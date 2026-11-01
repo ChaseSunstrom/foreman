@@ -476,6 +476,15 @@ class SteerChecks(ForemanTestCase):
                 self.assertNotEqual(r.returncode, 0)
                 self.assertIn("a check is", r.stderr)
 
+    def test_a_steer_rule_without_a_check_warns_when_it_is_recorded(self):
+        # T-2465: the doctor's steer-checks line caught a missing --check only later, twice in one session
+        r = self.fm("decide", "rule: x", "--cites", "user steer 2026-11-01")
+        self.assertIn("no --check", r.stderr)
+        self.assertIn("--revisited", r.stderr)
+        r = self.fm("decide", "rule: y", "--cites", "user steer 2026-11-01", "--check", "python3 plugin/tests/run.py test_good")
+        self.assertNotIn("no --check", r.stderr)
+        self.assertNotIn("no --check", self.fm("decide", "not a steer").stderr)
+
     def test_a_steer_rule_with_no_check_or_a_failing_one_is_named_and_a_settled_one_isnt(self):
         self.fm("decide", "rule one: no check", "--cites", "user steer 2026-10-30")
         self.fm("decide", "rule two: fails", "--cites", "the user's steer", "--check", "python3 plugin/tests/run.py test_bad")
@@ -528,4 +537,5 @@ class SteerChecks(ForemanTestCase):
     def test_cites_that_almost_name_a_steer_warn(self):
         r = self.fm("decide", "rule: x", "--cites", "steer 2026-10-30 #2")
         self.assertIn("doesn't read as a user steer", r.stderr)
-        self.assertNotIn("warning", self.fm("decide", "rule: y", "--cites", "the user's steer 2026-10-30").stderr)
+        self.assertNotIn("doesn't read as a user steer",  # T-2465: it reads as one (and warns only that it has no check)
+                         self.fm("decide", "rule: y", "--cites", "the user's steer 2026-10-30").stderr)

@@ -4195,6 +4195,9 @@ def cmd_decide(args):
     if re.search(r"steer|user", cites, re.I) and not c.STEER.search("cites: " + cites):
         print(f"fm: warning: --cites {c.plain(cites)[:60]!r} doesn't read as a user steer ('user steer …' or "
               "\"the user's steer …\"), so no check is asked of this rule", file=sys.stderr)
+    elif cites and c.STEER.search("cites: " + cites) and not getattr(args, "check", None):  # T-2465: said now, not later
+        print("fm: warning: a rule from a user steer was recorded with no --check, so fm doctor and the sweep will "
+              "flag it: record it again with --check CMD --revisited '<words from this rule>'", file=sys.stderr)
     conf = getattr(args, "confidence", None)
     if conf is not None and not (str(conf).isdecimal() and 0 <= int(conf) <= 100):  # T-2337
         raise UsageError("--confidence is a whole percent, 0-100: how likely this decision is not reversed")
@@ -5965,8 +5968,13 @@ class _Parser(argparse.ArgumentParser):
     def error(self, message):
         """T-0273: an unknown command or flag names the nearest real one (a wrong guess costs a retry otherwise)."""
         import difflib
-        flags = sorted({o for prs in _all_parsers(build_parser()) for o in prs._option_string_actions})  # every
-        # command's and the root's (-p); sorted, so the nearest match doesn't depend on set order
+        root = build_parser()  # T-2475: the typed command's own flags (and its subcommands') plus the root's (-p),
+        # never another command's; sorted, so the nearest match doesn't depend on set order
+        words = [t for i, t in enumerate(_ARGV) if not t.startswith("-") and not (i and _ARGV[i - 1] in ("-p", "--project"))]
+        sp = next((a for a in root._actions if isinstance(a, argparse._SubParsersAction)), None)
+        scope = sp.choices.get(words[0]) if sp and words else None
+        flags = sorted({o for prs in (_all_parsers(scope) + [root] if scope else _all_parsers(root))
+                        for o in prs._option_string_actions})
         unknown = [t.partition("=")[0] for t in _ARGV if re.match(r"--?[A-Za-z]", t) and t.partition("=")[0] not in flags]
         near = [m for t in unknown for m in difflib.get_close_matches(t, flags, n=1)][:1]  # a mistyped flag shifts the
         bad = re.search(r"invalid choice: '([^']*)' \(choose from (.+)\)", message)    # positionals: name it first
