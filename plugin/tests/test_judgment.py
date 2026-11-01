@@ -377,6 +377,21 @@ class Confidence(Base):  # T-2338: fm decide --confidence N writes the number in
         self.assertNotIn("[confidence: 99%]", read_text(os.path.join(self.p.dir, "decisions.md")))
 
 
+class AssumptionReceipt(Base):  # T-2345 (Mission 5 inbox): the finish receipt says how each assumption was checked
+    def test_the_finish_receipt_groups_assumptions_by_how_they_were_checked(self):
+        self.fm("task", "new", "Tidy", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        for fact in ("the parser is lenient", "the cache is warm", "users read the README", "nobody calls old_api",
+                     "the old flag is gone"):
+            self.fm("task", "assume", "T-0001", "add", fact)
+        self.fm("task", "assume", "T-0001", "verify", "1", "--run", "true")
+        self.fm("task", "assume", "T-0001", "verify", "2", "--evidence", "read the cache code")
+        self.fm("task", "assume", "T-0001", "verify", "5", "--run", "false", check=False)  # a failed check: false
+        out = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true").stdout
+        self.assertIn("Assumptions: 1 ran, 1 typed, 1 proved false, 2 never checked", out)
+        self.fm("task", "new", "Plain", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        self.assertNotIn("Assumptions:", self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true").stdout)
+
+
 class Followups(Base):
     def test_finish_keeps_the_answers_to_likely_followups_and_the_insight(self):
         self.fm("task", "new", "Tidy", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
