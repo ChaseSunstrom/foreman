@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-01T22:43:17Z",
+ "updated": "2026-11-01T22:48:20Z",
  "rev": "51450637",
  "capabilities": [
   {
@@ -1202,7 +1202,7 @@
       {
        "id": "T-2379",
        "title": "Stop-time can't claims as capability misses (Mission 6 inbox, tier 2): a final reply…",
-       "status": "captured",
+       "status": "dropped",
        "type": "FEATURE",
        "tier": "S",
        "steps": 0,
