@@ -3973,3 +3973,62 @@ class LeanSubstance(ForemanTestCase):
         self.assertEqual(fmgenesis._gain(self.p, 1, {"cap": 8, "ids": list(outs)}, outs=outs)[0], "no gain")  # 3/4 < 0.8
         outs["T-2"]["survival"] = "survived"
         self.assertEqual(fmgenesis._gain(self.p, 1, {"cap": 8, "ids": list(outs)}, outs=outs)[0], "gain")
+
+
+class ProofBeforePresentation(ForemanTestCase):
+    """T-2504 (the user's standing rule of 2026-11-01, part 4): nothing user-facing claims more than the exam and
+    outcomes show: each public result names a proof the record holds, and no line says a capability passes while the
+    scorecard doesn't; the sweep compares them."""
+    def setUp(self):
+        super().setUp()
+        import fmcore as c
+        import fmgenesis
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.tower = fmgenesis.home(self.p)
+        fmgenesis.init(self.p, GEN0.encode())
+        tower_file(self.tower, "gen-1/seed.md", "# Seed\ngen-0\n")
+
+    def write(self, rel, text):
+        os.makedirs(os.path.dirname(os.path.join(self.repo, rel)), exist_ok=True)
+        with open(os.path.join(self.repo, rel), "w") as f:
+            f.write(text)
+
+    def test_a_result_needs_a_proof_the_record_holds(self):
+        import fmgenesis
+        tid = self.fm_json("task", "new", "measure it", "--type", "PERF", "--tier", "S", "--step", "x")["id"]
+        self.write("README.md", "# Tool\n\nIt found 9 of 10 planted bugs.\n\nIt found 7 of 10 on run s1-001.\n\n"
+                                f"It ran 3x faster ({tid}).\n\nAt 85% context it checkpoints.\n")
+        self.write("site/pages.py", 'X = "The first run lost the rules of later requests (44 of 105 hidden tests once)."\n'
+                                    'S = \'<rect fill="hsl(1 38% 20%)" width="10"/>\'\n'
+                                    'Y = "Charts read site/stats.json, so the 62% shown is live."\n')
+        bad, _ = fmgenesis._claim_row(self.p)
+        joined = "\n".join(bad)
+        self.assertIn("README.md:3", joined)  # no source at all
+        self.assertIn("README.md:5", joined)  # a run exam.jsonl doesn't hold
+        self.assertIn("README.md:7", joined)  # a task with no recorded evidence
+        self.assertIn("site/pages.py:1", joined)
+        self.assertNotIn("hsl", joined)  # markup isn't prose
+        self.assertNotIn("85%", joined)  # a threshold isn't a result
+        self.assertNotIn("site/pages.py:3", joined)  # live data
+        tower_file(self.tower, "exam.jsonl", line("s1-001", 1, ["a"]))
+        self.fm("task", "evidence", tid, "--step", "1", "--run", "true")
+        bad, _ = fmgenesis._claim_row(self.p)
+        self.assertEqual([x for x in bad if x.startswith("README.md:5") or x.startswith("README.md:7")], [])
+
+    def test_a_capability_claimed_to_pass_must_pass_on_the_scorecard(self):
+        import fmgenesis
+        from unittest import mock
+        self.write("README.md", "# Tool\n\nInitiative passes its held-out exam.\n")
+        card = {"rows": [{"n": 1, "name": "Initiative", "state": "too few"}]}
+        with mock.patch.object(fmgenesis, "scorecard", return_value=card):
+            bad, _ = fmgenesis._claim_row(self.p)
+            self.assertTrue(any("Initiative passes; the scorecard says too few" in x for x in bad), bad)
+            card["rows"][0]["state"] = "pass"
+            self.assertFalse(any("Initiative" in x for x in fmgenesis._claim_row(self.p)[0]))
+
+    def test_the_sweep_has_the_row(self):
+        import fmgenesis
+        self.write("README.md", "# Tool\n\nIt found 9 of 10 planted bugs.\n")
+        rows = {x["check"]: x for x in fmgenesis.sweep(self.p, 1)["rows"]}
+        self.assertFalse(rows["proof before presentation"]["ok"])

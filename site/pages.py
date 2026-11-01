@@ -296,7 +296,7 @@ def _duel(s, name):
     for what, a, b in (("cost", cost_f, cost_b), ("time", time_f, time_b)):
         p = pct(a, b)
         verdict += (f" Foreman's {what} was {abs(p)}% {'lower' if p < 0 else 'higher'}." if abs(p) >= 3 else
-                    f" Its {what} was within 3% of Claude Code's.")
+                    f" Its {what} was within 3% of Claude Code's.<!-- source: site/stats.json -->")
 
     def cell(x):
         mark = "✓" if x["pass"] else "✗"
@@ -334,7 +334,7 @@ def _loses(s):
                             + (f"<code>{esc(cmd)}</code>" if cmd else "not recorded with this run") + "</td></tr>")
     if not rows:
         return ("<p><strong>Foreman lost no row in these runs</strong>: no task Claude Code passed and Foreman failed, "
-                "and none cost or took 25% more.</p>")
+                "and none cost or took 25% more.<!-- source: site/stats.json --></p>")
     return (f"<p><strong>{len(rows)} row(s) where Foreman did worse.</strong> Each command reruns that row on both "
             "sides with its run's model and settings.</p><div class=\"verdicts\"><table><thead><tr><th>Run</th>"
             "<th>Task</th><th>Where it lost</th><th>Rerun it</th></tr></thead><tbody>" + "".join(rows)
@@ -598,7 +598,7 @@ PAGES = [
           "the context or the verbs with nothing cut to pay for it.</p>"),
          ("chart", _self_running)]},
     {"slug": "model-layer", "nav": "Model layer", "title": "Models advise; proof decides",  # T-2489
-     "desc": "A rule first, then local models, then cloud: each use runs in shadow until the exam shows it beats the rule.",
+     "desc": "A rule first, then local models, then cloud: each use runs in shadow until the exam shows the model is right more often than the rule.",
      "lede": "Some calls (a request's type and size, whether two items are the same, whether a lead is real) can go to a "
              "model. Foreman asks the cheapest that can answer, books every answer, and lets one take over only when "
              "its record says so.",
@@ -908,7 +908,7 @@ PAGES = [
          ("chart", lambda s: _long(s, "marathon")),
          ("text", "Where Foreman loses", "<p>Generated from the same results as the tables above: every row where "
           "Claude Code passed and Foreman didn't, or Foreman cost or took 25% more. Each one reruns on its own with "
-          "<code>fm bench repro</code>, both sides, with that run's model and settings.</p>"),
+          "<code>fm bench repro</code>, both sides, with that run's model and settings.<!-- rule --></p>"),
          ("chart", _loses),
          ("text", "What the duels changed in Foreman", "<p>Reading the sessions turn by turn showed where Foreman's "
           "extra cost went: not into its context (about 2,000 tokens), but into turns spent on its own commands. A "
@@ -921,11 +921,11 @@ PAGES = [
           "command, so the agent writes instead of listing folders.</li><li><strong>Less friction.</strong> Commands "
           "default to the active task, a broken check can be corrected, and only real security names ask for an "
           "adversary review.</li><li><strong>Requests survive compaction.</strong> The first long runs lost the rules "
-          "of later requests after a compaction (44 of 105 hidden tests once): a summary keeps a request's name and "
+          "of later requests after a compaction (44 of 105 hidden tests once)<!-- source: T-1242 -->: a summary keeps a request's name and "
           "drops its rules. Now each request is its own task holding its text, the open ones come back after every "
           "compaction, and the next one is focused with its text when the agent moves on.</li></ul>"),
          ("text", "The first run, and why it was replaced", "<p>The first duel used six tasks from Foreman's own "
-          "history and came out at 0 of 6 for Foreman, 1 of 6 for Claude Code, with Foreman costing 33% more. "
+          "history and came out at 0 of 6 for Foreman, 1 of 6 for Claude Code, with Foreman costing 33% more<!-- source: T-1231 -->. "
           "Reading its transcripts showed the case set couldn't measure either side: three cases graded what Foreman "
           "had learned from this user's own past corrections, which a fresh session can't have, and the other three "
           "checked exact wording their requests never stated. Both sides also worked inside Foreman's own code, which "
