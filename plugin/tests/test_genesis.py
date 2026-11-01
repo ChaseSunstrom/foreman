@@ -868,6 +868,9 @@ class GenesisStep(ForemanTestCase):
         lineage = "# Lineage\n"
         for n in (1, 2):
             self.put(f"gen-{n}/seed.md", DRY if n > 1 else SEED.split("| 1 |")[0] + "No Missions this generation.\n")
+            if n > 1:  # T-2505: from gen 2 the prediction is sealed before anything else
+                self.at("predict")
+                predicted(self.p, n)
             self.at("select")
             lineage += f"\n## gen-{n}\n- dry\n"
             self.put("lineage.md", lineage)
@@ -1544,6 +1547,26 @@ def selected(p, *gens):
         tower_file(fmgenesis.home(p), f"gen-{n}/select.md", f"# Select\n\nGen: {n}\nVerdict: keep\n")
     reviewed(p, *gens)
     mapped(p, *gens)
+    predicted(p, *gens)
+    hunted(p, *gens)
+
+
+def predicted(p, *gens):
+    """T-2505: a sealed prediction, as fm genesis put leaves it."""
+    import hashlib
+    import fmcore as c
+    import fmgenesis
+    for n in gens:
+        text = f"# Prediction — gen {n}\n\n1. Steer: a test steer | Why: a test reason\n"
+        tower_file(fmgenesis.home(p), f"gen-{n}/prediction.md", text)
+        c.log_event(p, "genesis_seal", data={"gen": n, "sha": hashlib.sha256(text.encode()).hexdigest()})
+
+
+def hunted(p, *gens):
+    """T-2505: a blind-spot hunt that found no class."""
+    import fmgenesis
+    for n in gens:
+        tower_file(fmgenesis.home(p), f"gen-{n}/blind-spots.md", f"# Blind spots — gen {n}\n\nNo class found.\n")
 
 
 def reviewed(p, *gens, rows=(), model="fable", missions="Opus 5.5", head=""):
@@ -1864,6 +1887,9 @@ class GenesisSelect(ForemanTestCase):
             self.assertIn(want, moon)
         self.assertNotIn("too timid", text)
         self.assertNotIn("mission-security", text)  # nothing open there
+        s = fmgenesis.step(self.p)
+        self.assertEqual((s["stage"], s["gen"]), ("predict", 3))  # T-2505: sealed first
+        predicted(self.p, 3)
         s = fmgenesis.step(self.p)
         self.assertEqual((s["stage"], s["gen"]), ("mission", 3))
         self.assertIn("mission-exhaustive-thinking", s["command"])
@@ -3812,6 +3838,8 @@ class GenerationReview(ForemanTestCase):
         reviewed(self.p, 1)
         self.assertEqual(fmgenesis.step(self.p)["stage"], "gap map")  # T-2502: the redraw comes next
         mapped(self.p, 1)
+        self.assertEqual(fmgenesis.step(self.p)["stage"], "blind spots")  # T-2505: the hunt, then the sweep
+        hunted(self.p, 1)
         self.assertEqual(fmgenesis.step(self.p)["stage"], "sweep")
 
 
@@ -3891,6 +3919,8 @@ class GapMapValue(ForemanTestCase):
         s = fmgenesis.step(self.p)
         self.assertEqual((s["stage"], s["command"]), ("gap map", "fm genesis put gen-1/gap-map.md --file -"), s)
         mapped(self.p, 1)
+        self.assertEqual(fmgenesis.step(self.p)["stage"], "blind spots")  # T-2505: the hunt, then the sweep
+        hunted(self.p, 1)
         self.assertEqual(fmgenesis.step(self.p)["stage"], "sweep")
         self.assertTrue(fmgenesis.SHAPE.fullmatch("gen-1/gap-map.md"))
 
@@ -4032,3 +4062,87 @@ class ProofBeforePresentation(ForemanTestCase):
         self.write("README.md", "# Tool\n\nIt found 9 of 10 planted bugs.\n")
         rows = {x["check"]: x for x in fmgenesis.sweep(self.p, 1)["rows"]}
         self.assertFalse(rows["proof before presentation"]["ok"])
+
+
+class SealedPrediction(ForemanTestCase):
+    """T-2505 (the user's standing rule of 2026-11-01, part 5): each generation seals a prediction of the user's next
+    three steers, scores each real steer against it, files a miss as an anticipation gap, and hunts blind spots from
+    inputs it didn't author, each class becoming a rule plus a check; the sweep checks all of it."""
+    PRED = ("# Prediction — gen 1\n\n"
+            "1. Steer: make the sweep measure code size, not rule text | Why: the lean row counts only rules\n"
+            "2. Steer: stop the drive from repeating offers | Why: it re-offered drafted tasks\n"
+            "3. Steer: show proof before claims on the site | Why: static numbers had no source\n")
+
+    def setUp(self):
+        super().setUp()
+        import fmcore as c
+        import fmgenesis
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.tower = fmgenesis.home(self.p)
+        fmgenesis.init(self.p, GEN0.encode())
+        tower_file(self.tower, "gen-1/seed.md", "# Seed\ngen-0\n")
+
+    def put(self, name, text):
+        import fmgenesis
+        from unittest import mock
+        with mock.patch.object(fmgenesis, "_read"):  # the cold read is the read tests' business
+            return fmgenesis.put(self.p, name, text)
+
+    def test_the_prediction_is_sealed_once_and_an_edit_breaks_the_seal(self):
+        import fmgenesis
+        self.put("gen-1/prediction.md", self.PRED)
+        self.assertEqual(fmgenesis._seal_state(self.p, 1), "sealed")
+        with self.assertRaises(ValueError):
+            self.put("gen-1/prediction.md", self.PRED + "4. Steer: anything | Why: hindsight\n")
+        with open(os.path.join(self.tower, "gen-1", "prediction.md"), "a") as f:
+            f.write("4. Steer: written after the fact | Why: x\n")
+        self.assertEqual(fmgenesis._seal_state(self.p, 1), "broken")
+
+    def test_a_recorded_steer_is_scored_and_a_miss_files_one_anticipation_gap(self):
+        import json
+        import fmcore as c
+        import fmgenesis
+        self.put("gen-1/prediction.md", self.PRED)
+        self.fm("decide", "Standing rule: the sweep measures code and test lines, not rule text", "--why", "steer",
+                "--cites", "user steer 2026-11-01: lean measures code lines", "--check", "fm genesis check")
+        self.fm("decide", "Standing rule: every chart gets a dark mode", "--why", "steer",
+                "--cites", "user steer 2026-11-01: dark mode charts", "--check", "fm genesis check")
+        rows = [json.loads(x) for x in open(os.path.join(self.tower, "gen-1", "prediction-score.jsonl"))]
+        self.assertEqual([r["hit"] for r in rows], [True, False])
+        self.assertIn("overlap", rows[0])
+        gaps = [b for b in c.load_briefs(self.p) if "anticipation" in b.section("Raw request").lower()]
+        self.assertEqual(len(gaps), 1)
+        self.assertEqual(fmgenesis._hit_rate(self.p, 1), (1, 2))
+
+    def test_blind_spot_classes_need_a_rule_and_a_passing_check(self):
+        import fmgenesis
+        self.fm("decide", "Standing rule: a drive offer is made once per active task", "--why", "blind spot",
+                "--check", "fm genesis check")
+        good = ("# Blind spots — gen 1\n\n## Repeated offers\n- Source: session replays\n"
+                "- Rule: a drive offer is made once per active task\n- Check: fm genesis check\n")
+        import subprocess
+        from unittest import mock
+        tower_file(self.tower, "gen-1/blind-spots.md", good)
+        ok, red = subprocess.CompletedProcess([], 0), subprocess.CompletedProcess([], 1)
+        with mock.patch("subprocess.run", return_value=ok):  # the check itself runs; here it passes
+            self.assertEqual(fmgenesis._blind_row(self.p, 1)[0], [])
+            tower_file(self.tower, "gen-1/blind-spots.md", good + "\n## Silent stalls\n- Source: inversion\n")
+            self.assertTrue(any("Silent stalls: needs a Rule and a Check" in x for x in fmgenesis._blind_row(self.p, 1)[0]))
+        tower_file(self.tower, "gen-1/blind-spots.md", good)
+        with mock.patch("subprocess.run", return_value=red):
+            self.assertTrue(any("fails" in x for x in fmgenesis._blind_row(self.p, 1)[0]))
+
+    def test_from_gen_2_step_asks_for_the_prediction_first_and_the_sweep_checks_the_seal(self):
+        import fmgenesis
+        tower_file(self.tower, "gen-2/seed.md", "# Seed\ngen-0\nNo Missions this generation.\n")
+        tower_file(self.tower, "lineage.md", "# Lineage\n\n## gen-1\n- baseline\n- seed base: gen-1\n")
+        s = fmgenesis.step(self.p)
+        self.assertEqual((s["stage"], s["command"]), ("predict", "fm genesis put gen-2/prediction.md --file -"), s)
+        self.assertIn("is missing", fmgenesis._predict_row(self.p, 2)[0][0])
+        self.put("gen-2/prediction.md", self.PRED.replace("gen 1", "gen 2"))
+        self.assertNotEqual(fmgenesis.step(self.p)["stage"], "predict")
+        bad = fmgenesis._predict_row(self.p, 2)[0]
+        self.assertEqual([x for x in bad if "prediction" in x], [])
+        self.assertTrue(any("blind-spots" in x for x in bad))  # the hunt still owed
+        self.assertEqual(fmgenesis._predict_row(self.p, 1), ([], "gen 1 predates the rule (from gen 2)"))
