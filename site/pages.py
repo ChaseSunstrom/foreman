@@ -153,6 +153,20 @@ def _self_running(s):
     return row
 
 
+def _decisions(s):
+    """T-2348: fm decide's rows newest first on one scrollable tape (site/stats.py's decisions block), each with its
+    kind (a door when costly or outward), its stated confidence and the later row that reversed or revisited it."""
+    tape = s.get("decisions") or []
+    row = tiles([("decisions", len(tape)), ("doors (costly or outward)", sum(x["kind"] != "reversible" for x in tape)),
+                 ("reversed or revisited later", sum(bool(x.get("later")) for x in tape))])
+    items = "".join(
+        f'<li><time>{esc(x["date"])}</time> <b>{esc(x["kind"])}</b>'
+        + (f' {int(x["confidence"])}%' if isinstance(x.get("confidence"), int) else "") + f' {esc(x["text"])}'
+        + (f' <em>{esc(x["later"]["how"])} {esc(x["later"]["date"])}</em>' if x.get("later") else "") + "</li>"
+        for x in tape)
+    return row + (f'<ol class="tape" style="max-height:70vh;overflow-y:auto">{items}</ol>' if items else "")
+
+
 def _types(s):
     return hbars("Closed tasks by type", None, sorted(s["types"].items(), key=lambda kv: -kv[1]))
 
@@ -568,6 +582,16 @@ PAGES = [
           "a generation that ends bigger than it began, and the self-change gate refuses a merge that grows the hooks, "
           "the context or the verbs with nothing cut to pay for it.</p>"),
          ("chart", _self_running)]},
+    {"slug": "decisions", "nav": "Decisions", "title": "Every decision on one tape",  # T-2348
+     "desc": "Each fm decide row with its confidence, whether it was a door, and the later row that reversed it.",
+     "lede": "Foreman decides on its own under full autonomy, so every choice is written down: what was chosen, why, "
+             "how sure it was, and what happened to it later.",
+     "blocks": [
+         ("text", "What a row holds", "<p><code>fm decide</code> writes each choice to the project's decisions file: "
+          "its kind (reversible, or a door: costly or outward, which the final report lists), the confidence stated, "
+          "the user steer it rests on and the check that proves a standing rule still holds. A later row that "
+          "reverses or revisits it is linked here, so a choice that didn't last shows as one.</p>"),
+         ("chart", _decisions)]},
     {"slug": "guard", "nav": "The guard", "title": "A guard built for bypass mode",
      "desc": "Every command and edit is read before it runs; dangerous ones are refused and destructive git saves your work first.",
      "lede": "Foreman is meant to run without permission prompts, so the brake has to be real: it reads every Bash "
