@@ -422,3 +422,15 @@ def check(p, tid):
                             f"'Undo: cp -a SNAPSHOT/. .' line on the step by hand")
     if b.status in ("active", "verifying") and (gaps := c.door_gaps(c.find_brief(p, tid))):
         raise c.PolicyError(f"{tid} has a one-way step on untracked data and needs {', '.join(gaps)}")
+
+
+def tally(b):
+    """T-2346: the finish receipt's one line on the plan's local one-way steps: each undone (its Undo line's restore)
+    or parked (no way back, left for the final report); '' when the plan had none."""
+    marked = c.door_marked(b)
+    if not marked:
+        return ""
+    steps = {s.n: s.text for s in b.steps()}
+    parts = [f"step {n} undone ({c.fit(steps[n].split('Undo:', 1)[1].strip(), 60)})" if c.undo_ok(steps.get(n, ""))
+             else f"step {n} parked" for n in marked]
+    return f"Doors: {len(marked)} one-way step{'' if len(marked) == 1 else 's'}: " + ", ".join(parts)

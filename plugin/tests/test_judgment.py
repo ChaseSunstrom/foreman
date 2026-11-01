@@ -197,6 +197,21 @@ class DoorPark(DoorBase):
         self.assertRegex(rows, r"\[confidence: \d+%\].*data/old\.csv")
         self.assertIsNone(self.waits(tid))
 
+    def test_the_finish_receipt_tallies_each_one_way_step_and_how_it_was_undone_or_parked(self):
+        # T-2346 (Mission 5 inbox): one receipt line, only when the plan had a local one-way step
+        import fmdoors
+        self.data(text="keep,me\n")
+        tid = self.brief("delete data/old.csv", "write the summary")
+        self.fm("focus", tid)
+        out = self.fm("task", "finish", tid, "--audit", "self", "--run", "true").stdout
+        self.assertRegex(out, r"Doors: 1 one-way step: step 1 undone \(cp -a ")
+        plain = self.brief("write the summary")
+        self.fm("focus", plain)
+        self.assertNotIn("Doors:", self.fm("task", "finish", plain, "--audit", "self", "--run", "true").stdout)
+        b = c.find_brief(self.p, plain)
+        b.meta["doors"] = ["1"]  # a marked step with no way back: parked
+        self.assertEqual(fmdoors.tally(b), "Doors: 1 one-way step: step 1 parked")
+
     def test_a_snapshot_that_does_not_verify_is_not_an_undo(self):
         from unittest import mock
         import fmdoors
