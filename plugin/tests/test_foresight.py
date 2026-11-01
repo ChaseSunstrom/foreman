@@ -415,6 +415,18 @@ class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicte
         self.assertEqual(len([r for r in self.rows() if r["kind"] == "score"]), 1)  # never rescored
         self.assertEqual(len([r for r in self.rows() if r["kind"] == "next-request"]), 2)  # the next one, after tid
 
+    def test_predicted_paths_come_from_the_newest_request_of_that_type_the_last_included_and_keep_every_path(self):
+        # T-2449: the replay over this project's own 376 held-out requests had the paths trail the naive baseline
+        # (0.053 vs 0.086): the last request was skipped, and a guess was cut to 5 of up to 20 paths
+        for t, s in (("FIX", "a.py"), ("FEATURE", "b.py"), ("FEATURE", "c.py")):
+            self.ask(t, s)
+        fs.prediction_tick(self.p)
+        (pred,) = [r for r in self.rows() if r["kind"] == "next-request"]
+        self.assertEqual(pred["pred"], {"type": "FEATURE", "paths": ["c.py"]})  # the newest FEATURE is the last one
+        many = [f"m{i}.py" for i in range(8)]
+        self.assertEqual(fs.predict([(None, "FIX", ["x.py"]), (None, "FEATURE", many), (None, "FIX", ["y.py"])]),
+                         ("FEATURE", many))  # every path the request touched, as _requests keeps them
+
     def test_predictions_report_hit_rates_beside_the_baseline_and_mute_a_kind_that_trails_it(self):
         with open(os.path.join(self.p.dir, fs.PREDICTIONS), "w", encoding="utf-8") as f:
             for i in range(20):
