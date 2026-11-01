@@ -2953,6 +2953,23 @@ class Stop(HookCase):
             json.dump(g, f)
         self.assertNotIn("step 1/2", stop(ci, agent).get("reason", ""), "the agent still holds it")
 
+    def test_the_drained_product_check_waits_while_the_genesis_round_is_held(self):
+        # T-2466: with fm drive --round-first on, the wait branch still said "fm capture each defect, then plan and work
+        # the first": new maintenance the user's steer holds until the round is done
+        self.fm("init")
+        g = os.path.join(c.find_project(self.repo).dir, "research", "genesis")
+        os.makedirs(os.path.join(g, "gen-1"))
+        for rel in ("gen-0.md", "gen-1/seed.md"):
+            with open(os.path.join(g, rel), "w", encoding="utf-8") as f:
+                f.write("# x\n")
+        self.fm("autonomy", "full")
+        self.fm("drive", "on", "--round-first", "on")
+        self.task("Active work")
+        ci = {"id": "bci1", "type": "shell", "status": "running", "description": "watch the pipeline"}
+        r = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on CI.",
+                                     "session_id": "sess-1", "background_tasks": [ci]})) or {}
+        self.assertNotIn("end to end", r.get("reason", ""))
+
     def test_drained_queue_checks_the_product(self):
         # T-0417 (the user: "foreman should be able to find these issues … itself"): JARVIS closed 34 tasks with the
         # tests green while its web UI didn't load; a drained queue ended the run instead of looking at the product

@@ -4100,7 +4100,7 @@ def _drive(p, sd, briefs, pl, g):
         # round is progress, so it resets the cap); usage ahead of pace pauses it until a later Stop
         if looping and not scope and not waiting and not _headless():
             key = [int(fmloop.state(p).get("round") or 0), len(briefs)]
-            if d.get("loop") == key or _pace(p):
+            if d.get("loop") == key or _pace(p) or c._round_first(p):  # T-2466: a round's new work waits for Genesis
                 return None
             d.update(loop=key, count=1, marks=_marks(p))
             _event({"kind": "drive_loop", "session_id": sid, "project": p.slug, "round": key[0] + 1})
@@ -4170,7 +4170,8 @@ def _drive(p, sd, briefs, pl, g):
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
         # the queue and inbox are the user's own requests, never optional: only side offers wait on pace (review)
         more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"] and x["id"] not in blocked][:3]
-        if not more and full and d.get("drained") != len(briefs):  # T-0415: nothing else queued: find the next
+        if not more and full and d.get("drained") != len(briefs) and not c._round_first(p):  # T-0415: nothing queued: find
+            # the next (T-2466: not while fm drive --round-first holds new work for the Genesis round)
             d["drained"] = len(briefs)  # work rather than wait; once per drain, as below, not once per set of jobs
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}) and nothing else is "
                     f"queued; don't wait on it. Check the product end to end as its user uses it (every screen at "

@@ -179,6 +179,19 @@ class Loop(ForemanTestCase):
         self.fm("loop", "on")
         self.assertIn("0 rounds, 0 tasks closed since", self.fm("loop", "off").stdout, "a new run counts afresh")
 
+    def test_the_drive_holds_the_loop_while_the_genesis_round_is_open(self):
+        # T-2466: with fm drive --round-first on, the Stop hook still pushed the next loop round (a brainstorm of new
+        # work), which the user's steer holds until the Genesis round is done
+        g = os.path.join(self.project_dir(), "research", "genesis")
+        os.makedirs(os.path.join(g, "gen-1"))
+        for rel in ("gen-0.md", "gen-1/seed.md"):
+            with open(os.path.join(g, rel), "w", encoding="utf-8") as f:
+                f.write("# x\n")
+        self.fm("autonomy", "full")
+        self.fm("loop", "on")
+        self.fm("drive", "on", "--round-first", "on")
+        self.assertNotIn("fm loop round", self.stop().get("reason", ""))
+
     def test_the_drive_continues_into_each_round(self):
         self.fm("autonomy", "full")
         self.assertNotIn("fm loop round", self.stop().get("reason", ""))
