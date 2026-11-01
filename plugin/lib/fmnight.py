@@ -318,6 +318,11 @@ def tick(p, fetch_ci=None):
                 fmforesight.breakage_tick(p)
             except Exception as e:
                 res["notes"].append(f"breakage warnings: {c.fit(c.plain(str(e)), 120)}")
+            try:  # T-2488: the model layer's shadow pass: local backends only, a few rows a tick, nothing spent without one
+                import fmmodels
+                fmmodels.shadow_pass(p, cap=5)
+            except Exception as e:
+                res["notes"].append(f"shadow pass: {c.fit(c.plain(str(e)), 120)}")
             try:
                 with open(path, encoding="utf-8") as f:
                     seen = json.load(f)

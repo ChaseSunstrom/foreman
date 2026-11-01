@@ -88,6 +88,21 @@ class Init(ForemanTestCase):
         self.assertIn("fm init", p.stderr)
 
 
+class ShadowRows(ForemanTestCase):  # T-2488: each model use logs the path's own decision, no model called
+    def test_capture_and_intake_log_type_and_tier_and_a_refused_near_duplicate_logs_dedupe(self):
+        import json
+        self.fm("init")
+        p = c.find_project(self.repo)
+        self.fm("capture", "FIX: the parser crashes on empty input")
+        self.fm("intake", "FEATURE: an export button for the report page")
+        self.fm("capture", "FIX: the parser crashes on empty input files", check=False)  # near-duplicate: refused
+        rows = [json.loads(x) for x in open(os.path.join(p.dir, "shadow.jsonl"))]
+        got = [(r["use"], r["path"]) for r in rows]
+        for want in (("intake-type", "FIX"), ("intake-type", "FEATURE"), ("dedupe", "same")):
+            self.assertIn(want, got)
+        self.assertEqual(sum(u == "intake-tier" for u, _ in got), 2)
+
+
 class FlagsAmongPaths(unittest.TestCase):  # T-1671
     def test_a_flag_among_path_words_moves_in_front_and_free_text_is_left_as_typed(self):
         p = fmcli.build_parser()

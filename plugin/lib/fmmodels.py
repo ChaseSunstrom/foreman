@@ -783,7 +783,7 @@ def _answer(d, choices):
     return {"choice": d["choice"], "probability": round(float(pr), 3)}
 
 
-def decide(kind, prompt, choices, rule=None, bar=0.8, p=None, backends=None, timeout=60):
+def decide(kind, prompt, choices, rule=None, bar=0.8, p=None, backends=None, timeout=60, ref=None):
     """T-2485: one decision of `kind` among `choices`: the caller's deterministic rule first (prompt -> (choice,
     probability) or None), then each backend cheapest first (local before cloud; no cloud backend for a sensitive
     project), stopping at the first valid answer whose probability clears `bar`. Returns {choice, probability,
@@ -809,7 +809,7 @@ def decide(kind, prompt, choices, rule=None, bar=0.8, p=None, backends=None, tim
                       choices)
         tried.append("rule: " + ("ok" if ans else "no answer"))
         if ans and take(ans, "rule"):
-            return _booked(p, kind, best, tried, True)
+            return _booked(p, kind, best, tried, True, ref)
     ask = [{"role": "system", "content": DECIDE_SYSTEM},
            {"role": "user", "content": f"Choices: {json.dumps(choices)}\nQuestion: {prompt}"}]
     for b in sorted(registry() if backends is None else backends, key=lambda b: not b.get("local")):
@@ -826,11 +826,11 @@ def decide(kind, prompt, choices, rule=None, bar=0.8, p=None, backends=None, tim
         ans = _answer(extract_json(r.get("text") or ""), choices)
         tried.append(f"{name}: {'ok' if ans else 'malformed reply'} ({int((time.monotonic() - t0) * 1000)} ms)")
         if ans and take(ans, name):
-            return _booked(p, kind, best, tried, True)
-    return _booked(p, kind, best, tried, False) if best else None
+            return _booked(p, kind, best, tried, True, ref)
+    return _booked(p, kind, best, tried, False, ref) if best else None
 
 
-def _booked(p, kind, best, tried, cleared):
+def _booked(p, kind, best, tried, cleared, ref=None):
     """T-2485: the answer, written to p's prediction book (fmforesight's predictions.jsonl) for scoring."""
     out = dict(best, cleared=cleared, tried=tried)
     if p is not None:
@@ -839,7 +839,7 @@ def _booked(p, kind, best, tried, cleared):
         fmcore.append_line(os.path.join(p.dir, fmforesight.PREDICTIONS), json.dumps(
             {"kind": "decide", "id": f"decide-{kind}-{time.time_ns()}", "use": kind, "choice": best["choice"],
              "probability": best["probability"], "backend": best["backend"], "cleared": cleared,
-             "at": fmcore.now()}) + "\n")
+             "at": fmcore.now(), **({"ref": ref} if ref else {})}) + "\n")
     return out
 
 
@@ -857,3 +857,52 @@ def live(p, use):
         if m and m.group(2) == use:
             state = m.group(1) == "live" and bool(EXAM_RUN.search(text))
     return state
+
+
+# ---------------------------------------------------------------- shadow mode (T-2488)
+SHADOW = "shadow.jsonl"  # the path's own decisions, one row per use, for the night's shadow pass and the exam arms
+
+
+def shadow_uses():
+    import fmcore
+    return {"intake-type": list(fmcore.TYPES), "intake-tier": ["S", "M", "L"], "dedupe": ["same", "different"],
+            "lead-triage": ["real", "noise"]}
+
+
+def shadow(p, use, text, path):
+    """T-2488: the path's own decision for a model use, recorded inline with no model call (redacted, cut short); a
+    failure never costs the caller."""
+    try:
+        import fmcore
+        fmcore.append_line(os.path.join(p.dir, SHADOW), json.dumps(
+            {"id": f"{use}-{time.time_ns()}", "use": use, "path": str(path), "at": fmcore.now(),
+             "input": fmcore.fit(fmcore.redact(fmcore.plain(str(text))), 600)}) + "\n")
+    except Exception:  # shadow logging is advisory by the user's rule: it never breaks a capture or a scan
+        pass
+
+
+def shadow_pass(p, cap=20, backends=None):
+    """T-2488: shadow rows no model has answered yet, through decide() on local backends only (private and cheapest),
+    at most `cap` a pass; with no local backend nothing runs and nothing is spent. A row is answered once: its booked
+    answer (or miss) carries the row's id as ref."""
+    import fmcore
+    import fmforesight
+    local = [b for b in (registry() if backends is None else backends) if b.get("local")]
+    if not local:
+        return {"answered": 0, "rows": 0, "note": "no local backend: nothing spent"}
+    done = {r.get("ref") for r in fmforesight._book(p) if r.get("kind") in ("decide", "decide-miss")}
+    try:
+        with open(os.path.join(p.dir, SHADOW), encoding="utf-8") as f:
+            rows = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict)]
+    except (OSError, ValueError):
+        rows = []
+    uses = shadow_uses()
+    todo = [r for r in rows if r.get("use") in uses and r.get("id") not in done][:cap]
+    answered = 0
+    for r in todo:
+        if decide(r["use"], r.get("input", ""), uses[r["use"]], p=p, backends=local, ref=r["id"]) is not None:
+            answered += 1
+        else:  # nothing usable came back: booked as a miss so the pass doesn't spend on it every night
+            fmcore.append_line(os.path.join(p.dir, fmforesight.PREDICTIONS), json.dumps(
+                {"kind": "decide-miss", "id": f"miss-{r['id']}", "ref": r["id"], "at": fmcore.now()}) + "\n")
+    return {"answered": answered, "rows": len(todo)}
