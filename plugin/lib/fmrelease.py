@@ -360,6 +360,13 @@ def ship(p, args):
     behind the publish grant. The working tree is never touched; a failure pushes nothing and keeps the grant."""
     import shlex
     root, remote = p.root, args.remote or "origin"
+    chance = getattr(args, "chance", None)
+    if chance is not None:  # T-2496: refused before anything is pushed
+        import fmoutcomes
+        try:
+            fmoutcomes._stated(chance)
+        except ValueError as e:
+            _err(f"--chance: {e}")
     if remote.startswith("-"):
         _err(f"--remote {remote!r} reads as a git option; name a remote or a URL")
     _git(root, "fetch", "-q", remote, "main")
@@ -472,6 +479,10 @@ def ship(p, args):
             _git(root, "worktree", "remove", "--force", wt, ok=True)
     print(f"shipped {n} to {remote} main at {tip} (the publish grant is spent)."
           + ("" if args.watch else f" Watch CI in the background: fm ci-watch --commit {tip}"), flush=True)
+    if chance is not None:  # T-2496: the bet is booked once the commit is on main
+        import fmoutcomes
+        if fmoutcomes.ship_bet(p, chance, b.id, tip):
+            print(f"Ship bet: {fmoutcomes._stated(chance)}% that CI's blocking jobs pass on {tip[:12]}; fm ci-watch settles it.")
     if not args.watch:
         return 0
     import fmci  # T-1946

@@ -6935,6 +6935,8 @@ def _build_parser(only=None):
     s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
     s.add_argument("--test", metavar="CMD", help="the check to run in the scratch tree (default: the last --test given here, else fm check)")
     s.add_argument("--watch", action="store_true", help="then watch CI on the pushed commit and exit with its result (T-1946)")
+    s.add_argument("--chance", metavar="N", help="your chance, 0-100, that CI's blocking jobs pass on the pushed commit: "
+                                               "a write-once ship bet fm ci-watch settles (T-2496)")
     s.add_argument("--task", metavar="ID", help="ship on this task's publish grant (closed or active) instead of the "
                                                 "active task's, and spend it (T-2007)")
     s.add_argument("--check", action="store_true", help="push nothing: exit 0 when the remote's main has these commits' "

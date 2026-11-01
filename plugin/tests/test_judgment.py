@@ -539,3 +539,24 @@ class SteerChecks(ForemanTestCase):
         self.assertIn("doesn't read as a user steer", r.stderr)
         self.assertNotIn("doesn't read as a user steer",  # T-2465: it reads as one (and warns only that it has no check)
                          self.fm("decide", "rule: y", "--cites", "the user's steer 2026-10-30").stderr)
+
+
+class ShipBets(Base):  # T-2496: a ship bet is scored in hours by CI's blocking jobs, apart from the bars
+    def test_a_ship_bet_is_written_once_per_commit_and_settled_by_ci_s_verdict(self):
+        import fmoutcomes as o
+        tid = json.loads(self.fm("task", "new", "Ship it", "--type", "FIX", "--tier", "S", "--json").stdout)["id"]
+        green, red = "a" * 40, "b" * 40
+        row = o.ship_bet(self.p, 90, tid, green)
+        self.assertEqual((row["kind"], row["stated"], row["key"], row["base"]), ("ship", 90, green[:12], None))
+        self.assertIsNone(o.ship_bet(self.p, 70, tid, green))  # write-once per commit: a restated number is ignored
+        self.assertEqual([(r["kind"], r["outcome"]) for r in o.scored(self.p)], [("ship", None)])
+        c.log_event(self.p, "ci_verdict", data={"commit": green, "green": True})
+        o.maintain(self.p)
+        (r,) = o.scored(self.p)
+        self.assertEqual((r["outcome"], r["src"]), ("held", "ci"))
+        self.assertEqual(o.bar_rows(o.scored(self.p)), [])  # CI scores the kind, never moves a bar
+        self.assertEqual(o.ship_bet(self.p, 80, tid, red)["base"], 100)  # the held share of earlier settled ships
+        c.log_event(self.p, "ci_verdict", data={"commit": red, "green": False})
+        self.assertEqual({r["key"]: r["outcome"] for r in o.scored(self.p)}, {green[:12]: "held", red[:12]: "missed"})
+        with self.assertRaises(ValueError):
+            o.ship_bet(self.p, 150, tid, "c" * 40)
