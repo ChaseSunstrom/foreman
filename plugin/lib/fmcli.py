@@ -3377,7 +3377,13 @@ def task_set(p, args):
     if b.meta.get("plan0_at"):  # T-2337: a number stated after work began is still a bet
         import fmoutcomes
         fmoutcomes.record_stated(p, b)
-    out(args, c.brief_summary(b), f"{b.id} updated.")
+    note = ""
+    if any(sec.startswith("Approach") for sec, _ in pairs):  # T-2497: the base rate beside the number as it's written
+        import fmoutcomes
+        note = fmoutcomes.base_note(p, b)
+        if note != (b.meta.get("base_note") or ""):
+            b, _ = mutate(p, args.id, lambda x: x.meta.update(base_note=note), "task_set", {"base_note": bool(note)})
+    out(args, c.brief_summary(b), f"{b.id} updated." + (f"\n{note}" if note else ""))
 
 
 def _task_new_forms(sec, text):
@@ -3613,8 +3619,11 @@ def cmd_focus(args):
     import fmoutcomes
     if first_focus:  # T-2337: the confidences the brief states are bets from here on
         fmoutcomes.record_stated(p, target)
+        if (note := fmoutcomes.base_note(p, target)) != (target.meta.get("base_note") or ""):  # T-2497
+            target, _ = mutate(p, target.id, lambda x: x.meta.update(base_note=note), "task_set", {"base_note": bool(note)})
     try:
         record = "\n".join(filter(None, [fmoutcomes.track_line(p, target.type, target.tier),  # T-0641
+                                          target.meta.get("base_note") or "",  # T-2497
                                           fmoutcomes.caution(p, target.meta.get("scope") or []),  # T-0620
                                           step_order(target), step_contracts(p, target),  # T-0623, T-0666
                                           _preflight(p, target) if first_focus else "",  # T-0633
@@ -5929,6 +5938,8 @@ def cmd_next(args):
         over += (f" · {len(hollow)} hollow subagent return(s) today: the last, {d.get('agent_type')}"
                  f"{' on ' + hollow[-1]['task'] if hollow[-1].get('task') else ''}, said {d.get('chars')} chars: read its "
                  f"transcript ({d.get('transcript') or 'no path'}) before trusting or merging its work")
+    if b and b.status == "active" and b.meta.get("base_note"):  # T-2497: kept at focus, never recomputed per turn
+        over += f" · {b.meta['base_note']}"
     if b and b.status == "active":  # T-0631: beliefs still open, each with what would kill it
         beliefs = [f"A{n} {t.split(' — kill: ')[0]} (dead if {t.split(' — kill: ')[1]})"
                    for n, tag, _, t in b.assumptions() if tag in (None, "assumed") and " — kill: " in t]

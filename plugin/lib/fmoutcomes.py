@@ -349,6 +349,26 @@ def ship_bet(p, chance, task, commit):
                base=round(100 * done.count("held") / len(done)) if done else None)
 
 
+def base_note(p, b):
+    """T-2497 (Mission 2, #8): one line when the brief's Choice N (NN%) sits 20+ points from the base rate of its type
+    and tier (either way), naming both numbers and whose closes set the base; '' otherwise or with no history."""
+    try:
+        pct = c.stated_confidence(b.section("Approach (options → choice → why)"))
+        if pct is None:
+            return ""
+        outs = outcomes(p)
+        base = base_rate(outs, _first_finish(p), b.type, b.tier)
+    except Exception:  # a note: it never stops a plan or a focus
+        return ""
+    if base is None or abs(pct - base) < 20:
+        return ""
+    pair = sum(1 for o in outs.values() if o.get("type") == b.type and o.get("tier") == b.tier)
+    whose = f"{b.type} {b.tier} closes ({pair})" if pair >= LEDGER_MIN else f"all closes (only {pair} {b.type} {b.tier})"
+    way, gap = ("under", base - pct) if pct < base else ("over", pct - base)
+    return (f"Calibration: this plan states Choice {pct}% where {whose} held on the first finish {base}% of the time: "
+            f"{gap} points {way} the record. State what you believe; the ledger scores it (fm outcomes --judgment).")
+
+
 def base_rate(outs, first, typ, tier):
     """The forecast with no stated number: the share of earlier closes of this type and tier that held on the first
     finish (a clean first fm task finish, then nothing undid it); every close counts while the pair has under

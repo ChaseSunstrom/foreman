@@ -560,3 +560,35 @@ class ShipBets(Base):  # T-2496: a ship bet is scored in hours by CI's blocking 
         self.assertEqual({r["key"]: r["outcome"] for r in o.scored(self.p)}, {green[:12]: "held", red[:12]: "missed"})
         with self.assertRaises(ValueError):
             o.ship_bet(self.p, 150, tid, "c" * 40)
+
+
+class BaseRateNote(Base):  # T-2497 (Mission 2, #8): a plan's percent against its base rate, said while it is stated
+    def plan(self, pct):
+        tid = self.fm_json("task", "new", "Fix the parser", "--type", "FIX", "--tier", "S", "--step", "x",
+                           "--ac", "fixed :: true")["id"]
+        return tid, self.fm("task", "set", tid, "--section", "Approach (options → choice → why)", "--text",
+                            f"1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z "
+                            f"Choice 1 ({pct}%): it holds").stdout
+
+    def test_a_choice_far_from_its_base_rate_is_named_with_both_numbers(self):
+        import fmoutcomes
+        from unittest import mock
+        tid, _ = self.plan(75)
+        b = c.find_brief(self.p, tid)
+        with mock.patch.object(fmoutcomes, "base_rate", return_value=96):
+            note = fmoutcomes.base_note(self.p, b)
+        self.assertIn("75%", note)
+        self.assertIn("96%", note)
+        self.assertIn("21 points under", note)
+        with mock.patch.object(fmoutcomes, "base_rate", return_value=85):
+            self.assertEqual(fmoutcomes.base_note(self.p, b), "")  # within 20 points
+        with mock.patch.object(fmoutcomes, "base_rate", return_value=None):
+            self.assertEqual(fmoutcomes.base_note(self.p, b), "")  # no history
+
+    def test_the_note_is_kept_at_focus_and_shown_by_fm_next(self):
+        tid, _ = self.plan(75)
+        self.fm("focus", tid)  # focus computes the note (none here: no history) and keeps it in the brief
+        b = c.find_brief(self.p, tid)
+        b.meta["base_note"] = "Calibration: this plan states Choice 75% where FIX S closes held 96%"
+        c.save_brief(self.p, b)
+        self.assertIn("Choice 75% where FIX S closes held 96%", self.fm("next").stdout)
