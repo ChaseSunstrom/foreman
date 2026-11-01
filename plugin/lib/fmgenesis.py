@@ -2235,7 +2235,7 @@ STEERS = "The user's standing rules (steers)"  # T-2160: not "Standing rules", w
 MOONSHOT = "Moonshot (one Mission a generation, from gen 2)"  # T-2187, steer 2026-10-30 #5
 MADE = ("What this generation is for", "Missions", "Empty coverage cells (fill first)",
         "Not-yet items (each retried this generation)", "Exam", "Lineage", "Standing intent", STEERS,
-        MOONSHOT)  # seed() writes these
+        MOONSHOT, "Order of work")  # seed() writes these (T-2482: a base's Order of work names its own Missions)
 FAR = ("immune systems", "markets and auctions", "ecology", "evolution", "epidemiology", "control theory",
        "logistics and supply chains", "game theory", "neuroscience", "materials and structures")
 COVER = 7  # coverage Missions a seed lists; the 8th row is the moonshot's
@@ -2313,8 +2313,11 @@ def _seed(p, n, agent):
     caps = {nm.lower(): num for num, nm, _ in all_caps(p, gen0)}
     def open_(r):
         return r["ideas"] + len(r["empty"]) + r["bad"]
-    # T-2474: the empty cells first (the run can't end with one), then the rest of the open cells
-    table, ranked = [], sorted((r for r in cov["rows"] if open_(r)), key=lambda r: (-len(r["empty"]), -open_(r)))
+    # T-2482: §2 capability areas first (no polish while a tier 3-4 gap stands), then T-2474's empty cells first
+    # (the run can't end with one), then the rest of the open cells
+    def rank(r):
+        return (re.sub(r"^\d+\.\s*", "", r["area"]).lower() not in caps, -len(r["empty"]), -open_(r))
+    table, ranked = [], sorted((r for r in cov["rows"] if open_(r)), key=rank)
     wait = [f"{r['area']} ({open_(r)})" for r in ranked[COVER:]]  # past the cap, named so no area drops out unseen
     for i, r in enumerate(ranked[:COVER], 1):
         bare = re.sub(r"^\d+\.\s*", "", r["area"]).replace("|", "/")
@@ -2360,6 +2363,11 @@ def _seed(p, n, agent):
            "| # | Mission file | Capabilities | Gaps closed (open cells) | Depends on |", "|---|---|---|---|---|", *table,
            *(["", f"Past the {COVER} coverage Missions (the 8th row is the moonshot's), open cells wait in: "
                   f"{', '.join(wait)}"] if wait else []), "",
+           "## Order of work", "",
+           "Missions in table order; Missions that don't depend on each other run in parallel lanes up to fm lane max, "
+           "each with its own critique, merged in table order (the user's steer of 2026-10-31). After all Missions: "
+           "the drift check, the sweep (a red one files a fix task per red line; a clean one writes the next seed) and "
+           "selection.", "",
            "## " + MOONSHOT, "",
            f"- Far-domain lens: {lens}. Borrow a mechanism from {lens} that no harness has, and say what it becomes in "
            "Foreman.",
@@ -2375,7 +2383,14 @@ def _seed(p, n, agent):
            f"## What gen-{n - 1}'s critiques said to change", "", *("\n\n".join(asks) or "None.").splitlines(), "",
            "## Exam", "", *(exam or ["No graded line yet."]), "", "## Lineage", "", *(verdicts or ["None."]), "",
            *carried]
-    path = put(p, name, "\n".join(out).rstrip("\n") + "\n")
+    text = "\n".join(out).rstrip("\n") + "\n"
+    try:
+        path = put(p, name, text)
+    except ValueError as e:  # T-2482: keep the draft, so the fix revises it instead of regenerating blind
+        draft = os.path.join(p.dir, f"genesis-seed-draft-{n}.md")
+        c.write_atomic(draft, text)
+        raise ValueError(f"{e}\nThe draft is kept at {draft}: revise the lines named and fm genesis put {name} "
+                         f"--file {draft}") from e
     return {"gen": n, "path": path, "base": base, "missions": len(table)}
 
 
