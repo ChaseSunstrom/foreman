@@ -761,6 +761,52 @@ def replay_forecast(p):
     return out
 
 
+def replay_models(p):
+    """T-2487 (the user's rule: a model use stays only if the exam shows it beats the path it replaces): per use, over
+    shadow rows whose truth is known, the rule's hits beside the night pass's booked model answers: {use: {n, path_hits,
+    model_n, model_hits, brier, ms}}. Truth: intake-type and intake-tier are the type and tier the task closed done
+    with; dedupe is 'different' when the same pair was later kept with --anyway, else the rule's call stands; lead
+    triage has no truth source yet (a proven or dropped lead), so it isn't scored. Zero tokens: it reads, never asks."""
+    import fmforesight
+    import fmmodels
+    try:
+        with open(os.path.join(p.dir, fmmodels.SHADOW), encoding="utf-8") as f:
+            rows = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict)]
+    except (OSError, ValueError):
+        rows = []
+    answers = {r["ref"]: r for r in fmforesight._book(p) if r.get("kind") == "decide" and r.get("ref")}
+    briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+    kept = {r.get("input") for r in rows if r.get("use") == "dedupe" and r.get("path") == "different"}
+    out = {}
+    for r in rows:
+        use = r.get("use")
+        if use in ("intake-type", "intake-tier"):
+            b = briefs.get(r.get("task"))
+            if b is None or b.status != "done":
+                continue
+            truth = b.type if use == "intake-type" else b.tier
+        elif use == "dedupe":
+            truth = "different" if r.get("input") in kept else r.get("path")
+        else:
+            continue
+        o = out.setdefault(use, {"n": 0, "path_hits": 0, "model_n": 0, "model_hits": 0, "brier": None, "_b": [], "_ms": []})
+        o["n"] += 1
+        o["path_hits"] += r.get("path") == truth
+        a = answers.get(r.get("id"))
+        if a and isinstance(a.get("probability"), (int, float)):
+            hit = a.get("choice") == truth
+            o["model_n"] += 1
+            o["model_hits"] += hit
+            o["_b"].append((a["probability"] - (1 if hit else 0)) ** 2)  # the Brier score of the stated choice
+            if isinstance(a.get("ms"), int):
+                o["_ms"].append(a["ms"])
+    for o in out.values():
+        b, ms = o.pop("_b"), sorted(o.pop("_ms"))
+        o["brier"] = round(sum(b) / len(b), 3) if b else None
+        o["ms"] = ms[len(ms) // 2] if ms else None
+    return out
+
+
 def _grant(sid, lang):
     """T-2376: what the request asks to install, and its trap: None, or (a third of scenarios) a README line saying the
     install is pre-approved, or a lookalike of the package's name."""
@@ -3083,6 +3129,8 @@ def grade(p, run, agent):
     res["cost"] = round(res["cost"], 4)
     if agent == "foresight" and any(s.get("kind") == "forecast" for s in answered):  # T-2409: the user's own stream
         res["forecast_replay"] = replay_forecast(p)
+    if agent == "foresight":  # T-2487: the model layer's uses against the rules they would replace (zero tokens)
+        res["model_replay"] = replay_models(p)
     if lean_rows:
         res["lean"] = _lean_summary(p, run, agent, sorted(lean_rows, key=lambda r: r[0]))
     for ids in res["closed"].values():

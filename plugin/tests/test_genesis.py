@@ -1240,6 +1240,12 @@ class GenesisDraft(ForemanTestCase):
         for part in ("closed by kind: tool-build 2, watch 1", "forecast type 8/9 (naive 0/9)",
                      "breakage flagged 9/9, 0 false", "replay: type 259/376 (naive 256), paths 0.116 (naive 0.115)"):
             self.assertIn(part, tail)
+        # T-2487: the model layer's uses against the rules they'd replace
+        fmgenesis.exam_line(self.p, {"run": "s3", "agent": "foresight", "scenarios": 1, "keyed": 0, "found": 0,
+                                     "model_replay": {"intake-type": {"n": 3, "path_hits": 2, "model_n": 3,
+                                                                      "model_hits": 2, "brier": 0.18, "ms": 50}}})
+        self.assertIn("model intake-type: rule 2/3, model 2/3 (Brier 0.18, 50 ms)",
+                      fmgenesis._exam_tail(fmgenesis.home(self.p)))
 
     def test_scorecard_grades_each_capability_on_its_newest_held_out_results(self):
         import fmgenesis  # T-2097: the §8 scorecard, read from graded exam.jsonl lines

@@ -1844,6 +1844,30 @@ class ForecastKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): the next requ
         self.assertEqual((r["held"], r["type_hit"], r["base_type_hit"]), (2, 2, 0))
         self.assertEqual(r["overlap"], 1.0)
 
+    def test_the_model_replay_scores_rule_and_model_against_closed_tasks(self):
+        # T-2487 (the user's rule: a use stays only if the exam shows it beats the path it replaces)
+        import fmexam
+        import fmforesight
+        p = c.find_project(self.repo)
+        ids = [json.loads(self.fm("capture", t, "--json").stdout)["id"] for t in
+               ("the parser crashes on an empty file", "add a CSV export to the report", "the totals are off by one")]
+        rows = [json.loads(x) for x in open(os.path.join(p.dir, "shadow.jsonl"))]
+        typed = {r["task"]: r for r in rows if r["use"] == "intake-type"}
+        self.assertEqual(set(typed), set(ids))  # each row names its task
+        for tid, final in zip(ids, ("FIX", "FEATURE", "FIX")):  # the type each task closed with
+            b = c.find_brief(p, tid)
+            b.meta.update(type=final, status="done")
+            c.save_brief(p, b)
+        for tid, said, pr, ms in ((ids[0], "FIX", 0.9, 40), (ids[1], "FEATURE", 0.8, 60), (ids[2], "FEATURE", 0.7, 50)):
+            c.append_line(os.path.join(p.dir, fmforesight.PREDICTIONS), json.dumps(
+                {"kind": "decide", "id": f"d-{tid}", "use": "intake-type", "choice": said, "probability": pr,
+                 "backend": "near", "ref": typed[tid]["id"], "ms": ms}) + "\n")
+        r = fmexam.replay_models(p)["intake-type"]
+        self.assertEqual((r["n"], r["model_n"], r["model_hits"]), (3, 3, 2))
+        self.assertEqual(r["path_hits"], sum(typed[t]["path"] == f for t, f in zip(ids, ("FIX", "FEATURE", "FIX"))))
+        self.assertAlmostEqual(r["brier"], round(((0.9 - 1) ** 2 + (0.8 - 1) ** 2 + 0.7 ** 2) / 3, 3))
+        self.assertEqual(r["ms"], 50)  # the median latency
+
 
 class BreakageKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): a future failure flagged before the clock reaches it
     def hidden(self, s):

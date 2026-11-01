@@ -2557,6 +2557,11 @@ def _exam_tail(d, k=20):
             by.append(f"forecast type {num('forecast_type') or 0}/{x['forecast_keyed']} (naive {num('forecast_base_type') or 0}/{x['forecast_keyed']})")
         if num("breakage_keyed"):
             by.append(f"breakage flagged {num('breakage_flagged') or 0}/{x['breakage_keyed']}, {num('breakage_false') or 0} false")
+        mr = x.get("model_replay") if isinstance(x.get("model_replay"), dict) else {}  # T-2487
+        for use, o in sorted(mr.items()):
+            if isinstance(o, dict) and all(isinstance(o.get(k), int) for k in ("n", "path_hits", "model_n", "model_hits")):
+                by.append(f"model {use}: rule {o['path_hits']}/{o['n']}, model {o['model_hits']}/{o['model_n']}"
+                          + (f" (Brier {o['brier']}, {o['ms']} ms)" if o.get("brier") is not None else ""))
         fr = x.get("forecast_replay") if isinstance(x.get("forecast_replay"), dict) else {}
         if all(isinstance(fr.get(k), (int, float)) for k in ("held", "type_hit", "base_type_hit", "overlap", "base_overlap")):
             by.append(f"replay: type {fr['type_hit']}/{fr['held']} (naive {fr['base_type_hit']}), paths {fr['overlap']} "

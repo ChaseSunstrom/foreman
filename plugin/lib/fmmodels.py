@@ -797,10 +797,10 @@ def decide(kind, prompt, choices, rule=None, bar=0.8, p=None, backends=None, tim
         sensitive = bool(fmcore.read_meta(p).get("sensitive"))
     best, tried = None, []
 
-    def take(ans, name):
+    def take(ans, name, ms=0):
         nonlocal best
         if best is None or ans["probability"] > best["probability"]:
-            best = dict(ans, backend=name)
+            best = dict(ans, backend=name, ms=ms)  # T-2487: the deciding backend's latency, for the exam arm
         return ans["probability"] >= bar
 
     if rule is not None:
@@ -823,9 +823,9 @@ def decide(kind, prompt, choices, rule=None, bar=0.8, p=None, backends=None, tim
         except ModelError as e:
             tried.append(f"{name}: {str(e)[:160]}")
             continue
-        ans = _answer(extract_json(r.get("text") or ""), choices)
-        tried.append(f"{name}: {'ok' if ans else 'malformed reply'} ({int((time.monotonic() - t0) * 1000)} ms)")
-        if ans and take(ans, name):
+        ans, ms = _answer(extract_json(r.get("text") or ""), choices), int((time.monotonic() - t0) * 1000)
+        tried.append(f"{name}: {'ok' if ans else 'malformed reply'} ({ms} ms)")
+        if ans and take(ans, name, ms):
             return _booked(p, kind, best, tried, True, ref)
     return _booked(p, kind, best, tried, False, ref) if best else None
 
@@ -838,7 +838,7 @@ def _booked(p, kind, best, tried, cleared, ref=None):
         import fmforesight
         fmcore.append_line(os.path.join(p.dir, fmforesight.PREDICTIONS), json.dumps(
             {"kind": "decide", "id": f"decide-{kind}-{time.time_ns()}", "use": kind, "choice": best["choice"],
-             "probability": best["probability"], "backend": best["backend"], "cleared": cleared,
+             "probability": best["probability"], "backend": best["backend"], "cleared": cleared, "ms": best.get("ms", 0),
              "at": fmcore.now(), **({"ref": ref} if ref else {})}) + "\n")
     return out
 
@@ -869,13 +869,14 @@ def shadow_uses():
             "lead-triage": ["real", "noise"]}
 
 
-def shadow(p, use, text, path):
+def shadow(p, use, text, path, task=None):
     """T-2488: the path's own decision for a model use, recorded inline with no model call (redacted, cut short); a
     failure never costs the caller."""
     try:
         import fmcore
         fmcore.append_line(os.path.join(p.dir, SHADOW), json.dumps(
             {"id": f"{use}-{time.time_ns()}", "use": use, "path": str(path), "at": fmcore.now(),
+             **({"task": task} if task else {}),  # T-2487: the closed task's final call is the truth the exam scores
              "input": fmcore.fit(fmcore.redact(fmcore.plain(str(text))), 600)}) + "\n")
     except Exception:  # shadow logging is advisory by the user's rule: it never breaks a capture or a scan
         pass

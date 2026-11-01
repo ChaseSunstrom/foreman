@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The exam scores the model layer's uses against the rules they would replace. On your own closed tasks it compares how often the rule and the model got the type, the tier and duplicates right, with the model's calibration and latency, and costs no tokens.
 - The model layer's first uses run in shadow mode. Capture, intake, the near-duplicate check and `fm find --rank` record the decision their rules made. The hourly tick has a local model answer the same questions beside them, so the exam can compare the two before any use goes live. Nothing is spent without a local model.
 - `fm decide` warns when it records a rule from a user steer with no `--check`, naming how to add one, instead of leaving the gap for the doctor to find later. A mistyped flag's "did you mean" now suggests only the typed command's own flags.
 - The model layer's rules are checked: no guard or evidence gate can call a model; the layer downloads and installs nothing itself; and a model use goes live only through a decision that cites the exam run it won (`model-live: USE`), staying in shadow mode otherwise.
