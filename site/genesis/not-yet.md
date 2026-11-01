@@ -24,3 +24,9 @@ owes two tries only once it has been evaluated.
 - blocker: unevaluated: intent routing has no exam arm yet
 - unblocks-with: an exam arm on held-out requests where Von's routing beats fm code's current planner choice on accuracy, cost or latency
 - added: gen-2, the intent router the user named
+
+## Byte-stable goal card in the cached prefix
+- blocker: no measurable win: the goal card is about 120 characters (around 30 tokens), and the SessionStart context is cached after its first write in each session, so moving it into the prefix shared across sessions saves about 30 cache-write tokens per new session
+- tried: a byte-stable goal line in the SessionStart context (T-2143: the lines before it change every session, so it kept no extra prefix); a goal card in a file Claude Code loads with CLAUDE.md (T-2418: the whole card is ~30 tokens, below anything fm cost can tell apart)
+- unblocks-with: a goal card large enough to matter (the Seed's Missions or the gap map's top rows, 2k+ tokens, read by every session), measured by fm cost --by-model before and after
+- added: gen-2, from gen-1/critique-finish.md via T-2418
