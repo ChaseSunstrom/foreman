@@ -3130,9 +3130,14 @@ def _sweep_fixes(p, n, red):
         key = f"{n}:{x['check']}"
         if key not in have:
             b = fmcli._create(p, c.fit(f"Genesis gen-{n} sweep: {x['check']} is red — {c.plain(x['detail'])}", 120),
-                              "FIX", "M", "captured", raw=f"fm genesis sweep {n}: ✗ {x['check']}: "
+                              "FIX", "S", "captured", raw=f"fm genesis sweep {n}: ✗ {x['check']}: "
                               f"{c.fit(c.plain(x['detail']), 1500)}\nDone when the rerun's {x['check']} line is ✓.",
                               source="genesis")
+            # T-2480: filed ready to close: the row that filed it is its criterion and its regression test
+            b.add_step(f"fix what the sweep's {x['check']} line names, then rerun fm genesis sweep {n}")
+            b.add_ac(f"the sweep's {x['check']} line is ✓", f"fm genesis sweep {n}")
+            b.set_section("Regression test", f"The sweep's {x['check']} row: every fm genesis sweep reruns it, so this "
+                                             "can't come back unseen.\n")
             b.meta[SWEEP_FIX] = key
             c.save_brief(p, b)
             have[key] = b.id
