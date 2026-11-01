@@ -312,8 +312,8 @@ REFUSED_NEAR = 5  # T-1662: its own exit code (see the module docstring: 3, aske
 def _shadow_intake(p, text, b):
     """T-2488: the type and tier the rules gave a new request, for the model's shadow pass (no model call here)."""
     import fmmodels
-    fmmodels.shadow(p, "intake-type", text, b.type)
-    fmmodels.shadow(p, "intake-tier", text, b.tier)
+    fmmodels.shadow(p, "intake-type", text, b.type, task=b.id)
+    fmmodels.shadow(p, "intake-tier", text, b.tier, task=b.id)
 
 
 def _near(p, args, text, type_):
