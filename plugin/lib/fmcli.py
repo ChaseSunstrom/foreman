@@ -6558,6 +6558,9 @@ def _build_parser(only=None):
                                                                  "by a task naming them, or held; track record (T-0616)")
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
     s.add_argument("--calibration", action="store_true", help="per tier: median actual/predicted minutes (T-2290)")
+    s.add_argument("--predictions", action="store_true", help="each prediction kind's hit rate beside its naive "
+                                                              "baseline, and the ones muted for trailing it (T-2406)")
+    s.add_argument("--unmute", metavar="KIND", help="--predictions: let a muted kind count again from now")
     s.add_argument("--readme", action="store_true", help="one sentence for a README: held, closed and ungraded "
                                                          "counts (T-0960)")
     for flag, why in (("settle", "log one outcome event per task whose 30-day window closed (survived or lost)"),

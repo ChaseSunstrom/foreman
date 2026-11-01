@@ -161,6 +161,22 @@ def track_lines(p, outs=None):
 def cmd_outcomes(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "predictions", False) or getattr(args, "unmute", None):  # T-2406: the prediction book
+        import fmforesight
+        if getattr(args, "unmute", None):
+            kinds = [k["kind"] for k in fmforesight.prediction_kinds(p)]
+            if args.unmute not in kinds:
+                raise fmcli.UsageError(f"--unmute takes a prediction kind: {', '.join(kinds)}")
+            with c.lock(p.dir):
+                meta = c.read_meta(p)
+                meta["predictions_unmuted"] = dict(meta.get("predictions_unmuted") or {}, **{args.unmute: c.now()})
+                c.write_meta(p, meta)
+        rows = fmforesight.prediction_kinds(p)
+        pct = lambda x: "n/a" if x is None else f"{x:.0%}"  # noqa: E731
+        return fmcli.out(args, {"kinds": rows}, "\n".join(
+            f"{k['kind']}: {k['n']} scored, hit {pct(k['hit'])} vs baseline {pct(k['base_hit'])}"
+            + (f" (muted: it trails the baseline; fm outcomes --predictions --unmute {k['kind']})" if k["muted"] else "")
+            for k in rows))
     outs = outcomes(p)
     if getattr(args, "readme", False):  # T-0960: the one sentence a README publishes
         held = sum(o["fate"] == "held" for o in outs.values())

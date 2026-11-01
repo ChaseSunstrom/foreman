@@ -201,3 +201,133 @@ def lines(p):
         out.append(f"CI on {ci.get('branch') or 'main'} is red at {str(ci['sha'])[:7]} ({', '.join(map(str, ci['failed']))})"
                    f" → {act}.")
     return out
+
+
+# ---------------------------------------------------------------- T-2406 (#3): the prediction book
+PREDICTIONS = "predictions.jsonl"  # write-once rows: a next-request prediction, then (later) its one score row
+MUTE_MIN = 20  # scored rows before a kind that trails its baseline is muted
+
+
+def _requests(p):
+    """The user's own requests, oldest first, as (brief, type, paths): paths are its scope and the files it touched
+    (this project's ledger). Foreman's captures, followups and triggers aren't the user's, so they never count."""
+    briefs = sorted((b for b in c.load_briefs(p, include_archive=True) if b.meta.get("source") == "user"),
+                    key=lambda b: (str(b.meta.get("created") or ""), b.id))
+    touched = {}
+    for e in c.ledger_events(p, ("touched",)):
+        f = (e.get("data") or {}).get("file")
+        if e.get("task") and isinstance(f, str):
+            touched.setdefault(e["task"], set()).add(os.path.relpath(f, p.root) if os.path.isabs(f) else f)
+    out = []
+    for b in briefs:
+        scope = b.meta.get("scope") if isinstance(b.meta.get("scope"), list) else []
+        out.append((b, b.type, sorted({str(x) for x in scope} | touched.get(b.id, set()))[:20]))
+    return out
+
+
+def _book(p):
+    try:
+        with open(os.path.join(p.dir, PREDICTIONS), encoding="utf-8") as f:
+            rows = []
+            for ln in f:
+                try:
+                    r = json.loads(ln)
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and isinstance(r.get("id"), str):
+                    rows.append(r)
+            return rows
+    except OSError:
+        return []
+
+
+def _jaccard(a, b):
+    a, b = set(a or ()), set(b or ())
+    return None if not b else round(len(a & b) / len(a | b), 3)
+
+
+def prediction_tick(p):
+    """T-2406, on the tick (fmnight.tick): the pending next-request prediction is scored against the first user request
+    after the one it followed, once (an appended score row, never rewritten); then, once per request, the next one is
+    predicted beside the naive baseline (the last request again): its type from this user's own type transitions, its
+    paths from their latest request of that type. Reads only this project's briefs and ledger; a sensitive project
+    predicts nothing. ponytail: no co-change neighbours yet (fm graph's db can take seconds to build on a tick)."""
+    if c.read_meta(p).get("sensitive"):
+        return None
+    reqs = _requests(p)
+    if not reqs:
+        return None
+    rows, path = _book(p), os.path.join(p.dir, PREDICTIONS)
+    scored = {r["id"] for r in rows if r.get("kind") == "score"}
+    ids = [b.id for b, _, _ in reqs]
+    for r in rows:
+        if r.get("kind") != "next-request" or r["id"] in scored or r.get("after") not in ids:
+            continue
+        i = ids.index(r["after"])
+        if i + 1 >= len(reqs):
+            continue
+        b, t, paths = reqs[i + 1]
+        pred, base = r.get("pred") or {}, r.get("base") or {}
+        c.append_line(path, json.dumps({"kind": "score", "id": r["id"], "for": b.id, "at": c.now(),
+                                        "type_hit": pred.get("type") == t, "base_type_hit": base.get("type") == t,
+                                        "overlap": _jaccard(pred.get("paths"), paths),
+                                        "base_overlap": _jaccard(base.get("paths"), paths)}) + "\n")
+        scored.add(r["id"])
+    last, lt, lpaths = reqs[-1]
+    if any(r.get("kind") == "next-request" and r.get("after") == last.id for r in rows):
+        return None
+    types = [t for _, t, _ in reqs]
+    nxt = {}
+    for a, b in zip(types, types[1:]):
+        if a == lt:
+            nxt[b] = nxt.get(b, 0) + 1
+    ptype = max(nxt, key=lambda k: (nxt[k], -types[::-1].index(k))) if nxt else lt  # a tie goes to the most recent
+    ppaths = next((ps for _, t, ps in reversed(reqs[:-1]) if t == ptype), lpaths)[:5]
+    row = {"kind": "next-request", "id": f"P-{len(rows) + 1}-{int(time.time())}", "at": c.now(), "after": last.id,
+           "pred": {"type": ptype, "paths": ppaths}, "base": {"type": lt, "paths": lpaths}}
+    c.append_line(path, json.dumps(row) + "\n")
+    return row
+
+
+def _rate(xs):
+    return round(sum(xs) / len(xs), 3) if xs else None
+
+
+def prediction_kinds(p):
+    """T-2406: per prediction kind, scored rows, the hit rate beside the naive baseline's, and whether it is muted (it
+    trailed the baseline over MUTE_MIN+ rows scored since its last unmute). next-request: the type hit (the path
+    overlap's means ride along); effort (T-2290): a predicted minutes within 2x of the actual, against the median
+    minutes of the tier's earlier closes."""
+    import statistics
+    import fmoutcomes
+    unmuted = c.read_meta(p).get("predictions_unmuted") or {}
+    since = lambda k: str(unmuted.get(k) or "") if isinstance(unmuted, dict) else ""  # noqa: E731
+    scores = [r for r in _book(p) if r.get("kind") == "score"]
+    kinds = []
+
+    def kind(name, rows, extra=None):  # rows: (at, hit, base hit or None)
+        fresh = [(h, bh) for at, h, bh in rows if at >= since(name) and bh is not None]
+        hit, base = _rate([h for h, _ in fresh]), _rate([bh for _, bh in fresh])
+        kinds.append(dict({"kind": name, "n": len(rows), "hit": _rate([h for _, h, _ in rows]),
+                           "base_hit": _rate([bh for _, _, bh in rows if bh is not None]),
+                           "muted": len(fresh) >= MUTE_MIN and hit is not None and base is not None and hit < base},
+                          **(extra or {})))
+    kind("next-request", [(str(r.get("at") or ""), r.get("type_hit") is True, r.get("base_type_hit") is True)
+                          for r in scores],
+         {"overlap": _rate([r["overlap"] for r in scores if isinstance(r.get("overlap"), (int, float))]),
+          "base_overlap": _rate([r["base_overlap"] for r in scores if isinstance(r.get("base_overlap"), (int, float))])})
+    effort, seen = [], {}
+    for r in fmoutcomes._closes(p):
+        pm, m, tier = r.get("predict_minutes"), r.get("minutes"), r.get("tier")
+        if not (isinstance(pm, int) and pm > 0 and isinstance(m, int) and m > 0 and tier):
+            continue
+        prior = seen.setdefault(tier, [])
+        base = statistics.median(prior) if prior else None
+        effort.append((str(r.get("at") or ""), 0.5 <= m / pm <= 2, (0.5 <= m / base <= 2) if base else None))
+        prior.append(m)
+    kind("effort", effort)
+    return kinds
+
+
+def muted_kinds(p):
+    return [k for k in prediction_kinds(p) if k["muted"]]

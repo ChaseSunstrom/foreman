@@ -194,3 +194,74 @@ class ReviewerCostAtScale(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicted, scored against the naive baseline
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def ask(self, type_, scope):
+        return json.loads(self.fm("task", "new", f"{type_} {scope}", "--type", type_, "--tier", "S", "--ac", "ok :: true",
+                                  "--step", "s", "--scope", scope, "--json").stdout)["id"]
+
+    def rows(self):
+        try:
+            with open(os.path.join(self.p.dir, fs.PREDICTIONS), encoding="utf-8") as f:
+                return [json.loads(x) for x in f if x.strip()]
+        except OSError:
+            return []
+
+    def test_the_tick_stores_one_prediction_beside_the_baseline_and_the_next_user_request_scores_it_once(self):
+        for t, s in (("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py")):
+            self.ask(t, s)
+        fs.prediction_tick(self.p)
+        fs.prediction_tick(self.p)  # nothing new arrived: still one
+        (pred,) = [r for r in self.rows() if r["kind"] == "next-request"]
+        self.assertEqual(pred["pred"]["type"], "FEATURE")  # after a FIX this user asks for a FEATURE
+        self.assertEqual(pred["base"], {"type": "FIX", "paths": ["a.py"]})  # the naive baseline: the last request again
+        tid = self.ask("FEATURE", "b.py")
+        fs.prediction_tick(self.p)
+        (score,) = [r for r in self.rows() if r["kind"] == "score"]
+        self.assertEqual((score["id"], score["for"], score["type_hit"], score["base_type_hit"]),
+                         (pred["id"], tid, True, False))
+        self.assertEqual(score["base_overlap"], 0.0)
+        fs.prediction_tick(self.p)
+        self.assertEqual(len([r for r in self.rows() if r["kind"] == "score"]), 1)  # never rescored
+        self.assertEqual(len([r for r in self.rows() if r["kind"] == "next-request"]), 2)  # the next one, after tid
+
+    def test_predictions_report_hit_rates_beside_the_baseline_and_mute_a_kind_that_trails_it(self):
+        with open(os.path.join(self.p.dir, fs.PREDICTIONS), "w", encoding="utf-8") as f:
+            for i in range(20):
+                f.write(json.dumps({"kind": "next-request", "id": f"P{i}", "at": c.now(), "after": "T-0001",
+                                    "pred": {"type": "FIX", "paths": []}, "base": {"type": "FEATURE", "paths": []}}) + "\n")
+                f.write(json.dumps({"kind": "score", "id": f"P{i}", "for": f"T-{i + 2:04d}", "at": c.now(),
+                                    "type_hit": False, "base_type_hit": True, "overlap": None, "base_overlap": None}) + "\n")
+        import fmoutcomes
+        for m, pm in ((30, 30), (40, 30), (200, 30)):
+            fmoutcomes.record_close(self.p, {"type": "FIX", "tier": "S", "minutes": m, "predict_minutes": pm})
+        got = self.fm_json("outcomes", "--predictions")
+        kinds = {k["kind"]: k for k in got["kinds"]}
+        self.assertEqual((kinds["next-request"]["n"], kinds["next-request"]["hit"], kinds["next-request"]["base_hit"]),
+                         (20, 0.0, 1.0))
+        self.assertTrue(kinds["next-request"]["muted"])
+        self.assertIn("effort", kinds)
+        doc = self.fm("doctor", check=False).stdout
+        self.assertIn("next-request", doc)
+        self.assertIn("fm outcomes --predictions --unmute next-request", doc)
+        self.fm("outcomes", "--predictions", "--unmute", "next-request")
+        self.assertFalse({k["kind"]: k for k in self.fm_json("outcomes", "--predictions")["kinds"]}["next-request"]["muted"])
+
+    def test_a_sensitive_project_predicts_nothing(self):
+        for t, s in (("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py")):
+            self.ask(t, s)
+        self.fm("sensitive", "on")
+        fs.prediction_tick(c.find_project(self.repo))
+        self.assertEqual(self.rows(), [])
+
+    def test_the_tick_runs_the_prediction_book(self):  # T-2406: fm night --tick is where predictions are made
+        for t, s in (("FIX", "a.py"), ("FEATURE", "b.py")):
+            self.ask(t, s)
+        self.fm("night", "--tick")
+        self.assertEqual([r["kind"] for r in self.rows()], ["next-request"])

@@ -306,6 +306,10 @@ def tick(p, fetch_ci=None):
                     res["orders"] = [o["n"] for o in fmorders.run(p)]
             except Exception as e:  # an order file never costs the tick
                 res["notes"].append(f"standing orders: {c.fit(c.plain(str(e)), 120)}")
+            try:  # T-2406: score the pending next-request prediction, make the next (local reads, never sensitive)
+                fmforesight.prediction_tick(p)
+            except Exception as e:  # the book never costs the tick
+                res["notes"].append(f"predictions: {c.fit(c.plain(str(e)), 120)}")
             try:
                 with open(path, encoding="utf-8") as f:
                     seen = json.load(f)
