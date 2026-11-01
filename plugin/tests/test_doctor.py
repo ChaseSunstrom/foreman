@@ -1266,3 +1266,32 @@ class ModelBackends(ForemanTestCase):  # T-2489: the model layer's backends on o
         c.write_meta(p, dict(c.read_meta(p), sensitive=True))
         with mock.patch.object(fmmodels, "registry", return_value=reg):
             self.assertIn("sensitive: local only", d.check_model_backends(p).detail)
+
+
+class SelfFixWeek(ForemanTestCase):  # T-2365: the week's self-fix trials on one doctor line, held against not held
+    def test_the_week_s_self_fix_trials_held_against_not_held_and_none_when_none(self):
+        import datetime
+        import fmtrials
+        self.fm("init")
+        p = c.find_project(self.repo, create=False)
+        r = d.check_self_fixes(p)
+        self.assertEqual((r.status, r.detail), ("PASS", "none settled in the last 7 days"))
+        now = datetime.datetime(2026, 11, 1, 12, tzinfo=datetime.timezone.utc)
+        fix = lambda task, at, by, verdict=None: dict(kind="self-fix", task=task, at=at, by=by,  # noqa: E731
+                                                      **({"verdict": verdict} if verdict else {}))
+        rows = [fix("T-1", "2026-10-25T00:00:00Z", 3, "held"),  # its window closed 10-28: this week
+                fix("T-2", "2026-10-27T00:00:00Z", 2, "didn't hold"),
+                fix("T-5", "2026-10-26T00:00:00Z", 2, "unmeasured"),
+                fix("T-3", "2026-10-01T00:00:00Z", 3, "held"),  # closed weeks ago
+                fix("T-4", "2026-10-31T00:00:00Z", 7),  # still pending
+                fix("T-6", "garbage", 2, "held"),  # a malformed record is skipped, never a crash
+                {"what": "x", "moves": "corrections", "by": 3, "at": "2026-10-26T00:00:00Z", "verdict": "held"}]
+        with open(fmtrials._path(p), "w", encoding="utf-8") as f:
+            json.dump(rows, f)
+        r = d.check_self_fixes(p, now=now)
+        self.assertEqual((r.status, r.detail), ("WARN", "last 7 days: 1 held, 1 didn't hold, 1 unmeasured"))
+        with open(fmtrials._path(p), "w", encoding="utf-8") as f:
+            json.dump(rows[:1], f)
+        r = d.check_self_fixes(p, now=now)
+        self.assertEqual((r.status, r.detail), ("PASS", "last 7 days: 1 held, 0 didn't hold"))
+        self.assertEqual(d.check_self_fixes(None).status, "PASS")

@@ -607,6 +607,31 @@ def check_model_backends(p):
     return Result("model backends", "PASS", f"local: {names(True)}; cloud: {names(False)}; live: {', '.join(live) or 'none'}{sens}")
 
 
+def check_self_fixes(p, now=None):
+    """T-2365: the self-fix trials whose window closed in the last 7 days (the verdicts the digest stored, no
+    regrading), held against not held; a WARN only when one didn't hold (its FIX is already filed)."""
+    if not p:
+        return Result("self-fixes", "PASS", "no project here")
+    import datetime
+    import fmtrials
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    n = {"held": 0, "didn't hold": 0, "unmeasured": 0}
+    for t in fmtrials.load(p):
+        if not (isinstance(t, dict) and t.get("kind") == "self-fix" and t.get("verdict") in n):
+            continue
+        try:
+            due = fmtrials._t(t["at"]) + datetime.timedelta(days=int(t["by"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if now - datetime.timedelta(days=7) <= due <= now:
+            n[t["verdict"]] += 1
+    if not any(n.values()):
+        return Result("self-fixes", "PASS", "none settled in the last 7 days")
+    held, bad, unmeasured = n["held"], n["didn't hold"], n["unmeasured"]
+    return Result("self-fixes", "WARN" if bad else "PASS", f"last 7 days: {held} held, {bad} didn't hold"
+                  + (f", {unmeasured} unmeasured" if unmeasured else ""))
+
+
 def check_night_timers(p):
     """T-2357: night timers staged and waiting for the user's yes, and installed ones that run another Foreman home."""
     import glob
@@ -2466,6 +2491,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_night_timers(here))
     results.append(check_predictions(here))
     results.append(check_model_backends(here))
+    results.append(check_self_fixes(here))
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))
