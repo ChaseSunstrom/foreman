@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The install and permission requests waiting on you are now listed by how much open work each yes frees: the task itself plus every open task waiting on it, directly or through others. On a tie the oldest comes first. `fm todo`, the waiting-requests line in `fm next` and the Stop hook, and the MCP list all use this order.
 - `fm ship` no longer gives up when main moves during its test run in files the shipped commits never touch, such as Genesis's own tower publishes. It re-picks onto the new main and pushes. A move in a shipped file still refuses.
 - When a plan's Choice percent sits 20 or more points from how often that type and size of task has held up here, `fm task set`, `fm focus` and `fm next` say so, naming both numbers. It is a note, never a refusal.
 - Ship bets: `fm ship --chance N` states the chance that CI's blocking jobs pass on the pushed commit. `fm ci-watch` settles it from the run, so a stated number is scored within hours instead of after 30 days. Ship bets are their own kind in `fm outcomes --judgment` and never move a bar.
