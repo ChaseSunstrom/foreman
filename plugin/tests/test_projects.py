@@ -47,7 +47,8 @@ class Usage(ForemanTestCase):
 
 
 class Follow(ForemanTestCase):
-    def read_line(self, proc, timeout=10):
+    def read_line(self, proc, timeout=30):  # T-2508: returns when the line lands; the bound only matters on failure,
+        # and a loaded CI host took over 10 s to start fm and build the first view
         ready, _, _ = select.select([proc.stdout], [], [], timeout)
         self.assertTrue(ready, "no line within the timeout")
         return json.loads(proc.stdout.readline())
@@ -65,7 +66,7 @@ class Follow(ForemanTestCase):
         self.assertEqual(self.read_line(proc)["inbox_total"], 0)
         time.sleep(0.05)
         self.fm("capture", "Merge the date helpers")
-        deadline = time.monotonic() + 10  # capture writes more than once, so a line can land between its writes
+        deadline = time.monotonic() + 30  # capture writes more than once, so a line can land between its writes
         while self.read_line(proc, max(0.1, deadline - time.monotonic()))["inbox_total"] != 1:
             pass
 
