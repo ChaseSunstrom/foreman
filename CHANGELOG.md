@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm doctor` has a self-fixes line: how many of the self-fix trials that closed in the last 7 days held and how many did not, or none. It warns only when one did not hold.
 - Model layer surfaces: other agents can ask the model layer through a `decide` MCP tool (booked apart from Foreman's own uses), `fm doctor` lists the model backends it can reach and which uses are live, the AGENTS.md block says a model's answer advises and a run decides, and the site has a Model layer page with the newest exam replay.
 - The exam scores the model layer's uses against the rules they would replace. On your own closed tasks it compares how often the rule and the model got the type, the tier and duplicates right, with the model's calibration and latency, and costs no tokens.
 - The model layer's first uses run in shadow mode. Capture, intake, the near-duplicate check and `fm find --rank` record the decision their rules made. The hourly tick has a local model answer the same questions beside them, so the exam can compare the two before any use goes live. Nothing is spent without a local model.
