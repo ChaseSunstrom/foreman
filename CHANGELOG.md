@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Each claim in a research note now says how it was learned: `[read]` from a cited page, `[ran]` from a command, or `[recalled]` with no source. `fm prove` already flags a research Decision with no verified claim, and its message now says the Decision rests on recalled or unchecked claims only.
 - `fm prove` now catches unproven terminal UI changes too: a TUI screen, a statusline or a mod's hooks changed with no recorded run that renders it is listed as `tui-unshot`. A run naming the file clears it, as does `claude plugin test` for a mod's hooks; an `echo` that only names the file does not.
 - `fm friction` now lists the fm verbs and flags that sessions reached for but don't exist (such as `fm next --last`), ranked by how many sessions tried each one, as votes for what to add.
 - `fm lane stats` shows how often builder lanes landed, by the size of the brief each builder got (up to 4k, 8k, 16k characters, or more). `fm lane brief` now records each brief's size; older briefs are sized from their file when it's still on disk. On this repo, briefs up to 8k characters landed 96–98% of the time and briefs of 8–16k landed 57%.
