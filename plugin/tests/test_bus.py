@@ -357,3 +357,19 @@ class FailingMark(HookCase):
         ctx = ((parse(r) or {}).get("hookSpecificOutput") or {}).get("additionalContext", "")
         self.assertIn(f"outside {tid} scope", ctx)
         self.assertIn("use the new parser", ctx)
+
+
+class NoProcfs(HookCase):  # T-2492: macOS has no /proc, so a process's start time comes from ps
+    def test_a_slow_ps_is_asked_again_before_the_process_counts_as_gone(self):
+        import subprocess
+        from unittest import mock
+        import fmbus
+        real_isdir = os.path.isdir
+        slow = subprocess.TimeoutExpired(["ps"], 5)
+        done = subprocess.CompletedProcess(["ps"], 0, stdout="  1 Sat Nov  1 12:00:00 2026\n")
+        with mock.patch.object(fmbus.os.path, "isdir", side_effect=lambda x: False if x == "/proc" else real_isdir(x)), \
+                mock.patch("builtins.open", side_effect=OSError("no procfs")), \
+                mock.patch.object(fmbus.subprocess, "run", side_effect=[slow, done]) as run:
+            self.assertEqual(fmbus._proc(424242), (1, "Sat Nov  1 12:00:00 2026"))
+        self.assertEqual(len(run.call_args_list), 2)
+        self.assertGreater(run.call_args_list[1].kwargs["timeout"], run.call_args_list[0].kwargs["timeout"])

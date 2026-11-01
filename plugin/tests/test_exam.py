@@ -1688,7 +1688,8 @@ class LanesKind(JudgmentStub, ForemanTestCase):  # T-2362: #9, stopped builder l
                                                           "lanes", s["id"], fmexam.LANES_LOG)))["lanes"]
                 self.assertEqual([x["stop"] for x in lanes], stops)
                 for x in lanes:
-                    self.assertEqual(x["cause"], fmexam.STOPS[x["stop"]], x)  # recovered by the cause it stopped for
+                    self.assertEqual(x["cause"], fmexam.STOPS[x["stop"]], (x.get("said"), x))  # recovered by the cause it stopped
+                    # for; T-2492: what fm said first, so CI's cut annotation shows why
                     self.assertFalse(x["human"], x)
                     self.assertLessEqual(x["recoveries"], 2, x)
                 self.assertEqual((d["lanes_recovered"], d["lanes_kept"], d["lanes_dup"]), (3, 3, 0), lanes)

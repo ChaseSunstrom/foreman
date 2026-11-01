@@ -158,12 +158,16 @@ def _proc(pid):
         pass
     if os.path.isdir("/proc"):
         return None
-    try:  # no procfs (macOS, BSD)
-        out = subprocess.run(["ps", "-o", "ppid=,lstart=", "-p", str(pid)], capture_output=True, text=True,
-                             timeout=5).stdout.split(None, 1)
-        return (int(out[0]), out[1].strip()) if len(out) == 2 else None
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
+    for wait in (5, 20):  # no procfs (macOS, BSD); T-2492: a loaded host's ps can pass 5 s, and a timeout read as
+        try:              # "no such process" made a live builder look gone; one patient retry first
+            out = subprocess.run(["ps", "-o", "ppid=,lstart=", "-p", str(pid)], capture_output=True, text=True,
+                                 timeout=wait).stdout.split(None, 1)
+            return (int(out[0]), out[1].strip()) if len(out) == 2 else None
+        except subprocess.TimeoutExpired:
+            continue
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
+    return None
 
 
 def _chain(pid, depth):
