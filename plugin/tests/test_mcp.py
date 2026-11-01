@@ -440,7 +440,7 @@ class JudgmentTool(_Mcp):  # T-2344: #2 and #8 through MCP (Claude Desktop and o
         out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.call(2, "calibration"))
         self.assertIn("calibration", {t["name"] for t in out[0]["result"]["tools"]})
         d = json.loads(_text(out[1]))
-        for k in ("kinds", "brier", "bars", "races", "doors_parked"):
+        for k in ("kinds", "interim", "brier", "bars", "races", "doors_parked"):
             self.assertIn(k, d)
         self.assertEqual(d["races"], {"run": 2, "judged": 2, "first_lost": 1})
         self.assertEqual(c.read_meta(p), before)  # no settle, no bar move
