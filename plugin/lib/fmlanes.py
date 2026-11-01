@@ -905,12 +905,33 @@ def _failing(p, x, path, checks):
     return bad
 
 
-def _side(p, x, main):
-    """{id, branch, tests, passed, lines, outside, diff} for one side: the race's checks run in its own worktree;
-    outside is the changed files no scope glob covers, diff a hash of its patch (equal hashes: the same change)."""
+def _avoided(p):
+    """T-2403: the stemmed word sets the user said never to (fm vetoes) or declined as a proposal: a race side whose
+    change holds every word of one is further from what the user keeps. [] when none can be read."""
+    try:
+        import fmideas
+        return [ws for ws in fmideas._covered(p) if ws]
+    except Exception:  # a tiebreak never costs the race its score
+        return []
+
+
+def _taste(patch, avoid):
+    """T-2403: how many of avoid's word sets the patch's added lines hold whole (stemmed, as fm vetoes match)."""
+    if not avoid:
+        return 0
+    import fmideas
+    added = " ".join(ln[1:] for ln in patch.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
+    stems = {fmideas._stem(w) for w in fmideas._key_words(added)}
+    return sum(1 for ws in avoid if ws <= stems)
+
+
+def _side(p, x, main, avoid=()):
+    """{id, branch, tests, passed, lines, outside, diff, taste} for one side: the race's checks run in its own worktree;
+    outside is the changed files no scope glob covers, diff a hash of its patch (equal hashes: the same change), taste
+    how many of the user's recorded no's (avoid, T-2403) its added lines hold."""
     branch, path = x.meta.get("lane_branch"), x.meta.get("lane")
     row = {"id": x.id, "branch": branch, "tests": 0, "passed": 0, "lines": None, "outside": 0, "diff": None,
-           "caught": 0, "broken": 0, "coupled": 0}
+           "caught": 0, "broken": 0, "coupled": 0, "taste": 0}
     if not branch or not path or not os.path.isdir(path):
         return row
     if _git(path, "status", "--porcelain").stdout.strip():  # the diff below reads commits: this side's work isn't in it
@@ -926,6 +947,7 @@ def _side(p, x, main):
     row["outside"] = len([f for f in names if f and scope and not any(c.glob_match(f, s) for s in scope)])
     patch = _git(main, "diff", "--no-renames", f"HEAD...{branch}").stdout
     row["diff"] = hashlib.sha1(patch.encode("utf-8", "replace")).hexdigest()[:12] if patch.strip() else None
+    row["taste"] = _taste(patch, avoid)
     checks = _checks(p, x)
     row["tests"], row["passed"] = len(checks), len(checks) - len(_failing(p, x, path, checks))
     return row
@@ -1026,11 +1048,12 @@ def _rank(p, b, main):
     stated = str(_options(orig)[1])
     first = next((x.id for x in xs if str(x.meta.get("race_option")) == stated), xs[0].id)  # T-2340
     _say(f"running the frozen checks in {len(xs)} sides")
-    rows = [_side(p, x, main) for x in xs]
+    avoid = _avoided(p)  # T-2403: read once per race
+    rows = [_side(p, x, main, avoid) for x in xs]
     _cross(p, xs, rows, main)
     started = [r for r in rows if r["lines"] is not None]
     lead = min(started, key=lambda r: (-r["passed"] / (r["tests"] or 1), r["broken"] - r["caught"], r["lines"],
-                                       r["outside"], r["id"] != first))["id"] if started else None
+                                       r["outside"], r.get("taste", 0), r["id"] != first))["id"] if started else None
     groups = {}
     for r in started:
         groups.setdefault(r["diff"] or f"empty-{r['id']}", []).append(r["id"])
@@ -1097,6 +1120,8 @@ def score(p, b, main, args):
     lines = [f"{r['id']}: " + (f"tests {r['passed']}/{r['tests']} passing, {r['lines']} lines changed, {r['outside']} "
                                f"files outside scope, its tests caught {r['caught']} of the others (broken by "
                                f"{r['broken']}), coupled to {r['coupled']}"
+                               + (f"; holds {r['taste']} of what you said never to (a tie goes against it)"
+                                  if r.get("taste") else "")  # T-2403
                                + (f"; {r['cross_stopped']}" if r.get("cross_stopped") else "")
                                if r["lines"] is not None else f"error: {r['error']}" if r.get("error")
                                else "not started (no worktree yet)")
@@ -1130,6 +1155,9 @@ def _lost(r, w):
         why.append(f"{r['lines']} lines against {w['lines']}")
     if r["outside"] > w["outside"]:
         why.append(f"{r['outside']} files outside scope against {w['outside']}")
+    if not why and r.get("taste", 0) > w.get("taste", 0):  # T-2403: a tie on the evidence, broken by the user's no's
+        why.append(f"tied on the evidence; its change holds {r['taste']} of what you said never to, the winner's "
+                   f"{w.get('taste', 0)}")
     return "; ".join(why) or "tied on the evidence; the winner was picked by hand"
 
 
