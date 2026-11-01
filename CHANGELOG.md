@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- While background work runs, the Stop drive offers each stage of a side task once per session: planning a captured task, then drafting a planned one. Before, every change of active task started the offers over, so the same draft was asked for again.
 - On macOS, Foreman now recognizes Claude Code installed through npm. macOS names a script's process after its interpreter (`node`, `sh`), so Foreman used to miss it. The lanes drill's stand-in for Claude, a shell script, is found the same way, which fixes the macOS CI failure "builder process is not recorded".
 - The install and permission requests waiting on you are now listed by how much open work each yes frees: the task itself plus every open task waiting on it, directly or through others. On a tie the oldest comes first. `fm todo`, the waiting-requests line in `fm next` and the Stop hook, and the MCP list all use this order.
 - `fm ship` no longer gives up when main moves during its test run in files the shipped commits never touch, such as Genesis's own tower publishes. It re-picks onto the new main and pushes. A move in a shipped file still refuses.

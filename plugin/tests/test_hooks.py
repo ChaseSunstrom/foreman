@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import time
+import re
 import unittest
 
 from helpers import HOOK, RELAY, ForemanTestCase, read_json, read_text
@@ -2877,9 +2878,24 @@ class Stop(HookCase):
         self.assertIn(f"Start {side}", parse(self.stop("Waiting on the review."))["reason"])
         self.hook("SubagentStart", {"agent_id": "a2", "agent_type": "foreman:fm-reviewer"})  # the running set changes
         self.assertNotIn(f"Start {side}", parse(self.stop("Waiting on both.")).get("reason", ""))
-        self.task("Another current task")  # a new active task: its own round of offers (the old one is queued too)
+        self.task("Another current task")  # T-2513: a new active task doesn't offer the same stage of a task again
+        self.hook("SubagentStart", {"agent_id": "a3", "agent_type": "foreman:fm-reviewer"})
+        again = [parse(self.stop("Waiting on all three.")).get("reason", "") for _ in range(2)]
+        self.assertFalse(any(f"Start {side}" in r for r in again), again)
+
+    def test_a_side_task_planned_since_its_offer_is_offered_once_more_for_its_draft(self):  # T-2513
+        self.fm("init")
+        self.fm("autonomy", "full")
+        cap = re.search(r"T-\d+", self.fm("capture", "Later thing", "--type", "FIX", "--tier", "S").stdout).group(0)
+        self.task("Current work")
+        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
+        self.assertIn(f"Start {cap}", parse(self.stop("Waiting on the review."))["reason"])
+        self.fm("task", "new", "Later thing", "--from", cap, "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+                "--step", "s")
+        self.task("Next current task")
+        self.hook("SubagentStart", {"agent_id": "a2", "agent_type": "foreman:fm-reviewer"})
         again = [parse(self.stop("Waiting on both.")).get("reason", "") for _ in range(2)]
-        self.assertTrue(any(f"Start {side}" in r for r in again), again)
+        self.assertTrue(any(f"Start {cap}" in r for r in again), again)
 
     def test_drive_offers_queued_work_while_background_runs(self):
         # T-0401 (JARVIS 2026-10-09, the user: "make sure it doesnt sit idle"): two background jobs ran, 20+ tasks were
