@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The finish receipt tallies one-way doors: one line naming each step that couldn't be taken back and whether it was undone through its snapshot or parked for you.
+- Your steers as checks: `fm drive on --round-first on` keeps Foreman's own captures out of fm next until the open Genesis round's next seed is filed (urgent ones and ones a task depends on still come); `fm drive on --pace off` stops usage pace from dropping work; `fm exam long run` runs a session arm only with `--final` (the end-of-run exam) or `--regressing N`.
 - Outside authors for the tools, proof and beyond exam kinds: a child writes the tool kinds' record format and rewords the install, proof and deliverable requests (every requirement checked to survive), so capabilities #5, #6 and #10 can pass the held-out scorecard; #6 and #10 are now graded on their own kinds (proof, beyond).
 - The next-request prediction guesses every file your newest request of that type touched, the last request included; replayed over this project's own history its file guess beats the naive one (0.088 vs 0.086 overlap) instead of trailing it (0.053).
 - #3 exam kinds forecast and breakage (Mission 8): forecast hands an arm a user's request history and grades its guess at the next request (type and files) beside the naive guess of the last request again; breakage plants a config value that stops working within two weeks next to a harmless look-alike, and grades flagging it before a fake clock reaches the day, with no alarm on the twin. A zero-token `foresight` arm replays both through Foreman's own nightly tick, and its grade replays your own request history with the last third held out. Capability #3 on the scorecard now counts these two kinds.

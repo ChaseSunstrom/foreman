@@ -927,7 +927,12 @@ def cmd_task(args):
                         for cl, why in fmrecall.meaning_unproven(c.find_brief(p, b.id) or b)]
         except Exception:
             pass
-        return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
+        try:  # T-2346: the plan's one-way steps, each undone or parked
+            import fmdoors
+            doors = fmdoors.tally(c.find_brief(p, b.id) or b)
+        except Exception:  # a receipt line never fails the close
+            doors = ""
+        return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed, doors=doors,
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
                                                         else {}),
                               **({"ablation": args.ablation} if getattr(args, "ablation", None) else {})),
@@ -938,7 +943,7 @@ def cmd_task(args):
             if not guessed and b.acceptance() else "") + (
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
-            if guessed else "") + (
+            if guessed else "") + (f"\n{doors}" if doors else "") + (
             "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
     if sub == "prove":
         return task_prove(p, args)
@@ -4508,12 +4513,23 @@ def cmd_research_show(args):
 
 
 def cmd_drive(args):
+    """T-2327: --pace off (a user steer: never drop work for usage pace) and --round-first on (no new maintenance
+    Foreman filed itself until the open Genesis round's next seed is filed) ride along."""
     p = resolve(args)
-    c.update_meta(p, drive=args.state == "on")
+    extra = {}
+    if getattr(args, "pace", None):
+        extra["pace_drops"] = args.pace == "on"
+    if getattr(args, "round_first", None):
+        import fmgenesis
+        extra["round_first"] = fmgenesis.current(p) if args.round_first == "on" else None
+    c.update_meta(p, drive=args.state == "on", **extra)
     with c.lock(p.dir):
-        c.log_event(p, "drive", data={"on": args.state == "on"}, session=session())
+        c.log_event(p, "drive", data={"on": args.state == "on", **extra}, session=session())
         c.regen_views(p)
-    out(args, {"drive": args.state == "on"}, f"{p.slug}: drive {args.state}.")
+    out(args, {"drive": args.state == "on", **extra}, f"{p.slug}: drive {args.state}"
+        + (f"; pace drops {args.pace}" if "pace_drops" in extra else "")
+        + (f"; round first {'on (gen ' + str(extra['round_first']) + ')' if extra['round_first'] else 'off'}"
+           if "round_first" in extra else "") + ".")
 
 
 def cmd_posture(args):
@@ -6992,6 +7008,9 @@ def _build_parser(only=None):
 
     s = add("drive", cmd_drive, tier=("Project and settings", 690), help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
+    s.add_argument("--pace", choices=["on", "off"], help="off: usage pace never drops work (a spent risk budget still slows)")
+    s.add_argument("--round-first", choices=["on", "off"],
+                   help="on: no new maintenance Foreman filed itself until the open Genesis round's next seed is filed")
 
     s = add("edit", lazy("fmedit", "cmd_edit"), tier=("Finding your way", 260), help="a batch of exact replacements across files from stdin (JSON or "
             "@@ file / <<< old / === new / >>> blocks), all or none, inside the task's scope (T-1089)")
@@ -7578,6 +7597,9 @@ def _build_parser(only=None):
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
     s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
     s.add_argument("--jobs", type=int, default=1, help="run, long run: session scenarios at once (default 1, T-2292)")
+    s.add_argument("--final", action="store_true", help="long run: this is the end-of-run exam (session arms wait for it)")
+    s.add_argument("--regressing", type=int, metavar="N",
+                   help="long run: a session arm for capability N, which a free or Haiku arm shows regressing")
     s.add_argument("--budget", type=float, help="run: USD cap per session (default none: gen-0 puts no cap on proving; "
                                                 "the timeout stops a runaway)")
     s.add_argument("--request", help="run: session arms get these words instead of each scenario's request")
