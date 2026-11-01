@@ -2869,6 +2869,18 @@ class Stop(HookCase):
                      FOREMAN_HOME=self.home, CLAUDE_ENV_FILE=self.env_file)
         self.assertNotIn("one-off", self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env=bench)))
 
+    def test_a_new_background_set_does_not_offer_the_same_side_task_again(self):  # T-2507
+        self.fm("init")
+        side = self.task("Second fix", focus=False)
+        self.task("Current work")
+        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
+        self.assertIn(f"Start {side}", parse(self.stop("Waiting on the review."))["reason"])
+        self.hook("SubagentStart", {"agent_id": "a2", "agent_type": "foreman:fm-reviewer"})  # the running set changes
+        self.assertNotIn(f"Start {side}", parse(self.stop("Waiting on both.")).get("reason", ""))
+        self.task("Another current task")  # a new active task: its own round of offers (the old one is queued too)
+        again = [parse(self.stop("Waiting on both.")).get("reason", "") for _ in range(2)]
+        self.assertTrue(any(f"Start {side}" in r for r in again), again)
+
     def test_drive_offers_queued_work_while_background_runs(self):
         # T-0401 (JARVIS 2026-10-09, the user: "make sure it doesnt sit idle"): two background jobs ran, 20+ tasks were
         # queued, and after one generic push every Stop let the turn end ("nothing else to do until it does")

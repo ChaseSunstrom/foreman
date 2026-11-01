@@ -4147,7 +4147,8 @@ def _drive(p, sd, briefs, pl, g):
         if first:  # one wait, one event (T-0152: every Stop counted again in fm friction)
             _event({"kind": "drive_wait", "session_id": sid, "project": p.slug, "task": work["id"],
                     "running": running[:5]})
-            d["offered"] = []
+        if d.get("offered_for") != work["id"]:  # T-2507: a new background set isn't a new round of offers; a new
+            d.update(offered=[], offered_for=work["id"])  # active task is (each queued task offered once per task)
         d.update(waited=running[:5], waiting_on=running[:3])  # waiting_on: said on screen, a silent end reads as a stall
         if _headless() or d.get("count", 0) >= DRIVE_MAX:
             return None

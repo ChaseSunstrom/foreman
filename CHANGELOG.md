@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- While background work runs, the Stop drive offers each queued task once per active task. A change in which background jobs are running no longer offers the same tasks again.
 - The model layer can use a server you own. Mark its `models.json` profile `"own": true` and name its key's variable. It is asked after local servers and before cloud ones, and the night shadow pass can use it, but never for a sensitive project. `TYPESAFE_BASE_URL` adds a Jev-compatible server from the environment. `models.json` is now gitignored.
 - Genesis runs a cross-cutting review each generation, after the Mission critiques and before the sweep. A cold reader on a stronger model than the Missions used sees only the generation's diff, exam lines, outcomes and friction. It answers what got worse, what grew without earning it, what is measured wrong, what is presented ahead of its proof, and what a demanding user would complain about first. Findings with no file or number from those inputs are dropped. Each kept one becomes a task, a top gap in the next Seed, or a dismissal with its reason, and the sweep stays red until every one is handled.
 - Past 80% weekly usage, while a gate runs in the background, the Stop drive offers a side task as prep in the scratchpad instead of a builder lane, since economy mode allows no subagents.
