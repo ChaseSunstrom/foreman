@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T21:37:30Z",
- "rev": "9d7437a1",
+ "updated": "2026-11-01T21:57:46Z",
+ "rev": "ee25fa27",
  "capabilities": [
   {
    "n": 1,
@@ -1924,7 +1924,7 @@
       {
        "id": "T-2496",
        "title": "Ship bets: fm ship --chance NN records a write-once \"ship\" bet keyed by the pushed…",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
@@ -1934,22 +1934,22 @@
       {
        "id": "T-2497",
        "title": "The plan's percent against its base rate: when a plan's Choice N (NN%) sits 20+ points…",
-       "status": "captured",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
-       "done": 0,
+       "steps": 3,
+       "done": 3,
        "current": ""
       },
       {
        "id": "T-2498",
        "title": "Interim calibration reads and reliability bins: fm outcomes --judgment adds a 7-day…",
-       "status": "captured",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
+       "steps": 3,
        "done": 0,
-       "current": ""
+       "current": "red tests: interim and bins in ledger_data, MCP, site"
       },
       {
        "id": "T-2499",
@@ -17995,14 +17995,14 @@
  },
  "not_yet": 4,
  "not_yet_open": 0,
- "unproven": 1051,
+ "unproven": 1052,
  "unproven_kinds": {
-  "meaning": 581,
+  "meaning": 582,
   "research-uncited": 29,
   "typed": 44,
   "red": 61,
   "perf-typed": 52,
-  "docs": 587,
+  "docs": 588,
   "ui-unshot": 54,
   "data": 4,
   "infra": 7,
@@ -18011,8 +18011,8 @@
  "next": {
   "stage": "build",
   "gen": 2,
-  "action": "Mission 2 (calibrated-judgment): finish T-2496",
-  "command": "fm focus T-2496",
+  "action": "Mission 2 (calibrated-judgment): finish T-2497",
+  "command": "fm focus T-2497",
   "kind": "ok"
  },
  "docs": {
