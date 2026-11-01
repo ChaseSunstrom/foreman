@@ -575,6 +575,22 @@ def check_backup(home):
 NO_CC = "no Claude Code here (claude isn't on PATH): nothing to check"  # T-2174: CC is one surface, not a requirement
 
 
+def check_predictions(p):
+    """T-2406: a prediction kind muted for trailing its naive baseline, named with the command that lets it count."""
+    if not p:
+        return Result("predictions", "PASS", "no project here")
+    import fmforesight
+    try:
+        muted = fmforesight.muted_kinds(p)
+    except Exception as e:  # a bad book never fails the doctor
+        return Result("predictions", "WARN", f"the prediction book couldn't be read ({type(e).__name__})")
+    if not muted:
+        return Result("predictions", "PASS", "no prediction kind trails its baseline")
+    return Result("predictions", "WARN", "; ".join(
+        f"{k['kind']} is muted: hit {k['hit']:.0%} vs the baseline's {k['base_hit']:.0%} over {k['n']} rows "
+        f"(fm outcomes --predictions --unmute {k['kind']})" for k in muted))
+
+
 def check_night_timers(p):
     """T-2357: night timers staged and waiting for the user's yes, and installed ones that run another Foreman home."""
     import glob
@@ -2432,6 +2448,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_steers(here, run=full))
     results.append(check_muted_triggers(here))
     results.append(check_night_timers(here))
+    results.append(check_predictions(here))
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))
