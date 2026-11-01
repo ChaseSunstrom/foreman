@@ -2,6 +2,6 @@
 
 Verdict: clean
 
-Checked seed.md, mission-exam.md, mission-finish.md, mission-genesis.md, mission-initiative.md against gen-0's 6 MUST/NEVER line(s); cold read: clean.
+Checked seed.md, mission-exam.md, mission-finish.md, mission-genesis.md, mission-initiative.md, mission-proof.md, mission-self.md, mission-thinking.md, mission-tools.md against gen-0's 6 MUST/NEVER line(s); cold read: clean.
 
 Nothing drifted.
