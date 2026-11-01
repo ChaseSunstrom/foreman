@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-01T18:20:34Z",
+ "updated": "2026-11-01T18:25:37Z",
  "rev": "4ffc19f1",
  "capabilities": [
   {
@@ -1768,13 +1768,13 @@
       },
       {
        "id": "T-2365",
-       "title": "fm doctor shows one weekly line: self-fixes held vs did not hold (Mission 8 inbox, tier…",
-       "status": "captured",
+       "title": "fm doctor shows one line for the last 7 days of self-fix trials: how many held and how many did not",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "S",
-       "steps": 0,
+       "steps": 1,
        "done": 0,
-       "current": ""
+       "current": "red test, then the line from fmtrials' verdicts"
       }
      ]
     }
