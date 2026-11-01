@@ -83,6 +83,15 @@ class Typos(ForemanTestCase):
             self.assertNotEqual(p.returncode, 0)
             self.assertIn(f"did you mean {want}", p.stderr, argv)
 
+    def test_a_mistyped_flag_is_matched_against_the_typed_commands_own_flags_only(self):
+        # T-2475: fm night --print-timer suggested --print, which fm night doesn't take
+        self.fm("init")
+        p = self.fm("night", "--print-timer", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertNotIn("did you mean --print?", p.stderr)
+        p = self.fm("night", "--instal", check=False)
+        self.assertIn("did you mean --install", p.stderr)  # its own flag still comes back
+
     def test_a_folded_verb_names_its_new_home_and_runs_nothing(self):
         # T-2461: six verbs folded into the verbs that hold their job; the old name is a hint, never an alias (an
         # alias would carry user-only words past the guard's per-verb table, e.g. prove's --yes-run)
