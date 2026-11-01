@@ -4,7 +4,7 @@ import re
 
 import os
 
-from build import TYPES, columns, esc, hbars, line, pairs, tiles, verdicts
+from build import TYPES, columns, esc, hbars, line, pairs, table, tiles, verdicts
 
 LIBRARY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin", "skills", "playbooks",
                        "references")
@@ -165,6 +165,21 @@ def _decisions(s):
         + (f' <em>{esc(x["later"]["how"])} {esc(x["later"]["date"])}</em>' if x.get("later") else "") + "</li>"
         for x in tape)
     return row + (f'<ol class="tape" style="max-height:70vh;overflow-y:auto">{items}</ol>' if items else "")
+
+
+def _models(s):
+    """T-2489: the model layer's exam replay (site/stats.py's models block): per use, the rule's hits beside the booked
+    model answers, the model's Brier and its latency; why there are none yet when no run has scored one."""
+    mo = s.get("models") or {}
+    rep = {k: v for k, v in (mo.get("replay") or {}).items() if isinstance(v, dict)}
+    two = lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else "n/a"  # noqa: E731
+    row = tiles([("uses scored", len(rep)), ("exam run", mo.get("run") or "none yet"),
+                 ("model answers booked", sum(v.get("model_n") or 0 for v in rep.values()))])
+    if not rep:
+        return row + "<p>No exam run has scored a use yet: the shadow rows wait for tasks to close with their truth.</p>"
+    return row + table(["use", "rule right", "model right", "model Brier", "model ms"], [
+        (u, f"{v.get('path_hits', 0)} of {v.get('n', 0)}", f"{v.get('model_hits', 0)} of {v.get('model_n', 0)}",
+         two(v.get("brier")), v.get("ms") if isinstance(v.get("ms"), (int, float)) else "n/a") for u, v in sorted(rep.items())])
 
 
 def _types(s):
@@ -582,6 +597,25 @@ PAGES = [
           "a generation that ends bigger than it began, and the self-change gate refuses a merge that grows the hooks, "
           "the context or the verbs with nothing cut to pay for it.</p>"),
          ("chart", _self_running)]},
+    {"slug": "model-layer", "nav": "Model layer", "title": "Models advise; proof decides",  # T-2489
+     "desc": "A rule first, then local models, then cloud: each use runs in shadow until the exam shows it beats the rule.",
+     "lede": "Some calls (a request's type and size, whether two items are the same, whether a lead is real) can go to a "
+             "model. Foreman asks the cheapest that can answer, books every answer, and lets one take over only when "
+             "its record says so.",
+     "blocks": [
+         ("text", "The order it asks in", "<ul><li><strong>The rule first.</strong> The deterministic path answers when "
+          "it is sure.</li><li><strong>Local models next</strong>, on this machine; a <strong>sensitive</strong> "
+          "project never goes further.</li><li><strong>Cloud last</strong>: a cloud model only when no local answer clears the "
+          "bar.</li></ul><p>Every answer is booked with its probability, so each use has a Brier score against what "
+          "really happened. No gate or guard ever asks a model: proof comes from a run, never an opinion. A model "
+          "download or install waits for your yes like any other install.</p>"),
+         ("text", "Shadow, then live", "<p>Each use starts in <strong>shadow</strong> mode: the rule decides and "
+          "its call is logged; the night tick asks local models the same questions. The exam replays both against "
+          "the tasks' real outcomes at zero tokens. A use goes live only by a <code>model-live</code> decision row "
+          "citing the exam run that showed it beating the rule on accuracy, cost or latency. Other agents ask the "
+          "same layer through the <code>decide</code> MCP tool; their questions are booked apart from Foreman's own, "
+          "and <code>fm doctor</code> lists the backends it can reach.</p>"),
+         ("chart", _models)]},
     {"slug": "decisions", "nav": "Decisions", "title": "Every decision on one tape",  # T-2348
      "desc": "Each fm decide row with its confidence, whether it was a door, and the later row that reversed it.",
      "lede": "Foreman decides on its own under full autonomy, so every choice is written down: what was chosen, why, "

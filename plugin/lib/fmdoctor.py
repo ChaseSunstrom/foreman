@@ -591,6 +591,22 @@ def check_predictions(p):
         f"(fm outcomes --predictions --unmute {k['kind']})" for k in muted))
 
 
+def check_model_backends(p):
+    """T-2489: the model layer's backends (fmmodels.registry: configured, reachable local, keyed cloud), local or
+    cloud, and which uses are live; information only, so it never fails the doctor."""
+    import fmmodels
+    try:
+        reg = fmmodels.registry()
+        live = [u for u in fmmodels.shadow_uses() if p and fmmodels.live(p, u)]
+    except Exception as e:  # a bad models.json or a slow probe is a note, not a failure
+        return Result("model backends", "PASS", f"couldn't list them ({type(e).__name__})")
+    if not reg:
+        return Result("model backends", "PASS", "no backend: decide() answers by rule only ($FOREMAN_HOME/models.json or a local server adds one)")
+    names = lambda local: ", ".join(c.plain(str(b.get("name")))[:40] for b in reg if bool(b.get("local")) == local) or "none"  # noqa: E731
+    sens = "; sensitive: local only" if p and c.read_meta(p).get("sensitive") else ""
+    return Result("model backends", "PASS", f"local: {names(True)}; cloud: {names(False)}; live: {', '.join(live) or 'none'}{sens}")
+
+
 def check_night_timers(p):
     """T-2357: night timers staged and waiting for the user's yes, and installed ones that run another Foreman home."""
     import glob
@@ -2449,6 +2465,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_muted_triggers(here))
     results.append(check_night_timers(here))
     results.append(check_predictions(here))
+    results.append(check_model_backends(here))
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))

@@ -222,6 +222,24 @@ def bench():
     return {k: {"p50": v["p50"], "p95": v["p95"], "budget": v["budget"]} for k, v in data.items() if "p95" in v}
 
 
+def models(state):
+    """T-2489: the Model layer page's figures: the newest exam line carrying fmexam.replay_models' per-use scores
+    (research/genesis/exam.jsonl), as {run, replay}; {} when no run has scored one yet."""
+    try:
+        with open(os.path.join(state, "research", "genesis", "exam.jsonl"), encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return {}
+    for raw in reversed(lines):
+        try:
+            row = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and isinstance(row.get("model_replay"), dict):
+            return {"run": str(row.get("run") or ""), "replay": row["model_replay"]}
+    return {}
+
+
 def merge_duels(old, new):
     """Site review: the duels named now replace the saved ones of the same name; the others stay, in order."""
     fresh = {d["name"]: d for d in new}
@@ -330,7 +348,7 @@ def main():
         with open(OUT, encoding="utf-8") as f:
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
-             "cards": cards(), "code": code_counts(), "calibration": calibration(), "proof": proof(old.get("proof")), "self_running": self_running(state), "decisions": decisions(state), "bench": old.get("bench", {}) if a.no_bench else bench(),
+             "cards": cards(), "code": code_counts(), "calibration": calibration(), "proof": proof(old.get("proof")), "self_running": self_running(state), "models": models(state), "decisions": decisions(state), "bench": old.get("bench", {}) if a.no_bench else bench(),
              "duels": merge_duels(old.get("duels") or [], [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
                  *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
                                                      for x in (a.duel or [f"quality={state}"])) if d])}

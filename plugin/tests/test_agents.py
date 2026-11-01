@@ -347,3 +347,12 @@ class ProofLine(ForemanTestCase):  # T-2395
         text = a.rules_text()
         self.assertIn("fm prove --rollup", text)
         self.assertEqual(len(text.splitlines()), 7)  # in an existing line, no new one
+
+
+class ModelLine(ForemanTestCase):  # T-2489: the model layer's rule reaches other agents in an existing line
+    def test_the_agents_block_says_a_model_advises_and_a_run_decides(self):
+        import fmagents as a
+        text = a.rules_text()
+        line = next(x for x in text.splitlines() if "fresh evidence" in x)
+        self.assertIn("a model's answer advises", line)
+        self.assertEqual(len(text.splitlines()), 7)

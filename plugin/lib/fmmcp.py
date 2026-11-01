@@ -109,6 +109,12 @@ TOOLS = [
      lambda a, p: ["prove", "--rollup", "--json"]),
     ("grants", "Install grants queued for the user (T-2374): per open task, what is asked and why, the miss behind it, "
      "what was searched, the fallback, and what a yes unblocks. Read-only: a grant is the user's to answer.", _TEXT, None),
+    ("decide", "One choice among 2 to 12 by Foreman's model layer (T-2489): local backends before cloud, the first "
+     "answer whose probability clears 0.8, as {choice, probability, backend, cleared, tried}; booked as mcp-KIND for "
+     "calibration. It advises; it gates nothing.",
+     _obj(["kind", "prompt", "choices"], kind=_str("what is decided, e.g. intake-type", cap=40),
+          prompt=_str("the question", cap=4000),
+          choices={"type": "array", "items": {"type": "string", "maxLength": 80}, "minItems": 2, "maxItems": 12}), None),
 ]
 MAX_LINE = 1_000_000
 
@@ -211,6 +217,19 @@ def _call(p, name, args):
                 by = {b.id: b for b in c.load_briefs(p, include_archive=True)}
                 m["items"] = [dict(it, state=fmmandate.item_state(it, by)) for it in m.get("items") or []]
             return json.dumps({"goal": m, "line": fmmandate.goal_line(p), "verdict": fmmandate.fresh_verdict(p, m)},
+                              ensure_ascii=False), False
+        if name == "decide":  # T-2489: a sensitive project never gets here (refused above), so cloud is allowed
+            import fmmodels
+            kind, prompt, choices = _need(args, "kind", r"[a-z][a-z0-9-]{0,39}"), args.get("prompt"), args.get("choices")
+            if not isinstance(prompt, str) or not 0 < len(prompt) <= 4000:
+                return "prompt: the question, 1 to 4000 characters", True
+            if (not isinstance(choices, list) or not 2 <= len(choices) <= 12
+                    or not all(isinstance(x, str) and 0 < len(x) <= 80 for x in choices)):
+                return "choices: 2 to 12 strings, each 1 to 80 characters", True
+            got = fmmodels.decide("mcp-" + kind, prompt, choices, p=p)
+            if not got:
+                return "no backend answered (fm doctor's model backends line lists them)", True
+            return json.dumps({k: got.get(k) for k in ("choice", "probability", "backend", "cleared", "tried")},
                               ensure_ascii=False), False
         if name == "which":  # T-2378: the shelves searched in-process, so no tool_search receipt lands on a task
             import fmwhich

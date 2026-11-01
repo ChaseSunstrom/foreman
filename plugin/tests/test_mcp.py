@@ -41,7 +41,7 @@ class RoundTrip(_Mcp):
         names = {t["name"] for t in by[2]["result"]["tools"]}
         self.assertEqual(names, {"state", "next", "recall", "research_list", "research_read", "task_show", "checks",
                                  "lib_suggest", "lib_search", "lib_show", "outline", "sym", "impact", "why", "fail",
-                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status", "goal", "triggers", "calibration", "which", "grants", "proof"})
+                                 "logs", "data", "trace", "find", "exam_scorecard", "genesis_status", "goal", "triggers", "calibration", "which", "grants", "proof", "decide"})
         for t in by[2]["result"]["tools"]:
             self.assertEqual(t["inputSchema"]["type"], "object")
         self.assertIn("Parse dates in the importer", by[3]["result"]["content"][0]["text"])
@@ -494,3 +494,35 @@ class ProofTool(_Mcp):  # T-2395: the unproven rollup through MCP (Claude Deskto
         d = json.loads(_text(out[1]))
         self.assertEqual([x["id"] for x in d["tasks"]], [tid])
         self.assertIn("typed", d["tasks"][0]["kinds"])
+
+
+class DecideTool(_Mcp):  # T-2489: the model layer's decide() for other agents, booked apart from Foreman's own uses
+    BASE = {"kind": "intake-type", "prompt": "the parser crashes on an empty file", "choices": ["FIX", "FEATURE"]}
+
+    def test_decide_is_listed_validates_its_input_and_answers_through_the_model_layer(self):
+        import fmcore as c
+        import fmmcp
+        import fmmodels
+        from unittest import mock
+        self.fm("init")
+        p = c.find_project(self.repo, create=False)
+        self.assertIn("decide", {t[0] for t in fmmcp.TOOLS})
+        got = {"choice": "FIX", "probability": 0.9, "backend": "ollama", "cleared": True, "tried": ["ollama: ok (5 ms)"],
+               "ms": 5}
+        with mock.patch.object(fmmodels, "decide", return_value=got) as dec:
+            text, err = fmmcp._call(p, "decide", dict(self.BASE))
+        self.assertFalse(err)
+        self.assertEqual((json.loads(text)["choice"], json.loads(text)["backend"]), ("FIX", "ollama"))
+        # booked under its own kind, so an outside agent's questions never score Foreman's own intake use
+        self.assertEqual(dec.call_args.args[:3], ("mcp-intake-type", self.BASE["prompt"], ["FIX", "FEATURE"]))
+        self.assertIs(dec.call_args.kwargs["p"], p)
+        for bad in ({"kind": "has space"}, {"choices": ["one"]}, {"choices": "FIX"}, {"choices": ["a", 2]},
+                    {"choices": ["x"] * 13}, {"prompt": ""}, {"prompt": "x" * 4001}):
+            with mock.patch.object(fmmodels, "decide") as dec:
+                text, err = fmmcp._call(p, "decide", dict(self.BASE, **bad))
+            self.assertTrue(err, bad)
+            dec.assert_not_called()
+        with mock.patch.object(fmmodels, "decide", return_value=None):
+            text, err = fmmcp._call(p, "decide", dict(self.BASE))
+        self.assertTrue(err)
+        self.assertIn("no backend answered", text)
