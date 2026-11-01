@@ -2512,6 +2512,20 @@ def _exam_tail(d, k=20):
         rec = x.get("recall") if isinstance(x.get("recall"), dict) else {}
         by = [f"by {word}: " + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in rec[dim].items() if isinstance(v, list) and len(v) == 2)
               for dim, word in (("lang", "language"), ("kind", "kind")) if isinstance(rec.get(dim), dict) and rec[dim]]
+        # T-2473: closed scenarios by kind (an id is KIND-LANG-HASH) and the foresight numbers critiques cite
+        cl = x.get("closed") if isinstance(x.get("closed"), dict) else {}
+        kinds = collections.Counter(i.rsplit("-", 2)[0] for v in cl.values() if isinstance(v, list)
+                                    for i in v if isinstance(i, str) and i.count("-") >= 2)
+        by += [f"closed by kind: {', '.join(f'{k} {n}' for k, n in sorted(kinds.items()))}"] if kinds else []
+        num = lambda k: x.get(k) if isinstance(x.get(k), (int, float)) and not isinstance(x.get(k), bool) else None  # noqa: E731
+        if num("forecast_keyed"):
+            by.append(f"forecast type {num('forecast_type') or 0}/{x['forecast_keyed']} (naive {num('forecast_base_type') or 0}/{x['forecast_keyed']})")
+        if num("breakage_keyed"):
+            by.append(f"breakage flagged {num('breakage_flagged') or 0}/{x['breakage_keyed']}, {num('breakage_false') or 0} false")
+        fr = x.get("forecast_replay") if isinstance(x.get("forecast_replay"), dict) else {}
+        if all(isinstance(fr.get(k), (int, float)) for k in ("held", "type_hit", "base_type_hit", "overlap", "base_overlap")):
+            by.append(f"replay: type {fr['type_hit']}/{fr['held']} (naive {fr['base_type_hit']}), paths {fr['overlap']} "
+                      f"(naive {fr['base_overlap']})")
         return (f"found {x.get('found', 0)}/{x['keyed']}, {x.get('false_alarms', 0)} false alarms"
                 + (f" ({x['proved_by_arm']} with the arm's own proof)" if x.get("proved_by_arm") else "")
                 + f", fixed {x.get('fixed', 0)}/{x.get('fixable', 0)}"
