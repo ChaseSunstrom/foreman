@@ -18,6 +18,7 @@ LEASE_S = 20 * 60      # an edit holds its function this long, renewed by each e
 FRESH_ALL_S = 15 * 60  # a session reading mail for the first time gets broadcasts this recent
 WATCH_S = 10           # a watcher whose heartbeat is this fresh delivers wakes; older, tmux is tried
 KEEP = 500             # messages kept
+INTERPRETERS = {"sh", "bash", "dash", "zsh", "node", "bun", "deno"}  # T-2512: what runs a shebang script
 TYPES = ("note", "steer", "stop")
 _DEF = c.lazy(r"^(\s*)(?:(?:export|pub|async|static|public|private)\s+)*(?:def|class|function|fn|func)\s+(\w+)")
 
@@ -250,9 +251,16 @@ def _comm(pid):
         pass
     if os.path.isdir("/proc"):
         return ""
+    ps = lambda field: subprocess.run(["ps", "-o", f"{field}=", "-p", str(pid)], capture_output=True,  # noqa: E731
+                                      text=True, timeout=5).stdout.strip()
     try:  # no procfs (macOS, BSD)
-        return subprocess.run(["ps", "-o", "comm=", "-p", str(pid)], capture_output=True, text=True,
-                              timeout=5).stdout.strip().rsplit("/", 1)[-1]
+        comm = ps("comm").rsplit("/", 1)[-1]
+        if comm in INTERPRETERS:  # T-2512: macOS names a shebang script (npm's claude, the lanes drill's stub) by its
+            # interpreter; the script is the interpreter's first argument that isn't a flag
+            script = next((w for w in ps("args").split()[1:] if not w.startswith("-")), "")
+            if script.rsplit("/", 1)[-1] == "claude":
+                return "claude"
+        return comm
     except (OSError, subprocess.SubprocessError):
         return ""
 
