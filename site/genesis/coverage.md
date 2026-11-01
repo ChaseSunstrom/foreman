@@ -66,6 +66,68 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 ## 8. Calibrated judgment
 - understand × CLI: F: plugin/lib/fmexam.py — the exam grades agents on held-out scenarios that outside (child) authors write, kept apart from any Foreman wrote itself (T-2204)
 - learn × Claude Code: F: plugin/lib/fmhooks.py — the track record by type and tier is injected at focus
+- find × Claude Code: I: fm find --rank states each lead's chance of being real beside its rank, booked so a proven or dropped lead scores the number (plugin/lib/fmfind.py)
+- find × fm code: I: fm code's planner states a percent per hotspot before it reads one, settled when that hotspot yields a fix or nothing (plugin/lib/fmcode.py)
+- find × other agents: I: the AGENTS.md block asks another harness to put a percent beside each bug it claims, so fm outcomes can score that harness's claims (plugin/lib/fmagents.py)
+- find × MCP: I: the MCP find tool returns each lead's stated chance with the lead ledger's real hit rate for that 10-point bucket (plugin/lib/fmmcp.py)
+- find × Desktop: N/A: the desktop app lists projects and their next action; no lead is found or scored there
+- find × site: I: the Judgment page shows lead calibration: of the leads stated at 70–80%, the share that proved real (site/pages.py)
+- find × CLI: F: plugin/lib/fmoutcomes.py — fm outcomes --judgment lists stated-confidence buckets per kind beside what held, which finds the kinds whose numbers are off (T-2344)
+- find × headless/server: I: the nightly digest names the bet kind whose Brier trails its base rate most this week as the next calibration target (plugin/lib/fmnight.py)
+- understand × Claude Code: I: fm next says when the active plan's Choice percent sits 20+ points above the held rate for its type and tier, with that rate (plugin/lib/fmhooks.py)
+- understand × fm code: I: the fm code TUI shows the run's stated Choice percent beside the type and tier base rate before the build station starts (plugin/lib/fmcodetui.py)
+- understand × other agents: I: a bet records which harness stated it, so fm outcomes --judgment can show one harness's record apart from the others (plugin/lib/fmoutcomes.py)
+- understand × MCP: F: plugin/lib/fmmcp.py — the calibration tool returns the buckets, the stated Brier beside the base rate's, the bars, races and parked doors, and writes nothing (T-2344)
+- understand × Desktop: I: each project row in Foreman Desktop carries its stated Brier against its base rate, read from fm projects --json (plugin/lib/fmwatch.py)
+- understand × site: F: site/pages.py — the Judgment page renders confidences scored, the stated Brier against the base rate's, races lost and the race bar from fm outcomes --judgment --json (T-2344)
+- understand × headless/server: I: fm serve's status reply carries the calibration snapshot, so a remote viewer reads the record with no session open (plugin/lib/fmserve.py)
+- plan × Claude Code: F: plugin/lib/fmcli.py — the M/L plan gate needs two readings, 3+ fails-if options and Choice N (NN%); a choice under 80% needs fm second rival and each dissent resolved (T-2344)
+- plan × fm code: F: plugin/lib/fmcode.py — the PLAN slot asks for a choice and a whole-percent confidence, writes Choice N (NN%): why, and refuses a number outside 0–100
+- plan × other agents: F: plugin/lib/fmagents.py — the AGENTS.md plan line asks other harnesses for 2 readings, 3+ fails-if options and Choice N (NN%) (T-2344)
+- plan × MCP: I: a plan_check MCP tool scores a draft's Choice percent against the type and tier base rate before the plan is filed (plugin/lib/fmmcp.py)
+- plan × Desktop: N/A: plans are written in sessions and briefs; the desktop shows project state, not plan text
+- plan × site: I: the Planning page quotes a real plan's Choice line next to how often plans stated in that bucket held (site/pages.py)
+- plan × CLI: I: fm task set --section Approach warns when the Choice percent is 20+ points above the pair's base rate and names that rate (plugin/lib/fmcli.py)
+- plan × headless/server: I: fm run's headless sessions meet the same stated-percent plan gate, so queue work feeds the ledger like session work (plugin/lib/fmserve.py)
+- build × Claude Code: F: plugin/lib/fmlanes.py — fm lane race runs rival builders when the plan's percent is under the race bar; the race_pick row records whether the first choice lost (T-2344)
+- build × fm code: I: fm code books the build station's retries against the plan's percent, so a plan that needed three tries scores as an over-bet (plugin/lib/fmcode.py)
+- build × other agents: I: a lane built by another harness (codex, gemini) meets the same race bar, so its Choice percent decides whether a rival runs (plugin/lib/fmagents.py)
+- build × MCP: I: an MCP bet tool records an outside agent's stated percent on a task, write-once like the judgment ledger's rows (plugin/lib/fmoutcomes.py)
+- build × Desktop: N/A: building happens in sessions and lanes; the desktop app starts none
+- build × site: N/A: the site is a static report of the record; nothing is built or bet from it
+- build × CLI: I: a fm decide row with --confidence is scored when a later row reverses it, the reversal counting as a miss (plugin/lib/fmcli.py)
+- build × headless/server: I: each night lane states its percent at launch, and its merge or block settles the bet (plugin/lib/fmnight.py)
+- verify × Claude Code: I: fm task finish asks an S task with no plan percent for the chance the close holds, so small work enters the ledger too (plugin/lib/fmcli.py)
+- verify × fm code: I: fm code's verify station books its first-run result against the plan's percent, so each run scores its own planner (plugin/lib/fmcode.py)
+- verify × other agents: I: the exam scores a plain harness's stated confidences with the same Brier as Foreman's arm, so the two records compare (plugin/lib/fmexam.py)
+- verify × MCP: I: the calibration tool adds reliability bins (stated bucket against held share) so a client can draw the curve itself (plugin/lib/fmmcp.py)
+- verify × Desktop: N/A: scoring runs where the ledger lives; the desktop reads only its summary through fm projects
+- verify × site: I: the Judgment page draws a reliability curve, stated bucket against held share, beside the Brier pair (site/pages.py)
+- verify × CLI: F: plugin/lib/fmoutcomes.py — settle() grades each write-once bet once its signal speaks, and the Brier is read against the type and tier base rate (T-2344)
+- verify × headless/server: F: plugin/lib/fmexam.py — the foresight arm scores stated confidences by Brier, an unstated one counted at 50 (T-2366)
+- ship × Claude Code: F: plugin/lib/fmcli.py — a plan's one-way steps are each undone or parked at a door, and fm decide --review prices each parked door by its wait (T-2346, T-2347)
+- ship × fm code: I: fm code's close states the chance the change survives seven days, settled by fm outcomes' survival check (plugin/lib/fmcode.py)
+- ship × other agents: I: another harness's commit hook records its stated chance the change holds, so its ships join the same ledger (plugin/lib/fmagents.py)
+- ship × MCP: N/A: the MCP server pushes nothing; shipping belongs to fm ship and a session
+- ship × Desktop: N/A: the desktop app pushes nothing; it shows what a push left behind
+- ship × site: I: each release on the site shows the risk stated at ship beside whether a revert or hotfix followed (site/pages.py)
+- ship × CLI: I: fm ship states the chance CI's blocking jobs pass on the pushed commit, and fm ci-watch settles it (plugin/lib/fmrelease.py)
+- ship × headless/server: I: a release cut by fm release states the chance it needs a hotfix within a week, settled from the revert log (plugin/lib/fmrelease.py)
+- operate × Claude Code: F: plugin/lib/fmoutcomes.py — the research and race bars live in project meta and are read by every plan, a hand-set bar above BAR_MAX kept (T-2344)
+- operate × fm code: I: fm code reads the same research bar to decide whether a run researches before it plans (plugin/lib/fmcode.py)
+- operate × other agents: I: other harnesses' hooks read the bars from fm state --json, so they race and research at Foreman's thresholds (plugin/lib/fmagents.py)
+- operate × MCP: I: the MCP state tool includes the bars, so an outside agent knows when Foreman would research or race (plugin/lib/fmmcp.py)
+- operate × Desktop: I: Foreman Desktop shows a project's bars and resets one through fm, with a decision row saying why (plugin/lib/fmwatch.py)
+- operate × site: N/A: the site reports the bars (understand × site); it runs nothing against them
+- operate × CLI: I: fm outcomes --judgment --set-bar research=N sets a bar by hand and writes the decision row that says why (plugin/lib/fmoutcomes.py)
+- operate × headless/server: I: fm run's worker checks the research bar before each queued task, as a session's plan gate does (plugin/lib/fmserve.py)
+- learn × fm code: I: fm code writes each closed run's stated percent and outcome into the judgment ledger, so its planner's misses move the bars too (plugin/lib/fmcode.py)
+- learn × other agents: I: a harness whose Brier trails the base rate over 20 bets has its stated percents shrunk toward that rate before they gate a race (plugin/lib/fmoutcomes.py)
+- learn × MCP: I: the model layer's decide answers, MCP ones included, are scored in the same per-kind Brier table as stated confidences (plugin/lib/fmmodels.py)
+- learn × Desktop: N/A: the bars move from the project's ledger; the desktop only reads the result
+- learn × site: I: the Judgment page plots each bar's moves over time with the bucket that moved it (site/pages.py)
+- learn × CLI: F: plugin/lib/fmoutcomes.py — adjust_bars() raises the research bar when a kind is 15+ points overconfident over 20+ scored closes, registers the raise as a trial and writes its decision row
+- learn × headless/server: I: the nightly digest settles the day's bets and adjusts the bars, so a project with no sessions still learns (plugin/lib/fmnight.py)
 
 ## 9. Orchestration
 - find × Claude Code: F: plugin/agents/fm-debugger.md — fresh-eyes debugger returns ranked hypotheses with a probe each
