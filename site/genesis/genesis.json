@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T17:28:57Z",
- "rev": "96aa091d",
+ "updated": "2026-11-01T17:36:44Z",
+ "rev": "5e4f5355",
  "capabilities": [
   {
    "n": 1,
@@ -1855,7 +1855,7 @@
       {
        "id": "T-2485",
        "title": "decide() on fmmodels: a kind and an input return choice, score and probability from a…",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
@@ -1865,11 +1865,11 @@
       {
        "id": "T-2486",
        "title": "The user's four model rules as tests: no model import in fmguard or the evidence gates,…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
+       "done": 2,
        "current": "red tests for the four rules"
       },
       {
@@ -1885,12 +1885,12 @@
       {
        "id": "T-2488",
        "title": "The first uses in shadow mode: intake type and tier, fm find lead triage, embedding…",
-       "status": "captured",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
+       "steps": 3,
        "done": 0,
-       "current": ""
+       "current": "red tests"
       },
       {
        "id": "T-2489",
@@ -18047,14 +18047,14 @@
  },
  "not_yet": 4,
  "not_yet_open": 0,
- "unproven": 1043,
+ "unproven": 1044,
  "unproven_kinds": {
   "meaning": 578,
   "research-uncited": 31,
   "typed": 46,
-  "red": 55,
+  "red": 56,
   "perf-typed": 52,
-  "docs": 580,
+  "docs": 581,
   "ui-unshot": 56,
   "data": 4,
   "infra": 7,
@@ -18063,8 +18063,8 @@
  "next": {
   "stage": "build",
   "gen": 2,
-  "action": "Mission 1 (model-layer): finish T-2485",
-  "command": "fm focus T-2485",
+  "action": "Mission 1 (model-layer): finish T-2486",
+  "command": "fm focus T-2486",
   "kind": "ok"
  },
  "docs": {
