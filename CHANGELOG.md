@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Genesis sweep's lean check measures substance: code and test lines per module, and dependencies, against the generation's start. Each Mission's growth is judged by its gain. Growth whose tasks held up passes, growth not yet measured waits, and growth that was measured with no gain turns the sweep red and files a task to subtract it.
 - Genesis redraws its gap map every generation against the current code, after the cross-cutting review. The next Seed ranks Missions by expected value: the gap map's tier, the exam scorecard, how the area's last tasks survived, and the review's gaps. Empty coverage cells only break ties. Each Seed prints every Mission's score parts. The sweep goes red when the map is missing, older than the review, or skips a capability.
 - While background work runs, the Stop drive offers each queued task once per active task. A change in which background jobs are running no longer offers the same tasks again.
 - The model layer can use a server you own. Mark its `models.json` profile `"own": true` and name its key's variable. It is asked after local servers and before cloud ones, and the night shadow pass can use it, but never for a sensitive project. `TYPESAFE_BASE_URL` adds a Jev-compatible server from the environment. `models.json` is now gitignored.
