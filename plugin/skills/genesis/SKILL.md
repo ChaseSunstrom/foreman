@@ -17,7 +17,12 @@ A user steer mid-run becomes a standing rule plus its check in the same task:
 survival gain passes, an unmeasured one waits as pending, a measured lack of gain is red and files a subtraction task. Its proof-before-presentation row reads README.md, site/index.html and site/pages.py:
 every result (N of M, a percentage, a ratio, a comparison) names its proof (an exam run, a task with evidence, live
 data; `<!-- source: T-NNNN -->` cites one invisibly), a rule or UI sample says so with `<!-- rule -->`, and no line
-says a capability passes before the scorecard does.
+says a capability passes before the scorecard does. From gen 2, step asks first for `gen-N/prediction.md` (the user's three
+likeliest next steers, `N. Steer: … | Why: …`), sealed by its first put; every steer recorded with `fm decide --cites
+"user steer …"` is scored against it (a miss files an anticipation gap), and before the next seed
+`gen-N/blind-spots.md` lists each class found from inputs Foreman didn't author (session replays, steer classes,
+unfiled failures, inversion, one far-domain comparison) with Source, Rule and Check lines, the rule recorded with
+`fm decide --check`.
 
 ## Start (no gen-0 yet)
 

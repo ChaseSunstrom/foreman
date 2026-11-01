@@ -4217,6 +4217,15 @@ def cmd_decide(args):
                     getattr(args, "revisited", None), revisit, cites=getattr(args, "cites", None),
                     check=getattr(args, "check", None), confidence=conf)
     note = ""
+    if cites and c.STEER.search("cites: " + cites):  # T-2505: each recorded steer is scored against the sealed prediction
+        try:
+            import fmgenesis
+            sc = fmgenesis.score_steer(p, f"{args.decision} {cites}")
+            if sc:
+                note += (f" Predicted (overlap {sc['overlap']} with: {sc['nearest']})." if sc["hit"] else
+                         f" Not predicted (nearest overlap {sc['overlap']}): filed as an anticipation gap.")
+        except Exception as e:  # a score never loses the decision just written
+            note += f" Its prediction score wasn't recorded ({c.fit(str(e), 80)})."
     if conf is not None:  # a stated confidence is a bet in the calibration ledger, scored when it's reversed or holds
         try:
             import fmoutcomes

@@ -16,8 +16,10 @@ import fmcore as c
 # not-yet.md: ideas no approach has landed yet, with their blockers (retried each generation, never dropped);
 # coverage.md: the capability-area x surface x stage grid every generation fills.
 SHAPE = re.compile(r"(gap-map|lineage|catalogue|report|not-yet|coverage|spec)\.md|exam\.jsonl"
-                   r"|frame\.md|gen-[1-9][0-9]*/(seed|drift|sweep|frontier|gap-map|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
-OWNED = re.compile(r"exam\.jsonl|frame\.md|gen-[1-9][0-9]*/(drift|sweep|select|confirm|frontier|review)\.md")  # T-2155: the stage gates' records,
+                   r"|frame\.md|gen-[1-9][0-9]*/(seed|drift|sweep|frontier|gap-map|prediction|blind-spots"
+                   r"|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
+OWNED = re.compile(r"exam\.jsonl|frame\.md|gen-[1-9][0-9]*/((drift|sweep|select|confirm|frontier|review)\.md"
+                   r"|prediction-score\.jsonl)")  # T-2155: the stage gates' records,
 # frame.md (T-2188): only fm genesis grow adds to it;
 # never put; T-2187: frontier.md is built from the project's own notes by fm genesis frontier N
 GEN = re.compile(r"gen-([1-9][0-9]*)")
@@ -80,8 +82,13 @@ def put(p, name, text):
     if not SHAPE.fullmatch(name):
         raise ValueError(f"{name!r} isn't a tower doc: gap-map.md, lineage.md, catalogue.md, report.md, "
                          "not-yet.md, coverage.md, spec.md, or gen-N/seed.md, mission-NAME.md, critique-NAME.md (N from 1)")
+    sealed = re.fullmatch(r"gen-(\d+)/prediction\.md", name)
+    if sealed and _seal(p, int(sealed[1])):  # T-2505: a sealed prediction is never rewritten
+        raise ValueError(f"{name} is sealed: a prediction is written once, before the steers it predicts")
     _read(p, name, text)
     path = _file(p, name, text, record="put")
+    if sealed:
+        c.log_event(p, "genesis_seal", data={"gen": int(sealed[1]), "sha": hashlib.sha256(text.encode()).hexdigest()})
     if (m := re.fullmatch(r"gen-(\d+)/seed\.md", name)):
         try:  # T-2359: the generation's lean start; never fails a put
             record_lean(p, int(m[1]))
@@ -806,6 +813,10 @@ def step(p):
     if len(rows) > 8:
         return act("fatal", n, f"{pre}seed.md lists {len(rows)} Missions; the cap is 8: merge or drop rows",
                    f"fm genesis put {pre}seed.md --file -", "fatal")
+    if n >= 2 and _seal_state(p, n) == "missing":  # T-2505 (user steer 2026-11-01, part 5): sealed before the steers it
+        # predicts; from gen 2, the generation running when the rule arrived (gen 1 can't be sealed after the fact)
+        return act("predict", n, "seal a prediction: the user's three likeliest next steers, one line each as "
+                                 "'N. Steer: … | Why: …'", f"fm genesis put {pre}prediction.md --file -")
     for num, file, caps, _gaps, _deps in rows:  # in table order, which keeps each row's Depends on satisfied
         name, doc = file[8:], _doc(d, f"{pre}{file}.md")
         where = f"Mission {num} ({name})"
@@ -861,6 +872,11 @@ def step(p):
                                          "subagent when the budget allows, targeted reads otherwise), a row each with "
                                          "its tier, evidence and what is missing, and a 'Drawn at: <HEAD sha>' line",
                            f"fm genesis put {pre}gap-map.md --file -")
+            if _doc(d, f"{pre}blind-spots.md") is None:  # T-2505: from inputs Foreman didn't author, before the seed
+                return act("blind spots", n, "hunt blind spots: session replays (stalls, guesses, corrections), the "
+                                             "user's steers grouped into classes, failures nobody filed, inversion, one "
+                                             "far-domain comparison; each class a '## Class' with Source, Rule and Check "
+                                             "lines, its rule recorded with fm decide --check", f"fm genesis put {pre}blind-spots.md --file -")
             continue
         if stage == "drift" and _stale(d, pre):
             return act(stage, n, "the seed or a Mission changed after drift.md: rerun the drift check",
@@ -3564,6 +3580,109 @@ def _gapmap_row(p, n):
     return bad, f"{len(rows)} area(s) drawn at {at[:8]}"
 
 
+PRED_ROW = re.compile(r"^\s*\d+\.\s*Steer:\s*(.+?)\s*\|\s*Why:\s*(.+?)\s*$", re.M)  # T-2505
+STOP = {"with", "that", "this", "from", "into", "every", "each", "when", "what", "them", "they", "then", "than", "only",
+        "rule", "standing", "steer", "user", "should", "would", "make", "must", "never", "always"}
+
+
+def _seal(p, n):
+    """T-2505: the sha256 gen n's prediction was sealed with (its first put), or None."""
+    return next(((e.get("data") or {}).get("sha") for e in c.ledger_events(p, ("genesis_seal",))
+                 if (e.get("data") or {}).get("gen") == n), None)
+
+
+def _seal_state(p, n):
+    """missing, unsealed, sealed, or broken (the file no longer hashes to its seal)."""
+    text, sha = _doc(home(p), f"gen-{n}/prediction.md"), _seal(p, n)
+    if text is None:
+        return "missing"
+    if not sha:
+        return "unsealed"
+    return "sealed" if hashlib.sha256(text.encode()).hexdigest() == sha else "broken"
+
+
+def _steer_words(t):  # T-2505 (fmgenesis already has a _words for coverage cells)
+    return set(WORD.findall(str(t).lower())) - STOP
+
+
+def score_steer(p, text):
+    """T-2505 (user steer 2026-11-01, part 5): a recorded user steer against the newest sealed prediction: overlap =
+    shared words over the smaller side's words, a hit at 0.3+; one row in gen-N/prediction-score.jsonl, and a miss
+    files one anticipation (#3) gap. None when no prediction is sealed."""
+    import fmeco
+    gens = sorted({(e.get("data") or {}).get("gen") for e in c.ledger_events(p, ("genesis_seal",))} - {None})
+    if not gens:
+        return None
+    n = gens[-1]
+    preds = PRED_ROW.findall(_doc(home(p), f"gen-{n}/prediction.md") or "")
+    w = _steer_words(text)
+    best = max(((len(w & _steer_words(s)) / max(1, min(len(w), len(_steer_words(s)))), s) for s, _ in preds),
+               default=(0.0, ""))
+    row = {"at": c.now(), "steer": c.fit(c.plain(text), 300), "nearest": c.fit(c.plain(best[1]), 200),
+           "overlap": round(best[0], 2), "hit": best[0] >= 0.3, "seal": _seal_state(p, n)}
+    with c.lock(p.dir):
+        c.append_line(os.path.join(home(p), f"gen-{n}", "prediction-score.jsonl"), json.dumps(row))
+    if not row["hit"]:
+        key = f"genesis-anticipation {n}:{hashlib.sha1(text.encode()).hexdigest()[:10]}"
+        fmeco.capture_once(p, f"FEATURE: anticipation gap (#3): the user's steer wasn't among gen-{n}'s sealed predictions: "
+                              f"{row['steer']} (nearest: {row['nearest'] or 'none'}, overlap {row['overlap']})\n{key}",
+                           "FEATURE", "genesis-anticipation", key=key)
+    return row
+
+
+def _hit_rate(p, n):
+    rows = []
+    for raw in (_doc(home(p), f"gen-{n}/prediction-score.jsonl") or "").splitlines():
+        try:
+            rows.append(json.loads(raw))
+        except ValueError:
+            continue
+    return sum(1 for r in rows if r.get("hit")), len(rows)
+
+
+def _blind_row(p, n):
+    """T-2505: (bad, good): gen-n/blind-spots.md lists classes, each with a Source, a Rule recorded as a decision and a
+    Check that rule carries and that passes (fm genesis check, fm exam scorecard or test ids, as steer checks)."""
+    import subprocess
+    text = _doc(home(p), f"gen-{n}/blind-spots.md")
+    if text is None:
+        return [f"no gen-{n}/blind-spots.md: hunt blind spots from inputs Foreman didn't author"], ""
+    decisions = _doc(p.dir, "decisions.md") or ""
+    bad, classes = [], 0
+    for head, body in _sections(text):
+        classes += 1
+        f = dict(re.findall(r"^- (Source|Rule|Check):\s*(.+?)\s*$", body, re.M))
+        if not (f.get("Rule") and f.get("Check")):
+            bad.append(f"{head}: needs a Rule and a Check line")
+            continue
+        row = next((ln for ln in decisions.splitlines() if f["Rule"][:60].lower() in ln.lower()), "")
+        tag = c.CHECK_TAG.search(row) if row else None
+        if not tag or tag.group(1).strip() != f["Check"]:
+            bad.append(f"{head}: no decision records its rule with --check {c.fit(f['Check'], 60)}")
+            continue
+        try:
+            argv = c.check_argv(f["Check"])
+            argv = [sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm")] + argv[1:] if argv[0] == "fm" else [sys.executable] + argv[1:]
+            if subprocess.run(argv, cwd=p.root, capture_output=True, timeout=900).returncode:
+                bad.append(f"{head}: its check `{f['Check']}` fails")
+        except (ValueError, OSError, subprocess.TimeoutExpired) as e:
+            bad.append(f"{head}: its check can't run ({c.fit(c.plain(str(e)), 80)})")
+    return bad, f"{classes} blind-spot class(es), each a rule with a passing check"
+
+
+def _predict_row(p, n):
+    """T-2505: (bad, good): gen n's prediction is sealed and intact, its blind-spot hunt holds, and the hit rate of the
+    steers scored against it is reported."""
+    if n < 2:
+        return [], "gen 1 predates the rule (from gen 2)"
+    state = _seal_state(p, n)
+    bad = [] if state == "sealed" else [f"gen-{n}/prediction.md is {state}" + (
+        ": write the user's three likeliest next steers, each with its reason, then fm genesis put it" if state == "missing" else "")]
+    b, good = _blind_row(p, n)
+    hits, total = _hit_rate(p, n)
+    return bad + b, f"prediction sealed; {hits} of {total} steer(s) predicted; {good}"
+
+
 def _review_gaps(p, n):
     """T-2501: the findings gen n's review marked gap, for the next Seed's top gaps."""
     return [f"{REVIEW_KEYS.get(r['key'], r['key'])}: {r['claim']} ({r['ground']})"
@@ -3586,6 +3705,7 @@ def sweep(p, n, agent="foreman"):
     row("cross-cutting review", *_review_row(p, n))  # T-2501 (user steer 2026-11-01, part 1)
     row("gap map", *_gapmap_row(p, n))  # T-2502 (user steer 2026-11-01, part 2)
     row("proof before presentation", *_claim_row(p))  # T-2504 (user steer 2026-11-01, part 4)
+    row("prediction and blind spots", *_predict_row(p, n))  # T-2505 (user steer 2026-11-01, part 5)
     briefs = c.load_briefs(p)
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
     ids = [t for f in sorted(os.listdir(os.path.join(d, f"gen-{n}")) if os.path.isdir(os.path.join(d, f"gen-{n}")) else [])
