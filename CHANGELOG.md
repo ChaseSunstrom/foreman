@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A race that ties on the evidence now goes against the side whose change holds something you said never to do; with nothing recorded, the stated choice keeps the tie as before.
 - A Decisions page on the site: every decision Foreman made on one scrollable timeline, with how sure it was, whether it was a door, and the later decision that reversed it.
 - The finish receipt groups the plan's assumptions by how each was checked: ran, read, typed, proved false or never checked, so an unchecked one shows at close.
 - The finish receipt tallies one-way doors: one line naming each step that couldn't be taken back and whether it was undone through its snapshot or parked for you.
