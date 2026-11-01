@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T23:29:23Z",
- "rev": "ddd253b6",
+ "updated": "2026-11-01T23:43:09Z",
+ "rev": "c9705e5c",
  "capabilities": [
   {
    "n": 1,
@@ -1222,7 +1222,7 @@
       {
        "id": "T-2382",
        "title": "Unknown fm verbs and flags as feature votes in fm friction",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "S",
        "steps": 2,
@@ -17995,15 +17995,16 @@
  },
  "not_yet": 4,
  "not_yet_open": 0,
- "unproven": 1048,
+ "unproven": 1053,
  "unproven_kinds": {
   "meaning": 582,
   "research-uncited": 29,
   "typed": 42,
   "red": 61,
   "perf-typed": 51,
-  "docs": 586,
+  "docs": 587,
   "ui-unshot": 54,
+  "tui-unshot": 53,
   "data": 4,
   "infra": 7,
   "perf-noise": 1
