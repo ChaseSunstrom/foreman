@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The model layer's rules are checked: no guard or evidence gate can call a model; the layer downloads and installs nothing itself; and a model use goes live only through a decision that cites the exam run it won (`model-live: USE`), staying in shadow mode otherwise.
 - The model layer's decision interface: one call picks among choices with a probability. It tries a deterministic rule first, then local models, then cloud ones, never a cloud model for a sensitive project, and books every answer so its calibration can be scored.
 - `fm ci-watch` no longer files a new FIX brief on every ship for the same failing non-blocking jobs: the run is logged on the open or blocked brief already filed for them, and a new brief is filed only once that one is closed.
 - Genesis's not-yet ledger can hold candidates to evaluate: an item whose blocker says unevaluated owes no tries until an exam runs it. Gen 2 opens with a Model layer Mission, the layer has its own coverage area, and selfjev-4b, jeff, Jevlike and Von wait in the ledger as candidates.
