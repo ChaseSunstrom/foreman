@@ -1,17 +1,17 @@
 {
- "generated": "2026-10-31",
+ "generated": "2026-11-01",
  "totals": {
-  "tasks_done": 1504,
-  "evidence": 6528,
-  "proofs": 578,
-  "commits": 1205,
-  "gate_runs": 936,
-  "subagents": 1327,
-  "lanes_merged": 385,
-  "findings": 1961,
-  "guard_blocks": 524,
-  "captures": 1257,
-  "lessons_shown": 1950
+  "tasks_done": 1571,
+  "evidence": 6998,
+  "proofs": 621,
+  "commits": 1260,
+  "gate_runs": 965,
+  "subagents": 1436,
+  "lanes_merged": 414,
+  "findings": 2162,
+  "guard_blocks": 554,
+  "captures": 1314,
+  "lessons_shown": 2043
  },
  "daily": [
   {
@@ -214,34 +214,45 @@
   },
   {
    "day": "2026-10-31",
-   "FEATURE": 68,
-   "FIX": 32,
+   "FEATURE": 116,
+   "FIX": 45,
    "CLEAN": 1,
    "PERFORMANCE": 1,
-   "SECURITY": 4,
+   "SECURITY": 6,
    "RESEARCH": 0,
-   "lanes": 73,
-   "evidence": 596
+   "lanes": 102,
+   "evidence": 1033
+  },
+  {
+   "day": "2026-11-01",
+   "FEATURE": 2,
+   "FIX": 2,
+   "CLEAN": 0,
+   "PERFORMANCE": 0,
+   "SECURITY": 0,
+   "RESEARCH": 0,
+   "lanes": 0,
+   "evidence": 33
   }
  ],
  "tiers": {
-  "S": 733,
-  "M": 700,
+  "S": 748,
+  "M": 752,
   "L": 71
  },
  "types": {
-  "FEATURE": 737,
-  "FIX": 488,
+  "FEATURE": 787,
+  "FIX": 503,
   "CLEAN": 77,
   "PERFORMANCE": 53,
-  "SECURITY": 119,
+  "SECURITY": 121,
   "RESEARCH": 30
  },
  "guard": {
-  "core": 199,
-  "brief": 162,
-  "state-direct": 55,
-  "system": 33,
+  "core": 209,
+  "brief": 177,
+  "state-direct": 58,
+  "system": 34,
   "plugin": 27,
   "rm-outside": 22,
   "pipe-shell": 11,
@@ -249,71 +260,44 @@
  },
  "findings": {
   "lenses": {
-   "edge": 513,
-   "adversary": 476,
-   "maintainer": 314,
-   "intent": 276,
-   "self": 221,
-   "operator": 122
+   "edge": 573,
+   "adversary": 530,
+   "maintainer": 343,
+   "intent": 301,
+   "self": 231,
+   "operator": 145
   },
   "severity": {
-   "LOW": 1228,
-   "MEDIUM": 614,
-   "HIGH": 81
+   "LOW": 1330,
+   "MEDIUM": 702,
+   "HIGH": 92
   }
  },
  "subagents": {
-  "fm-builder": 693,
-  "fm-reviewer": 415,
+  "fm-builder": 758,
+  "fm-reviewer": 440,
   "fm-recon": 112,
-  "general-purpose": 80,
+  "general-purpose": 99,
   "fm-scout": 11,
   "claude-code-guide": 8
  },
  "gate_seconds": {
-  "runs": 936,
-  "median": 172.7
+  "runs": 965,
+  "median": 176.8
+ },
+ "tools": {
+  "misses": 1,
+  "resolved": 0,
+  "proved": 0,
+  "searches": 5,
+  "queued": 0,
+  "refused": 0
  },
  "releases": [
   {
-   "version": "1.2.35",
-   "day": "2026-10-16",
-   "tests": 2131
-  },
-  {
-   "version": "1.2.36",
-   "day": "2026-10-16",
-   "tests": 2131
-  },
-  {
-   "version": "1.2.37",
-   "day": "2026-10-16",
-   "tests": 2253
-  },
-  {
-   "version": "1.2.38",
-   "day": "2026-10-16",
-   "tests": 2255
-  },
-  {
-   "version": "1.2.39",
-   "day": "2026-10-16",
-   "tests": 2279
-  },
-  {
-   "version": "1.2.40",
-   "day": "2026-10-16",
-   "tests": 2283
-  },
-  {
-   "version": "1.2.41",
+   "version": "1.2.43",
    "day": "2026-10-20",
-   "tests": 2312
-  },
-  {
-   "version": "1.2.42",
-   "day": "2026-10-20",
-   "tests": 2318
+   "tests": 2369
   },
   {
    "version": "1.2.43",
@@ -326,9 +310,24 @@
    "tests": 2394
   },
   {
+   "version": "1.2.44",
+   "day": "2026-10-20",
+   "tests": 2394
+  },
+  {
    "version": "1.2.45",
    "day": "2026-10-20",
    "tests": 2428
+  },
+  {
+   "version": "1.2.45",
+   "day": "2026-10-20",
+   "tests": 2428
+  },
+  {
+   "version": "1.2.46",
+   "day": "2026-10-20",
+   "tests": 2444
   },
   {
    "version": "1.2.46",
@@ -341,6 +340,16 @@
    "tests": 2484
   },
   {
+   "version": "1.2.47",
+   "day": "2026-10-21",
+   "tests": 2484
+  },
+  {
+   "version": "1.2.48",
+   "day": "2026-10-21",
+   "tests": 2505
+  },
+  {
    "version": "1.2.48",
    "day": "2026-10-21",
    "tests": 2505
@@ -349,6 +358,16 @@
    "version": "1.2.49",
    "day": "2026-10-21",
    "tests": 2600
+  },
+  {
+   "version": "1.2.49",
+   "day": "2026-10-21",
+   "tests": 2600
+  },
+  {
+   "version": "1.2.50",
+   "day": "2026-10-21",
+   "tests": 2636
   },
   {
    "version": "1.2.50",
@@ -360,8 +379,8 @@
   "web": 81,
   "frontend": 65,
   "python": 62,
-  "data": 60,
   "infra": 60,
+  "data": 60,
   "tools": 59,
   "security": 59,
   "design": 58,
@@ -370,8 +389,8 @@
   "ml": 54,
   "jvm": 53,
   "ux": 50,
-  "lang": 50,
   "testing": 50,
+  "lang": 50,
   "domains": 45,
   "native": 41,
   "looks": 30,
@@ -390,7 +409,42 @@
  "code": {
   "model_tests": 52,
   "endpoints": 9,
-  "tests": 4918
+  "tests": 5523
+ },
+ "calibration": {
+  "scored": 0,
+  "pending": 41,
+  "brier": null,
+  "bars": {
+   "research": 70,
+   "race": 55
+  },
+  "races": {
+   "run": 0,
+   "judged": 0,
+   "first_lost": 0
+  }
+ },
+ "proof": {
+  "n": 1026,
+  "counts": {
+   "meaning": 572,
+   "research-uncited": 30,
+   "typed": 46,
+   "red": 38,
+   "perf-typed": 52,
+   "docs": 572,
+   "ui-unshot": 57,
+   "data": 6,
+   "infra": 7,
+   "perf-noise": 1
+  },
+  "history": [
+   {
+    "day": "2026-11-01",
+    "n": 1026
+   }
+  ]
  },
  "bench": {
   "SessionStart": {
