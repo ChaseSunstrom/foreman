@@ -156,6 +156,38 @@ class ProofPage(unittest.TestCase):  # T-2395: #6/#10 on the site, built from Fo
         self.assertIn('class="tiles"', build.render_page(page, {}, pages.PAGES))  # no data: still a figure
 
 
+class DecisionTape(unittest.TestCase):  # T-2348 (Mission 5 inbox): every fm decide row on one timeline
+    def test_the_decisions_page_lists_rows_newest_first_with_kind_confidence_and_reversal(self):
+        import shutil
+        import tempfile
+        sys.path.insert(0, SITE)
+        try:
+            import pages
+            import build
+            import stats
+        finally:
+            sys.path.pop(0)
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        with open(os.path.join(d, "decisions.md"), "w", encoding="utf-8") as f:
+            f.write("| Date | Decision | Why | Rejected |\n|---|---|---|---|\n"
+                    "| 2026-10-30 | [costly] [confidence: 70%] Keep the file cache | fast | |\n"
+                    "| 2026-10-31 | Use <b>SQLite</b> for the index | simpler | |\n"
+                    "| 2026-11-01 | [reverses: file cache] Drop the cache | stale reads | |\n")
+        tape = stats.decisions(d)
+        self.assertEqual([x["date"] for x in tape], ["2026-11-01", "2026-10-31", "2026-10-30"])
+        self.assertEqual((tape[-1]["kind"], tape[-1]["confidence"], tape[-1]["later"]),
+                         ("costly", 70, {"date": "2026-11-01", "how": "reversed"}))
+        self.assertIsNone(tape[1]["later"])
+        page = next(x for x in pages.PAGES if x["slug"] == "decisions")
+        html = build.render_page(page, {"decisions": tape}, pages.PAGES)
+        for figure in ("Keep the file cache", "70%", "costly", "reversed 2026-11-01"):
+            self.assertIn(figure, html)
+        self.assertIn("&lt;b&gt;SQLite", html)  # a row's text is escaped
+        self.assertNotIn("<b>SQLite", html)
+        self.assertIn('class="tiles"', build.render_page(page, {}, pages.PAGES))
+
+
 class SelfRunningPage(unittest.TestCase):  # T-2364: Mission 8 on the site, its figures from the ledger and books
     def test_self_running_page_names_each_surface_and_renders_from_state(self):
         sys.path.insert(0, SITE)

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A Decisions page on the site: every decision Foreman made on one scrollable timeline, with how sure it was, whether it was a door, and the later decision that reversed it.
+- The finish receipt groups the plan's assumptions by how each was checked: ran, read, typed, proved false or never checked, so an unchecked one shows at close.
 - The finish receipt tallies one-way doors: one line naming each step that couldn't be taken back and whether it was undone through its snapshot or parked for you.
 - Your steers as checks: `fm drive on --round-first on` keeps Foreman's own captures out of fm next until the open Genesis round's next seed is filed (urgent ones and ones a task depends on still come); `fm drive on --pace off` stops usage pace from dropping work; `fm exam long run` runs a session arm only with `--final` (the end-of-run exam) or `--regressing N`.
 - Outside authors for the tools, proof and beyond exam kinds: a child writes the tool kinds' record format and rewords the install, proof and deliverable requests (every requirement checked to survive), so capabilities #5, #6 and #10 can pass the held-out scorecard; #6 and #10 are now graded on their own kinds (proof, beyond).

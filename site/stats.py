@@ -147,6 +147,33 @@ def calibration():
     return {k: d[k] for k in ("scored", "pending", "brier", "bars", "races") if k in d}
 
 
+def decisions(state, limit=200):
+    """T-2348: the Decisions page's tape: fm decide's rows (decisions.md in the project's state) newest first, each
+    with its kind (costly or outward is a door), its stated confidence and the later row that reversed or revisited
+    it (whole words, 4+ characters, as fmcore._settled reads them); [] when the file can't be read."""
+    try:
+        with open(os.path.join(state, "decisions.md"), encoding="utf-8", errors="replace") as f:
+            rows = [x for x in f if x.startswith("| 2")]
+    except OSError:
+        return []
+    parsed = []
+    for row in rows:
+        cells = re.split(r"(?<!\\)\|", row)
+        if len(cells) >= 3:
+            tags, text = re.match(r"^((?:\[[^\]]*\] )*)(.*)$", cells[2].strip()).groups()
+            parsed.append((cells[1].strip(), tags, text))
+    out = []
+    for i, (date, tags, text) in enumerate(parsed):
+        conf = re.search(r"\[confidence: (\d+)%\]", tags)
+        later = next(({"date": d, "how": "reversed" if how == "reverses" else "revisited"}
+                      for d, t, _ in parsed[i + 1:] for how, w in re.findall(r"\[(reverses|revisited): ([^\]]+)\]", t)
+                      if len(w.strip()) >= 4 and re.search(r"(?<!\w)" + re.escape(w.strip().lower()) + r"(?!\w)",
+                                                           text.lower())), None)
+        out.append({"date": date, "text": text[:200], "later": later, "confidence": int(conf.group(1)) if conf else None,
+                    "kind": next((k for k in ("costly", "outward") if f"[{k}]" in tags), "reversible")})
+    return out[::-1][:limit]
+
+
 def self_running(state):
     """T-2364: the Self-running page's figures: fm triggers --json (the table, recoveries, trials, installs waiting,
     the prediction book) and each generation's lean start (genesis-lean.json in the project's state); {} on failure."""
@@ -303,7 +330,7 @@ def main():
         with open(OUT, encoding="utf-8") as f:
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
-             "cards": cards(), "code": code_counts(), "calibration": calibration(), "proof": proof(old.get("proof")), "self_running": self_running(state), "bench": old.get("bench", {}) if a.no_bench else bench(),
+             "cards": cards(), "code": code_counts(), "calibration": calibration(), "proof": proof(old.get("proof")), "self_running": self_running(state), "decisions": decisions(state), "bench": old.get("bench", {}) if a.no_bench else bench(),
              "duels": merge_duels(old.get("duels") or [], [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
                  *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
                                                      for x in (a.duel or [f"quality={state}"])) if d])}
