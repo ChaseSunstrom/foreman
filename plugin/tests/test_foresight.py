@@ -1,6 +1,7 @@
 """T-1810: session start names problems nobody raised (CI red on main, a changed model, window or CC version, a stale
 blocked pile, overdue tidy), each with its action, from caches the Stop hook's detached refresh writes."""
 import contextlib
+import datetime
 import io
 import json
 import os
@@ -283,6 +284,96 @@ class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ah
         self.assertTrue(any(r.get("kind") == "draft" and r.get("adopted") and r.get("for") == tid for r in rows))
         kinds = {k["kind"]: k for k in self.fm_json("outcomes", "--predictions")["kinds"]}
         self.assertEqual(kinds["draft-ahead"]["n"], 1)
+
+
+class BreakageWarnings(ForemanTestCase):  # T-2408 (#3): dates about to pass, stale co-change partners, state growth
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.today = datetime.date.today()
+
+    def commit(self, files, msg):
+        import subprocess
+        for name, text in files.items():
+            with open(os.path.join(self.repo, name), "w", encoding="utf-8") as f:
+                f.write(text)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", msg], check=True)
+
+    def tick(self, days=0, budget=10 ** 12):
+        return fs.breakage_tick(c.find_project(self.repo), today=self.today + datetime.timedelta(days=days),
+                                budget=budget)
+
+    def rows(self, kind):
+        try:
+            with open(os.path.join(self.p.dir, fs.PREDICTIONS), encoding="utf-8") as f:
+                return [r for r in map(json.loads, f) if r.get("kind") == kind]
+        except OSError:
+            return []
+
+    def day(self, n):
+        return (self.today + datetime.timedelta(days=n)).isoformat()
+
+    def test_a_clean_repo_files_no_warning(self):
+        self.commit({"app.py": "x = 1\n", "notes.md": f"due {self.day(3)}\n"}, "app")  # prose dates don't count
+        self.tick()
+        self.commit({"app.py": "x = 2\n"}, "edit")
+        self.tick(1)
+        self.assertEqual(self.rows("warning"), [])
+        self.assertFalse([b for b in c.load_briefs(c.find_project(self.repo)) if str(b.meta.get("trigger", "")).startswith("foresight")])
+
+    def test_a_date_passing_within_14_days_is_filed_through_the_trigger_table_and_a_far_one_is_not(self):
+        self.commit({"lic.py": f"EXPIRES = \"{self.day(5)}\"\n", "far.py": f"LATER = \"{self.day(40)}\"\n"}, "dates")
+        self.tick()
+        w = self.rows("warning")
+        self.assertEqual([(x["wkind"], x["target"], x["line"]) for x in w], [("date", "lic.py", 1)])
+        self.assertEqual(w[0]["until"][:10], self.day(5))
+        b = c.find_brief(c.find_project(self.repo), w[0]["task"])
+        self.assertEqual(b.meta.get("trigger"), "foresight-date")
+        self.tick()  # once per day, and a warning is filed once
+        self.assertEqual(len(self.rows("warning")), 1)
+
+    def test_a_commit_without_its_usual_co_change_partner_is_warned_and_one_with_it_is_not(self):
+        self.tick()
+        for i in range(fs.PAIR_MIN - 1):
+            self.commit({"api.py": f"v = {i}\n", "api_client.py": f"v = {i}\n"}, f"pair {i}")
+        self.commit({"api.py": "v = 9\n", "api_client.py": "v = 9\n"}, "both")
+        self.tick(1)
+        self.assertEqual(self.rows("warning"), [])
+        self.commit({"api.py": "v = 10\n"}, "alone")
+        self.tick(2)
+        self.assertEqual([(x["wkind"], x["target"]) for x in self.rows("warning")], [("cochange", "api_client.py")])
+
+    def test_state_growing_toward_its_budget_within_30_days_is_warned(self):
+        with open(os.path.join(self.p.dir, fs.WARN_STATE), "w", encoding="utf-8") as f:
+            json.dump({"sizes": {self.day(-10): 1000, self.day(-5): 50_000}}, f)
+        size = fs._state_bytes(c.find_project(self.repo))
+        self.tick(budget=size * 100)  # flat-ish: crossing far beyond 30 days
+        self.assertEqual(self.rows("warning"), [])
+        with open(os.path.join(self.p.dir, fs.WARN_STATE), "w", encoding="utf-8") as f:
+            json.dump({"sizes": {self.day(-10): size // 10, self.day(-5): size // 2}}, f)
+        self.tick(1, budget=size * 3)  # about 0.08x a day: the 3x budget in about 24 days
+        self.assertEqual([x["wkind"] for x in self.rows("warning")], ["state"])
+
+    def test_warnings_are_scored_hit_acted_on_or_missed_by_their_window(self):
+        self.commit({"a.py": f"D = \"{self.day(5)}\"\n", "b.py": f"D = \"{self.day(6)}\"\n",
+                     "c.py": f"D = \"{self.day(7)}\"\n"}, "dates")
+        self.tick()
+        w = {x["target"]: x for x in self.rows("warning")}
+        self.commit({"a.py": "D = None\n"}, "T-0999: unrelated cleanup drops the date")  # another task: a hit
+        self.commit({"b.py": "D = None\n"}, f"{w['b.py']['task']}: fix from the warning")  # its own fix: acted on
+        self.tick(3)
+        scores = {x["id"]: x for x in self.rows("warning-score")}
+        self.assertTrue(scores[w["a.py"]["id"]]["hit"])
+        self.assertNotIn(w["c.py"]["id"], scores)  # its window is still open
+        self.tick(15)
+        scores = {x["id"]: x for x in self.rows("warning-score")}
+        self.assertFalse(scores[w["c.py"]["id"]]["hit"])  # the window passed with neither: a miss
+        self.assertTrue(scores[w["b.py"]["id"]]["acted"] and not scores[w["b.py"]["id"]]["hit"])
+        kinds = {k["kind"]: k for k in self.fm_json("outcomes", "--predictions")["kinds"]}
+        self.assertEqual((kinds["foresight-date"]["n"], kinds["foresight-date"]["hit"]), (2, 0.5))
+        self.assertEqual(kinds["foresight-date"]["acted"], 1)
 
 
 if __name__ == "__main__":

@@ -314,6 +314,10 @@ def tick(p, fetch_ci=None):
                 fmdraft.ahead(p)
             except Exception as e:
                 res["notes"].append(f"draft ahead: {c.fit(c.plain(str(e)), 120)}")
+            try:  # T-2408: dates about to pass, stale co-change partners, state nearing its budget (once a day)
+                fmforesight.breakage_tick(p)
+            except Exception as e:
+                res["notes"].append(f"breakage warnings: {c.fit(c.plain(str(e)), 120)}")
             try:
                 with open(path, encoding="utf-8") as f:
                     seen = json.load(f)
