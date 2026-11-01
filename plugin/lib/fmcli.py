@@ -2059,9 +2059,6 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
         kinds = []
     if kinds and "Unproven:" not in message:
         trailer += ["--trailer", f"Unproven: {', '.join(kinds)}"]
-    sid = os.environ.get("CLAUDE_CODE_BRIDGE_SESSION_ID", "")  # T-2443: the session's link, as on a hand-made commit
-    if re.fullmatch(r"session_[A-Za-z0-9]{1,64}", sid) and "Claude-Session:" not in message:
-        trailer += ["--trailer", f"Claude-Session: https://claude.ai/code/{sid}"]
     # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
     done = add.returncode == 0 and run("commit", "-q", "-m", message, *trailer, "--", *files)
     if not done or done.returncode:
