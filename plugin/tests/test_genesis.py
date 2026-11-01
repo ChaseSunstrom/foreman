@@ -1180,6 +1180,18 @@ class GenesisDraft(ForemanTestCase):
         for part in ("0 exam defects", "ranked 2/3 in order", "by language: python 3/5, ts 1/5", "by kind: bug 0/4, slow 4/6",
                      "true done 1/2, checks 5/8, false done 1"):
             self.assertIn(part, tail)
+        # T-2473: and what Missions 6-8's critiques cite: closed scenarios by kind, forecast, breakage and the replay
+        fmgenesis.exam_line(self.p, {"run": "s2", "agent": "foresight", "scenarios": 6, "keyed": 0, "found": 0,
+                                     "closed": {"train": ["tool-build-c-1a2b3c", "watch-ts-9bc8ea"],
+                                                "holdout": ["tool-build-rust-4d5e6f"]},
+                                     "forecast_keyed": 9, "forecast_type": 8, "forecast_base_type": 0,
+                                     "breakage_keyed": 9, "breakage_flagged": 9, "breakage_false": 0,
+                                     "forecast_replay": {"held": 376, "type_hit": 259, "base_type_hit": 256,
+                                                         "overlap": 0.116, "base_overlap": 0.115}})
+        tail = fmgenesis._exam_tail(fmgenesis.home(self.p))
+        for part in ("closed by kind: tool-build 2, watch 1", "forecast type 8/9 (naive 0/9)",
+                     "breakage flagged 9/9, 0 false", "replay: type 259/376 (naive 256), paths 0.116 (naive 0.115)"):
+            self.assertIn(part, tail)
 
     def test_scorecard_grades_each_capability_on_its_newest_held_out_results(self):
         import fmgenesis  # T-2097: the §8 scorecard, read from graded exam.jsonl lines
