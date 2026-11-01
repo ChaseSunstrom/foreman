@@ -14,7 +14,10 @@ autonomy or a sensitive project, `fm scout` only offers it and waits on the user
 A user steer mid-run becomes a standing rule plus its check in the same task:
 `fm decide "<rule>" --cites "user steer <date>" --check "python3 plugin/tests/run.py test_…"` (or
 `fm genesis check`, `fm exam scorecard`); the sweep stays red while a steer rule has no check or its check fails. Its lean substance row judges each Mission's net code and test lines by its gain: a
-survival gain passes, an unmeasured one waits as pending, a measured lack of gain is red and files a subtraction task.
+survival gain passes, an unmeasured one waits as pending, a measured lack of gain is red and files a subtraction task. Its proof-before-presentation row reads README.md, site/index.html and site/pages.py:
+every result (N of M, a percentage, a ratio, a comparison) names its proof (an exam run, a task with evidence, live
+data; `<!-- source: T-NNNN -->` cites one invisibly), a rule or UI sample says so with `<!-- rule -->`, and no line
+says a capability passes before the scorecard does.
 
 ## Start (no gen-0 yet)
 

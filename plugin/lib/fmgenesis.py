@@ -3015,6 +3015,83 @@ def _lean_record(p, n):
     return r if isinstance(r, dict) else None
 
 
+RULE_MARK = "<!-- rule -->"  # T-2504: invisible when rendered; says the line states a rule or a sample, not a result
+RESULT = re.compile(r"\b\d+ of \d+\b|\b\d+/\d+\b|(?<!at )(?<!over )(?<!above )(?<!under )\b\d+(?:\.\d+)?%"
+                    r"|\b\d+(?:\.\d+)?x (?:faster|fewer|cheaper|less|more)\b"
+                    r"|\b(?:beats?|outperform\w*|better than|faster than|cheaper than)\b", re.I)  # T-2504
+SOURCE = re.compile(r"\b(?:s\d+-\d+|l\d{3})\b|\bT-\d{4,}\b|\bfm (?:outcomes|exam scorecard)\b|stats\.json")
+PASS_CLAIM = re.compile(r"\b(?:passes|passed|proven)\b", re.I)
+
+
+def _prose(root):
+    """T-2504: (file, line, sentence) for the public prose: README.md and site/index.html as text (tags dropped, code
+    and tables skipped), and site/pages.py's string constants of 5+ words (by ast, so markup and code stay out)."""
+    import ast
+    import html
+    out = []
+    def scan(rel, n, text):  # each sentence keeps its whole line (or constant): a source there covers it
+        if RULE_MARK in text:  # a line that declares itself a rule or a UI sample, not a result
+            return
+        bare = re.sub(r"`[^`]*`|<code>.*?</code>", " ", html.unescape(text))  # code samples aren't claims
+        for sent in re.split(r"(?<=[.!?])\s+", re.sub(r"<[^>]+>", " ", bare)):
+            if sent.strip():
+                out.append((rel, n, re.sub(r"\s+", " ", sent).strip(), text))
+    for rel in ("README.md", "site/index.html"):
+        try:
+            with open(os.path.join(root, rel), encoding="utf-8") as f:
+                fence = False
+                for n, ln in enumerate(f, 1):
+                    fence ^= ln.lstrip().startswith("```")
+                    if not fence and not ln.lstrip().startswith(("```", "|", "    ")):
+                        scan(rel, n, ln)
+        except OSError:
+            pass
+    try:
+        with open(os.path.join(root, "site", "pages.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and len(node.value.split()) >= 5 \
+                    and not re.search(r"<(?:rect|path|svg|text)\b|\b(?:fill|stroke)=", node.value):
+                scan("site/pages.py", node.lineno, node.value)
+    except (OSError, SyntaxError):
+        pass
+    return out
+
+
+def _claim_row(p):
+    """T-2504 (user steer 2026-11-01, part 4): (bad, good) for the sweep: each public result claim names a proof the
+    record holds (an exam run in exam.jsonl, a task whose brief recorded verification evidence, or live data: fm
+    outcomes, fm exam scorecard, site/stats.json), and no line says a §2 capability passes while the scorecard
+    doesn't."""
+    runs = set()
+    for raw in (_doc(home(p), "exam.jsonl") or "").splitlines():
+        try:
+            runs.add(str(json.loads(raw).get("run")))
+        except (ValueError, AttributeError):
+            continue
+    briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+    def proved(sent):
+        for m in SOURCE.findall(sent):
+            if m.startswith("T-"):
+                if m in briefs and briefs[m].section("Verification evidence").strip():
+                    return True
+            elif m.startswith(("fm ", "stats")) or m in runs:
+                return True
+        return False
+    prose = _prose(p.root)
+    bad = [f"{f}:{n}: {c.fit(s, 120)} (no exam run, measured task or live source)"
+           for f, n, s, whole in prose if RESULT.search(s) and not proved(whole)]
+    try:
+        rows = scorecard(p).get("rows") or []
+    except ValueError:  # a gen-0 with no numbered §2 has no capability to claim
+        rows = []
+    for f, n, s, _ in prose:
+        for r in rows:
+            if r.get("name") and r["name"].lower() in s.lower() and PASS_CLAIM.search(s) and r.get("state") != "pass":
+                bad.append(f"{f}:{n}: says {r['name']} passes; the scorecard says {r.get('state')}")
+    return bad, f"{sum(1 for _, _, s, _ in prose if RESULT.search(s))} public result(s), each with its proof"
+
+
 SUBSTANCE = {"code": ("plugin/lib", "plugin/bin", "plugin/hooks"), "test": ("plugin/tests",)}  # T-2503
 IMPORT = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_]\w*)", re.M)
 
@@ -3508,6 +3585,7 @@ def sweep(p, n, agent="foreman"):
     row("steer checks", steer(p)[0], "every rule from a user steer has a check, and each passes")  # T-2167
     row("cross-cutting review", *_review_row(p, n))  # T-2501 (user steer 2026-11-01, part 1)
     row("gap map", *_gapmap_row(p, n))  # T-2502 (user steer 2026-11-01, part 2)
+    row("proof before presentation", *_claim_row(p))  # T-2504 (user steer 2026-11-01, part 4)
     briefs = c.load_briefs(p)
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
     ids = [t for f in sorted(os.listdir(os.path.join(d, f"gen-{n}")) if os.path.isdir(os.path.join(d, f"gen-{n}")) else [])

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Proof before presentation: the Genesis sweep reads the README and the site for results (counts, percentages, ratios, comparisons). Each must name a record the sweep can resolve: an exam run, a task that recorded its measurement, or live data. A line saying a capability passes must match the scorecard. The two older static results on the site now cite the tasks that measured them, and rule descriptions are marked as rules.
 - The Genesis sweep's lean check measures substance: code and test lines per module, and dependencies, against the generation's start. Each Mission's growth is judged by its gain. Growth whose tasks held up passes, growth not yet measured waits, and growth that was measured with no gain turns the sweep red and files a task to subtract it.
 - Genesis redraws its gap map every generation against the current code, after the cross-cutting review. The next Seed ranks Missions by expected value: the gap map's tier, the exam scorecard, how the area's last tasks survived, and the review's gaps. Empty coverage cells only break ties. Each Seed prints every Mission's score parts. The sweep goes red when the map is missing, older than the review, or skips a capability.
 - While background work runs, the Stop drive offers each queued task once per active task. A change in which background jobs are running no longer offers the same tasks again.
