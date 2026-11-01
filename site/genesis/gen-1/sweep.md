@@ -8,10 +8,10 @@ Verdict: red
 ✓ tasks: every task closed or blocked with a reason (T-2461 runs this sweep)
 ✓ lanes: no unmerged lane
 ✓ docs: no docs drift
-✗ doctor: self docs fails: README.md: `fm proof` isn't an fm command; MASTER.md: `fm proof` isn't an fm command
+✓ doctor: no failures
 ✗ gates: no full fm check pass recorded on this exact tree: run fm check
 ✓ privileges: publish 223×; no new kind
-✗ lean: rules chars 6395 -> 6399 (+4); descriptions chars 4237 -> 4465 (+228); verbs 165 -> 170 (+5); added: calibration, goal, incident, prove, triggers; hook p95 not judged (no start time); measured from the seed's commit (no start record)
+✓ lean: rules chars 6395 -> 6391 (-4); descriptions chars 4237 -> 4236 (-1); largest SKILL chars 9742 -> 9269 (-473); removed: instruments, suspects, sweep; added: goal, prove, triggers; hook p95 not judged (no start time); measured from the seed's commit (no start record)
 ✓ exam: 4 foreman line(s) graded for gen 1
 
 Fix the ✗ lines, then rerun fm genesis sweep 1; the next generation waits on a clean sweep.
