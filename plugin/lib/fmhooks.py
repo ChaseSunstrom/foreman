@@ -1880,10 +1880,29 @@ def cmd_guard_try(args):
               f"deny {block.category}: {c.plain(msg)}" if block else "allow")
 
 
+def _lane_fault(pl):
+    """T-2384: fm exam long's lane fault (FOREMAN_FAULT_LANE names its marker): the first builder lane with an edit in it
+    is stopped once mid-edit, as a builder killed there would be; the marker keeps it to once. Unset: never runs."""
+    mark = os.environ.get("FOREMAN_FAULT_LANE") or ""
+    if not mark or os.path.exists(mark):
+        return None
+    p = c.find_project(_cwd(pl))
+    if not p or not p.lane or not c._git(p.lane, "status", "--porcelain", fail="").strip():
+        return None
+    c.write_atomic(mark, json.dumps({"lane": p.lane, "at": c.now()}))
+    return ("Foreman exam fault (lane): this builder lane is stopped mid-edit. End your turn now and report what you "
+            "did; the work stays in the lane for the main session to recover.")
+
+
 def _pre_tool_use(raw):
     try:
         pl = json.loads(raw)
         tool = pl.get("tool_name", "")
+        if os.environ.get("FOREMAN_FAULT_LANE"):  # T-2384: an exam's planted stop; one env read when unset
+            stop = _lane_fault(pl)
+            if stop:
+                print(stop, file=sys.stderr)
+                return 2
         if tool in ("Agent", "Task"):  # T-0320: subagents wait only while usage runs ahead of pace
             try:
                 import fmbudget
