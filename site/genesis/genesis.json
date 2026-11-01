@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T04:16:41Z",
- "rev": "99269500",
+ "updated": "2026-11-01T04:43:58Z",
+ "rev": "ad0b9576",
  "capabilities": [
   {
    "n": 1,
@@ -12051,7 +12051,7 @@
    "state": "too few",
    "closed": null,
    "graded": null,
-   "why": "no graded slow scenarios yet"
+   "why": "no graded lean scenarios yet"
   },
   {
    "n": 13,
