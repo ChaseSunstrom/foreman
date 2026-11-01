@@ -471,7 +471,19 @@ def ship(p, args):
             tip = _git(wt, "rev-parse", "HEAD").strip()
             _git(root, "fetch", "-q", remote, "main")
             if c._git(root, "merge-base", "--is-ancestor", "FETCH_HEAD", tip, timeout=60, proc=True).returncode:
-                _err(f"{remote} main moved while testing; nothing was pushed: run fm ship again")
+                # T-2511: a move in files the shipped commits never touch (fm genesis live's tower publishes) can't
+                # change what was tested: re-pick onto the new main and push; any shared file refuses as before
+                new = _git(root, "rev-parse", "FETCH_HEAD").strip()
+                if _files(base, new) & _files(base, tip):
+                    _err(f"{remote} main moved while testing; nothing was pushed: run fm ship again")
+                _git(wt, "checkout", "-q", "--detach", new)
+                for sha in picks:
+                    merge = len(_git(root, "rev-list", "--parents", "-n1", sha).split()) > 2
+                    if c._git(wt, "cherry-pick", *(["-m", "1"] if merge else []), sha, timeout=300, proc=True).returncode:
+                        _git(wt, "cherry-pick", "--abort", ok=True)
+                        _err(f"{remote} main moved while testing and re-picking onto it conflicted; nothing was pushed")
+                print(f"{remote} main moved while testing, only in files these commits don't touch: re-picked onto it")
+                tip = _git(wt, "rev-parse", "HEAD").strip()
             _push_main(p, b.id, tip, remote, "fm ship")
             if c._git(root, "update-ref", SHIPPED, picks[-1], timeout=60, proc=True).returncode:  # T-1951: main has them
                 print(f"warning: couldn't move {SHIPPED} to {picks[-1][:8]}; the next plain fm ship may offer these again")
