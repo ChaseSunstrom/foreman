@@ -64,6 +64,28 @@ class Race(ForemanTestCase):
         self.assertEqual(c.find_brief(p, tid).status, "dropped")
         self.assertIn(other, c.find_brief(p, tid).section("Log"))
 
+    def test_a_tie_on_the_evidence_goes_to_the_side_without_what_the_user_said_never_to(self):
+        # T-2403 (Mission 5): no veto recorded, the stated choice keeps a tie; with one, the side whose change holds
+        # every word of it loses the tie, and the score says why
+        self.fm("init")
+        tid = self.task()
+        other = json.loads(self.fm("lane", "race", tid, "--json").stdout)["race"]
+        for t, side, text in ((tid, "a", "totals kept in a global cache\n"), (other, "b", "totals kept in a local map\n")):
+            path = os.path.join(self.tmp, f"wt-{side}")
+            self.git(self.repo, "worktree", "add", "-q", "-b", f"race-{side}", path, "HEAD")
+            self.fm("focus", t, cwd=path)
+            with open(os.path.join(path, "win.txt"), "w") as f:
+                f.write(text)
+            self.git(path, "add", "-A")
+            self.git(path, "commit", "-qm", f"{t}: side {side}")
+        self.assertRegex(self.fm("lane", "race", tid, "--score").stdout, rf"leader: {tid}\b")  # a tie: the stated choice
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "vetoes.json"), "w", encoding="utf-8") as f:
+            json.dump([{"words": ["global", "cache"], "said": "never a global cache"}], f)
+        out = self.fm("lane", "race", tid, "--score").stdout
+        self.assertRegex(out, rf"leader: {other}\b")
+        self.assertIn("said never to", out)
+
     def test_review_fixes_lines_snapshot_brief_and_no_half_start(self):
         self.fm("init")
         tid = self.task()
