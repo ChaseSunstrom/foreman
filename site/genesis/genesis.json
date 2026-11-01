@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T17:15:09Z",
- "rev": "5b32e1ef",
+ "updated": "2026-11-01T17:23:55Z",
+ "rev": "96aa091d",
  "capabilities": [
   {
    "n": 1,
@@ -1855,22 +1855,22 @@
       {
        "id": "T-2485",
        "title": "decide() on fmmodels: a kind and an input return choice, score and probability from a…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
-       "done": 0,
+       "done": 1,
        "current": "red tests"
       },
       {
        "id": "T-2486",
        "title": "The user's four model rules as tests: no model import in fmguard or the evidence gates,…",
-       "status": "captured",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
+       "steps": 3,
        "done": 0,
-       "current": ""
+       "current": "red tests for the four rules"
       },
       {
        "id": "T-2487",
