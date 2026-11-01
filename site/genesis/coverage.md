@@ -95,7 +95,7 @@ Status: `fm genesis check` counts this file's cells (each `- stage × surface:` 
 - build × MCP: I: an MCP bet tool records an outside agent's stated percent on a task, write-once like the judgment ledger's rows (plugin/lib/fmoutcomes.py)
 - build × Desktop: N/A: building happens in sessions and lanes; the desktop app starts none
 - build × site: N/A: the site is a static report of the record; nothing is built or bet from it
-- build × CLI: I: a fm decide row with --confidence is scored when a later row reverses it, the reversal counting as a miss (plugin/lib/fmcli.py)
+- build × CLI: F: plugin/lib/fmoutcomes.py — a decision bet is missed when a later fm decide row reverses it and held after SURVIVE_DAYS (30) unreversed; its own signal, so it never moves a bar (T-2344)
 - build × headless/server: I: each night lane states its percent at launch, and its merge or block settles the bet (plugin/lib/fmnight.py)
 - verify × Claude Code: I: fm task finish asks an S task with no plan percent for the chance the close holds, so small work enters the ledger too (plugin/lib/fmcli.py)
 - verify × fm code: I: fm code's verify station books its first-run result against the plan's percent, so each run scores its own planner (plugin/lib/fmcode.py)
