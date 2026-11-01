@@ -4056,10 +4056,11 @@ def _drive(p, sd, briefs, pl, g):
     # T-1708: a queued task whose dependency is still open (in a lane, or waiting) isn't work yet
     open_ids, by_id = {b.id for b in briefs if b.status not in c.CLOSED}, {b.id: b for b in briefs}
     blocked = {i for i, b in by_id.items() if any(d in open_ids for d in c._deps(b))}
+    blocked |= c._round_held(p, briefs)  # T-2464: what fm drive --round-first holds isn't pushed or listed either
     work = next((w for w in ([sd["active"]] if sd["active"] else []) + [q for q in sd["queue"] if q["id"] not in blocked]
                  if w["id"] not in waiting and w["id"] not in held and (not scope or w["id"] == scope)), None)
     if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
-        work = next((w for w in sd["inbox"] if w["id"] not in waiting and w["id"] not in held), None)
+        work = next((w for w in sd["inbox"] if w["id"] not in waiting and w["id"] not in held and w["id"] not in blocked), None)
     import fmlanes
     recovery, key = "", []
     if not work and full and not scope:  # T-2354: a lane that stopped before its merge has one recovery: do it
