@@ -1277,6 +1277,16 @@ class GenesisDraft(ForemanTestCase):
         (row,) = fmgenesis.scorecard(self.p)["rows"]
         self.assertIn("proxy", row["why"])  # #9's kind grades a three-part outcome, not delegation, and says so
 
+    def test_verifying_maps_to_proof_and_beyond_code_to_beyond(self):
+        import fmgenesis  # T-2451: Mission 7 built proof and beyond (T-2394) but never mapped them, so #6 and #10 had none
+        six = ("Proof beyond unit tests: UI (`fm shot`, `fm flow`), data, docs against code, infra and ops, performance, "
+               "and \"does it do what the user meant\". Whatever can't be proven gets labelled as unproven.")
+        ten = "Research, docs, ops and incidents, infra, data, design and releases, done to the same standard of proof."
+        self.assertIn("proof", fmgenesis._kinds("Verifying anything", six))
+        self.assertIn("beyond", fmgenesis._kinds("Beyond code", ten))
+        self.assertNotIn("beyond", fmgenesis._kinds("Verifying anything", six))  # "proof beyond unit tests" isn't #10
+        self.assertFalse({"proof", "beyond"} & set(fmgenesis._kinds("Initiative", "It finds and fixes bugs unasked.")))
+
     def test_anticipation_maps_to_forecast_and_breakage(self):
         import fmgenesis  # T-2409: #3's own kinds: the next request predicted, a failure flagged before it bites
         three = ("A model of me, my projects and my machines (requests, corrections, habits, what breaks). It predicts the "

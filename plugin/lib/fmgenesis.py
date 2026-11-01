@@ -1427,6 +1427,9 @@ KIND_WORDS = (("bug", r"\bbugs?\b|correct(?!ions?\b)|broken"), ("vuln", r"secur|
               ("lean", r"staying lean|hooks fast|context small|guard intact"),  # T-2363: #12, no longer slow's
               ("forecast", r"predicts? the next request|next request"),  # T-2409: #3's own kinds
               ("breakage", r"before (?:they|it) happens?|what breaks"),
+              # T-2451: Mission 7's kinds (T-2394); #6's "proof beyond unit tests" must not read as #10's beyond
+              ("proof", r"\bunproven\b|proof beyond|what the user meant"),
+              ("beyond", r"^beyond code\b|\bstandard of proof\b|\bincidents?\b.*\breleases?\b"),
               # T-2343: #2 (race: candidates tried side by side) and #8 (fork: decides and records, door: irreversible,
               # unsure: states confidence); phrases, not bare "race", "fork" or "door", which mean other things
               ("race", r"parallel lanes|candidate (?:fixes|designs|approaches)|choose by evidence"),
