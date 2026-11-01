@@ -514,6 +514,19 @@ def _cold_read(p, assumption, proof):
     return (True, "") if re.match(r"\W*HOLDS\b", last) else (False, c.fit(last or "no answer", 100))
 
 
+def _assumption_tally(b):
+    """T-2345: the finish receipt's one line on how the brief's assumptions were checked: ran (fm task assume --run),
+    read (--from a research note or spike), typed (--evidence), proved false, never checked; '' when it has none."""
+    n = dict.fromkeys(("ran", "read", "typed", "proved false", "never checked"), 0)
+    for _, tag, how, text in b.assumptions():
+        if text.strip():
+            h = (how or "").strip()
+            n["proved false" if tag == "false" else "never checked" if tag != "verified" else
+              "ran" if h.startswith("`") else "read" if h.startswith("from ") else "typed"] += 1
+    shown = [f"{v} {k}" for k, v in n.items() if v]
+    return f"Assumptions: {', '.join(shown)}" if shown else ""
+
+
 def task_assume(p, args):
     """T-0254: the brief's assumptions say whether they were checked. A check that fails marks it false, not an error."""
     if args.action == "add":
@@ -927,12 +940,14 @@ def cmd_task(args):
                         for cl, why in fmrecall.meaning_unproven(c.find_brief(p, b.id) or b)]
         except Exception:
             pass
-        try:  # T-2346: the plan's one-way steps, each undone or parked
+        try:  # T-2346: the plan's one-way steps, each undone or parked; T-2345: how each assumption was checked
             import fmdoors
-            doors = fmdoors.tally(c.find_brief(p, b.id) or b)
+            fresh = c.find_brief(p, b.id) or b
+            assumed, doors = _assumption_tally(fresh), fmdoors.tally(fresh)
         except Exception:  # a receipt line never fails the close
-            doors = ""
+            assumed = doors = ""
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed, doors=doors,
+                              assumptions=assumed,
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
                                                         else {}),
                               **({"ablation": args.ablation} if getattr(args, "ablation", None) else {})),
@@ -943,7 +958,7 @@ def cmd_task(args):
             if not guessed and b.acceptance() else "") + (
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
-            if guessed else "") + (f"\n{doors}" if doors else "") + (
+            if guessed else "") + "".join(f"\n{x}" for x in (assumed, doors) if x) + (
             "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
     if sub == "prove":
         return task_prove(p, args)
