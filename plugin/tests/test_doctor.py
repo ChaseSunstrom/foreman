@@ -1241,3 +1241,28 @@ class NightTimers(ForemanTestCase):  # T-2357
             json.dump({"units": []}, f)
         self.assertEqual(row()["status"], "WARN")
         self.assertIn("waiting for your yes", row()["detail"])
+
+
+class ModelBackends(ForemanTestCase):  # T-2489: the model layer's backends on one line that never fails the doctor
+    def test_backends_line_names_each_backend_local_or_cloud_and_the_live_uses(self):
+        from unittest import mock
+        import fmmodels
+        self.fm("init")
+        p = c.find_project(self.repo, create=False)
+        reg = [{"name": "ollama", "local": True, "profile": {}}, {"name": "anthropic", "local": False, "profile": {}}]
+        with mock.patch.object(fmmodels, "registry", return_value=reg):
+            r = d.check_model_backends(p)
+        self.assertEqual(r.status, "PASS")
+        for word in ("local: ollama", "cloud: anthropic", "live: none"):
+            self.assertIn(word, r.detail)
+        with mock.patch.object(fmmodels, "registry", return_value=reg), mock.patch.object(
+                fmmodels, "live", side_effect=lambda p, use: use == "intake-tier"):
+            self.assertIn("live: intake-tier", d.check_model_backends(p).detail)
+        with mock.patch.object(fmmodels, "registry", return_value=[]):
+            r = d.check_model_backends(p)
+        self.assertEqual((r.status, "no backend" in r.detail), ("PASS", True))
+        with mock.patch.object(fmmodels, "registry", side_effect=OSError("boom")):
+            self.assertEqual(d.check_model_backends(p).status, "PASS")
+        c.write_meta(p, dict(c.read_meta(p), sensitive=True))
+        with mock.patch.object(fmmodels, "registry", return_value=reg):
+            self.assertIn("sensitive: local only", d.check_model_backends(p).detail)

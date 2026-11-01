@@ -237,3 +237,39 @@ class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its fig
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ModelLayerPage(unittest.TestCase):  # T-2489: the gen-2 model layer on the site, its figures from the exam's replay
+    def test_model_layer_page_states_the_rules_and_renders_the_newest_replay(self):
+        import shutil
+        import tempfile
+        sys.path.insert(0, SITE)
+        try:
+            import pages
+            import build
+            import stats
+        finally:
+            sys.path.pop(0)
+        page = next(x for x in pages.PAGES if x["slug"] == "model-layer")
+        text = json.dumps(page["blocks"], default=str)
+        for word in ("rule", "local", "cloud", "sensitive", "shadow", "exam", "model-live", "proof", "MCP", "Brier",
+                     "install"):
+            self.assertIn(word, text)
+        mr = {"intake-type": {"n": 40, "path_hits": 31, "model_n": 12, "model_hits": 10, "brier": 0.14, "ms": 820}}
+        html = build.render_page(page, {"models": {"run": "s2-1", "replay": mr}}, pages.PAGES)
+        for figure in ("intake-type", "31 of 40", "10 of 12", "0.14", "820"):
+            self.assertIn(figure, html)
+        self.assertIn('class="tiles"', build.render_page(page, {}, pages.PAGES))
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, "research", "genesis"))
+        with open(os.path.join(d, "research", "genesis", "exam.jsonl"), "w", encoding="utf-8") as f:
+            for row in ({"run": "s1-1", "model_replay": {"dedupe": {"n": 1}}}, {"run": "s2-1", "model_replay": mr},
+                        {"run": "s2-2"}, "not json"):
+                f.write((row if isinstance(row, str) else json.dumps(row)) + "\n")
+        self.assertEqual(stats.models(d), {"run": "s2-1", "replay": mr})
+        self.assertEqual(stats.models(tempfile.gettempdir() + "/no-such-state-T2489"), {})
+        root = os.path.dirname(SITE)
+        for name in ("README.md", "MASTER.md", "CHANGELOG.md"):
+            with open(os.path.join(root, name), encoding="utf-8") as f:
+                self.assertIn("Model layer", f.read(), name)
