@@ -479,7 +479,9 @@ def not_yet(text, gen):
         if not any(f.get("blocker", [])):
             mine.append("no blocker")
         tries = {t.strip().lower() for t in ";".join(f.get("tried", [])).split(";")} - {""}
-        if len(tries) < 2:
+        # T-2437 (user steer 2026-10-31): a candidate to evaluate (blocker: unevaluated) owes no tries until evaluated
+        candidate = any(re.match(r"unevaluated\b", v.strip(), re.I) for v in f.get("blocker", []))
+        if len(tries) < 2 and not candidate:
             mine.append(f"tried {len(tries)} approach{'es' if len(tries) != 1 else ''}; 2 different ones first")
         if not any(f.get("unblocks-with", [])):
             mine.append("no unblocks-with")
