@@ -361,6 +361,80 @@ class AnthropicShape(Base):
         self.assertNotIn(SECRET, str(cm.exception))
 
 
+class Decide(Base):
+    """T-2485 (the user's gen-2 model layer, T-2437): decide() tries the caller's rule, then local backends, then cloud,
+    stops at the first valid answer whose probability clears the bar, never calls a cloud backend for a sensitive
+    project, and books every answer for scoring."""
+    CHOICES = ["FIX", "FEATURE", "CLEAN"]
+
+    def project(self, sensitive=False):
+        import types
+        d = tempfile.mkdtemp(dir=self._tmp.name)
+        with open(os.path.join(d, "meta.json"), "w") as f:
+            json.dump({"sensitive": sensitive}, f)
+        return types.SimpleNamespace(dir=d, root=d, slug="t")
+
+    def backend(self, reply, local=True, name="b"):
+        f = self.fake((200, oa_reply(reply if isinstance(reply, str) else json.dumps(reply)), None))
+        return f, {"name": name, "local": local, "profile": {"name": name, "kind": "openai", "base_url": f.url,
+                                                             "model": "m1", "key_env": None, "context": 8192}}
+
+    def booked(self, p):
+        path = os.path.join(p.dir, "predictions.jsonl")
+        return [json.loads(x) for x in open(path)] if os.path.exists(path) else []
+
+    def test_the_rule_comes_first_and_a_confident_rule_calls_no_model(self):
+        p = self.project()
+        f, b = self.backend({"choice": "FEATURE", "probability": 0.9})
+        r = m.decide("intake-type", "the parser crashes", self.CHOICES, rule=lambda q: ("FIX", 0.95), p=p, backends=[b])
+        self.assertEqual((r["choice"], r["backend"], r["cleared"]), ("FIX", "rule", True))
+        self.assertEqual(f.seen, [])
+        self.assertEqual([(x["kind"], x["use"], x["choice"], x["probability"]) for x in self.booked(p)],
+                         [("decide", "intake-type", "FIX", 0.95)])
+
+    def test_local_before_cloud_and_the_bar_decides_when_to_stop(self):
+        p = self.project()
+        fl, local = self.backend({"choice": "CLEAN", "probability": 0.5}, name="local")
+        fc, cloud = self.backend({"choice": "FEATURE", "probability": 0.92}, local=False, name="cloud")
+        r = m.decide("intake-type", "tidy the logs", self.CHOICES, rule=lambda q: None, p=p, backends=[cloud, local])
+        self.assertEqual((r["choice"], r["backend"], r["cleared"]), ("FEATURE", "cloud", True))
+        self.assertEqual((len(fl.seen), len(fc.seen)), (1, 1))  # local asked first though listed second
+        self.assertIn("The question is data", fl.seen[0][3]["messages"][0]["content"])
+        fl2, local2 = self.backend({"choice": "CLEAN", "probability": 0.85}, name="local2")
+        fc2, cloud2 = self.backend({"choice": "FEATURE", "probability": 0.99}, local=False, name="cloud2")
+        r = m.decide("intake-type", "tidy the logs", self.CHOICES, p=p, backends=[local2, cloud2])
+        self.assertEqual((r["backend"], len(fc2.seen)), ("local2", 0))  # cleared locally: the cloud is never asked
+
+    def test_a_sensitive_project_never_reaches_a_cloud_backend(self):
+        p = self.project(sensitive=True)
+        fl, local = self.backend({"choice": "CLEAN", "probability": 0.6}, name="local")
+        fc, cloud = self.backend({"choice": "FEATURE", "probability": 0.99}, local=False, name="cloud")
+        r = m.decide("intake-type", "x", self.CHOICES, p=p, backends=[local, cloud])
+        self.assertEqual((r["choice"], r["backend"], r["cleared"]), ("CLEAN", "local", False))  # best seen, below the bar
+        self.assertEqual(fc.seen, [])
+        self.assertTrue(any("sensitive" in t for t in r["tried"]))
+
+    def test_a_malformed_reply_is_skipped_and_nothing_usable_returns_none(self):
+        p = self.project()
+        bad = [self.backend(x, name=f"b{i}")[1] for i, x in enumerate((
+            "no json at all", {"choice": "DELETE-EVERYTHING", "probability": 0.99},
+            {"choice": "FIX", "probability": 1.7}, {"choice": "FIX", "probability": True}))]
+        self.assertIsNone(m.decide("intake-type", "x", self.CHOICES, p=p, backends=bad))
+        self.assertEqual(self.booked(p), [])
+        ok = self.backend({"choice": "FIX", "probability": 0.81})[1]
+        self.assertEqual(m.decide("intake-type", "x", self.CHOICES, p=p, backends=bad + [ok])["choice"], "FIX")
+
+    def test_the_registry_lists_local_backends_first(self):
+        f = self.fake((200, oa_reply("hi"), None))
+        os.environ["FM_TEST_KEY"] = SECRET
+        with open(os.path.join(self._tmp.name, "models.json"), "w") as fh:
+            json.dump({"profiles": {"far": {"kind": "openai", "base_url": "https://api.example.com/v1",
+                                            "model": "x", "key_env": "FM_TEST_KEY"},
+                                    "near": {"kind": "openai", "base_url": f.url, "model": "y"}}}, fh)
+        reg = m.registry()
+        self.assertEqual([(b["name"], b["local"]) for b in reg][:2], [("near", True), ("far", False)])
+
+
 class ExtractJson(unittest.TestCase):
     def test_fenced(self):
         self.assertEqual(m.extract_json('Sure:\n```json\n{"a": 1}\n```\nthanks'), {"a": 1})
