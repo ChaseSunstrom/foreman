@@ -3893,3 +3893,83 @@ class GapMapValue(ForemanTestCase):
         mapped(self.p, 1)
         self.assertEqual(fmgenesis.step(self.p)["stage"], "sweep")
         self.assertTrue(fmgenesis.SHAPE.fullmatch("gen-1/gap-map.md"))
+
+
+class LeanSubstance(ForemanTestCase):
+    """T-2503 (the user's standing rule of 2026-11-01, part 3, and their answer that unmeasured growth waits): the lean
+    row measures code and test lines, dependencies and per-module growth against the generation's start, and judges each
+    Mission's net growth by its capability's exam or outcome gain: a gain passes, no measure waits (pending, no task),
+    a measured lack of gain turns the row red and files one subtraction task."""
+    def setUp(self):
+        super().setUp()
+        import subprocess
+        import time
+        import fmcore as c
+        import fmgenesis
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.tower = fmgenesis.home(self.p)
+        fmgenesis.init(self.p, GEN0.encode())
+        self.write("plugin/lib/fmx.py", "import os\n\ndef f():\n    return 1\n")
+        self.write("plugin/tests/test_x.py", "def test_f():\n    pass\n")
+        self.commit("start")
+        now = time.time()
+        tower_file(self.tower, "gen-1/seed.md", "# Seed\ngen-0\n")
+        os.utime(os.path.join(self.tower, "gen-1", "seed.md"), (now + 30, now + 30))
+        tower_file(self.tower, "gen-1/mission-judgment.md", "# Mission 1 — judgment (gen 1, #8)\n\nTask: T-0001\n")
+        self.write("plugin/lib/fmx.py", "import os\nimport requests\n\ndef f():\n    return 1\n\ndef g():\n    return 2\n")
+        self.write("plugin/tests/test_x.py", "def test_f():\n    pass\n\ndef test_g():\n    pass\n")
+        self.commit("T-0001: grow fmx", later=60)
+        self.write("plugin/lib/fmy.py", "y = 1\n")
+        self.commit("tidy without a task", later=90)
+
+    def write(self, rel, text):
+        os.makedirs(os.path.dirname(os.path.join(self.repo, rel)), exist_ok=True)
+        with open(os.path.join(self.repo, rel), "w") as f:
+            f.write(text)
+
+    def commit(self, msg, later=0):
+        import subprocess
+        import time
+        when = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() + later))
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", msg], check=True,
+                       env=dict(os.environ, GIT_COMMITTER_DATE=when, GIT_AUTHOR_DATE=when))
+
+    def test_growth_is_measured_by_module_and_attributed_to_its_mission(self):
+        import fmgenesis
+        g = fmgenesis._growth(self.p, 1)
+        self.assertEqual((g["code"], g["test"]), (5, 3))  # fmx +4, fmy +1; test_x +3
+        self.assertEqual(g["modules"], {"plugin/lib/fmx.py": 4, "plugin/lib/fmy.py": 1, "plugin/tests/test_x.py": 3})
+        self.assertEqual(g["deps_added"], ["requests"])
+        self.assertEqual([(m["slug"], m["cap"], m["lines"]) for m in g["missions"]], [("judgment", 8, 7)])
+        self.assertEqual(g["unattributed"], 1)
+
+    def test_unmeasured_growth_waits_measured_no_gain_files_one_subtraction_task_and_a_gain_passes(self):
+        import fmcore as c
+        import fmgenesis
+        from unittest import mock
+        bad, good = fmgenesis._substance_row(self.p, 1)
+        self.assertEqual(bad, [])
+        self.assertIn("pending: #8 judgment +7 lines", good)
+        with mock.patch.object(fmgenesis, "_gain", return_value=("no gain", "2 of 5 of its tasks held")):
+            bad, _ = fmgenesis._substance_row(self.p, 1)
+            self.assertTrue(any("no gain: #8 judgment +7 lines" in x for x in bad), bad)
+            self.assertTrue(any("dependencies +requests" in x for x in bad), bad)  # with no gain anywhere
+            filed = [b for b in c.load_briefs(self.p) if b.meta.get("source") == "genesis-lean" or "subtract" in b.title.lower()]
+            self.assertEqual(len(filed), 1)
+            fmgenesis._substance_row(self.p, 1)
+            self.assertEqual(len([b for b in c.load_briefs(self.p) if "subtract" in b.title.lower()]), 1)  # once
+        with mock.patch.object(fmgenesis, "_gain", return_value=("gain", "held-out rate 2/9 -> 5/9")):
+            bad, good = fmgenesis._substance_row(self.p, 1)
+            self.assertEqual(bad, [])
+            self.assertIn("gain: #8 judgment +7 lines", good)
+
+    def test_a_mission_s_gain_comes_from_survival_once_three_tasks_settled(self):
+        import fmgenesis
+        self.assertEqual(fmgenesis._gain(self.p, 1, {"cap": 8, "ids": ["T-1"]}, outs={"T-1": {"survival": "survived"}})[0],
+                         "unmeasured")
+        outs = {f"T-{i}": {"survival": s} for i, s in enumerate(("survived", "survived", "lost", "survived"))}
+        self.assertEqual(fmgenesis._gain(self.p, 1, {"cap": 8, "ids": list(outs)}, outs=outs)[0], "no gain")  # 3/4 < 0.8
+        outs["T-2"]["survival"] = "survived"
+        self.assertEqual(fmgenesis._gain(self.p, 1, {"cap": 8, "ids": list(outs)}, outs=outs)[0], "gain")

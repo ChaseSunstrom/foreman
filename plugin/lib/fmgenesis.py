@@ -3,6 +3,7 @@ read-only; the other tower docs (gap map, lineage, exam results, each generation
 filed only in the tower's shape; the status lists every generation."""
 import collections
 import difflib
+import glob
 import hashlib
 import json
 import os
@@ -3014,6 +3015,116 @@ def _lean_record(p, n):
     return r if isinstance(r, dict) else None
 
 
+SUBSTANCE = {"code": ("plugin/lib", "plugin/bin", "plugin/hooks"), "test": ("plugin/tests",)}  # T-2503
+IMPORT = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_]\w*)", re.M)
+
+
+def _deps(texts, local):
+    """Top-level imports that are neither stdlib nor this tree's own modules: the dependency count (T-2503)."""
+    return sorted({m for t in texts for m in IMPORT.findall(t)} - set(sys.stdlib_module_names) - local - {"__future__"})
+
+
+def _growth(p, n):
+    """T-2503 (user steer 2026-11-01, part 3): generation n's committed growth from its start commit: net code and test
+    lines, per module, dependencies added and removed, and each Mission's net lines from the commits that name its
+    tasks ('T-NNNN: …'); lines no Mission's commit added are unattributed. None without a start commit."""
+    import subprocess
+    start = _gen_start(p, n)
+    if not start:
+        return None
+    g = ["git", "-C", p.root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
+    paths = [x for v in SUBSTANCE.values() for x in v]
+    run = lambda *a: subprocess.run(g + list(a), capture_output=True, text=True, errors="replace", timeout=60).stdout  # noqa: E731
+    kind = lambda f: next((k for k, roots in SUBSTANCE.items() if any(f.startswith(r + "/") for r in roots)), None)  # noqa: E731
+    out, modules = {"code": 0, "test": 0}, {}
+    for ln in run("diff", "--numstat", f"{start}..HEAD", "--", *paths).splitlines():
+        a, r, f = (ln.split("\t") + ["", "", ""])[:3]
+        if a.isdigit() and r.isdigit() and kind(f):
+            out[kind(f)] += int(a) - int(r)
+            modules[f] = modules.get(f, 0) + int(a) - int(r)
+    d = home(p)
+    owner = {}  # task id -> mission
+    missions = []
+    sub = os.path.join(d, f"gen-{n}")
+    for f in sorted(os.listdir(sub)) if os.path.isdir(sub) else []:
+        if f.startswith("mission-"):
+            text = _doc(sub, f) or ""
+            cap = re.search(r"#(\d+)", text.split("\n", 1)[0])
+            m = {"slug": f[8:-3], "cap": int(cap.group(1)) if cap else None, "lines": 0,
+                 "ids": re.findall(r"\bT-\d{4,}\b", " ".join(TASKS.findall(text)))}
+            missions.append(m)
+            owner.update({t: m for t in m["ids"]})
+    mine, cur = 0, None
+    for ln in run("log", "--numstat", "--format=@@%s", f"{start}..HEAD", "--", *paths).splitlines():
+        if ln.startswith("@@"):
+            t = re.match(r"@@(T-\d{4,}):", ln)
+            cur = owner.get(t.group(1)) if t else None
+            continue
+        a, r, f = (ln.split("\t") + ["", "", ""])[:3]
+        if a.isdigit() and r.isdigit() and kind(f) and cur is not None:
+            cur["lines"] += int(a) - int(r)
+            mine += int(a) - int(r)
+    local = {os.path.splitext(os.path.basename(x))[0] for x in glob.glob(os.path.join(p.root, "plugin", "lib", "*.py"))}
+    now = []
+    for x in glob.glob(os.path.join(p.root, "plugin", "lib", "*.py")):
+        with open(x, encoding="utf-8", errors="replace") as fh:
+            now.append(fh.read())
+    then = _deps([run("grep", "-h", "-E", r"^\s*(import|from) ", start, "--", "plugin/lib/*.py")], local)
+    now = _deps(now, local)
+    return dict(out, modules=modules, missions=[m for m in missions if m["lines"]], unattributed=out["code"] + out["test"] - mine,
+                deps_added=sorted(set(now) - set(then)), deps_removed=sorted(set(then) - set(now)))
+
+
+def _gain(p, n, mission, outs=None):
+    """T-2503: (verdict, why) for a Mission's growth: 'gain' or 'no gain' once measured, else 'unmeasured'. The
+    measure is outcome survival: with 3+ of its tasks settled (survived or lost, fm outcomes), a held share of 0.8 or
+    more is a gain. ponytail: no per-generation exam split yet (the scorecard is cumulative); add it when exam lines
+    carry a capability's rate per generation."""
+    if outs is None:
+        import fmoutcomes
+        outs = fmoutcomes.outcomes(p)
+    done = [outs[t]["survival"] for t in mission["ids"] if t in outs and outs[t].get("survival") in ("survived", "lost")]
+    if len(done) < 3:
+        return "unmeasured", f"{len(done)} of its tasks settled (3 needed)"
+    held = done.count("survived")
+    return ("gain" if held / len(done) >= 0.8 else "no gain"), f"{held} of {len(done)} of its tasks held"
+
+
+def _substance_row(p, n):
+    """T-2503: (bad, good) for the sweep: growth per Mission judged by its gain (the user's 2026-11-01 answer:
+    unmeasured growth waits, listed as pending, no task); a measured lack of gain is red and files one CLEAN task to
+    subtract it; a new dependency is red unless some Mission showed a gain."""
+    import fmeco
+    g = _growth(p, n)
+    if g is None:
+        return [], f"no start commit for gen {n}: growth not judged"
+    bad, notes, gained, missed = [], [f"code lines {g['code']:+d}", f"test lines {g['test']:+d}"], False, False
+    for m in g["missions"]:
+        if m["lines"] <= 0:
+            notes.append(f"#{m['cap']} {m['slug']} {m['lines']:+d} lines")
+            continue
+        verdict, why = _gain(p, n, m)
+        label = f"#{m['cap'] or '?'} {m['slug']} +{m['lines']} lines ({why})"
+        if verdict == "gain":
+            gained = True
+            notes.append(f"gain: {label}")
+        elif verdict == "unmeasured":
+            notes.append(f"pending: {label}")
+        else:
+            missed = True
+            bad.append(f"no gain: {label}")
+            fmeco.capture_once(p, f"CLEAN: subtract gen-{n} Mission {m['slug']}'s +{m['lines']} lines: its growth showed "
+                                  f"no gain ({why}); cut what it added that its exam and outcomes don't use\n"
+                                  f"genesis-lean {n}:{m['slug']}", "CLEAN",  # the key's own line: capture_once dedupes on it
+                               "genesis-lean", key=f"genesis-lean {n}:{m['slug']}")
+    if g["unattributed"]:
+        notes.append(f"unattributed: {g['unattributed']:+d} lines")
+    if g["deps_added"]:  # a new dependency follows the generation's verdict: earned, waiting, or red
+        what = f"dependencies +{', +'.join(g['deps_added'])}"
+        (bad.append(what) if missed and not gained else notes.append(what if gained else f"pending: {what}"))
+    return bad[:6], "; ".join(notes)
+
+
 def record_lean(p, n):
     """T-2359: generation n's lean start, kept once (the first put of its seed): metrics, verbs, hook p95, HEAD."""
     import fmdoctor
@@ -3241,7 +3352,8 @@ def review_fixes(p, n):
         if not r["handled"]:
             b, _new = fmeco.capture_once(
                 p, f"FIX: cross-cutting review gen-{n} #{r['n']} ({REVIEW_KEYS.get(r['key'], r['key'])}): {r['claim']} "
-                   f"[{r['ground']}]", "FIX", "genesis-review", key=f"genesis-review {n}:{r['n']}")
+                   f"[{r['ground']}]\ngenesis-review {n}:{r['n']}", "FIX", "genesis-review",
+                key=f"genesis-review {n}:{r['n']}")  # the key's own line: capture_once dedupes on it
             r["handled"] = b.id
             filed.append(b.id)
     if filed:
@@ -3430,6 +3542,10 @@ def sweep(p, n, agent="foreman"):
         row("lean", *_lean_row(p, n))
     except Exception as e:
         row("lean", [f"could not measure: {c.fit(c.plain(str(e)), 160)}"], "")
+    try:  # T-2503 (user steer 2026-11-01, part 3): growth judged by gain; unmeasured growth waits
+        row("lean substance", *_substance_row(p, n))
+    except Exception as e:
+        row("lean substance", [f"could not measure: {c.fit(c.plain(str(e)), 160)}"], "")
     graded = [x for x in _exam(p, agent) if x.get("gen") == n]
     row("exam", [] if graded else [f"no {agent} exam line graded for gen {n}: fm exam run, then fm exam grade"],
         f"{len(graded)} {agent} line(s) graded for gen {n}")
