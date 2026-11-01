@@ -253,6 +253,7 @@ def _poll(p, branch, retries, interval, max_polls, say, commit, hold):
         if run and run.get("status") == "completed" and key not in seen:
             seen.add(key)
             if run.get("conclusion") == "success":
+                _ci_verdict(p, run, commit, True)  # T-2496: blocking jobs green, whatever the non-blocking ones did
                 failed = _failed_jobs(p, run)
                 if not failed:
                     return 0, "CI green."
@@ -279,6 +280,7 @@ def _poll(p, branch, retries, interval, max_polls, say, commit, hold):
                     return 1, f"{what}: rerun it on GitHub or push again (gh auth login lets fm rerun it)."
                 say(f"{what}: rerunning {'them' if len(idle) > 1 else 'it'}")
             else:
+                _ci_verdict(p, run, commit, False)
                 b, _new = _brief(p, run, branch)
                 fails += 1
                 say(f"run {run['databaseId']} {run.get('conclusion')}: FIX brief {b.id}")
@@ -287,6 +289,19 @@ def _poll(p, branch, retries, interval, max_polls, say, commit, hold):
         time.sleep(max(interval, PUBLIC_POLL) if via else interval)
     where = " (read through GitHub's public API: gh is missing or logged out)" if via else ""  # T-1940
     return 1, f"gave up waiting: no new finished run in {max_polls} polls{where}."
+
+
+def _ci_verdict(p, run, commit, green):
+    """T-2496: a finished run's blocking verdict on its commit, for the ship bet; maintain() writes the grade."""
+    sha = str(run.get("headSha") or commit or "")
+    if not sha:
+        return
+    try:
+        c.log_event(p, "ci_verdict", data={"commit": sha, "green": green, "run": run.get("databaseId")})
+        import fmoutcomes
+        fmoutcomes.maintain(p)
+    except Exception:  # the watch's verdict stands; the ledger is a convenience
+        pass
 
 
 def cmd_ci_watch(args):

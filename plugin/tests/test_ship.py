@@ -93,6 +93,17 @@ class Ship(ForemanTestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("nothing to ship", r.stdout)
 
+    def test_chance_books_one_ship_bet_on_the_pushed_commit(self):  # T-2496
+        self.grant()
+        self.assertNotEqual(self.ship("--test", "true", "--chance", "150").returncode, 0)  # refused before any push
+        self.assertTrue(self.granted())
+        r = self.ship("--test", "true", "--chance", "85")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        tip = sh(self.origin, "rev-parse", "main").strip()
+        rows = [json.loads(x) for x in open(os.path.join(c.find_project(self.repo).dir, "calibration.jsonl"))]
+        self.assertEqual([(x["kind"], x["stated"], x["key"], x["task"]) for x in rows], [("ship", 85, tip[:12], self.tid)])
+        self.assertIn("85%", r.stdout)
+
     def test_ship_on_a_named_tasks_grant(self):
         # T-2007: a finished task ships on its own grant: no separate ship task focused to hold one
         r = self.ship("--task", self.tid.lower(), "--test", "true")

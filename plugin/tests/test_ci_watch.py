@@ -421,3 +421,30 @@ class CiWatch(ForemanTestCase):
         subprocess.run(["git", "-C", self.repo, "remote", "remove", "origin"], check=True)
         with gh_out, self.assertRaisesRegex(UsageError, "not logged in"):  # nowhere public to look: gh's own error
             fmci.watch(p, "main", 3, 0, max_polls=1, **quiet)
+
+    def test_a_finished_run_logs_its_blocking_verdict_for_the_ship_bet(self):  # T-2496
+        import fmci
+        import fmcore as c
+        from unittest import mock
+        self.fm("init")
+        p = c.find_project(self.repo)
+        head = fmci._head(p)
+        state = {"conclusion": "success"}
+
+        def gh(p, *argv):
+            if argv[:2] == ("run", "list"):
+                return json.dumps([{"databaseId": 9, "status": "completed", "conclusion": state["conclusion"],
+                                    "headSha": head, "url": "https://github.com/o/r/actions/runs/9"}])
+            if "--json" in argv:
+                return json.dumps({"jobs": [{"name": "test (ubuntu, 3.12, 1)", "conclusion": state["conclusion"]}]})
+            return LOG
+        quiet = {"say": lambda *a, **k: None}
+        verdicts = lambda: [(e["data"]["commit"], e["data"]["green"]) for e in c.ledger_events(p, ("ci_verdict",))]  # noqa: E731
+        with mock.patch.object(fmci, "_gh", side_effect=gh):
+            self.assertEqual(fmci.watch(p, "main", 3, 0, commit=head, **quiet), (0, "CI green."))
+        self.assertEqual(verdicts(), [(head, True)])
+        state["conclusion"] = "failure"
+        with mock.patch.object(fmci, "_gh", side_effect=gh):
+            fmci.watch(p, "main", 0, 0, max_polls=1, commit=head, **quiet)
+        self.assertEqual(verdicts(), [(head, True), (head, False)])
+

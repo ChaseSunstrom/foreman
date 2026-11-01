@@ -339,6 +339,16 @@ def bet(p, kind, stated, task=None, key="", files=(), tree=None, tier=None, typ=
     return row
 
 
+def ship_bet(p, chance, task, commit):
+    """T-2496: the stated chance a pushed commit's blocking CI jobs pass: one write-once row per commit (None when one
+    exists). Its base is the held share of earlier settled ship bets, None before the first. fm ci-watch's verdict
+    settles it (src ci): scored as its own kind, never moving a bar (bar_rows takes survival only)."""
+    stated = _stated(chance)
+    done = [r["outcome"] for r in scored(p) if r["kind"] == "ship" and r.get("outcome")]
+    return bet(p, "ship", stated, task=task, key=str(commit)[:12],
+               base=round(100 * done.count("held") / len(done)) if done else None)
+
+
 def base_rate(outs, first, typ, tier):
     """The forecast with no stated number: the share of earlier closes of this type and tier that held on the first
     finish (a clean first fm task finish, then nothing undid it); every close counts while the pair has under
@@ -396,6 +406,11 @@ def _verdicts(p, bets, outs, first):
                  for e in c.ledger_events(p, ("decision",)) if (e.get("data") or {}).get("reverses")]
     picks = [e.get("data") or {} for e in c.ledger_events(p, ("race_pick",))]
     now = datetime.datetime.now(datetime.timezone.utc)
+    ci = {}
+    if any(r["kind"] == "ship" for r in bets):  # T-2496: the first finished run on a commit is what was bet on
+        for e in c.ledger_events(p, ("ci_verdict",)):
+            d = e.get("data") or {}
+            ci.setdefault(str(d.get("commit") or "")[:12], bool(d.get("green")))
     got = {}
     for r in bets:
         k, t, v = r["kind"], r.get("task"), (None, "", "")
@@ -418,6 +433,8 @@ def _verdicts(p, bets, outs, first):
                 v = ("missed", "reversed by a later decision", "decision")
             elif at and (now - at).days >= SURVIVE_DAYS:
                 v = ("held", f"not reversed in {SURVIVE_DAYS} days", "decision")
+        elif k == "ship" and r.get("key") in ci:  # T-2496: GitHub's run on hosts Foreman doesn't control
+            v = ("held", "CI's blocking jobs passed", "ci") if ci[r["key"]] else ("missed", "a blocking CI job failed", "ci")
         elif k == "race":
             side = str(r["key"]).split(">")[0]
             for d in picks:
