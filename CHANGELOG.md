@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Two macOS-only test failures are fixed. The infrastructure-proof test now expects the real path of a symlinked temp folder, which every macOS one is. On hosts without `/proc`, a process's start time gets one patient retry when `ps` is slow under load, instead of the process being treated as gone.
 - Each Genesis generation seals a prediction of your next three steers before they arrive, and every steer you send is scored against it. A miss is filed as an anticipation gap. Before the next Seed, Foreman hunts blind spots from inputs it didn't write: session replays, your past steers grouped into classes, failures nobody filed, inversion, and one far-domain comparison. Every class it finds becomes a rule with a passing check, and the sweep checks the seal, the hunt and the hit rate.
 - Proof before presentation: the Genesis sweep reads the README and the site for results (counts, percentages, ratios, comparisons). Each must name a record the sweep can resolve: an exam run, a task that recorded its measurement, or live data. A line saying a capability passes must match the scorecard. The two older static results on the site now cite the tasks that measured them, and rule descriptions are marked as rules.
 - The Genesis sweep's lean check measures substance: code and test lines per module, and dependencies, against the generation's start. Each Mission's growth is judged by its gain. Growth whose tasks held up passes, growth not yet measured waits, and growth that was measured with no gain turns the sweep red and files a task to subtract it.

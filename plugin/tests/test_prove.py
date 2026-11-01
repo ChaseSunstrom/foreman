@@ -752,13 +752,21 @@ class InfraProof(ForemanTestCase):
         fmprove_infra.infra(self.tree, allowed=False)
         calls = self.calls()
         self.assertEqual(len(calls), 2, calls)
+        tmp = os.path.realpath(tempfile.gettempdir())  # T-2492: a scrubbed env has no PWD, so sh reports the real path
         for call in calls:
-            self.assertIn("pwd=" + os.path.join(tempfile.gettempdir(), "fm-prove-"), call)
+            self.assertIn("pwd=" + os.path.join(tmp, "fm-prove-"), call)
             self.assertNotIn(os.path.realpath(self.tree), call)
             self.assertIn("tok=", call)
             self.assertNotIn("t0ps3cret", call)
             self.assertNotIn("home=" + os.environ.get("HOME", "/nonexistent") + " ", call)
         self.assertEqual(mine() - before, set())  # the copy is gone
+
+    def test_infra_proof_copy_under_a_symlinked_temp_dir(self):  # T-2492: every macOS TMPDIR is one (/var -> /private/var)
+        real = tempfile.mkdtemp(dir=self.tmp)
+        link = real + "-link"
+        os.symlink(real, link)
+        with mock.patch.object(tempfile, "tempdir", link):
+            self.test_infra_proof_runs_on_a_copy_with_a_scrubbed_environment()
 
     def test_infra_proof_exit_codes_and_what_is_said(self):
         env = {"PATH": self.bin}
