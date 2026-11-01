@@ -87,7 +87,9 @@ D. Make the tower a `fm loop` mode. Rejected: the loop is open-ended by design (
    drifted lines, counted only when the seed holds them. Verdict clean, drifted or unread (no read is no pass). Sweep:
    §7's list in one command — fm genesis check, mission tasks closed or blocked with a reason, no planned/active task,
    no unreasoned block, no unmerged lane, fm docs, fm doctor, a full fm check pass on this exact tree (read, never
-   rerun), an exam line for gen N — into gen-N/sweep.md, exit 1 on any red. step stays on either until its Verdict is
+   rerun), an exam line for gen N, and every user-steer rule's stored `fm decide --check`, run (the steer-checks row,
+   T-2167) — into gen-N/sweep.md, exit 1 on any red; a red sweep files a fix task per red row and a clean one writes
+   the next seed (T-2477). step stays on either until its Verdict is
    clean. Tests: a reworded MUST, an added NEVER and an unpointed file drift; a clean seed passes; no read fails; a
    red sweep keeps step on it, a clean one moves to the next seed.
 6. **Auto-start** (tier 3). When user-origin work is dry and the gap map has tier 3–4 gaps, the idle path proposes a
@@ -103,7 +105,7 @@ D. Make the tower a `fm loop` mode. Rejected: the loop is open-ended by design (
 ## Exam (#13; ≥ 9 scenarios per kind, ≥ 3 held out)
 | Kind | Given | Graded on |
 |---|---|---|
-| G-line | a generated project + "make this great" | draft covers every MUST, NEVER and § of the hand gen-0 checklist |
+| G-line | a generated project + "make this great" | draft covers every MUST, NEVER and § of the hand gen-0 checklist, and every standing-intent clause (T-2191) |
 | G-none | a generated project + nothing | same checklist; the draft names what it assumed |
 | G-sweep | a generated project + "super improve this" | same checklist + a tier on every brief |
 | G-tower | a generated project with planted gaps (fm exam key) | one generation closes the planted gaps (found + fixed, test first) |
@@ -124,8 +126,16 @@ Generation receipt and digest with a publish secret scan; a resume verdict line;
 slider on the site page; publish only on green CI; tower rewind; and the rest of the ~40 tier 1–2 titles.
 
 ## Rejected
-Cross-project genome import, specs sourced from competitors or dependencies, earned-trust autonomy or a user proxy,
-persona bots on live products, signed attestations, upstream bug reports (all leave the machine or cross a NEVER).
+Each with its own reason; the four that only leave the machine are parked for a grant, not killed (gen-0: anything
+that leaves the machine needs its grant):
+- Cross-project genome import: reads other people's Foreman state from outside this machine; parked until a grant.
+- Specs sourced from competitors or dependencies: sweeping outside repos to brainstorm, which gen-0's NEVER forbids
+  beyond §5's targeted form; the targeted form is fm genesis frontier.
+- Earned-trust autonomy or a user proxy: Foreman would grant itself what only the user grants, which gen-0's NEVER
+  forbids (grant yourself anything or lower your own guard).
+- Persona bots on live products: acts on live services outside the machine; parked until a grant.
+- Signed attestations: publishes signatures outside the machine; parked until a grant.
+- Upstream bug reports: posts to other projects' trackers; parked until a grant (outward posting is the user's call).
 
 ## Tier share
 Built here: 8 briefs, 1 at tier 4 and 7 at tier 3 (100% tier 3–4) plus 6 tier-4 spikes; tier 1–2 go to the inbox.
