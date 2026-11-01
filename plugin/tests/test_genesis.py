@@ -2665,6 +2665,10 @@ class GenesisSweep(ForemanTestCase):
         self.assertEqual(sorted(c.find_brief(self.p, t).meta["genesis_sweep"] for t in fixes),
                          sorted(f"1:{x}" for x in bad))
         self.assertIn("Fix tasks: " + ", ".join(fixes), text)
+        one = c.find_brief(self.p, fixes[0])  # T-2480: filed ready to close: S, a step, a criterion, its regression test
+        self.assertEqual(one.tier, "S")
+        self.assertIn("fm genesis sweep 1", one.section("Acceptance criteria"))
+        self.assertTrue(one.section("Steps").strip() and one.section("Regression test").strip())
         self.assertEqual(self.sweep(doctor=["hook scripts"], gates=None, clean_check=False)["fixes"], fixes)  # not twice
         s = fmgenesis.step(self.p)
         self.assertEqual((s["stage"], s["command"]), ("build", f"fm focus {fixes[0]}"))
