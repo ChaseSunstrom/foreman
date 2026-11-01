@@ -1,6 +1,6 @@
 # Mission — Goal to finish (gen 1, #4)
 
-Task: T-2135…T-2141 (briefs 1–7 in order). T-2135 is L: today's spent risk budget is Foreman's own guard, which
+Task: T-2135, T-2136, T-2137, T-2138, T-2139, T-2140, T-2141 (briefs 1–7 in order). T-2135 is L: today's spent risk budget is Foreman's own guard, which
 gen-0 forbids lowering, and it holds L self-approval until it resets on 2026-10-31; no question goes to the user,
 and then the plan takes the normal L path under full autonomy (a self-critique, then `fm decide`). Nothing is
 granted around the guard while it's spent; the run waits it out, as it would a usage limit.
