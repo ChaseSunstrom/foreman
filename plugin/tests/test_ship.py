@@ -104,6 +104,29 @@ class Ship(ForemanTestCase):
         self.assertEqual([(x["kind"], x["stated"], x["key"], x["task"]) for x in rows], [("ship", 85, tip[:12], self.tid)])
         self.assertIn("85%", r.stdout)
 
+    def mover(self, rel):  # T-2511: a script the ship's test runs: someone else pushes a commit to main meanwhile
+        script, other = os.path.join(self.tmp, f"move-{rel.replace('/', '-')}.sh"), os.path.join(self.tmp, "other")
+        with open(script, "w") as f:
+            f.write(f"set -e\nrm -rf {other}\ngit clone -q {self.origin} {other}\ncd {other}\n"
+                    f"mkdir -p $(dirname {rel})\necho moved > {rel}\ngit add -A\n"
+                    "git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -qm 'tower update'\n"
+                    "git push -q origin HEAD:main\n")
+        return script
+
+    def test_a_main_that_moved_only_in_other_files_is_re_picked_and_pushed(self):  # T-2511
+        self.grant()
+        r = self.ship("--test", f"sh {self.mover('site/genesis/genesis.json')}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.main_log()[:3], ["add b", "add a", "tower update"])
+        self.assertFalse(self.granted())
+
+    def test_a_main_that_moved_in_a_shipped_file_still_refuses(self):  # T-2511
+        self.grant()
+        r = self.ship("--test", f"sh {self.mover('a.txt')}")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("moved while testing", r.stdout + r.stderr)
+        self.assertTrue(self.granted())
+
     def test_ship_on_a_named_tasks_grant(self):
         # T-2007: a finished task ships on its own grant: no separate ship task focused to hold one
         r = self.ship("--task", self.tid.lower(), "--test", "true")
@@ -277,17 +300,18 @@ class Ship(ForemanTestCase):
         self.ship("--test", "false")
         self.assertFalse([b for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("baseline")])
 
-    def test_main_moving_during_the_test_pushes_nothing(self):
+    def test_main_moving_during_the_test_in_no_shipped_file_is_re_picked(self):
+        # T-2511: an empty commit lands on main mid-test; it touches no file the ship does, so the tested result
+        # still holds on the new main (a move in a shipped file refuses: test_a_main_that_moved_in_a_shipped_file...)
         self.grant()
         other = os.path.join(self.tmp, "other")
         subprocess.run(["git", "clone", "-q", self.origin, other], check=True)
         sh(other, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "someone else")
         r = self.ship("--test", f"git -C {other} push -q origin HEAD:main")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("main moved", r.stdout + r.stderr)
-        self.assertEqual(self.main_log()[0], "someone else")
-        self.assertNotIn("add a", self.main_log())
-        self.assertTrue(self.granted())
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("re-picked onto it", r.stdout)
+        self.assertEqual(self.main_log()[:3], ["add b", "add a", "someone else"])
+        self.assertFalse(self.granted())
 
     def test_a_rejected_push_keeps_the_grant(self):
         # review: the grant was spent before git push, so a rejected push cost the yes
