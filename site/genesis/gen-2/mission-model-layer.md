@@ -1,5 +1,7 @@
 # Mission 1 — model layer (gen 2, the user's gen-2 steer of 2026-10-31, T-2437)
 
+Task: T-2485, T-2486, T-2487, T-2488, T-2489 (briefs 1-5 in order).
+
 Parent: gen-2/seed.md row 1 → the user's steer recorded as T-2437, under gen-0.md (its goal, MUSTs and NEVERs are
 quoted in the seed and apply here unchanged).
 
