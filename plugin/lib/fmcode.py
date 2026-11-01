@@ -2581,6 +2581,13 @@ def cmd_code(args):
         warned = install_warning()  # T-1757
         if warned:
             run.emit("note", warned)
+        try:  # T-2364: what runs or waits by itself here, as fm state says it
+            import fmtriggers
+            ran = fmtriggers.self_running(p)["line"]
+            if ran:
+                run.emit("note", ran)
+        except Exception:  # a status line never costs the run
+            pass
         run.tool_dirs, pinned = toolchain(root, run.env())  # T-1407
         if pinned:
             run.emit("note", pinned)

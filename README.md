@@ -480,6 +480,7 @@ The app never talks to a server: it runs `fm … --json` on this machine, and on
 **`fm run`** works the queue in fresh `claude -p` sessions, one task each, so a long queue never piles up in one context.
 - It waits out a usage limit (up to six hours by default) before retrying. A task that makes no progress is blocked with the reason, so the next run moves on.
 - The machine is kept from sleeping while it runs (systemd-inhibit, where there is one).
+- Self-running: `fm state`, the pane's band and `fm code` carry one line of what ran or waits by itself (triggers fired today and their routes, installs waiting for your yes, lanes recovering, self-fix trials due, how the next-request predictions do against their baseline); `fm triggers` has the table and the MCP `triggers` tool the same, as JSON.
 - To run `fm night` every night and `fm night --tick` hourly, `fm night --stage` writes both systemd timers into state and queues one request for your yes (`--watch-ci`, `--watch-issues OWNER/REPO` add those lines); after the yes `fm night --install` starts them, `fm night --uninstall` removes them.
 
 **The sandbox** is opt-in: `fm run --sandbox`, or `fm sandbox on` to keep it for later runs and `fm night` timers (`--no-sandbox` skips it for one run).

@@ -156,6 +156,32 @@ class ProofPage(unittest.TestCase):  # T-2395: #6/#10 on the site, built from Fo
         self.assertIn('class="tiles"', build.render_page(page, {}, pages.PAGES))  # no data: still a figure
 
 
+class SelfRunningPage(unittest.TestCase):  # T-2364: Mission 8 on the site, its figures from the ledger and books
+    def test_self_running_page_names_each_surface_and_renders_from_state(self):
+        sys.path.insert(0, SITE)
+        try:
+            import pages
+            import build
+        finally:
+            sys.path.pop(0)
+        page = next(x for x in pages.PAGES if x["slug"] == "self-running")
+        text = json.dumps(page["blocks"], default=str)
+        for word in ("fm triggers", "precision", "route", "fm night --tick", "install", "fm lane recover", "trial",
+                     "fm outcomes --predictions", "baseline", "lean", "generation"):
+            self.assertIn(word, text)
+        sr = {"triggers": [{"trigger": "ci-red", "fired": 9, "precision": 0.78, "route": "inbox"}], "installs": 2,
+              "recoveries": 3, "trials": {"held": 4, "didn't hold": 1}, "predictions": [{"kind": "next-request",
+              "hit": 0.62, "base_hit": 0.48, "n": 40}], "lean": [{"gen": 1, "rules chars": 5200}]}
+        html = build.render_page(page, {"self_running": sr}, pages.PAGES)
+        for figure in ("ci-red", "0.78", "62%", "48%"):
+            self.assertIn(figure, html)
+        self.assertIn('class="tiles"', build.render_page(page, {}, pages.PAGES))
+        root = os.path.dirname(SITE)
+        for name in ("README.md", "MASTER.md", "CHANGELOG.md"):
+            with open(os.path.join(root, name), encoding="utf-8") as f:
+                self.assertIn("Self-running", f.read(), name)
+
+
 class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its figures from fm calibration --json
     def test_judgment_page_describes_the_plan_shape_races_doors_and_scores_from_calibration_data(self):
         sys.path.insert(0, SITE)

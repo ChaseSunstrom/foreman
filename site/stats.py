@@ -147,6 +147,32 @@ def calibration():
     return {k: d[k] for k in ("scored", "pending", "brier", "bars", "races") if k in d}
 
 
+def self_running(state):
+    """T-2364: the Self-running page's figures: fm triggers --json (the table, recoveries, trials, installs waiting,
+    the prediction book) and each generation's lean start (genesis-lean.json in the project's state); {} on failure."""
+    try:
+        p = subprocess.run([os.path.join(ROOT, "plugin", "bin", "fm"), "triggers", "--json"], cwd=ROOT,
+                           capture_output=True, text=True, timeout=300)
+        d = json.loads(p.stdout or "{}")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {}
+    sr = d.get("self_running") or {}
+    verdicts = {}
+    for t in d.get("trials") or []:
+        v = t.get("verdict") or "due"
+        verdicts[v] = verdicts.get(v, 0) + 1
+    try:
+        with open(os.path.join(state, "genesis-lean.json"), encoding="utf-8") as f:
+            lean = json.load(f)
+    except (OSError, ValueError):
+        lean = {}
+    return {"triggers": [{k: r.get(k) for k in ("trigger", "fired", "precision", "route")} for r in d.get("triggers") or []],
+            "installs": sr.get("installs", 0), "recoveries": len(d.get("recoveries") or []), "trials": verdicts,
+            "predictions": [sr["predictions"]] if sr.get("predictions") else [],
+            "lean": [dict(gen=int(g), **(r.get("metrics") or {})) for g, r in sorted(lean.items(), key=lambda kv: int(kv[0]))
+                     if str(g).isdigit() and isinstance(r, dict)]}
+
+
 def proof(old):
     """T-2395: the verifying page's figures from fm proof --json, today's count added to the kept history (60 days)."""
     try:
@@ -277,7 +303,7 @@ def main():
         with open(OUT, encoding="utf-8") as f:
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
-             "cards": cards(), "code": code_counts(), "calibration": calibration(), "proof": proof(old.get("proof")), "bench": old.get("bench", {}) if a.no_bench else bench(),
+             "cards": cards(), "code": code_counts(), "calibration": calibration(), "proof": proof(old.get("proof")), "self_running": self_running(state), "bench": old.get("bench", {}) if a.no_bench else bench(),
              "duels": merge_duels(old.get("duels") or [], [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
                  *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
                                                      for x in (a.duel or [f"quality={state}"])) if d])}

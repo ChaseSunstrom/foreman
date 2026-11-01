@@ -393,6 +393,16 @@ class MissNote(CodeCase):
         self.assertNotEqual(self.task()["status"], "done", r.stdout)  # fm task finish refuses past an open miss
 
 
+class SelfRunningNote(CodeCase):  # T-2364: fm code shows what runs by itself, as fm state does
+    def test_fm_code_prints_the_self_running_line_at_its_start(self):
+        self.fm("task", "new", "waiting", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        self.fm("ask", "T-0001", "plugin", "--later", "--why", "needs a linter")
+        self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        r = self.code("fix calc.add so it adds", "--model", "fake")
+        self.assertIn("Self-running:", r.stdout)
+        self.assertIn("1 install waiting", r.stdout)
+
+
 class CloseLines(CodeCase):  # T-2395: fm code's close prints the Not verified and meaning lines fm task finish does
     def test_unproven_and_meaning_lines_reach_fm_code_s_close_output(self):
         self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
