@@ -3082,6 +3082,20 @@ class Stop(HookCase):
         self.assertIn("T-0001", parse(p)["reason"])
         self.assertIn("expand it into a planned brief", parse(p)["reason"])
 
+    def test_full_autonomy_drive_skips_inbox_items_the_round_holds(self):
+        # T-2464: with fm drive --round-first on, the Stop hook still pushed Foreman's own captures (source self, ci)
+        self.fm("init")
+        g = os.path.join(self.project().dir, "research", "genesis")
+        os.makedirs(os.path.join(g, "gen-1"))
+        for rel in ("gen-0.md", "gen-1/seed.md"):
+            with open(os.path.join(g, rel), "w", encoding="utf-8") as f:
+                f.write("# x\n")
+        self.fm("autonomy", "full")
+        self.fm("capture", "FIX: a discovered nit in the parser", "--source", "discovered")
+        self.assertIn("T-0001", (parse(self.stop("Queue is empty.")) or {}).get("reason", ""))  # off: as before
+        self.fm("drive", "on", "--round-first", "on")
+        self.assertNotIn("T-0001", (parse(self.stop("Queue is empty.", session="sess-2")) or {}).get("reason", ""))
+
     def test_drive_scoped_to_one_task_stops_pushing_once_that_task_is_finished(self):
         # fm run gives each fresh session one task (FOREMAN_DRIVE_TASK); the next task gets its own session.
         self.fm("init")
