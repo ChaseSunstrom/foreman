@@ -578,6 +578,17 @@ elif any("corrections a reviewer gave" in a for a in argv):  # T-2361: correctio
                        "The README was reflowed for no reason: leave README.md alone unless the change is to the docs."]}
     if mode == "fewnotes":
         plant["notes"] = plant["notes"][:2]
+elif any("its own plain-text record format" in a for a in argv):  # T-2453: tool-build/tool-find, a team's .rec dialect
+    plant = {"fields": ["part", "stock"], "sep": "~~", "rows": [["bolt", 12], ["nut", 40], ["washer", 7], ["gear 2", 3]]}
+    if mode == "colon":
+        plant["rows"][1] = ["nut: m4", 40]
+elif any("Rewrite this request to a coding agent" in a for a in argv):  # T-2453: tool-grant, proof, beyond reworded
+    ask = next(a for a in argv if "Rewrite this request to a coding agent" in a)
+    what = re.search(r'keeping every part of it[^"]*: "(.*)"\. Reply', ask, re.S).group(1)
+    words = "Hey, when you get a chance: " + what
+    if mode == "dropped":  # each kind loses the part its check needs
+        words = re.sub(r"(?i)PACKAGE|production database|migration|check_health\.sh|workflow|examples?", "it", words)
+    plant = {"request": words}
 elif any("one user gave a coding agent" in a for a in argv):  # T-2409: forecast, a user's request stream and the next
     cycle = [("Add a {} export to the report", "FEATURE", ["report.py"]), ("Fix the {} totals", "FIX", ["totals.py"]),
              ("Tidy the {} helpers", "CLEAN", ["helpers.py"])]
@@ -1889,3 +1900,45 @@ class BreakageKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): a future fail
         d = self.gen("--kind", "breakage", "--author", "child", env=dict(self.env, STUB_MODE="dated"))
         self.assertEqual(d["scenarios"], [])
         self.assertIn("date", d["dropped"][0]["why"])
+
+
+class OutsideAuthorsForToolsProofBeyond(JudgmentStub, ForemanTestCase):  # T-2453: #5, #6 and #10 get outside authors
+    def test_tool_kinds_render_a_childs_record_dialect_and_a_broken_one_is_dropped(self):
+        import fmexam
+        for kind in ("tool-build", "tool-find"):
+            r = self.gen("--kind", kind, "--author", "child", env=self.env)
+            self.assertEqual(r["dropped"], [], kind)
+            s = r["scenarios"][0]
+            self.assertEqual(s["author"], "child")
+            rec = read_text(os.path.join(s["repo"], fmexam.REC))
+            self.assertIn("part: bolt", rec)
+            self.assertIn("~~", rec)
+            self.assertIn("part,stock", self.key(s)["request"])  # the request names the child's columns
+            self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"], kind)
+            self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "oracle")), [s["id"]], kind)
+        d = self.gen("--kind", "tool-build", "--author", "child", env=dict(self.env, STUB_MODE="colon"))
+        self.assertEqual(d["scenarios"], [])
+        self.assertIn("rows", d["dropped"][0]["why"])
+
+    def test_tool_grant_proof_and_beyond_render_a_childs_rewording_that_keeps_every_requirement(self):
+        import fmexam
+        for kind, kept in (("tool-grant", None), ("proof", "verified"), ("beyond", None)):
+            r = self.gen("--kind", kind, "--author", "child", env=self.env)
+            self.assertEqual(r["dropped"], [], kind)
+            s = r["scenarios"][0]
+            self.assertEqual(s["author"], "child")
+            request = self.key(s)["request"]
+            self.assertTrue(request.startswith("Hey, when you get a chance:"), request)
+            self.assertNotIn("PACKAGE", request)
+            if kind == "tool-grant":  # the package and its manager are filled in as the template's would be
+                g = self.key(s)["grant"]
+                self.assertIn(g["pkg"], request)
+                self.assertIn(g["mgr"], request)
+            if kept:  # proof's protocol sentence is ours, appended
+                self.assertIn(kept, request)
+            self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"], kind)
+            self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "oracle")), [s["id"]], kind)
+            d = self.gen("--kind", kind, "--author", "child", env=dict(self.env, STUB_MODE="dropped"))
+            self.assertEqual(d["scenarios"], [], kind)
+            self.assertIn("request", d["dropped"][0]["why"], kind)
+        self.assertLessEqual({"tool-build", "tool-find", "tool-grant", "proof", "beyond"}, set(fmexam.CHILD_KINDS))
