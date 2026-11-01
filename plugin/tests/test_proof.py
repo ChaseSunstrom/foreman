@@ -122,8 +122,23 @@ class Proof(ForemanTestCase):
         t = self.task(type="PERFORMANCE", lines=[(1, "slow", self.RED1ST), (1, "slow", bench)])
         self.assertNotIn(t, self.listed())
 
+    def test_a_terminal_ui_needs_a_run_that_renders_it(self):  # T-2396: fm shot can't shoot a terminal
+        tui = self.task("plugin/lib/fmcodetui.py", evidence=[("--step", "1", "--run", "true")])
+        ran = self.task("plugin/lib/fmcodetui.py", lines=[(1, "python3 plugin/lib/fmcodetui.py --demo", self.GREEN)])
+        said = self.task("plugin/lib/fmcodetui.py", lines=[(1, "echo fmcodetui", self.GREEN)])  # names it, runs nothing
+        pane = self.task("mods/x/hooks/index.ts", evidence=[("--step", "1", "--run", "true")])
+        tested = self.task("mods/x/hooks/index.ts", lines=[(1, "claude plugin test .", self.GREEN)])
+        web = self.task("web/app.css", lines=[(1, "python3 plugin/lib/fmcodetui.py", self.GREEN)])
+        got = self.listed()
+        for t in (tui, said, pane):
+            self.assertEqual(got.get(t), ["tui-unshot"], t)
+        self.assertNotIn(ran, got)
+        self.assertNotIn(tested, got)
+        self.assertEqual(got[web], ["ui-unshot"], "a web file still needs fm shot")
+
     def test_proof_kind_table_names_every_kind_with_its_upgrade_command(self):
-        for kind in ("typed", "red", "inconclusive", "ui-unshot", "docs", "infra", "migration", "data", "perf-typed",
+        for kind in ("typed", "red", "inconclusive", "ui-unshot", "tui-unshot", "docs", "infra", "migration", "data",
+                     "perf-typed",
                      "perf-noise", "research-uncited", "hollow"):
             row = c.PROOF_KINDS[kind]
             self.assertTrue(row["need"] and row["upgrade"] and "{id}" in row["upgrade"], kind)

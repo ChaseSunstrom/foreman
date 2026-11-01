@@ -4418,6 +4418,22 @@ def _need_ui(x):
     return {"why": ", ".join(ui[:3]), "fmt": {"file": ui[0]}, "files": ui} if ui else None
 
 
+_SAYS = lazy(r"^(?:\w+=\S*\s+)*(?:echo|printf|true|:|test|\[|touch|mkdir|cat)\b")  # T-2396: names a file, renders nothing
+
+
+def _need_tui(x):
+    """T-2396: a changed terminal UI (a TUI screen, a statusline, the pane's hooks: ui_paths' terminal rows) that no
+    green run renders: a run naming the file's stem, or claude plugin test for a mod's hooks. fm shot can't shoot a
+    terminal. ponytail: the run's time isn't checked against the file's last edit (this kind reads cmds, not times)."""
+    term = [f for f in x["files"] if not _NOT_UI.search(f.lower()) and (_UI_TUI.search(f.lower()) or _UI_OTHER.search(f))]
+    runs = [s.strip() for k, cmd in x["cmds"].items() if k not in x["bad"] for s in cmd.split("&&")]
+    runs = [s for s in runs if not _SAYS.match(s)]
+    named = lambda f: any(("claude plugin test" if f.startswith("mods/") else  # noqa: E731
+                           os.path.splitext(os.path.basename(f))[0]) in s for s in runs)
+    left = [f for f in term if not named(f)]
+    return {"why": ", ".join(left[:3]), "fmt": {"file": left[0]}, "files": left} if left else None
+
+
 def _need_docs(x):
     """A checkable claim in the doc lines this task added (git diff from its start). ponytail: the diff runs to HEAD, so
     a later task's edit to the same doc counts its lines too (a claim it added shows on this task as well); a task with
@@ -4534,6 +4550,8 @@ PROOF_KINDS = {
     "red": _kind(_need_evidence("red"), _EVID),
     "inconclusive": _kind(_need_evidence("inconclusive"), _EVID),
     "ui-unshot": _kind(_need_ui, 'fm task evidence {id} --run "fm shot {file}"', clear=_UI_PROOF),
+    "tui-unshot": _kind(_need_tui, 'fm task evidence {id} --run "<a command that renders {file}>" (fm playbooks show '
+                                   'ui/terminal-ui)'),  # T-2396
     "docs": _kind(_need_docs, 'fm task evidence {id} --run "fm prove --docs"', clear=lazy(rf"{_FM_RUN}prove\s+--docs")),
     "infra": _kind(_need_infra, 'fm task evidence {id} --run "fm prove --infra"',
                    clear=lazy(rf"{_FM_RUN}prove\s+--infra"), trust=True),
