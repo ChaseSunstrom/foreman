@@ -2,6 +2,7 @@
 project) looks for problems nobody raised (CI red on the default branch, a changed model, window or CC version) and
 caches them; session start reads those caches and the state it already has (blocked pile, tidy), never the network,
 and names each problem with its action."""
+import datetime
 import glob
 import json
 import os
@@ -329,8 +330,200 @@ def prediction_kinds(p):
     kind("effort", effort)
     kind("draft-ahead", [(str(r.get("at") or ""), r.get("adopted") is True, None) for r in book  # T-2407: no baseline
                          if r.get("kind") == "draft" and (r.get("adopted") or r.get("expired"))])
+    ws = [r for r in book if r.get("kind") == "warning-score"]
+    for w in ("date", "cochange", "state"):  # T-2408: precision (hits of hits and misses); acted-on rows ride along
+        mine = [r for r in ws if r.get("wkind") == w]
+        kind(f"foresight-{w}", [(str(r.get("at") or ""), r.get("hit") is True, None) for r in mine if not r.get("acted")],
+             {"acted": sum(bool(r.get("acted")) for r in mine)})
     return kinds
 
 
 def muted_kinds(p):
     return [k for k in prediction_kinds(p) if k["muted"]]
+
+
+# ---------------------------------------------------------------- T-2408 (#3): breakage warnings
+WARN_STATE = "foresight-warn.json"  # {day, head, sizes: {YYYY-MM-DD: bytes}}: the detectors run once a local day
+# PAIR_MIN, PAIR_SHARE: 5 pairings and 80% of the file's commits; 3 and 60% flagged 30 of Foreman's last 20 commits
+# (fmforesight without fmeco), 5 and 80% flags 4, each a module without its test file
+DATE_DAYS, STATE_DAYS, PAIR_MIN, PAIR_SHARE, PAIR_COMMITS, WARN_MAX = 14, 30, 5, 0.8, 500, 3
+CODE_EXT = (".py", ".pyi", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".rb", ".java", ".kt", ".swift",
+            ".c", ".h", ".cc", ".cpp", ".cs", ".php", ".sh", ".bash", ".toml", ".json", ".yml", ".yaml", ".ini", ".cfg",
+            ".conf", ".sql")  # code, tests and config; prose (.md, .txt, changelogs) never counts
+_DATE = re.compile(r"(?<![\d-])(20\d\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?!\d)")
+
+
+def _state_bytes(p):
+    """This project's state in bytes, without fm tidy's backups (as fmdoctor.check_state_size counts it)."""
+    total = 0
+    for root, dirs, names in os.walk(p.dir):
+        if root == p.dir:
+            dirs[:] = [d for d in dirs if d != "backups"]
+        for n in names:
+            try:
+                total += os.path.getsize(os.path.join(root, n))
+            except OSError:
+                pass
+    return total
+
+
+def _dates(p, today):
+    """(path, line, date) for each literal date in tracked code, tests or config passing within DATE_DAYS.
+    ponytail: reads every tracked code file once a day (20000 at most); an index if a repo outgrows that."""
+    out, end = [], today + datetime.timedelta(days=DATE_DAYS)
+    for rel in [x for x in c._git(p.root, "ls-files", "-z", timeout=60).split("\0") if x.endswith(CODE_EXT)][:20000]:
+        path = os.path.join(p.root, rel)
+        try:
+            if os.path.islink(path) or os.path.getsize(path) > 512 * 1024:
+                continue
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for n, ln in enumerate(f, 1):
+                    for m in _DATE.finditer(ln):
+                        try:
+                            d = datetime.date(*map(int, m.groups()))
+                        except ValueError:
+                            continue
+                        if today < d <= end:  # today's own date has passed: fixtures written today aren't deadlines
+                            out.append((rel, n, d.isoformat()))
+        except OSError:
+            continue
+    return out
+
+
+def _cochange(p, head):
+    """(sha, file, partner) for each commit since head that changed a file without the partner it went with in
+    PAIR_MIN+ of the last PAIR_COMMITS commits and PAIR_SHARE+ of the file's own (commits of 30+ files don't count)."""
+    new = c._git(p.root, "rev-list", "--max-count=20", f"{head}..HEAD", timeout=30).split() if head else []
+    if not new:
+        return []
+    commits = {}
+    for chunk in c._git(p.root, "log", f"--max-count={PAIR_COMMITS}", "--name-only", "--format=%x00%H",
+                        timeout=60).split("\0")[1:]:
+        lines = chunk.strip().splitlines()
+        if lines:
+            commits[lines[0]] = set(lines[1:])
+    one, two = {}, {}
+    for sha, files in commits.items():
+        if sha in new or len(files) > 30:
+            continue
+        for x in files:
+            one[x] = one.get(x, 0) + 1
+            for y in files - {x}:
+                two[(x, y)] = two.get((x, y), 0) + 1
+    out = []
+    for sha in reversed(new):
+        files = commits.get(sha, set())
+        out += [(sha, x, y) for (x, y), k in two.items() if x in files and y not in files and k >= PAIR_MIN
+                and k / one[x] >= PAIR_SHARE and os.path.exists(os.path.join(p.root, y))]
+    return out
+
+
+def _state_days(sizes, budget):
+    """Days until the state's trend (a least-squares line over the last STATE_DAYS of daily sizes) reaches budget,
+    when that is within STATE_DAYS; None when flat, shrinking, already over or further off."""
+    pts = sorted((datetime.date.fromisoformat(k), v) for k, v in sizes.items())
+    pts = [(d, v) for d, v in pts if (pts[-1][0] - d).days <= STATE_DAYS]
+    if len(pts) < 2 or (pts[-1][0] - pts[0][0]).days < 3 or pts[-1][1] >= budget:
+        return None
+    xs, ys = [(d - pts[0][0]).days for d, _ in pts], [v for _, v in pts]
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+    days = (budget - ys[-1]) / slope if slope > 0 else None
+    return int(days) if days is not None and days <= STATE_DAYS else None
+
+
+def _failed_at(events, target):
+    """A failed run naming the target's file stem: a failed evidence run or a gate run's failing test names."""
+    stem = re.compile(r"\b" + re.escape(os.path.splitext(os.path.basename(target))[0]) + r"\b")
+    for e in events:
+        d = e.get("data") or {}
+        if e.get("event") == "evidence" and (c.result_exit(d.get("result")) or 0) and stem.search(
+                f"{d.get('cmd')} {d.get('result')}"):
+            return True
+        if e.get("event") == "check_run" and any(r.get("exit") and any(stem.search(str(n)) for n in r.get("failing") or ())
+                                                 for r in d.get("results") or () if isinstance(r, dict)):
+            return True
+    return False
+
+
+def _score_warnings(p, rows, today, size, budget):
+    """Each open warning scored once: a hit when the failure shows at its target (a failed run naming it, the state
+    budget crossed) or a commit from a task other than the warning's own changes it (the dated literal, the partner);
+    acted on when only its own task's commits did; a miss (or acted on) once its window passes."""
+    scored = {r.get("id") for r in rows if r.get("kind") == "warning-score"}
+    todo = [r for r in rows if r.get("kind") == "warning" and r.get("id") not in scored
+            and isinstance(r.get("until"), str) and isinstance(r.get("at"), str)]
+    events = c.ledger_events(p, ("evidence", "check_run"), since=min(r["at"] for r in todo)) if todo else []
+    for r in todo:
+        hit = acted = False
+        if r.get("wkind") == "state":
+            hit = size >= budget
+        else:
+            hit = _failed_at([e for e in events if str(e.get("ts") or "") >= r["at"]], r["target"])
+            if not hit and r.get("head"):
+                pick = [f"-S{r['date']}"] if r.get("date") else []
+                subj = c._git(p.root, "log", "--format=%s", *pick, f"{r['head']}..HEAD", "--", r["target"],
+                              timeout=30).splitlines()
+                own = [s for s in subj if re.match(re.escape(str(r.get("task"))) + r"\b", s)]
+                hit, acted = len(subj) > len(own), bool(own)
+        if hit or today > datetime.date.fromisoformat(r["until"][:10]):
+            c.append_line(os.path.join(p.dir, PREDICTIONS), json.dumps(
+                {"kind": "warning-score", "id": r["id"], "wkind": r.get("wkind"), "at": c.now(), "hit": hit,
+                 "acted": acted and not hit}) + "\n")
+
+
+def breakage_tick(p, today=None, budget=None):
+    """T-2408 (#3), on the tick, once a local day: open warnings are scored, then each detector files what it sees
+    through the trigger table (fmeco.capture_once, trigger foresight-KIND), WARN_MAX a kind a day, one open warning
+    per target: a literal date in tracked code, tests or config passing within DATE_DAYS; a commit since the last
+    look that changed a file without its usual co-change partner (a 14-day window); state whose 30-day trend reaches
+    its budget (fmdoctor.STATE_BUDGET) within STATE_DAYS. Each warning is a book row with its window. The new rows."""
+    import fmdoctor
+    import fmeco
+    today, budget = today or datetime.date.today(), budget or fmdoctor.STATE_BUDGET
+    path = os.path.join(p.dir, WARN_STATE)
+    try:
+        with open(path, encoding="utf-8") as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        st = {}
+    st = st if isinstance(st, dict) else {}
+    if st.get("day") == today.isoformat():
+        return []
+    sizes = {k: v for k, v in (st.get("sizes") or {}).items() if isinstance(k, str) and isinstance(v, int)
+             and re.fullmatch(r"\d{4}-\d\d-\d\d", k) and (today - datetime.date.fromisoformat(k)).days <= 2 * STATE_DAYS}
+    sizes[today.isoformat()] = _state_bytes(p)
+    head = c._git(p.root, "rev-parse", "HEAD", timeout=10).strip()
+    rows = _book(p)
+    _score_warnings(p, rows, today, sizes[today.isoformat()], budget)
+    scored = {r.get("id") for r in _book(p) if r.get("kind") == "warning-score"}
+    live = {(r.get("wkind"), r.get("target"), r.get("line")) for r in rows if r.get("kind") == "warning"
+            and r.get("id") not in scored}
+    soon = (today + datetime.timedelta(days=DATE_DAYS)).isoformat()
+    found = [("date", rel, n, d, f"Breakage ahead: {rel}:{n} holds the date {d}, which passes in "
+              f"{(datetime.date.fromisoformat(d) - today).days} days", {"date": d}) for rel, n, d in _dates(p, today)]
+    found += [("cochange", y, None, soon, f"Breakage ahead: {sha[:7]} changed {x} without {y}, which changed with it "
+               f"in most past commits", {"file": x, "sha": sha}) for sha, x, y in _cochange(p, st.get("head"))]
+    days = _state_days(sizes, budget)
+    if days is not None:
+        found.append(("state", "state", None, (today + datetime.timedelta(days=days)).isoformat(),
+                      f"Breakage ahead: this project's state ({sizes[today.isoformat()] // 2**20} MB) reaches its "
+                      f"{budget // 2**20} MB budget in about {days} days at its 30-day trend (fm tidy --apply)", {}))
+    new, per = [], {}
+    for wkind, target, line, until, text, extra in found:
+        if (wkind, target, line) in live or per.get(wkind, 0) >= WARN_MAX:
+            continue
+        key = f"foresight-{wkind} {target}" + (f":{line}" if line else "")
+        b, made = fmeco.capture_once(p, f"{c.plain(text)}\n{key}", "FIX", "foresight", key=key,
+                                     trigger=f"foresight-{wkind}")
+        if not (b and made):
+            continue
+        live.add((wkind, target, line))
+        per[wkind] = per.get(wkind, 0) + 1
+        row = dict({"kind": "warning", "id": f"W-{len(rows) + len(new) + 1}-{int(time.time())}", "wkind": wkind,
+                    "at": c.now(), "until": until, "target": target, "line": line, "head": head, "task": b.id}, **extra)
+        c.append_line(os.path.join(p.dir, PREDICTIONS), json.dumps(row) + "\n")
+        new.append(row)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"day": today.isoformat(), "head": head, "sizes": sizes}, f)
+    return new
