@@ -167,12 +167,11 @@ class UnprovenTrailer(HookCase):  # T-2392: a closed task in the unproven rollup
         self.assertNotIn("Unproven:", body)
 
 
-class SessionTrailer(HookCase):  # T-2443: the session's link rides on fm task finish's commit, as on a hand-made one
-    def test_session_trailer_from_the_bridge_session_id_and_none_without_a_well_formed_one(self):
+class SessionTrailer(HookCase):  # T-2447: commits carry no attribution line, whatever session made them (T-2443 undone)
+    def test_session_trailer_is_never_added_whatever_the_bridge_session_id(self):
         self.fm("init")
         path = os.path.join(self.repo, "a.py")
-        for n, sid, want in ((1, "session_Abc123", "Claude-Session: https://claude.ai/code/session_Abc123"),
-                             (2, "session_x; rm -rf ~", None), (3, "", None)):
+        for n, sid in ((1, "session_Abc123"), (2, "")):
             self.fm("task", "new", f"t{n}", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
                     "--focus")
             with open(path, "w") as f:
@@ -182,10 +181,7 @@ class SessionTrailer(HookCase):  # T-2443: the session's link rides on fm task f
                     env={"CLAUDE_CODE_BRIDGE_SESSION_ID": sid})
             body = subprocess.run(["git", "-C", self.repo, "log", "-1", "--format=%B"], capture_output=True,
                                   text=True).stdout
-            if want:
-                self.assertEqual(body.strip().splitlines()[-1], want)
-            else:
-                self.assertNotIn("Claude-Session", body)
+            self.assertNotIn("Claude-Session", body)
 
 
 class CommitOwnFiles(HookCase):
