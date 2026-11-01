@@ -1080,6 +1080,43 @@ class Queue(unittest.TestCase):
         self.assertEqual([b.id for b in q], ["T-0004"])
 
 
+class RoundFirst(ForemanTestCase):  # T-2327 (user steer 2026-10-31, 2): no new maintenance before the round is done
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        g = os.path.join(self.p.dir, "research", "genesis")
+        os.makedirs(os.path.join(g, "gen-1"))
+        for rel in ("gen-0.md", "gen-1/seed.md"):
+            with open(os.path.join(g, rel), "w", encoding="utf-8") as f:
+                f.write("# x\n")
+        self.g = g
+
+    def offered(self):
+        b, _, _ = c._next_for(c.find_project(self.repo))
+        return b.id if b else None
+
+    def capture(self, text, *flags):
+        out = self.fm("capture", text, "--json", *flags).stdout
+        return json.loads(out)["id"]
+
+    def test_foremans_own_captures_wait_for_the_round_unless_urgent_or_depended_on(self):
+        mine = self.capture("FIX: a discovered nit in the parser", "--source", "discovered")
+        self.assertEqual(self.offered(), mine)  # the switch is off: offered as before
+        self.fm("drive", "on", "--round-first", "on")
+        self.assertIsNone(self.offered())
+        urgent = self.capture("FIX: the gates are red on main", "--source", "discovered", "--urgent")
+        self.assertEqual(self.offered(), urgent)
+        self.fm("task", "drop", urgent, "--reason", "test")
+        user = self.capture("FEATURE: add an export button")
+        self.assertEqual(self.offered(), user)  # the user's own request is never held
+        self.fm("task", "drop", user, "--reason", "test")
+        os.makedirs(os.path.join(self.g, "gen-2"))
+        with open(os.path.join(self.g, "gen-2", "seed.md"), "w", encoding="utf-8") as f:
+            f.write("# gen 2\n")
+        self.assertEqual(self.offered(), mine)  # gen 2's seed is filed: the round is done, the hold lapses
+
+
 if __name__ == "__main__":
     unittest.main()
 

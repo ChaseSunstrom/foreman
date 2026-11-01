@@ -1026,6 +1026,14 @@ def cmd(p, args):
                             f"({', '.join(meta['dropped_ids'])})" if meta["dropped_pinned"] else ""))
     if verb in ("run", "grade") and rest:
         agent = args.agent or "oracle"
+        import fmexam
+        reg = getattr(args, "regressing", None)
+        if reg is not None and not 1 <= reg <= 13:
+            raise fmcli.UsageError(f"--regressing takes a capability number from 1 to 13, not {reg}")
+        if verb == "run" and agent in fmexam.SESSIONS and not getattr(args, "final", False) and reg is None:
+            raise fmcli.UsageError(  # T-2327: the user's steer 2026-10-31 (1)
+                f"a {agent} session arm runs only at the end-of-run exam (--final) or for one capability a free or "
+                "Haiku arm shows regressing (--regressing N); the free arms (oracle, empty) run any time")
         faults = [f for f in (args.faults or "").split(",") if f]
         r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit, args.jobs) if verb == "run" else grade(p, rest[0], agent))
         text = (f"{agent} answered {len(r['answered'])} goal(s) of {rest[0]}" if verb == "run" else

@@ -66,6 +66,18 @@ class Long(ForemanTestCase):
         self.assertIn("def f2", open(os.path.join(later, "app.py")).read())  # base of T-1003 holds the earlier work
         self.assertNotIn("def f3", open(os.path.join(later, "app.py")).read())  # but never its own or later work
 
+    def test_a_session_arm_waits_for_the_end_of_run_exam_or_a_regressing_capability(self):
+        # T-2327 (user steer 2026-10-31, 1): session arms of the long tier run only at the end of the run, or for one
+        # capability a free or Haiku arm shows regressing
+        run = json.loads(self.gen().stdout)["run"]
+        for agent in ("foreman", "plain", "genesis"):
+            r = self.fm("exam", "long", "run", run, "--agent", agent, check=False)
+            self.assertNotEqual(r.returncode, 0, agent)
+            self.assertIn("--final", r.stderr, agent)
+        r = self.fm("exam", "long", "run", run, "--agent", "plain", "--regressing", "14", check=False)
+        self.assertIn("--regressing", r.stderr)  # a capability number from 1 to 13
+        self.fm("exam", "long", "run", run, "--agent", "empty")  # free arms run as before
+
     def test_oracle_scores_true_done_and_empty_does_not_and_the_line_is_tier_long(self):
         run = json.loads(self.gen().stdout)["run"]
         for agent, done in (("oracle", 2), ("empty", 0)):
@@ -536,7 +548,7 @@ class Long(ForemanTestCase):
             with self.assertRaises(ValueError):
                 self.go(agent, faults)
         self.assertFalse(os.path.exists(self.log))
-        r = self.fm("exam", "long", "run", self.run_id, "--agent", "plain", "--faults", "compaction,misleading", "--json")
+        r = self.fm("exam", "long", "run", self.run_id, "--agent", "plain", "--faults", "compaction,misleading", "--final", "--json")
         self.assertEqual(json.loads(r.stdout)["agent"], "plain")
 
     # T-2377: the missing fault. A goal whose hidden checks start a binary has it shadowed on the session's PATH (the 127
