@@ -83,6 +83,17 @@ class Typos(ForemanTestCase):
             self.assertNotEqual(p.returncode, 0)
             self.assertIn(f"did you mean {want}", p.stderr, argv)
 
+    def test_a_folded_verb_names_its_new_home_and_runs_nothing(self):
+        # T-2461: six verbs folded into the verbs that hold their job; the old name is a hint, never an alias (an
+        # alias would carry user-only words past the guard's per-verb table, e.g. prove's --yes-run)
+        self.fm("init")
+        for old, home in (("proof", "prove --rollup"), ("calibration", "outcomes --judgment"),
+                          ("incident", "capture --incident"), ("sweep", "projects --sweep"),
+                          ("instruments", "which --instruments"), ("suspects", "whyred --suspects")):
+            p = self.fm(old, "x", check=False)
+            self.assertEqual(p.returncode, 2, old)
+            self.assertIn(f"did you mean {home}?", p.stderr, old)
+
     def test_common_guesses_run_the_real_command(self):
         # T-1180: builders and small models guess `fm task list`; the guess runs what it meant, with one quiet note
         self.fm("init")

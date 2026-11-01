@@ -850,6 +850,10 @@ def _project_paths(_v):
 
 def cmd_projects(args):
     """fm projects [--json] [--follow]: the device-wide list the desktop app's sidebar shows (T-0322)."""
+    if getattr(args, "sweep", None):  # T-2461: fm sweep folded in here
+        import fmeco
+        args.fix = args.sweep
+        return fmeco.cmd_sweep(args)
     build = lambda: {"v": 1, "projects": projects(), "usage": _usage()}  # noqa: E731
     if args.follow:
         return _follow(build, _project_paths, args.interval)

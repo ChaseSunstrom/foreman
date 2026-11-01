@@ -1,4 +1,4 @@
-"""fm proof: done tasks whose claims no run here proved (T-2273): typed evidence, inconclusive runs, UI edits unshot."""
+"""fm prove --rollup (fm proof until T-2461): done tasks whose claims no run here proved (T-2273): typed evidence, inconclusive runs, UI edits unshot."""
 import json
 import os
 
@@ -45,7 +45,7 @@ class Proof(ForemanTestCase):
         return {x["kind"]: x for x in next(r for r in c.unproven(self.p) if r["id"] == tid)["needs"]}
 
     def listed(self):
-        return {x["id"]: x["kinds"] for x in self.fm_json("proof")["tasks"]}
+        return {x["id"]: x["kinds"] for x in self.fm_json("prove", "--rollup")["tasks"]}
 
     def test_typed_inconclusive_and_unshot_ui_are_each_listed(self):
         typed = self.task(evidence=[("--step", "1", "pytest", "9 passed")])
@@ -88,20 +88,20 @@ class Proof(ForemanTestCase):
 
     def test_the_window_bounds_the_list_and_the_count_is_on_status_and_digest(self):
         t = self.task(evidence=[("--step", "1", "pytest", "ok")])
-        self.assertEqual(self.fm_json("proof", "--days", "7")["count"], 1)
+        self.assertEqual(self.fm_json("prove", "--rollup", "--days", "7")["count"], 1)
         with c.lock(self.p.dir):
             b = c.find_brief(self.p, t)
             b.meta["updated"] = "2020-01-01T00:00:00Z"
             c.save_brief(self.p, b, touch=False)
-        self.assertEqual(self.fm_json("proof", "--days", "7")["count"], 0)
-        self.assertEqual(self.fm_json("proof", "--days", "100000")["count"], 1)
-        self.assertEqual(self.fm("proof").stdout.count(t), 0)
+        self.assertEqual(self.fm_json("prove", "--rollup", "--days", "7")["count"], 0)
+        self.assertEqual(self.fm_json("prove", "--rollup", "--days", "100000")["count"], 1)
+        self.assertEqual(self.fm("prove", "--rollup").stdout.count(t), 0)
         t2 = self.task(evidence=[("--step", "1", "pytest", "ok")])
-        self.assertIn("unproven: 1 (fm proof)", self.fm("status").stdout)
-        self.assertIn("unproven: 1 (fm proof)", self.fm("digest").stdout)
+        self.assertIn("unproven: 1 (fm prove --rollup)", self.fm("status").stdout)
+        self.assertIn("unproven: 1 (fm prove --rollup)", self.fm("digest").stdout)
         self.assertEqual(self.fm_json("status", "--json")["unproven"], 1)
-        self.assertIn(t2, self.fm("proof").stdout)
-        self.assertEqual(json.loads(self.fm("proof", "--json").stdout)["count"], 1)
+        self.assertIn(t2, self.fm("prove", "--rollup").stdout)
+        self.assertEqual(json.loads(self.fm("prove", "--rollup", "--json").stdout)["count"], 1)
 
     # --- T-2391: the proof-kinds table, one row per domain
     GREEN, RED, RED1ST = "exit 0 · ok", "✗ exit 1 · boom", "red as expected (exit 1) · boom"
@@ -128,7 +128,7 @@ class Proof(ForemanTestCase):
             row = c.PROOF_KINDS[kind]
             self.assertTrue(row["need"] and row["upgrade"] and "{id}" in row["upgrade"], kind)
         t = self.task("data/users.csv")
-        out = self.fm("proof").stdout
+        out = self.fm("prove", "--rollup").stdout
         self.assertIn(t, out)
         self.assertIn(f"fm task evidence {t} --run", out, "each row prints its upgrade command")
 
@@ -218,8 +218,8 @@ class Proof(ForemanTestCase):
         self.assertIn("--vacuous", self.needs(hollow)["hollow"]["upgrade"])
 
     def test_unproven_line_is_one_function_the_four_renderers_call(self):
-        self.assertEqual(c.unproven_line(3), "unproven: 3 (fm proof)")
-        self.assertEqual(c.unproven_line(3, {"docs": 2, "typed": 1}), "unproven: 3 (fm proof) · typed 1, docs 2")
+        self.assertEqual(c.unproven_line(3), "unproven: 3 (fm prove --rollup)")
+        self.assertEqual(c.unproven_line(3, {"docs": 2, "typed": 1}), "unproven: 3 (fm prove --rollup) · typed 1, docs 2")
         self.assertEqual(c.unproven_line(0), "")
         self.task(evidence=[("--step", "1", "pytest", "ok")])
         for verb in ("status", "digest"):  # one function's text, with the kind counts
@@ -255,7 +255,7 @@ class Proof(ForemanTestCase):
         self.task(evidence=[("--step", "1", "pytest", "ok")])
         self.task("data/a.csv", evidence=[("--step", "1", "--run", "true")])
         self.task("data/b.csv", evidence=[("--step", "1", "pytest", "ok")])
-        d = self.fm_json("proof")
+        d = self.fm_json("prove", "--rollup")
         self.assertEqual(d["counts"], {"typed": 2, "data": 2})
         self.assertEqual(d["count"], 3)
 
@@ -273,9 +273,9 @@ class Proof(ForemanTestCase):
         old = self.task(evidence=[("--step", "1", "python3 -m unittest", "ok")])
         wait = self.task("Dockerfile", evidence=[("--step", "1", "--run", "true")])
         with mock.patch.object(c.shutil, "which", return_value=None):
-            rows = {r["id"]: r for r in self.fm_json("proof")["tasks"]}
+            rows = {r["id"]: r for r in self.fm_json("prove", "--rollup")["tasks"]}
             self.assertTrue(rows[wait]["needs"][0]["waiting"], "a missing tool is waiting, not a to-do")
-            self.assertIn("waiting", self.fm("proof").stdout)
+            self.assertIn("waiting", self.fm("prove", "--rollup").stdout)
             nxt = c.next_for(self.p)[2]
         self.assertIn(old, nxt, "the newer row waits on an install, so the older runnable one is named")
         self.assertNotIn(wait, nxt)
@@ -303,7 +303,7 @@ class Proof(ForemanTestCase):
         ok = self.needs(real)["typed"]
         self.assertEqual(c.proof_waiting(self.p, ok), "")
         self.assertIn("python3 -m unittest", ok["upgrade"])
-        self.assertIn("needs a check that can fail", self.fm("proof").stdout)
+        self.assertIn("needs a check that can fail", self.fm("prove", "--rollup").stdout)
 
     def test_review_a_command_that_only_mentions_the_proof_does_not_clear_its_kind(self):
         t = self._doc_task("Run `fm proof --days 7` to see it.\n")
@@ -374,7 +374,7 @@ class Proof(ForemanTestCase):
     def test_review_the_cache_ignores_open_briefs_and_other_windows(self):
         from unittest import mock
         self.task(evidence=[("--step", "1", "pytest", "ok")])
-        cold = self.fm_json("proof")
+        cold = self.fm_json("prove", "--rollup")
         self.assertIsInstance(cold["cold_s"], float, "the cold rollup's own time is printed")
         path = os.path.join(self.p.dir, "unproven.json")
         before = open(path, encoding="utf-8").read()
@@ -383,7 +383,7 @@ class Proof(ForemanTestCase):
         self.fm("task", "evidence", open_id, "--step", "1", "pytest", "ok")  # an active task saves its brief
         with mock.patch.object(c, "unproven", side_effect=AssertionError("recomputed")):
             self.assertEqual(c.unproven_summary(self.p)["n"], 1, "saving an open brief keeps the cache")
-        self.assertEqual(self.fm_json("proof", "--days", "7")["count"], 1)
+        self.assertEqual(self.fm_json("prove", "--rollup", "--days", "7")["count"], 1)
         self.assertEqual(open(path, encoding="utf-8").read(), before, "another window never overwrites the cache")
         self.task(evidence=[("--step", "1", "pytest", "ok")])  # a done brief does
         self.assertEqual(c.unproven_summary(self.p)["n"], 2)
@@ -418,7 +418,7 @@ class Meaning(ForemanTestCase):  # T-2393 (Mission 7, #6): each clause of the re
     def test_meaning_kind_lists_the_unbound_clause_in_fm_proof(self):
         tid = self.new()
         self.fm("task", "finish", tid, "--audit", "self", "--run", "true")
-        rows = {x["id"]: x for x in self.fm_json("proof")["tasks"]}
+        rows = {x["id"]: x for x in self.fm_json("prove", "--rollup")["tasks"]}
         self.assertIn("meaning", rows[tid]["kinds"])
         need = next(n for r in c.unproven(self.p) if r["id"] == tid for n in r["needs"] if n["kind"] == "meaning")
         self.assertIn("email the weekly digest", need["why"])

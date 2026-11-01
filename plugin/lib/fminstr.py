@@ -1,6 +1,6 @@
-"""fm instruments (T-0701): zero-token instruments. Deterministic typed tools answer the common read, failure, log,
+"""fm which --instruments (T-0701): zero-token instruments. Deterministic typed tools answer the common read, failure, log,
 data and trace questions in a few capped lines, so the model reads the answer instead of the raw file or output.
-One registry (name, line cap, JSON-schema input) drives `fm instruments`, the fm subcommands and their arguments.
+One registry (name, line cap, JSON-schema input) drives `fm which --instruments`, the fm subcommands and their arguments.
 Each tool puts its most telling lines first and is cut at its cap. Stdlib and git only: no network, no model calls."""
 import collections
 import itertools

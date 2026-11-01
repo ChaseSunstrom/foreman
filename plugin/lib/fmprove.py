@@ -728,6 +728,8 @@ def _yes(args, root):
 def cmd_prove(args):
     import fmcli
     import fmfind
+    if getattr(args, "rollup", False):  # T-2461: the unproven rollup (fm proof until it folded in here)
+        return fmcli.cmd_proof(args)
     if args.docs:  # T-2381: the docs' claims about the repo's own CLI
         return cmd_docs_proof(args)
     root = os.path.abspath(args.path)

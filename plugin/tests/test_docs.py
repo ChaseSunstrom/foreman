@@ -60,7 +60,7 @@ class Judgment(unittest.TestCase):  # T-2344: #2 and #8 described where a reader
         root = os.path.dirname(PLUGIN)
         for name in ("MASTER.md", "README.md", "CHANGELOG.md"):
             text = read_text(os.path.join(root, name))
-            for word in ("Choice N (NN%)", "fm lane race", "one-way", "fm calibration"):
+            for word in ("Choice N (NN%)", "fm lane race", "one-way", "fm outcomes --judgment"):
                 with self.subTest(doc=name, word=word):
                     self.assertIn(word, text)
 

@@ -1,6 +1,6 @@
 ---
 name: fm-scout
-description: Cheap, fast read-only lookup (Haiku): where something is defined or used, which files touch a feature, what a config says; returns file:line hits only. For open-ended research use fm-recon.
+description: Cheap, fast read-only lookup (Haiku): where something is defined or used, which files touch a feature, what a config says; file:line hits only. Open-ended research: fm-recon.
 tools: Read, Grep, Glob
 model: haiku
 color: blue

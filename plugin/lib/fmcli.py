@@ -260,6 +260,10 @@ def cmd_intake(args):
 
 
 def cmd_capture(args):
+    if getattr(args, "incident", None):  # T-2461: fm incident folded in here
+        import fmincident
+        args.words = args.incident
+        return fmincident.cmd_incident(args)
     if args.self_:
         home = c.foreman_home()
         p = c.find_project(home, create=True) or c.init_project(home)
@@ -5968,7 +5972,7 @@ class _Parser(argparse.ArgumentParser):
         bad = re.search(r"invalid choice: '([^']*)' \(choose from (.+)\)", message)    # positionals: name it first
         choices = re.findall(r"'?([\w-]+)'?", bad.group(2)) if bad else []
         if bad and not near:
-            near = difflib.get_close_matches(bad.group(1), choices, n=1)
+            near = [FOLDED[bad.group(1)]] if bad.group(1) in FOLDED else difflib.get_close_matches(bad.group(1), choices, n=1)
         if len(choices) > 12:  # T-1170: every command's name is 2 KB of output for one typo
             message = message.replace(bad.group(0), f"unknown '{bad.group(1)}' (fm help lists them)")
         super().error(message + (f" — did you mean {near[0]}?" if near else ""))
@@ -6212,6 +6216,13 @@ def _build_parser(only=None):
                                                          "(only fm capture checks; fm intake, fm task new and fm "
                                                          "research --from-agent don't)")
     s.add_argument("--self", dest="self_", action="store_true", help="capture into Foreman's own project (self-improvement)")
+    s.add_argument("--incident", nargs="+", metavar="WORDS", help="live harm (T-2388; fm incident until T-2461): "
+                   "'<impact>' --signal CMD opens an urgent FIX on a signal red now; log '<action>' --expect "
+                   "'<effect>'; follow-up '<what stops this recurring>'; closes on the signal green twice plus one "
+                   "follow-up, and fm sentinel keeps rerunning it")
+    s.add_argument("--signal", help="--incident: the harm signal, one command, exit 0 healthy, 1..125 harmed")
+    s.add_argument("--expect", help="--incident log: the effect the action should have")
+    s.add_argument("--id", help="--incident log/follow-up: the incident (default: the open one)")
 
     s = add("ask", cmd_ask, tier=("Every task", 180), help="ask the user to authorize guard categories for a task; their next message decides")
     s.add_argument("id")
@@ -6586,7 +6597,9 @@ def _build_parser(only=None):
     s = add("which", lazy("fmwhich", "cmd"), tier=("Finding your way", 205), help="a need in plain words → every shelf: past fixes, "
             "project tools, MCP servers, installed skills, binaries, Foreman's skills, playbooks and commands, stack cards, "
             "marketplace plugins; each hit with its source and any grant it needs (T-1699, T-2371)")
-    s.add_argument("task", nargs="+", help="the work, e.g. make a 3D hero with motion")
+    s.add_argument("task", nargs="*", help="the work, e.g. make a 3D hero with motion")
+    s.add_argument("--instruments", action="store_true", help="instead: the zero-token instruments, typed tools with "
+                   "input schemas and line caps (sym, fail, logs, data, trace; fm instruments until T-2461)")
     s = add("scout", lazy("fmscout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
     s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
@@ -6601,16 +6614,13 @@ def _build_parser(only=None):
     s.add_argument("--days", type=float, default=7)
     s.add_argument("--say", action="store_true", help="read it aloud too, with the first of say, spd-say, espeak-ng or "
                                                       "espeak installed (T-1549)")
-    s = add("proof", cmd_proof, tier=("Reports", 972), help="done tasks no run here proved: typed, red or inconclusive "
-            "evidence, UI edits with no shot/smoke/stories run (T-2273)")
-    s.add_argument("--days", type=int, default=30, help="how far back closed tasks are read (default 30)")
     s = add("away", lazy("fmaway", "cmd_away"), tier=("Reports", 975), help="what closed, blocked, was asked or was reverted since you last spoke (T-1155)")
-    s = add("calibration", lazy("fmoutcomes", "cmd_calibration"), tier=("Reports", 981),
-            help="the confidence ledger: stated bets scored by outcomes, Brier beside the base rate, the bars (T-2337)")
     s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), tier=("Reports", 980), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
     s.add_argument("--calibration", action="store_true", help="per tier: median actual/predicted minutes (T-2290)")
+    s.add_argument("--judgment", action="store_true", help="the confidence ledger: stated bets scored by outcomes, "
+                   "Brier beside the base rate, the bars (T-2337; fm calibration until T-2461)")
     s.add_argument("--predictions", action="store_true", help="each prediction kind's hit rate beside its naive "
                                                               "baseline, and the ones muted for trailing it (T-2406)")
     s.add_argument("--unmute", metavar="KIND", help="--predictions: let a muted kind count again from now")
@@ -6690,14 +6700,13 @@ def _build_parser(only=None):
     s.add_argument("words", nargs="*")
     s.add_argument("--as-of", help="only what was known by this ISO time (backtests)")
     s.add_argument("--top", type=int, default=15)
-    s = add("suspects", lazy("fmdebug", "cmd_suspects"), tier=("Finding your way", 580), help="files ranked for a failure: stack, task change, test "
-                                                               "links, recency (T-0706)")
-    s.add_argument("file", nargs="?", help="the failing run's output (default: stdin)")
-    s.add_argument("--top", type=int, default=5)
     s = add("whyred", lazy("fmdebug", "cmd_whyred"), tier=("Finding your way", 590), help="the minimal hunks of this task's change that turn a command "
                                                            "red (delta debugging, T-0706)")
-    s.add_argument("cmd")
+    s.add_argument("cmd", nargs="?")
     s.add_argument("--timeout", type=int, default=300)
+    s.add_argument("--suspects", nargs="?", const="", metavar="FILE", help="instead: files ranked for a failure from "
+                   "its output (FILE or stdin): stack, task change, test links, recency (fm suspects until T-2461)")
+    s.add_argument("--top", type=int, default=5, help="--suspects: how many files")
     s = add("record", lazy("fmdebug", "cmd_record"), tier=("Finding your way", 610), help="rerun a Python command and show the locals where its "
                                                            "exceptions unwound (T-0706)")
     s.add_argument("cmd")
@@ -6945,8 +6954,6 @@ def _build_parser(only=None):
     s = add("outline", lazy("fmmap", "cmd_outline"), tier=("Finding your way", 350), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
     import fminstr  # T-0701: the instruments, their help and arguments come from one registry
-    add("instruments", lazy("fminstr", "cmd_instruments"), tier=("Finding your way", 520),
-        help="the zero-token instruments: typed tools with input schemas and line caps (sym, fail, logs, data, trace)")
     for name in fminstr.TOOLS:
         fminstr.arguments(add(name, lazy("fminstr", "cmd_" + name), tier=("Finding your way", 530),
                               help=fminstr.TOOLS[name][1]), name)
@@ -7067,14 +7074,6 @@ def _build_parser(only=None):
 
     add("next", cmd_next, tier=("Every task", 10), help="the one next required action (derived from the briefs)")
 
-    s = add("incident", lazy("fmincident", "cmd_incident"), tier=("Every task", 102), help="live harm: open an urgent FIX "
-            "on a signal that is red now (--signal CMD); log actions with their expected effect; close on the signal "
-            "green twice plus one follow-up; fm sentinel keeps rerunning it")
-    s.add_argument("words", nargs="+", help="'<impact>' with --signal; or: log '<action>' --expect '<effect>'; "
-                   "follow-up '<what stops this recurring>'")
-    s.add_argument("--signal", help="the harm signal: one command, exit 0 healthy, 1..125 harmed")
-    s.add_argument("--expect", help="with log: the effect the action should have")
-    s.add_argument("--id", help="log/follow-up: the incident (default: the open one)")
 
     s = add("sentinel", cmd_sentinel, tier=("Internal (hooks and installer)", 1320), help="re-run the checks recent finished tasks passed; report what fails now")
     s.add_argument("--last", type=int, default=10, help="finished tasks to cover")
@@ -7209,12 +7208,6 @@ def _build_parser(only=None):
     s.add_argument("--seed", type=int, help="replay this plan (default: from the clock; the report names it)")
     s.add_argument("--faults", type=int, default=3, help="how many kinds to plant at once, 3 to 6 (default 3)")
 
-    s = add("sweep", lazy("fmeco", "cmd_sweep"), tier=("Running elsewhere", 1260), help="ask every other project about a fix: where a pattern is (or what "
-                                                       "recall relates), a brief in its inbox; edits nothing there")
-    s.add_argument("fix", help="the fix, as the brief's first line")
-    s.add_argument("--grep", metavar="TEXT", help="the sibling pattern (a fixed string, git grep in each project)")
-    s.add_argument("--type", default="FIX")
-    s.add_argument("--dry-run", action="store_true", help="say where it would ask; capture nothing")
     s = add("adopt", lazy("fmeco", "cmd_adopt"), tier=("Project and settings", 660), help="take in an existing repo: map, gates (a flake rerun), secrets, "
                                                        "dependencies once; a baseline note and CLEAN/RESEARCH work queued")
     s.add_argument("--history", action="store_true", help="only mine git history (reverts, fix: commits) into a lesson "
@@ -7562,6 +7555,9 @@ def _build_parser(only=None):
             "re-found cold; runs the tree's tests, so only in a tree you commit to (T-2122); exit 1 when one is proven")
     s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
     s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
+    s.add_argument("--rollup", action="store_true", help="instead: done tasks no run here proved, by kind (typed, red, "
+                   "inconclusive, UI unshot, docs, perf, meaning; T-2273, folded in from fm proof by T-2461)")
+    s.add_argument("--days", type=int, default=30, help="--rollup: how far back closed tasks are read (default 30)")
     s.add_argument("files", nargs="*", help="--docs: the docs files to check (default: all the repo's markdown)")
     s.add_argument("--docs", action="store_true", help="instead: check what the docs say about the repo's own CLI "
                    "(paths, make/npm targets, flags, subcommands, fenced commands) against its files, each claim proven, "
@@ -8068,6 +8064,12 @@ def _build_parser(only=None):
                                                                 "app's list): --json, --follow, --next")
     s.add_argument("--follow", action="store_true", help="print a new list whenever a project changes")
     s.add_argument("--next", action="store_true", help="one ranked list of every project's next action")
+    s.add_argument("--sweep", metavar="FIX", help="instead: ask every other project about a fix (the brief's first "
+                   "line): where a pattern is (or what recall relates), a brief in its inbox; edits nothing there "
+                   "(fm sweep until T-2461)")
+    s.add_argument("--grep", metavar="TEXT", help="--sweep: the sibling pattern (a fixed string, git grep in each project)")
+    s.add_argument("--type", default="FIX", help="--sweep: the brief's type")
+    s.add_argument("--dry-run", action="store_true", help="--sweep: say where it would ask; capture nothing")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s = add("watch", lazy("fmwatch", "cmd_watch"), tier=("Running elsewhere", 1280), help="live dashboard")
     s.add_argument("--once", action="store_true")
@@ -8151,6 +8153,10 @@ def _options_first(parser, argv):
     return argv[:k + 1] + head[first:] + head[:first] + argv[k + 1 + len(head):]
 
 
+# T-2461: verbs folded into the verb that holds their job; the old name only names the new home (never an alias: an
+# alias would carry a user-only word past fmguard's per-verb table, e.g. prove's --yes-run)
+FOLDED = {"proof": "prove --rollup", "calibration": "outcomes --judgment", "incident": "capture --incident",
+          "sweep": "projects --sweep", "instruments": "which --instruments", "suspects": "whyred --suspects"}
 # T-1180: what builders and small models guess, run as what they meant (one quiet note says which); first match wins
 ALIASES = [(("task", "list"), ["queue"]), (("task", "ls"), ["queue"]), (("task", "all"), ["queue"]),
            (("tasks",), ["queue"]), (("list",), ["queue"]), (("ls",), ["queue"]),

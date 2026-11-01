@@ -244,7 +244,7 @@ def digest(p, recheck=True):
                                if e.get("event") == "task_done" and (e.get("data") or {}).get("lesson")][-MAX_LINES:]
 
     briefs = c.load_briefs(p)
-    out["requests from other projects (fm sweep, fm -p SLUG capture --source cross-project), open here"] = [
+    out["requests from other projects (fm projects --sweep, fm -p SLUG capture --source cross-project), open here"] = [
         f"{b.id} {c.fit(b.title, 140)}" for b in briefs
         if b.meta.get("source") == "cross-project" and b.status not in c.CLOSED][:MAX_LINES]  # T-0443
 

@@ -1,6 +1,6 @@
 ---
 name: design-extract
-description: Derive DESIGN.md's token table from a repo's CSS custom properties, prove its contrast, or make a light/dark palette from one seed colour (usage /foreman:design-extract [ui root | seed colour]).
+description: DESIGN.md's token table from a repo's CSS custom properties, its contrast proved, or a light/dark palette from one seed colour (usage /foreman:design-extract [ui root | seed colour]).
 argument-hint: "[ui root | seed colour]"
 disable-model-invocation: true
 ---

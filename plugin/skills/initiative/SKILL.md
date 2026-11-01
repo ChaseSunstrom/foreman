@@ -1,6 +1,6 @@
 ---
 name: initiative
-description: Use whenever the user wants Foreman to find work on its own in a repo: map it, find candidates, prove them, fix the proven ones test-first on lanes, and stop at a receipt.
+description: Use whenever Foreman should find work on its own in a repo: map it, prove the leads, fix the proven ones test-first on lanes, stop at a receipt.
 disable-model-invocation: true
 ---
 

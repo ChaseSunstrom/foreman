@@ -43,7 +43,7 @@ class Base(HookCase):
 class Suspects(Base):
     def test_the_changed_file_on_the_stack_ranks_first_with_its_reasons(self):
         self.break_it()
-        out = self.fm("suspects", input=self.run_tests().stderr).stdout
+        out = self.fm("whyred", "--suspects", input=self.run_tests().stderr).stdout
         first = next(l for l in out.splitlines() if l.strip().startswith("1."))
         self.assertIn("calc.py", first)
         self.assertIn("changed", first)

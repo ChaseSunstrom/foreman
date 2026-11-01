@@ -160,6 +160,8 @@ def track_lines(p, outs=None):
 
 def cmd_outcomes(args):
     import fmcli
+    if getattr(args, "judgment", False):  # T-2461: fm calibration folded in here
+        return cmd_calibration(args)
     p = fmcli.resolve(args)
     if getattr(args, "predictions", False) or getattr(args, "unmute", None):  # T-2406: the prediction book
         import fmforesight
@@ -674,7 +676,7 @@ def priced_doors(p, briefs=None):
 
 
 def snapshot(p):
-    """T-2344: fm calibration's data with none of its writes (no settle, no bar move): the MCP tool and the band read it."""
+    """T-2344: fm outcomes --judgment's data with none of its writes (no settle, no bar move): the MCP tool and the band read it."""
     d = ledger_data(p, outcomes(p))
     d["bars"] = bars(p)
     d.update(extras(p))
@@ -690,11 +692,11 @@ def band_line(p):
         if d["doors_parked"] else []
     if br.get("base") is not None and br.get("stated") is not None and br["stated"] > br["base"]:
         parts.append(f"stated confidence scores Brier {br['stated']:.2f}, worse than the base rate's {br['base']:.2f}")
-    return ("judgment: " + "; ".join(parts) + " (fm calibration)") if parts else ""
+    return ("judgment: " + "; ".join(parts) + " (fm outcomes --judgment)") if parts else ""
 
 
 def cmd_calibration(args):
-    """fm calibration: the ledger's buckets per kind, the Brier of the stated numbers beside the base rate's, the
+    """fm outcomes --judgment: the ledger's buckets per kind, the Brier of the stated numbers beside the base rate's, the
     bars and where the base rate routes. Writes the outcome rows that are due and applies a bar raise."""
     import fmcli
     p = fmcli.resolve(args)

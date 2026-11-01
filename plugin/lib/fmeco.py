@@ -1,4 +1,4 @@
-"""Foreman across projects, machines and the tools around it (T-0673): fm sweep asks sibling projects about a fix
+"""Foreman across projects, machines and the tools around it (T-0673): fm projects --sweep asks sibling projects about a fix
 (T-0443), fm adopt takes in an existing repo (T-0444), version skew per project (T-0463), fm inbox gh turns open issues
 into briefs (T-0481), fm canary checks Foreman against a new Claude Code (T-0482) and fm machine names this machine
 (T-0574). Stdlib only. Nothing here edits another repo's files or sends anything anywhere; gh is only read."""
@@ -76,7 +76,7 @@ def capture_once(p, text, type_, source, key=None, trigger=None, bound=None, tri
     return b, True
 
 
-# ---------------------------------------------------------------- fm sweep (T-0443)
+# ---------------------------------------------------------------- fm projects --sweep (T-0443)
 
 def _grep(root, pattern, cap=10):
     try:
@@ -107,7 +107,7 @@ def sweep(fix, pattern=None, type_="FIX", dry_run=False, here=None):
         if not (row["hits"] if pattern else row["related"]):
             continue
         text = "\n".join([fix, f"CONTEXT: a cross-project sweep from {here.slug if here else 'another project'}: the "
-                               f"fix was made there; check whether it applies here (fm sweep changed nothing here)."]
+                               f"fix was made there; check whether it applies here (fm projects --sweep changed nothing here)."]
                          + ([f"CONTEXT: `{pattern}` found at {', '.join(row['hits'])}"] if row["hits"] else [])
                          + [f"CONTEXT: related here: {x}" for x in row["related"]])
         if dry_run:
