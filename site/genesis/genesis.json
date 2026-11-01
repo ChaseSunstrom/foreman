@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T18:10:13Z",
- "rev": "71d9a8ab",
+ "updated": "2026-11-01T18:20:34Z",
+ "rev": "4ffc19f1",
  "capabilities": [
   {
    "n": 1,
@@ -1875,17 +1875,17 @@
       {
        "id": "T-2487",
        "title": "Model exam arms: per use (intake tier, lead triage, dedupe), the model path against the…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
+       "done": 2,
        "current": "red tests"
       },
       {
        "id": "T-2488",
        "title": "The first uses in shadow mode: intake type and tier, fm find lead triage, embedding…",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
@@ -1895,12 +1895,12 @@
       {
        "id": "T-2489",
        "title": "Model layer surfaces: MCP decide tool, fm doctor backend health, the site's Model layer…",
-       "status": "captured",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
+       "steps": 3,
        "done": 0,
-       "current": ""
+       "current": "red tests per surface"
       }
      ]
     },
@@ -18047,14 +18047,14 @@
  },
  "not_yet": 4,
  "not_yet_open": 0,
- "unproven": 1046,
+ "unproven": 1047,
  "unproven_kinds": {
   "meaning": 578,
   "research-uncited": 31,
   "typed": 46,
-  "red": 57,
+  "red": 58,
   "perf-typed": 52,
-  "docs": 583,
+  "docs": 584,
   "ui-unshot": 56,
   "data": 4,
   "infra": 7,
