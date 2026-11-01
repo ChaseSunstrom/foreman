@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T18:25:37Z",
- "rev": "4ffc19f1",
+ "updated": "2026-11-01T18:46:55Z",
+ "rev": "05738e42",
  "capabilities": [
   {
    "n": 1,
@@ -1875,12 +1875,12 @@
       {
        "id": "T-2487",
        "title": "Model exam arms: per use (intake tier, lead triage, dedupe), the model path against the…",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "red tests"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2488",
@@ -1895,11 +1895,11 @@
       {
        "id": "T-2489",
        "title": "Model layer surfaces: MCP decide tool, fm doctor backend health, the site's Model layer…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
+       "done": 2,
        "current": "red tests per surface"
       }
      ]
@@ -18049,12 +18049,12 @@
  "not_yet_open": 0,
  "unproven": 1047,
  "unproven_kinds": {
-  "meaning": 578,
-  "research-uncited": 31,
-  "typed": 46,
-  "red": 58,
+  "meaning": 577,
+  "research-uncited": 30,
+  "typed": 45,
+  "red": 59,
   "perf-typed": 52,
-  "docs": 584,
+  "docs": 585,
   "ui-unshot": 56,
   "data": 4,
   "infra": 7,
@@ -18063,8 +18063,8 @@
  "next": {
   "stage": "build",
   "gen": 2,
-  "action": "Mission 1 (model-layer): finish T-2487",
-  "command": "fm focus T-2487",
+  "action": "Mission 1 (model-layer): finish T-2489",
+  "command": "fm focus T-2489",
   "kind": "ok"
  },
  "docs": {
