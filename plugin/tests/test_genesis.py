@@ -1543,14 +1543,24 @@ def selected(p, *gens):
     for n in gens:
         tower_file(fmgenesis.home(p), f"gen-{n}/select.md", f"# Select\n\nGen: {n}\nVerdict: keep\n")
     reviewed(p, *gens)
+    mapped(p, *gens)
 
 
-def reviewed(p, *gens, rows=(), model="fable", missions="Opus 5.5"):
+def reviewed(p, *gens, rows=(), model="fable", missions="Opus 5.5", head=""):
     """T-2501: what fm genesis review leaves (rows: dicts with key, ground, claim, handled)."""
     import fmgenesis
     for n in gens:
         tower_file(fmgenesis.home(p), f"gen-{n}/review.md",
-                   fmgenesis._review_text(n, model, missions, "0" * 64, list(rows), 0))
+                   fmgenesis._review_text(n, model, missions, "0" * 64, list(rows), 0, head))
+
+
+def mapped(p, *gens, tier=2):
+    """T-2502: a gap map drawn at HEAD with a row for every gen-0 capability, for fixtures past the review."""
+    import fmgenesis
+    rows = "".join(f"| {num}. {name} | {tier} | plugin/lib/fmcore.py | a test row |\n" for num, name, _ in fmgenesis.all_caps(p))
+    for n in gens:
+        tower_file(fmgenesis.home(p), f"gen-{n}/gap-map.md", f"# Gap map — gen {n}\n\nDrawn at: {fmgenesis._head(p)}\n\n"
+                   f"| Area | Tier | Evidence | Missing |\n|---|---|---|---|\n{rows}")
 
 
 NY = ("# Not yet\n\n## Self-hosted model router\n- blocker: no local model\n- tried: ollama probe; llama.cpp spike\n"
@@ -3800,4 +3810,86 @@ class GenerationReview(ForemanTestCase):
         s = fmgenesis.step(self.p)
         self.assertEqual((s["stage"], s["command"]), ("review", "fm genesis review 1"), s)
         reviewed(self.p, 1)
+        self.assertEqual(fmgenesis.step(self.p)["stage"], "gap map")  # T-2502: the redraw comes next
+        mapped(self.p, 1)
         self.assertEqual(fmgenesis.step(self.p)["stage"], "sweep")
+
+
+class GapMapValue(ForemanTestCase):
+    """T-2502 (the user's standing rule of 2026-11-01, part 2): the gap map is redrawn each generation against the
+    current code, and the next Seed ranks Missions by expected value from it, the exam scorecard, outcome survival and
+    the review; empty coverage cells only break ties; the sweep checks the map."""
+    MAP = ("# Gap map — gen 1\n\nDrawn at: {sha}\n\n| Area | Tier | Evidence | Missing |\n|---|---|---|---|\n"
+           "| 8. Calibrated judgment | 4 | plugin/lib/fmoutcomes.py | scored feedback in hours |\n"
+           "| 2. Exhaustive thinking | 2 | plugin/lib/fmideas.py | breadth checks |\n"
+           "| not a row\n")
+
+    def setUp(self):
+        super().setUp()
+        import subprocess
+        import fmcore as c
+        import fmgenesis
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        self.tower = fmgenesis.home(self.p)
+        fmgenesis.init(self.p, GEN0.encode())
+        tower_file(self.tower, "gen-1/seed.md", "# Seed\ngen-0\nNo Missions this generation.\n")
+        self.sha = subprocess.run(["git", "-C", self.repo, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    def card(self, **states):
+        return {"rows": [{"n": n, "name": name, "state": states.get(key, "too few")} for n, name, key in
+                         ((8, "Calibrated judgment", "cal"), (2, "Exhaustive thinking", "ex"))]}
+
+    def test_the_map_parses_tiers_and_skips_a_malformed_row(self):
+        import fmgenesis
+        rows = fmgenesis._gap_rows(self.MAP.format(sha=self.sha))
+        self.assertEqual({k: v["tier"] for k, v in rows.items()}, {"calibrated judgment": 4, "exhaustive thinking": 2})
+
+    def test_value_orders_missions_and_empty_cells_only_break_ties(self):
+        import fmgenesis
+        tower_file(self.tower, "gen-1/gap-map.md", self.MAP.format(sha=self.sha))
+        cov = [{"area": "2. Exhaustive thinking", "empty": ["a", "b", "c"], "ideas": 0, "bad": 0},
+               {"area": "8. Calibrated judgment", "empty": ["a"], "ideas": 0, "bad": 0},
+               {"area": "UX", "empty": ["a", "b", "c", "d", "e"], "ideas": 0, "bad": 0},
+               {"area": "Docs", "empty": ["a", "b"], "ideas": 0, "bad": 0}]
+        ranked = fmgenesis._mission_rank(self.p, 2, cov, card=self.card(ex="pass"))
+        self.assertEqual([r["area"] for r, _, _ in ranked], ["8. Calibrated judgment", "2. Exhaustive thinking", "UX", "Docs"])
+        score, parts = ranked[0][1], ranked[0][2]
+        self.assertEqual((score, parts["tier"], parts["exam"]), (6, 4, 2))  # tier 4 + ungraded 2
+        self.assertEqual(ranked[1][1], 2)  # tier 2 + passing 0: fewer empty cells never lift it
+        self.assertEqual([r[1] for r in ranked[2:]], [0, 0])  # equal scores: more empty cells first (UX 5 over Docs 2)
+
+    def test_the_sweep_row_is_red_when_the_map_is_missing_stale_or_incomplete(self):
+        import subprocess
+        import fmgenesis
+        self.assertIn("no gen-1/gap-map.md", fmgenesis._gapmap_row(self.p, 1)[0][0])
+        tower_file(self.tower, "gen-1/gap-map.md", self.MAP.format(sha="0" * 40))
+        self.assertTrue(any("isn't a commit" in x for x in fmgenesis._gapmap_row(self.p, 1)[0]))
+        tower_file(self.tower, "gen-1/gap-map.md", self.MAP.format(sha=self.sha))
+        from unittest import mock
+        with mock.patch.object(fmgenesis, "all_caps", return_value=[(8, "Calibrated judgment", ""), (1, "Initiative", "")]):
+            self.assertEqual(fmgenesis._gapmap_row(self.p, 1)[0], ["no row for #1 Initiative"])
+        with open(os.path.join(self.repo, "later.py"), "w") as f:
+            f.write("x = 1\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "later"], check=True)
+        mapped(self.p, 1)  # every capability, drawn at the new HEAD
+        self.assertEqual(fmgenesis._gapmap_row(self.p, 1)[0], [])
+        reviewed(self.p, 1, head=fmgenesis._head(self.p))
+        tower_file(self.tower, "gen-1/gap-map.md", fmgenesis._doc(self.tower, "gen-1/gap-map.md").replace(
+            fmgenesis._head(self.p), self.sha))  # drawn before the review's commit
+        self.assertTrue(any("older than the review" in x for x in fmgenesis._gapmap_row(self.p, 1)[0]))
+
+    def test_step_names_the_redraw_after_the_review_and_put_takes_the_map(self):
+        import fmgenesis
+        tower_file(self.tower, "lineage.md", "# Lineage\n\n## gen-1\n- baseline\n")
+        tower_file(self.tower, "gen-1/drift.md", "# Drift\n\nVerdict: clean\n")
+        later = os.path.getmtime(os.path.join(self.tower, "gen-1", "seed.md")) + 60
+        os.utime(os.path.join(self.tower, "gen-1", "drift.md"), (later, later))
+        tower_file(self.tower, "gen-1/select.md", "# Select\n\nGen: 1\nVerdict: keep\n")
+        reviewed(self.p, 1)
+        s = fmgenesis.step(self.p)
+        self.assertEqual((s["stage"], s["command"]), ("gap map", "fm genesis put gen-1/gap-map.md --file -"), s)
+        mapped(self.p, 1)
+        self.assertEqual(fmgenesis.step(self.p)["stage"], "sweep")
+        self.assertTrue(fmgenesis.SHAPE.fullmatch("gen-1/gap-map.md"))

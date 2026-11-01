@@ -15,7 +15,7 @@ import fmcore as c
 # not-yet.md: ideas no approach has landed yet, with their blockers (retried each generation, never dropped);
 # coverage.md: the capability-area x surface x stage grid every generation fills.
 SHAPE = re.compile(r"(gap-map|lineage|catalogue|report|not-yet|coverage|spec)\.md|exam\.jsonl"
-                   r"|frame\.md|gen-[1-9][0-9]*/(seed|drift|sweep|frontier|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
+                   r"|frame\.md|gen-[1-9][0-9]*/(seed|drift|sweep|frontier|gap-map|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
 OWNED = re.compile(r"exam\.jsonl|frame\.md|gen-[1-9][0-9]*/(drift|sweep|select|confirm|frontier|review)\.md")  # T-2155: the stage gates' records,
 # frame.md (T-2188): only fm genesis grow adds to it;
 # never put; T-2187: frontier.md is built from the project's own notes by fm genesis frontier N
@@ -855,6 +855,11 @@ def step(p):
         if stage == "review":  # T-2501: its findings are filed by the review itself; one left bare reruns it
             if any(not r["handled"] for r in _review_rows(doc)):
                 return act(stage, n, f"{pre}review.md has unhandled findings: file them", f"fm genesis review {n}")
+            if _doc(d, f"{pre}gap-map.md") is None:  # T-2502: the redraw comes after the review, before the sweep
+                return act("gap map", n, "redraw the gap map against the current code: one recon per capability (a "
+                                         "subagent when the budget allows, targeted reads otherwise), a row each with "
+                                         "its tier, evidence and what is missing, and a 'Drawn at: <HEAD sha>' line",
+                           f"fm genesis put {pre}gap-map.md --file -")
             continue
         if stage == "drift" and _stale(d, pre):
             return act(stage, n, "the seed or a Mission changed after drift.md: rerun the drift check",
@@ -2321,18 +2326,20 @@ def _seed(p, n, agent):
     caps = {nm.lower(): num for num, nm, _ in all_caps(p, gen0)}
     def open_(r):
         return r["ideas"] + len(r["empty"]) + r["bad"]
-    # T-2482: §2 capability areas first (no polish while a tier 3-4 gap stands), then T-2474's empty cells first
-    # (the run can't end with one), then the rest of the open cells
-    def rank(r):
-        return (re.sub(r"^\d+\.\s*", "", r["area"]).lower() not in caps, -len(r["empty"]), -open_(r))
-    table, ranked = [], sorted((r for r in cov["rows"] if open_(r)), key=rank)
+    # T-2502 (user steer 2026-11-01, part 2): expected value from the gap map, the scorecard, survival and the
+    # review; empty cells only break ties (T-2482's capability-first and T-2474's empty-first orders are retired)
+    scored = _mission_rank(p, n, [r for r in cov["rows"] if open_(r)])
+    ev = {id(r): (v, parts) for r, v, parts in scored}
+    table, ranked = [], [r for r, _, _ in scored]
     wait = [f"{r['area']} ({open_(r)})" for r in ranked[COVER:]]  # past the cap, named so no area drops out unseen
     for i, r in enumerate(ranked[:COVER], 1):
         bare = re.sub(r"^\d+\.\s*", "", r["area"]).replace("|", "/")
         slug = re.sub(r"[^a-z0-9]+", "-", bare.lower()).strip("-") or f"area-{i}"
         label = f"#{caps[bare.lower()]} {bare}" if bare.lower() in caps else bare
-        table.append(f"| {i} | mission-{slug}.md | {label} | {open_(r)} open cells: {len(r['empty'])} empty, "
-                     f"{r['ideas']} ideas, {r['bad']} ungrounded or templated | — |")
+        v, parts = ev[id(r)]
+        table.append(f"| {i} | mission-{slug}.md | {label} | value {v} ({', '.join(f'{k} {x}' for k, x in parts.items())}); "
+                     f"{open_(r)} open cells: {len(r['empty'])} empty, {r['ideas']} ideas, {r['bad']} ungrounded or "
+                     f"templated | — |")
     # T-2187: one row a generation fits no cell and no capability, judged only on novelty and value
     table.append(f"| {len(table) + 1} | mission-moonshot.md | moonshot: no cell, no capability | judged on novelty "
                  "and value only (see Moonshot below) | — |")
@@ -2372,6 +2379,11 @@ def _seed(p, n, agent):
            "| # | Mission file | Capabilities | Gaps closed (open cells) | Depends on |", "|---|---|---|---|---|", *table,
            *(["", f"Past the {COVER} coverage Missions (the 8th row is the moonshot's), open cells wait in: "
                   f"{', '.join(wait)}"] if wait else []), "",
+           "## How the Missions were ranked", "",
+           f"Expected value = the gap map's tier (1-4) + the exam ({', '.join(f'{k} {v}' for k, v in EV_WEIGHTS['exam'].items())}) "
+           f"+ {EV_WEIGHTS['survival']} x the share of the area's last Mission tasks lost in survival + "
+           f"{EV_WEIGHTS['review']} per review gap naming it; empty cells only break ties (the user's steer of "
+           "2026-11-01).", "",
            "## Order of work", "",
            "Missions in table order; Missions that don't depend on each other run in parallel lanes up to fm lane max, "
            "each with its own critique, merged in table order (the user's steer of 2026-10-31). After all Missions: "
@@ -3155,10 +3167,11 @@ def _missions_model(p, n):
     return max((m for m in seen if m), key=_rank, default=None)
 
 
-def _review_text(n, model, missions, digest, rows, dropped):
+def _review_text(n, model, missions, digest, rows, dropped, head=""):
     cell = lambda x: c.fit(c.plain(str(x)).replace("|", "/").replace("\n", " "), 300)  # noqa: E731
     return "\n".join([f"# Cross-cutting review — gen-{n}", "", f"Reviewer model: {model}",
                       f"Missions' model: {missions or 'unknown'}", f"Inputs: sha256 {digest}",
+                      f"Drawn at: {head or 'unknown'}",  # T-2502: the gap map must be drawn at or after this commit
                       f"Dropped (no ground in the inputs): {dropped}", "",
                       "Handled is a task id, gap (the next Seed's top gaps) or dismissed: <reason>.", "",
                       "| # | Question | Ground | Finding | Handled |", "|---|---|---|---|---|",
@@ -3203,7 +3216,7 @@ def review(p, n, model=None, run=None):
             else:
                 dropped += 1
         _file(p, f"gen-{n}/review.md", _review_text(n, model, missions, hashlib.sha256(blob.encode()).hexdigest(),
-                                                    rows[:30], dropped + max(0, len(rows) - 30)))
+                                                    rows[:30], dropped + max(0, len(rows) - 30), _head(p)))
     tasks = review_fixes(p, n)
     text = _doc(d, f"gen-{n}/review.md")
     return {"path": os.path.join(d, f"gen-{n}", "review.md"), "model": _review_head(text, "Reviewer model"),
@@ -3281,6 +3294,87 @@ def _review_row(p, n):
     return bad, f"{len(rows)} finding(s) from {model} over the Missions' {missions}, each handled"
 
 
+def _head(p):
+    return c._git(p.root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "rev-parse", "HEAD",
+                  timeout=10).strip()
+
+
+GAP_ROW = re.compile(r"^\| ([^|]+?) \| ([1-4]) \| ([^|]*?) \| ([^|]*?) \|$", re.M)
+EV_WEIGHTS = {"exam": {"fail": 3, "too few": 2, "pass": 0}, "survival": 3, "review": 2}  # T-2502: printed in each seed
+
+
+def _bare(area):
+    return re.sub(r"^#?\d+\.?\s*", "", str(area)).strip().lower()
+
+
+def _gap_rows(text):
+    """T-2502: {bare area: {tier, evidence, missing}} from a gap map's table; a malformed row is skipped."""
+    return {_bare(a): {"tier": int(t), "evidence": e.strip(), "missing": m.strip()}
+            for a, t, e, m in GAP_ROW.findall(text or "") if a.strip().lower() != "area"}
+
+
+def _mission_rank(p, n, rows, card=None, outs=None):
+    """T-2502 (the user's standing rule of 2026-11-01, part 2): coverage rows ranked for gen n's seed by expected value
+    (the gen n-1 gap map's tier, the exam scorecard's state for a §2 capability, the survival losses of that area's
+    gen n-1 Mission tasks, the gen n-1 review's gap rows naming it), empty cells only among equal scores, then open
+    cells. [(row, score, parts)], best first."""
+    d = home(p)
+    gaps = _gap_rows(_doc(d, f"gen-{n - 1}/gap-map.md"))
+    if card is None:
+        try:
+            card = scorecard(p)
+        except ValueError:  # a gen-0 with no numbered §2 has no scorecard; the other three inputs still rank
+            card = {}
+    state = {_bare(r["name"]): r.get("state") for r in card.get("rows") or []}
+    review = " ".join(_review_gaps(p, n - 1)).lower()
+    lost = {}
+    try:
+        import fmoutcomes
+        outs = fmoutcomes.outcomes(p) if outs is None else outs
+        sub = os.path.join(d, f"gen-{n - 1}")
+        for f in sorted(os.listdir(sub)) if os.path.isdir(sub) else []:
+            if f.startswith("mission-"):
+                ids = re.findall(r"\bT-\d{4,}\b", " ".join(TASKS.findall(_doc(sub, f) or "")))
+                done = [outs[t]["survival"] for t in ids if t in outs and outs[t].get("survival") in ("lost", "survived")]
+                if done:
+                    lost[f[8:-3]] = done.count("lost") / len(done)
+    except Exception:  # survival is one input of four; a bad outcome store never stops a seed
+        pass
+    out = []
+    for r in rows:
+        bare = _bare(r["area"])
+        slug = re.sub(r"[^a-z0-9]+", "-", bare).strip("-")
+        parts = {"tier": gaps.get(bare, {}).get("tier", 0),
+                 "exam": EV_WEIGHTS["exam"].get(state.get(bare), 0) if bare in state else 0,
+                 "survival": round(EV_WEIGHTS["survival"] * lost.get(slug, 0)),
+                 "review": EV_WEIGHTS["review"] * review.count(bare) if bare else 0}
+        out.append((r, sum(parts.values()), parts))
+    return sorted(out, key=lambda x: (-x[1], -len(x[0]["empty"]), -(x[0]["ideas"] + len(x[0]["empty"]) + x[0]["bad"])))
+
+
+def _gapmap_row(p, n):
+    """T-2502: (bad, good) for the sweep: gen-n/gap-map.md exists, names a real commit drawn at or after the review's,
+    and has a row for every gen-0 §2 capability."""
+    import subprocess
+    d = home(p)
+    text = _doc(d, f"gen-{n}/gap-map.md")
+    if text is None:
+        return [f"no gen-{n}/gap-map.md: redraw it against the current code, then fm genesis put gen-{n}/gap-map.md"], ""
+    g = ["git", "-C", p.root, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
+    at, bad = _review_head(text, "Drawn at"), []
+    if not re.fullmatch(r"[0-9a-f]{7,40}", at) or subprocess.run(g + ["cat-file", "-e", f"{at}^{{commit}}"],
+                                                                  capture_output=True, timeout=10).returncode:
+        bad.append(f"its Drawn at ({c.fit(at, 40) or 'none'}) isn't a commit here")
+    else:
+        rv = _review_head(_doc(d, f"gen-{n}/review.md") or "", "Drawn at")
+        if re.fullmatch(r"[0-9a-f]{7,40}", rv) and subprocess.run(g + ["merge-base", "--is-ancestor", rv, at],
+                                                                  capture_output=True, timeout=10).returncode:
+            bad.append(f"drawn at {at[:8]}, older than the review's {rv[:8]}: redraw it")
+    rows = _gap_rows(text)
+    bad += [f"no row for #{num} {name}" for num, name, _ in all_caps(p) if name.lower() not in rows]
+    return bad, f"{len(rows)} area(s) drawn at {at[:8]}"
+
+
 def _review_gaps(p, n):
     """T-2501: the findings gen n's review marked gap, for the next Seed's top gaps."""
     return [f"{REVIEW_KEYS.get(r['key'], r['key'])}: {r['claim']} ({r['ground']})"
@@ -3301,6 +3395,7 @@ def sweep(p, n, agent="foreman"):
     row("genesis check", _bad(r), "coverage, not-yet, reach and lineage are whole")
     row("steer checks", steer(p)[0], "every rule from a user steer has a check, and each passes")  # T-2167
     row("cross-cutting review", *_review_row(p, n))  # T-2501 (user steer 2026-11-01, part 1)
+    row("gap map", *_gapmap_row(p, n))  # T-2502 (user steer 2026-11-01, part 2)
     briefs = c.load_briefs(p)
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
     ids = [t for f in sorted(os.listdir(os.path.join(d, f"gen-{n}")) if os.path.isdir(os.path.join(d, f"gen-{n}")) else [])

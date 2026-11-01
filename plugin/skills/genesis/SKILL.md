@@ -36,7 +36,10 @@ Repeat until the kind is done or stopped (on blocked, work the rest of the queue
 2. Do it. Stages in order: spec (when spec.md is missing), seed (≤ 8 Missions), mission (`fm mission`,
    `fm ideas`), intake, build (each brief closed with `fm task finish`), critique, select (`fm genesis select N`), drift (`fm genesis drift N`), review
    (`fm genesis review N`: a cold reader on a stronger model sees only the diff, exam, outcomes and friction; each
-   finding becomes a task, `--handle K=gap` or `--handle "K=dismissed: why"`), sweep (`fm genesis sweep N`), then the next seed (`fm genesis seed N+1`) or the report. The report step is blocked while a lineage choice is still provisional: after the
+   finding becomes a task, `--handle K=gap` or `--handle "K=dismissed: why"`), gap map (redraw
+   `gen-N/gap-map.md` against the current code, one recon per capability: a row each with tier 1-4, evidence and what
+   is missing, plus `Drawn at: <HEAD sha>`; the next seed ranks Missions by expected value from it, the scorecard,
+   survival and the review, empty cells only breaking ties), sweep (`fm genesis sweep N`), then the next seed (`fm genesis seed N+1`) or the report. The report step is blocked while a lineage choice is still provisional: after the
    production-model exam, run `fm genesis confirm N` for each (T-2197).
    From gen 2 the seed's 8th Mission is the moonshot (mission-moonshot.md): run `fm genesis frontier N`
    first, give each `### idea` its `Prior art:`, `Better by:` and `Novelty: 1-5` lines, run `fm genesis
