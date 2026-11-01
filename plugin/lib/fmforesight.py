@@ -219,10 +219,11 @@ def _requests(p):
         f = (e.get("data") or {}).get("file")
         if e.get("task") and isinstance(f, str):
             touched.setdefault(e["task"], set()).add(os.path.relpath(f, p.root) if os.path.isabs(f) else f)
+    inside = lambda x: not os.path.isabs(x) and x.split(os.sep, 1)[0] != os.pardir  # noqa: E731 — T-2454: the repo's own
     out = []
     for b in briefs:
         scope = b.meta.get("scope") if isinstance(b.meta.get("scope"), list) else []
-        out.append((b, b.type, sorted({str(x) for x in scope} | touched.get(b.id, set()))[:20]))
+        out.append((b, b.type, sorted(x for x in {str(y) for y in scope} | touched.get(b.id, set()) if inside(x))[:20]))
     return out
 
 
