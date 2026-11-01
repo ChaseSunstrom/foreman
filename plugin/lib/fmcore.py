@@ -4525,7 +4525,8 @@ def _need_research(x):
     decision = b.section("Decision").lower()
     if any(re.search(r"(?<![\w-])" + re.escape(n) + r"(?![\w-])", decision) for n in sh["notes"]):
         return None
-    return {"why": "its Decision names no saved note with a verified claim", "fmt": {"q": _q(b.title)},
+    return {"why": "its Decision names no saved note with a verified claim: it rests on recalled or unchecked claims "
+                   "only", "fmt": {"q": _q(b.title)},
             "tools": ["claude"]}
 
 

@@ -93,6 +93,15 @@ class Add(ForemanTestCase):
         self.assertNotIn("alpha text", read_text(path))
 
 
+class HowLearned(ForemanTestCase):  # T-2397: a claim says whether it was read, ran or recalled
+    def test_each_claim_line_says_how_it_was_learned(self):
+        got = r.parse_claims("- CLAIM: x | SOURCE: https://e.org/a | QUOTE: one two three four\n"
+                             "- CLAIM: y | SOURCE: run: pytest -q\n- CLAIM: z")["claims"]
+        self.assertEqual([r._how(x) for x in got], ["read", "ran", "recalled"])
+        self.assertIn("[recalled] z", r._line(got[2]))
+        self.assertTrue(r._line(got[0]).startswith("- "), "the status mark still leads the line")
+
+
 class Verify(ForemanTestCase):
     def test_quotes_are_checked_against_the_fetched_page(self):
         pages = {"https://a.example/1": "<html><script>x</script><p>The engine &amp; it <b>runs  fast</b> on ARM.</p>",

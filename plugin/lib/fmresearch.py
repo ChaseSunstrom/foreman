@@ -250,8 +250,14 @@ def _run(jobs, timeout):
 MARK = {"verified": "✓", "not found": "✗", "unchecked": "?"}
 
 
+def _how(x):
+    """T-2397: how a claim was learned: read (a cited page), ran (its source is a command) or recalled (no source)."""
+    u = (x.url or "").strip()
+    return "ran" if u.startswith(("run:", "`")) else "read" if u.startswith(("http://", "https://")) else "recalled"
+
+
 def _line(x):
-    return (f"- {MARK[x.status]} {x.text} — {x.url or 'no source'}" + (f' "{x.quote}"' if x.quote else "")
+    return (f"- {MARK[x.status]} [{_how(x)}] {x.text} — {x.url or 'no source'}" + (f' "{x.quote}"' if x.quote else "")
             + f" ({x.tier}, {x.date}" + (f"; {x.status}: {x.why}" if x.status != "verified" else "; quote found") + ")"
             + (f" · {x.support}" if x.support else ""))
 
@@ -346,7 +352,7 @@ def _ask(p, args, q):
             f"are on the cited page, not that the claim is true; 'also:', 'single source' and possible conflicts come "
             f"from word overlap between claims, not from reading them.", ""]
     if known:
-        body += ["## Already known (fm recall)"] + [f"- {h[2]}" for h in known] + [""]
+        body += ["## Already known (fm recall)"] + [f"- [recalled] {h[2]}" for h in known] + [""]
     for i, (s, (_, err)) in enumerate(zip(subs, answers)):
         mine, listed = [x for x in claims if x.sub == i], set()
         lines = []
