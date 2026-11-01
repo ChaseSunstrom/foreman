@@ -3554,7 +3554,7 @@ def _mission_rank(p, n, rows, card=None, outs=None):
         parts = {"tier": gaps.get(bare, {}).get("tier", 0),
                  "exam": EV_WEIGHTS["exam"].get(state.get(bare), 0) if bare in state else 0,
                  "survival": round(EV_WEIGHTS["survival"] * lost.get(slug, 0)),
-                 "review": EV_WEIGHTS["review"] * review.count(bare) if bare else 0}
+                 "review": EV_WEIGHTS["review"] * len(re.findall(rf"\b{re.escape(bare)}\b", review)) if bare else 0}  # T-2509
         out.append((r, sum(parts.values()), parts))
     return sorted(out, key=lambda x: (-x[1], -len(x[0]["empty"]), -(x[0]["ideas"] + len(x[0]["empty"]) + x[0]["bad"])))
 

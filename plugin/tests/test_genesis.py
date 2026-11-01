@@ -3895,6 +3895,16 @@ class GapMapValue(ForemanTestCase):
         self.assertEqual(ranked[1][1], 2)  # tier 2 + passing 0: fewer empty cells never lift it
         self.assertEqual([r[1] for r in ranked[2:]], [0, 0])  # equal scores: more empty cells first (UX 5 over Docs 2)
 
+    def test_a_review_gap_scores_an_area_by_whole_word_only(self):  # T-2509
+        import fmgenesis
+        reviewed(self.p, 1, rows=[{"key": "worse", "ground": "plugin/lib/flux.py", "claim": "the flux cache leaks",
+                                   "handled": "gap"}])
+        cov = [{"area": "UX", "empty": ["a"], "ideas": 0, "bad": 0}]
+        self.assertEqual(fmgenesis._mission_rank(self.p, 2, cov, card={})[0][2]["review"], 0)  # 'flux' isn't 'ux'
+        reviewed(self.p, 1, rows=[{"key": "complaint", "ground": "site/ux.html", "claim": "the UX page lies",
+                                   "handled": "gap"}])
+        self.assertEqual(fmgenesis._mission_rank(self.p, 2, cov, card={})[0][2]["review"], 2 * 2)  # named twice
+
     def test_the_sweep_row_is_red_when_the_map_is_missing_stale_or_incomplete(self):
         import subprocess
         import fmgenesis
