@@ -1803,9 +1803,13 @@ class GenesisSelect(ForemanTestCase):
         text = self.read("gen-3/seed.md")
         self.assertIn("rule one", text)
         self.assertNotIn("child rule", text)  # gen 2 lost selection: its rewrite doesn't carry on
-        self.assertEqual([r[1] for r in fmgenesis.ROW.findall(text)],  # T-2474: most empty cells first, then most
-                         ["mission-exhaustive-thinking", "mission-docs", "mission-initiative"]  # open, ties in file order
-                         + [f"mission-extra-{i}" for i in range(1, 5)] + ["mission-moonshot"])  # T-2187: the 8th row
+        self.assertEqual([r[1] for r in fmgenesis.ROW.findall(text)],  # T-2482: §2 capability areas first (no polish
+                         ["mission-exhaustive-thinking", "mission-initiative", "mission-docs"]  # while a tier 3-4 gap
+                         + [f"mission-extra-{i}" for i in range(1, 5)] + ["mission-moonshot"])  # stands), then empties
+        order = text.split("## Order of work", 1)[1].split("\n## ", 1)[0]  # T-2482: written fresh, never gen-1's
+        self.assertEqual(text.count("## Order of work"), 1)
+        for want in ("parallel lanes", "merged in table order", "its own critique"):
+            self.assertIn(want, order)
         for want in ("find × MCP", "plan × site", "ship × CLI", "Self-hosted model router", "Voice intake",
                      "make it bolder", "#2 Exhaustive thinking"):
             self.assertIn(want, text)
@@ -1827,6 +1831,20 @@ class GenesisSelect(ForemanTestCase):
         with self.assertRaises(ValueError) as e:
             fmgenesis.seed(self.p, 4)
         self.assertIn("fm genesis select 3", str(e.exception))
+
+    def test_a_seed_whose_cold_read_fails_keeps_its_draft(self):
+        # T-2482: the gen-2 seed's read failed and the generated text was lost; the fix needs it
+        import fmgenesis
+        from unittest import mock
+        self.put("lineage.md", "# Lineage\n\n## gen-1\n- baseline: first\n- seed base: gen-1\n\n"
+                               "## gen-2\n- reverted: a tie\n- seed base: gen-1\n")
+        with mock.patch.object(fmgenesis, "_read", side_effect=ValueError("gen-3/seed.md wasn't filed: its cold read failed")):
+            with self.assertRaises(ValueError) as e:
+                fmgenesis.seed(self.p, 3)
+        draft = os.path.join(self.p.dir, "genesis-seed-draft-3.md")
+        self.assertIn(draft, str(e.exception))
+        self.assertIn("# Seed — generation 3", read_text(draft))
+        self.assertFalse(os.path.exists(os.path.join(self.tower, "gen-3", "seed.md")))
 
     def test_a_gen0_base_carries_no_prompt_text_and_the_agent_reaches_the_exam_section(self):
         import fmgenesis
