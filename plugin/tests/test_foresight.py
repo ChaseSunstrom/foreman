@@ -427,6 +427,16 @@ class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicte
         self.assertEqual(fs.predict([(None, "FIX", ["x.py"]), (None, "FEATURE", many), (None, "FIX", ["y.py"])]),
                          ("FEATURE", many))  # every path the request touched, as _requests keeps them
 
+    def test_files_touched_outside_the_repo_are_not_part_of_a_requests_paths(self):
+        # T-2454: the live book's first row guessed a scratchpad file (../../../../tmp/...) the request had touched
+        tid = self.ask("FIX", "a.py")
+        p = c.find_project(self.repo)
+        c.log_event(p, "touched", task=tid, data={"file": os.path.join(self.tmp, "elsewhere", "note.md")})
+        c.log_event(p, "touched", task=tid, data={"file": os.path.join(self.repo, "b.py")})
+        c.log_event(p, "touched", task=tid, data={"file": "../outside.py"})
+        ((_, _, paths),) = fs._requests(p)
+        self.assertEqual(paths, ["a.py", "b.py"])
+
     def test_predictions_report_hit_rates_beside_the_baseline_and_mute_a_kind_that_trails_it(self):
         with open(os.path.join(self.p.dir, fs.PREDICTIONS), "w", encoding="utf-8") as f:
             for i in range(20):
