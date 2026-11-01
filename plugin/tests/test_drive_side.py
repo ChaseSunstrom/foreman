@@ -98,3 +98,32 @@ class DriveSide(HookCase):
         text = self.offered()
         self.assertIn(f"Start {dep}", text)
         self.assertNotIn(f"Start {waits}", text)
+
+
+class EconomyOffer(HookCase):  # T-2495: past 80% weekly (economy mode) a side task is main-thread prep, never a lane
+    stop, reasons, offered = DriveSide.stop, DriveSide.reasons, DriveSide.offered  # its helpers, not its tests
+
+    def usage(self, pct):
+        import json
+        import time
+        d = os.path.join(self.home, "state", "sessions")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "snap.json"), "w") as f:  # a day left in the week: on pace, so side work is offered
+            json.dump({"rate_limits": {"seven_day": {"used_percentage": pct, "resets_at": time.time() + 86400}}}, f)
+
+    def test_past_80_percent_weekly_the_offer_drafts_in_the_scratchpad_instead_of_a_builder_lane(self):
+        self.fm("init")
+        side = self.task("Fix the parser", focus=False)
+        self.task("Current work")
+        self.usage(85)
+        text = self.offered()
+        self.assertIn(side, text)
+        self.assertNotIn("fm lane brief", text)
+        self.assertIn("scratchpad", text)
+
+    def test_under_80_percent_the_builder_lane_offer_stays(self):
+        self.fm("init")
+        side = self.task("Fix the parser", focus=False)
+        self.task("Current work")
+        self.usage(40)
+        self.assertIn(f"fm lane brief {side}", self.offered())

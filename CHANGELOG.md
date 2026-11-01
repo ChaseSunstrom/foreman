@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Past 80% weekly usage, while a gate runs in the background, the Stop drive offers a side task as prep in the scratchpad instead of a builder lane, since economy mode allows no subagents.
 - `fm doctor` has a self-fixes line: how many of the self-fix trials that closed in the last 7 days held and how many did not, or none. It warns only when one did not hold.
 - Model layer surfaces: other agents can ask the model layer through a `decide` MCP tool (booked apart from Foreman's own uses), `fm doctor` lists the model backends it can reach and which uses are live, the AGENTS.md block says a model's answer advises and a run decides, and the site has a Model layer page with the newest exam replay.
 - The exam scores the model layer's uses against the rules they would replace. On your own closed tasks it compares how often the rule and the model got the type, the tier and duplicates right, with the model's calibration and latency, and costs no tokens.
