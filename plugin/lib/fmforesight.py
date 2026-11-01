@@ -302,7 +302,8 @@ def prediction_kinds(p):
     import fmoutcomes
     unmuted = c.read_meta(p).get("predictions_unmuted") or {}
     since = lambda k: str(unmuted.get(k) or "") if isinstance(unmuted, dict) else ""  # noqa: E731
-    scores = [r for r in _book(p) if r.get("kind") == "score"]
+    book = _book(p)
+    scores = [r for r in book if r.get("kind") == "score"]
     kinds = []
 
     def kind(name, rows, extra=None):  # rows: (at, hit, base hit or None)
@@ -326,6 +327,8 @@ def prediction_kinds(p):
         effort.append((str(r.get("at") or ""), 0.5 <= m / pm <= 2, (0.5 <= m / base <= 2) if base else None))
         prior.append(m)
     kind("effort", effort)
+    kind("draft-ahead", [(str(r.get("at") or ""), r.get("adopted") is True, None) for r in book  # T-2407: no baseline
+                         if r.get("kind") == "draft" and (r.get("adopted") or r.get("expired"))])
     return kinds
 
 

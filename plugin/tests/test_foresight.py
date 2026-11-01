@@ -192,6 +192,99 @@ class ReviewerCostAtScale(unittest.TestCase):
             self.assertIn("In every review, whatever the lens or task type", f.read())
 
 
+
+
+class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ahead while its kind beats the baseline
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def ask(self, title, type_, scope):
+        return json.loads(self.fm("task", "new", title, "--type", type_, "--tier", "S", "--ac", "ok :: true", "--step",
+                                  "s", "--scope", scope, "--approach", "1) edit the export; fails if: x 2) use what exists: "
+                                  "y; fails if: z 3) do less: w; fails if: v Choice 1 (80%): edit it", "--json").stdout)["id"]
+
+    def book(self, n, beats=True):
+        with open(os.path.join(self.p.dir, fs.PREDICTIONS), "a", encoding="utf-8") as f:
+            for i in range(n):
+                f.write(json.dumps({"kind": "score", "id": f"Q{i}", "for": "T-9", "at": c.now(), "type_hit": beats,
+                                    "base_type_hit": not beats, "overlap": None, "base_overlap": None}) + "\n")
+
+    def ahead(self):
+        import fmdraft
+        return fmdraft.ahead(c.find_project(self.repo))
+
+    def draft(self):
+        import fmdraft
+        try:
+            with open(os.path.join(self.p.dir, fmdraft.AHEAD), encoding="utf-8") as f:
+                return json.load(f)
+        except OSError:
+            return None
+
+    def setup_requests(self):
+        self.ask("Add a CSV export to the report", "FEATURE", "report.py")
+        self.ask("Fix the totals in the report", "FIX", "totals.py")
+        self.ask("Add a PDF export to the report", "FEATURE", "report.py")
+        self.ask("Fix rounding in the totals", "FIX", "totals.py")
+        fs.prediction_tick(self.p)  # next after a FIX: a FEATURE on report.py
+
+    def test_a_plan_only_draft_is_made_while_the_kind_beats_its_baseline_and_never_when_muted(self):
+        import subprocess
+        self.setup_requests()
+        self.assertIsNone(self.ahead())  # no scored rows yet: nothing beats anything
+        self.book(6)
+        table = os.path.join(self.p.dir, "trigger-table.json")
+        with open(table, "w", encoding="utf-8") as f:
+            json.dump({"draft-ahead": {"route": "muted"}}, f)
+        self.assertIsNone(self.ahead())  # the user muted its trigger route
+        os.remove(table)
+        d = self.ahead()
+        self.assertTrue(d and os.path.isdir(d["wt"]), d)
+        plan = open(os.path.join(d["wt"], "DRAFTED-AHEAD.md"), encoding="utf-8").read()
+        self.assertIn("Speculative", plan)
+        self.assertIn("edit the export", plan)  # the plan of this user's closest past request of that type
+        changed = subprocess.run(["git", "-C", d["wt"], "diff", "--name-only", "HEAD~1", "HEAD"], capture_output=True,
+                                 text=True).stdout.split()
+        self.assertEqual(changed, ["DRAFTED-AHEAD.md"])  # a plan, no code
+        self.assertEqual(self.ahead(), None)  # one draft per prediction
+        import fmdraft
+        fmdraft._drop_ahead(self.p)
+        self.book(20, beats=False)  # now it trails: muted, so nothing is drafted
+        self.assertIsNone(self.ahead())
+
+    def test_a_draft_older_than_three_days_is_removed_and_scored_as_expired(self):
+        self.setup_requests()
+        self.book(6)
+        d = self.ahead()
+        import fmdraft
+        path = os.path.join(self.p.dir, fmdraft.AHEAD)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(d, at=c.iso(time.time() - 4 * 86400)), f)
+        self.ahead()
+        self.assertFalse(os.path.isdir(d["wt"]))
+        rows = [json.loads(x) for x in open(os.path.join(self.p.dir, fs.PREDICTIONS), encoding="utf-8")]
+        self.assertTrue(any(r.get("kind") == "draft" and r.get("expired") for r in rows))
+
+    def test_a_request_overlapping_the_draft_gets_its_plan_and_one_that_does_not_leaves_it(self):
+        self.setup_requests()
+        self.book(6)
+        d = self.ahead()
+        other = self.ask("Rename the login page title", "FEATURE", "login.py")
+        self.assertNotIn("Drafted ahead", c.find_brief(self.p, other).section("Drafted ahead") or "")
+        self.assertTrue(os.path.isdir(d["wt"]))  # under 20%: left alone
+        self.fm("capture", "Add an Excel export to the report", "--source", "discovered", "--anyway")
+        self.assertTrue(os.path.isdir(d["wt"]))  # Foreman's own capture never adopts a draft of the user's next ask
+        tid = self.ask("Add an Excel export to the report", "FEATURE", "report.py")
+        b = c.find_brief(c.find_project(self.repo), tid)
+        self.assertIn("Speculative", b.section("Drafted ahead"))
+        rows = [json.loads(x) for x in open(os.path.join(self.p.dir, fs.PREDICTIONS), encoding="utf-8")]
+        self.assertTrue(any(r.get("kind") == "draft" and r.get("adopted") and r.get("for") == tid for r in rows))
+        kinds = {k["kind"]: k for k in self.fm_json("outcomes", "--predictions")["kinds"]}
+        self.assertEqual(kinds["draft-ahead"]["n"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
 
