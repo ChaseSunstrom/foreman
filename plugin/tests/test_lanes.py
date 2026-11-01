@@ -352,6 +352,29 @@ class Lanes(ForemanTestCase):
         for tid, model in ((a, "sonnet"), (b, "opus")):
             self.assertIn(f"builder_model: {model}", open(c.find_brief(c.find_project(self.repo), tid).path).read())
 
+    def test_lane_stats_rates_landing_by_brief_size(self):  # T-2368
+        p = c.find_project(self.repo)
+        c.log_event(p, "lane_builder", task="T-0901", data={"path": "a", "chars": 3000})
+        c.log_event(p, "lane_merge", task="T-0901", data={})
+        c.log_event(p, "lane_builder", task="T-0902", data={"path": "b", "chars": 12000})
+        c.log_event(p, "lane_rm", task="T-0902", data={})
+        c.log_event(p, "lane_builder", task="T-0903", data={"path": "c"})  # written before briefs had a size
+        older = os.path.join(p.dir, "audits", "T-0904.builder.md")  # an older brief still on disk: sized from its file
+        os.makedirs(os.path.dirname(older), exist_ok=True)
+        with open(older, "w") as f:
+            f.write("x" * 5000)
+        c.log_event(p, "lane_builder", task="T-0904", data={"path": older})
+        c.log_event(p, "lane_merge", task="T-0904", data={})
+        rows = json.loads(self.fm("lane", "stats", "--json").stdout)["stats"]
+        self.assertEqual([(r["size"], r["landed"], r["briefs"]) for r in rows],
+                         [("up to 4k chars", 1, 1), ("up to 8k", 1, 1), ("up to 16k", 0, 1), ("unsized", 0, 1)])
+        self.assertIn("up to 4k chars: 1 of 1 briefs landed (100%)", self.fm("lane", "stats").stdout)
+        tid = json.loads(self.fm("task", "new", "Sized", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                                 "--step", "s", "--json").stdout)["id"]
+        self.fm("lane", "brief", tid)
+        got = [e for e in c.ledger_events(p, ("lane_builder",)) if e.get("task") == tid]
+        self.assertGreater(got[-1]["data"]["chars"], 500)
+
     def test_a_clean_tasks_brief_says_to_record_the_behaviour_lock_first(self):
         # T-1712: CLEAN lanes failed the close gate: their brief never said to run the tests before the first edit
         lock = "fm check --evidence {} --step 1"
