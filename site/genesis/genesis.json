@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T22:48:20Z",
- "rev": "51450637",
+ "updated": "2026-11-01T23:06:39Z",
+ "rev": "543a8bb8",
  "capabilities": [
   {
    "n": 1,
@@ -1212,7 +1212,7 @@
       {
        "id": "T-2380",
        "title": "Shelf retire proposals (Mission 6 inbox, tier 2): a tool built by fm new tool that went…",
-       "status": "captured",
+       "status": "deferred",
        "type": "FEATURE",
        "tier": "S",
        "steps": 0,
@@ -1221,13 +1221,13 @@
       },
       {
        "id": "T-2382",
-       "title": "Unknown fm verbs and flags as feature votes (Mission 6 inbox, tier 2): the typo-help…",
-       "status": "captured",
+       "title": "Unknown fm verbs and flags as feature votes in fm friction",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "S",
-       "steps": 0,
+       "steps": 2,
        "done": 0,
-       "current": ""
+       "current": "red test: fm task drop T-1 --reason x twice in one session and once in another, fm bogus once; fm friction's section shows '2 sessions: fm task drop --reason' above 'fm bogus'"
       },
       {
        "id": "T-2453",
@@ -1944,12 +1944,12 @@
       {
        "id": "T-2498",
        "title": "Interim calibration reads and reliability bins: fm outcomes --judgment adds a 7-day…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
-       "current": "red tests: interim and bins in ledger_data, MCP, site"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2499",
@@ -17995,14 +17995,14 @@
  },
  "not_yet": 4,
  "not_yet_open": 0,
- "unproven": 1051,
+ "unproven": 1049,
  "unproven_kinds": {
   "meaning": 584,
   "research-uncited": 29,
-  "typed": 44,
+  "typed": 43,
   "red": 61,
   "perf-typed": 51,
-  "docs": 586,
+  "docs": 585,
   "ui-unshot": 54,
   "data": 4,
   "infra": 7,
