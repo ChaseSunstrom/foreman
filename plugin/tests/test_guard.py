@@ -1514,6 +1514,40 @@ class ScratchNames(GuardCase):
             self.assertBlocked(self.bash(f"echo x > {d}/l/secrets.txt"), "credentials")
 
 
+class FdAndLiterals(GuardCase):
+    """T-2629: a redirect's fd number is the fd, not a write target, and a parsed python heredoc's path candidates are
+    its real string constants, not spans a quote scan pairs across two literals. Both refused harmless commands."""
+
+    def targets(self, cmd):
+        ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome, scratch=["/tmp"],
+                    allow=set(), task_id=None, unbriefed=self.repo)
+        return [d for _, d in g.findings("Bash", {"command": self.sub(cmd)}, ctx)]
+
+    def test_an_fd_number_is_no_write_target_and_a_split_literal_is_no_path(self):
+        for cmd in ("cp a b 2>/dev/null", 'cp -r a "b c" 2> /dev/null', "mv a b 2>&1", "cp a b 1>/dev/null 2>&1",
+                    "cp a b 2>>/tmp/log"):
+            got = self.targets(cmd)
+            self.assertFalse([d for d in got if os.path.basename(d) in ("1", "2")], (cmd, got))
+            self.assertTrue([d for d in got if os.path.basename(d) in ("b", "b c")], (cmd, got))  # the real one stays
+        self.assertTrue([d for d in self.targets("cp a 2") if d.endswith("/2")])  # a file named 2 is still one
+        self.assertTrue([d for d in self.targets("cp a 2 >/dev/null") if d.endswith("/2")])  # spaced: an argument
+        self.assertTrue([d for d in self.targets("cp a ٢>/dev/null") if d.endswith("/٢")])  # bash fds are ASCII digits
+        code = ("S=/tmp/x && python3 - \"$S/a.py\" plugin/tests/t.py <<'EOF'\nimport sys\nout = ['a']\n"
+                "open(sys.argv[2], 'w').write(\"\\n\".join(out)+\"\\n\")\nEOF")
+        self.assertFalse([d for d in self.targets(code) if ".join" in d], self.targets(code))
+        # still refused: a protected path as a literal, one nested in a shell string inside a literal, and code that
+        # doesn't parse (the quote scan reads it)
+        for cmd in ("python3 - <<'EOF'\nopen('{fhome}/state/x.json', 'w').write('{{}}')\nEOF",
+                    "python3 - <<'EOF'\nimport os\nos.system('echo 1 > \"{fhome}/state/x.json\"')\nEOF",
+                    "python3 - <<'EOF'\nopen('{fhome}/state/x.json', 'w').write(\nEOF",
+                    "python3 - <<'EOF'\nopen(b'{fhome}/state/x.json', 'w').write('{{}}')\nEOF",  # bytes write too
+                    # review: the quoted argv on python's own line, and an fd glued after ; && | or (
+                    "python3 - '{fhome}/state/x.json' <<'EOF'\nimport sys\nopen(sys.argv[1], 'w').write('x')\nEOF",
+                    "echo a;2>{fhome}/state/x.json", "true&&2>{fhome}/state/x.json", "echo a|2>{fhome}/state/x.json",
+                    "(2>{fhome}/state/x.json)"):
+            self.assertIsNotNone(self.bash(cmd), cmd)
+
+
 class InterpreterWrites(GuardCase):
     """Writes made from interpreter code (heredocs, -c/-e) to protected paths count as writes to those paths."""
 

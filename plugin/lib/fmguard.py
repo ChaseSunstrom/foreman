@@ -1268,11 +1268,18 @@ def _decode(token):
 def _hide_quoted_ops(text, encoded=False):
     """(text with each operator character inside quotes or after a backslash encoded, what closes it: an unpaired
     trailing \\ doubled, then the quote left open): shlex drops the quotes, so a quoted '>' came out as the bare redirect
-    >. Quoting as shlex reads it. encoded: the text's _ESC pairs are encoded already (_mask_nested_dq)."""
+    >. Quoting as shlex reads it. encoded: the text's _ESC pairs are encoded already (_mask_nested_dq). T-2629: an
+    unquoted fd number glued to < or > at a word's start is dropped, as bash reads it as the fd (2>/dev/null is no
+    word 2: shlex split it off, and cp a b 2>/dev/null read ./2 as cp's destination)."""
     hide = lambda c: _ESC + str(_ENCODED.index(c)) if c and c in _OPS else c  # noqa: E731
     out, q, i, tail = [], None, 0, ""
     while i < len(text):
         ch = text[i]
+        if not q and ch in "0123456789" and (i == 0 or text[i - 1] in " \t\n;&|(") and \
+                (fd := re.match(r"[0-9]+(?=[<>])", text[i:])):
+            out.append(" ")  # review: a space, never nothing: ;2>f must stay ; and >f, not the one token ;>
+            i += fd.end()
+            continue
         if ch == _ESC:
             out.append(text[i:i + 2] if encoded else _ESC + _ESC)
             i += 2 if encoded else 1
@@ -2219,11 +2226,37 @@ def _interpreter_writes(cmd, ctx):
     if proved is None:  # T-1458: after a provable `cd DIR &&` chain a relative name opens there, not in ctx.cwd
         units, _, starters, lead = _python_units(cmd)
         base = (_chain_dir(starters, "\n".join(lead), ctx) if units else None) or ctx.cwd
-    for path in proved if proved is not None else [_resolve(_expand(m.group(2), ctx), base)
-                                                   for m in _QUOTED.finditer(cmd)]:
+    for path in proved if proved is not None else [_resolve(_expand(x, ctx), base) for x in _quoted_paths(cmd)]:
         found += [(cat, f"{path} (written from interpreter code)") for cat in classify_write(path, ctx)
                   if cat in _GUARDED_BY_PATH]
     return found
+
+
+_PATH_LITERAL = lazy(r"""(?:[~/.]|[\w.-]+/)[^'"\s]*""")  # what _QUOTED takes between its quotes
+
+
+def _quoted_paths(cmd):
+    """T-2629: the quoted literals that could be paths. A python heredoc that parses gives its real string constants,
+    each one a path, and any quoted path inside one (os.system('… > "/x"')): a quote scan over the code paired the close
+    of "\\n" with the open of the next literal, so "\\n".join(out)+"\\n" read as the path .join(out)+. A literal path is
+    always a constant, so nothing real is lost (comments, which write nothing, are). The shell text and code that
+    doesn't parse keep the quote scan."""
+    import ast
+    units, rest, starters, _ = _python_units(cmd)
+    out, text = [], "\n".join(rest + starters)  # review: python - '/path' <<EOF: its argv is open(sys.argv[1])'s path
+    for code in units:
+        try:
+            tree = ast.parse(code)
+        except Exception:  # SyntaxError, ValueError, and RecursionError or MemoryError on deep nesting: the quote scan
+            text += "\n" + code
+            continue
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Constant) and isinstance(n.value, (str, bytes)):  # open(b'/x', 'w') writes /x too
+                v = n.value.decode("latin-1") if isinstance(n.value, bytes) else n.value
+                if _PATH_LITERAL.fullmatch(v):
+                    out.append(v)
+                out += [m.group(2) for m in _QUOTED.finditer(v)]
+    return out + [m.group(2) for m in _QUOTED.finditer(text)]
 
 
 # T-1460: the home folder's credential names, as code joins them (os.path.join(HOME, ".ssh", "id_rsa"))
