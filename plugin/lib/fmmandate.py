@@ -38,6 +38,8 @@ def put(p, text, until, usd=None, status="overwritten"):
     import fmrecall
     m = {"text": c.plain(text).strip(), "clauses": fmrecall.clauses(text)[:20], "until": c.iso(until) if until else None,
          "set_at": c.now(), **({"usd": usd} if usd is not None else {})}
+    if (lines := done_when_lines(text)):  # T-2557: from the raw text; plain() drops the newlines that separate them
+        m["done_when"] = [c.fit(c.plain(x), 200) for x in lines[:20]]
     with c.lock(p.dir):
         meta = c.read_meta(p)
         _archive(meta, status)
@@ -367,6 +369,14 @@ def verdict(p, m):
         cw = set(fmrecall.words(x))
         if not any(len(cw & b) >= min(2, len(cw)) for b in bags):
             causes.append(f"clause unaccounted: {c.fit(x, 80)}")
+    # T-2557: a stated Done-when line counts only when an item's done-when command names it (2 of its words, with
+    # identifiers split at _ / . -), not when an item's prose shares them: the long tier's sessions claimed done with
+    # stated lines no check tested (research long-false-done)
+    cmds = [set(fmrecall.words(re.sub(r"[_/.-]+", " ", i.get("done_when") or ""))) for i in items]
+    for x in m.get("done_when") or []:
+        cw = set(fmrecall.words(x))
+        if cw and not any(len(cw & b) >= min(2, len(cw)) for b in cmds):
+            causes.append(f"done-when line unchecked: {c.fit(x, 80)}")
     runs = c.ledger_events(p, kinds=["check_run"])
     last = runs[-1].get("data") or {} if runs else None
     if last is None:
@@ -544,6 +554,21 @@ def cmd_goal(args):
         return fmcli.out(args, {"item": int(words[0]), "task": words[1].upper()},
                          f"{words[1].upper()} builds item {words[0]}.")
     return show(p, args)
+
+
+def done_when_lines(text):
+    """T-2557: the bullets under a 'Done when:' line of a goal's raw text (a blank or other line ends the list)."""
+    import re
+    out, on = [], False
+    for ln in (text or "").splitlines():
+        s = ln.strip()
+        if re.fullmatch(r"(?i)done[ -]when:?", s):
+            on = True
+        elif on and s[:2] in ("- ", "* "):
+            out.append(s[2:].strip())
+        elif on and s:
+            on = False
+    return out
 
 
 def item_state(it, by):
