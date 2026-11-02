@@ -168,8 +168,11 @@ class Night(ForemanTestCase):
         with open(os.path.join(sessions, "s.json"), "w") as f:
             json.dump({"rate_limits": {"seven_day": {"used_percentage": 85}}}, f)
         p = self.fm("night", "--dry-run", check=False)
-        self.assertNotEqual(p.returncode, 0)
-        self.assertIn("usage", p.stderr)
+        self.assertEqual(p.returncode, 0, "a deliberate skip exits 0 so systemd records it as a success (T-2593)")
+        self.assertIn("nothing runs tonight", p.stdout)
+        res = json.loads(self.fm("night", "--dry-run", "--json").stdout)
+        self.assertEqual(res["ran"], [])
+        self.assertIn("usage is high", res["skipped"])
 
     def test_a_night_runs_its_jobs_and_the_digest_says_so(self):
         res = json.loads(self.fm("night", "--max-usd", "0.05", "--only", "second session", "--json",

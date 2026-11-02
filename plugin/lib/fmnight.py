@@ -505,8 +505,9 @@ def cmd_night(args):
     if bad:
         raise fmcli.UsageError(f"no such night job: {', '.join(bad)} (jobs: {', '.join(NAMES)})")
     high, known = _usage()
-    if high:
-        raise fmcli.UsageError(f"usage is high ({high}): nothing runs tonight — the user's own work comes first")
+    if high:  # T-2593: a deliberate skip is a success to systemd, not a failed run doctor and foresight flag
+        return fmcli.out(args, {"skipped": f"usage is high ({high})", "ran": []},
+                         f"usage is high ({high}): nothing runs tonight — the user's own work comes first")
     if not args.max_usd >= 0:  # NaN too
         raise fmcli.UsageError("--max-usd must be a number ≥ 0")
     cur, _ = fmbudget.effective()
