@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T09:40:38Z",
- "rev": "d94ddfbb",
+ "updated": "2026-11-02T09:47:16Z",
+ "rev": "896cf76c",
  "capabilities": [
   {
    "n": 1,
@@ -21024,7 +21024,7 @@
   "docs": 596,
   "ui-unshot": 51,
   "tui-unshot": 48,
-  "data": 3,
+  "data": 2,
   "infra": 8,
   "perf-noise": 1
  },
