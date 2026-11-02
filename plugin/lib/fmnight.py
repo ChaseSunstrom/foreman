@@ -257,6 +257,32 @@ def _watch(meta):
     return w.get("ci") is True, [r for r in issues if isinstance(r, str) and _REPO.fullmatch(r)] if isinstance(issues, list) else []
 
 
+BLIND = "tick-blind.json"  # T-2607: what the newest tick could not watch, and when that list last changed
+
+
+def _blind(meta, repo, ci_ok, repos):
+    """T-2607: [[kind, why]] the tick could not watch this pass, so a quiet night means quiet."""
+    if meta.get("sensitive"):
+        return [[k, "the project is marked sensitive: no remote reads"] for k in ("CI", "issues")]
+    if not repo:
+        return []  # no GitHub repo: nothing to watch
+    if os.environ.get("FOREMAN_NO_NET"):
+        return [[k, "FOREMAN_NO_NET is set: no remote reads"] for k in ("CI", "issues")]
+    out = [] if ci_ok else [["CI", "no watch yes for CI, the cached result only (fm night --stage --watch-ci, then your yes)"]]
+    return out + ([] if repo in repos else
+                  [["issues", f"no watch yes for {repo}'s issues (fm night --stage --watch-issues {repo}, then your yes)"]])
+
+
+def blind_state(p):
+    """{blind, changed} the newest tick left, or {}."""
+    try:
+        with open(os.path.join(p.dir, BLIND), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 CAP = 20  # issues the tick captures per repo per day: a flood of issues is not a flood of tasks
 
 
@@ -340,7 +366,7 @@ def tick(p, fetch_ci=None):
     import fmorders
     if c.panicked():
         raise c.PolicyError(c.PAUSED)
-    res = {"orders": [], "captured": [], "fetched": [], "notes": [], "settled": 0}
+    res = {"orders": [], "captured": [], "fetched": [], "notes": [], "settled": 0, "blind": []}
     lease = open(os.path.join(p.dir, "tick.lock"), "w")  # held until this returns (a second tick finds it taken)
     try:
         fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -403,6 +429,10 @@ def tick(p, fetch_ci=None):
                                  "requests are night_tick ledger events (fm decide --review lists them)"))
 
             repo = None if meta.get("sensitive") else fmforesight.github_repo(p.root)
+            res["blind"] = _blind(meta, fmforesight.github_repo(p.root) if os.environ.get("FOREMAN_NO_NET") else repo,
+                                  ci_ok, repos)
+            if blind_state(p).get("blind") != res["blind"]:  # T-2607: the change is what the session hears about
+                c.write_atomic(os.path.join(p.dir, BLIND), json.dumps({"blind": res["blind"], "changed": time.time()}))
             if repo:
                 sent = []
                 try:  # the cached result always; a fetch only with the yes, and with nobody at a keyboard to ask

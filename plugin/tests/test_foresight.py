@@ -28,6 +28,17 @@ class Foresight(ForemanTestCase):
         with open(path, "w") as f:
             json.dump({"model": model, "context_size": size, "version": version}, f)
 
+    def test_a_blind_tick_is_named_at_session_start_only_while_a_timer_runs_it(self):  # T-2607
+        import fmforesight
+        import fmnight
+        import fmserve
+        with open(os.path.join(self.p.dir, fmnight.BLIND), "w") as f:
+            json.dump({"blind": [["CI", "no watch yes"]], "changed": time.time()}, f)
+        self.assertFalse([x for x in fmforesight.lines(self.p) if "Tick can't watch" in x], "no timer, no line")
+        os.makedirs(fmserve.unit_dir(), exist_ok=True)
+        open(os.path.join(fmserve.unit_dir(), "foreman-tick-x.timer"), "w").close()
+        self.assertTrue([x for x in fmforesight.lines(self.p) if "Tick can't watch CI" in x])
+
     def test_a_changed_model_window_or_cc_is_named_and_the_cost_math_reruns(self):
         self._snap("Opus 5", 200_000, "2.1.305")
         self.assertFalse(fs.refresh(self.p, net=False))  # the first setup seen is the baseline, not a change

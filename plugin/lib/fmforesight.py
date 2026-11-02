@@ -204,6 +204,17 @@ def lines(p):
     for u, why in d.get("timers") or []:  # T-2542
         out.append(f"Timer {c.plain(str(u))[:80]} {c.plain(str(why))[:120]}"
                    + ("" if u == "systemd" else f" → journalctl --user -u {c.plain(str(u))[:80]}.service") + ".")
+    try:  # T-2607: what the tick can't watch, said in the days after that list changed
+        import fmnight
+        import glob
+        import fmserve
+        timed = glob.glob(os.path.join(fmserve.unit_dir(), "foreman-tick-*.timer"))  # unattended ticks only
+        bs = fmnight.blind_state(p) if timed else {}
+        if bs.get("blind") and time.time() - float(bs.get("changed") or 0) < CHANGE_DAYS * 86400:
+            out.append(f"Tick can't watch {', '.join(sorted({c.plain(str(k))[:20] for k, _ in bs['blind']}))} → "
+                       "fm doctor (night timers) says why and what opens it.")
+    except (ValueError, TypeError):
+        pass
     ci = _load(_mine(p))
     if ci.get("failed") and ci.get("sha"):
         b = c.find_brief(p, str(ci.get("task") or ""))

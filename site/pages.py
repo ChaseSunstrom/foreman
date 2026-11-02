@@ -590,7 +590,9 @@ PAGES = [
          ("text", "Triggers", "<p>Every source that files tasks is a row in <code>fm triggers</code>: how often it "
           "fired, its precision (the share of its tasks that got done) and its route: the inbox, the queue, a builder "
           "lane, or muted. <code>fm night --tick</code> is the model-free pass that runs them: standing orders, the "
-          "cached CI result, and the CI check or a repo's issues only where you said yes.</p>"),
+          "cached CI result, and the CI check or a repo's issues only where you said yes. What it can't watch, and "
+          "why (no yes, a sensitive project, no network), shows in <code>fm doctor</code>, so a quiet night means "
+          "quiet.</p>"),
          ("text", "Installs and recoveries", "<p>An install the work needs waits for your yes, and the timers that "
           "run the tick install only after it. A builder lane that stops (killed, at the usage wall, hung, clashing "
           "with main, red at merge) is recovered by its cause with <code>fm lane recover</code>, at most twice before "

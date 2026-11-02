@@ -388,6 +388,32 @@ class NightTick(ForemanTestCase):
         import fmtriggers  # each finding is in the trigger table under its own name
         self.assertEqual({t for t, _ in fmtriggers._captures(self.p, 1)}, {"order", "ci-red"})
 
+    def test_the_tick_names_what_it_could_not_watch_and_why(self):  # T-2607
+        kinds = lambda r: {k: why for k, why in r["blind"]}  # noqa: E731
+        got = kinds(self.tick(fetch_ci=False))  # no watch yes at all
+        self.assertIn("--watch-ci", got["CI"])
+        self.assertIn("--watch-issues o/r", got["issues"])
+        self.watch(ci=True, issues=["o/r"])
+        with self.mock.patch("fmeco.inbox_gh", return_value={"captured": []}):
+            self.assertEqual(self.tick(fetch_ci=False)["blind"], [], "an approved repo is watched whole")
+        c.update_meta(self.p, sensitive=True)
+        self.assertEqual(set(kinds(self.tick(fetch_ci=False))), {"CI", "issues"})
+        self.assertIn("sensitive", kinds(self.tick(fetch_ci=False))["CI"])
+        c.update_meta(self.p, sensitive=False)
+        with self.mock.patch.dict(os.environ, {"FOREMAN_NO_NET": "1"}):
+            self.assertIn("FOREMAN_NO_NET", kinds(self.tick(fetch_ci=False))["issues"])
+
+    def test_doctor_names_a_blind_kind_once_the_tick_saw_it(self):  # T-2607
+        import fmdoctor
+        self.tick(fetch_ci=False)
+        detail = fmdoctor.check_night_timers(self.p).detail
+        self.assertIn("tick can't watch CI", detail)
+        self.assertIn("fm night --stage --watch-ci", detail)
+        self.watch(ci=True, issues=["o/r"])
+        with self.mock.patch("fmeco.inbox_gh", return_value={"captured": []}):
+            self.tick(fetch_ci=False)
+        self.assertNotIn("can't watch", fmdoctor.check_night_timers(self.p).detail)
+
     def test_a_changed_file_fires_its_order_on_the_next_tick(self):
         path = os.path.join(self.repo, "api.json")
         with open(path, "w") as f:

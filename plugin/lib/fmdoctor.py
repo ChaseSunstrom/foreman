@@ -681,8 +681,10 @@ def check_night_timers(p):
               for u, why in fmnight.liveness()]
     live = len(glob.glob(os.path.join(fmserve.unit_dir(), "foreman-night-*.timer"))
                + glob.glob(os.path.join(fmserve.unit_dir(), "foreman-tick-*.timer")))
-    return Result("night timers", "WARN" if notes else "PASS", "; ".join(notes[:4]) or "none staged; none of another home"
-                  + (f"; {live} installed timer(s) firing, last runs ok (systemd)" if live else ""))
+    blind = "".join(f"; tick can't watch {c.plain(str(k))[:20]}: {c.plain(str(why))[:160]}"  # T-2607: info, not a WARN
+                    for k, why in (fmnight.blind_state(p).get("blind") or [] if p else []))
+    return Result("night timers", "WARN" if notes else "PASS", ("; ".join(notes[:4]) or "none staged; none of another home"
+                  + (f"; {live} installed timer(s) firing, last runs ok (systemd)" if live else "")) + blind)
 
 
 RELEASE_DAYS, RELEASE_BULLETS = 14, 150  # T-2597: past either, the Unreleased notes are waiting on a release
