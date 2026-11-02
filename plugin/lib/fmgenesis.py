@@ -85,6 +85,8 @@ def put(p, name, text):
     sealed = re.fullmatch(r"gen-(\d+)/prediction\.md", name)
     if sealed and _seal(p, int(sealed[1])):  # T-2505: a sealed prediction is never rewritten
         raise ValueError(f"{name} is sealed: a prediction is written once, before the steers it predicts")
+    if re.fullmatch(r"gen-\d+/mission-[\w-]+\.md", name):
+        _mission_grounded(name, text)  # T-2547: before the cold read, so an ungrounded Mission costs no model call
     _read(p, name, text)
     path = _file(p, name, text, record="put")
     if sealed:
@@ -95,6 +97,27 @@ def put(p, name, text):
         except Exception as e:
             print(f"fm: lean start for gen {m[1]} not recorded: {c.fit(c.plain(str(e)), 120)}", file=sys.stderr)
     return path
+
+
+_CODE_REF = re.compile(r"\b[\w-]+\.(?:py|md|json|toml|sh)\b|\bfm [a-z][\w-]*|\bfm\w+\.\w+")
+
+
+def _mission_grounded(name, text):
+    """T-2547: a Mission's intake block needs one '## Grounding' bullet per brief, each naming the code it rests on (a
+    file, an fm verb or a module.function); Mission 3 filed five briefs and three turned out built or had no failure."""
+    block = BLOCK.search(text)
+    briefs = len(c.parse_intake(block.group(1)).items) if block else 0
+    if not briefs:
+        return
+    m = re.search(r"^## Grounding\s*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    bullets = [x for x in (m.group(1) if m else "").splitlines() if x.lstrip().startswith("- ")]
+    if len(bullets) < briefs:
+        raise ValueError(f"{name}: {briefs} briefs, {len(bullets)} grounding line(s): add a '## Grounding' bullet per "
+                         "brief naming the code that lacks it and the record that its failure happened")
+    bare = [i + 1 for i, x in enumerate(bullets) if not _CODE_REF.search(x)]
+    if bare:
+        raise ValueError(f"{name}: grounding line(s) {', '.join(map(str, bare))} name no code (a file, an fm verb or a "
+                         "module.function): say where the gap is")
 
 
 def _file(p, name, text, record=""):

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm genesis put` now refuses a Mission file whose intake block has more briefs than grounding lines. Each brief needs a bullet under `## Grounding` naming the code it rests on (a file, an `fm` verb or a module.function). The check runs before the cold read, so an ungrounded Mission costs no model call. Gen-2's Mission 3 filed five briefs, and three turned out to be built already or to fix a failure that had never happened.
 - The exam's tool-build and tool-find grading no longer marks a correct tool as failed when its file is briefly busy. Grading runs on several threads, and running a file that another thread's process still has open for writing fails with "text file busy". That exec is now retried, which removes a flaky failure in the full test run.
 - Foreman now notices when an installed `fm night` timer stops firing or its runs fail. It reads systemd's own record of each timer's last trigger and each run's result. `fm doctor` names the timer and the `journalctl` command to read; with nothing wrong, it says how many timers are firing. The Stop hook's background sweep caches the finding, so the next session's Watch line shows it with no one asking. `fm night --install` now runs the tick once and reports how that first run went.
 - `fm task step ID remove 2` (or `delete`, or `del`) now removes step 2. Before, it added a step named "remove" and quietly dropped the number. Two bare words where step text belongs, such as `fm task step ID fix it`, are now refused rather than half-added; quote the text instead.
