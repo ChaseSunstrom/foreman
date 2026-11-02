@@ -1881,6 +1881,8 @@ class ForecastKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): the next requ
         r = fmexam.replay_forecast(c.find_project(self.repo))
         self.assertEqual((r["held"], r["type_hit"], r["base_type_hit"]), (2, 2, 0))
         self.assertEqual(r["overlap"], 1.0)
+        raw = fmexam.replay_forecast(c.find_project(self.repo), clean=False)  # T-2554: nothing to clean here: the same
+        self.assertEqual((raw["held"], raw["type_hit"]), (r["held"], r["type_hit"]))
 
     def test_the_model_replay_scores_rule_and_model_against_closed_tasks(self):
         # T-2487 (the user's rule: a use stays only if the exam shows it beats the path it replaces)

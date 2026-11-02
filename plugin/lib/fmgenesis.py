@@ -871,8 +871,9 @@ def step(p):
             if made:  # a kill between fm intake and the put: name them, never a second intake that duplicates them
                 return act("intake", n, f"{where}: {', '.join(made)} came from its intake block; add them to its "
                                         f"Task: line", f"fm genesis put {pre}{file}.md --file -")
-            return act("intake", n, f"{where}: {len(ids)} of {want} briefs intaken; fm intake the next line of its "
-                                    "block, then add its id to the Task: line at once", "fm intake")
+            return act("intake", n, f"{where}: {len(ids)} of {want} briefs intaken; fm intake --source genesis the "
+                                    "next line of its block, then add its id to the Task: line at once",
+                       "fm intake --source genesis")  # T-2554: the tower's briefs aren't the user's asks
         if not os.path.isfile(os.path.join(d, f"{pre}critique-{name}.md")):
             return act("critique", n, f"{where}: write its critique (closed vs planned, outside signals, what failed)"
                        + (f"; carried, deferred with a revisit date: {', '.join(carried)} (say why each waits)"

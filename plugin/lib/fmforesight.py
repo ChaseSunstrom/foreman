@@ -220,10 +220,33 @@ PREDICTIONS = "predictions.jsonl"  # write-once rows: a next-request prediction,
 MUTE_MIN = 20  # scored rows before a kind that trails its baseline is muted
 
 
-def _requests(p):
+_SLIP = re.compile(r"dropped: .*\b(?:by mistake|by accident|in error)\b", re.I)
+
+
+def _tower_ids(p):
+    """T-2554: the ids every Genesis Mission's Task paragraph names: briefs Foreman wrote and filed through fm intake."""
+    home = os.path.join(p.dir, "research", "genesis")
+    if not os.path.isdir(home):
+        return set()
+    import fmgenesis  # only in a tower project
+    ids = set()
+    for path in glob.glob(os.path.join(home, "gen-*", "mission-*.md")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                ids |= set(re.findall(r"\bT-\d{4,}\b", " ".join(fmgenesis.TASKS.findall(f.read()))))
+        except OSError:
+            continue
+    return ids
+
+
+def _requests(p, clean=True):
     """The user's own requests, oldest first, as (brief, type, paths): paths are its scope and the files it touched
-    (this project's ledger). Foreman's captures, followups and triggers aren't the user's, so they never count."""
-    briefs = sorted((b for b in c.load_briefs(p, include_archive=True) if b.meta.get("source") == "user"),
+    (this project's ledger). Foreman's captures, followups and triggers aren't the user's, so they never count.
+    T-2554: clean also leaves out the tower's Mission briefs (filed as user before fm intake --source) and captures
+    dropped as a mistake; clean=False is the old stream, for the replay's comparison."""
+    skip = _tower_ids(p) if clean else set()
+    briefs = sorted((b for b in c.load_briefs(p, include_archive=True) if b.meta.get("source") == "user"
+                     and b.id not in skip and not (clean and b.status == "dropped" and _SLIP.search(b.section("Log")))),
                     key=lambda b: (str(b.meta.get("created") or ""), b.id))
     touched = {}
     for e in c.ledger_events(p, ("touched",)):

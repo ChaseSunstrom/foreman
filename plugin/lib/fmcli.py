@@ -233,7 +233,8 @@ def cmd_intake(args):
         for item in r.items:
             b = _create(p, _title(item.text), item.type, c.guess_tier(item.type, item.text), "captured",
                         raw=_raw_with_block(item, r), scope=item.scopes, depends=item.refs,
-                        priority="urgent" if item.urgent else "normal", explore=item.explore)
+                        priority="urgent" if item.urgent else "normal", explore=item.explore,
+                        source=getattr(args, "source", None) or "user")  # T-2554: genesis for the tower's briefs
             if _block(item, r, "skip"):
                 b.set_section("Non-goals", "".join(f"- {s}\n" for s in _block(item, r, "skip")))
                 c.save_brief(p, b, touch=False)
@@ -6276,6 +6277,7 @@ def _build_parser(only=None):
     s = add("intake", cmd_intake, tier=("Every task", 40), help="parse an intake block into captured briefs")
     s.add_argument("text", nargs="?")
     s.add_argument("--file")
+    s.add_argument("--source", default="user", choices=["user", "genesis"], help="T-2554: genesis for a Mission's briefs, so the user model doesn't read the tower's own work as the user's asks")
 
     s = add("capture", cmd_capture, tier=("Every task", 20), help="capture a request to the inbox")
     s.add_argument("text", nargs="?")
