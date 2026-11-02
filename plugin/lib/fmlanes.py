@@ -129,6 +129,7 @@ def _wreck_aside(p, b, main, path, branches):
 
 
 SIZES = ((4000, "up to 4k chars"), (8000, "up to 8k"), (16000, "up to 16k"), (None, "more"))  # T-2368
+OWN_MAX = 4000  # T-2517: a task's own sections past this land 57% in a lane against 97% (fm lane stats, Oct 21-31)
 
 
 def _brief_chars(p, path, tid, later):
@@ -1712,6 +1713,15 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
     # T-0779: and its effort follows the tier: medium for small well-specified diffs, high for M
     model = f', model: "{chosen}", effort: "{"medium" if b.tier == "S" else "high"}"'
     agent = f'{AGENT_HEAD}{model}, {agent_prompt(path)}'
+    own = sum(len(b.section(s)) for s in ("Raw request", "Interpretation", "Approach (options → choice → why)",
+                                          "Acceptance criteria", "Steps"))
+    if own > OWN_MAX:  # T-2517: big tasks land worse in a lane; advice, never a refusal (the brief is written)
+        rows = stats(p)
+        rate = lambda labs: (f"{sum(r['landed'] for r in rows if r['size'] in labs)} of "  # noqa: E731
+                             f"{sum(r['briefs'] for r in rows if r['size'] in labs)}")
+        warns.append(f"{b.id}'s own sections are {own} chars: builder briefs up to 8k landed "
+                     f"{rate(('up to 4k chars', 'up to 8k'))}, longer ones {rate(('up to 16k', 'more'))} "
+                     f"(fm lane stats); split it, or keep it in the main thread")
     return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "model": chosen, "route": route, "out": out + [b.id], "warnings": warns},
                      "".join(f"{w}\n" for w in warns) +
                      f"{b.id}: builder brief {path}\n  model {chosen}: {route}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
