@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A contract's receipt now shows yield per dollar beside spend, for example "$0.50 a task (2.0 tasks a dollar)". `fm run` ends with the same line when it measured spend, which is under `--max-usd` or a USD contract. Zero spend or zero tasks show no ratio.
 - The brainstorm skill's grounding step now asks for MASTER.md first, three phrasings per idea and the verbs' own help strings before an idea counts as new, plus a spot check of two grounded items before any is built. In the 2 November run, three of the four items checked that the first pass had marked new or partial were already built.
 - `fm task finish` no longer re-runs a criterion whose exact command just passed on the same files and environment. If the newest run of that command was a pass recorded by fm on this tree and world, the close reuses it and says so ("Reused 1 run(s)…"). A different tree, a changed lockfile or interpreter, or a later failed run of the command still runs it again. The close's own gates still run.
 - A removed `fm` flag now says what replaced it and which task removed it, instead of argparse's bare error. The first one is `fm night --print-timer`, removed in T-2475, whose replacements are `fm night --stage` and `fm night --install`. It exits 2.
