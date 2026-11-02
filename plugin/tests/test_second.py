@@ -148,6 +148,10 @@ class Rival(_RivalBase):
             self.fm("task", "dissent", tid, "resolve", str(n), "adopted: noted in the plan", env=self.env)
         self.focus(tid, True)
 
+    def test_a_changed_mind_reads_the_last_choice_percent(self):  # T-2427: the one parser the ledger and plan gate use
+        changed = self.new("M", approach=self.SURE % 60 + " then, on a second look, Choice 2 (90%): lru_cache")
+        self.focus(changed, True)
+
     def test_M_under_the_race_bar_or_with_one_reading_waits_and_others_never_do(self):
         low = self.new("M", approach=self.SURE % 60)
         self.assertIn(f"fm second rival {low}", self.focus(low, False))
