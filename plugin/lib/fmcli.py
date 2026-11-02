@@ -6021,6 +6021,10 @@ def _no_ids(text):
     return re.sub(r"\(\s*\)|\(\s+", lambda m: "" if m.group(0).strip() == "()" else "(", text)
 
 
+# T-2641: (verb, removed flag or verb) -> what replaced it and the task that removed it; read only on the parser's error path
+TOMBSTONES = {("night", "--print-timer"): "removed in T-2475; fm night --stage queues the timers for one yes, fm night --install installs them"}
+
+
 class _Parser(argparse.ArgumentParser):
     """No abbreviated long options (subparsers inherit the class): `--allo core` must not slip past the guard."""
 
@@ -6048,6 +6052,9 @@ class _Parser(argparse.ArgumentParser):
         if bad and not near:
             near = [FOLDED[bad.group(1)]] if bad.group(1) in FOLDED else difflib.get_close_matches(bad.group(1), choices, n=1)
         word = unknown[0] if unknown else bad.group(1) if bad else ""
+        gone = TOMBSTONES.get((words[0] if words else "", word))  # T-2641: removed on purpose, not mistyped
+        if gone:
+            super().error(f"{word} is gone ({gone})")
         if word and not re.fullmatch(r"T-\d+", word):  # T-2382: a vote for a verb or flag that isn't there (fm friction)
             try:
                 c.append_line(os.path.join(c.state_dir(), "events.jsonl"), json.dumps(c.redact_obj(
