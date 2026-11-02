@@ -1,0 +1,37 @@
+{
+ "modules": {
+  "semver": {
+   "passed": true,
+   "tries": [
+    {
+     "attempt": 1,
+     "passed": true,
+     "summary": "OK"
+    }
+   ]
+  },
+  "table": {
+   "passed": true,
+   "tries": [
+    {
+     "attempt": 1,
+     "passed": true,
+     "summary": "OK"
+    }
+   ]
+  },
+  "ranges": {
+   "passed": true,
+   "tries": [
+    {
+     "attempt": 1,
+     "passed": true,
+     "summary": "OK"
+    }
+   ]
+  }
+ },
+ "passed": 3,
+ "of": 3,
+ "verdict": "viable"
+}
