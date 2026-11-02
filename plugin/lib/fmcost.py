@@ -195,8 +195,13 @@ def burn_findings(folder=None, days=2, forecast=None):
         by[("subagent " if sub else "") + ("opus" if "opus" in str(m.get("model")) else "other")] += size
     out = []
     if len(ctx) >= 20 and sum(ctx) / len(ctx) > BURN_CONTEXT:
-        out.append((f"context per reply averages {_human(sum(ctx) / len(ctx))} over {len(ctx)} replies",
-                    "sessions compact late: fm install-user sets Foreman's 200k compact window; /compact long ones"))
+        import fmsetup
+        w = _window()  # T-2537: fm install-user leaves a window the user set alone, so naming it as the fix is a no-op
+        fix = (f"sessions compact late: your settings set a {_human(w)} compact window (Foreman leaves your choice "
+               f"alone); /compact long sessions at task boundaries" if w and w > parse_tokens(fmsetup.COMPACT_WINDOW)
+               else "sessions compact late: /compact long sessions at task boundaries" if w
+               else "sessions compact late: fm install-user sets Foreman's 200k compact window; /compact long ones")
+        out.append((f"context per reply averages {_human(sum(ctx) / len(ctx))} over {len(ctx)} replies", fix))
     peak = max(map(len, hours.values()), default=0)
     if peak >= 3:
         out.append((f"{peak} sessions replied in the same hour", "each one multiplies usage: fm drive off in the "
@@ -420,6 +425,19 @@ def task_costs(p, days, retry=None):
         if _retrying(spans, task, ts[:19]):
             retry[task] += w
     return out
+
+
+def _window():
+    """T-2537: the compact window Claude Code runs with (its env, else the user's settings.json env), or None."""
+    raw = os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+    if raw is None:
+        try:
+            home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+            with open(os.path.join(home, "settings.json"), encoding="utf-8") as f:
+                raw = ((json.load(f) or {}).get("env") or {}).get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+        except (OSError, ValueError, AttributeError):
+            raw = None
+    return parse_tokens(raw) if raw else None
 
 
 def parse_tokens(v):

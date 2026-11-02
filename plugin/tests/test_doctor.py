@@ -928,6 +928,18 @@ class DoctorStateSize(ForemanTestCase):
         self.assertIn("research", r.detail)
         self.assertIn("fm tidy", r.detail)
 
+    def test_an_exam_heavy_project_is_told_tidy_doesnt_prune_exam_runs(self):  # T-2538
+        self.fm("init")
+        p = c.find_project(self.repo)
+        os.makedirs(os.path.join(p.dir, "exam", "long", "l001"), exist_ok=True)
+        with open(os.path.join(p.dir, "exam", "long", "l001", "work.tar"), "w") as f:
+            f.write("x" * 60_000)
+        r = d.check_state_size([p], budget=20_000)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("exam", r.detail)
+        self.assertIn("fm tidy doesn't prune exam runs", r.detail)
+        self.assertNotIn("fm tidy --apply prunes and rolls it", r.detail)
+
 
 class ScanCache(ForemanTestCase):
     # T-2298: usage burn and unloaded skills reuse their result while the files they read are unchanged

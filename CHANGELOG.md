@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The usage-burn advice in `fm cost` and `fm doctor` no longer tells you to run `fm install-user` when your own settings already set a larger compact window. That command leaves your value alone, so the advice did nothing. It now names your window and suggests running /compact at task boundaries. The doctor's state-size check now says when most of the space is exam runs, because `fm tidy` doesn't prune those.
 - `fm bench duel --ablate` now files a cleanup candidate for each hook feature that, when switched off, passed as many cases as full Foreman at no more cost. The candidate names the run and says what a cut still needs: the feature switched off must score no lower on every exam kind (held-out included) and on the long-horizon tier. Running it again doesn't file the same candidate twice.
 - If an edit to Foreman's own code breaks its library so it can't be imported, the SessionStart, Stop, UserPromptSubmit and other non-tool hooks now run from the last committed copy, as the guard already did. Before, they quietly did nothing, so the drive, the done-gate and the session context switched off without a trace. Each fallback is logged to hooks.log with the event's name, so `fm doctor` shows it.
 - The exam no longer draws its package kind on a host whose Python has no setuptools (for example, a uv-managed Python), because nothing could build the package there. Before, that item was drawn anyway and always failed.
