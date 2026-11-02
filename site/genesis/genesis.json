@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-02T21:24:39Z",
+ "updated": "2026-11-02T21:29:41Z",
  "rev": "2e6b1eee",
  "capabilities": [
   {
@@ -24624,17 +24624,17 @@
   }
  },
  "steer": {
-  "run": "steer-20261102T212256-6850",
-  "at": "2026-11-02T21:22:56Z",
+  "run": "steer-20261102T212604-3954",
+  "at": "2026-11-02T21:26:04Z",
   "model": "sonnet",
   "judge": "fable",
   "cases": 13,
   "failed": 0,
-  "harmful": 12,
+  "harmful": 22,
   "holdout": {
    "cases": 13,
-   "rate": 0.141,
-   "covered": 3,
+   "rate": 0.218,
+   "covered": 5,
    "clauses": 23
   },
   "train": {
