@@ -4,6 +4,7 @@ findings rebutted (T-0232), the last session read for what was missed (T-0235), 
 import json
 import os
 import re
+import unittest
 
 from helpers import ForemanTestCase
 
@@ -432,3 +433,27 @@ class LensSkills(ForemanTestCase):
         self.assertIsNone(routing_problem(good))
         self.assertIsNotNone(routing_problem(dict(good, lens_words={"adversary": "security"})))
         self.assertIsNotNone(routing_problem(dict(good, lens_builtin={"adversary": ["x; rm -rf /tmp/y"]})))
+
+
+class OneWayVerb(unittest.TestCase):  # T-2521: deleting a code symbol in a tracked file is undone by git, not one-way
+    def test_a_code_symbol_isn_t_a_one_way_object_and_data_still_is(self):
+        import fmcore as c
+
+        class B:  # the two things _one_way reads
+            tier = "M"
+
+            def __init__(self, step):
+                self.step = step
+
+            def steps(self):
+                return [type("S", (), {"text": self.step})()]
+
+            def section(self, name):
+                return "tidy the parser"
+        for step in ("delete _CONF_RE", "drop the unused fmcore._x helper", "delete `old_name` and its test",
+                     "delete parse_args()"):
+            self.assertEqual(c._one_way(B(step)), "", step)
+        for step, verb in (("delete data/old.csv", "delete"), ("drop the users table", "drop"),
+                           ("delete the release branch", "delete"), ("delete old.csv", "delete"),
+                           ("delete old_data.csv", "delete"), ("drop users.db", "drop")):
+            self.assertEqual(c._one_way(B(step)), verb, step)
