@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm night` now exits 0 when it skips a night because usage is high. It still prints "nothing runs tonight". systemd used to record each skipped night as a failed run, so `fm doctor` and the session-start watch reported your night timer as failing when it was working as designed.
 - `fm genesis review N --handle K=HOW` can now be given several times in one call, and every value is applied. Before, only the last one counted and the rest were dropped without a word. Every value is checked first, so one bad value applies none.
 - `fm loop round --next` no longer ends a round that started under 15 minutes ago and has made no task yet. It prints that round's instructions again. Before, a session that called it a few times to re-read the instructions ended two empty rounds as dry, and that switched the forever loop off. `fm loop yield N` still closes a round at any time.
 - `fm tidy --apply` now removes the work copies of old exam runs. These are the repo copies that sessions worked in, and they took 2.3 GB of state here. A run qualifies once its newest grade is 14 days old and the same agent has had a newer run of the same tier graded since. Answers, grades and keys stay, and runs that were never graded are left alone. Grading a pruned run now refuses and names the rerun command, instead of failing every goal for want of its files.
