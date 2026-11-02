@@ -115,12 +115,45 @@ class Ship(ForemanTestCase):
                     "git push -q origin HEAD:main\n")
         return script
 
+    def ci_ignores(self, *globs):  # T-2572: main's workflow names what CI never tests
+        other = os.path.join(self.tmp, "ci")
+        subprocess.run(["git", "clone", "-q", self.origin, other], check=True)
+        os.makedirs(os.path.join(other, ".github", "workflows"))
+        with open(os.path.join(other, ".github", "workflows", "test.yml"), "w") as f:
+            f.write("on:\n  push:\n    paths-ignore:  # data\n" + "".join(f"      - {g}\n" for g in globs) + "jobs: {}\n")
+        sh(other, "add", "-A")
+        sh(other, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "ci")
+        sh(other, "push", "-q", "origin", "HEAD:main")
+
     def test_a_main_that_moved_only_in_other_files_is_re_picked_and_pushed(self):  # T-2511
+        self.ci_ignores("site/genesis/genesis.json", "site/genesis/gen-*/**")
         self.grant()
         r = self.ship("--test", f"sh {self.mover('site/genesis/genesis.json')}")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.main_log()[:3], ["add b", "add a", "tower update"])
         self.assertFalse(self.granted())
+
+    def test_a_move_in_a_file_ci_tests_refuses_though_no_shipped_file_moved(self):  # T-2572
+        self.ci_ignores("site/genesis/genesis.json")
+        self.grant()
+        r = self.ship("--test", f"sh {self.mover('lib/other.py')}")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("files CI tests", r.stdout + r.stderr)
+        self.assertTrue(self.granted())
+
+    def test_without_a_workflow_every_file_move_refuses(self):  # T-2572
+        self.grant()
+        r = self.ship("--test", f"sh {self.mover('site/genesis/genesis.json')}")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertTrue(self.granted())
+
+    def test_ci_globs_follow_github_rules(self):  # T-2572
+        import fmrelease
+        g = fmrelease._glob_re
+        self.assertTrue(g("site/genesis/gen-*/**").match("site/genesis/gen-2/a/b.md"))
+        self.assertFalse(g("site/genesis/gen-*/**").match("site/x.md"))
+        self.assertFalse(g("site/genesis/*.md").match("site/genesis/gen-2/x.md"))
+        self.assertTrue(g("'site/genesis/*.md'").match("site/genesis/frame.md"))
 
     def test_a_main_that_moved_in_a_shipped_file_still_refuses(self):  # T-2511
         self.grant()

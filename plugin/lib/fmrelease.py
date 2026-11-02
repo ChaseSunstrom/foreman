@@ -337,6 +337,25 @@ SHIPPED = "refs/foreman/shipped"  # T-1945: the last commit fm ship landed; defa
 SHIPPED_TIP = "refs/foreman/shipped-tip"  # T-2527: the main commit that ship pushed (its sha differs once re-picked)
 
 
+def _glob_re(g):
+    """A GitHub paths glob as a regex: ** spans folders, * stays inside one."""
+    return re.compile("".join(".*" if x == "**" else "[^/]*" if x == "*" else re.escape(x)
+                              for x in re.split(r"(\*\*|\*)", g.strip().strip("'\""))) + r"\Z")
+
+
+def _ci_ignored(root, rev):
+    """T-2572: the paths-ignore globs in rev's .github/workflows: files CI never tests, so main moving only in them
+    can't change what a retest would show. A repo without any gives [] (every other move refuses)."""
+    names = c._git(root, "ls-tree", "--name-only", rev, ".github/workflows/", timeout=30, proc=True)
+    out = []
+    for name in names.stdout.split() if names.returncode == 0 else []:
+        if name.endswith((".yml", ".yaml")):
+            text = c._git(root, "show", f"{rev}:{name}", timeout=30, proc=True).stdout or ""
+            for m in re.finditer(r"(?m)^([ \t]*)paths-ignore:[^\n]*\n((?:\1[ \t]+-[^\n]*\n?)+)", text):
+                out += [x.split("#")[0].strip() for x in re.findall(r"-([^\n]*)", m.group(2))]
+    return [_glob_re(g) for g in out if g]
+
+
 def _affected_first(p, wt, base, env):
     """T-2323: fm check's affected-test selection over the range (main..the cherry-picked tip) in the scratch tree, run
     before the full suite; red stops the ship naming the failing classes. No linked test or no affected command: goes on."""
@@ -477,8 +496,13 @@ def ship(p, args):
                     # T-2511: a move in files the shipped commits never touch (fm genesis live's tower publishes) can't
                     # change what was tested: re-pick onto the new main and push; any shared file refuses as before
                     new = _git(root, "rev-parse", "FETCH_HEAD").strip()
-                    if _files(base, new) & _files(base, tip):
+                    moved = _files(base, new)
+                    if moved & _files(base, tip):
                         _err(f"{remote} main moved while testing; nothing was pushed: run fm ship again")
+                    ignored = _ci_ignored(root, new)
+                    if not all(any(g.match(f) for g in ignored) for f in moved):  # T-2572: an untested tree never ships
+                        _err(f"{remote} main moved while testing in files CI tests ({', '.join(sorted(moved)[:3])}); "
+                             "nothing was pushed: run fm ship again (it tests the new main)")
                     _git(wt, "checkout", "-q", "--detach", new)
                     for sha in picks:
                         merge = len(_git(root, "rev-list", "--parents", "-n1", sha).split()) > 2
