@@ -29,6 +29,15 @@ EXPECT = {"fastapi": {"fastapi", "pytest", "python"}, "nextjs": {"nextjs", "reac
 
 
 class LibraryCards(ForemanTestCase):
+    def test_a_path_dependency_is_the_projects_own_code_not_a_stack(self):  # T-2600
+        import tomllib
+        cargo = tomllib.loads('[dependencies]\nhmac = "0.12"\nlogic = { path = "logic" }\n'
+                              'serde = { workspace = true }\nbar = { git = "https://example.invalid/bar" }\n'
+                              '[dev-dependencies]\nlocal-test = { path = "../t" }\n')
+        self.assertEqual(sorted(fmlib._toml_deps(cargo)), ["bar", "hmac", "serde"])
+        poetry = tomllib.loads('[tool.poetry.dependencies]\njinja2 = "^3"\nmine = { path = "../mine", develop = true }\n')
+        self.assertEqual(fmlib._toml_deps(poetry), ["jinja2"])
+
     def test_a_near_neutral_accent_has_no_hue_note(self):  # T-2051: a hue distance means nothing below chroma 0.03
         looks = os.path.join(fmlib.CARDS, "looks")
         for name in os.listdir(looks):

@@ -365,6 +365,10 @@ def _req(line):
     return [m.group(1)] if m and not line.lstrip().startswith(("#", "-")) else []
 
 
+def _named(tbl):  # T-2600: a path dependency is the project's own code (a workspace crate), never a stack to card
+    return [k for k, v in (tbl or {}).items() if not (isinstance(v, dict) and "path" in v)]
+
+
 def _toml_deps(data):
     out = []
     proj = data.get("project") or {}
@@ -375,13 +379,13 @@ def _toml_deps(data):
         out += [d for s in group if isinstance(s, str) for d in _req(s)]
     tool = data.get("tool") or {}
     poetry = tool.get("poetry") or {}
-    out += list(poetry.get("dependencies") or {}) + list(poetry.get("dev-dependencies") or {})
+    out += _named(poetry.get("dependencies")) + _named(poetry.get("dev-dependencies"))
     for g in (poetry.get("group") or {}).values():
-        out += list((g or {}).get("dependencies") or {})
+        out += _named((g or {}).get("dependencies"))
     out += [d for s in (tool.get("uv") or {}).get("dev-dependencies") or [] for d in _req(s)]
     for k in ("dependencies", "dev-dependencies", "build-dependencies", "packages", "dev-packages"):  # Cargo, Pipfile
-        out += list(data.get(k) or {})
-    out += list((data.get("workspace") or {}).get("dependencies") or {})
+        out += _named(data.get(k))
+    out += _named((data.get("workspace") or {}).get("dependencies"))
     for t in (data.get("target") or {}).values():  # [target.'cfg(..)'.dependencies]
         out += list((t or {}).get("dependencies") or {})
     return out
