@@ -2,6 +2,10 @@
 
 Built from 13 parallel read-only recon passes (one per §2 capability) over the foreman repo at ae98159e. Every later
 idea is checked against this map: an idea that names something under **Exists** is a duplicate unless it extends it.
+Source limit: these passes are Foreman reading its own code, so the map ranks gaps by inspection only. The user's
+later rule (2026-10-30) asks for signals Foreman didn't author; none fed this map yet. Each generation re-ranks it from
+`fm outcomes` (reverts, re-fixes and corrections within 30 days), cold `fm second` reads and the foreman-vs-plain exam
+arms, which the user's testing-cadence steer (gen-1/seed.md rule 6) defers to the end-of-run exam on the production model; until then the order below is provisional.
 Tiers: 3 capability, 4 paradigm. Paths are under plugin/lib unless shown.
 
 ## Cross-cutting findings (the same hole seen from several capabilities)
@@ -11,9 +15,12 @@ Tiers: 3 capability, 4 paradigm. Paths are under plugin/lib unless shown.
 - **Foreman watches itself, not the project.** fm scout's 7 probes look at Foreman/Claude Code (fmscout.py:248-251).
 - **Prose, not gates.** "3+ approaches", the tower, the capability map, incident steps live in markdown; the plan gate
   checks only that Interpretation/Approach are non-empty (fmcore.py:2605-2607).
-- **No exam exists.** bench/spec-suite is 8 Python tasks; fmbench's planted-bug bench plants `return None` in Python
-  only (fmbench.py:1313). Holdout is a per-case hash split (fmbench.py:770, HOLDOUT_EVERY 5). Nothing generates
-  multi-language repos with answer keys.
+- **No exam existed at gen 1's start.** Then: bench/spec-suite was 8 Python tasks; fmbench's planted-bug bench
+  plants `return None` in Python only (fmbench.py:1313). Holdout was a per-case hash split (fmbench.py:770,
+  HOLDOUT_EVERY 5). Nothing generated multi-language repos with answer keys. Since then Mission 1 built `fm exam`
+  (plugin/lib/fmexam.py: LANGS at line 24 lists python, js, ts, ruby, rust and c; each scenario carries a key of its
+  planted faults, which the exam lines' `found N/M` counts are scored against). Whether that closes this gap is for
+  the end-of-run exam to show, not this line.
 - **Surfaces.** Nearly everything is CLI + Claude Code plugin; fm code, MCP (research/recall read-only) and Desktop
   are rarely wired.
 
@@ -133,3 +140,7 @@ Tiers: 3 capability, 4 paradigm. Paths are under plugin/lib unless shown.
 6. #6/#10 proof kinds (docs truth, data, infra, perf) and the unproven rollup.
 7. #7/#8 signal → fix loop, calibrated stop rule.
 8. #9/#11/#3/#12 router, triggers + install queue, anticipation model, lean ratchet.
+
+The order covers the 13 capabilities only. The harness areas (onboarding, UX, docs, ecosystem, multi-user,
+observability, security, performance, portability) were added as coverage.md rows after this map was built; their
+gaps aren't ranked here yet, and their open cells are listed by `fm genesis check`, not by this order.
