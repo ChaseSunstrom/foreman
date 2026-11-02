@@ -225,6 +225,45 @@ def triage_deferred(p, briefs):
     return out
 
 
+EXAM_WORK_DAYS = 14
+
+
+def _prune_exam_work(p, apply, actions):
+    """T-2568: a graded exam run's work copies (the repo copies its grade reads) once its newest grade is EXAM_WORK_DAYS
+    old and a newer graded run of the same tier exists for that agent. Answers, grades and keys stay; a PRUNED marker
+    makes a regrade ask for a rerun. Ungraded runs are never touched."""
+    import fmexam
+    import fmgenesis
+    last = {}  # (tier, agent, run) -> newest grade time
+    for x in c.tail_jsonl(os.path.join(fmgenesis.home(p), "exam.jsonl"), 100000):
+        if isinstance(x, dict) and x.get("run") and x.get("agent") and x.get("at"):
+            k = ("long" if x.get("tier") == "long" else "short", str(x["agent"]), str(x["run"]))
+            last[k] = max(last.get(k, ""), str(x["at"]))
+    newest = {}
+    for (tier, agent, _), at in last.items():
+        newest[(tier, agent)] = max(newest.get((tier, agent), ""), at)
+    out = []
+    for (tier, agent, run), at in sorted(last.items()):
+        if "/" in run or "/" in agent or run.startswith(".") or agent.startswith("."):
+            continue  # a line's text never names a path outside the exam store
+        base = os.path.join(fmexam.root(p), *(("long",) if tier == "long" else ()), run, "work", agent)
+        age = c.age_days(at) or 0
+        if (at == newest[(tier, agent)] or age < EXAM_WORK_DAYS or os.path.islink(base) or not os.path.isdir(base)
+                or fmexam.pruned(base)):  # a symlinked work dir is never followed
+            continue
+        mb = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(base) for f in fs
+                 if not os.path.islink(os.path.join(d, f))) / 1e6
+        out.append(finding(p.slug, "exam_work", "action", f"{tier} exam {run} ({agent}): work copies {mb:.0f} MB, "
+                           f"graded {int(age)}d ago, a newer run graded since", "remove them; answers and grades stay",
+                           auto=True))
+        if apply:
+            shutil.rmtree(base, ignore_errors=True)
+            os.makedirs(base, exist_ok=True)
+            c.write_atomic(os.path.join(base, fmexam.PRUNED), at + "\n")
+            actions.append(("exam_work", f"{run}/{agent}"))
+    return out
+
+
 def check_project(p, apply, actions):
     out, slug = [], p.slug
     briefs = c.load_briefs(p)
@@ -302,6 +341,7 @@ def check_project(p, apply, actions):
     out += fmlanes.stale(p, briefs, apply, actions, finding)
     out += _roll_ledger(p, apply, actions)
     out += _prune_snapshots(p, apply, actions)
+    out += _prune_exam_work(p, apply, actions)  # T-2568
     out += _prune_reverted(p, apply, actions)
     out += _prune_door_snapshots(p, apply, actions)
     out += _backup_state(p, apply, actions)

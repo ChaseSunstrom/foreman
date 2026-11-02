@@ -825,6 +825,10 @@ def run(p, run, agent, model=None, budget=None, timeout=None, faults=(), limit=N
     timeout = timeout or SESSION_T
     meta = _load(p, run)
     picked = meta["scenarios"]
+    try:
+        os.remove(os.path.join(_root(p), run, "work", agent, fmexam.PRUNED))  # T-2568: a rerun's work copies are fresh
+    except FileNotFoundError:
+        pass
     if agent in SESSIONS:
         import fmbudget
         picked = picked[:3 if limit is None else max(0, int(limit))]  # ponytail: a spend guard as in fmexam.run_agent; --limit raises it
@@ -949,6 +953,9 @@ def grade(p, run, agent):
     import fmgenesis
     _agent(agent)
     meta = _load(p, run)
+    import fmexam
+    if fmexam.pruned(os.path.join(_root(p), run, "work", agent)):
+        raise ValueError(f"work copy pruned (fm tidy): rerun to regrade (fm exam long run {run} --agent {agent})")
     goals, skipped = [], {}
     for s in meta["scenarios"]:  # every goal counts: one without an answer is not done
         key, work = _key(p, run, s["id"]), _work(p, run, agent, s["id"])
