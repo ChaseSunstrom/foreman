@@ -218,6 +218,34 @@ class Chain(ForemanTestCase):
         self.assertEqual(self.verify("--accept-damage").returncode, 0)
         self.assertEqual(self.verify().returncode, 0)
 
+    def cut(self, keep=40):
+        """T-2664: a crash that kept a line's first bytes and lost the rest (volt-89d78b, 2026-10-23), no zeros."""
+        with open(self.ledger, "rb") as f:
+            body = f.read()
+        start = body.rstrip(b"\n").rfind(b"\n") + 1
+        with open(self.ledger, "wb") as f:
+            f.write(body[:start + keep] + b"\n")
+        return len(self.lines())
+
+    def test_a_line_cut_short_mid_file_is_crash_damage_once_a_later_line_pins_it(self):
+        for i in range(3):
+            c.log_event(self.p, "note", data={"i": i})
+        n = self.cut()
+        r = self.verify()
+        self.assertEqual(r.returncode, 1, r.stdout)  # the last line: nothing pins its bytes yet, so it stays broken
+        self.assertEqual(self.verify("--accept-damage").returncode, 1)
+        c.log_event(self.p, "note")  # the next write chains to the cut bytes: they were cut at write, not edited
+        r = self.verify()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(f"ledger.jsonl:{n}", r.stdout)
+        self.assertIn("cut short", r.stdout)
+        self.assertIn("--accept-damage", r.stdout)
+        r = self.verify("--accept-damage")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = self.verify()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(f"ledger.jsonl:{n}", r.stdout, "the accepted damage stays named")
+
     def test_an_ack_counts_only_for_the_damage_before_it(self):
         # the same number of zero bytes hashes the same: an ack names the line before it too, so it can't cover a
         # later crash of the same size

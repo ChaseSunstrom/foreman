@@ -16,6 +16,7 @@ def chain(p, anchor=None):
     before each is unproven), broken (the first break, else None) and, given an anchor, whether a line hashes to it."""
     r = {"head": None, "chained": 0, "lines": 0, "start": None, "gaps": [], "broken": None, "damaged": []}
     prev, prev_at, found, pending, damage = c.ledger_hash(b""), "the start of the ledger", False, {}, None
+    unpinned = None  # T-2664: a cut-short line no later line has chained to yet
     for path in c.ledger_files(p):
         name = os.path.relpath(path, p.dir)
         try:
@@ -35,8 +36,10 @@ def chain(p, anchor=None):
                         return r
                     # keyed by the line before it too: the same number of zero bytes always hashes the same
                     key = f"{prev}:{c.ledger_hash(raw)}"
-                    damage = pending[key] = {"at": at, "bytes": len(raw) - len(raw.rstrip(b"\0")), "key": key,
-                                             "before": prev}
+                    zeros = len(raw) - len(raw.rstrip(b"\0"))
+                    damage = pending[key] = {"at": at, "bytes": zeros, "what": f"{zeros} zero bytes", "key": key,
+                                             "before": prev, "why": f"ends in {zeros} zero bytes: an unclean "
+                                                                            "shutdown lost the events written just before it"}
                     r["damaged"].append(damage)
                     prev, prev_at = c.ledger_hash(raw), at
                     continue
@@ -47,14 +50,26 @@ def chain(p, anchor=None):
                                       f"them were removed"
                         return r
                     r["chained"] += 1
+                    unpinned = None  # its prev is the hash of the line before, cut or not: those bytes are as written
                 elif r["start"]:
                     r["gaps"].append(at)
                 if r["start"]:
                     try:
                         e = json.loads(raw)
                     except ValueError:
-                        r["broken"] = f"{at} is not a whole JSON line: cut short or corrupted"
-                        return r
+                        if not raw.startswith(_CHAINED):
+                            r["broken"] = f"{at} is not a whole JSON line: cut short or corrupted"
+                            return r
+                        # T-2664: a chained line a crash cut short as it was written; once a later line chains to
+                        # these bytes they are what was written, not an edit: damage to accept, like a zeroed line
+                        key = f"{prev}:{c.ledger_hash(raw)}"
+                        damage = unpinned = pending[key] = {
+                            "at": at, "bytes": 0, "what": f"cut short at {len(raw)} bytes", "key": key, "before": prev,
+                            "why": f"was cut short at {len(raw)} bytes by an unclean shutdown; the next line chains "
+                                   "to those bytes, so the rest of that event was lost, not edited"}
+                        r["damaged"].append(damage)
+                        prev, prev_at = c.ledger_hash(raw), at
+                        continue
                     # the first write after a crash names the line before the damage: lines removed there show
                     if damage and isinstance(e, dict) and e.get("after_damage") not in (None, damage["before"]):
                         r["broken"] = f"{at} names a different line before the damage at {damage['at']}: lines " \
@@ -70,10 +85,12 @@ def chain(p, anchor=None):
                 found = found or prev == anchor
     if anchor:
         r["anchor"] = {"head": anchor, "found": found}
+    if unpinned:  # the newest line: nothing pins its bytes, so a cut and an edit look the same
+        r["broken"] = f"{unpinned['at']} is not a whole JSON line: cut short or corrupted"
+        return r
     if pending:
         d = next(iter(pending.values()))
-        r["broken"] = f"{d['at']} ends in {d['bytes']} zero bytes: an unclean shutdown lost the events written just " \
-                      f"before it (fm verify-ledger --accept-damage records it once you've checked)"
+        r["broken"] = f"{d['at']} {d['why']} (fm verify-ledger --accept-damage records it once you've checked)"
         r["damage_only"] = True
         return r
     r["head"] = prev
@@ -90,7 +107,7 @@ def accept_damage(p, anchor=None):
     if not r.get("damage_only") or (anchor and not r["anchor"]["found"]):
         return []
     new = [d for d in r["damaged"] if not d.get("accepted")]
-    c.log_event(p, DAMAGE_ACK, data={"keys": [d["key"] for d in new], "lines": [f"{d['at']} ({d['bytes']} zero bytes)"
+    c.log_event(p, DAMAGE_ACK, data={"keys": [d["key"] for d in new], "lines": [f"{d['at']} ({d['what']})"
                                                                               for d in new]})
     return new
 
@@ -124,13 +141,14 @@ def cmd_verify_ledger(args):
             if r["lines"] > r["chained"] + len(r["gaps"]) else "") + "; an edit to the last line shows only with " \
                                                                        "--head (a finish receipt's)."
     if accepted:
-        text = "Crash damage accepted: " + ", ".join(f"{d['at']} ({d['bytes']} zero bytes)" for d in accepted) + \
+        text = "Crash damage accepted: " + ", ".join(f"{d['at']} ({d['what']})" for d in accepted) + \
                "\n" + text
     elif getattr(args, "accept_damage", False) and r["broken"]:
-        text += "\nNothing accepted: --accept-damage covers only lines an unclean shutdown zeroed."
+        text += "\nNothing accepted: --accept-damage covers only lines an unclean shutdown zeroed or cut short " \
+                "that a later line chains to."
     if r["damaged"] and not r["broken"]:
         text += "\nCrash damage (accepted; the events written just before each were lost): " + \
-                ", ".join(f"{d['at']} ({d['bytes']} zero bytes)" for d in r["damaged"][:10])
+                ", ".join(f"{d['at']} ({d['what']})" for d in r["damaged"][:10])
     if r["gaps"] and not r["broken"]:
         text += f"\n{len(r['gaps'])} unchained line(s) after the start (an older Foreman wrote them; the line before " \
                 f"each is unproven): " + ", ".join(r["gaps"][:10])
