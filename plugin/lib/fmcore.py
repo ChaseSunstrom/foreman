@@ -5470,3 +5470,22 @@ def gate_lock(label, say=None, timeout=None):
                 os.environ["FOREMAN_GATE_HELD"] = prev
     finally:
         os.close(fd)  # closing the descriptor releases the flock
+
+
+def redefinitions(src):
+    """T-2553, T-2630: [(line, name, first line)] for top-level defs, classes and plain assignments that replace an
+    earlier one. A rebinding that reads the old value (DEFS = {k: … for k, v in DEFS.items()}) is deliberate and passes."""
+    import ast  # only the edit-time note and the test parse: not every hook's import
+    seen, out = {}, []
+    for node in ast.parse(src).body:
+        names = []
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names = [node.name]
+        elif isinstance(node, ast.Assign):
+            reads = {n.id for n in ast.walk(node.value) if isinstance(n, ast.Name)}
+            names = [t.id for t in node.targets if isinstance(t, ast.Name) and t.id not in reads]
+        for name in names:
+            if name in seen:
+                out.append((node.lineno, name, seen[name]))
+            seen[name] = node.lineno
+    return out

@@ -3243,7 +3243,38 @@ def post_tool_validate(pl):
         c.log_event(p, "enforce", task=act.id if act else None, data={"kind": "validator_block", "file": path, "problem": problem[:300]},
                     session=pl.get("session_id"))
         return {"decision": "block", "reason": problem}
+    note = note or _redefinition_note(pl, path, ti)
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
+
+
+_TOP_NAME = c.lazy(r"(?m)^(?:(?:async[ \t]+)?def|class)[ \t]+(\w+)|^(\w+)[ \t]*=(?!=)")
+
+
+def _redefinition_note(pl, path, ti):
+    """T-2630: an edit that adds a top-level def, class or assignment its Python module already defines, said at once
+    (fmcore.redefinitions, T-2553), once per name per session. The edit's own text is matched first: only an edit that
+    starts a top-level name parses the file."""
+    if not path.endswith(".py"):
+        return None
+    new = "\n".join([str(ti.get("new_string") or ""), str(ti.get("content") or "")]
+                    + [str(e.get("new_string") or "") for e in ti.get("edits") or [] if isinstance(e, dict)])
+    added = {m.group(1) or m.group(2) for m in _TOP_NAME.finditer(new)}
+    if not added:
+        return None
+    try:
+        if os.path.getsize(path) > 2_000_000:
+            return None
+        with open(path, encoding="utf-8") as f:
+            found = c.redefinitions(f.read())
+    except (OSError, ValueError, SyntaxError):  # a file that doesn't parse is _syntax_note's to report
+        return None
+    notes = [f"{name} (line {line}, first defined at line {first})" for line, name, first in found
+             if name in added and _first_time(pl.get("session_id"),
+                                              "redef-" + hashlib.sha1(f"{path}:{name}".encode()).hexdigest()[:10])]
+    if not notes:
+        return None
+    return (f"Foreman: {os.path.basename(path)} now defines a top-level name twice, and the later one replaces the "
+            f"earlier for every caller: {'; '.join(notes[:5])}. Rename one, unless the replacement is deliberate.")
 
 
 def _auto_evidence(pl, p, ok):
