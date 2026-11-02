@@ -42,3 +42,9 @@ owes two tries only once it has been evaluated.
 - tried: fm spec's concrete assertions from a wish, keeping the user's own examples (fmchange.cmd_spec); the meaning class binding each request clause to a failable criterion (T-2393)
 - unblocks-with: one session with the user, who reads a mocked example sheet for one task and says whether the pairs changed what they'd accept
 - added: gen-3, from the #6 brainstorm (research/brainstorm-20261102-081535)
+
+## M-12 · Weight deciders by a scored market on whether a close survives
+- blocker: no decider beats chance on whether a close survives 14 days unfixed, so a pool has nothing to weight. On 22 failed and 22 era-matched held closes, the best AUC was 0.58, and the log-weighted pool scored Brier 0.286 against the best single's 0.275 (90% interval of the margin -0.039 to +0.016).
+- tried: models reading the work, a Haiku planner and a Sonnet cold rival given the brief and the diff (AUC 0.58 and 0.50); the record, the held rate of settled closes of the same type and tier and of earlier closes that touched the same files (AUC 0.49 and 0.48). Both via bench/moonshot/kill_m12.py (T-2687); an earlier run whose held closes came from an older era only was confounded and set aside.
+- unblocks-with: one forecaster that beats chance from what is known at close: the close's verification grade and unproven kinds, its test evidence, or M-16's warranty claims as a denser label; then rerun the same script with it added
+- added: gen-3, the moonshot Mission's spike (Mission 8)

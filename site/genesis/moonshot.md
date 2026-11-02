@@ -154,8 +154,9 @@
 - Novelty: 3
 - Needs: M-16
 - Unblocks: M-05
-- Kill: For 40 closed tasks with `fm outcomes` labels, have three cheap forecasters read only the brief and the diff and post a probability; pass if the log-weighted pool beats the best single forecaster's Brier by at least 0.02, fail otherwise.
-- Stage: idea
+- Kill: For 40 closed tasks with `fm outcomes` labels, have three cheap forecasters read only the brief and the diff and post a probability; pass if the log-weighted pool beats the best single forecaster's Brier by at least 0.02, fail otherwise. → not-yet: two approaches, neither found a forecaster with signal to weight. Reading: a Haiku planner and a Sonnet cold rival read the brief and the diff (AUC 0.58 and 0.50). Record: the held rate of settled closes of the same type and tier, and of earlier closes that touched the same files (AUC 0.49 and 0.48). On 22 failed and 22 era-matched held closes (label: a fix or revert within 14 days), the log-weighted pool scored Brier 0.286 against the best single's 0.275, a margin of -0.011 (90% bootstrap interval -0.039 to +0.016; walk-forward 0.286). A first run that drew held closes from an older era only was confounded and is kept beside the script. Blocker: one forecaster that beats chance on survival from what is known at close.
+- Evidence: T-2687 (bench/moonshot/kill_m12.py reruns the verdict from the cached answers; output in bench/moonshot/m12-result.json)
+- Stage: kill
 
 ### M-13 · Price the user's attention and cap unreviewed output to it
 - Tier: xhigh
