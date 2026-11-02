@@ -12,6 +12,24 @@ the end of the run), so `fm exam scorecard` reads 0/13 and no capability below c
 didn't author so far: the long-horizon tier (l001, l002; foreman 0/6 true done with 6 false dones, plain 1/6), the
 gen-2 cross-cutting review on a stronger model (22 findings, 9 fixed, 4 sent here as gaps) and CI on main.
 
+## The map (one row per capability; tier of its largest open gap)
+
+| Area | Tier | Evidence | Missing |
+|---|---|---|---|
+| 1. Initiative | 3 | fm find ladder and leads (T-2185, T-2297); triggers file work unasked | a held-out score for its kinds |
+| 2. Exhaustive thinking | 3 | plan gate by tier, blast radius, races, cold rival (T-2269 to T-2341) | dissents scored against outcomes |
+| 3. Anticipation | 3 | predictions scored (T-2290); user model of own asks (T-2554); replay paths 0.118 vs naive 0.116 | a path predictor past naive; scored steer predictions |
+| 4. Goal to finish | 4 | fm goal verdicts (T-2416, T-2557); long tier foreman 0/6 true done, 6 false dones | a done claim that survives hidden checks |
+| 5. Getting the tools it lacks | 3 | miss trigger, scaffolds, install queue, built tools prove themselves (T-2270 to T-2377) | a held-out score; user-only installs wait (T-2564) |
+| 6. Verifying anything | 4 | fm prove kinds and the unproven rollup (T-2273 to T-2391); 1,042 unproven, 568 meaning | intent proof beyond an LLM lens |
+| 7. Self-repair and self-improvement | 3 | signal-to-fix loop (T-2349, T-2350); 66 of 1,699 closes lost | a held-out score for recur and correction |
+| 8. Calibrated judgment | 3 | calibration ledger, confidence routing, one-way stop (T-2337, T-2338, T-2342) | confidence adjusted from the ledger |
+| 9. Orchestration | 3 | model router, lane recovery (T-2291, T-2353, T-2354); model arm not run | the user's model key; a held-out score |
+| 10. Beyond code | 3 | incident ritual, docs/infra/data proof, release for any repo; 1.2.51 shipped | a held-out score for docs, beyond, package |
+| 11. Self-triggering | 3 | trigger routing, zero-token watchers, staged installs, timer liveness (T-2276 to T-2593) | a week of live ticks (the user's install); a held-out score |
+| 12. Staying lean and safe | 3 | lean ratchet and substance (T-2281, T-2503); hook p95 34.9 ms | a lean check over the tower's own growth |
+| 13. Genesis as a feature | 3 | tower orchestrator, exam, train-only selection (T-2566), drift, review | a production confirm; a run from no prompt |
+
 ## Cross-cutting findings
 - **Built, not yet measured.** Gen 1 closed most of gen 1's "advice, not action" holes with triggers and gates. What's
   missing now is proof that they work on held-out work: the production held-out exam (end of run) and outcomes past
