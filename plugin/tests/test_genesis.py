@@ -749,7 +749,8 @@ class GenesisCheck(ForemanTestCase):
         self.assertIn("coverage: 63 of 64 cells filled, 1 empty", self.fm("genesis").stdout)
 
 
-MISSION = "# Mission\n\n{task}\n```\nFEATURE: one\nFEATURE: two\n```\n"
+MISSION = ("# Mission\n\n{task}\n## Grounding\n- one: fmexam.KINDS lacks it\n- two: fm exam gen skips it\n\n"
+           "```\nFEATURE: one\nFEATURE: two\n```\n")  # T-2547: a grounding line per brief
 DRY = "# Seed\n\nNo tier 3-4 gap left; no Missions this generation.\n"
 
 
@@ -1003,7 +1004,8 @@ class GenesisStep(ForemanTestCase):
         made = self.fm_json("intake", "FEATURE: one\nFEATURE: two\n")
         one, two = [b["id"] for b in made["created"]] if isinstance(made, dict) else [b["id"] for b in made]
         self.put("gen-1/mission-exam.md", f"# Mission\n\nTask: {one} (brief 1, the first),\n#2: {two} (brief 2)\n"
-                                          "```\nFEATURE: one\nFEATURE: two #T-9999\n```\n")  # the fence ends it
+                                          "```\nFEATURE: one\nFEATURE: two #T-9999\n```\n"  # the fence ends it
+                                          "\n## Grounding\n- one: fm intake\n- two: fm intake\n")  # T-2547
         self.fm("task", "drop", one, "x")
         s = self.at("build", two)  # past intake: both briefs named, the second still open; T-9999 isn't read as one
         self.assertNotIn("intaken", s["action"])
@@ -4179,3 +4181,32 @@ class SealedPrediction(ForemanTestCase):
         self.assertEqual([x for x in bad if "prediction" in x], [])
         self.assertTrue(any("blind-spots" in x for x in bad))  # the hunt still owed
         self.assertEqual(fmgenesis._predict_row(self.p, 1), ([], "gen 1 predates the rule (from gen 2)"))
+
+
+class GroundedMission(ForemanTestCase):  # T-2547: Mission 3 filed five briefs; three were built or had no failure behind them
+    def setUp(self):
+        super().setUp()
+        import fmcore
+        import fmgenesis
+        self.p = fmcore.find_project(self.repo, create=True)
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+
+    def mission(self, grounding):
+        return ("# Mission\n\nTask: none yet.\n\n" + grounding + "\n## Briefs (fm intake)\n```\n"
+                "FEATURE: the first brief\nFIX: the second brief\n```\n")
+
+    def test_each_brief_needs_a_grounding_line_naming_the_code(self):
+        import fmgenesis
+        ok = ("## Grounding\n- Brief 1: fmrecall.covered reads help text only; 47 of 381 drops say already built.\n"
+              "- Brief 2: fm genesis put checks no grounding; Mission 3 dropped 3 of 5 briefs.\n")
+        fmgenesis.put(self.p, "gen-1/mission-x.md", self.mission(ok))
+        short = "## Grounding\n- Brief 1: fmrecall.covered reads help text only.\n"
+        with self.assertRaises(ValueError) as e:
+            fmgenesis.put(self.p, "gen-1/mission-y.md", self.mission(short))
+        self.assertIn("2 briefs", str(e.exception))
+        vague = "## Grounding\n- Brief 1: it seems missing.\n- Brief 2: probably needed.\n"
+        with self.assertRaises(ValueError) as e:
+            fmgenesis.put(self.p, "gen-1/mission-z.md", self.mission(vague))
+        self.assertIn("code", str(e.exception))
+        fmgenesis.put(self.p, "gen-1/mission-w.md", "# Mission\n\nTask: none.\n")  # no intake block: nothing to ground
+        fmgenesis.put(self.p, "not-yet.md", "# Not yet\n")  # other tower files are unaffected
