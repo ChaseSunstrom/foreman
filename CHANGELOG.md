@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- CI on macOS now runs the test suite in three parts instead of two. At 5,657 tests, half the suite ran past macOS's 1,980-second limit, and the classes still running were killed. That job doesn't block a release, but now each third fits. Ubuntu still runs in halves. A new test pins this layout.
 - `fm ideas --seen-latest N` reads the newest N earlier brainstorms' ideas, as if each had been passed with `--seen`. You no longer type the paths, and a run that left no ideas is skipped. The Genesis step's brainstorm line now uses `--seen-latest 6`. Twice in one session, a typed path to a run that didn't exist stopped the brainstorm.
 - A goal can no longer read as finished while a line from its "Done when:" list has no real check behind it. Each line now needs an item whose done-when command names it, with at least two of the line's words; sharing words with an item's description no longer counts. On Foreman's long-horizon exam, sessions claimed done with stated requirements no check tested. One built the feature but wrote no test for any of its three Done-when lines.
 - `fm ship` no longer fails when another writer, such as `fm genesis live`'s tower publish, lands on main between the ship's last check and its push. It fetches main again, re-applies the commits if the move touched none of the shipped files, and pushes again, up to three tries, without rerunning the tests. A move in a shipped file still stops the ship. Before, the rejected push cost a full rerun of the test suite.
