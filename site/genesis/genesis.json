@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T07:42:38Z",
- "rev": "5c549eeb",
+ "updated": "2026-11-02T07:47:40Z",
+ "rev": "8d8884ae",
  "capabilities": [
   {
    "n": 1,
@@ -17946,6 +17946,458 @@
     "rank"
    ],
    "author": "child+self"
+  },
+  {
+   "run": "s32-015",
+   "agent": "foreman",
+   "keyed": 3,
+   "found": 3,
+   "false_alarms": 0,
+   "exam_defects": 0,
+   "fixable": 3,
+   "fixed": 3,
+   "tf_keyed": 1,
+   "tf_first": 1,
+   "readings_keyed": 0,
+   "readings_hit": 0,
+   "missing_keyed": 0,
+   "missing_hit": 0,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 3,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 3,
+   "conf_missing": 0,
+   "brier_sum": 0.0594,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "ts": [
+      1,
+      1
+     ],
+     "c": [
+      1,
+      1
+     ],
+     "ruby": [
+      1,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      1,
+      1
+     ],
+     "untested": [
+      1,
+      1
+     ],
+     "docs": [
+      1,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 3,
+    "found": 3,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 3,
+    "fixed": 3,
+    "tf_keyed": 1,
+    "tf_first": 1,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 3,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 3,
+    "conf_missing": 0,
+    "brier_sum": 0.0594,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "ts": [
+       1,
+       1
+      ],
+      "c": [
+       1,
+       1
+      ],
+      "ruby": [
+       1,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       1,
+       1
+      ],
+      "untested": [
+       1,
+       1
+      ],
+      "docs": [
+       1,
+       1
+      ]
+     }
+    },
+    "brier": 0.0198,
+    "closed_share": 1.0
+   },
+   "cost": 0.1855,
+   "closed": {
+    "train": [
+     "bug-ts-2d95f0",
+     "docs-ruby-83dd44",
+     "untested-c-f2c372"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "brier": 0.0198,
+   "closed_share": 1.0,
+   "model": "haiku",
+   "at": "2026-11-02T07:46:10Z",
+   "gen": 2,
+   "split": "train",
+   "kinds": [
+    "bug",
+    "docs",
+    "untested"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s32-015",
+   "agent": "foreman",
+   "keyed": 3,
+   "found": 3,
+   "false_alarms": 0,
+   "exam_defects": 0,
+   "fixable": 3,
+   "fixed": 3,
+   "tf_keyed": 1,
+   "tf_first": 1,
+   "readings_keyed": 0,
+   "readings_hit": 0,
+   "missing_keyed": 0,
+   "missing_hit": 0,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 3,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 3,
+   "conf_missing": 0,
+   "brier_sum": 0.0594,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "ts": [
+      1,
+      1
+     ],
+     "c": [
+      1,
+      1
+     ],
+     "ruby": [
+      1,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      1,
+      1
+     ],
+     "untested": [
+      1,
+      1
+     ],
+     "docs": [
+      1,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 3,
+    "found": 3,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 3,
+    "fixed": 3,
+    "tf_keyed": 1,
+    "tf_first": 1,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 3,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 3,
+    "conf_missing": 0,
+    "brier_sum": 0.0594,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "ts": [
+       1,
+       1
+      ],
+      "c": [
+       1,
+       1
+      ],
+      "ruby": [
+       1,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       1,
+       1
+      ],
+      "untested": [
+       1,
+       1
+      ],
+      "docs": [
+       1,
+       1
+      ]
+     }
+    },
+    "brier": 0.0198,
+    "closed_share": 1.0
+   },
+   "cost": 0.1855,
+   "closed": {
+    "train": [
+     "bug-ts-2d95f0",
+     "docs-ruby-83dd44",
+     "untested-c-f2c372"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "brier": 0.0198,
+   "closed_share": 1.0,
+   "model": "haiku",
+   "at": "2026-11-02T07:46:11Z",
+   "gen": 2,
+   "split": "train",
+   "kinds": [
+    "bug",
+    "docs",
+    "untested"
+   ],
+   "author": "self"
   }
  ],
  "coverage": {
@@ -20567,9 +21019,9 @@
   "meaning": 570,
   "research-uncited": 29,
   "typed": 27,
-  "red": 64,
+  "red": 65,
   "perf-typed": 50,
-  "docs": 596,
+  "docs": 595,
   "ui-unshot": 52,
   "tui-unshot": 50,
   "data": 4,
@@ -20577,17 +21029,17 @@
   "perf-noise": 1
  },
  "next": {
-  "stage": "select",
+  "stage": "drift",
   "gen": 2,
-  "action": "select: gen-2's rewrite stays only if it closed more train exam scenarios than its parent on the same run; the verdict goes to fm decide and a '## gen-2' section in lineage.md",
-  "command": "fm genesis select 2",
+  "action": "drift check of the seed and Missions against gen-0's goal, MUSTs and NEVERs into gen-2/drift.md",
+  "command": "fm genesis drift 2",
   "kind": "ok"
  },
  "docs": {
   "coverage.md": "# Coverage — gen 1\n\nStatus: `fm genesis check` counts this file's cells (each `- stage × surface:` line is one) and lists the open ones. F names code that exists on that surface and how it's reached; Ideas aren't cells: an open cell is a gap until code fills it. Most cells are open, and gen 1 doesn't meet this grid: the open cells are its gaps and rank the next seed's Missions. Whether any F works is exam.jsonl's to say; no cell claims a pass.\n\n## 1. Initiative\n- find × MCP: F: plugin/lib/fmmcp.py — the `find` tool hands any MCP client fm find's ranked candidates, so other agents and Desktop read the same leads\n- find × CLI: F: plugin/lib/fmfind.py — `fm find --rank` runs the ordered ladder over a repo with no request: its free finders, each stack's standard analyzer (the tool rung, T-2239), Foreman's tree-sitter rules (T-2240) and the git hotspots where fixes landed (--hotspots, T-2238), then ranks the candidates; the MCP find tool runs it\n- verify × CLI: F: plugin/lib/fmprove.py — `fm prove` re-checks fm find leads on a throwaway copy (an untested function only in a tree you said yes to; docs, dep and secret findings found again cold); the other kinds stay leads\n- build × Claude Code: F: plugin/lib/fmprove.py — `fm prove --capture` files each proven lead as a planned S task whose criterion is red until fixed, so the session's own fm next loop fixes it\n- operate × Claude Code: F: plugin/lib/fmscout.py — when a full-autonomy queue drains and the quick probes find nothing, the Stop hook asks the session to run `fm scout --slow`, whose find probe files at most 3 proven leads a day on the user's own project\n- plan × Claude Code: F: plugin/skills/initiative/SKILL.md — /foreman:initiative plans an unattended run: map the repo, find candidates, prove them, fix the proven ones test-first on lanes, stop at a receipt\n- build × CLI: F: plugin/lib/fmdraft.py — a headless claude drafts the top queued S task in a throwaway worktree\n- operate × CLI: F: plugin/lib/fmorders.py — standing orders capture a task on a schedule or when a file changes\n\n## 2. Exhaustive thinking\n- find × CLI: F: plugin/lib/fmideas.py — the brainstorm skill runs `fm ideas`, whose tool-less lens children return deduplicated ideas, each naming the finished task it may repeat\n- understand × CLI: F: plugin/lib/fmmission.py — mission lenses and surfaces enumerate every reading of an open request\n- plan × CLI: F: plugin/lib/fmsecond.py — cold second opinion, debate and dissent kept open in the brief\n- verify × Claude Code: F: plugin/agents/fm-reviewer.md — one read-only reviewer per audit lens (intent, adversary, edge, operator, maintainer)\n- verify × CLI: F: plugin/lib/fmauditrun.py — fm audit run starts one headless claude per lens with only Read, Grep and Glob allowed and merges what they return\n- learn × CLI: F: plugin/lib/fmtaste.py — lens keep rates feed which lenses get more weight next brainstorm\n\n## 3. Anticipation\n- find × Claude Code: F: plugin/lib/fmforesight.py — the Stop hook's sweep caches a changed model, window or Claude Code version, and session start names it before it bites\n- understand × MCP: F: plugin/lib/fmmcp.py — the impact and why tools answer blast radius and history read-only\n- understand × CLI: F: plugin/lib/fmgraph.py — fm graph blast shows a change's blast radius from one local graph\n- verify × CLI: F: plugin/lib/fmreverify.py — fm sentinel re-queues old passing criteria when a later commit touches their files\n- operate × CLI: F: plugin/lib/fmrisk.py — the daily risk budget steps autonomy down after destructive blocks and reverts\n- learn × CLI: F: plugin/lib/fmrecall.py — fm recall and fm dream keep failure memory so a repeat is foreseen\n\n## 4. Goal to finish\n- understand × MCP: F: plugin/lib/fmmcp.py — state and next tools show the one next required action\n- plan × CLI: F: plugin/lib/fmcore.py — briefs with acceptance criteria and steps, each tied to a verify command\n- build × Claude Code: F: plugin/lib/fmhooks.py — the Stop hook drives on while open work remains and refuses a premature done\n- build × fm code: F: plugin/lib/fmcode.py — fm code runs Foreman's loop on the open task to the end of its plan\n- build × other agents: F: plugin/lib/fmagents.py — Codex gets the Stop drive and done-gate; Gemini and opencode have no Stop\n- verify × CLI: F: plugin/lib/fmcore.py — fm task finish closes only on fresh evidence for every criterion\n\n## 5. Getting the tools it lacks\n- find × fm code: F: plugin/lib/fmcode.py — fm code offers one matching indexed skill at a run's start\n- find × CLI: F: plugin/lib/fmplugins.py — fm plugins find searches for a plugin that covers a missing need\n- understand × Claude Code: F: plugin/skills/library/SKILL.md — stack cards with verify commands before coding in a framework\n- understand × MCP: F: plugin/lib/fmmcp.py — lib_suggest, lib_search and lib_show serve stack cards read-only\n- plan × CLI: F: plugin/lib/fmwhich.py — fm which names the skill, playbook or command that fits a task\n- build × CLI: F: plugin/lib/fmplugins.py — fm plugins install adds a pinned plugin only after the user's yes to fm ask ID plugin\n- learn × CLI: F: plugin/lib/fmrepeats.py — fm tidy's repeats finding points a session at fm repeats, which drafts a playbook, script or check from repeated manual step sequences\n\n## 6. Verifying anything\n- understand × CLI: F: plugin/lib/fmdebug.py — fm whyred ranks suspects and minimal failing hunks for a red run\n- verify × fm code: F: plugin/lib/fmcode.py — fm code's steps close through the same evidence runs\n- verify × CLI: F: plugin/lib/fmcore.py — fm task evidence --run runs the command itself and stores its exit and output, so a pass is never typed in\n- verify × headless/server: F: plugin/lib/fmserve.py — fm run sessions close tasks through the same gates\n- ship × CLI: F: plugin/lib/fmledger.py — fm verify-ledger proves the hash-chained record line by line\n- operate × CLI: F: plugin/lib/fmsmoke.py — fm smoke crawls the web UI at desktop and phone width\n- learn × CLI: F: plugin/lib/fmoutcomes.py — each finished task's fate (reverted, fixed later, held) scores its verification\n\n## 7. Self-repair and self-improvement\n- find × CLI: F: plugin/lib/fmfriction.py — fm friction mines stage paths, weak closes and give-up points\n- understand × CLI: F: plugin/lib/fmdoctor.py — fm doctor and fm wiring show what is wired and what is broken\n- plan × CLI: F: plugin/lib/fmevolve.py — fm evolve revises one instruction file on its own branch from bench and friction\n- build × Claude Code: F: plugin/skills/improve/SKILL.md — eval-gated changes to Foreman itself in a worktree\n- ship × CLI: F: plugin/lib/fmrollback.py — a snapshot before each new version and fm rollback to restore it\n- operate × CLI: F: plugin/lib/fmtidy.py — fm tidy repairs drift and dead state\n- learn × CLI: F: plugin/lib/fmtrials.py — a self-change is a pre-registered trial graded on ledger event rates\n\n## 8. Calibrated judgment\n- understand × CLI: F: plugin/lib/fmexam.py — the exam grades agents on held-out scenarios that outside (child) authors write, kept apart from any Foreman wrote itself (T-2204)\n- learn × Claude Code: F: plugin/lib/fmhooks.py — the track record by type and tier is injected at focus\n- find × Claude Code: I: fm find --rank states each lead's chance of being real beside its rank, booked so a proven or dropped lead scores the number (plugin/lib/fmfind.py)\n- find × fm code: I: fm code's planner states a percent per hotspot before it reads one, settled when that hotspot yields a fix or nothing (plugin/lib/fmcode.py)\n- find × other agents: I: the AGENTS.md block asks another harness to put a percent beside each bug it claims, so fm outcomes can score that harness's claims (plugin/lib/fmagents.py)\n- find × MCP: I: the MCP find tool returns each lead's stated chance with the lead ledger's real hit rate for that 10-point bucket (plugin/lib/fmmcp.py)\n- find × Desktop: N/A: the desktop app lists projects and their next action; no lead is found or scored there\n- find × site: I: the Judgment page shows lead calibration: of the leads stated at 70–80%, the share that proved real (site/pages.py)\n- find × CLI: F: plugin/lib/fmoutcomes.py — fm outcomes --judgment lists stated-confidence buckets per kind beside what held, which finds the kinds whose numbers are off (T-2344)\n- find × headless/server: I: the nightly digest names the bet kind whose Brier trails its base rate most this week as the next calibration target (plugin/lib/fmnight.py)\n- understand × Claude Code: I: fm next says when the active plan's Choice percent sits 20+ points above the held rate for its type and tier, with that rate (plugin/lib/fmhooks.py)\n- understand × fm code: I: the fm code TUI shows the run's stated Choice percent beside the type and tier base rate before the build station starts (plugin/lib/fmcodetui.py)\n- understand × other agents: I: a bet records which harness stated it, so fm outcomes --judgment can show one harness's record apart from the others (plugin/lib/fmoutcomes.py)\n- understand × MCP: F: plugin/lib/fmmcp.py — the calibration tool returns the buckets, the stated Brier beside the base rate's, the bars, races and parked doors, and writes nothing (T-2344)\n- understand × Desktop: I: each project row in Foreman Desktop carries its stated Brier against its base rate, read from fm projects --json (plugin/lib/fmwatch.py)\n- understand × site: F: site/pages.py — the Judgment page renders confidences scored, the stated Brier against the base rate's, races lost and the race bar from fm outcomes --judgment --json (T-2344)\n- understand × headless/server: I: fm serve's status reply carries the calibration snapshot, so a remote viewer reads the record with no session open (plugin/lib/fmserve.py)\n- plan × Claude Code: F: plugin/lib/fmcli.py — the M/L plan gate needs two readings, 3+ fails-if options and Choice N (NN%); a choice under 80% needs fm second rival and each dissent resolved (T-2344)\n- plan × fm code: F: plugin/lib/fmcode.py — the PLAN slot asks for a choice and a whole-percent confidence, writes Choice N (NN%): why, and refuses a number outside 0–100\n- plan × other agents: F: plugin/lib/fmagents.py — the AGENTS.md plan line asks other harnesses for 2 readings, 3+ fails-if options and Choice N (NN%) (T-2344)\n- plan × MCP: I: a plan_check MCP tool scores a draft's Choice percent against the type and tier base rate before the plan is filed (plugin/lib/fmmcp.py)\n- plan × Desktop: N/A: plans are written in sessions and briefs; the desktop shows project state, not plan text\n- plan × site: I: the Planning page quotes a real plan's Choice line next to how often plans stated in that bucket held (site/pages.py)\n- plan × CLI: I: fm task set --section Approach warns when the Choice percent is 20+ points above the pair's base rate and names that rate (plugin/lib/fmcli.py)\n- plan × headless/server: I: fm run's headless sessions meet the same stated-percent plan gate, so queue work feeds the ledger like session work (plugin/lib/fmserve.py)\n- build × Claude Code: F: plugin/lib/fmlanes.py — fm lane race runs rival builders when the plan's percent is under the race bar; the race_pick row records whether the first choice lost (T-2344)\n- build × fm code: I: fm code books the build station's retries against the plan's percent, so a plan that needed three tries scores as an over-bet (plugin/lib/fmcode.py)\n- build × other agents: I: a lane built by another harness (codex, gemini) meets the same race bar, so its Choice percent decides whether a rival runs (plugin/lib/fmagents.py)\n- build × MCP: I: an MCP bet tool records an outside agent's stated percent on a task, write-once like the judgment ledger's rows (plugin/lib/fmoutcomes.py)\n- build × Desktop: N/A: building happens in sessions and lanes; the desktop app starts none\n- build × site: N/A: the site is a static report of the record; nothing is built or bet from it\n- build × CLI: F: plugin/lib/fmoutcomes.py — a decision bet is missed when a later fm decide row reverses it and held after SURVIVE_DAYS (30) unreversed; its own signal, so it never moves a bar (T-2344)\n- build × headless/server: I: each night lane states its percent at launch, and its merge or block settles the bet (plugin/lib/fmnight.py)\n- verify × Claude Code: I: fm task finish asks an S task with no plan percent for the chance the close holds, so small work enters the ledger too (plugin/lib/fmcli.py)\n- verify × fm code: I: fm code's verify station books its first-run result against the plan's percent, so each run scores its own planner (plugin/lib/fmcode.py)\n- verify × other agents: I: the exam scores a plain harness's stated confidences with the same Brier as Foreman's arm, so the two records compare (plugin/lib/fmexam.py)\n- verify × MCP: I: the calibration tool adds reliability bins (stated bucket against held share) so a client can draw the curve itself (plugin/lib/fmmcp.py)\n- verify × Desktop: N/A: scoring runs where the ledger lives; the desktop reads only its summary through fm projects\n- verify × site: I: the Judgment page draws a reliability curve, stated bucket against held share, beside the Brier pair (site/pages.py)\n- verify × CLI: F: plugin/lib/fmoutcomes.py — settle() grades each write-once bet once its signal speaks, and the Brier is read against the type and tier base rate (T-2344)\n- verify × headless/server: F: plugin/lib/fmexam.py — the foresight arm scores stated confidences by Brier, an unstated one counted at 50 (T-2366)\n- ship × Claude Code: F: plugin/lib/fmcli.py — a plan's one-way steps are each undone or parked at a door, and fm decide --review prices each parked door by its wait (T-2346, T-2347)\n- ship × fm code: I: fm code's close states the chance the change survives seven days, settled by fm outcomes' survival check (plugin/lib/fmcode.py)\n- ship × other agents: I: another harness's commit hook records its stated chance the change holds, so its ships join the same ledger (plugin/lib/fmagents.py)\n- ship × MCP: N/A: the MCP server pushes nothing; shipping belongs to fm ship and a session\n- ship × Desktop: N/A: the desktop app pushes nothing; it shows what a push left behind\n- ship × site: I: each release on the site shows the risk stated at ship beside whether a revert or hotfix followed (site/pages.py)\n- ship × CLI: I: fm ship states the chance CI's blocking jobs pass on the pushed commit, and fm ci-watch settles it (plugin/lib/fmrelease.py)\n- ship × headless/server: I: a release cut by fm release states the chance it needs a hotfix within a week, settled from the revert log (plugin/lib/fmrelease.py)\n- operate × Claude Code: F: plugin/lib/fmoutcomes.py — the research and race bars live in project meta and are read by every plan, a hand-set bar above BAR_MAX kept (T-2344)\n- operate × fm code: I: fm code reads the same research bar to decide whether a run researches before it plans (plugin/lib/fmcode.py)\n- operate × other agents: I: other harnesses' hooks read the bars from fm state --json, so they race and research at Foreman's thresholds (plugin/lib/fmagents.py)\n- operate × MCP: I: the MCP state tool includes the bars, so an outside agent knows when Foreman would research or race (plugin/lib/fmmcp.py)\n- operate × Desktop: I: Foreman Desktop shows a project's bars and resets one through fm, with a decision row saying why (plugin/lib/fmwatch.py)\n- operate × site: N/A: the site reports the bars (understand × site); it runs nothing against them\n- operate × CLI: I: fm outcomes --judgment --set-bar research=N sets a bar by hand and writes the decision row that says why (plugin/lib/fmoutcomes.py)\n- operate × headless/server: I: fm run's worker checks the research bar before each queued task, as a session's plan gate does (plugin/lib/fmserve.py)\n- learn × fm code: I: fm code writes each closed run's stated percent and outcome into the judgment ledger, so its planner's misses move the bars too (plugin/lib/fmcode.py)\n- learn × other agents: I: a harness whose Brier trails the base rate over 20 bets has its stated percents shrunk toward that rate before they gate a race (plugin/lib/fmoutcomes.py)\n- learn × MCP: I: the model layer's decide answers, MCP ones included, are scored in the same per-kind Brier table as stated confidences (plugin/lib/fmmodels.py)\n- learn × Desktop: N/A: the bars move from the project's ledger; the desktop only reads the result\n- learn × site: I: the Judgment page plots each bar's moves over time with the bucket that moved it (site/pages.py)\n- learn × CLI: F: plugin/lib/fmoutcomes.py — adjust_bars() raises the research bar when a kind is 15+ points overconfident over 20+ scored closes, registers the raise as a trial and writes its decision row\n- learn × headless/server: I: the nightly digest settles the day's bets and adjusts the bars, so a project with no sessions still learns (plugin/lib/fmnight.py)\n\n## 9. Orchestration\n- find × Claude Code: F: plugin/agents/fm-debugger.md — fresh-eyes debugger returns ranked hypotheses with a probe each\n- understand × Claude Code: F: plugin/agents/fm-recon.md — read-only recon subagent with a bounded, cited summary\n- plan × CLI: I: fm next offers fm task split when an L task's files fall into independent groups, so lanes can take the children (plugin/lib/fmsplit.py)\n- build × Claude Code: F: plugin/agents/fm-builder.md — one S/M task built test-first in a worktree on its own branch\n- build × other agents: F: plugin/lib/fmsession.py — fm session runs detached claude, codex, gemini and opencode sessions\n- build × CLI: F: plugin/lib/fmlanes.py — fm lane runs git worktrees as lanes with their own active task\n- ship × CLI: F: plugin/lib/fmpr.py — fm pr train merges approved green PRs in order, each spending its task's publish grant (fm ask ID publish, the user's yes) before it posts\n- operate × CLI: F: plugin/lib/fmbus.py — fm bus passes messages and leases between sessions on a machine\n\n## 10. Beyond code\n- find × Claude Code: F: plugin/skills/research/SKILL.md — cited research before building, saved as one note\n- find × MCP: F: plugin/lib/fmmcp.py — research_list and research_read serve saved notes\n- understand × CLI: F: plugin/lib/fmresearch.py — fm research stores and finds cited notes\n- plan × Claude Code: F: plugin/skills/directions/SKILL.md — six style directions, the pick saved as DESIGN.md\n- build × Claude Code: F: plugin/skills/ui-design/SKILL.md — direction, tokens, motion and QA for pages and scenes\n- verify × CLI: F: plugin/lib/fmoffice.py — fm check office asserts spreadsheet and Word deliverables\n- operate × CLI: F: plugin/lib/fmdocs.py — fm docs reports doc drift against the code\n- learn × CLI: F: plugin/lib/fmtaste.py — the taste ledger learns which looks the user kept or reverted\n\n## 11. Self-triggering\n- find × Claude Code: F: plugin/lib/fmscout.py — the idle-turn hook runs scouts and captures findings\n- build × CLI: F: plugin/lib/fmloop.py — with fm loop on, the Stop hook's drive starts the next improvement round each time the queue drains (T-1057)\n- build × headless/server: F: plugin/lib/fmserve.py — fm run works the queue in fresh headless sessions, one task each\n- verify × Claude Code: F: plugin/lib/fmambient.py — tests run detached after each edit with no prompt\n- learn × CLI: F: plugin/lib/fmfriction.py — once fm friction --every N is set, fm next offers the self-improvement pass every N closes\n\n## 12. Staying lean and safe\n- plan × CLI: F: plugin/lib/fmbudget.py — subagents wait at 90% of the 5-hour window, or when weekly usage reaches 90% or, past 75%, runs 10+ points ahead of the week's pace\n- build × CLI: F: plugin/lib/fmreplay.py — fm replay scores the guard on real past commands\n- operate × CLI: F: plugin/lib/fmcost.py — fm cost and fm burden account tokens per task, session and version\n\n## 13. Genesis as a feature\n- find × Claude Code: F: plugin/lib/fmscout.py — the idle scout offers \"Start Genesis here?\" once, when the queue is drained, 10+ briefs are done and no gen-0 exists\n- find × site: F: site/genesis/gap-map.md — the gap map is published on the Genesis page\n- find × CLI: F: plugin/lib/fmgenesis.py — fm genesis check enforces the tower's gap-map shape\n- understand × CLI: F: plugin/lib/fmgenesis.py — fm genesis draft writes a whole gen-0 from one line or none, carrying open briefs' MUST/NEVER lines over and marking any not from the user unconfirmed\n- plan × Claude Code: F: plugin/skills/genesis/SKILL.md — /foreman:genesis runs every stage in order, spec and seed through the Missions, critiques, select, drift and the sweep to the next seed, each named by fm genesis step\n- plan × site: F: site/genesis/gen-1/seed.md — generation 1's seed is published\n- plan × CLI: F: plugin/lib/fmgenesis.py — fm genesis put stores a self-written seed for the next generation\n- verify × site: F: site/genesis/genesis.js — each generation's drift and sweep verdicts on the Genesis page\n- ship × site: F: plugin/lib/fmgenesis.py — fm genesis export writes the live tower page\n- operate × CLI: F: plugin/lib/fmgenesis.py — fm genesis live on republishes after each tower change\n- learn × site: F: site/genesis/gen-0.md — the previous generation is published beside the next\n\n## Onboarding\n- understand × CLI: F: plugin/lib/fmdemo.py — fm demo fixes a seeded bug in a throwaway repo with no model calls\n- plan × CLI: F: plugin/lib/fmsetup.py — fm setup configures a project\n- build × CLI: F: install.sh — one-line install, with --desktop for the app\n- verify × Claude Code: F: plugin/skills/doctor/SKILL.md — the doctor skill checks the install\n- operate × CLI: F: plugin/lib/fmaway.py — fm away summarises on return after a long gap\n\n## UX\n- understand × Claude Code: F: plugin/hooks/statusline — statusline shows task, progress and cost\n- understand × fm code: F: plugin/lib/fmcodetui.py — fm code tui draws the run from its event stream\n- understand × Desktop: F: plugin/lib/fmwatch.py — fm projects feeds Foreman Desktop's project list\n- understand × site: F: site/style.css — the site's shared palette and type\n- understand × CLI: F: plugin/lib/fmwatch.py — fm watch and fm ui show live task state\n- plan × CLI: F: plugin/lib/fmsettings.py — one schema for every setting the TUI and mod read\n- build × Claude Code: F: plugin/output-styles/foreman.md — the Foreman output style keeps replies short\n- build × fm code: F: plugin/lib/fmcodeterm.py — an ANSI terminal without curses, changed cells only\n- build × CLI: F: plugin/lib/fmdesign.py — fm design sprint checks brief, look and tokens in order\n\n## Docs\n- understand × Claude Code: F: MASTER.md — the system map lists every module\n- understand × site: F: site/pages.py — builds site pages from Foreman's own code, such as fm code tui's key poster from its key map (T-2061)\n- plan × CLI: F: plugin/lib/fmplaybooks.py — the playbook library's lint: index, budget, duplicates\n- build × Claude Code: F: plugin/skills/playbooks/SKILL.md — stage playbooks for refactor, ADR, TDD and the like\n- learn × CLI: F: plugin/lib/fmplaybooks.py — fm playbooks draft turns a done task into a playbook\n\n## Ecosystem\n- understand × other agents: F: plugin/lib/fmagents.py — fm agents list prints what each harness enforces\n- understand × MCP: F: plugin/lib/fmmcp.py — fm mcp serves Foreman read-only over stdio\n- understand × Desktop: F: plugin/lib/fmclaude.py — the desktop app's session view reads `fm claude --json`, locally or over ssh: each session on the device with its conversation, subagents and scratchpad\n- plan × Claude Code: F: plugin/lib/fmlib.py — stack cards for languages and frameworks\n- build × Claude Code: F: mods/foreman-ui — the foreman-ui mod for Claude Code\n- build × other agents: F: plugin/lib/fmagents.py — fm agents install wires Codex, Gemini and opencode\n- verify × CLI: F: plugin/lib/fmci.py — fm ci-watch polls GitHub Actions after a push\n- operate × CLI: F: plugin/lib/fmintegrations.py — fm timeline exports Perfetto and OTLP JSON\n\n## Multi-user\n- understand × CLI: F: plugin/lib/fmsync.py — fm sync keeps tasks and fixes with the repo so clones and teammates see them\n- build × Claude Code: F: plugin/lib/fmbus.py — hooks deliver bus mail between sessions on a machine\n- operate × CLI: F: plugin/lib/fmeco.py — fm machine and version skew checks across machines\n\n## Observability\n- understand × MCP: F: plugin/lib/fmmcp.py — logs, trace and fail tools read run data\n- understand × CLI: F: plugin/lib/fminstr.py — zero-token instruments: sym, fail, logs, data, trace\n\n## Security\n- understand × MCP: F: plugin/lib/fmmcp.py — read-only tools, argument caps and a sensitive-repo off switch\n- plan × CLI: F: plugin/lib/fmdeps.py — typosquat, registry and age look on a new package\n- build × Claude Code: F: plugin/lib/fmguard.py — the guard blocks destructive categories in Claude Code, and test_guard_decision_matches_across_harnesses checks the same decision through fmagents' dispatcher\n- verify × CLI: F: plugin/lib/fmoracle.py — the guard's oracle runs a line in a bwrap sandbox\n- ship × CLI: F: plugin/lib/fmsecrets.py — secret scan before commit; credential audit\n\n## Performance\n- understand × CLI: F: plugin/lib/fmgraph.py — fm graph pack ranks a task's read-set\n- build × Claude Code: F: plugin/lib/fmambient.py — affected-only tests keep the loop fast\n\n## Portability\n- build × fm code: F: plugin/lib/fmmodels.py — fm code runs on any OpenAI-compatible or Anthropic profile\n- build × other agents: F: plugin/lib/fmagents.py — one hook dispatcher maps each harness's tool events onto Foreman's hooks\n- build × CLI: F: plugin/lib/fmpy.py — re-exec under a supported interpreter\n\n## Model layer\n- find × Claude Code: I: a decision call ranks fm find's leads by how likely each is a real bug before the session proves any (plugin/lib/fmfind.py)\n- find × fm code: I: fm code's planner asks a local model which hotspots to read first, shadow-logged beside its current order (plugin/lib/fmcode.py)\n- find × other agents: I: AGENTS.md tells other harnesses to call fm find --rank, whose order comes from the decision interface once its exam beats the plain sort (plugin/lib/fmagents.py)\n- find × MCP: I: the MCP find tool returns each lead's model score and calibrated confidence beside the deterministic rank (plugin/lib/fmmcp.py)\n- find × Desktop: N/A: the desktop list shows projects and their next action, not leads; lead triage happens in sessions\n- find × site: I: the leads page shows model-scored against rule-ranked precision from the exam, so a reader sees whether the model earns its place (site/pages.py)\n- find × CLI: I: fm find --rank scores leads with selfjev-4b behind the Jev-compatible API when TYPESAFE_BASE_URL is set, and with rules alone otherwise (plugin/lib/fmmodels.py)\n- find × headless/server: I: the hourly tick dedupes open leads by embedding similarity, so one defect found twice files once (plugin/lib/fmnight.py)\n- understand × Claude Code: I: recall answers a session's question by embedding search over lessons and briefs, kept only if its hit rate beats keyword overlap (plugin/lib/fmrecall.py)\n- understand × fm code: I: the worker gets a reranked file list from a local reranker and spends its context on the top files (plugin/lib/fmcode.py)\n- understand × other agents: N/A: other harnesses read the repo themselves; Foreman's recall reaches them through MCP, counted on that row\n- understand × MCP: I: an MCP recall tool backed by the embedding index names the backend in each answer, so a client sees which model spoke (plugin/lib/fmmcp.py)\n- understand × Desktop: N/A: no code is read in the desktop app; it lists projects and starts sessions\n- understand × site: I: a Model layer page explains each backend, what it decides, its accuracy against the path it replaced and its cost (site/pages.py)\n- understand × CLI: I: fm which matches a need to shelves by embedding similarity, falling back to word overlap when no backend answers (plugin/lib/fmwhich.py)\n- understand × headless/server: I: fm serve offers the decision interface to a remote session and refuses sensitive projects at that boundary (plugin/lib/fmserve.py)\n- plan × Claude Code: I: intake asks the decision interface for type and tier with a probability; a low-confidence answer routes to research as fm next does today (plugin/lib/fmcli.py)\n- plan × fm code: I: Von routes short requests by intent to the planner slot, the cloud model takes the rest, and each choice is logged (plugin/lib/fmcode.py)\n- plan × other agents: I: the AGENTS.md block gives the tier suggestion as advice an agent may override, never as a gate (plugin/lib/fmagents.py)\n- plan × MCP: I: an MCP intake tool returns the suggested type, tier and confidence, so a client plans with the numbers a session sees (plugin/lib/fmmcp.py)\n- plan × Desktop: N/A: plans are made in sessions; the desktop app shows the next action a plan produced\n- plan × site: I: the judgment page plots stated against scored confidence for model-made tier guesses beside the session's own bets (site/pages.py)\n- plan × CLI: I: fm second rival asks a local model for the cold reading first and spends a cloud read only when the local one is unsure (plugin/lib/fmsecond.py)\n- plan × headless/server: I: fm run picks each task's model by the router's cheapest-that-holds rule, extended to the local backends in the registry (plugin/lib/fmlanes.py)\n- build × Claude Code: F: plugin/lib/fmmodels.py resolves a configured local or cloud profile: the base each backend in the cascade registers on\n- build × fm code: F: plugin/lib/fmcode.py runs Foreman's loop on any fmmodels profile, so a local code model behind vLLM or llama-swap can already work\n- build × other agents: I: one registry entry per backend with cost, latency and a sensitive_ok flag, so no caller hardcodes a model (plugin/lib/fmmodels.py)\n- build × MCP: I: an MCP decide tool takes a kind and an input and returns choice, score and probability from the cheapest backend that clears the bar (plugin/lib/fmmcp.py)\n- build × Desktop: N/A: nothing is built from the desktop app; it starts the sessions that build\n- build × site: I: the site build reads the registry and the exam lines to chart each backend's accuracy, cost and latency (site/pages.py)\n- build × CLI: I: fm models lists the registry, probes each backend once and queues missing ones as install requests, never downloading (plugin/lib/fmgrants.py)\n- build × headless/server: I: Jevlike trains a task-specific classifier from Foreman's closed tasks on the night run, staged as a candidate until its exam arm wins (plugin/lib/fmnight.py)\n- verify × Claude Code: I: a test fails if the guard or an evidence gate imports the model layer: models advise, proof decides (plugin/lib/fmguard.py)\n- verify × fm code: I: a vision model reads fm shot's screenshot as a second signal on a UI done claim, never in place of the run (plugin/lib/fmshot.py)\n- verify × other agents: N/A: other harnesses' claims face the same fm gates, and by the rule that proof decides no model is added there\n- verify × MCP: I: each MCP decide answer goes into the prediction book with its probability, so its calibration is scored against what happened (plugin/lib/fmforesight.py)\n- verify × Desktop: N/A: verification runs in the session and fm check; the desktop app only shows the result\n- verify × site: I: the exam page adds a model-against-path column per use; a use stays only while its column beats the path it replaced (site/pages.py)\n- verify × CLI: I: fm exam gains one model arm per use (intake tier, lead triage, dedupe) run on held-out scenarios against the path it would replace (plugin/lib/fmexam.py)\n- verify × headless/server: I: the night run replays the week's decisions through each candidate backend in shadow mode and scores them before any switch (plugin/lib/fmnight.py)\n- ship × Claude Code: I: a use moves from shadow to live only by an fm decide row citing its exam numbers, so the final report lists every switch (plugin/lib/fmoutcomes.py)\n- ship × fm code: N/A: fm code ships through fm ship like a session does; the model layer changes no step of it\n- ship × other agents: N/A: another harness ships through fm ship, and nothing a model makes touches the publish grant\n- ship × MCP: N/A: the MCP server ships with the plugin; no model decides a release or a push\n- ship × Desktop: N/A: the desktop app never ships code; releases go through fm release in a session\n- ship × site: I: CHANGELOG and the site name each model use when it goes live, with the accuracy and cost it beat (site/pages.py)\n- ship × CLI: I: fm release refuses a build whose registry names a backend the user never approved through the install queue (plugin/lib/fmgrants.py)\n- ship × headless/server: N/A: headless runs never publish; fm ship needs a per-task grant the night run doesn't take\n- operate × Claude Code: I: a sensitive repo's sessions resolve only local backends, and a cloud call from one is refused with its reason (plugin/lib/fmmodels.py)\n- operate × fm code: I: the worker falls back to the cloud model when the local server is down and logs the outage to the trigger table (plugin/lib/fmtriggers.py)\n- operate × other agents: I: decision calls are metered against fm budget, so an outside harness can't spend Foreman's cap through MCP (plugin/lib/fmbudget.py)\n- operate × MCP: I: the MCP server reports each backend's health and last latency, so a client sees which model will answer (plugin/lib/fmmcp.py)\n- operate × Desktop: I: the desktop list shows each project's active backend, local or cloud, beside its next action (plugin/lib/fmwatch.py)\n- operate × site: N/A: the site is static; it shows measured results, not live backend state\n- operate × CLI: I: fm doctor checks every registered backend answers within its latency budget and fails loud on a silent fallback (plugin/lib/fmdoctor.py)\n- operate × headless/server: I: the hourly tick probes the user's vLLM and llama-swap servers and marks a backend down before a run leans on it (plugin/lib/fmnight.py)\n- learn × Claude Code: I: each closed task's decisions (tier, lead, dedupe) become labelled rows Jevlike trains on, so the local model learns this repo (plugin/lib/fmoutcomes.py)\n- learn × fm code: I: fm code records which backend held on which task kind, feeding the router's cheapest-that-holds table (plugin/lib/fmcode.py)\n- learn × other agents: N/A: other harnesses' sessions aren't Foreman's to learn from; only work closed through fm counts\n- learn × MCP: I: decide answers the session overrode are kept as disagreement rows, the signal the next candidate model is scored on (plugin/lib/fmmcp.py)\n- learn × Desktop: N/A: the desktop app records nothing a model could learn from\n- learn × site: I: the site shows each backend's calibration curve over time, so drift in a local model shows before it is trusted more (site/pages.py)\n- learn × CLI: I: fm outcomes --judgment scores model-made probabilities beside the session's own bets in one Brier ledger (plugin/lib/fmoutcomes.py)\n- learn × headless/server: I: the night run retrains Jevlike's candidates from the week's labelled rows and stages the winner for its exam, never swapping it live (plugin/lib/fmnight.py)\n",
   "gap-map.md": "# Genesis gap map — generation 1 (2026-10-29)\n\nBuilt from 13 parallel read-only recon passes (one per §2 capability) over the foreman repo at ae98159e. Every later\nidea is checked against this map: an idea that names something under **Exists** is a duplicate unless it extends it.\nSource limit: these passes are Foreman reading its own code, so the map ranks gaps by inspection only. The user's\nlater rule (2026-10-30) asks for signals Foreman didn't author; none fed this map yet. Each generation re-ranks it from\n`fm outcomes` (reverts, re-fixes and corrections within 30 days), cold `fm second` reads and the foreman-vs-plain exam\narms, which the user's testing-cadence steer (gen-1/seed.md rule 6) defers to the end-of-run exam on the production model; until then the order below is provisional.\nTiers: 3 capability, 4 paradigm. Paths are under plugin/lib unless shown.\n\n## Cross-cutting findings (the same hole seen from several capabilities)\n- **Advice, not action.** Most parts report or hint and stop: fm burden, fm docs, fm backtest, fmtrials (proposes\n  revert), plugins suggest (no callers), fm mission (a hint, never auto-run), fm night --print-timer, fm lane brief\n  (prints an Agent line). The gap is the trigger and the closing of the loop, not the parts.\n- **Foreman watches itself, not the project.** fm scout's 7 probes look at Foreman/Claude Code (fmscout.py:248-251).\n- **Prose, not gates.** \"3+ approaches\", the tower, the capability map, incident steps live in markdown; the plan gate\n  checks only that Interpretation/Approach are non-empty (fmcore.py:2605-2607).\n- **No exam existed at gen 1's start.** Then: bench/spec-suite was 8 Python tasks; fmbench's planted-bug bench\n  plants `return None` in Python only (fmbench.py:1313). Holdout was a per-case hash split (fmbench.py:770,\n  HOLDOUT_EVERY 5). Nothing generated multi-language repos with answer keys. Since then Mission 1 built `fm exam`\n  (plugin/lib/fmexam.py: LANGS at line 24 lists python, js, ts, ruby, rust and c; each scenario carries a key of its\n  planted faults, which the exam lines' `found N/M` counts are scored against). Whether that closes this gap is for\n  the end-of-run exam to show, not this line.\n- **Surfaces.** Nearly everything is CLI + Claude Code plugin; fm code, MCP (research/recall read-only) and Desktop\n  are rarely wired.\n\n## 1. Initiative\n- Exists: fm scout (fmscout.py, Foreman-only probes, MAX_CAPTURES, mandate-aware); fm adopt (fmeco.py:92-150: one-shot\n  gates, flake rerun, untested hot files, secrets, deps → briefs); fm deps (pypi/npm/crates); fm docs (paths/commands);\n  fm inbox gh (manual); fm night queue job `fm run --fit --max 2`; fm run lanes (PARALLEL_MAX 3).\n- Partial: adopt is manual and one-shot; deps covers 3 ecosystems.\n- Missing: project probes in scout; bug/security/perf/flake finders; finding → repro/failing test → lane fix pipeline;\n  value ranking.\n- Gaps: project-scout (3) · finders (3) · find→prove→fix pipeline (4) · value ranking (3) · ecosystems + scout on\n  fm code/MCP (3).\n- Noticed: probe_doctor may queue Foreman setup failures as tasks in user projects.\n\n## 2. Exhaustive thinking\n- Exists: plan gate (presence only); fm second cheapest/devil/pre-mortem (advisory); fm graph blast (only caller\n  fmsplit); fm lane race (manual, 2 sides, S/M, scored by verify pass ratio then lines, fmlanes.py:320-442); spikes\n  can't merge; tier depth in protocols.json (only the S panel skip enforced).\n- Missing: content check of readings/approaches/failure modes; automatic races; L races; blast tied to the plan; a\n  scorer that sees design quality.\n- Gaps: approaches/readings gate scaled by tier (3) · auto race of N candidates by evidence (4) · blast in plan (3).\n\n## 3. Anticipation\n- Exists: fmforesight (present problems only: CI red, model/CC change, blocked pile); user_voice text dump\n  (fmideas.py:330-350); misses() (word overlap); lens_rates, taste, precedent, court cases, fm repeats, outcomes.\n- Missing: next-request predictor; drafting predictions in lanes; scoring predictions; user/project/machine model.\n- Gaps: user/project model (4) · predict-and-draft in a lane, scored (4) · foresight that predicts (3).\n\n## 4. Goal to finish\n- Exists: fm mission (prompt only; pillars tell the model to list best-in-class); hook hint for exhaustive asks\n  (fmhooks.py:1245-1253); DONE-WHEN → ACs; depends_on + _topo; PreCompact checkpoint + fm resume; Stop drive\n  (DRIVE_MAX, no-progress stop, contract bound); forever loop (2 dry rounds); fm mandate (clauses, read by scout and\n  night only); fm clauses (word overlap, nudge at focus).\n- Missing: a goal ledger (contents list → tasks → done-when → coverage); done-vs-stopped verdict; goal re-injection\n  across sessions; epics.\n- Gaps: goal ledger (4) · done vs stopped (4) · grounded contents lists (3) · clauses wired to Stop (3) · goal\n  carried across days (3).\n\n## 5. Getting the tools it lacks\n- Exists: fm plugins find/install/suggest (fmplugins.py:611-857; suggest uncalled); fm mcp new (server + test; register\n  only prints); fm ask plugin --pin (USER_ONLY); project skill = recipe (execute.md:40); failure_class detects\n  \"command not found\" only to excuse (fmcli.py:4783).\n- Missing: \"can't do X\" → find-or-build trigger; test-then-use loop for built tools; skill/script scaffold; durable\n  install-grant queue.\n- Gaps: capability-miss trigger (4) · build-test-use loop (3) · skill new/script scaffold (3) · install-grant queue (3).\n\n## 6. Verifying anything\n- Exists: evidence --run/--repeat/--inconclusive/--expect-fail; fm prove (vacuous/--same/--hunks); finish --claim;\n  fm check; UI: shot/flow/smoke/critique --brief/stories/design check/img diff; fm data (schema only).\n- Missing: data/infra/ops proof kinds; docs-vs-code truth; perf baseline gate; per-domain unproven rollup; intent proof\n  beyond an LLM lens.\n- Gaps: proof kinds for data/infra/docs/perf (3) · unproven rollup labelled everywhere (4) · intent proof (4).\n\n## 7. Self-repair and self-improvement\n- Exists: capture_friction (fmcli.py:3984); fmfriction.due reflect action; stranger findings → self FIX; fm evolve\n  (keeps past fmbench.gate, leaves a branch); fmnight court/lesions/evolve; fmtrials (proposes revert only); backtest\n  (report); failures.jsonl (hints only).\n- Missing: signal → evolve trigger; failures consumer that fixes; actioned trial verdicts; gate for Python/hook/guard\n  self-changes.\n- Gaps: signal→fix loop (3) · trials default + actioned (3) · code self-change gate (4).\n\n## 8. Calibrated judgment\n- Exists: confidence=N on tasks; fmoutcomes.calibration (Brier, in digest/cost); plan misses → autonomy slow; fm decide\n  --kind reversible|costly|outward, --review, --ask (defaults/taste/precedent); guard categories; risk budget 6/day;\n  fm research ask.\n- Missing: low confidence or [assumed] → research; calibration feedback; irreversible-and-ambiguous classifier;\n  decision confidence; --kind verified.\n- Gaps: unsure → research trigger (3) · calibration feeds thresholds (3) · irreversible∧ambiguous stop rule (4).\n\n## 9. Orchestration\n- Exists: fm lane new/spike/race/pick/brief/resume/merge (fmlanes.py); lane brief prints an Agent line (sonnet, effort\n  by tier, fmlanes.py:608-633); fm run spawns `claude -p` (fmserve.py:435-438, :935), --parallel lanes, _integrate\n  merges; --models by tier (empty default); stalled()/stopped()/resume --force; fm run stall-kill + resume, usage-limit\n  backoff, quarantine; fm budget, --max-usd.\n- Partial: no model router (fmcost._by_model reports, nothing consumes); lane recovery needs the main session.\n- Gaps: history-based model router with escalation (3) · auto-recovery of Agent lanes (3) · default models (3).\n\n## 10. Beyond code\n- Exists: fm research ask (quote-on-page verification, cross-check); research gate; fm docs (report-only); fm release\n  (Foreman repo only) / fm ship; fm design lint, looks, scene, visual diff; incident/observability playbooks (prose);\n  ~60 infra cards + guard asks on live apply; fm data (read-only); sql/migration playbooks.\n- Missing: incident verb/gate; infra tools as proof (terraform validate, hadolint, helm lint, kubectl --dry-run);\n  data correctness proof; docs truth; release ritual for other repos.\n- Gaps: incident ritual (3) · infra proof (3) · data/migration proof (3) · docs truth (3) · release for any repo (3).\n\n## 11. Self-triggering\n- Exists: fm night (flock, budget, orders first, fm run --fit --max 2); --print-timer (prints only); fm orders\n  (--every, --on-change sha1; captures only); fm serve (Remote Control unit); fm run (all-projects, inhibit);\n  fm ship --watch / fm ci-watch (post-push); fm inbox gh (manual).\n- Missing: staged install for one yes; unattended issue/CI polling; trigger table (event → type/tier/route); live\n  watcher; L tasks from triggers.\n- Gaps: install queue (3) · unattended issue/CI watch (3) · trigger→task routing table (4) · live watcher (3).\n\n## 12. Staying lean and safe\n- Exists: fm burden (report, no threshold); --by-verb (unused verbs, advisory); bench_hooks.py per-hook p95 budgets\n  (exit 1); check_hook_slo (WARN); injection ceilings 2000/400 chars (FAIL); check_footprint ceilings (rules 80 lines /\n  6400 chars, descriptions 6000, SKILL.md 10000); guard protected core, ~12 guard test files, fm canary.\n- Missing: generation-over-generation \"may not grow\" ratchet; subtract-as-you-add balance gate; doctor in merge path.\n- Gaps: lean ratchet per generation (3) · add/remove balance gate (3).\n\n## 13. Genesis as a feature\n- Exists: fm genesis storage (T-2078: init/put/status); fm mission compose (works with no request); fm ideas falsify,\n  crossbreed, misses/questions, --seen; fm loop; fm scout idle; hook routing hint (fmhooks.py:1245); fm evolve (targets\n  skills/rules/agents/routing only, train split); fm second roles; fm run.\n- Missing: gen-0 writer from one line or nothing; Seed/mission/critique writers with the 8-mission cap; per-project\n  capability spec + held-out exam; selection, lineage, carry-over; evolve on templates; drift check vs gen-0;\n  one-shot completeness sweep; auto-start from loop/scout; routing change (core → queued for the user).\n- Gaps: tower orchestrator (4) · multi-language exam generator with keys and holdout (3) · per-project spec (3) ·\n  selection + lineage + carry-over (3) · drift check + sweep command (3).\n\n## Gen 1 ordering (largest gaps first, dependencies honoured)\n1. #13 tower + exam generator (everything else is graded by it).\n2. #1 project initiative (find → prove → fix), which the exam's no-request scenarios grade.\n3. #4 goal ledger and done-vs-stopped.\n4. #2 exhaustive thinking gate + auto race.\n5. #5 capability-miss trigger + build-test-use.\n6. #6/#10 proof kinds (docs truth, data, infra, perf) and the unproven rollup.\n7. #7/#8 signal → fix loop, calibrated stop rule.\n8. #9/#11/#3/#12 router, triggers + install queue, anticipation model, lean ratchet.\n\nThe order covers the 13 capabilities only. The harness areas (onboarding, UX, docs, ecosystem, multi-user,\nobservability, security, performance, portability) were added as coverage.md rows after this map was built; their\ngaps aren't ranked here yet, and their open cells are listed by `fm genesis check`, not by this order.\n",
   "gen-0.md": "super improve Foreman into the harness that can do anything on its own, and seed yourself to get there. After this message I'm not going to say anything else.\n\nRESEARCH!: Genesis. Build Foreman into a self-directing agentic harness: it finds, thinks through, and does anything on its own\nCONTEXT: The goal is Foreman's own abilities, not work in other people's repos. In any repo, on any task, or with no task at all, Foreman should: find what needs doing without being asked; think through every interpretation, approach, outcome, failure mode and fix before choosing; get or build whatever tool it's missing; do the work end to end; prove it; and know when it's truly done. Section 2 is the spec. The run builds all of it, completely.\nCONTEXT: This message is Generation 0. It writes a Seed. The Seed writes one Mission per capability gap. Missions write and build the briefs, then critique and rewrite the Seed for the next generation. I never write another prompt.\nCONTEXT: Foreman already has most of the parts: fm mission, fm ideas, fm research ask, fm scout, fm orders, fm night, fm run, fm graph blast, fm second, fm lane (--spike, race), fm evolve, fm bench, fm backtest, fm trials, fm mcp new, fm plugins find, fm shot/flow, fm loop, fm mandate. Extend them and build what's missing. Don't rebuild what exists.\nCONTEXT: Recent rounds mostly shaved hook milliseconds and followed up the last ship. This run works from the capability spec, not from the last diff.\nMUST: full autonomy. Every decision through fm decide. Never ask me anything mid-run.\nMUST: no spend cap on building and proving. Tokens go into Foreman's code and its tests, not into sweeping the outside world. Waiting out a usage limit is fine.\nMUST: everything finishes completely. A capability is done only when it has its tests, its exam scenarios passing (§4), docs (MASTER.md, README where it belongs, CHANGELOG), a site page if it's user-facing, a pane/status surface if it has state, and it works on every surface it belongs on (Claude Code, fm code, other agents, Desktop).\nMUST: unprompted actions stay local and reversible (a lane, a branch, a spike, a throwaway folder). Anything that leaves the machine needs its grant, so it goes into the final report.\nNEVER: clone or sweep outside repos to brainstorm or to benchmark. Outside material is only allowed in the targeted form in §5.\nNEVER: grant yourself anything or lower your own guard. Protected core gets a built, evaluated candidate in a worktree plus `fm ask ID core` at the end. Merging Foreman changes stays my call.\nDONE-WHEN: every capability in §2 passes its held-out exam (including #13: Foreman can run this kind of Genesis by itself from no prompt), the completeness sweep (§7) is clean, and two generations in a row find no remaining tier 3–4 gap. It ends with one report.\n\n---\n\n## 0. Set up\n\n```\nfm autonomy full\nfm drive on\nfm loop on\nfm contract off\nfm lane max 6\nfm mandate set \"Genesis: build Foreman into a self-directing harness per research/genesis/gen-0.md §2\" --until <YYYY-MM-DD>\n```\nCapture this message as the Genesis task, save it verbatim as `research/genesis/gen-0.md` (never edited), and record the setup with `fm decide`.\n\n## 1. Gap map first (generation 1 only, no brainstorm yet)\n\nFor each capability in §2, map what Foreman already has with file and verb evidence, what's partial, and what's missing, using `foreman:fm-recon` per capability in parallel. Save it as `research/genesis/gap-map.md`. Every later idea is checked against it. Nothing gets built twice.\n\n## 2. The capability spec: what \"can do anything on its own\" means\n\nEach item has a test. A capability counts only when its exam scenarios pass (§4).\n\n1. **Initiative.** In any repo with no request: map it, find the real bugs, security holes, missing or failing tests, slow paths, rotten deps, docs drift, CI flakes, open issues and missing features, rank them by value, prove each one (repro or failing test), and fix them on lanes. Language-agnostic. Grows `fm scout` from watching Foreman into watching any project.\n2. **Exhaustive thinking.** Before acting on anything non-trivial: list the readings of the request, every approach (including \"use what exists\" and \"do less\"), the likely outcomes and failure modes of each, edge cases, and blast radius (`fm graph blast`). Then generate several candidate fixes or designs, test them in parallel lanes, and choose by evidence, not first instinct. Scale the depth to the risk, so an S task doesn't pay an L task's cost.\n3. **Anticipation.** A model of me, my projects and my machines (requests, corrections, habits, what breaks). It predicts the next request and drafts it on spec in a lane, and flags problems before they happen (grow `fmforesight`).\n4. **Goal to finish.** Turn a vague goal into a complete plan: what a finished, best-in-class version contains, decomposed and ordered. It carries the plan over days, across crashes and compactions, and knows when it's actually done rather than merely stopped.\n5. **Getting the tools it lacks.** When it hits something it can't do, it finds an existing plugin, skill or MCP server (`fm plugins find`, `fm lib search`) or builds one (`fm mcp new`, a script, a project skill), tests it, and uses it. Install grants are queued for me, never self-granted.\n6. **Verifying anything.** Proof beyond unit tests: UI (`fm shot`, `fm flow`), data, docs against code, infra and ops, performance, and \"does it do what the user meant\". Whatever can't be proven gets labelled as unproven.\n7. **Self-repair and self-improvement.** Its own failures, friction, misses and my corrections become fixes, gated by bench and trials, without being asked.\n8. **Calibrated judgment.** It knows what it doesn't know: it states confidence, researches when unsure, and stops for me only when something is irreversible and ambiguous. Everything else it decides and records.\n9. **Orchestration.** It spawns, briefs, checks and merges its own subagents and lanes, picks the cheapest model that can do each part, and recovers stopped ones.\n10. **Beyond code.** Research, docs, ops and incidents, infra, data, design and releases, done to the same standard of proof.\n11. **Self-triggering.** Schedules, file and event triggers, CI and issue watchers, so work starts without me. Installs (timers, units) get queued for one yes.\n12. **Staying lean and safe.** Each of the above keeps the hooks fast, keeps context small and keeps the guard intact (see §6).\n13. **Genesis as a feature.** Turn this whole tower into something Foreman ships and runs on its own, so nobody ever has to hand-write a prompt like this again. That means:\n    - **One entry point** (a verb such as `fm genesis` plus a skill) that writes its own gen-0. It writes it from whatever it's given: one line like \"make this great\", a sweeping request, or nothing at all. It draws on the project, my history and corrections, and the gap map, then runs the tower (Seed → Missions → briefs → critique → selection → drift check → completeness sweep) in any project, not just Foreman.\n    - **It starts by itself.** Routing sends open-ended or sweeping requests to it. The forever loop and `fm scout` start it when a project's queue runs dry or its gap map shows big gaps. The routing change to rules/foreman.md is protected core, so it gets queued for my yes.\n    - **It gets a spec of its own.** For any project it writes that project's version of §2: what \"complete and best-in-class\" means for that kind of project, with the same held-out exam approach.\n    - **It carries over.** What this run learned (the winning Seed and mission templates, the lenses that paid off, the lineage) becomes its starting defaults.\n    - **Exam:** given only \"make this great\", or no request at all, on held-out generated projects, its self-written gen-0 has to cover at least everything this hand-written one does (every MUST, NEVER and section). The tower it runs has to close the planted gaps. From generation 2 on, this run's own Seed is written by the feature, not by this message.\n\n## 3. The tower (each generation)\n\n| Level | Written by | File |\n|---|---|---|\n| L0 Genesis | me | `gen-0.md` (fixed) |\n| L1 Seed | gen 1: Genesis plus the gap map; later: the last generation's critiques | `gen-N/seed.md`: which gaps this generation closes, lenses, order |\n| L2 Missions | the Seed, ≤ 8, one per gap | `gen-N/mission-<capability>.md`: a self-contained prompt a fresh `fm run` session can execute |\n| L3 Briefs | each Mission | `fm intake` blocks, grounded, tiered, built |\n\n1. The Seed picks the biggest open gaps from the gap map and the exam results. Capability #13 goes in generation 1 (a first working version), so the rest of the run uses it on itself.\n2. Each Mission runs `fm mission` and `fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen <earlier ideas.md>`, with lenses fitted to its capability, plus **inversion** (how this capability fails or gets abused), **sci-fi** (the 2030 version, worked back to a slice buildable today) and **self-modification**. It invents at least 2 lenses of its own and puts their definitions in the pack.\n3. It grounds every idea against the code (brainstorm step 4: nothing dropped silently) and tags it with an **ambition tier**: 1 tweak, 2 feature, 3 capability, 4 paradigm. At least 70% of what gets built is tier 3–4. Tier 1 goes to the inbox.\n4. It builds (§6) until its capability's exam passes.\n5. It writes `gen-N/critique-<capability>.md`: what in its mission or the Seed was wrong or too timid, and a proposed rewrite of each.\n6. **Selection:** the next Seed is written from the critiques. A rewrite stays only if its generation closed more exam scenarios than its parent did; otherwise the parent text comes back. Lineage goes in `lineage.md`. Every 3rd generation, the Seed and mission templates and `ideas-prompt.md` go through `fm evolve --runs 3`.\n7. **Drift check:** an `fm second` read compares each new Seed to gen-0's goals, MUSTs and NEVERs, and undoes anything that drifted.\n8. **Structure caps:** at most 4 levels, at most 8 Missions per generation, one generation at a time, each finished before the next starts.\n\n## 4. The exam: local, cheap, held out\n\nThere are no outside repos. Build the exam in gen 1, as a permanent suite like `fm code bench` or `bench/spec-suite`:\n\n- **Generated scenarios:** throwaway repos made locally from scripts, in at least 6 languages, with planted defects (bugs, vulnerabilities, missing tests, slow paths, docs drift, a flaky test, a broken dep), plus vague goals (\"make this production-ready\"), ambiguous requests, and a task that needs a tool Foreman doesn't have. Every scenario has a hidden answer key. \"No request at all\" scenarios test initiative.\n- **My own history:** `fm bench build` cases from finished tasks, `fm backtest` on real sessions, and `fm bench court` on my past corrections, so taste is measured too.\n- **Held out:** a third of the scenarios are never shown to any Mission or used for selection. They're only used to grade a capability as done, so the tower can't overfit to the exam.\n- **Scored:** what it found or did against the answer key, false alarms, how many readings and approaches it considered against the key's list, fixes that pass with a failing-test-first proof, tokens per verified result. Results go to `research/genesis/exam.jsonl`.\n\n## 5. Outside ideas: targeted only\n\nWhen a Mission is stuck on a specific gap, it may do one `fm research ask` on how others solve exactly that, and search the already indexed sources (`fm lib search`, `fm lib source defaults`, which are markdown-only and cheap). At most a couple of web pages or one README per gap, never a clone-and-read sweep. Distill the result into the mission's critique.\n\n## 6. Building rules\n\n- Tier 4 or uncertain → `fm lane new ID --spike` first, then promote it or kill it with the reason. \"Too ambitious\" is never a reason on its own.\n- Two credible designs → `fm lane race`, then `fm lane pick`.\n- A normal brief: red-first test, M/L approaches listed first, `fm task finish` with its audits.\n- Changes to Foreman's instruction files go through `fm evolve`, kept only past `fm bench gate` and `fm bench court`. Protected core goes through an `/foreman:improve` worktree and is queued for my yes.\n- Every self-change is a registered trial with the metric it should move.\n- **Subtract as you add:** each generation removes, merges or slims at least as much as it adds (`fm burden --by-verb`, unused verbs and cards). Hook p95 (`fm doctor`), rules size and injected context may not grow. A new capability pays for itself or gets cut.\n- **Retry limit:** a blocked task gets two genuinely new approaches. If both fail, record the diagnosis with `fm decide` and move on. It doesn't loop.\n\n## 7. Completeness sweep (the end of every generation)\n\nRun `fm state`, `fm queue`, `fm lane list`, `fm docs`, `fm doctor` and the full gates. Every task is closed, or blocked with a diagnosis after its two retries. Every spike has a verdict. Every finished lane is merged (or queued for me if it's core). Docs drift is zero, gates are green, and the exam is re-run. The next generation doesn't start until this is clean.\n\n## 8. Final report (one, at the end)\n\n- The capability scorecard: each §2 item with its held-out exam score per generation, what was built for it, and a short real example of it working\n- The catalogue checklist page: every idea with its capability, tier, outcome and reason\n- The prompt lineage, and which rewrites won\n- What was removed to stay lean, with the hook latency and context numbers before and after\n- What's waiting on me: core candidates with their eval deltas, installs and timers, outward actions, merges, `fm decide --review` items\n- The last completeness sweep's output, and `fm cost` for the record\n",
-  "lineage.md": "# Lineage\n\n## gen-1\n- baseline: gen 0 has no graded line from foreman: gen 1 is the baseline\n- run s31-006 (agent foreman): train closed 0; reopened: none; held out never used; cost 0.7635\n- provisional: until the end-of-run exam on the production model confirms or reverses it; rests on exam run s31-006 only (4 graded lines from foreman, model haiku: a smoke signal, train only; no other signal recorded)\n- seed base: gen-1\n",
+  "lineage.md": "# Lineage\n\n## gen-1\n- baseline: gen 0 has no graded line from foreman: gen 1 is the baseline\n- run s31-006 (agent foreman): train closed 0; reopened: none; held out never used; cost 0.7635\n- provisional: until the end-of-run exam on the production model confirms or reverses it; rests on exam run s31-006 only (4 graded lines from foreman, model haiku: a smoke signal, train only; no other signal recorded)\n- seed base: gen-1\n\n## gen-2\n- baseline: gen 1 has no graded line from foreman: gen 2 is the baseline\n- run s32-015 (agent foreman): train closed 3; reopened: none; held out never used; cost 0.1855\n- provisional: until the end-of-run exam on the production model confirms or reverses it; rests on exam run s32-015 only (2 graded lines from foreman, model haiku: a smoke signal, train only; no other signal recorded)\n- seed base: gen-2\n",
   "not-yet.md": "# Not yet — ideas waiting on a blocker\n\nEach item: `## <idea>`, then `- blocker:`, `- tried: <approach>; <another>` (two different ones), `- unblocks-with:`, and\n`- added: gen-N …` or `- retried: gen-N …` for the newest generation. `## Removed` lines say proven harm or exact duplicate.\nCandidates the user named for the model layer (T-2437) wait here as unevaluated until an exam arm runs them; a candidate\nowes two tries only once it has been evaluated.\n\n## selfjev-4b\n- blocker: unevaluated: no exam arm has run it against a path it would replace\n- unblocks-with: an exam arm (intake tier, lead triage or dedupe) where it beats the current path on accuracy, cost or latency, its probabilities checked against outcomes; reached through the Jev-compatible API at TYPESAFE_BASE_URL\n- added: gen-2, a local backend the user named for the model layer\n\n## jeff\n- blocker: unevaluated: no exam arm has run it against a path it would replace\n- unblocks-with: the same exam arms as selfjev-4b, run on this machine behind the Jev-compatible API; kept only where it beats the path it replaces\n- added: gen-2, the second local backend the user named\n\n## Jevlike\n- blocker: unevaluated: no task-specific model has been trained from Foreman's own history yet\n- unblocks-with: labelled rows from closed tasks (tier, lead, dedupe decisions), a night-run training job staged as a candidate, and an exam arm where the trained model beats the path it replaces\n- added: gen-2, the trainer the user named for task-specific models\n\n## Von\n- blocker: unevaluated: intent routing has no exam arm yet\n- unblocks-with: an exam arm on held-out requests where Von's routing beats fm code's current planner choice on accuracy, cost or latency\n- added: gen-2, the intent router the user named\n\n## Byte-stable goal card in the cached prefix\n- blocker: no measurable win: the goal card is about 120 characters (around 30 tokens), and the SessionStart context is cached after its first write in each session, so moving it into the prefix shared across sessions saves about 30 cache-write tokens per new session\n- tried: a byte-stable goal line in the SessionStart context (T-2143: the lines before it change every session, so it kept no extra prefix); a goal card in a file Claude Code loads with CLAUDE.md (T-2418: the whole card is ~30 tokens, below anything fm cost can tell apart)\n- unblocks-with: a goal card large enough to matter (the Seed's Missions or the gap map's top rows, 2k+ tokens, read by every session), measured by fm cost --by-model before and after\n- added: gen-2, from gen-1/critique-finish.md via T-2418\n",
   "gen-1/critique-exam.md": "# Critique — Mission 1, the exam (gen 1, #13 + #6)\n\nTask: T-2079 (done; pushed to main at 1a78a3f on the user's push grant, a use the §8 report lists). Mission: gen-1/mission-exam.md.\n\n## Exam scenarios: closed vs planned\n| Planned | State |\n|---|---|\n| Generated repos build, visible tests pass (except flaky, dep) in python, js, ts, rust, ruby, c | closed — test_exam |\n| Every hidden check fails planted, passes clean | closed — test_exam, all six languages |\n| Oracle 100%, empty 0% | closed — test_exam; s0-001 empty row: 0/108 |\n| Holdout never in `--split train` | closed — test_exam |\n| ≥ 9 scenarios per kind, ≥ 3 held out | closed for Foreman's own generator only — `--per-kind 9` → 6 train + 3 held out per kind; these come from fmexam.py's templates, so the child-authored set the steer asks for is the next row, still open |\n| Tool-less child author (standing rule 5) | built, not proven — `fm exam gen --author child`; its one real run kept 1 and the exam of the exam dropped 1, so its yield at ≥ 9 per capability is unmeasured (end-of-run exam) |\n| Foreman vs plain session arms with cost | built, not yet measured — both arms run the same held-out scenarios, cost in `fm cost` under `exam-arm`, capped by `fm budget`; smoke so far: s0-001 (1 and 3 scenarios, below) and s31-006 (9 scenarios: foreman found 6/18, 7 false alarms, fixed 9/18; plain found 6/18, 6 false alarms, fixed 11/18); the deciding comparison is the end-of-run exam (gen-1/seed.md rule 6) |\n| Finders baseline in exam.jsonl | closed — 0/108 (decision recorded 2026-10-28); revisited 2026-10-30 after fm find (T-2121): 90/108 found, 0 false alarms, held out 30/36, 0 fixed (finders find, never fix; T-2157) |\n\n5 of the 8 rows are closed with their tests, and a sixth (≥ 9 per kind) only for Foreman's own generator; the child author and the arms comparison are built and smoke-tested, and both are decided at the end-of-run exam (gen-1/seed.md rule 6). None waits on the user.\n\n## Outside signals\n- **Session arms on s0-001 (smoke only, gen-1/seed.md rule 6).** exam.jsonl holds every graded line; the exam summary shows only\n  the newest per run and agent. In order: (1) foreman and plain on 1 held-out scenario: both found 1/1, fixed 0/1\n  (the work dir sat inside Foreman's state, see What failed 1); (2) the same pair after the temp-copy fix: both found\n  1/1 and fixed 1/1, foreman at $0.34 and plain at $0.11 — the s0-001 (foreman) row the summary shows is this run,\n  while its plain line was superseded by (3); (3) genesis and plain on 3 scenarios: the s0-001 (genesis) row, found\n  3/3, 13 false alarms, fixed 0/3, and the s0-001 (plain) row, found 3/3, 9 false alarms, fixed 3/3. These are 1- and\n  3-scenario samples, so no lean, cost or ranking change rests on them; the questions they raise for the end-of-run\n  exam and the long-horizon tier are whether Foreman's extra cost buys anything on scenarios plain Claude misses\n  (vague, none, missing-tool), and why the genesis arm fixed none. s31-006's 9-scenario smoke pair already leans the same way: plain fixed 11/18 to\n  Foreman's 9/18 with one false alarm fewer.\n- **Finders arm 0/108:** Foreman's deterministic finders (fmdocs.scan + fmsecrets) find none of the planted defects. Re-run 2026-10-30 (T-2157) with fm find in the arm: 90/108 found, 0 false alarms, held out 30/36 (zero tokens).\n  At 0/108 the self-checks called those finders healthy (their own tests passed) while the exam said they found\n  nothing; by standing rule 4 that made **#1 Initiative's finders a top gap** → Mission 3. After fm find they find\n  90/108 but fix 0: finding is measured, fixing is still Mission 3's prove → fix gap.\n- **fm outcomes (all time):** 1292 of 1337 finished tasks held (96.6%), 44 fixed later, 1 reverted. Close warnings on\n  T-2079 itself: \"suspiciously smooth: 16 runs passed the first time\". Survival is good; first-try green is a sign the\n  checks are too easy, not that the code is.\n- **Cold reads:** this file, like every tower file, is filed only after `fm genesis put`'s cold Haiku read passes it\n  (gen-1/seed.md rule 7, T-2166). The gen-level drift check (`fm genesis drift 1`, fm second over the whole generation) runs once\n  gen 1's seed is filed.\n\n## Coverage cells filled\ncoverage.md now exists (Mission 2). The cells this Mission's code fills there, both `F: plugin/lib/fmexam.py`:\nCalibrated judgment's understand × CLI (the exam grades agents on held-out scenarios) and Genesis's build × CLI\n(`fm exam gen` builds the exam). Its site section is Genesis page D; MCP, Desktop and pane cells are open (T-2172).\n\n## Not-yet items\nNone added. Nothing here is a failed spike: the finders arm fixes 0 by design (finders find, T-2157), and the\ngenesis arm's 0/3 fixes on s0-001 is a #13 gap carried to Mission 2's critique and the end-of-run exam, not an idea\nthis Mission tried and dropped.\n\n## What failed\n1. First real session sample: the work dir sat under the project dir, so Foreman's own guard refused the agent's edits\n   and both arms scored 0 fixed. Fixed by running sessions in a temp copy outside the project. Lesson: an exam arm\n   must run where a user's repo would be, never inside Foreman's state.\n2. A session that errored (rate limit, budget cap) was silently scored zero — a wrong \"Foreman is weak\" signal. Now\n   counted as `errors` and shown as \"N errored\".\n3. One planted bug per arm is too small a sample to rank anything. Cost per scenario ($0.11–0.34) makes a full\n   held-out arm (33 scenarios) ~$4–11 per agent.\n\n## What the next Seed should change\n- ~~Every Mission's critique runs both session arms on ≥ 9 held-out scenarios~~ — superseded by the user's steer\n  (2026-10-30): each generation runs the free deterministic arms on all scenarios plus at most a Haiku smoke run of\n  foreman vs plain on ≤ 9 held-out ones (a smoke signal, never a verdict); the full arms and the long-horizon tier run\n  once at the end on the production model.\n- Add a **cost-per-verified-result** column to selection: a rewrite that ties on score at 3× the cost does not win.\n- The child author should write the held-out third by default once it passes the exam of the exam reliably\n  (currently 1 of 2 kept) — templates are memorisable by anything that reads fmexam.py.\n- Mission 3 starts from the finders' 0/108 (90/108 found, 0 fixed after fm find): the find → prove → fix pipeline is graded on the exam's `none` and `bug`\n  kinds, not on Foreman's own repo.\n",
   "gen-1/critique-finish.md": "# Critique — Mission 4, goal to finish (gen 1, #4)\n\nTasks: T-2135 to T-2141 (briefs 1-7, all done by 2026-10-31T02:41Z). Mission: gen-1/mission-finish.md. Numbers are\nfrom exam run s21-013 (2026-11-01, zero-token arms) and the long-horizon runs l001-l003 (2026-10-31, after the\nMission closed, the default model).\n\n## Closed vs planned\n| Planned (Done when) | State |\n|---|---|\n| fm goal set/plan/show/verdict work and are tested (T-2135, T-2136, T-2137) | closed: test_goal |\n| A done claim with unaccounted clauses or an unfinished goal blocks once at Stop and never traps (T-2138) | closed: test_hooks; not seen working in the long-horizon runs (below) |\n| The goal line survives a new session, a compaction and a crash (T-2139) | closed: test_goal, test_hooks |\n| The #4 exam runs the foreman and plain arms on its held-out third (T-2140) | built (T-2140: kinds vague, goal, resume; test_exam); not yet measured: their scores come from the session arms, which wait for the end-of-run exam (rule 6) |\n| fm code, MCP, AGENTS.md block, site page, pane line, MASTER, README, CHANGELOG (T-2141) | closed on T-2141's recorded runs: test_code and test_code_envelope (fm code), test_mcp (MCP), test_site and test_export (site page), test_ui_signals (pane line), test_goal; the AGENTS.md block and the docs have no run of their own here (test_agents and test_docs check them in fm check); coverage #4: 6 cells filled |\n\n## Outside signals\n- s21-013: the #4 kinds (vague, goal, resume, 27 scenarios) close only for the oracle; no zero-token arm can do the\n  work they grade, so they wait for the session arms.\n- Long-horizon (the deciding tier, paused by the user's 2026-10-31 steer until the end of the run): over 6 goals the\n  foreman arm finished 0 and claimed done on all 6 (false-done 6), with 4 of 20 checks passing; plain finished 1 with\n  5 false-done claims, at the same total cost ($13.08). On l002 the foreman arm passed 0 checks on its first goals\n  (T-2093: 0/5, T-2020: 0/3) and still said done.\n\n## What failed\n- False done is what Mission 4 exists to stop, and the foreman arm claimed done on every long-horizon goal it didn't\n  finish. Why is not established yet: the Stop wiring holds a claim against a goal set with fm goal set or the last\n  request's unaccounted clauses, and the runs' transcripts weren't read for which of these fired. The working\n  hypothesis is that a headless session never set a goal and its clauses read as accounted for, so nothing held the\n  claim; the end-of-run exam's long-horizon tier should log the Stop decisions to settle it.\n- One long-horizon sample on one model can't separate Foreman from plain (1 finish in 12); the end-of-run exam decides.\n\n## Spike verdicts\nNone planned as tier-4 spikes in this Mission.\n\n## What the next Seed should change\n- Make the goal automatic: a request with a done-when, or one fm goal plan sizes past a single task, becomes the\n  standing goal, so Stop always has a goal to block a false done against; test it on a long-horizon goal, not a unit.\n- Count a session's \"done\" against the goal's own checks at Stop (fm goal verdict), never against its own say-so.\n- Re-run the long-horizon tier at the end of the run, with the false-done count as #4's headline number.\n",
