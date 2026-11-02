@@ -323,6 +323,11 @@ def tick(p, fetch_ci=None):
                 fmmodels.shadow_pass(p, cap=5)
             except Exception as e:
                 res["notes"].append(f"shadow pass: {c.fit(c.plain(str(e)), 120)}")
+            try:  # T-2499: bets settle on a night with no fm task finish (outcome rows written, the bar check run)
+                import fmoutcomes
+                fmoutcomes.maintain(p)
+            except Exception as e:
+                res["notes"].append(f"calibration: {c.fit(c.plain(str(e)), 120)}")
             try:
                 with open(path, encoding="utf-8") as f:
                     seen = json.load(f)

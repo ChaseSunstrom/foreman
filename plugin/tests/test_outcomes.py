@@ -610,6 +610,18 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         self.assertEqual(len(self.bets("task")), 1)
 
 
+class CalibrationTrails(CalBase):  # T-2499: the digest names the kind whose Brier trails its base rate most
+    def test_the_digest_names_the_kind_whose_brier_trails_its_base_rate_most(self):
+        self.seed("choice", 90, 6, 12, base=60)  # stated 90, held half: Brier 0.41 against the base rate's 0.26
+        self.seed("task", 70, 8, 12, base=70, prefix="t")  # stated equals the base rate: no trail
+        self.assertIn("trails its base rate most: choice (Brier stated 0.41 vs base 0.26, n 12)",
+                      fmoutcomes.ledger_lines(self.p)[0])
+
+    def test_under_twenty_scored_says_too_few(self):
+        self.seed("choice", 90, 6, 10, base=60)
+        self.assertIn("too few", fmoutcomes.ledger_lines(self.p)[0])
+
+
 class CalibrationInterim(CalBase):  # T-2498: a week-old close reads "held so far", labeled, never scored
     def test_a_pending_bet_closed_a_week_ago_reads_held_so_far_and_scores_nothing(self):
         rows = [{"kind": "choice", "stated": 75, "outcome": None, "task": "T-1"},
