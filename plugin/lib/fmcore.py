@@ -383,12 +383,16 @@ def pause_snapshot(root, b):
 
 
 def git_head(root):
-    try:
-        r = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "-q", "HEAD"], capture_output=True, text=True,
-                           timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return r.stdout.strip() or None
+    for t in (10, 60):  # T-2334: a loaded host times out once; a task with no start point costs more than a slow focus
+        try:
+            r = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "-q", "HEAD"], capture_output=True,
+                               text=True, timeout=t)
+        except subprocess.TimeoutExpired:
+            continue
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return r.stdout.strip() or None
+    return None
 
 
 def trust_path():
@@ -475,7 +479,10 @@ def task_base(root, b):
     work from before the task isn't its change (no commit needed); else its start commit. None when neither exists
     any more (git may prune an unreferenced snapshot after about two weeks)."""
     for rev in (b.meta.get("base_tree"), b.meta.get("base")):
-        if rev and _git(root, "cat-file", "-t", rev, timeout=10).strip() in ("tree", "commit"):
+        if not rev:
+            continue
+        r = _git(root, "cat-file", "-t", rev, timeout=10, proc=True)
+        if r.returncode == 124 or r.stdout.strip() in ("tree", "commit"):  # T-2334: a timeout isn't absence
             return rev
     return None
 

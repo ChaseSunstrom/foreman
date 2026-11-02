@@ -809,8 +809,14 @@ def cmd_task(args):
         ran = args.run is not None or bench is not None
         if not ran:
             tried = None
+        # T-2334: a task made active without fm focus (fm task set status=active) or whose focus timed out on git has
+        # no start point to tell its files apart; HEAD now, not a snapshot (one now would hide the edits made so far)
+        late = None if need_brief(p, args.id).meta.get("base") or not c.git_root(p.root) else c.git_head(p.root)
 
         def record(b):
+            if late and not b.meta.get("base"):
+                b.meta["base"] = late
+                b.append_log(f"start point recorded late (no focus had kept one): its diff starts at {late[:7]}")
             b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree, ran=ran,
                            inconclusive=args.inconclusive)
             if bench is not None and median:  # the finish gate reads Measurements, so the measured line is the numbers
