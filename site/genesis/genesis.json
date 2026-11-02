@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-02T14:03:05Z",
+ "updated": "2026-11-02T14:08:07Z",
  "rev": "71981f46",
  "capabilities": [
   {
@@ -20381,6 +20381,1164 @@
    "cost": 13.0774,
    "cost_unknown": 1,
    "hours_to_done": 0.245,
+   "reverts": null,
+   "brier": null,
+   "conf_missing": null,
+   "door_touched": null,
+   "unknown": {
+    "false_done": 0,
+    "resumes_needed": 0,
+    "unfinished": 0,
+    "guard_blocks": 0,
+    "hours_to_done": 0
+   }
+  },
+  {
+   "tier": "long",
+   "agent": "foreman",
+   "run": "l001",
+   "at": "2026-11-02T14:03:09Z",
+   "gen": 3,
+   "model": "default",
+   "scenarios": 6,
+   "true_done": 0,
+   "regressions": 0,
+   "checks": 20,
+   "checks_passed": 5,
+   "goals": [
+    {
+     "id": "T-2031",
+     "answered": true,
+     "true_done": false,
+     "checks": 1,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_core.py::test_core.BriefIndex.test_brief_index_the_fast_scan_reads_only_the_closed_keys",
+       "line": "AssertionError: '/tmp/tmpkg9ijdr2/fhome/state/projects/app-d6447f/tasks/T-0001-t0.md' unexpectedly found in ['/tmp/tmpkg9ijdr2/fhome/state/projects/app-d6447f/briefs-closed.json', '/tmp/tmpkg9ijdr2/fhome/state/projects/app-d6447f/tasks/T-0001-t0.md', '/tmp/tmpkg9ijdr2/fhome/state/projects/app-d6447f",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.5638427999999998,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1745.6,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-1674",
+     "answered": true,
+     "true_done": false,
+     "checks": 2,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_ui.py::test_ui.UiView.test_every_string_of_the_view_is_shown_plain_but_paths",
+       "line": "AttributeError: module 'fmwatch' has no attribute '_shown'",
+       "reach": true
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 0.6443797999999998,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1392.9,
+     "guard_blocks": 0,
+     "false_reach": true,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2181",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 2,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisReadRecord.test_a_sectioned_legacy_file_needs_a_pass_for_every_section",
+       "line": "-  'sections unread) (edited by hand or never put): fm genesis put coverage.md']",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisReadRecord.test_a_sectioned_legacy_file_read_whole_counts",
+       "line": "-  'sections unread) (edited by hand or never put): fm genesis put coverage.md']",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisReadRecord.test_legacy_file_is_clean_only_with_a_ledger_pass_just_before_its_mtime",
+       "line": "-  'hand or never put): fm genesis put coverage.md']",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.6688546000000002,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1898.0,
+     "guard_blocks": 1,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-1665",
+     "answered": true,
+     "true_done": false,
+     "checks": 2,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_portability.py::test_portability.Home.test_a_sensitive_project_is_left_out",
+       "line": "AssertionError: 'sensitive' not found in 'Wrote /tmp/tmpr_snm4vx/home.tar.gz: 6 file(s) from 1 project(s), redacted; grants, commands, ledgers and sessions stay here. Review it before you share it.\\n'",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 3.1878366000000007,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2333.4,
+     "guard_blocks": 1,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2262",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_a_kill_that_never_fires_is_logged_unfired_with_no_resume",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_a_pause_whose_reply_has_no_marker_is_unfired_and_not_resumed",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_a_resume_that_fails_after_a_kill_gets_one_fresh_turn_and_the_kill_cost_is_unknown",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_a_tampered_run_json_id_is_refused_and_nothing_outside_the_run_is_touched",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_all_faults_together_and_a_rerun_starts_clean",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 2.721965999999999,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1881.2,
+     "guard_blocks": 2,
+     "false_reach": true,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2225",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisDraft.test_a_capability_graded_in_only_some_languages_is_partial_and_names_the_rest",
+       "line": "+ ('partial', 3, ['python'])",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisDraft.test_a_python_only_spec_passes_on_python_and_odd_ids_never_crash",
+       "line": "-  'no graded js, ts, ruby, rust, c scenarios yet')",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisFrame.test_a_grow_keeps_a_put_lineage_read_and_never_blesses_a_hand_edit",
+       "line": "KeyError: 'read'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisReadRecord.test_a_sectioned_legacy_file_needs_a_pass_for_every_section",
+       "line": "KeyError: 'read'",
+       "reach": true
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 0.9801186000000001,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1523.1,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    }
+   ],
+   "skipped": {},
+   "rate": 0.0,
+   "false_done": 6,
+   "false_done_reach": 2,
+   "resumes_needed": 0,
+   "unfinished": 0,
+   "guard_blocks": 4,
+   "installs_attempted": null,
+   "miss_resolved": null,
+   "cost": 10.767,
+   "cost_unknown": 4,
+   "hours_to_done": null,
+   "reverts": null,
+   "brier": null,
+   "conf_missing": null,
+   "door_touched": null,
+   "unknown": {
+    "false_done": 0,
+    "resumes_needed": 0,
+    "unfinished": 0,
+    "guard_blocks": 0,
+    "hours_to_done": 0
+   }
+  },
+  {
+   "tier": "long",
+   "agent": "foreman",
+   "run": "l002",
+   "at": "2026-11-02T14:03:25Z",
+   "gen": 3,
+   "model": "default",
+   "scenarios": 6,
+   "true_done": 0,
+   "regressions": 0,
+   "checks": 20,
+   "checks_passed": 4,
+   "goals": [
+    {
+     "id": "T-2093",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_a_full_grid_and_a_tried_ledger_pass",
+       "line": "AssertionError: 1 != 0 : {'ok': False, 'generation': 1, 'capabilities': 2, 'coverage': {'rows': 3, 'cells': 192, 'filled': 192}, 'not_yet': {'items': 1}, 'gaps': [{'kind': 'empty', 'where': 'not-yet: Self-hosted model router', 'why': 'no Unblock:'}, {'kind': 'untried', 'where': 'not-yet: Self-hosted",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_a_grid_without_rows_and_punctuated_paths",
+       "line": "KeyError: 'problems'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_an_empty_field_never_borrows_the_next_line_and_tries_must_differ",
+       "line": "KeyError: 'problems'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_empty_ungrounded_and_unknown_cells_are_flagged",
+       "line": "KeyError: 'problems'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_every_capability_needs_its_row",
+       "line": "KeyError: 'problems'",
+       "reach": true
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 2.6054288000000003,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2436.1,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2020",
+     "answered": true,
+     "true_done": false,
+     "checks": 3,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_core.py::test_core.LazyPatterns.test_lazy_a_pattern_compiles_on_first_use_and_keeps_its_methods",
+       "line": "AssertionError: <built-in method search of re.Pattern object at 0x6f146ff833d0> is not <built-in method search of re.Pattern object at 0x6f146ff833d0>",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_core.py::test_core.LazyPatterns.test_lazy_every_deferred_pattern_still_compiles",
+       "line": "AssertionError: 104 not greater than 150",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_core.py::test_core.LazyPatterns.test_lazy_importing_the_hook_modules_compiles_no_module_level_pattern",
+       "line": "Diff is 1718 characters long. Set self.maxDiff to None to see it. : ",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.9743049999999998,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2680.4,
+     "guard_blocks": 2,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2240",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 2,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_find.py::test_find.FindTreeSitterRung.test_a_binding_that_raises_is_a_note_not_a_crash",
+       "line": "AssertionError: False is not true : [\"tree-sitter rung: python: AttributeError: module 'tree_sitter_language_pack' has no attribute 'get_parser'\", \"tree-sitter rung: javascript: AttributeError: module 'tree_sitter_language_pack' has no attribute 'get_parser'\", 'tool rung skipped: not a trusted tree ",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_find.py::test_find.FindTreeSitterRung.test_findings_join_the_scan_with_a_learned_precision_key",
+       "line": "AssertionError: False is not true",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_find.py::test_find.FindTreeSitterRung.test_rule_headers_name_kind_and_message",
+       "line": "AssertionError: [] is not true : []",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 2.4886084,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 3260.8,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2211",
+     "answered": true,
+     "true_done": false,
+     "checks": 2,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_exam.py::test_exam.ExamAuthors.test_children_author_untested_docs_flaky_and_clean_scenarios",
+       "line": "-   'why': \"a clean item's name is missing or over 8000 characters\"}]",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 2.5821842000000004,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2857.4,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2041",
+     "answered": true,
+     "true_done": false,
+     "checks": 1,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_docs.py::test_docs.Logo.test_the_mark_is_a_small_self_contained_square_svg_the_readme_shows",
+       "line": " : square, so it fits a favicon, an avatar and the README",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.4602114000000006,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2190.9,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2279",
+     "answered": true,
+     "true_done": false,
+     "checks": 4,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_doctor.py::test_doctor.Timing.test_a_slow_bench_is_charged_to_hook_latency",
+       "line": "TypeError: 'Result' object is not subscriptable",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_doctor.py::test_doctor.Timing.test_a_slow_check_tops_the_slowest_list",
+       "line": "TypeError: 'Result' object is not subscriptable",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_doctor.py::test_doctor.Timing.test_unmeasured_rows_are_none_and_briefs_and_views_are_timed",
+       "line": "TypeError: 'Result' object is not subscriptable",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.9685927999999995,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2084.3,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    }
+   ],
+   "skipped": {},
+   "rate": 0.0,
+   "false_done": 6,
+   "false_done_reach": 0,
+   "resumes_needed": 0,
+   "unfinished": 0,
+   "guard_blocks": 2,
+   "installs_attempted": null,
+   "miss_resolved": null,
+   "cost": 13.0793,
+   "cost_unknown": 1,
+   "hours_to_done": null,
+   "reverts": null,
+   "brier": null,
+   "conf_missing": null,
+   "door_touched": null,
+   "unknown": {
+    "false_done": 0,
+    "resumes_needed": 0,
+    "unfinished": 0,
+    "guard_blocks": 0,
+    "hours_to_done": 0
+   }
+  },
+  {
+   "tier": "long",
+   "agent": "foreman",
+   "run": "l001",
+   "at": "2026-11-02T14:04:01Z",
+   "gen": 3,
+   "model": "default",
+   "scenarios": 6,
+   "true_done": 0,
+   "regressions": 0,
+   "checks": 20,
+   "checks_passed": 5,
+   "goals": [
+    {
+     "id": "T-2031",
+     "answered": true,
+     "true_done": false,
+     "checks": 1,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_core.py::test_core.BriefIndex.test_brief_index_the_fast_scan_reads_only_the_closed_keys",
+       "line": "AssertionError: '/tmp/tmpxk51a33i/fhome/state/projects/app-fbab63/tasks/T-0001-t0.md' unexpectedly found in ['/tmp/tmpxk51a33i/fhome/state/projects/app-fbab63/briefs-closed.json', '/tmp/tmpxk51a33i/fhome/state/projects/app-fbab63/tasks/T-0001-t0.md', '/tmp/tmpxk51a33i/fhome/state/projects/app-fbab63",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.5638427999999998,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1745.6,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-1674",
+     "answered": true,
+     "true_done": false,
+     "checks": 2,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_ui.py::test_ui.UiView.test_every_string_of_the_view_is_shown_plain_but_paths",
+       "line": "AttributeError: module 'fmwatch' has no attribute '_shown'",
+       "reach": true
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 0.6443797999999998,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1392.9,
+     "guard_blocks": 0,
+     "false_reach": true,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2181",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 2,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisReadRecord.test_a_sectioned_legacy_file_needs_a_pass_for_every_section",
+       "line": "-  'sections unread) (edited by hand or never put): fm genesis put coverage.md']",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisReadRecord.test_a_sectioned_legacy_file_read_whole_counts",
+       "line": "-  'sections unread) (edited by hand or never put): fm genesis put coverage.md']",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisReadRecord.test_legacy_file_is_clean_only_with_a_ledger_pass_just_before_its_mtime",
+       "line": "-  'hand or never put): fm genesis put coverage.md']",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.6688546000000002,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1898.0,
+     "guard_blocks": 1,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-1665",
+     "answered": true,
+     "true_done": false,
+     "checks": 2,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_portability.py::test_portability.Home.test_a_sensitive_project_is_left_out",
+       "line": "AssertionError: 'sensitive' not found in 'Wrote /tmp/tmpgra4h6nl/home.tar.gz: 6 file(s) from 1 project(s), redacted; grants, commands, ledgers and sessions stay here. Review it before you share it.\\n'",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 3.1878366000000007,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2333.4,
+     "guard_blocks": 1,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2262",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_a_kill_that_never_fires_is_logged_unfired_with_no_resume",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_a_pause_whose_reply_has_no_marker_is_unfired_and_not_resumed",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_a_resume_that_fails_after_a_kill_gets_one_fresh_turn_and_the_kill_cost_is_unknown",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_a_tampered_run_json_id_is_refused_and_nothing_outside_the_run_is_touched",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_long.py::test_long.Long.test_all_faults_together_and_a_rerun_starts_clean",
+       "line": "AttributeError: module 'fmlong' has no attribute 'KILL_T'",
+       "reach": true
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 2.721965999999999,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1881.2,
+     "guard_blocks": 2,
+     "false_reach": true,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2225",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisDraft.test_a_capability_graded_in_only_some_languages_is_partial_and_names_the_rest",
+       "line": "+ ('partial', 3, ['python'])",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisDraft.test_a_python_only_spec_passes_on_python_and_odd_ids_never_crash",
+       "line": "-  'no graded js, ts, ruby, rust, c scenarios yet')",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisFrame.test_a_grow_keeps_a_put_lineage_read_and_never_blesses_a_hand_edit",
+       "line": "KeyError: 'read'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisReadRecord.test_a_sectioned_legacy_file_needs_a_pass_for_every_section",
+       "line": "KeyError: 'read'",
+       "reach": true
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 0.9801186000000001,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 1523.1,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    }
+   ],
+   "skipped": {},
+   "rate": 0.0,
+   "false_done": 6,
+   "false_done_reach": 2,
+   "resumes_needed": 0,
+   "unfinished": 0,
+   "guard_blocks": 4,
+   "installs_attempted": null,
+   "miss_resolved": null,
+   "cost": 10.767,
+   "cost_unknown": 4,
+   "hours_to_done": null,
+   "reverts": null,
+   "brier": null,
+   "conf_missing": null,
+   "door_touched": null,
+   "unknown": {
+    "false_done": 0,
+    "resumes_needed": 0,
+    "unfinished": 0,
+    "guard_blocks": 0,
+    "hours_to_done": 0
+   }
+  },
+  {
+   "tier": "long",
+   "agent": "foreman",
+   "run": "l002",
+   "at": "2026-11-02T14:04:17Z",
+   "gen": 3,
+   "model": "default",
+   "scenarios": 6,
+   "true_done": 0,
+   "regressions": 0,
+   "checks": 20,
+   "checks_passed": 4,
+   "goals": [
+    {
+     "id": "T-2093",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_a_full_grid_and_a_tried_ledger_pass",
+       "line": "AssertionError: 1 != 0 : {'ok': False, 'generation': 1, 'capabilities': 2, 'coverage': {'rows': 3, 'cells': 192, 'filled': 192}, 'not_yet': {'items': 1}, 'gaps': [{'kind': 'empty', 'where': 'not-yet: Self-hosted model router', 'why': 'no Unblock:'}, {'kind': 'untried', 'where': 'not-yet: Self-hosted",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_a_grid_without_rows_and_punctuated_paths",
+       "line": "KeyError: 'problems'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_an_empty_field_never_borrows_the_next_line_and_tries_must_differ",
+       "line": "KeyError: 'problems'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_empty_ungrounded_and_unknown_cells_are_flagged",
+       "line": "KeyError: 'problems'",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_genesis.py::test_genesis.GenesisCheck.test_every_capability_needs_its_row",
+       "line": "KeyError: 'problems'",
+       "reach": true
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 2.6054288000000003,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2436.1,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2020",
+     "answered": true,
+     "true_done": false,
+     "checks": 3,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_core.py::test_core.LazyPatterns.test_lazy_a_pattern_compiles_on_first_use_and_keeps_its_methods",
+       "line": "AssertionError: <built-in method search of re.Pattern object at 0x65c0cc4833d0> is not <built-in method search of re.Pattern object at 0x65c0cc4833d0>",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_core.py::test_core.LazyPatterns.test_lazy_every_deferred_pattern_still_compiles",
+       "line": "AssertionError: 104 not greater than 150",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_core.py::test_core.LazyPatterns.test_lazy_importing_the_hook_modules_compiles_no_module_level_pattern",
+       "line": "Diff is 1718 characters long. Set self.maxDiff to None to see it. : ",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.9743049999999998,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2680.4,
+     "guard_blocks": 2,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2240",
+     "answered": true,
+     "true_done": false,
+     "checks": 5,
+     "checks_passed": 2,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_find.py::test_find.FindTreeSitterRung.test_a_binding_that_raises_is_a_note_not_a_crash",
+       "line": "AssertionError: False is not true : [\"tree-sitter rung: python: AttributeError: module 'tree_sitter_language_pack' has no attribute 'get_parser'\", \"tree-sitter rung: javascript: AttributeError: module 'tree_sitter_language_pack' has no attribute 'get_parser'\", 'tool rung skipped: not a trusted tree ",
+       "reach": true
+      },
+      {
+       "check": "plugin/tests/test_find.py::test_find.FindTreeSitterRung.test_findings_join_the_scan_with_a_learned_precision_key",
+       "line": "AssertionError: False is not true",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_find.py::test_find.FindTreeSitterRung.test_rule_headers_name_kind_and_message",
+       "line": "AssertionError: [] is not true : []",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 2.4886084,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 3260.8,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2211",
+     "answered": true,
+     "true_done": false,
+     "checks": 2,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_exam.py::test_exam.ExamAuthors.test_children_author_untested_docs_flaky_and_clean_scenarios",
+       "line": "-   'why': \"a clean item's name is missing or over 8000 characters\"}]",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 2.5821842000000004,
+     "cost_unknown": true,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2857.4,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2041",
+     "answered": true,
+     "true_done": false,
+     "checks": 1,
+     "checks_passed": 0,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_docs.py::test_docs.Logo.test_the_mark_is_a_small_self_contained_square_svg_the_readme_shows",
+       "line": " : square, so it fits a favicon, an avatar and the README",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.4602114000000006,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2190.9,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    },
+    {
+     "id": "T-2279",
+     "answered": true,
+     "true_done": false,
+     "checks": 4,
+     "checks_passed": 1,
+     "regressions": [],
+     "misses": [
+      {
+       "check": "plugin/tests/test_doctor.py::test_doctor.Timing.test_a_slow_bench_is_charged_to_hook_latency",
+       "line": "TypeError: 'Result' object is not subscriptable",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_doctor.py::test_doctor.Timing.test_a_slow_check_tops_the_slowest_list",
+       "line": "TypeError: 'Result' object is not subscriptable",
+       "reach": false
+      },
+      {
+       "check": "plugin/tests/test_doctor.py::test_doctor.Timing.test_unmeasured_rows_are_none_and_briefs_and_views_are_timed",
+       "line": "TypeError: 'Result' object is not subscriptable",
+       "reach": false
+      }
+     ],
+     "confidence": null,
+     "conf_missing": null,
+     "brier": null,
+     "false_done": true,
+     "cost": 1.9685927999999995,
+     "cost_unknown": false,
+     "resumes_needed": 0,
+     "unfinished": 0,
+     "secs": 2084.3,
+     "guard_blocks": 0,
+     "false_reach": false,
+     "door_touched": null,
+     "binary": null,
+     "installs_attempted": null,
+     "shadow_calls": null,
+     "miss_resolved": null,
+     "fault_interventions": null,
+     "injected_followed": null,
+     "activity": null
+    }
+   ],
+   "skipped": {},
+   "rate": 0.0,
+   "false_done": 6,
+   "false_done_reach": 0,
+   "resumes_needed": 0,
+   "unfinished": 0,
+   "guard_blocks": 2,
+   "installs_attempted": null,
+   "miss_resolved": null,
+   "cost": 13.0793,
+   "cost_unknown": 1,
+   "hours_to_done": null,
    "reverts": null,
    "brier": null,
    "conf_missing": null,
