@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-02T08:22:07Z",
+ "updated": "2026-11-02T08:35:23Z",
  "rev": "c2c0683d",
  "capabilities": [
   {
@@ -21029,10 +21029,10 @@
   "perf-noise": 1
  },
  "next": {
-  "stage": "review",
+  "stage": "gap map",
   "gen": 2,
-  "action": "cross-cutting review: a cold reader on a stronger model than the Missions' reads the generation's diff, exam lines, outcomes and friction into gen-2/review.md",
-  "command": "fm genesis review 2",
+  "action": "redraw the gap map against the current code: one recon per capability (a subagent when the budget allows, targeted reads otherwise), a row each with its tier, evidence and what is missing, and a 'Drawn at: <HEAD sha>' line",
+  "command": "fm genesis put gen-2/gap-map.md --file -",
   "kind": "ok"
  },
  "docs": {
