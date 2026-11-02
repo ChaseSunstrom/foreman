@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The night tick now records how many bets it settled: its printed line says "N bet(s) settled", and the ledger event it writes carries the count, so settling with no session can be checked rather than assumed.
 - Foreman's known-fix store no longer learns a no-op as a fix. A failed `mytool --check` followed by `touch mytool` (or `mkdir`, `test`, `true`, `:`) used to be stored as "run `touch mytool` instead"; now only a real retry pairs.
 - `fm outcomes --judgment` now shows ship bets in its buckets. They were scored but missing from the table; on this repo, 4 of 4 have held. They still never move a bar or a route.
 - Each bet now records which harness stated it: fm code, the exam, or a Claude Code session. A harness it can't recognize reads "unknown" rather than a guess. `fm outcomes --judgment --by harness` shows the buckets and Brier scores for each harness.
