@@ -505,7 +505,7 @@ FAILURES_KEEP = 1000  # records; the file is trimmed to this when it passes 1 MB
 # FAILED (1 classes), pytest's ==== 2 failed … ====, Ran N tests, fm quiet's ✗ exit 1 (…)): as the signature, every red
 # run was one "recurring obstacle", red-first runs included
 _TALLY_LINE = re.compile(r"(?i)^(?:FAILED \([^)]*\)|=+ .*\b\d+ (?:failed|errors?)\b.*=+|Ran \d+ tests? in .*|"
-                         r"✗ exit \d+ \(.*\))$")
+                         r"✗ exit \d+ \(.*\)|fm doctor: (?:OK|FAILED) \(\d+ pass, \d+ warn, \d+ fail\))$")  # T-2567
 
 
 def failure_signature(text):

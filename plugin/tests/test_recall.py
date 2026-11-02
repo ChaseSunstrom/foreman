@@ -120,6 +120,13 @@ class Tally(ForemanTestCase):  # T-1769
         self.assertIn("modulenotfounderror", fmrecall.failure_signature(
             "ModuleNotFoundError: No module named 'yaml'\nFAILED (errors=1)"))
 
+    def test_doctors_tally_is_never_its_signature(self):  # T-2567
+        import fmrecall
+        out = ("FAIL  hook wiring          PostToolUse not registered\n"
+               "WARN  state size           2471 MB > 200 MB\n\nfm doctor: FAILED (55 pass, 7 warn, 1 fail)")
+        self.assertEqual(fmrecall.failure_signature(out), "fail hook wiring posttooluse not registered")
+        self.assertEqual(fmrecall.failure_signature("\nfm doctor: FAILED (0 pass, 0 warn, 3 fail)"), "")
+
 
 class RedGreen(ForemanTestCase):
     """T-0045: a FIX is proven by its regression test failing before and passing after."""
