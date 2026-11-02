@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T18:07:09Z",
- "rev": "083fa7c6",
+ "updated": "2026-11-02T18:12:54Z",
+ "rev": "1d29428d",
  "capabilities": [
   {
    "n": 1,
@@ -2113,7 +2113,7 @@
       {
        "id": "T-2261",
        "title": "Guard (for the user's review, touches the guard): the interpreter-code rule blocks a…",
-       "status": "blocked",
+       "status": "captured",
        "type": "FEATURE",
        "tier": "M",
        "steps": 0,
@@ -2123,7 +2123,7 @@
       {
        "id": "T-2068",
        "title": "Guard refusal for interpreter code driving Foreman names no clause that fired (7x on a…",
-       "status": "blocked",
+       "status": "captured",
        "type": "FEATURE",
        "tier": "M",
        "steps": 0,
