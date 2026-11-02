@@ -1539,6 +1539,23 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
 
+    def test_the_refusal_names_the_clause_that_fired(self):
+        # T-2068: 42 refusals in a week named no clause, so each rewrite was a guess at which of six had fired
+        cases = {
+            "cat > x.py <<'EOF'\nimport fmcore\nfmcore.write_meta(p, {{}})\nEOF\npython3 x.py":
+                "shell text it can't read as python names Foreman's modules",
+            "export PYTHONPATH=.\npython3 - <<'PY'\nimport fmcore\nfmcore.write_meta(p, {{}})\nPY": "a PYTHON setting",
+            "python3 - <<'PY'\nimport fmcore\nfmcore.write_meta(\nPY": "python code that doesn't parse",
+            "python3 - <<'PY'\nexec(\"import fmsecrets; write_atomic(1)\")\nPY": "dynamic code or an import outside",
+            "cd /tmp\npython3 - <<'PY'\nimport re\ns = 'import fmcore; fmcore.write_meta(p, {{}})'\n"
+            "open('x.txt', 'w').write(s)\nPY": "python's run folder",
+            "python3 - <<'PY'\nimport fmhooks\nfmhooks.save_brief(x)\nPY": "it imports fmhooks",
+        }
+        for cmd, clause in cases.items():
+            got = str(self.bash(cmd) or "")
+            self.assertIn("interpreter code driving Foreman's modules", got, cmd)
+            self.assertIn(clause, got, cmd)
+
     def test_a_quoted_heredoc_gets_the_python_settings_and_earlier_cd_checks(self):
         # T-1204: -c code (T-1194) is refused when python's settings or an earlier cd change what it imports; a
         # heredoc fed to python had neither check

@@ -2038,17 +2038,18 @@ def _drives_fm(cmd, cwd=None):
     python, and (T-1194) literal `python -c` code, are parsed: text that merely mentions `import fm…` (an edit script's
     strings) isn't an import. The text match of before decides for everything else: fm import text outside those
     (data heredocs, the shell, -c code it can't read), code that doesn't parse, and dynamic code (exec, eval, getattr,
-    importlib…). It only relaxes what it can prove."""
+    importlib…). It only relaxes what it can prove. T-2068: the result is the clause that fired, '' when none did, so the
+    refusal can say which one (42 refusals in a week named none)."""
     if not (_FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd)):
-        return False
+        return ""
     units, rest, starters, _ = _python_units(cmd)
     c_units, shell, c_starters = _python_c_units("\n".join(rest))
     if _FM_INTERNALS.search("\n".join([shell] + starters)):
-        return True
+        return "shell text it can't read as python names Foreman's modules (a heredoc not fed to python, a file run later)"
     # T-1204: python's own settings (PYTHONPATH loads sitecustomize, PYTHONSTARTUP…), set in the command or inherited,
     # change what any of its code runs, as _python_c_units already refuses for -c
     if (units or c_units) and ("PYTHON" in "\n".join([shell] + starters) or any(os.environ.get(k) for k in _PY_PATH_VARS)):
-        return True
+        return "a PYTHON setting (PYTHONPATH, PYTHONSTARTUP…) changes what its python loads"
     # python - and -c import from the folder they run in: a cd anywhere but in their own `cd DIR &&` chain (an earlier
     # line, a `;`) makes that folder unknown (T-1204: heredocs too)
     moved = len(_CD.findall("\n".join([shell] + starters))) > sum(len(_CD.findall(s)) for s in starters + c_starters)
@@ -2060,23 +2061,33 @@ def _drives_fm(cmd, cwd=None):
         try:
             tree = ast.parse(code)
         except (SyntaxError, ValueError):
-            return True
+            return "python code that doesn't parse, so its imports can't be read"
         names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | \
                 {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
         modules = [a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names] + \
                   [n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
-        if names & _DYNAMIC or any(x.startswith("__") for x in names) or \
-                any(m.split(".")[0] not in _PLAIN_IMPORTS and not m.startswith("fm") for m in modules):
-            return True  # its strings could still run: a process, a module it wrote, pickle, dunder walking…
+        odd = sorted(names & _DYNAMIC) + sorted(x for x in names if x.startswith("__")) + \
+            [m for m in modules if m.split(".")[0] not in _PLAIN_IMPORTS and not m.startswith("fm")]
+        if odd:  # its strings could still run: a process, a module it wrote, pickle, dunder walking…
+            return f"dynamic code or an import outside re, json, textwrap and the like ({_ident(odd[0])})"
         # review (T-0286): python - (and -c) imports from its folder first — a json.py there runs
-        if modules and (run is None or any(os.path.exists(os.path.join(run, m.split(".")[0] + x))
-                                           for m in modules for x in (".py", ""))):
-            return True
+        if modules and run is None:
+            return ("python's run folder is unknown (a cd outside its own `cd DIR && python` chain), so an import may "
+                    "load a file there")
+        shadow = [m for m in modules for x in (".py", "") if os.path.exists(os.path.join(run, m.split(".")[0] + x))]
+        if modules and shadow:
+            return f"python's run folder holds a file named like its import ({_ident(shadow[0])})"
         fm_from = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("fm")]
         fm_import = [a for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names if a.name.startswith("fm")]
         if fm_from or (fm_import and _FM_MUTATORS.search(code)):
-            return True
-    return False
+            return f"it imports {_ident((fm_from[0].module if fm_from else fm_import[0].name) or 'fm')}"
+    return ""
+
+
+def _ident(x):
+    """A module or builtin name as a refusal may quote it: an identifier path, capped (never command text)."""
+    m = re.match(r"[\w.]{1,40}", str(x))
+    return m.group(0) if m else "?"
 
 
 def _interp_code(cmd):
@@ -2186,11 +2197,11 @@ def _interpreter_writes(cmd, ctx):
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
-    if _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)
-                                      or _writes_unrun_draft(line, cmd, ctx)), ctx.cwd):
+    if why := _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)
+                                             or _writes_unrun_draft(line, cmd, ctx)), ctx.cwd):
         # T-0740: 9 repeats in a day; T-0934: `cd DIR; python3 - <<EOF` is refused only because of the `;`. T-1171: 12
         # of 31 refusals in four days wrote a test with cat <<EOF and ran the tests in the same command
-        return [("core", "interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
+        return [("core", f"interpreter code driving Foreman's modules: {why} (use the fm CLI; to edit a Foreman source file "
                          "whose text names its modules, use the Edit or Write tool"
                          + ("; chain the cd with && instead of ;, or pass the path" if re.search(r"\bcd\s+[^\n;&|]+;", cmd)
                             else "")
