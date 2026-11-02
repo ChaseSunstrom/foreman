@@ -493,7 +493,7 @@ def draw(seed, kinds, langs, per_kind):
     the arguments, so --split train lists the same train ids and never a held-out one."""
     out = []
     for kind in kinds:
-        if kind in PY_ONLY and "python" not in langs:  # T-2524: a Python-only kind has nothing to draw here
+        if kind in PY_ONLY and ("python" not in langs or package_backend()):  # T-2524, T-2529: nothing gradable here
             continue
         want = {"holdout": (per_kind + 1) // 3}
         want["train"] = per_kind - want["holdout"]

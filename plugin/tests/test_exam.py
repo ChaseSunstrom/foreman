@@ -1498,9 +1498,18 @@ class ProofKinds(JudgmentStub, ForemanTestCase):
         self.says_verified(r["run"], r["scenarios"][0])
         self.assertGreater(self.fm_json("exam", "grade", r["run"], "--agent", "plain")["false_proofs"], e["false_proofs"])
 
-    def test_kind_package_installs_offline_and_runs_its_command_and_moves_no_beyond_item(self):  # T-2524
+    def test_a_python_without_setuptools_draws_no_package_item(self):  # T-2529: ungradable there, so never drawn
         import fmexam
         from unittest import mock
+        with mock.patch("importlib.util.find_spec", return_value=None):
+            self.assertIn("setuptools", fmexam.package_backend())
+            self.assertEqual(fmexam.draw(5, ("package",), fmexam.LANGS, 9), [])
+            self.assertTrue(fmexam.draw(5, ("beyond",), fmexam.LANGS, 9), "other kinds still draw")
+
+    def test_kind_package_installs_offline_and_runs_its_command_and_moves_no_beyond_item(self):  # T-2524
+        import fmexam
+        if fmexam.package_backend():  # T-2529: this host's Python can't build it offline
+            self.skipTest(fmexam.package_backend())
         before = [s["id"] for s in fmexam.draw(5, ("beyond",), fmexam.LANGS, 9)]
         self.assertEqual([s["id"] for s in fmexam.draw(5, ("beyond", "package"), fmexam.LANGS, 9)
                           if s["id"].startswith("beyond-")], before, "adding package moves no beyond item")
@@ -1511,8 +1520,6 @@ class ProofKinds(JudgmentStub, ForemanTestCase):
         self.assertEqual(key["beyond"], "package")
         self.assertTrue(fmexam.passes(base, key, key["defects"][0], os.path.join(base, "hidden", "clean")))
         self.assertFalse(fmexam.passes(base, key, key["defects"][0], s["repo"]))
-        with mock.patch("importlib.util.find_spec", return_value=None):
-            self.assertIn("setuptools", fmexam.package_backend())
         import fmgenesis
         self.assertIn("package", dict(fmgenesis.KIND_WORDS))
 
