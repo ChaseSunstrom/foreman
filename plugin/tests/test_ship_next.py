@@ -45,8 +45,29 @@ class ShipNext(ForemanTestCase):
         self.commit("a.txt")
         self.grant()
         out = self.nxt()
-        self.assertIn("fm ship", out)
-        self.assertNotIn("commit(s) main lacks", out)
+        self.assertIn("ship 1 commit(s) main lacks under the user's standing push grant", out)
+        self.assertIn("fm task set ID --allow publish, fm ship", out)  # fm ship needs the active task's grant
+
+    def test_a_steer_that_forbids_pushing_to_main_is_no_grant(self):
+        self.commit("a.txt")
+        self.grant()
+        self.fm("decide", "never push to main again: the user holds pushes", "--cites", "user steer: hold pushes")
+        self.assertIn("1 commit(s) main lacks: fm ship (needs a publish grant)", self.nxt())
+
+    def test_since_the_last_ship_only_new_commits_wait_though_main_took_other_pushes(self):
+        self.commit("a.txt")
+        sh(self.repo, "update-ref", "refs/foreman/shipped", "HEAD")  # what fm ship records
+        other = os.path.join(self.tmp, "other")  # main moves on its own (fm genesis live's site/)
+        subprocess.run(["git", "clone", "-q", self.origin, other], check=True)
+        with open(os.path.join(other, "site.md"), "w") as f:
+            f.write("site\n")
+        sh(other, "add", "site.md")
+        sh(other, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "site")
+        sh(other, "push", "-q", "origin", "HEAD:main")
+        sh(self.repo, "fetch", "-q", "origin")
+        self.assertNotIn("fm ship", self.nxt())
+        self.commit("b.txt")
+        self.assertIn("1 commit(s) main lacks", self.nxt())
 
     def test_open_work_is_never_preempted(self):
         self.commit("a.txt")
@@ -60,12 +81,14 @@ class ShipNext(ForemanTestCase):
         sh(self.repo, "fetch", "-q", "origin")
         self.assertNotIn("fm ship", self.nxt())
 
-    def test_a_commit_main_holds_by_content_under_another_sha_is_not_waiting(self):
+    def test_a_commit_main_holds_by_patch_under_another_sha_is_not_waiting(self):
         self.commit("a.txt")
-        sh(self.repo, "commit", "-q", "--amend", "-m", "reworded")
-        sh(self.repo, "push", "-q", "origin", "HEAD:main")
-        sh(self.repo, "fetch", "-q", "origin")
-        self.commit("b.txt")
+        sha = sh(self.repo, "rev-parse", "HEAD").strip()
         sh(self.repo, "reset", "-q", "--hard", "HEAD~1")
-        sh(self.repo, "commit", "-q", "--allow-empty", "-m", "empty")  # '+' by cherry, tree equal to main's
+        sh(self.repo, "cherry-pick", sha)  # same patch, another sha: what a ship's re-pick leaves
+        sh(self.repo, "commit", "-q", "--amend", "-m", "re-picked")
+        sh(self.repo, "push", "-q", "origin", "HEAD:main")
+        sh(self.repo, "reset", "-q", "--hard", sha)
+        sh(self.repo, "fetch", "-q", "origin")
+        self.assertNotEqual(sh(self.repo, "rev-parse", "HEAD").strip(), sh(self.repo, "rev-parse", "origin/main").strip())
         self.assertNotIn("fm ship", self.nxt())

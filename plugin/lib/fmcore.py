@@ -3908,20 +3908,25 @@ def finished_lanes(p, briefs, quiet_min=30):
 
 
 PUSH_GRANT = lazy(r"\bpush(?:ing)?\b.*\bmain\b|\bmain\b.*\bpush(?:ing)?\b", re.I)
+NO_PUSH = lazy(r"\b(?:never|don't|do not|no|stop)\b\W+(?:\w+\W+){0,3}?push", re.I)  # a steer that forbids it
 
 
 def ship_waiting(p):
-    """T-2682: (n, granted) when HEAD has n commits the remote's main lacks (git cherry, by patch) and its tree differs
-    from main's (a merge-landed copy shows '+' with the same content), else None. granted: a user-steer decision in force
-    says to push to main. Local refs only: no fetch, so a stale origin/main can only overcount until the next fm ship."""
+    """T-2682: (n, granted) when fm ship would push n commits, else None: the first-parent commits since the last ship
+    (fmrelease.SHIPPED) while that is an ancestor of HEAD, else git cherry's '+' lines against origin/main or main. No
+    tree diff: main also takes pushes HEAD never has (fm genesis live's site/). granted: a user steer in force grants
+    pushes to main and none forbids them. Local refs only: no fetch."""
     root = p.root
-    ref = next((r for r in ("origin/main", "main") if _git(root, "rev-parse", "--verify", "-q", r)), None)
-    if not ref:
+    last = _git(root, "rev-parse", "--verify", "-q", "refs/foreman/shipped").strip()  # fmrelease.SHIPPED
+    if last and _git(root, "merge-base", "--is-ancestor", last, "HEAD", proc=True).returncode == 0:
+        n = int(_git(root, "rev-list", "--first-parent", "--count", f"{last}..HEAD").strip() or 0)
+    else:
+        ref = next((r for r in ("origin/main", "main") if _git(root, "rev-parse", "--verify", "-q", r)), None)
+        n = sum(1 for ln in _git(root, "cherry", ref, "HEAD").splitlines() if ln.startswith("+ ")) if ref else 0
+    if not n:
         return None
-    n = sum(1 for ln in _git(root, "cherry", ref, "HEAD").splitlines() if ln.startswith("+ "))
-    if not n or _git(root, "diff", "--quiet", ref, "HEAD", proc=True).returncode == 0:
-        return None
-    return n, any(PUSH_GRANT.search(t) for _, t in steer_rules(p))
+    rules = [t for _, t in steer_rules(p)]
+    return n, any(PUSH_GRANT.search(t) for t in rules) and not any(NO_PUSH.search(t) for t in rules)
 
 
 def next_for(p, briefs=None):
@@ -3999,7 +4004,9 @@ def next_for(p, briefs=None):
         except Exception:  # git trouble never costs the next action
             ship = None
         if ship and ship[1]:
-            action = "fm ship (the user's standing push grant is on record; commits main lacks wait) · " + action
+            action = (f'ship {ship[0]} commit(s) main lacks under the user\'s standing push grant: fm task new "Ship '
+                      f'{ship[0]} commit(s) to main" --type CLEAN --tier S --ac "main has them :: fm ship --check" '
+                      '--step "fm ship" --focus, fm task set ID --allow publish, fm ship · ' + action)
         elif ship:
             action += f" · {ship[0]} commit(s) main lacks: fm ship (needs a publish grant)"
     return b, st, action
