@@ -636,6 +636,43 @@ def check_model_backends(p):
                                             f"live: {', '.join(live) or 'none'}{sens}")
 
 
+def _pinned_models():
+    """T-2643: {model name: [modules pinning it]}: fmgenesis.REVIEW_MODELS (also the moonshot rater's top model) and the
+    exam and steer defaults."""
+    import fmgenesis
+    pins = {}
+    for m in fmgenesis.REVIEW_MODELS:
+        pins.setdefault(m, []).append("fmgenesis")
+    pins[fmgenesis.REVIEW_MODELS[-1]].append("fmmoonshot")
+    for mod in ("fmexam", "fmsteer"):
+        pins.setdefault("sonnet", []).append(mod)
+    return pins
+
+
+def check_model_pins(pins=None):
+    """T-2643: each pinned model name still answers a one-line claude -p call. Probed at most once a day (the cache
+    keys on the day); quiet when claude is absent or a call merely times out, WARN naming the dead model and its
+    pinning modules."""
+    if not shutil.which("claude"):
+        return Result("model pins", "PASS", "claude isn't on PATH: no probe")
+    pins = pins or _pinned_models()
+
+    def probe():
+        dead = []
+        for m, mods in pins.items():
+            try:
+                r = subprocess.run(["claude", "-p", "--model", m, "--no-session-persistence", "Reply with OK"],
+                                   capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError):
+                continue  # a slow or broken call says nothing about the name
+            if r.returncode:
+                dead.append(f"{m} (pinned in {', '.join(mods)})")
+        if dead:
+            return Result("model pins", "WARN", "no answer from " + "; ".join(dead) + ": update the pin or check the login")
+        return Result("model pins", "PASS", f"{len(pins)} pinned models answered")
+    return _cached("model pins", sorted(pins), probe)
+
+
 def check_self_fixes(p, now=None):
     """T-2365: the self-fix trials whose window closed in the last 7 days (the verdicts the digest stored, no
     regrading), held against not held; a WARN only when one didn't hold (its FIX is already filed)."""
@@ -2589,6 +2626,8 @@ def run_all(full=False, accept_supply=False):
     results.append(check_anergy())
     results.append(check_predictions(here))
     results.append(check_model_backends(here))
+    if not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-2643: a test's doctor run never spends real model calls
+        results.append(check_model_pins())
     results.append(check_self_fixes(here))
     results.append(check_worlds(here))  # T-2398
     results.append(check_flaky_rates(here))  # T-2657
