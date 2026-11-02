@@ -315,6 +315,26 @@ class Ship(ForemanTestCase):
         self.assertEqual(self.main_log()[:3], ["add b", "add a", "someone else"])
         self.assertFalse(self.granted())
 
+    def test_main_moving_between_the_last_check_and_the_push_is_re_picked_without_a_retest(self):
+        # T-2555: fm genesis live's tower publish landed between ship's last fetch and its push: "cannot lock ref"
+        hook = os.path.join(self.origin, "hooks", "pre-receive")
+        with open(hook, "w") as f:  # the first push moves main itself (an empty commit), as a racing writer would
+            f.write('#!/bin/sh\n[ -f "$GIT_DIR/moved" ] && exit 0\ntouch "$GIT_DIR/moved"\n'
+                    "unset GIT_QUARANTINE_PATH GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES\n"
+                    "old=$(git rev-parse refs/heads/main)\n"
+                    'new=$(echo "tower publish" | GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t '
+                    'GIT_COMMITTER_EMAIL=t@t git commit-tree "$old^{tree}" -p "$old")\n'
+                    'git update-ref refs/heads/main "$new"\n')
+        os.chmod(hook, 0o755)
+        self.grant()
+        runs = os.path.join(self.tmp, "runs")
+        r = self.ship("--test", f"sh -c 'echo x >> {runs}'")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.main_log()[:3], ["add b", "add a", "tower publish"])
+        with open(runs) as f:
+            self.assertEqual(f.read().count("x"), 1, "the move touched no shipped file: no second test run")
+        self.assertFalse(self.granted())
+
     def test_a_rejected_push_keeps_the_grant(self):
         # review: the grant was spent before git push, so a rejected push cost the yes
         hook = os.path.join(self.origin, "hooks", "pre-receive")
