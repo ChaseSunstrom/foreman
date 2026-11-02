@@ -315,61 +315,6 @@ def covered(text):
     return [(name, c.plain(help_)) for _, name, help_ in sorted(hits, reverse=True)[:2]]
 
 
-MASTER_PATH = os.path.join(os.path.dirname(c.PLUGIN_ROOT), "MASTER.md")
-_CLAUSE_TID = re.compile(r"\bT-(\d{4,})\b")
-# T-2546: request stems shared, and their share of the request. The backtest (research covered-backtest) met no
-# bar (best: 4/46 built drops flagged at 31/400 new work), so nothing prints at capture; this stays as the
-# yardstick a better matcher (the model layer's embeddings) must beat before it ships.
-MASTER_MIN, MASTER_SHARE = 3, 0.6
-
-
-def master_clauses(path=None, text=None):
-    """T-2546: MASTER.md's module entries ('- `fmX` …' lines) split at semicolons: [(module, task id or '', clause)]."""
-    if text is None:
-        try:
-            with open(path or MASTER_PATH, encoding="utf-8") as f:
-                text = f.read()
-        except OSError:
-            return []
-    out = []
-    for line in text.splitlines():
-        m = re.match(r"- `(fm\w+)`\s*(.*)", line)
-        for part in (m.group(2).split(";") if m else []):
-            t = _CLAUSE_TID.search(part)
-            if part.strip():
-                out.append((m.group(1), f"T-{t.group(1)}" if t else "", part.strip()))
-    return out
-
-
-def _tnum(tid):
-    m = re.fullmatch(r"T-(\d+)", tid or "")
-    return int(m.group(1)) if m else None
-
-
-def covered_master(text, clauses=None, before=None, n=2, min_shared=None, share=None):
-    """T-2546: the best n MASTER.md clauses a request mostly restates (most of its stems in the clause), each with its
-    task id. before=T-NNNN keeps only clauses from earlier tasks (a backtest can't let a task cover itself)."""
-    min_shared, share = MASTER_MIN if min_shared is None else min_shared, MASTER_SHARE if share is None else share
-    q, cut, hits = set(_tokens(text)), _tnum(before), []
-    if len(q) > 40:  # a long paste, not a request
-        return []
-    for mod, tid, clause in master_clauses() if clauses is None else clauses:
-        if cut is not None and (_tnum(tid) is None or _tnum(tid) >= cut):
-            continue
-        shared = len(q & set(_tokens(clause)))
-        if shared >= min_shared and shared >= share * len(q):
-            hits.append((shared / len(q), mod, tid, clause))
-    return [(mod, tid, c.fit(c.plain(cl), 160)) for _, mod, tid, cl in sorted(hits, key=lambda h: -h[0])[:n]]
-
-
-def backtest_built(pos, neg, clauses=None, min_shared=None, share=None):
-    """T-2546: how many past requests the nudge would have flagged: pos, rows (id, title) later dropped as already built;
-    neg, rows done as new work. Each row sees only the clauses of tasks before it."""
-    clauses = master_clauses() if clauses is None else clauses
-    hit = lambda rows: sum(1 for tid, t in rows if covered_master(t, clauses, tid, 1, min_shared, share))  # noqa: E731
-    return {"pos": len(pos), "flagged_pos": hit(pos), "neg": len(neg), "flagged_neg": hit(neg)}
-
-
 _CAN_ASK = {_stem(w) for w in """what way see have how there able want need your you thing something anything possible
 support supports can could would foreman""".split()}  # a question's own words (as stems), never what it asks about
 
@@ -976,23 +921,8 @@ def where_defined(p, question):
     return defs, uses
 
 
-def _rows(path):
-    with open(path, encoding="utf-8", errors="replace") as f:
-        return [tuple(x.split("\t", 1)) for x in f.read().splitlines() if "\t" in x]
-
-
 def cmd_recall(args):
     import fmcli
-    if getattr(args, "backtest_built", None):  # T-2546: a grid of thresholds, each with its recall and false alarms
-        pos, neg = (_rows(x) for x in args.backtest_built)
-        clauses, grid = master_clauses(), []
-        for m in (2, 3, 4):
-            for s in (0.5, 0.6, 0.7, 0.8):
-                r = backtest_built(pos, neg, clauses, m, s)
-                grid.append(dict(r, min_shared=m, share=s))
-        return fmcli.out(args, {"grid": grid}, "\n".join(
-            f"min {g['min_shared']} share {g['share']:.1f}: built drops {g['flagged_pos']}/{g['pos']}, "
-            f"new work {g['flagged_neg']}/{g['neg']}" for g in grid))
     p = fmcli.resolve(args)
     if getattr(args, "repos", False):
         hits = repos(p, " ".join(args.text))

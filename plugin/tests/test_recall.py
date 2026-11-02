@@ -483,24 +483,10 @@ class Recurring(ForemanTestCase):  # T-2272: one obstacle in many tasks is fixed
         self.assertEqual(self.caps(), [])
 
 
-class CoveredMaster(ForemanTestCase):  # T-2546: 47 of 381 drops said the work was already built
-    MASTER = ("- `fmci` (`fm ci-watch`; T-2527: --last-ship watches the main commit the newest fm ship pushed; T-2518: one "
-              "open FIX per failing cause while it's open)\n- `fmother` (panes and colours for the dock)\n")
-
-    def test_a_request_restating_a_clause_gets_it_with_its_task_id(self):
+class NoBuiltMatcher(ForemanTestCase):  # T-2587: the MASTER-clause matcher failed its backtest and was removed
+    def test_the_matcher_and_its_flag_are_gone(self):
         import fmrecall
-        clauses = fmrecall.master_clauses(text=self.MASTER)
-        self.assertIn(("fmci", "T-2527"), [x[:2] for x in clauses])
-        hits = fmrecall.covered_master("ci-watch --last-ship watches the commit the newest fm ship pushed", clauses)
-        self.assertEqual(hits[0][:2], ("fmci", "T-2527"))
-        self.assertEqual(fmrecall.covered_master("draw a heatmap of lane spend", clauses), [])
-        self.assertEqual(fmrecall.covered_master("ship " * 400, clauses), [], "a long paste is no match")
-        self.assertEqual(fmrecall.covered_master("ci-watch --last-ship watches the commit the newest fm ship pushed",
-                                                 clauses, before="T-2527"), [], "a clause from this task or later can't cover it")
-
-    def test_the_backtest_scores_positives_and_negatives(self):
-        import fmrecall
-        clauses = fmrecall.master_clauses(text=self.MASTER)
-        r = fmrecall.backtest_built([("T-2600", "ci-watch --last-ship watches the commit the newest fm ship pushed")],
-                                    [("T-2601", "draw a heatmap of lane spend")], clauses)
-        self.assertEqual((r["flagged_pos"], r["pos"], r["flagged_neg"], r["neg"]), (1, 1, 0, 1))
+        for name in ("master_clauses", "covered_master", "backtest_built"):
+            self.assertFalse(hasattr(fmrecall, name), name)
+        r = self.fm("recall", "--backtest-built", "a", "b", check=False)
+        self.assertNotEqual(r.returncode, 0)

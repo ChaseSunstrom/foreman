@@ -7063,8 +7063,6 @@ def _build_parser(only=None):
     s.add_argument("--task", help="recall for this task's title, request and scope")
     s.add_argument("-n", type=int, default=4)
     s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
-    s.add_argument("--backtest-built", nargs=2, metavar=("POS", "NEG"), help="T-2546: calibrate the already-built "
-                   "nudge on two files of id<TAB>title rows (dropped as built; done as new work)")
     s.add_argument("--magnets", action="store_true", help="files the most FIX tasks touched (T-0613)")
     s.add_argument("--lessons", action="store_true", help="lessons by id: times shown, never recalled, recurred (T-0617)")
     s.add_argument("--retire", metavar="LESSON", help="with --lessons: leave this lesson (T-0123.1) out of recall and "
