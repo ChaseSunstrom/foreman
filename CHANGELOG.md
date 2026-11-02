@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Three numbers that read wrong now read right (from the gen-2 review). The model-versus-rule exam line says "model not run (no night answers booked)" when no model has answered yet, instead of scoring the model 0/0. A review finding can rest on a short number quoted with its words, such as "landed 57%"; a bare "57%" still can't. And the survival line and track record now count a close as held or lost only once its 30-day window has ended, so recent closes no longer inflate "held". The loss rate is taken over closes whose window is over.
 - `fm night` now exits 0 when it skips a night because usage is high. It still prints "nothing runs tonight". systemd used to record each skipped night as a failed run, so `fm doctor` and the session-start watch reported your night timer as failing when it was working as designed.
 - `fm genesis review N --handle K=HOW` can now be given several times in one call, and every value is applied. Before, only the last one counted and the rest were dropped without a word. Every value is checked first, so one bad value applies none.
 - `fm loop round --next` no longer ends a round that started under 15 minutes ago and has made no task yet. It prints that round's instructions again. Before, a session that called it a few times to re-read the instructions ended two empty rounds as dry, and that switched the forever loop off. `fm loop yield N` still closes a round at any time.

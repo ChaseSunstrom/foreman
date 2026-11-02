@@ -99,8 +99,9 @@ class Survival(Base):
         self.assertEqual(t[fresh]["survival"], "settling")
         self.assertGreater(t[fresh]["days_left"], 25)
         out = self.fm("outcomes").stdout
-        # T-2037: lost counts every close and survived only those past the window, so give the total and the share
-        self.assertIn("Survival (30 days): of 5 closes, 2 lost (40%), 2 survived the window, 1 settling", out)
+        # T-2037: a loss lands mid-window, a survival only after it; T-2584: so the rate counts finished windows only
+        self.assertIn("Survival (30 days): of 5 closes, 3 finished the window: 1 lost (33%), 2 survived; "
+                      "2 still in it (1 lost so far)", out)
         self.assertIn("days since a lost task: 0", out)
 
     def test_settling_logs_one_grade_per_task_and_shows_in_digest_and_history(self):
@@ -202,6 +203,15 @@ class Yield(Base):
 
 
 class TrackRecord(Base):
+    def test_a_close_still_in_its_window_is_neither_held_nor_in_the_loss_rate(self):  # T-2584
+        old, fresh = self.done("Old"), self.done("Fresh")
+        self.age(old, 31)
+        outs = fmoutcomes.outcomes(self.p)
+        self.assertEqual(fmoutcomes._row(fmoutcomes.track(self.p, outs)[("FEATURE", "S")]).split(", ", 1)[1],
+                         "1 of 1 held, 1 still in the 30-day window")
+        line = fmoutcomes.survival_lines(self.p, outs)[0]
+        self.assertIn("of 2 closes, 1 finished the window: 0 lost (0%), 1 survived; 1 still in it (0 lost so far)", line)
+
     def test_track_record_and_would_do_differently_in_digest_and_focus(self):
         self.done("First", "FEATURE", "true", "--differently", "write the failing test before the parser")
         self.fm("task", "new", "Second", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
@@ -210,7 +220,7 @@ class TrackRecord(Base):
         self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true")
         self.assertIn("write the failing test", c.find_brief(self.p, "T-0001").section("Would do differently"))
         out = self.fm("digest").stdout
-        self.assertRegex(out, r"Track record.*FEATURE S: 1 of 2 closed on the first finish, 2 of 2 held")
+        self.assertRegex(out, r"Track record.*FEATURE S: 1 of 2 closed on the first finish, 0 of 0 held, 2 still in the 30-day window")
         self.assertIn("write the failing test", out)
         self.fm("task", "new", "Third", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         self.assertRegex(self.fm("focus", "T-0003").stdout, r"Track record for FEATURE S here: 1 of 2 closed")
