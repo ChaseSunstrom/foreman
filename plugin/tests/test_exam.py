@@ -120,6 +120,21 @@ class ExamGen(ForemanTestCase):
         r = self.fm("exam", "grade", run, "--agent", "empty", check=False)
         self.assertIn(f"ungraded {s0['id']}", r.stdout)
 
+    def test_a_pruned_work_copy_asks_for_a_rerun_and_a_rerun_clears_it(self):
+        # T-2568: fm tidy removed the work copies the grade reads; grading goal kinds on nothing would fail them all
+        res = self.gen("--seed", "4", "--per-kind", "1", "--lang", "python", "--kind", "clean")
+        run = res["run"]
+        self.fm_json("exam", "run", run, "--agent", "empty")
+        work = os.path.join(os.path.dirname(os.path.dirname(res["scenarios"][0]["repo"])), "work", "empty")
+        with open(os.path.join(work, "PRUNED"), "w") as f:
+            f.write("2026-01-01T00:00:00Z\n")
+        r = self.fm("exam", "grade", run, "--agent", "empty", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("work copy pruned", r.stdout + r.stderr)
+        self.fm_json("exam", "run", run, "--agent", "empty")
+        self.assertFalse(os.path.exists(os.path.join(work, "PRUNED")))
+        self.fm("exam", "grade", run, "--agent", "empty")
+
     def test_key_and_hidden_checks_sit_outside_a_one_commit_repo(self):
         res = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug,docs")
         for s in res["scenarios"]:

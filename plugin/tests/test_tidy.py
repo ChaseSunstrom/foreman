@@ -641,3 +641,60 @@ class UnblockedByGit(TidyCase):
             f.write("x = 2\n")
         subprocess.run(["git", "-C", self.repo, "commit", "-qam", "a changed"], check=True)
         self.assertIn("a.py changed", fmtidy.unblocked(self.p, c.find_brief(self.p, tid), {}) or "")
+
+
+class ExamWork(TidyCase):
+    """T-2568: fm tidy prunes a graded exam run's work copies once its newest grade is 14 days old and a newer run of
+    the same tier was graded for that agent; answers, grades and ungraded runs stay."""
+    def seed(self, rel, run, agent, at, tier=None):
+        import fmgenesis
+        base = os.path.join(self.p.dir, "exam", *rel, run)
+        os.makedirs(os.path.join(base, "work", agent, "sc1"), exist_ok=True)
+        os.makedirs(os.path.join(base, "answers", agent), exist_ok=True)
+        with open(os.path.join(base, "work", agent, "sc1", "big.txt"), "w") as f:
+            f.write("x" * 2_000_000)
+        with open(os.path.join(base, "answers", agent, "sc1.json"), "w") as f:
+            f.write("{}")
+        home = fmgenesis.home(self.p)
+        os.makedirs(home, exist_ok=True)
+        with open(os.path.join(home, "exam.jsonl"), "a") as f:
+            f.write(json.dumps({"run": run, "agent": agent, "at": at, **({"tier": tier} if tier else {})}) + "\n")
+        return base
+
+    def test_old_superseded_runs_lose_work_copies_only(self):
+        old = self.seed((), "s1-001", "foreman", "2026-01-01T00:00:00Z")
+        new = self.seed((), "s2-002", "foreman", "2026-01-20T00:00:00Z")
+        lng = self.seed(("long",), "l001", "foreman", "2026-01-01T00:00:00Z", tier="long")  # newest of its tier
+        ungraded = os.path.join(self.p.dir, "exam", "s3-003", "work", "foreman")
+        os.makedirs(ungraded)
+        dry = [f for f in self.tidy()["findings"] if f["kind"] == "exam_work"]
+        self.assertEqual(len(dry), 1, dry)
+        self.assertIn("s1-001", dry[0]["detail"])
+        self.assertIn("2 MB", dry[0]["detail"])
+        self.assertTrue(os.path.isdir(os.path.join(old, "work", "foreman", "sc1")), "a dry run removes nothing")
+        self.tidy("--apply")
+        self.assertFalse(os.path.exists(os.path.join(old, "work", "foreman", "sc1")))
+        self.assertTrue(os.path.isfile(os.path.join(old, "work", "foreman", "PRUNED")))
+        self.assertTrue(os.path.isfile(os.path.join(old, "answers", "foreman", "sc1.json")))
+        for keep in (new, lng):
+            self.assertTrue(os.path.isdir(os.path.join(keep, "work", "foreman", "sc1")), keep)
+        self.assertTrue(os.path.isdir(ungraded))
+        self.assertNotIn("exam_work", self.kinds(self.tidy()), "a pruned run is not listed again")
+
+    def test_a_line_naming_a_path_is_ignored(self):
+        self.seed((), "s2-002", "foreman", "2026-01-20T00:00:00Z")
+        import fmgenesis
+        with open(os.path.join(fmgenesis.home(self.p), "exam.jsonl"), "a") as f:
+            f.write(json.dumps({"run": "../../x", "agent": "foreman", "at": "2026-01-01T00:00:00Z"}) + "\n")
+        self.assertNotIn("exam_work", self.kinds(self.tidy()))
+
+    def test_a_symlinked_work_dir_is_never_followed(self):
+        old = self.seed((), "s1-001", "foreman", "2026-01-01T00:00:00Z")
+        self.seed((), "s2-002", "foreman", "2026-01-20T00:00:00Z")
+        outside = os.path.join(self.tmp, "outside")
+        shutil.move(os.path.join(old, "work", "foreman"), outside)
+        os.symlink(outside, os.path.join(old, "work", "foreman"))
+        self.tidy("--apply")
+        self.assertTrue(os.path.isfile(os.path.join(outside, "sc1", "big.txt")))
+        self.assertFalse(os.path.exists(os.path.join(outside, "PRUNED")))
+

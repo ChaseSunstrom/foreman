@@ -940,7 +940,7 @@ class DoctorStateSize(ForemanTestCase):
         r = d.check_state_size([p], budget=20_000)
         self.assertEqual(r.status, "WARN")
         self.assertIn("exam", r.detail)
-        self.assertIn("fm tidy doesn't prune exam runs", r.detail)
+        self.assertIn("fm tidy --apply prunes graded exam runs' old work copies", r.detail)
         self.assertNotIn("fm tidy --apply prunes and rolls it", r.detail)
 
 

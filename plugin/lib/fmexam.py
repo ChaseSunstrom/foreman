@@ -1197,6 +1197,13 @@ def root(p):
     return os.path.join(p.dir, "exam")
 
 
+PRUNED = "PRUNED"  # T-2568: fm tidy removed this agent's work copies; a regrade needs a rerun
+
+
+def pruned(base):
+    return os.path.isfile(os.path.join(base, PRUNED))
+
+
 def runs(p):
     d = root(p)
     return sorted((x for x in os.listdir(d) if RUN_ID.fullmatch(x)), key=lambda x: int(RUN_ID.fullmatch(x).group(1))) \
@@ -2954,6 +2961,10 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
         fmbudget.check("exam-arm", fmbudget.estimate("exam-arm", len(picked), min(budget or 0.5, 0.5)),
                        "a smaller --limit")  # the user's own fm budget cap; T-2179: no per-session dollar cap by default
     shutil.rmtree(_answers(p, run, agent), ignore_errors=True)  # the grade is this run's answers only
+    try:
+        os.remove(os.path.join(root(p), run, "work", agent, PRUNED))  # T-2568: a rerun's work copies are fresh
+    except FileNotFoundError:
+        pass
     import fmgenesis  # the generation that answers, so a later regrade still files it under that generation
     c.write_atomic(os.path.join(_answers(p, run, agent), "gen"), str(fmgenesis.current(p)))
     if request and agent in SESSIONS:  # --request: the user's words replace each scenario's own
@@ -3054,6 +3065,8 @@ def grade(p, run, agent):
     answered = [s for s in meta["scenarios"] if os.path.isfile(os.path.join(_answers(p, run, agent), f"{s['id']}.json"))]
     if not answered:
         raise ValueError(f"no answers from {agent!r} in {run} (fm exam run {run} --agent {agent})")
+    if pruned(os.path.join(root(p), run, "work", agent)):
+        raise ValueError(f"work copy pruned (fm tidy): rerun to regrade (fm exam run {run} --agent {agent})")
     lean_rows = []  # T-2363: (sid, overhead, grown) per lean scenario
 
     def one(s):
