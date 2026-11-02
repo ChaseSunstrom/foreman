@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T04:46:10Z",
- "rev": "912d89cc",
+ "updated": "2026-11-02T04:51:23Z",
+ "rev": "bff2c77d",
  "capabilities": [
   {
    "n": 1,
@@ -18152,10 +18152,10 @@
   "perf-noise": 1
  },
  "next": {
-  "stage": "build",
+  "stage": "critique",
   "gen": 2,
-  "action": "Mission 3 (staying-lean-and-safe): finish T-2533",
-  "command": "fm focus T-2533",
+  "action": "Mission 3 (staying-lean-and-safe): write its critique (closed vs planned, outside signals, what failed); carried, deferred with a revisit date: T-2533, T-2535 (say why each waits)",
+  "command": "fm genesis put gen-2/critique-staying-lean-and-safe.md --file -",
   "kind": "ok"
  },
  "docs": {
