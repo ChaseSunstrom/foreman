@@ -639,6 +639,56 @@ class Long(ForemanTestCase):
         with self.assertRaises(ValueError):
             self.fmlong.grade(self.p, self.run_id, "plain")
 
+    # T-2613: a false done split into misses on names the goal never states and real misses
+    def test_a_failure_on_a_name_the_goal_never_states_is_out_of_reach(self):
+        import fmlong
+        goal = "Add f1. The checks use these new names: app.f1\nDone when: f1 returns 1"
+        self.assertTrue(fmlong._reach("KeyError: 'problems'", goal))
+        self.assertTrue(fmlong._reach("AttributeError: module 'fmwatch' has no attribute '_shown'", goal))
+        self.assertTrue(fmlong._reach("ImportError: cannot import name 'KILL_T' from 'fmlong'", goal))
+        self.assertFalse(fmlong._reach("AttributeError: module 'app' has no attribute 'f1'", goal), "the goal names it")
+        self.assertFalse(fmlong._reach("AssertionError: 2 != 1", goal), "a wrong value is a real miss")
+        self.assertFalse(fmlong._reach("", goal))
+
+    def test_grade_classes_each_failed_check_and_counts_all_reach_false_dones(self):
+        import fmcore as c
+        import fmlong
+        self.add("\n\ndef info():\n    return {'problems': []}\n",
+                 "\n    def test_info_reports_a_clean_tree(self):  # the key it reads is named nowhere in the goal\n        self.assertEqual(app.info()['problems'], [])\n",
+                 "Add info (T-1020)")
+        run = json.loads(self.gen().stdout)["run"]
+        self.fm("exam", "long", "run", run, "--agent", "empty")
+        p = c.find_project(self.repo)
+        with open(os.path.join(fmlong._work(p, run, "empty", "T-1020"), "app.py"), "a") as f:
+            f.write("\n\ndef info():\n    return {}\n")  # built, but without the key no line of the goal names
+        g = {x["id"]: x for x in self.grade(run, "empty")["goals"]}
+        (m,) = g["T-1020"]["misses"]
+        self.assertEqual((m["reach"], m["line"]), (True, "KeyError: 'problems'"), m)
+        (m,) = g["T-1001"]["misses"]
+        self.assertFalse(m["reach"], m)  # app.f1 is named in its goal: a real miss
+        self.assertIn("has no attribute 'f1'", m["line"])
+        goals = [{"answered": True, "true_done": False, "false_done": True, "false_reach": True},
+                 {"answered": True, "true_done": False, "false_done": True, "false_reach": False}]
+        self.assertEqual(fmlong._totals(goals)["false_done_reach"], 1)
+
+    def test_an_exception_whose_str_raises_never_stops_the_runner(self):  # T-2613
+        import fmlong
+        write(self.src, "tests/test_bad.py", "import unittest\n\n\nclass E(Exception):\n    def __str__(self):\n"
+              "        raise RuntimeError('no')\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n\n\n"
+              "raise E()\n")
+        why = {}
+        ok = fmlong._passed(self.src, ["tests/test_bad.py::test_bad.T.test_x", "tests/test_app.py::test_app.T.test_old"],
+                            [], why=why)
+        self.assertEqual(ok, {"tests/test_app.py::test_app.T.test_old"})
+        self.assertEqual(why, {"tests/test_bad.py::test_bad.T.test_x": "E"})
+
+    def test_the_grade_text_prints_the_split(self):
+        import fmlong
+        self.assertEqual(fmlong._split_line({"false_done": 6, "false_done_reach": 2}),
+                         "false done 6 (2 only on names the goal never states)")
+        self.assertEqual(fmlong._split_line({"false_done": 0, "false_done_reach": 0}), "")
+        self.assertEqual(fmlong._split_line({"false_done": None, "false_done_reach": None}), "")
+
 
 class MissionEightFaults(Long):
     """T-2384 (#7, #9, #11): the lane, event and recur faults. Long's own tests are not this class's."""

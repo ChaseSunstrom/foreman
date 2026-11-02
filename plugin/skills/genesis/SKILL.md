@@ -35,7 +35,8 @@ unfiled failures, inversion, one far-domain comparison) with Source, Rule and Ch
 3. `fm genesis spec` maps its §2 capabilities to an exam, a third held out for grading only.
 4. `fm genesis exam` grades Genesis itself (#13) on the held-out third: drafts from a line, nothing and "super
    improve this" on generated projects; `--arm plain` is the baseline. `fm exam run --agent genesis` runs a whole
-   generation in a throwaway repo.
+   generation in a throwaway repo. `fm exam long grade RUN --agent A` splits false dones: those whose
+   failed checks all name something the goal never states, and real ones (T-2613).
 
 ## Drive
 

@@ -79,7 +79,7 @@ RUNNER = """import importlib.util, json, os, sys, unittest
 spec = json.load(open(sys.argv[1]))
 os.chdir(spec["tree"])
 sys.path.extend(spec["paths"])
-ok = []
+ok, why = [], {}
 for i in spec["ids"]:
     try:
         f, name = i.split("::")
@@ -92,10 +92,17 @@ for i in spec["ids"]:
         unittest.defaultTestLoader.loadTestsFromName(rest, m).run(r)
         if r.testsRun == 1 and r.wasSuccessful() and not r.skipped:
             ok.append(i)
-    except BaseException:
-        pass
+        elif r.errors or r.failures:
+            why[i] = [x for x in (r.errors + r.failures)[0][1].splitlines() if x.strip()][-1][:300]
+    except BaseException as e:
+        try:
+            why[i] = f"{type(e).__name__}: {e}"[:300]
+        except BaseException:  # an answer's exception whose str() raises never stops the other checks
+            why[i] = type(e).__name__
 json.dump(ok, open(spec["out"], "w"))
+json.dump(why, open(spec["out"] + ".why", "w"))
 """
+NAMED = re.compile(r"has no attribute '(\w+)'|KeyError: '(\w+)'|cannot import name '(\w+)'")  # T-2613
 
 
 def _root(p):
@@ -179,10 +186,11 @@ def _overlay(dst, src, target, files):
                 f.write(data)
 
 
-def _passed(tree, ids, pypath, end=None):
+def _passed(tree, ids, pypath, end=None, why=None):
     """The ids that pass in tree, or None when the runner failed or timed out (distinct from all red): run by a script
     outside the tree under -I (the stdlib first, the tree appended), in its own process group (c.run_command kills it
-    whole), a throwaway home, no credentials, no Foreman state."""
+    whole), a throwaway home, no credentials, no Foreman state. T-2613: a dict `why` gets each failing id's last
+    traceback line (the tree's own text: plain'd, cut)."""
     import fmbench
     if not ids:
         return set()
@@ -201,11 +209,32 @@ def _passed(tree, ids, pypath, end=None):
             return None
         try:
             with open(out) as f:
-                return {i for i in json.load(f) if i in ids}
+                ok = {i for i in json.load(f) if i in ids}
         except (OSError, ValueError):
             return None
+        if why is not None:
+            try:
+                with open(out + ".why") as f:
+                    why.update({i: c.fit(c.plain(str(v)), 300) for i, v in json.load(f).items() if i in ids})
+            except (OSError, ValueError, AttributeError):
+                pass
+        return ok
     finally:
         shutil.rmtree(home, ignore_errors=True)
+
+
+def _reach(line, goal):
+    """T-2613: a hidden check's failure is out of the goal's reach when it names a missing attribute, key or import
+    that the goal text never mentions (T-2556's largest class); a stated name, or any other failure, is a real miss."""
+    m = NAMED.search(line or "")
+    name = next((x for x in m.groups() if x), None) if m else None
+    return bool(name) and not re.search(rf"(?<![\w]){re.escape(name)}(?![\w])", goal or "")
+
+
+def _split_line(r):
+    """T-2613: the grade's false-done split, '' with none."""
+    return (f"false done {r['false_done']} ({r.get('false_done_reach') or 0} only on names the goal never states)"
+            if r.get("false_done") else "")
 
 
 def _tests_in(tree):
@@ -935,7 +964,8 @@ def _totals(goals):
     tot = lambda k: sum(known(k)) if known(k) else None
     secs = [g["secs"] for g in mine if g["true_done"] and g.get("secs") is not None]
     out = {"rate": round(sum(g["true_done"] for g in goals) / len(goals), 3) if goals else 0,
-           "false_done": tot("false_done"), "resumes_needed": tot("resumes_needed"), "unfinished": tot("unfinished"), "guard_blocks": tot("guard_blocks"),
+           "false_done": tot("false_done"), "false_done_reach": sum(bool(g.get("false_reach")) for g in mine),  # T-2613
+           "resumes_needed": tot("resumes_needed"), "unfinished": tot("unfinished"), "guard_blocks": tot("guard_blocks"),
            "installs_attempted": tot("installs_attempted"), "miss_resolved": tot("miss_resolved"),
            "cost": round(tot("cost"), 4) if known("cost") else None,
            "cost_unknown": sum(g.get("cost") is None or g.get("cost_unknown") is not False for g in mine),
@@ -974,15 +1004,19 @@ def grade(p, run, agent):
             try:  # the answer's copy with the hidden tests and their support files laid over it
                 shutil.copytree(work, os.path.join(tmp, "w"))
                 _overlay(os.path.join(tmp, "w"), key["src"], key["target"], key["test_files"])
-                ok = _passed(os.path.join(tmp, "w"), key["checks"] + key["sample"], key["pypath"])
+                why = {}
+                ok = _passed(os.path.join(tmp, "w"), key["checks"] + key["sample"], key["pypath"], why=why)
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
             if ok is None:
                 g["error"] = "the runner failed or timed out"
             else:
                 g.update(true_done=set(key["checks"]) <= ok, regressions=[i for i in key["sample"] if i not in ok],
-                         checks_passed=len(set(key["checks"]) & set(ok)))
+                         checks_passed=len(set(key["checks"]) & set(ok)),
+                         misses=[{"check": i, "line": why.get(i, ""), "reach": _reach(why.get(i, ""), key.get("goal"))}
+                                 for i in key["checks"] if i not in ok])  # T-2613
         g.update(_metrics(p, run, agent, g))
+        g["false_reach"] = bool(g.get("false_done")) and bool(g.get("misses")) and all(m["reach"] for m in g["misses"])
         g["door_touched"] = door["touched"] if g["answered"] and door and isinstance(door.get("touched"), bool) else None  # T-2343
         g.update(_missing(os.path.join(fdir, s["id"] + ".shim.log"), miss if g["answered"] else None, g["true_done"]))
         new = [f for f in flog if f.get("kind") in ("lane", "event", "recur")] if g["answered"] else []
@@ -1045,7 +1079,7 @@ def cmd(p, args):
         r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit, args.jobs) if verb == "run" else grade(p, rest[0], agent))
         text = (f"{agent} answered {len(r['answered'])} goal(s) of {rest[0]}" if verb == "run" else
                 f"{agent} {rest[0]}: {r['true_done']}/{r['scenarios']} true done, {r['checks_passed']}/{r['checks']} checks, "
-                f"{r['regressions']} regressions\n{went(r)}"
+                f"{r['regressions']} regressions\n{went(r)}" + (f"\n{_split_line(r)}" if _split_line(r) else "")
                 + (f"\nmissing fault: {r['installs_attempted']} install(s) attempted, {r['miss_resolved']} miss(es) resolved"
                    if r["installs_attempted"] is not None else "")
                 + (f"\nskipped {len(r['skipped'])} goal(s): {next(iter(r['skipped'].values()))}" if r["skipped"] else "")
