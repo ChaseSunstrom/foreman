@@ -5,7 +5,7 @@ Use when finished work on a working branch goes to main: push to main, fast-forw
 
 In Foreman's own repo a release ships with `fm release VERSION --push` and the task's `publish` grant (it merges with `--no-ff` from a temporary worktree); this book is for any other branch or repo. `fm ship [COMMIT…] [--remote URL] [--test CMD] [--watch]` runs steps 1, 2, 4, 5 and 8 in one call behind the same grant, step 3 when `--test` names the oldest runtime's suite, and the CI watch with `--watch` (run it in the background).
 
-State your chance that CI's blocking jobs pass with `fm ship --chance N`: it books one write-once ship bet on the pushed commit, and `fm ci-watch` settles it from GitHub's run, so the number is scored within hours (`fm outcomes --judgment` shows the ship kind).
+State your chance that CI's blocking jobs pass with `fm ship --chance N`: it books one write-once ship bet on the pushed commit, and `fm ci-watch` settles it from GitHub's run, so the number is scored within hours (`fm outcomes --judgment` shows the ship kind). Once 20+ ship bets have settled, a chance 15+ points from their held share gets one line after the bet, naming the record and which way the number sits, so the next bet starts from it (T-2611).
 
 1. **Start from fetched main**, not the local copy: fetch, then make a scratch worktree at the fetched head and cherry-pick or merge the work there. The working tree stays untouched.
 2. **Check the trees match:** the shipped files in the scratch worktree equal the branch's (`git diff --quiet HEAD branch -- <paths>`). A difference means a missed or extra commit.

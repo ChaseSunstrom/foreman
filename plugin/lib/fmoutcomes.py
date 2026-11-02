@@ -359,6 +359,27 @@ def ship_bet(p, chance, task, commit):
                base=round(100 * done.count("held") / len(done)) if done else None)
 
 
+SHIP_GAP = 15  # T-2611: points between a ship's stated chance and its record before the record is named
+
+
+def ship_note(p, chance):
+    """T-2611 (Mission 2, #8): one line when a ship's stated chance sits SHIP_GAP+ points from the held share of
+    LEDGER_MIN+ settled ship bets, said where the number is typed (fm ship); '' otherwise. A note: never raises."""
+    try:
+        stated = _stated(chance)
+        done = [r["outcome"] for r in scored(p) if r["kind"] == "ship" and r.get("outcome")]
+    except Exception:
+        return ""
+    if len(done) < LEDGER_MIN:
+        return ""
+    held = done.count("held")
+    pct = round(100 * held / len(done))
+    if abs(stated - pct) < SHIP_GAP:
+        return ""
+    return (f"Ship record: {held} of {len(done)} ship bets held ({pct}%); {stated}% sits {abs(stated - pct)} points "
+            f"{'under' if stated < pct else 'over'} it. State what you believe; fm ci-watch scores it.")
+
+
 def base_note(p, b):
     """T-2497 (Mission 2, #8): one line when the brief's Choice N (NN%) sits 20+ points from the base rate of its type
     and tier (either way), naming both numbers and whose closes set the base; '' otherwise or with no history."""

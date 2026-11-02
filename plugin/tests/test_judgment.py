@@ -637,3 +637,32 @@ class BaseRateNote(Base):  # T-2497 (Mission 2, #8): a plan's percent against it
         b.meta["base_note"] = "Calibration: this plan states Choice 75% where FIX S closes held 96%"
         c.save_brief(self.p, b)
         self.assertIn("Choice 75% where FIX S closes held 96%", self.fm("next").stdout)
+
+
+class ShipNote(Base):  # T-2611 (Mission 2, #8): the ship record meets the stated chance where it is typed
+    def settled(self, n, held):
+        """n ship bets settled by CI's verdict, `held` of them green."""
+        import fmoutcomes as o
+        tid = json.loads(self.fm("task", "new", "Ship them", "--type", "FIX", "--tier", "S", "--json").stdout)["id"]
+        for i in range(n):
+            sha = f"{i:012x}" + "0" * 28  # a bet is keyed by the commit's first 12 characters
+            o.ship_bet(self.p, 85, tid, sha)
+            c.log_event(self.p, "ci_verdict", data={"commit": sha, "green": i < held})
+        return tid
+
+    def test_a_chance_far_from_twenty_settled_ship_bets_names_the_record(self):
+        import fmoutcomes as o
+        self.settled(21, 21)
+        self.assertEqual(o.ship_note(self.p, 85), "Ship record: 21 of 21 ship bets held (100%); 85% sits 15 points "
+                                                  "under it. State what you believe; fm ci-watch scores it.")
+        self.assertEqual(o.ship_note(self.p, 90), "", "within 15 points: nothing to say")
+
+    def test_under_twenty_settled_says_nothing(self):
+        import fmoutcomes as o
+        self.settled(19, 19)
+        self.assertEqual(o.ship_note(self.p, 50), "")
+
+    def test_an_overconfident_chance_reads_over(self):
+        import fmoutcomes as o
+        self.settled(20, 10)
+        self.assertIn("95% sits 45 points over it", o.ship_note(self.p, 95))

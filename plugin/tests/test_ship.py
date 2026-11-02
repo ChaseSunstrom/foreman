@@ -106,6 +106,17 @@ class Ship(ForemanTestCase):
         self.assertEqual([(x["kind"], x["stated"], x["key"], x["task"]) for x in rows], [("ship", 85, tip[:12], self.tid)])
         self.assertIn("85%", r.stdout)
 
+    def test_chance_far_from_the_ship_record_names_it_after_the_bet(self):  # T-2611
+        with open(os.path.join(c.find_project(self.repo).dir, "calibration.jsonl"), "w") as f:
+            for i in range(20):  # 20 earlier ship bets, all settled green by CI
+                f.write(json.dumps({"ts": c.now(), "id": f"s{i}", "kind": "ship", "stated": 85, "base": None,
+                                    "task": self.tid, "key": f"{i:012x}"}) + "\n")
+                f.write(json.dumps({"ts": c.now(), "of": f"s{i}", "outcome": "held", "by": "seeded", "src": "ci"}) + "\n")
+        self.grant()
+        r = self.ship("--test", "true", "--chance", "80")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertRegex(r.stdout, r"Ship bet: 80%.*\nShip record: 20 of 20 ship bets held \(100%\); 80% sits 20 points under")
+
     def mover(self, rel):  # T-2511: a script the ship's test runs: someone else pushes a commit to main meanwhile
         script, other = os.path.join(self.tmp, f"move-{rel.replace('/', '-')}.sh"), os.path.join(self.tmp, "other")
         with open(script, "w") as f:

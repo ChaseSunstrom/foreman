@@ -565,6 +565,9 @@ def ship(p, args):
         import fmoutcomes
         if fmoutcomes.ship_bet(p, chance, b.id, tip):
             print(f"Ship bet: {fmoutcomes._stated(chance)}% that CI's blocking jobs pass on {tip[:12]}; fm ci-watch settles it.")
+            note = fmoutcomes.ship_note(p, chance)  # T-2611: the record meets the number where it is typed
+            if note:
+                print(note)
     if not args.watch:
         return 0
     import fmci  # T-1946
