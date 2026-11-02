@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-02T13:42:04Z",
+ "updated": "2026-11-02T13:47:08Z",
  "rev": "221357ee",
  "capabilities": [
   {
@@ -2915,8 +2915,8 @@
        "type": "FEATURE",
        "tier": "S",
        "steps": 3,
-       "done": 1,
-       "current": "docs: CHANGELOG, ship-to-main.md"
+       "done": 2,
+       "current": "red: test_judgment.ShipNote"
       },
       {
        "id": "T-2338",
