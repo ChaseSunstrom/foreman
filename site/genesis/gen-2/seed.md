@@ -81,7 +81,9 @@ Missions in table order; Missions that don't depend on each other run in paralle
 ## Moonshot (one Mission a generation, from gen 2)
 
 - Far-domain lens: immune systems. Borrow a mechanism from immune systems that no harness has, and say what it becomes in Foreman.
-- Frontier digest: gen-2/frontier.md (fm genesis frontier 2; what's new outside, read, never cloned).
+- Frontier digest: gen-2/frontier.md (fm genesis frontier 2), built only from the project's own research notes
+  (fm landscape and fm research ask notes already on disk), per the user's standing rule of 2026-10-31 above. It
+  reads nothing new from outside; a new outside read stays in gen-0 §5's targeted form, and no repo is cloned or swept.
 - Each idea in mission-moonshot.md carries three lines: `Prior art:` (what exists, or none found), `Better by:` (how ours beats it) and `Novelty: 1-5`. fm genesis novelty marks the obvious ones by a cold read; a mark typed into the file counts for nothing, and an obvious idea can't be the spiked pick while a non-obvious one exists.
 - The pick is spiked; a failed spike goes to not-yet.md with its blocker, never dropped.
 
@@ -155,8 +157,9 @@ From proof:
 - A check that a new exam kind is mapped in KIND_WORDS and has an outside author before its task can close.
 
 From self:
-- Stage the night timers and put the install to the user first thing (fm night --stage, one yes), then grade a week of
-  live ticks: predictions scored, warnings scored, watcher captures and their precision.
+- Stage the night timers (fm night --stage); the install goes to the user in the end-of-run report (one yes, per
+  gen-0: asks come at the end). Grading a week of live ticks (predictions scored, warnings scored, watcher
+  captures and their precision) waits for that install as a deferred check, never a mid-run ask.
 - Rework recurring-failure grouping against its 3 drops before it fires again.
 - #3 and #11 as their own gen-2 Missions, per the seed's overload rule.
 
