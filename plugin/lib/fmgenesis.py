@@ -2229,10 +2229,11 @@ def _compare(rows, n, agent):
     rerun (why is then the rerun ask); k and m are gen n's and its parent's lines on the chosen run."""
     if n < 1:
         raise ValueError("gen-0 is the user's own text: fm genesis select starts at 1")
+    rows = [x for x in rows if x.get("split") != "holdout"]  # T-2566: answered no train scenario, so it can't decide
     kid = [x for x in rows if x.get("gen") == n]
     if not kid:
-        raise ValueError(f"no graded exam line for gen {n} from {agent}: fm exam run RUN --agent {agent}, then "
-                         f"fm exam grade RUN --agent {agent}")
+        raise ValueError(f"no graded exam line on the train split for gen {n} from {agent}: fm exam run RUN --agent "
+                         f"{agent} --split train, then fm exam grade RUN --agent {agent}")
     mom = [x for x in rows if x.get("gen") == n - 1]
     runs = {x.get("run") for x in mom}
     run = next((x.get("run") for x in reversed(kid) if x.get("run") in runs), None) if mom else kid[-1].get("run")
