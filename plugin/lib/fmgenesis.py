@@ -3754,9 +3754,12 @@ def sweep(p, n, agent="foreman"):
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
     ids = [t for f in sorted(os.listdir(os.path.join(d, f"gen-{n}")) if os.path.isdir(os.path.join(d, f"gen-{n}")) else [])
            if f.startswith("mission-") for t in re.findall(r"\bT-\d{4,}\b", " ".join(TASKS.findall(_doc(d, f"gen-{n}/{f}") or "")))]
+    carried = [t for t in dict.fromkeys(ids) if t in by_id and by_id[t].status == "deferred"
+               and by_id[t].meta.get("revisit")]  # T-2603: a dated deferral is carried, as the build loop counts it
     row("mission tasks", [f"{t} isn't a task here" if t not in by_id else f"{t} {by_id[t].status}"
-                          for t in dict.fromkeys(ids) if t not in by_id or by_id[t].status not in c.CLOSED | {"blocked"}],
-        f"{len(set(ids))} brief(s) closed or blocked")
+                          for t in dict.fromkeys(ids) if t not in carried
+                          and (t not in by_id or by_id[t].status not in c.CLOSED | {"blocked"})],
+        f"{len(set(ids))} brief(s) closed, blocked or carried" + (f" ({len(carried)} carried)" if carried else ""))
     act = c.active_brief(briefs)
     row("tasks", [f"{b.id} {b.status}" for b in briefs if b.status in c.RUNNABLE and b is not act]
         + [f"{b.id} blocked with no reason" for b in briefs if b.status == "blocked" and not _block_reason(b)],

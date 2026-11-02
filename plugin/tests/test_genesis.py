@@ -2920,6 +2920,22 @@ class GenesisSweep(ForemanTestCase):
         rows = {x["check"]: x for x in self.sweep()["rows"]}
         self.assertTrue(rows["lanes"]["ok"], rows["lanes"])
 
+
+    def test_a_mission_task_deferred_with_a_revisit_is_carried_not_open(self):  # T-2603
+        import fmgenesis
+        carried = self.fm_json("task", "new", "brief one", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
+        self.fm("task", "defer", carried, "--until", "2026-12-01", "revive when the data exists")
+        fmgenesis.put(self.p, "gen-1/mission-x.md", f"# Mission\ngen-0\nTask: {carried} (brief 1)\n")
+        row = {x["check"]: x for x in self.sweep()["rows"]}["mission tasks"]
+        self.assertTrue(row["ok"], row)
+        self.assertIn("1 carried", row["detail"])
+        bare = self.fm_json("task", "new", "brief two", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
+        self.fm("task", "defer", bare, "no date")
+        fmgenesis.put(self.p, "gen-1/mission-y.md", f"# Mission\ngen-0\nTask: {bare} (brief 1)\n")
+        row = {x["check"]: x for x in self.sweep()["rows"]}["mission tasks"]
+        self.assertFalse(row["ok"], row)
+        self.assertIn(f"{bare} deferred", row["detail"])
+
     def test_a_grant_kind_no_earlier_generation_used_turns_the_sweep_red(self):
         """T-2113 (brief 8): the privileges row lists the grant kinds gen-N used (from gen-0's save for gen 1); a kind no
         earlier generation used is red until the user grants it in this one."""
