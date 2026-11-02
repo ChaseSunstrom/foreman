@@ -223,6 +223,17 @@ class Ship(ForemanTestCase):
         self.assertTrue(self.granted())
         self.assertEqual(sh(self.repo, "worktree", "list").count("\n"), 1)
 
+    def test_a_tree_changed_after_the_tests_ran_refuses_with_both_hashes(self):  # T-2642
+        self.grant()
+        r = self.ship("--test", "sh -c 'echo x > c.txt && git add c.txt && git -c user.name=t -c user.email=t@t commit -qm sneak'")
+        out = r.stdout + r.stderr
+        self.assertNotEqual(r.returncode, 0, out)
+        self.assertIn("tree", out)
+        self.assertRegex(out, r"[0-9a-f]{40}.*[0-9a-f]{40}")
+        self.assertNotIn("add a", self.main_log())
+        self.assertNotIn("sneak", self.main_log())
+        self.assertTrue(self.granted())
+
     def affected_ship(self, template):
         # T-2323: a changed test file in the range, and a stubbed affected runner; the full suite writes a marker
         self.grant()

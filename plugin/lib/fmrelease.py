@@ -479,6 +479,7 @@ def ship(p, args):
                          "a running fm check or ambient test run", "fm ship", out=sys.stdout)
             print(f"testing {n} on {remote} main: {shlex.join(test)}", flush=True)
             env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # GIT_DIR from a hook: not the user's repo
+            tested = _git(wt, "rev-parse", "HEAD^{tree}").strip()  # T-2642: the tree the suite runs on is the tree pushed
             c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": os.path.realpath(wt)})
             env.setdefault("PYTHONUNBUFFERED", "1")
             log = os.path.join(tmp, "test.log")  # T-2255: a file, not a pipe: a background process holding it can't hang the ship
@@ -525,6 +526,10 @@ def ship(p, args):
             except Exception as e:  # the ship stands; the record is a convenience
                 print(f"footprint record failed: {e}")
             tip = _git(wt, "rev-parse", "HEAD").strip()
+            pushing = _git(wt, "rev-parse", "HEAD^{tree}").strip()
+            if pushing != tested:
+                _err(f"the tree to push ({pushing}) isn't the tree the tests ran on ({tested}): something changed it "
+                     "after the gates; nothing was pushed")
             for attempt in range(3):  # T-2555: a writer that lands between this fetch and the push is re-picked over too
                 _git(root, "fetch", "-q", remote, "main")
                 if c._git(root, "merge-base", "--is-ancestor", "FETCH_HEAD", tip, timeout=60, proc=True).returncode:
