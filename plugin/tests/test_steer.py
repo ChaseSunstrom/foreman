@@ -101,7 +101,7 @@ class Run(_Steer):
         expands = [x for x in calls if "cold reviewer" not in x["args"][x["args"].index("--append-system-prompt") + 1]]
         judges = [x for x in calls if x not in expands]
         self.assertTrue(all(x["args"][x["args"].index("--model") + 1] == "sonnet" for x in expands))
-        self.assertTrue(all(x["args"][x["args"].index("--model") + 1] == "opus" for x in judges))
+        self.assertTrue(all(x["args"][x["args"].index("--model") + 1] == "fable" for x in judges))  # T-2627: one judge, the strongest
         for x in expands:  # from the raw words alone: no reference clause reaches the expander
             self.assertNotIn("Unprompted actions", x["stdin"])
             self.assertNotIn("No spend cap", x["stdin"])
@@ -197,7 +197,7 @@ class Page(_Steer):
         fmgenesis.export(p, out)
         got = json.loads(read_text(os.path.join(out, "genesis.json")))["steer"]
         self.assertEqual(got["model"], "sonnet")
-        self.assertEqual(got["judge"], "opus")
+        self.assertEqual(got["judge"], "fable")
         self.assertIn("rate", got["holdout"])
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         js = read_text(os.path.join(root, "site", "genesis", "genesis.js"))

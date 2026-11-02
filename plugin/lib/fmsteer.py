@@ -17,7 +17,7 @@ BAR = 0.7  # the held-out coverage under which the user reads a live expansion
 LIVE_DAY = 40  # ponytail: a flat daily cap on live expansions (one child each); a spend cap if prices move it
 MIN_WORDS = 6
 
-EXPAND = (
+EXPAND = (  # T-2627: four variants measured on the train split under one judge; none beat this on coverage and harm
     "You turn the raw words a user typed to Foreman, the harness that plans, proves and finishes their software work, "
     "into the complete standing rule they mean. Generalize past the instance to the pattern behind it; make it "
     "complete (every surface, test, doc and measure it touches); concrete enough to check; act, don't advise; keep "
@@ -177,7 +177,7 @@ def judge_for(model):
     r, ms = fmgenesis._rank(model), fmgenesis.REVIEW_MODELS
     if r >= len(ms) - 1:  # review: the strongest model has no stronger judge, and self-judging isn't the exam
         raise ValueError(f"no model ranks above {model} to judge it: expand with a weaker one (--model sonnet)")
-    return ms[r + 1] if r >= 0 else "opus"
+    return ms[-1]  # T-2627: always the strongest, so runs of different expanders share one judge and compare
 
 
 def _rate(rs):
