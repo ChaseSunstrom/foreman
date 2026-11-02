@@ -4563,7 +4563,11 @@ def cmd_research(args):
         c.log_event(p, "research", task=args.task, data={"name": name, "chars": len(text), "noticed": made},
                     session=session())
         c.regen_views(p)  # (and fm sync's mirror)
-    out(args, {"path": path, "noticed": made, "logged": logged}, f"Saved {path}" + (
+    import fmideas
+    spread = fmideas.canary_spread(text)  # T-2686: a canary any search finds proves nothing about the idea
+    out(args, {"path": path, "noticed": made, "logged": logged, "canary_spread": spread}, f"Saved {path}" + (
+        f"; ⚠ {spread[1]} of {spread[2]} canaries are '{c.fit(c.plain(spread[0]), 40)}': a canary must be a built feature "
+        "near the idea (its nouns or module), so regrounding those verdicts is due" if spread else "") + (
         f"; {len(made)} noticed item(s) captured: {', '.join(made)}" if made else "") + (
         f"; {len(logged)} logged onto open tasks: {', '.join(dict.fromkeys(logged))}" if logged else ""))
 

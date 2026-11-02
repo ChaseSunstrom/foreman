@@ -64,6 +64,17 @@ NO_TOOLS = ["--setting-sources", "project,local", "--tools", "", "--strict-mcp-c
 WARM = 10  # T-1265: seconds the first lens runs alone, so the rest read the pack from the prompt cache it wrote
 
 
+_CANARY = re.compile(r"canary:\s*(.+?)\s+found\b")
+
+
+def canary_spread(text):
+    """T-2686: (term, count, total) when one canary term covers over half of a catalogue's 10+ canary lines, else
+    None. Such a term ('def main') shows the search ran, not that the idea's phrasing could find a built neighbour."""
+    terms = [m.group(1).strip("`'\" ") for m in _CANARY.finditer(text)]
+    top = Counter(terms).most_common(1)
+    return (top[0][0], top[0][1], len(terms)) if len(terms) >= 10 and top[0][1] * 2 > len(terms) else None
+
+
 def child_cmd(model, system, system_file=None):
     """The prompt goes in on stdin and a big system text in a file (system_file): packs can exceed the per-argument
     size limit."""

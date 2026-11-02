@@ -4,6 +4,8 @@ close grade, decision --sunset)."""
 import os
 import unittest
 
+from helpers import ForemanTestCase
+
 SKILL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "brainstorm", "SKILL.md")
 
 
@@ -30,6 +32,25 @@ class Canary(unittest.TestCase):
         self.assertIn("canary", step)
         self.assertIn("same tool and scope", step)
         self.assertIn("canary:", step)  # the verdict records it, so a catalogue can count the "new" verdicts that carry one
+        self.assertIn("near the idea", step)  # T-2686: Mission 7's catalogue met the rule with 'def main' 156 times
+
+    def test_one_canary_term_across_most_verdicts_is_flagged(self):  # T-2686
+        import fmideas
+        same = "".join(f"- [new] idea {i}: grep 'x{i}': none; canary: def main found\n" for i in range(9))
+        varied = "".join(f"- [new] idea {i}: none; canary: fm{i}.thing found (fm{i}.py:3)\n" for i in range(12))
+        self.assertEqual(fmideas.canary_spread(same + "- [new] y: canary: fmcost.burden found\n"), ("def main", 9, 10))
+        self.assertIsNone(fmideas.canary_spread(varied))
+        self.assertIsNone(fmideas.canary_spread(same))  # under 10 canaries: too few to judge
+
+
+class CanaryWarning(ForemanTestCase):
+    def test_research_add_warns_on_a_generic_canary(self):  # T-2686
+        self.fm("init")
+        path = os.path.join(self.tmp, "cat.md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("".join(f"- [new] idea {i}: none; canary: def main found\n" for i in range(12)))
+        out = self.fm("research", "add", "brainstorm-x", "--file", path).stdout
+        self.assertIn("12 of 12 canaries are 'def main'", out)
 
 
 
