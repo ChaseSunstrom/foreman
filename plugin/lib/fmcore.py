@@ -617,6 +617,7 @@ def judged(code, out):
     return code, out
 
 
+_NO_TEST = lazy(r"(?i)no test matches|Ran 0 tests|no tests ran")  # T-2606: an evidence line whose run measured nothing
 _NO_TESTS = lazy(r"(?m)^(=+ )?(Ran 0 tests in|collected 0 items\b|no tests ran\b|No tests found\b|"
                        r"0 examples, 0 failures)")
 # test runners' failure summaries: unittest, pytest, jest, cargo, go
@@ -1860,7 +1861,9 @@ class Brief:
     def edit_ac(self, n, text=None, verify=None):
         """T-0333: criterion n's text and/or verify command replaced; its checkbox stays as it was. T-0342: only while
         it has no evidence (the T-0305 decision: an edit could weaken a failing check until it passes), and logged."""
-        if self.has_evidence(ac=n, checked=True):
+        mine = [ln for ln in self.evidence() if (m := _EV_RE.match(ln)) and (m.group(1), int(m.group(2))) == ("ac", n)]
+        measured_nothing = bool(mine) and all(_NO_TEST.search(ln) for ln in mine)  # T-2606: no test ran, nothing weakens
+        if self.has_evidence(ac=n, checked=True) and not measured_nothing:
             raise PolicyError(f"{self.id} criterion {n} already has evidence, so its check stays as it is (an edit could "
                               f"weaken a failing one). Add a criterion (fm task ac {self.id} add …), or drop the task "
                               f"with a reason and recreate it with the right check (fm task new … --redo {self.id} keeps its "

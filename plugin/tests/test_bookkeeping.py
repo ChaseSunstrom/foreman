@@ -114,6 +114,23 @@ class FinishGaps(HookCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(c.find_brief(c.find_project(self.repo), "T-0001").status, "done")
 
+    def test_a_criterion_whose_runs_matched_no_test_can_be_fixed_and_a_real_failure_cannot(self):  # T-2606
+        self.fm("init")
+        self.fm("task", "new", "t", "--type", "FIX", "--tier", "S", "--ac", "ok :: python3 plugin/tests/run.py test_nope",
+                "--step", "s", "--focus")
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, "T-0001")
+        b.add_evidence("python3 plugin/tests/run.py test_nope", c.run_result(1, "run.py: no test matches test_nope"),
+                       ac=1, ran=True)
+        c.save_brief(p, b)
+        self.fm("task", "ac", "T-0001", "edit", "1", "--verify", "python3 plugin/tests/run.py test_real")
+        self.assertIn("test_real", c.find_brief(p, "T-0001").section("Acceptance criteria"))
+        b = c.find_brief(p, "T-0001")
+        b.add_evidence("python3 plugin/tests/run.py test_real", c.run_result(1, "AssertionError: 1 != 2"), ac=1, ran=True)
+        c.save_brief(p, b)
+        r = self.fm("task", "ac", "T-0001", "edit", "1", "--verify", "true", check=False)
+        self.assertNotEqual(r.returncode, 0, "a check that ran and failed stays as it is (T-0342)")
+
     def test_a_failed_affected_run_reruns_its_command_not_its_label(self):  # T-2596
         self.fm("init")
         self.fm("task", "new", "t", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
