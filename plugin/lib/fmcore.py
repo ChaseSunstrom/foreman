@@ -2926,7 +2926,6 @@ HARD_RE = lazy(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|drop|
 # S briefs: only what can't be taken back (a push, a send or a lease chore is routine and never waits on a paid call)
 HARD_S_RE = lazy(r"(?i)\b(deploy|release|publish|migrat(?:e|ion)|delete|drop table)(?:s|es|d|ed|ing)?\b")
 RACE_BAR = 80  # T-2341: an M plan whose own choice is under this sure (the "(60%)" after Choice) gets a cold rival read
-_CONF_RE = lazy(r"\b(?:choice|choose|chose|chosen)\b[^\n(]{0,20}\((\d{1,3})\s*%\)", re.I)
 _ONE_READING_RE = lazy(r"(?<!no )(?<!not )\b(?:only|just|one|single|sole)\s+(?:honest\s+)?reading\b", re.I)  # "no other honest reading" is T-2335's ruled-out form
 _RIVAL_OPEN = lazy(r"- \[ \] rival (?:reading|approach): ")
 
@@ -2948,11 +2947,11 @@ def rival_gap(b):
     FOREMAN_NO_RIVAL set to anything but '' or '0' skips it (the suite, a run with no child to ask)."""
     if os.environ.get("FOREMAN_NO_RIVAL", "0") not in ("", "0"):
         return []
-    conf = _CONF_RE.search(b.section("Approach (options → choice → why)"))
+    conf = stated_confidence(b.section("Approach (options → choice → why)"))  # T-2427: the one shared parser (last wins)
     hard = _one_way(b) or ("untracked data, T-2342" if b.meta.get("doors") or b.meta.get("door_acs") else "")  # fm focus marks local one-way steps
     why = ("an L plan" if b.tier == "L" else
            f"a one-way step ({hard})" if hard else
-           f"the choice is {conf.group(1)}% sure, under {RACE_BAR}%" if b.tier == "M" and conf and int(conf.group(1)) < RACE_BAR else
+           f"the choice is {conf}% sure, under {RACE_BAR}%" if b.tier == "M" and conf is not None and conf < RACE_BAR else
            "the plan claims one reading" if b.tier == "M" and _ONE_READING_RE.search(b.section("Interpretation")) else "")
     if not why:
         return []
