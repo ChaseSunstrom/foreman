@@ -332,7 +332,22 @@ class SessionStart(HookCase):
         for i in range(40):
             self.fm("task", "new", f"a fairly long task title number {i} " + "x" * 60, "--type", "FIX", "--tier", "S")
             self.fm("capture", f"idea {i} " + "y" * 80)
-        self.assertLessEqual(len(self.ctx_of(self.run_ss())), 2000)
+        self.assertLessEqual(len(self.ctx_of(self.run_ss())), 1500)  # T-2589: one budget, the friction rule's
+
+    def test_the_whole_note_fits_one_budget_with_a_long_mandate(self):  # T-2589
+        import fmhooks
+        self.fm("init")
+        for i in range(30):
+            self.fm("task", "new", f"a fairly long task title number {i} " + "x" * 60, "--type", "FIX", "--tier", "S")
+        import time
+        self.fm("mandate", "set", "Genesis: build Foreman into a self-directing harness " + "z" * 500, "--until",
+                time.strftime("%Y-%m-%d", time.localtime(time.time() + 3 * 86400)))
+        ctx = self.ctx_of(self.run_ss())
+        self.assertIn("Standing mandate", ctx)
+        self.assertLessEqual(len(ctx), fmhooks.CTX_BUDGET)
+        self.assertEqual(fmhooks.CTX_BUDGET, 1500)
+        import fmdoctor
+        self.assertEqual(fmdoctor.CTX_BUDGET, fmhooks.CTX_BUDGET, "doctor measures the hook's own budget")
 
     def test_sensitive_and_other_session_are_reported(self):
         self.fm("init")

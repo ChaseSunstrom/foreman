@@ -185,6 +185,16 @@ class Friction(ForemanTestCase):
         self.assertIn("SessionStart: session map — 1,900 chars avg × 4", big)
         self.assertNotIn("prompt hint", big)
 
+    def test_a_deliberate_add_on_is_left_out_of_the_note_budget(self):  # T-2589: the compact recap, the repo note
+        import fmcore as c
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            for i in range(3):
+                f.write(json.dumps({"ts": c.now(), "kind": "inject", "event": "SessionStart", "key": "project state",
+                                    "h": f"h{i}", "chars": 9000, "addon": 8000}) + "\n")
+        out = self.fm("friction").stdout
+        self.assertNotIn("project state — 9,000", out)
+        self.assertNotIn("notes averaging over 1,500 characters per injection (trim them: T-2109)\n- SessionStart: project", out)
+
     def test_guard_example_drops_heredoc_bodies_and_adds_the_rules_hint(self):
         # T-2280: the first 160 chars cut a heredoc before the line the guard judged
         import fmcore as c

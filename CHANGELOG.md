@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The note that opens each session now fits 1,500 characters, the same limit Foreman's friction report holds notes to. The standing mandate or goal and the starting leads now count against that limit; before, they were added after the budget and pushed the note to about 2,000 characters. The recap after a compaction and the repo note are still added on purpose, and the friction report no longer counts them against the note.
 - `fm task finish` now reruns a step whose `fm check --affected` evidence failed by its test command. Before, it tried to run the evidence label itself and failed with a shell syntax error.
 - `fm doctor`'s "reflex prompts" row now says no permission prompts have been recorded yet, and why: bypass mode shows none. Before, it said "none qualified", which read like a finding.
 - `fm ship` now skips the retest after main moves mid-ship only when every file main gained is one your CI workflow ignores (its `paths-ignore` list), such as the Genesis tower's data publishes. A move in any other file stops the ship with "run fm ship again", and the next ship tests the new main. Before, a code change in a file the shipped commits didn't touch could be pushed on top without ever being tested together with them. A repo with no `paths-ignore` refuses every such move.

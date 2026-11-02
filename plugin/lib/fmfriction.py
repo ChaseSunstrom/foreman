@@ -265,7 +265,7 @@ def digest(p, recheck=True):
     for e in events:
         if e.get("kind") == "inject":
             b = budget[(e.get("event"), e.get("key"))]
-            b[0], b[1] = b[0] + 1, b[1] + int(e.get("chars") or 0)
+            b[0], b[1] = b[0] + 1, b[1] + int(e.get("chars") or 0) - int(e.get("addon") or 0)  # T-2589
             same[(e.get("event"), e.get("key"), e.get("h"))] += 1
     most = collections.Counter()
     for (ev, k, _), n in same.items():

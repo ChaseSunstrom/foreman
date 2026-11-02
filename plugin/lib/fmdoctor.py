@@ -23,7 +23,7 @@ RULES_MAX, BLOCK_MAX, ALWAYS_ON_MAX = 80, 5, 120
 DESCRIPTIONS_MAX = 6000  # chars (~1.5k tokens) of skill/agent/command descriptions, loaded in every session
 SKILL_MAX = 10000  # chars of one SKILL.md body: loaded whole whenever the skill runs
 RULES_CHARS_MAX = 6400  # T-1279: the reply format moved in from the output style; chars (~1.5k tokens) of always-on rules: denser lines cost as much as more lines
-CTX_BUDGET, PROMPT_BUDGET = 2000, 400
+CTX_BUDGET, PROMPT_BUDGET = 1500, 400  # fmhooks' own (T-2589: a test pins them equal)
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"},  # T-0234: bounded exceptions, each in its own worktree
                   "fm-reproducer.md": {"Edit", "Write", "Bash"}}  # T-0608: the failing test, on its lane branch
