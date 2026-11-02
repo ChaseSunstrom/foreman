@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A removed `fm` flag now says what replaced it and which task removed it, instead of argparse's bare error. The first one is `fm night --print-timer`, removed in T-2475, whose replacements are `fm night --stage` and `fm night --install`. It exits 2.
+- `flakes.json` now counts each flaky test's fails and passes, and `fm doctor` lists the three worst by fail rate, with the command that makes each one flake.
+- `fm ship` refuses to push when the tree it would push isn't the tree its tests ran on, for example when a test command committed in the scratch worktree. It names both tree hashes and pushes nothing.
+- `fm doctor` checks, at most once a day, that each model name Foreman pins still answers a one-line call: the review models, the moonshot rater, and the exam and steer defaults. The call runs through Foreman's isolated child runner. If one fails, it WARNs with the model and the modules that pin it, and stays quiet when `claude` isn't installed.
 - Fixed: the guard now treats an unquoted argument on a `python3 - ARG <<EOF` line as a path the script may write, as it already did for a quoted one. `python3 - ~/.claude/settings.json <<EOF` with `open(sys.argv[1], 'w')` used to write a protected file without a check.
 - An edit that adds a top-level def, class or assignment its Python module already defines now gets a note at once, naming the name and both lines. Before, a second `def` silently replaced the first, and only the full test suite caught it (three times so far, most recently a helper in the guard that broke six guard tests). Decorated repeats such as `@overload` stubs and `@f.register` handlers are left alone.
 - `fm exam steer` now always uses the strongest model as its judge, so runs with different expanders can be compared. Tuning the expander's method prompt on the train split didn't help. Four variants were tried, the last round under one judge, and asking for more anticipation added about 50% more harmful clauses while covered clauses stayed at 19 to 21 of 93, within judge noise. The original prompt stays. The next idea, splitting the rule from proposals so anticipated extras aren't acted on, is T-2632.

@@ -19,7 +19,7 @@ class ModelProbe(ForemanTestCase):
             f.write("#!/bin/sh\necho \"$@\" >> %s\ncase \"$*\" in\n" % log)
             for m in dead:
                 f.write("  *\"--model %s \"*) echo 'model not found' >&2; exit 1;;\n" % m)
-            f.write("esac\necho OK\n")
+            f.write("esac\ncat >/dev/null\necho '{\"type\": \"result\", \"is_error\": false, \"total_cost_usd\": 0, \"result\": \"OK\"}'\n")
         os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
         self._path = os.environ["PATH"]
         os.environ["PATH"] = bin_ + os.pathsep + self._path

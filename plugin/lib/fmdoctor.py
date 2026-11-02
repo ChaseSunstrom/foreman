@@ -650,22 +650,20 @@ def _pinned_models():
 
 
 def check_model_pins(pins=None):
-    """T-2643: each pinned model name still answers a one-line claude -p call. Probed at most once a day (the cache
-    keys on the day); quiet when claude is absent or a call merely times out, WARN naming the dead model and its
-    pinning modules."""
+    """T-2643: each pinned model name still answers a one-line call through fmideas.run_child (no tools, hooks or MCP
+    servers; budget-checked). Probed at most once a day (the cache keys on the day); quiet when claude is absent; a
+    call that fails or times out is a WARN naming the model and its pinning modules (a dead name or a login to check)."""
     if not shutil.which("claude"):
         return Result("model pins", "PASS", "claude isn't on PATH: no probe")
     pins = pins or _pinned_models()
 
     def probe():
+        import fmideas
         dead = []
         for m, mods in pins.items():
-            try:
-                r = subprocess.run(["claude", "-p", "--model", m, "--no-session-persistence", "Reply with OK"],
-                                   capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
-            except (OSError, subprocess.SubprocessError):
-                continue  # a slow or broken call says nothing about the name
-            if r.returncode:
+            try:  # review: Foreman's one child runner: no tools, hooks or MCP servers, budget-checked (T-0295)
+                fmideas.run_child("model-probe", "Reply with OK.", "OK?", m, 60, detail=m)
+            except ValueError:
                 dead.append(f"{m} (pinned in {', '.join(mods)})")
         if dead:
             return Result("model pins", "WARN", "no answer from " + "; ".join(dead) + ": update the pin or check the login")
