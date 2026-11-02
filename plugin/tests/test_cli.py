@@ -222,6 +222,18 @@ class CaptureAndIntake(ForemanTestCase):
             self.assertNotEqual(self.fm("task", "step", "T-0001", typo, check=False).returncode, 0, typo)
         self.assertEqual(len(c.find_brief(c.find_project(self.repo), "T-0001").steps()), 1)
 
+    def test_an_action_synonym_is_its_action_and_two_bare_words_refuse(self):  # T-2540
+        # `fm task step T-1 remove 4` added a step named "remove" and dropped the 4
+        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "one", "--step", "two")
+        steps = lambda: [s.text for s in c.find_brief(c.find_project(self.repo), "T-0001").steps()]  # noqa: E731
+        self.fm("task", "step", "T-0001", "remove", "2")
+        self.assertEqual(steps(), ["one"])
+        p = self.fm("task", "step", "T-0001", "fix", "it", check=False)
+        self.assertNotEqual(p.returncode, 0, "two bare words: quote the text")
+        self.assertEqual(steps(), ["one"])
+        self.fm("task", "step", "T-0001", "CHANGELOG")  # T-1903's lone word still adds
+        self.assertEqual(steps(), ["one", "CHANGELOG"])
+
     def test_capture_reads_a_leading_tag_as_the_type(self):  # T-1904: "FIX: …" was filed as a FEATURE
         self.fm("capture", "FIX: the send button stays grey")
         self.fm("capture", "bug: login loops", "--type", "CLEAN")  # --type wins; the words stay

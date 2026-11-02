@@ -8260,6 +8260,7 @@ def _alias(argv):
 
 
 _TASK_ID = re.compile(r"^T-\d+$", re.I)
+ACT_SYNONYMS = {"remove": "rm", "delete": "rm", "del": "rm"}  # T-2540: words that mean an action, never step text
 # T-1877: ranges and lists; nine digits at most, so int() never sees a runaway number
 _TASK_IDS = re.compile(r"^T-\d{1,9}(?:\.\.(?:T-)?\d{1,9})?(?:,T-\d{1,9}(?:\.\.(?:T-)?\d{1,9})?)*$", re.I)
 
@@ -8301,7 +8302,10 @@ def _task_shape(parser, argv):
         print(f"(task {act.id}, the active one)", file=sys.stderr)
         rest = [act.id] + rest
     import difflib
-    lone = len(rest) > 1 and not rest[1].startswith("-") and not rest[1].isdigit()  # an option or a step number
+    if acts and len(rest) > 1 and ACT_SYNONYMS.get(rest[1]) in acts:  # T-2540: `step T-1 remove 4` is rm, not add
+        rest[1] = ACT_SYNONYMS[rest[1]]
+    lone = (len(rest) > 1 and not rest[1].startswith("-") and not rest[1].isdigit()  # an option or a step number
+            and not (len(rest) > 2 and not rest[2].startswith("-")))  # T-2540: a second bare word is unquoted text
     if acts and "add" in acts and lone and _TASK_ID.match(rest[0]) and rest[1] not in acts and (
             " " in rest[1] or not difflib.get_close_matches(rest[1].lower(), acts)):
         rest = [rest[0], "add"] + rest[1:]  # review: a one-word typo stays an error; T-1903: a lone word nothing resembles is one

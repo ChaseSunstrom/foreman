@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm task step ID remove 2` (or `delete`, or `del`) now removes step 2. Before, it added a step named "remove" and quietly dropped the number. Two bare words where step text belongs, such as `fm task step ID fix it`, are now refused rather than half-added; quote the text instead.
 - `fm genesis step` no longer stalls a generation on a Mission task that was deferred with a revisit date (`fm task defer --until`). The task is carried: the critique step names it and asks why it waits. A task deferred without a date, or still planned, still holds the build stage.
 - The usage-burn advice in `fm cost` and `fm doctor` no longer tells you to run `fm install-user` when your own settings already set a larger compact window. That command leaves your value alone, so the advice did nothing. It now names your window and suggests running /compact at task boundaries. The doctor's state-size check now says when most of the space is exam runs, because `fm tidy` doesn't prune those.
 - `fm bench duel --ablate` now files a cleanup candidate for each hook feature that, when switched off, passed as many cases as full Foreman at no more cost. The candidate names the run and says what a cut still needs: the feature switched off must score no lower on every exam kind (held-out included) and on the long-horizon tier. Running it again doesn't file the same candidate twice.
