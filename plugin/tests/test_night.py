@@ -536,6 +536,14 @@ class NightTick(ForemanTestCase):
         self.assertIn("night tick sent 2 request(s)", self.fm("decide", "--review").stdout)
         self.assertNotIn("night tick", self.fm("todo").stdout)
 
+    def test_the_tick_settles_bets_with_no_session(self):  # T-2499
+        import fmoutcomes
+        with self.mock.patch.object(fmoutcomes, "maintain") as m:
+            self.tick()
+        m.assert_called_once_with(self.p)
+        with self.mock.patch.object(fmoutcomes, "maintain", side_effect=RuntimeError("ledger gone")):
+            self.assertIn("calibration: ledger gone", self.tick()["notes"])
+
     def test_a_second_tick_while_one_runs_stops_at_once(self):
         import fcntl
         with open(os.path.join(self.p.dir, "tick.lock"), "w") as held:

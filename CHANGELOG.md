@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Bets now settle even on nights when no task closes: fm night's tick writes the outcomes that are due. Once 20 bets are scored, `fm digest` names the kind of bet whose stated confidence scores worst against its base rate (or says none does).
 - `fm lane brief` now says when a task's own sections run past 4,000 characters, quotes the landing rates from `fm lane stats` (on this repo, long briefs landed 57% of the time against 97%), and suggests splitting the task or keeping it in the main thread. It still writes the brief.
 - Each check fm runs as proof now records the world it ran in: the Python version and the repo's lockfiles. `fm doctor` names finished tasks from the last 30 days whose world has changed since (for example, "uv.lock changed"), so you know which passes to rerun.
 - Every `fm prove` result now ends with a "Does not prove:" line for its mode, so a pass isn't read as more than it is. For example, `--docs` says only that each documented command, flag or path exists or ran, not that the prose is right; a scan says that leads weren't tried and that a proven ticket shows a failing test, not its cause.

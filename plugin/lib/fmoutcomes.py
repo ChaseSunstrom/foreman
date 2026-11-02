@@ -559,6 +559,19 @@ def _interim_line(d):
         if d.get("interim") else "")
 
 
+def _trails(done):
+    """T-2499: (kind, stated Brier, base Brier, n) for the kind whose stated Brier is furthest above its base rate's,
+    over rows with a base (5+ per kind); None when no kind trails."""
+    worst = None
+    for k in KINDS:
+        rows = [r for r in done if r["kind"] == k and r.get("base") is not None]
+        if len(rows) >= 5:
+            s, b = brier(rows), brier(rows, "base")
+            if s > b and (worst is None or s - b > worst[1] - worst[2]):
+                worst = (k, s, b, len(rows))
+    return worst
+
+
 def brier(rows, key="stated"):
     """The mean squared miss of a forecast against what happened (0 is perfect); None without rows that have it."""
     pairs = [(r[key] / 100, r["outcome"] == "held") for r in rows if r["outcome"] and r.get(key) is not None]
@@ -680,7 +693,8 @@ def ledger_data(p, outs=None):
     based = [r for r in done if r.get("base") is not None]
     return {"total": len(rows), "scored": len(done), "pending": len(rows) - len(done), "kinds": table,
             "brier": {"stated": brier(done), "base": brier(based, "base")} if len(done) >= LEDGER_MIN else None,
-            "bars": bars(p), "routes": routes(p, rows) if len(done) >= LEDGER_MIN else {}, "interim": interim(rows, outs)}
+            "bars": bars(p), "routes": routes(p, rows) if len(done) >= LEDGER_MIN else {}, "interim": interim(rows, outs),
+            "trails": _trails(done) if len(done) >= LEDGER_MIN else None}  # T-2499
 
 
 def _bucket_line(kind, b):
@@ -704,7 +718,9 @@ def ledger_lines(p, outs=None):
     if not d["brier"]:
         return [_too_few(d)]
     return ["Calibration ledger: " + "; ".join(_bucket_line(k, b) for k, bs in d["kinds"].items() for b in bs)
-            + f"; {_brier_line(d)}"]
+            + f"; {_brier_line(d)}" + (  # T-2499
+                "; trails its base rate most: {} (Brier stated {:.2f} vs base {:.2f}, n {})".format(*d["trails"])
+                if d["trails"] else "; no kind's stated Brier trails its base rate")]
 
 
 def extras(p, briefs=None):
