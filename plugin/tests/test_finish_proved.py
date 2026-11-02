@@ -54,3 +54,24 @@ class ProvedPaths(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FinishAfterARedGate(ForemanTestCase):  # T-2526: T-2334 closed and committed right after its full gate failed
+    def test_a_red_full_check_on_this_tree_refuses_the_close_and_a_green_one_after_it_lets_it_go(self):
+        import json
+        self.fm("init")
+        p = c.find_project(self.repo)
+        tid = json.loads(self.fm("task", "new", "Close me", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                                 "--step", "s", "--json").stdout)["id"]
+        self.fm("focus", tid)
+        tree = c.worktree_id(self.repo)
+        c.log_event(p, "check_run", data={"tree": tree, "results": [
+            {"cmd": "python3 plugin/tests/run.py", "exit": 1, "failing": ["test_proof.Proof"]}]})
+        r = self.fm("task", "finish", tid, "--run", "true", "--audit", "self check", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("python3 plugin/tests/run.py", r.stdout + r.stderr)
+        self.assertIn("test_proof.Proof", r.stdout + r.stderr)
+        self.assertNotEqual(c.find_brief(p, tid).status, "done")
+        c.log_event(p, "check_run", data={"tree": tree, "results": [{"cmd": "python3 plugin/tests/run.py", "exit": 0}]})
+        self.fm("task", "finish", tid, "--run", "true", "--audit", "self check")
+        self.assertEqual(c.find_brief(p, tid).status, "done")
