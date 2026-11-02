@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T14:36:24Z",
- "rev": "c0c2ba3f",
+ "updated": "2026-11-02T18:07:09Z",
+ "rev": "083fa7c6",
  "capabilities": [
   {
    "n": 1,
@@ -3127,12 +3127,12 @@
       {
        "id": "T-2616",
        "title": "The docs proof kind reads the lines a task itself landed, not every later doc edit",
-       "status": "active",
+       "status": "done",
        "type": "FIX",
        "tier": "S",
        "steps": 3,
-       "done": 2,
-       "current": "red test"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2273",
@@ -24309,7 +24309,7 @@
  },
  "not_yet": 7,
  "not_yet_open": 5,
- "unproven": 974,
+ "unproven": 973,
  "unproven_kinds": {
   "meaning": 571,
   "research-uncited": 29,
@@ -24317,17 +24317,17 @@
   "red": 73,
   "perf-typed": 50,
   "ui-unshot": 50,
-  "docs": 421,
+  "docs": 417,
   "tui-unshot": 47,
   "data": 2,
   "infra": 8,
   "perf-noise": 1
  },
  "next": {
-  "stage": "build",
+  "stage": "critique",
   "gen": 3,
-  "action": "Mission 4 (verifying-anything): finish T-2616",
-  "command": "fm focus T-2616",
+  "action": "Mission 4 (verifying-anything): write its critique (closed vs planned, outside signals, what failed)",
+  "command": "fm genesis put gen-3/critique-verifying-anything.md --file -",
   "kind": "ok"
  },
  "docs": {
