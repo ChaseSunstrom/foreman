@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T05:40:11Z",
- "rev": "495a7d58",
+ "updated": "2026-11-02T05:59:25Z",
+ "rev": "0c6813fb",
  "capabilities": [
   {
    "n": 1,
@@ -2251,22 +2251,22 @@
       {
        "id": "T-2546",
        "title": "Already built, at birth: fm capture and fm task new name the MASTER.md clauses a request mostly restates, with thresholds a backtest set",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 0,
+       "done": 3,
        "current": "red test in test_recall: a request restating a MASTER clause gets that clause and its T-id; an unrelated request gets none; a long paste gets none"
       },
       {
        "id": "T-2547",
        "title": "fm genesis put refuses a Mission whose intake block has more briefs than grounding lines (a ## Grounding bullet per brief naming the code and the record)",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "S",
        "steps": 2,
-       "done": 0,
-       "current": "red test in test_genesis: the three cases (grounded, short, no code reference) and a non-mission file"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2335",
@@ -18311,14 +18311,14 @@
  },
  "not_yet": 5,
  "not_yet_open": 0,
- "unproven": 1052,
+ "unproven": 1049,
  "unproven_kinds": {
-  "meaning": 578,
+  "meaning": 577,
   "research-uncited": 28,
-  "typed": 36,
-  "red": 63,
+  "typed": 35,
+  "red": 64,
   "perf-typed": 50,
-  "docs": 593,
+  "docs": 592,
   "ui-unshot": 52,
   "tui-unshot": 51,
   "data": 4,
