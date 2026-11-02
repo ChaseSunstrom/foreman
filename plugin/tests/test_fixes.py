@@ -54,6 +54,14 @@ class KnownFixes(ForemanTestCase):
         note = self.context(self.run_fail("pytest", session="sess-3", cwd=other))
         self.assertIn("python3 -m pytest -q tests", note)
 
+    def test_a_no_op_naming_the_subject_teaches_nothing(self):  # T-2413
+        self.run_fail("mytool --check")
+        self.ok("touch mytool")
+        self.ok("mkdir -p mytool")
+        self.assertEqual(self.fm_json("fix", "list"), [])
+        self.ok("mytool --check --fix")
+        self.assertEqual(len(self.fm_json("fix", "list")), 1)
+
     def test_a_retry_that_passes_and_a_look_around_teach_nothing(self):
         self.run_fail("pytest -q tests")
         self.ok("cat setup.cfg")

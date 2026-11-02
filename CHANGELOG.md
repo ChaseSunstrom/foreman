@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Foreman's known-fix store no longer learns a no-op as a fix. A failed `mytool --check` followed by `touch mytool` (or `mkdir`, `test`, `true`, `:`) used to be stored as "run `touch mytool` instead"; now only a real retry pairs.
 - `fm outcomes --judgment` now shows ship bets in its buckets. They were scored but missing from the table; on this repo, 4 of 4 have held. They still never move a bar or a route.
 - Each bet now records which harness stated it: fm code, the exam, or a Claude Code session. A harness it can't recognize reads "unknown" rather than a guess. `fm outcomes --judgment --by harness` shows the buckets and Brier scores for each harness.
 - Bets now settle even on nights when no task closes: fm night's tick writes the outcomes that are due. Once 20 bets are scored, `fm digest` names the kind of bet whose stated confidence scores worst against its base rate (or says none does).

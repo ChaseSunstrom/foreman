@@ -21,7 +21,7 @@ import fmfixes
 
 KINDS = ("capability_miss", "fix_paired", "tool_proved", "grant_queued", "miss_resolved")
 CUT = 1000  # a key is the whole command up to here; the event keeps as much, so both sides cut alike
-NOOPS = {"touch", "mkdir", "true", ":", "test", "["}  # they succeed with anything: pairing with one proves nothing
+NOOPS = fmfixes.NOOPS  # T-2413: one list with fmfixes (they succeed with anything: pairing with one proves nothing)
 _PASS = re.compile(r"^- (?:\((step|ac) (\d+)\) )?`([^`]*)` → exit 0\b")
 _CD = re.compile(r"^(?:\s*cd\s+\S+\s*&&)+\s*")
 
