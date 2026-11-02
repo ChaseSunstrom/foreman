@@ -1471,11 +1471,13 @@ def missing_modules(home, master=None):
 
 def check_state_dir(home, state):
     default = os.path.join(home, "state")
+    fs = _fs_type(state)  # T-2639: wherever state is, a RAM filesystem loses every brief and ledger at reboot
+    gone = f" It's on {fs}, so a reboot clears it: point FOREMAN_STATE at a disk folder." if fs in ("tmpfs", "ramfs") else ""
     if state == default:
-        return Result("state dir", "PASS", state)
+        return Result("state dir", "WARN" if gone else "PASS", state + gone)
     if os.environ.get("FOREMAN_STATE"):
-        return Result("state dir", "WARN", f"FOREMAN_STATE is set: state is in {state}, not {default}")
-    tmp = " It's under the temp dir, so a reboot can clear it." if state.startswith(tempfile.gettempdir()) else ""
+        return Result("state dir", "WARN", f"FOREMAN_STATE is set: state is in {state}, not {default}.{gone}")
+    tmp = gone or (" It's under the temp dir, so a reboot can clear it." if state.startswith(tempfile.gettempdir()) else "")
     return Result("state dir", "WARN", f"fallback in use: {state} ({default} wasn't writable; the marker in it keeps "
                   f"every process there).{tmp} fm doctor --restore-state moves it back once {default} is writable")
 

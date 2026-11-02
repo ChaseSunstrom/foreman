@@ -375,8 +375,10 @@ class Checks(unittest.TestCase):
             self.assertIn(needle, r.detail)
 
     def test_state_location(self):
+        import unittest.mock as mock
         home = os.path.join(self.t, "fh")
-        self.assertEqual(d.check_state_dir(home, os.path.join(home, "state")).status, "PASS")
+        with mock.patch.object(d, "_fs_type", return_value="ext4"):  # T-2639: the test's /tmp may be tmpfs, which warns
+            self.assertEqual(d.check_state_dir(home, os.path.join(home, "state")).status, "PASS")
         r = d.check_state_dir(home, os.path.join(self.t, "xdg", "foreman"))
         self.assertEqual(r.status, "WARN")
         self.assertIn("fallback", r.detail)

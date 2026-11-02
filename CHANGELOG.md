@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm doctor`'s state-dir row now warns when Foreman's state directory is on a RAM filesystem (tmpfs or ramfs), wherever it lives: the default, `FOREMAN_STATE` or a fallback. Before, it warned only when a fallback was under the temp dir. Every brief and ledger there is lost at reboot.
 - Fixed: the guard could hang on a command with deeply nested `$(`. Every level re-read the rest of the command, so the work grew about n⁴: 20 levels took 19 seconds and 500 never finished. More than 8 nested at once is now refused at once with the guard's existing "nesting too deep" message. A new latency test times ten pathological commands (a 50,000-character line, 200 heredocs, 10,000 `;`-joined commands and others) against CPU-time bars, and a planted slow regex proves the test can fail.
 - The steer expander's one-section output stays. A second try at anticipation without harm split the expansion into a Rule (acted on) and Proposals (filed, never acted on), with the judge reading the Rule only. On the train split it covered 15 of 93 reference clauses against 20 before, with 46 harmful additions against 45: the expander moved clauses the user meant into Proposals. It was measured and reverted.
 - New: `fm run --stall-usd N` stops starting tasks once the run has spent N dollars since its last task close, and its end line says why. A run that keeps closing tasks is never stopped by it. Like `--max-usd`, it runs one task at a time so each session's cost is measured.
