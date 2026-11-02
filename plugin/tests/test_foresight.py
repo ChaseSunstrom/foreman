@@ -158,6 +158,19 @@ class Foresight(ForemanTestCase):
         self.assertIn("tidy overdue", text)
         self.assertEqual(fs.pile_lines({"blocked": [], "tidy_overdue_days": None, "last_tidy": None}), [])
 
+    def test_the_pile_names_the_one_action_that_frees_most(self):  # T-2683
+        b = lambda i, **k: dict({"id": i, "updated": None}, **k)
+        sd = {"blocked": [b("T-1"), b("T-2"), b("T-3"), b("T-4", allow=["push"]), b("T-5", waits_on=["T-9"])],
+              "asks": [{"task": "T-1", "allow": ["publish"]}, {"task": "T-2", "allow": ["publish"]},
+                       {"task": "T-3", "allow": ["core"]}]}
+        line = fs.pile_lines(sd)[0]
+        self.assertIn("5 blocked, 2 of them wait on one answer: fm ask list (publish)", line)
+        self.assertLess(line.index("fm ask list"), line.index("fm tidy"))
+        sd["asks"] = sd["asks"][:1]  # no group above one task: nothing new
+        self.assertNotIn("of them", fs.pile_lines(sd)[0])
+        sd["blocked"] = [b("T-6", waits_on=["T-9"]), b("T-7", waits_on=["T-9"]), b("T-8")]
+        self.assertIn("2 of them wait on T-9 closing", fs.pile_lines(sd)[0])
+
 
 SHA = "a" * 40
 

@@ -4200,6 +4200,7 @@ def state_dict(p, briefs=None):
     days = age_days(since)
     panic = panicked()
     autonomy = "standard" if panic else effective_autonomy(p, meta)
+    open_ids = {b.id for b in everything if b.status not in ("done", "dropped")}
     active = None
     if act:
         changed = last_change(p, act.id)
@@ -4212,7 +4213,9 @@ def state_dict(p, briefs=None):
         "lanes": [dict(brief_summary(b), lane=b.meta.get("lane") or "main") for b in everything
                   if held_elsewhere(b, p.lane) and b.status not in ("done", "dropped")],
         "inbox": [brief_summary(b) for b in rank_inbox(briefs)],
-        "blocked": [dict(brief_summary(b), reason=_last_log(b)) for b in briefs if b.status == "blocked"],
+        "blocked": [dict(brief_summary(b), reason=_last_log(b),  # T-2683: the open task it waits on, if any
+                         waits_on=[d for d in b.meta.get("depends_on") or [] if d in open_ids])
+                    for b in briefs if b.status == "blocked"],
         "deferred": [b.id for b in briefs if b.status == "deferred"],
         "cycles": cycles, "dangling": [list(d) for d in dangling],
         "sensitive": bool(meta.get("sensitive")), "drive": meta.get("drive", True), "paused": bool(meta.get("paused")),

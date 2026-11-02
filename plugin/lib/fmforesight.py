@@ -8,6 +8,7 @@ import json
 import os
 import re
 import time
+from collections import Counter
 
 import fmcore as c
 
@@ -187,8 +188,18 @@ def pile_lines(sd):
     if blocked:
         dated = sorted((x["updated"], x["id"]) for x in blocked if c.age_days(x.get("updated")) is not None)
         days = c.age_days(dated[0][0]) if dated else 0
+        asks = {a["task"]: a.get("allow") or [] for a in sd.get("asks") or [] if a.get("task")}
+        keys = Counter()  # T-2683: the one user action that frees each blocked task
+        for x in blocked:
+            if x["id"] in asks:
+                keys["wait on one answer: fm ask list (" + (c.plain(", ".join(map(str, asks[x["id"]])))[:40] or "no category") + ")"] += 1
+            elif x.get("waits_on"):
+                keys[f"wait on {c.plain(str(x['waits_on'][0]))[:12]} closing"] += 1
+        top = keys.most_common(1)
         out.append(f"{len(blocked)} blocked" + (f", oldest untouched {days:.0f} days ({dated[0][1]})"
-                                                if days > STALE_DAYS else "") + " → fm tidy")  # T-2117: short items
+                                                if days > STALE_DAYS else "")
+                   + (f", {top[0][1]} of them {top[0][0]}" if top and top[0][1] > 1 else "")
+                   + " → fm tidy")  # T-2117: short items
     if sd.get("tidy_overdue_days"):
         out.append(f"tidy overdue {sd['tidy_overdue_days']} days → fm tidy")
     return out
