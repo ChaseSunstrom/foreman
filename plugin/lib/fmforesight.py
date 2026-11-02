@@ -128,6 +128,14 @@ def refresh(p, net=True):
             d["changed"], changed = {"ts": time.time(), "what": what}, True
         d["setup"] = now
         _save(_path(), d)
+    try:  # T-2542: an installed timer that stopped firing or fails, kept for session start (a quiet tick logs nothing)
+        import fmnight
+        timers = [list(r) for r in fmnight.liveness()]
+        if d.get("timers", []) != timers:
+            d["timers"] = timers
+            _save(_path(), d)
+    except Exception:
+        pass  # a failed read never costs the sweep its other caches
     if net and not os.environ.get("FOREMAN_NO_NET") and not c.read_meta(p).get("sensitive"):
         _ci(p)
     if net:  # T-2356: the same sweep runs the model-free tick (orders, the cached CI result, approved issues)
@@ -193,6 +201,9 @@ def lines(p):
     if ch.get("what") and time.time() - ch.get("ts", 0) < CHANGE_DAYS * 86400:
         out.append(f"Setup changed ({ch['what']}): every default's cost moves with it → fm cost --by-model and fm budget "
                    "for the new per-call cost; fm doctor for CC features to adopt and settings to redo.")
+    for u, why in d.get("timers") or []:  # T-2542
+        out.append(f"Timer {c.plain(str(u))[:80]} {c.plain(str(why))[:120]}"
+                   + ("" if u == "systemd" else f" → journalctl --user -u {c.plain(str(u))[:80]}.service") + ".")
     ci = _load(_mine(p))
     if ci.get("failed") and ci.get("sha"):
         b = c.find_brief(p, str(ci.get("task") or ""))

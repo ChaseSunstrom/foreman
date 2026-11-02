@@ -504,6 +504,8 @@ class NightInstall(ServeCase):  # T-2357: night and tick timers staged, asked on
         for n in (f"foreman-night-{self.slug}.timer", f"foreman-tick-{self.slug}.timer"):
             self.assertTrue(os.path.isfile(os.path.join(udir, n)), r.stdout)
             self.assertIn(f"systemctl --user enable --now {n}", self.called())
+        self.assertIn(f"systemctl --user start foreman-tick-{self.slug}.service", self.called())  # T-2542
+        self.assertIn("First tick", r.stdout, "the yes is followed by a run that is seen")
         meta = self.meta()
         self.assertEqual(meta.get("watch"), {"ci": True, "issues": []})  # issues weren't staged, so not watched
         self.assertFalse(os.path.exists(os.path.join(c.find_project(self.repo).dir, "night", "staged")))
