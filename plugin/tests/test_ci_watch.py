@@ -448,3 +448,34 @@ class CiWatch(ForemanTestCase):
             fmci.watch(p, "main", 0, 0, max_polls=1, commit=head, **quiet)
         self.assertEqual(verdicts(), [(head, True), (head, False)])
 
+
+
+class CiCause(ForemanTestCase):  # T-2518: one open FIX per failing cause, not one per run or per shard
+    def runs(self, p, run_id, job, conclusion="failure"):
+        import fmci
+        def gh(p_, *argv):
+            if argv[:2] == ("run", "list"):
+                return json.dumps([{"databaseId": run_id, "status": "completed", "conclusion": conclusion,
+                                    "headSha": fmci._head(p), "url": f"https://github.com/o/r/actions/runs/{run_id}"}])
+            if "--json" in argv:
+                return json.dumps({"jobs": [{"name": job, "conclusion": "failure"}]})
+            return "FAILED tests/test_exam.py::LanesKind\n1 classes failed: test_exam.LanesKind (exit 1)\n"
+        return gh
+
+    def test_the_same_failing_classes_on_new_runs_and_shards_join_one_open_fix(self):
+        import fmci
+        import fmcore as c
+        from unittest import mock
+        self.fm("init")
+        p = c.find_project(self.repo)
+        quiet = {"say": lambda *a, **k: None}
+        fixes = lambda: [b for b in c.load_briefs(p) if b.type == "FIX" and b.status not in c.CLOSED]  # noqa: E731
+        for run_id, job in ((8, "test (macos, 1)"), (9, "test (macos, 2)")):  # blocking red, two shards
+            with mock.patch.object(fmci, "_gh", side_effect=self.runs(p, run_id, job)):
+                fmci.watch(p, "main", 0, 0, max_polls=1, **quiet)
+        self.assertEqual(len(fixes()), 1, [b.id for b in fixes()])
+        self.assertIn("runs/9", fixes()[0].section("Log"))
+        self.fm("task", "drop", fixes()[0].id, "fixed")
+        with mock.patch.object(fmci, "_gh", side_effect=self.runs(p, 10, "test (macos, 1)")):
+            fmci.watch(p, "main", 0, 0, max_polls=1, **quiet)
+        self.assertEqual(len(fixes()), 1, "after its fix closed, the failure coming back files anew")
