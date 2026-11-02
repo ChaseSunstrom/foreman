@@ -2935,9 +2935,16 @@ def _one_way(b):
     rx, raw = (HARD_S_RE if b.tier == "S" else HARD_RE), b.section("Raw request")
     for s in b.steps():
         m = rx.search(s.text)
+        if m and m.group(1).lower() in ("delete", "drop") and _CODE_OBJ.match(s.text[m.end():]):
+            continue  # T-2521: a code symbol in a tracked file: git undoes its removal
         if m and not re.search(r"(?i)\b" + re.escape(m.group(1)[:5]), raw):
             return m.group(0).lower()
     return ""
+
+
+# T-2521: the verb's object is a code identifier (snake_case with _, dotted, backticked or called), after "the unused"
+_CODE_OBJ = lazy(r"\s+(?:the\s+)?(?:unused\s+|dead\s+|old\s+)?"  # a file name (old.csv, old_data.csv) is never one
+                 r"(?:`[^`]+`|\w*_\w*\b(?!\.)|\w+(?:\.\w+)*\.\w*_\w*\b(?!\.)|\w+(?:\.\w+)*\(\))")
 
 
 def rival_gap(b):
