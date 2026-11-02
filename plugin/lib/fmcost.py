@@ -952,6 +952,10 @@ def cmd_digest(args):
         lines += [f"Trigger routes moved: {', '.join(f'{t} -> {r}' for t, r in moved.items())}"] if moved else []
     except Exception:  # a digest never fails on a derived report
         pass
+    import fmanergy  # T-2563: prompts approved by reflex, with the rule that would retire each (never applied here)
+    reflex = fmanergy.report()["reflex"]
+    lines += ["Approved by reflex (an allow rule would stop asking; your call): "
+              + " · ".join(f"{cls} ×{n}, median {m}s" for cls, n, m in reflex[:4])] if reflex else []
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
     triage.sort(key=lambda r: ("do", "drop", "ask").index(r[1]))  # a do or drop never hides behind asks
     lines += [f"Deferred: {t} → {v} ({w})" for t, v, w in triage[:6]]

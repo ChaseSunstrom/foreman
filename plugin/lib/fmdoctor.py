@@ -685,6 +685,18 @@ def check_night_timers(p):
                   + (f"; {live} installed timer(s) firing, last runs ok (systemd)" if live else ""))
 
 
+def check_anergy():
+    """T-2563: permission prompts approved by reflex (5+, median within 2 s, every one read-only): the allow rule that
+    would retire each. Advisory: Foreman never applies a rule; the user does."""
+    import fmanergy
+    r = fmanergy.report()
+    head = f"{r['prompts']} prompt(s), {r['timed']} timed"
+    if not r["reflex"]:
+        return Result("reflex prompts", "PASS", f"{head}; none qualified")
+    return Result("reflex prompts", "PASS", f"{head}; approved by reflex, retire with an allow rule if you agree: "
+                  + "; ".join(f"{cls} ({n}×, median {m}s)" for cls, n, m in r["reflex"][:4]))
+
+
 def check_muted_triggers(p):
     """T-2355: a muted trigger files nothing, so each one is named here with the command that brings it back."""
     import fmtriggers
@@ -2522,6 +2534,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_steers(here, run=full))
     results.append(check_muted_triggers(here))
     results.append(check_night_timers(here))
+    results.append(check_anergy())
     results.append(check_predictions(here))
     results.append(check_model_backends(here))
     results.append(check_self_fixes(here))
