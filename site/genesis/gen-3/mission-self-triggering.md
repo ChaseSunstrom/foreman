@@ -1,5 +1,7 @@
 # Mission 1 — self-triggering (gen 3, #11)
 
+Task: T-2607 (brief 1).
+
 Parent: gen-3/seed.md row 1 → gen-0.md #11: "Self-triggering. Schedules, file and event triggers, CI and issue
 watchers, so work starts without me. Installs (timers, units) get queued for one yes." gen-0's goal, MUSTs and NEVERs
 are quoted in the seed and apply here unchanged.
