@@ -3489,24 +3489,30 @@ def review_fixes(p, n):
 
 def review_handle(p, n, spec):
     """fm genesis review N --handle 'K=gap' or 'K=dismissed: why': marks finding K; the task filed for it is dropped
-    with that reason. A dismissal needs its reason."""
+    with that reason. A dismissal needs its reason. Several specs (T-2592: --handle repeated) are each checked before
+    any is applied, so one bad value applies none."""
     import fmcli
-    k, _, how = str(spec).partition("=")
-    how = how.strip()
-    if not (k.strip().isdigit() and (how == "gap" or re.fullmatch(r"dismissed:\s*\S.{2,}", how))):
-        raise ValueError("--handle K=gap or K=dismissed: <reason> (the finding's number from review.md)")
+    specs = [spec] if isinstance(spec, str) else list(spec)
     text = _doc(home(p), f"gen-{n}/review.md")
-    rows = _review_rows(text)
-    r = next((x for x in rows if x["n"] == int(k)), None)
-    if r is None:
-        raise ValueError(f"gen-{n}/review.md has no finding {k}")
-    old, r["handled"] = r["handled"], how
-    b = c.find_brief(p, old) if re.fullmatch(r"T-\d{4,}", old) else None
-    if b is not None and b.status not in c.CLOSED:
-        fmcli.mutate(p, b.id, lambda x: (x.meta.update(status="dropped"), x.append_log(f"dropped: review.md marks it {how}")),
-                     "task_drop", {"reason": f"cross-cutting review: {how}"})
+    rows, todo = _review_rows(text), []
+    for s in specs:
+        k, _, how = str(s).partition("=")
+        how = how.strip()
+        if not (k.strip().isdigit() and (how == "gap" or re.fullmatch(r"dismissed:\s*\S.{2,}", how))):
+            raise ValueError("--handle K=gap or K=dismissed: <reason> (the finding's number from review.md)")
+        r = next((x for x in rows if x["n"] == int(k)), None)
+        if r is None:
+            raise ValueError(f"gen-{n}/review.md has no finding {k}")
+        todo.append((r, how))
+    for r, how in todo:
+        old, r["handled"] = r["handled"], how
+        b = c.find_brief(p, old) if re.fullmatch(r"T-\d{4,}", old) else None
+        if b is not None and b.status not in c.CLOSED:
+            fmcli.mutate(p, b.id, lambda x, how=how: (x.meta.update(status="dropped"),
+                                                      x.append_log(f"dropped: review.md marks it {how}")),
+                         "task_drop", {"reason": f"cross-cutting review: {how}"})
     _review_save(p, n, text, rows)
-    return r
+    return todo[0][0] if isinstance(spec, str) else [r for r, _ in todo]
 
 
 def _review_row(p, n):
@@ -3894,8 +3900,8 @@ def cmd_genesis(args):
         if action == "review":  # T-2501
             n = int(args.path)
             if getattr(args, "handle", None):
-                r = review_handle(p, n, args.handle)
-                return fmcli.out(args, r, f"gen {n} review: finding {r['n']} → {r['handled']}")
+                rs = review_handle(p, n, args.handle)  # T-2592: a list, every value checked before any applies
+                return fmcli.out(args, rs, "\n".join(f"gen {n} review: finding {r['n']} → {r['handled']}" for r in rs))
             r = review(p, n)
             c.log_event(p, "genesis_review", data={"gen": n, "findings": len(r["findings"]), "model": r["model"]},
                         session=fmcli.session())

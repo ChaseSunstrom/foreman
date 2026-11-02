@@ -3847,6 +3847,16 @@ class GenerationReview(ForemanTestCase):
         bad, good = fmgenesis._review_row(self.p, 1)
         self.assertEqual(bad, [])
 
+    def test_handle_given_twice_applies_both_and_a_bad_one_applies_none(self):  # T-2592
+        import fmcore as c
+        import fmgenesis
+        first, second = fmgenesis.review(self.p, 1, run=self.run_with(self.REPLY)[1])["tasks"]
+        with self.assertRaises(ValueError):
+            fmgenesis.review_handle(self.p, 1, ["1=gap", "9=gap"])  # no finding 9: nothing is applied
+        self.assertNotEqual(c.find_brief(self.p, first).status, "dropped")
+        self.fm("genesis", "review", "1", "--handle", "1=gap", "--handle", "2=dismissed: the README names the run")
+        self.assertEqual({c.find_brief(self.p, t).status for t in (first, second)}, {"dropped"})
+
     def test_the_sweep_row_is_red_without_a_review_with_a_weaker_reviewer_or_a_bare_finding(self):
         import fmgenesis
         self.assertIn("no gen-1/review.md", fmgenesis._review_row(self.p, 1)[0][0])

@@ -7618,7 +7618,7 @@ def _build_parser(only=None):
     s.add_argument("--model", help="exam: the child author's model (default sonnet)")
     s.add_argument("--lang", help="exam: comma list of languages to draw projects in (default all six)")
     s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
-    s.add_argument("--handle", metavar="K=HOW", help="review: mark finding K as gap (the next Seed's top gaps) or "
+    s.add_argument("--handle", metavar="K=HOW", action="append", help="review (repeatable, T-2592): mark finding K as gap (the next Seed's top gaps) or "
                                                     "'dismissed: <reason>'; its filed task is dropped (T-2501)")
     s.add_argument("--settle", action="store_true", help="publish: wait out the rest of the window first (the detached "
                                                          "publish a tower change starts)")
