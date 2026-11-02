@@ -236,7 +236,27 @@ def lines(p):
                "newest run is still going" if status in c.CLOSED | {"closed"} else f"fix it first: {ci.get('task')}")
         out.append(f"CI on {ci.get('branch') or 'main'} is red at {str(ci['sha'])[:7]} ({', '.join(map(str, ci['failed']))})"
                    f" → {act}.")
+    out += _next_line(p)
     return out
+
+
+def _next_line(p):
+    """T-2681: the newest unscored next-request prediction, once, while its kind beats its baseline and isn't muted;
+    the book gains a write-once {"kind": "shown"} row so shown and unshown hit rates can be told apart. Never in a
+    sensitive project."""
+    if c.read_meta(p).get("sensitive"):
+        return []
+    rows = _book(p)
+    done = {r["id"] for r in rows if r.get("kind") in ("score", "shown")}
+    mine = [r for r in rows if r.get("kind") == "next-request" and r["id"] not in done]
+    k = next((k for k in prediction_kinds(p) if k["kind"] == "next-request"), None)
+    if not mine or not k or k["muted"] or k["hit"] is None or k["base_hit"] is None or k["hit"] <= k["base_hit"]:
+        return []
+    r, pred = mine[-1], mine[-1].get("pred") or {}
+    paths = ", ".join(c.plain(str(x))[:80] for x in (pred.get("paths") or [])[:3])
+    c.append_line(os.path.join(p.dir, PREDICTIONS), json.dumps({"kind": "shown", "id": r["id"]}) + "\n")
+    return [f"You may ask next: {c.plain(str(pred.get('type')))[:20]}" + (f" on {paths}" if paths else "")
+            + f" (guesses hit {k['hit']:.0%} vs {k['base_hit']:.0%} for 'same as last')."]
 
 
 # ---------------------------------------------------------------- T-2406 (#3): the prediction book

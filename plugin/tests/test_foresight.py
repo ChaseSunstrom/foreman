@@ -470,6 +470,42 @@ class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicte
         self.assertEqual(fs.predict([(None, "FIX", ["x.py"]), (None, "FEATURE", many), (None, "FIX", ["y.py"])]),
                          ("FEATURE", many))  # every path the request touched, as _requests keeps them
 
+    def test_session_start_names_the_unscored_prediction_once_while_it_beats_its_baseline(self):
+        # T-2681: shown only while the kind beats 'same as last'; the book gains a write-once shown row
+        for t, s in (("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py")):
+            self.ask(t, s)
+        fs.prediction_tick(self.p)
+        (pred,) = [r for r in self.rows() if r["kind"] == "next-request"]
+
+        def book(n, hit, base):
+            with open(os.path.join(self.p.dir, fs.PREDICTIONS), "a", encoding="utf-8") as f:
+                for i in range(n):
+                    f.write(json.dumps({"kind": "score", "id": f"Q{i}", "at": c.now(), "type_hit": hit,
+                                        "base_type_hit": base}) + "\n")
+        shown = lambda: [r for r in self.rows() if r["kind"] == "shown"]  # noqa: E731
+        self.assertEqual(fs.lines(self.p), [])  # no scored rows: nothing beats anything
+        book(20, False, True)  # trailing and muted
+        self.assertEqual(fs.lines(self.p), [])
+        self.assertEqual(shown(), [])
+        with open(os.path.join(self.p.dir, fs.PREDICTIONS), "w", encoding="utf-8") as f:
+            f.write(json.dumps(pred) + "\n")
+        book(6, True, False)
+        (line,) = fs.lines(self.p)
+        self.assertIn("FEATURE on b.py", line)
+        self.assertIn("100% vs 0%", line)
+        self.assertEqual(shown(), [{"kind": "shown", "id": pred["id"]}])
+        self.assertEqual(fs.lines(self.p), [])  # once per prediction
+        self.assertEqual(len(shown()), 1)
+
+    def test_session_start_says_nothing_of_a_sensitive_projects_prediction(self):
+        for t, s in (("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py")):
+            self.ask(t, s)
+        fs.prediction_tick(self.p)
+        with open(os.path.join(self.p.dir, fs.PREDICTIONS), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"kind": "score", "id": "Q", "at": c.now(), "type_hit": True, "base_type_hit": False}) + "\n")
+        self.fm("sensitive", "on")
+        self.assertEqual(fs.lines(self.p), [])
+
     def test_files_touched_outside_the_repo_are_not_part_of_a_requests_paths(self):
         # T-2454: the live book's first row guessed a scratchpad file (../../../../tmp/...) the request had touched
         tid = self.ask("FIX", "a.py")
