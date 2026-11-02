@@ -323,6 +323,18 @@ def _near(p, args, text, type_):
     type, and for a FEATURE the done task close to it."""
     import fmrecall
     same, other, done = fmrecall.near_tasks(p, _title(text), _scope_paths(args.scope or ()), type_)
+    asleep = c.find_brief(p, same[0]) if same and not args.anyway else None
+    if asleep and asleep.status == "deferred":  # T-2656: new words that match a deferred task bring it back
+        import datetime
+
+        def wake(x):
+            x.meta["revisit"] = datetime.date.today().isoformat()  # due now: fm next names it, as for a date that came
+            x.append_log(f"woken by a capture that matched it: {c.fit(c.plain(text), 200)}")
+        mutate(p, asleep.id, wake, "task_woken", {"by": "capture"})
+        out(args, {"woke": asleep.id, "title": asleep.title},
+            f"woke deferred {asleep.id} ({c.fit(c.plain(asleep.title), 80)}): your words are on its log and it's due back "
+            f"today (fm next names it)")
+        return 0, None
     if same:  # T-2488: the rule's dedupe call, for the model's shadow pass (refused: same; kept with --anyway: different)
         import fmmodels
         fmmodels.shadow(p, "dedupe", f"{_title(text)} || {same[1]}", "different" if args.anyway else "same")
