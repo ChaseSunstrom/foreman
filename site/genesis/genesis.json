@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T11:04:45Z",
- "rev": "6176c50b",
+ "updated": "2026-11-02T11:17:58Z",
+ "rev": "f19090be",
  "capabilities": [
   {
    "n": 1,
@@ -21014,12 +21014,12 @@
  },
  "not_yet": 5,
  "not_yet_open": 0,
- "unproven": 1044,
+ "unproven": 1045,
  "unproven_kinds": {
-  "meaning": 566,
+  "meaning": 567,
   "research-uncited": 29,
   "typed": 26,
-  "red": 71,
+  "red": 72,
   "perf-typed": 50,
   "docs": 599,
   "ui-unshot": 50,
@@ -21029,10 +21029,10 @@
   "perf-noise": 1
  },
  "next": {
-  "stage": "build",
+  "stage": "sweep",
   "gen": 2,
-  "action": "gen-2/sweep.md is red: finish its fix task T-2603",
-  "command": "fm focus T-2603",
+  "action": "gen-2/sweep.md's fix tasks are closed: rerun it",
+  "command": "fm genesis sweep 2",
   "kind": "ok"
  },
  "docs": {
