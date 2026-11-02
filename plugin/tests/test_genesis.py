@@ -1266,6 +1266,12 @@ class GenesisDraft(ForemanTestCase):
                                                                       "model_hits": 2, "brier": 0.18, "ms": 50}}})
         self.assertIn("model intake-type: rule 2/3, model 2/3 (Brier 0.18, 50 ms)",
                       fmgenesis._exam_tail(fmgenesis.home(self.p)))
+        fmgenesis.exam_line(self.p, {"run": "s4", "agent": "foresight", "scenarios": 1, "keyed": 0, "found": 0,
+                                     "model_replay": {"dedupe": {"n": 2, "path_hits": 1, "model_n": 0,
+                                                                 "model_hits": 0, "brier": None, "ms": None}}})
+        tail = fmgenesis._exam_tail(fmgenesis.home(self.p))
+        self.assertIn("model dedupe: rule 1/2, model not run (no night answers booked)", tail)  # T-2582
+        self.assertNotIn("model 0/0", tail)
 
     def test_scorecard_grades_each_capability_on_its_newest_held_out_results(self):
         import fmgenesis  # T-2097: the §8 scorecard, read from graded exam.jsonl lines
@@ -3832,6 +3838,18 @@ class GenerationReview(ForemanTestCase):
         r = fmgenesis.review(self.p, 1, run=self.run_with(reply)[1])
         self.assertEqual([x["ground"] for x in r["findings"]], ["slow.py"])
         self.assertEqual(r["dropped"], "1")
+
+    def test_a_short_number_with_its_words_grounds_a_finding(self):  # T-2583
+        import fmgenesis
+        from unittest import mock
+        reply = ("FINDING: worse | landed 57% | the landing rate fell\n"
+                 "FINDING: worse | 57% | a bare short number\n"
+                 "FINDING: worse | gen 10 | too short to say which number\n")
+        with mock.patch.object(fmgenesis, "_review_inputs",
+                               return_value={"diff": "briefs landed 57% of the time in gen 10"}):
+            r = fmgenesis.review(self.p, 1, run=self.run_with(reply)[1])
+        self.assertEqual([x["ground"] for x in r["findings"]], ["landed 57%"])
+        self.assertIn("landed 57%", fmgenesis.REVIEW_CHILD, "the prompt asks for the number with its words")
 
     def test_handle_marks_a_gap_or_a_dismissal_with_a_reason_and_drops_the_filed_task(self):
         import fmcore as c

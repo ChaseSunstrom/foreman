@@ -108,10 +108,11 @@ def _survival(closed_at, bad):
     end = t0 + datetime.timedelta(days=SURVIVE_DAYS)
     now = datetime.datetime.now(datetime.timezone.utc)
     hits = sorted((at, why) for at, why in bad if at and t0 <= at <= min(end, now))  # a future-dated commit waits
+    left = (end - now).total_seconds() / 86400  # T-2584: only a finished window decides held or lost for good
     if hits:
-        return {"survival": "lost", "lost_at": c.iso(hits[0][0].timestamp()), "lost_by": hits[0][1]}
-    left = (end - now).total_seconds() / 86400
-    return {"survival": "survived"} if left <= 0 else {"survival": "settling", "days_left": int(left) + 1}
+        return {"survival": "lost", "lost_at": c.iso(hits[0][0].timestamp()), "lost_by": hits[0][1], "window_done": left <= 0}
+    return ({"survival": "survived", "window_done": True} if left <= 0
+            else {"survival": "settling", "days_left": int(left) + 1, "window_done": False})
 
 
 def survival_lines(p, outs=None):
@@ -125,8 +126,11 @@ def survival_lines(p, outs=None):
     since = (f"days since a lost task: {max(0, (datetime.datetime.now(datetime.timezone.utc) - max(lost)).days)}" if lost
              else "no lost task yet")
     total = n['survived'] + n['lost'] + n['settling']  # T-2037: a loss can land mid-window, survival only after it
-    return [f"Survival ({SURVIVE_DAYS} days): of {total} closes, {n['lost']} lost ({round(100 * n['lost'] / max(total, 1))}%), "
-            f"{n['survived']} survived the window, {n['settling']} settling; {since}"]
+    past = [o for o in outs.values() if o.get("window_done")]  # T-2584: the rate counts only finished windows
+    lost_past = sum(o.get("survival") == "lost" for o in past)
+    return [f"Survival ({SURVIVE_DAYS} days): of {total} closes, {len(past)} finished the window: {lost_past} lost "
+            f"({round(100 * lost_past / max(len(past), 1))}%), {n['survived']} survived; {total - len(past)} still in it "
+            f"({n['lost'] - lost_past} lost so far); {since}"]
 
 
 def track(p, outs=None):
@@ -138,12 +142,15 @@ def track(p, outs=None):
         r = rows[(o["type"], o["tier"])]
         r["n"] += 1
         r["first"] += first.get(tid, True)
-        r["held"] += o["fate"] == "held"
+        r["settled"] += o["fate"] != "held" or bool(o.get("window_done"))  # T-2584: a hold counts once its window ends
+        r["held"] += o["fate"] == "held" and bool(o.get("window_done"))
     return rows
 
 
 def _row(r):
-    return f"{r['first']} of {r['n']} closed on the first finish, {r['held']} of {r['n']} held"
+    left = r["n"] - r["settled"]
+    return (f"{r['first']} of {r['n']} closed on the first finish, {r['held']} of {r['settled']} held"
+            + (f", {left} still in the {SURVIVE_DAYS}-day window" if left else ""))
 
 
 def track_line(p, typ, tier):
