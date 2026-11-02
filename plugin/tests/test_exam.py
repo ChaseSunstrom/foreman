@@ -1621,6 +1621,28 @@ class WatchKind(JudgmentStub, ForemanTestCase):  # T-2360: #11, work started fro
         self.assertEqual((t["watch_hit"], t["watch_started"], t["watch_keyed"]), (o["watch_keyed"],) * 3, started)
         self.assertEqual(self.closed(t), [sid])
 
+    def test_kind_watch_blind_variant_expects_no_issue_work_and_issues_named_blind(self):  # T-2608
+        import tempfile
+        import fmexam
+        streams = [fmexam._stream(f"watch-python-{i:06x}") for i in range(30)]
+        blind = [(e, k) for e, k in streams if k.get("blind")]
+        normal = [(e, k) for e, k in streams if not k.get("blind")]
+        self.assertTrue(5 <= len(blind) <= 15, len(blind))  # about a third
+        for events, key in blind:
+            self.assertEqual(events[0]["watch"], [])
+            self.assertEqual(key["blind"], ["issues"])
+            self.assertFalse([s for s in key["starts"] if events[s["event"]]["kind"] == "issue"])
+        self.assertTrue(all(e[0]["watch"] == ["issues"] for e, _ in normal))
+        events, key = blind[0]
+        base, target = tempfile.mkdtemp(), tempfile.mkdtemp()
+        os.makedirs(os.path.join(base, "hidden"))
+        with open(os.path.join(base, "hidden", "watch.json"), "w") as f:
+            json.dump(key, f)
+        for named, ok in ((["CI", "issues"], True), (["CI"], False)):
+            with open(os.path.join(target, fmexam.STARTED), "w") as f:
+                json.dump({"started": key["starts"], "ran": [], "blind": named}, f)
+            self.assertEqual(fmexam._watch_blind(base, target), ok, named)
+
     def test_kind_watch_children_write_the_issue_texts_and_one_without_an_instruction_is_dropped(self):
         r = self.gen("--kind", "watch", "--author", "child", env=self.env)
         self.assertEqual(r["dropped"], [])

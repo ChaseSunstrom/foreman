@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The watch exam kind now has blind variants. In about a third of scenarios the setup gives no watch yes for issues, so the tick never sees them. Such a scenario passes only if no work starts from those issues and the tick reports issues as blind (via T-2607's report), so the exam checks that a quiet tick is honest about what it can't see.
 - The night tick now says what it couldn't watch. `fm doctor`'s night-timers row names each trigger kind it skipped (CI, issues) with the reason: no watch yes (and the command that asks for one), a sensitive project, or `FOREMAN_NO_NET`. With a tick timer installed, the session note mentions it for a few days after the list changes. A quiet night now means quiet, not blind.
 - `fm task ac ID edit N --verify CMD` now works on a criterion whose recorded runs all matched no test, for example a misspelled test module. Such a run measured nothing, so fixing its command weakens no check. A criterion with any real run, passing or failing, still keeps its check.
 - The self-change gate catches a hook that waits (a sleep, slow I/O) on a busy machine more reliably. When the machine is loaded it now compares the hooks' median wall time rather than their p95, which load spikes inflate. This also fixes a test that failed now and then under the full suite.
