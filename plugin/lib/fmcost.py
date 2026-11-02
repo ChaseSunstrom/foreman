@@ -1555,10 +1555,21 @@ def burden(folder, since):
                                 s["guard_refusals"] += "Foreman guard: blocked" in t
                                 s["fm_refusals"] += bool(re.search(r"\bfm: (?:refused|give --run)", t))
                         a = e.get("attachment") if isinstance(e.get("attachment"), dict) else {}
+                        t, src = "", str(a.get("hookName") or a.get("type") or "?").split(":")[0]
                         if a.get("type") in INJECTS:
                             t = _text(a.get("content") or a.get("response") or a.get("blockingError") or "")
-                            if "Foreman" in t or "fm " in t:
-                                s["injected_chars"] += len(t)
+                        elif a.get("type") == "hook_success" and a.get("stdout"):  # T-2667: SessionStart's text is here
+                            try:
+                                j = json.loads(a["stdout"])
+                            except (ValueError, TypeError):
+                                j = None
+                            j = j if isinstance(j, dict) else {}
+                            h = j.get("hookSpecificOutput") if isinstance(j.get("hookSpecificOutput"), dict) else {}
+                            # not updatedToolOutput: that is the tool's own output
+                            t = "\n".join(x for x in (h.get("additionalContext"), j.get("systemMessage")) if isinstance(x, str))
+                        if "Foreman" in t or "fm " in t:
+                            s["injected_chars"] += len(t)
+                            s["src:" + src] += len(t)
             except OSError:
                 continue
             for uses in tools.values():
@@ -1566,6 +1577,15 @@ def burden(folder, since):
                 s["bookkeeping_turns"] += bool(uses) and all(
                     u.get("name") == "Bash" and _only_bookkeeping((u.get("input") or {}).get("command")) for u in uses)
     return {k: v for k, v in out.items() if v.get("turns")}
+
+
+def by_source(sessions, turns=None):
+    """[(source, injected chars per turn)] biggest first (T-2667)."""
+    tot = collections.Counter()
+    for s in sessions.values():
+        tot.update({k[4:]: v for k, v in s.items() if k.startswith("src:")})
+    n = max(turns if turns is not None else sum(s["turns"] for s in sessions.values()), 1)
+    return sorted(((k, v / n) for k, v in tot.items()), key=lambda kv: -kv[1])
 
 
 def cmd_burden(args):
@@ -1579,6 +1599,11 @@ def cmd_burden(args):
     for e in c.ledger_tail(p, 50000):
         if e.get("event") == "session_start" and e.get("session_id"):
             version[e["session_id"]] = _version((e.get("data") or {}).get("root"))
+    if getattr(args, "by_source", False):
+        rows = by_source(sessions)
+        return fmcli.out(args, {"days": args.days, "sources": dict(rows)},
+                         f"Injected characters per turn by source, last {args.days:g} day(s), biggest first:\n" + (
+                             "\n".join(f"  {k}: {v:.1f}" for k, v in rows) or "  none"))
     by = {}
     for sid, s in sessions.items():
         v = by.setdefault(version.get(sid, "unknown"), collections.Counter())

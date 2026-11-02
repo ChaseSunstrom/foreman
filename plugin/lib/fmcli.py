@@ -6859,6 +6859,7 @@ def _build_parser(only=None):
                                                           "turns, refusals, injected context (T-0712)")
     s.add_argument("--days", type=float, default=14)
     s.add_argument("--by-verb", action="store_true", help="the fm verbs no session called in the window (T-0959)")
+    s.add_argument("--by-source", action="store_true", help="injected chars per turn by hook source, biggest first (T-2667)")
     s = add("usage", lazy("fmcost", "cmd_usage"), tier=("Reports", 1020), help="skills, playbooks and fm commands used (and never used)")
     s.add_argument("--days", type=float, default=30)
     s.add_argument("--prune", action="store_true",
