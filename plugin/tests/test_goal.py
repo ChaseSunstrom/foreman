@@ -197,6 +197,24 @@ class GoalReview(GoalBase):
         subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "the work"], check=True)
 
+    def test_a_done_when_line_needs_a_check_naming_it_not_only_shared_words(self):
+        # T-2557: the long tier's T-2020 built fmcore.lazy, tested none of its three Done-when lines, and claimed done
+        self.work()
+        self.fm("goal", "set", "Cache the index.\n\nDone when:\n- the cache file exists after a run\n"
+                "- lazy every deferred pattern still compiles", "--no-end")
+        self.fm("goal", "item", "cache the index and lazy deferred patterns", "--done-when", "test -f cache.txt")
+        t = self.new("cache it", "--goal", "1")
+        self.finish(t)
+        out = self.verdict()[1]
+        self.assertIn("done-when line unchecked: lazy every deferred pattern still compiles", out)
+        self.assertIn("done-when line unchecked: the cache file exists after a run", out, "'test -f cache.txt' names "
+                      "cache but not the line's other words: two are needed, as for clauses")
+        self.fm("goal", "item", "deferred patterns", "--done-when",
+                "test -f cache.txt && test -n test_lazy_every_deferred_pattern_still_compiles_file_exists_after_run")
+        t2 = self.new("lazy", "--goal", "2")
+        self.finish(t2)
+        self.assertNotIn("done-when line unchecked", self.verdict()[1], "a check whose words name each line covers it")
+
     def test_verdict_names_each_cause_and_finishes_only_when_all_hold(self):
         # T-2137
         self.assertEqual(self.verdict(), (2, "no goal\n"))
