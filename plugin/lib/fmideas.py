@@ -35,6 +35,11 @@ LENS_NOTES = {
     "devil's idea": "propose what a rival who wanted this project to win would ship that its owner would never dare to",
     "worst-bugs persona": "be the user who hits the worst bugs: what breaks, confuses or loses work, and what would "
                           "have prevented it",
+    # T-2672: exhaustive requests: one idea per cell of surfaces x actors x failure modes
+    "grid": "list the request's surfaces (from the pack's surfaces line, or the project's entry points) and its actors "
+            "(the user, the agent, other agents, an unattended run), cross them with failure modes (missing, wrong, "
+            "slow, unsafe, unclear), and give one idea per cell that matters, naming the cell; say which cells you "
+            "left empty and why",
     # T-2076: added when earlier brainstorms missed asks the user then had to make
     "blind spots": "the pack lists asks the user had to make that no earlier brainstorm predicted: for each, name the "
                    "question a brainstorm should have asked to catch it, ask that question of the whole project now, and "

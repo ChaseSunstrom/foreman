@@ -14,6 +14,11 @@ class Grounding(unittest.TestCase):
         for want in ("MASTER.md", "three phrasings", "help strings", "spot-check"):
             self.assertIn(want, step)
 
+    def test_step_3_names_the_grid_lens_for_exhaustive_requests(self):  # T-2672
+        with open(SKILL, encoding="utf-8") as f:
+            step = f.read().split("3. **Fan out", 1)[1].split("\n4. ", 1)[0]
+        self.assertIn("--lens grid", step)
+
 
 
 class Canary(unittest.TestCase):

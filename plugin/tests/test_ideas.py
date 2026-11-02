@@ -96,6 +96,14 @@ class Ideas(Stubbed):
         self.assertIn("super improve it", calls[0]["system"], "the pack goes in a file (no argv size limit)")
         self.assertNotIn("super improve it", " ".join(calls[0]["args"]))
 
+    def test_the_grid_lens_sends_its_note_to_the_child(self):  # T-2672
+        import fmideas
+        self.assertIn("one idea per cell", fmideas.LENS_NOTES["grid"])
+        self.fm("ideas", "--pack", self.pack, "--lens", "grid", env=self.env)
+        stdin = self.calls()[0]["stdin"]
+        self.assertIn("Lens: grid", stdin)
+        self.assertIn(fmideas.LENS_NOTES["grid"], stdin)
+
     def test_the_pack_is_one_cached_system_prompt_and_the_first_child_warms_it(self):  # T-1265
         env = dict(self.env, STUB_SLEEP="1", FOREMAN_IDEAS_WARM="5", STUB_JSON="1")
         three = ["--lens", "reliability", "--lens", "bold bets", "--lens", "delight"]
