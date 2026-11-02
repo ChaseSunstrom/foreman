@@ -370,6 +370,9 @@ def base_note(p, b):
             f"{gap} points {way} the record. State what you believe; the ledger scores it (fm outcomes --judgment).")
 
 
+MISSES = ("reverted", "fixed later")  # T-2423: the scorer's survival misses; a correction or a smoke failure isn't one
+
+
 def base_rate(outs, first, typ, tier):
     """The forecast with no stated number: the share of earlier closes of this type and tier that held on the first
     finish (a clean first fm task finish, then nothing undid it); every close counts while the pair has under
@@ -378,7 +381,7 @@ def base_rate(outs, first, typ, tier):
     pool = pair if len(pair) >= LEDGER_MIN else list(outs)
     if not pool:
         return None
-    return round(100 * sum(first.get(t, True) and outs[t]["fate"] == "held" for t in pool) / len(pool))
+    return round(100 * sum(first.get(t, True) and outs[t]["fate"] not in MISSES for t in pool) / len(pool))
 
 
 def record_stated(p, b):

@@ -566,6 +566,15 @@ class ShipBets(Base):  # T-2496: a ship bet is scored in hours by CI's blocking 
         self.assertEqual(o.bar_rows(o.scored(self.p)), [], "still no bar moves on them")
 
 
+class BaseRateHeld(Base):  # T-2423: the base rate counts held as the bet scorer does
+    def test_a_correction_or_a_smoke_failure_is_no_miss_in_the_base_rate(self):
+        import fmoutcomes as o
+        outs = {f"T-{i}": {"type": "FIX", "tier": "S", "fate": f}
+                for i, f in enumerate(("held", "smoke failed after", "corrected", "fixed later"))}
+        self.assertEqual(o.base_rate(outs, {}, "FIX", "S"), 75)
+        self.assertEqual(o.base_rate(outs, {"T-0": False}, "FIX", "S"), 50, "a failed first finish still misses")
+
+
 class BaseRateNote(Base):  # T-2497 (Mission 2, #8): a plan's percent against its base rate, said while it is stated
     def plan(self, pct):
         tid = self.fm_json("task", "new", "Fix the parser", "--type", "FIX", "--tier", "S", "--step", "x",
