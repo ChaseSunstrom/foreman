@@ -4268,8 +4268,10 @@ def _write_decision(p, decision, why="", rejected="", kind="reversible", reverse
     path = os.path.join(p.dir, "decisions.md")
     import contextlib
     with contextlib.nullcontext() if locked else c.lock(p.dir):
-        cur = open(path, encoding="utf-8").read() if os.path.exists(path) else \
-            "# Decisions\n\n| Date | Decision | Why | Alternatives rejected |\n|---|---|---|---|\n"
+        cur = "# Decisions\n\n| Date | Decision | Why | Alternatives rejected |\n|---|---|---|---|\n"
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:  # T-2426: closed, not left to the collector
+                cur = f.read()
         c.write_atomic(path, cur + row)
         c.log_event(p, "decision", task=task, data={"decision": decision, "why": why, "rejected": rejected,
                                                      "kind": kind, "reverses": reverses}, session=session())
