@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-02T07:04:48Z",
+ "updated": "2026-11-02T07:09:50Z",
  "rev": "b2c41330",
  "capabilities": [
   {
@@ -20255,7 +20255,7 @@
  "next": {
   "stage": "mission",
   "gen": 2,
-  "action": "Mission 8 (moonshot), moonshot: no cell, no capability: fm mission, then fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen; file it as gen-2/mission-moonshot.md",
+  "action": "Mission 8 (moonshot), moonshot: no cell, no capability: fm mission, then fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen-latest 6; file it as gen-2/mission-moonshot.md",
   "command": "fm genesis put gen-2/mission-moonshot.md --file -",
   "kind": "ok"
  },
