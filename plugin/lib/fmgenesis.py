@@ -2687,9 +2687,9 @@ def _exam_tail(d, k=20):
                   + (f", {len(x[key]['holdout'])} held out" if isinstance(x[key].get("holdout"), list) and x[key]["holdout"] else "")
                   for key, label in (("closed", "fully closed"), ("given", "closed on the given score"))
                   if isinstance(x.get(key), dict)]
-        key = (x["run"], x.get("agent", "?"))
+        key = (x["run"], x.get("agent", "?"), x.get("gen"))  # T-2693: a later gen on the same run is its own line
         rows.pop(key, None)
-        rows[key] = (f"{x['run']} ({key[1]}" + (f", model {x['model']}" + (": a smoke signal" if smoke(x) else "")
+        rows[key] = (f"{x['run']} ({key[1]}" + (f", gen {key[2]}" if key[2] is not None else "") + (f", model {x['model']}" + (": a smoke signal" if smoke(x) else "")
                                                  if x.get("model") else "") + "): " + "; ".join(s for s in parts if s))
     return "\n".join(_fence(c.plain(r)) for r in list(rows.values())[-k:]) or "no graded exam line yet"
 

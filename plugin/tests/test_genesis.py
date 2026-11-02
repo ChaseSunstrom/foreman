@@ -1248,6 +1248,13 @@ class GenesisDraft(ForemanTestCase):
         for part in ("0 exam defects", "ranked 2/3 in order", "by language: python 3/5, ts 1/5", "by kind: bug 0/4, slow 4/6",
                      "true done 1/2, checks 5/8, false done 1"):
             self.assertIn(part, tail)
+        # T-2693: two gens graded on one run are two lines; gen 3's grade must not hide gen 2's from the reader
+        for gen, closed in ((2, ["a", "b", "c"]), (3, ["a", "b"])):
+            fmgenesis.exam_line(self.p, {"run": "s9", "agent": "foreman", "gen": gen, "scenarios": 3,
+                                         "closed": {"train": closed, "holdout": []}})
+        tail = fmgenesis._exam_tail(fmgenesis.home(self.p))
+        self.assertIn("s9 (foreman, gen 2): 3 scenarios; fully closed 3 of 3", tail)
+        self.assertIn("s9 (foreman, gen 3): 3 scenarios; fully closed 2 of 3", tail)
         # T-2473: and what Missions 6-8's critiques cite: closed scenarios by kind, forecast, breakage and the replay
         fmgenesis.exam_line(self.p, {"run": "s2", "agent": "foresight", "scenarios": 6, "keyed": 0, "found": 0,
                                      "closed": {"train": ["tool-build-c-1a2b3c", "watch-ts-9bc8ea"],
