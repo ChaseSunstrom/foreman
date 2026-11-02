@@ -18,6 +18,9 @@ class Foresight(ForemanTestCase):
     def setUp(self):
         super().setUp()
         self.p = c.find_project(self.repo, create=True)
+        old = os.environ.get("XDG_CONFIG_HOME")  # the host's real systemd timers never reach these lines (T-2569)
+        os.environ["XDG_CONFIG_HOME"] = os.path.join(self.tmp, "xdgconfig")
+        self.addCleanup(lambda: os.environ.pop("XDG_CONFIG_HOME") if old is None else os.environ.update(XDG_CONFIG_HOME=old))
 
     def _snap(self, model, size, version):
         path = os.path.join(c.state_dir(), "sessions", f"s{time.time_ns()}.json")

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm loop round --next` no longer ends a round that started under 15 minutes ago and has made no task yet. It prints that round's instructions again. Before, a session that called it a few times to re-read the instructions ended two empty rounds as dry, and that switched the forever loop off. `fm loop yield N` still closes a round at any time.
 - `fm tidy --apply` now removes the work copies of old exam runs. These are the repo copies that sessions worked in, and they took 2.3 GB of state here. A run qualifies once its newest grade is 14 days old and the same agent has had a newer run of the same tier graded since. Answers, grades and keys stay, and runs that were never graded are left alone. Grading a pruned run now refuses and names the rerun command, instead of failing every goal for want of its files.
 - A failed `fm doctor` run is now recorded by the check that failed, not by its summary line. `fm digest`'s "Recurring failures" used to show "fm doctor: failed (0 pass, 0 warn, 0 fail)" over and over (numbers are zeroed in signatures), which named no check. `fm doctor` also prints its FAIL rows last, right above the verdict.
 - `fm genesis select` and `fm genesis confirm` no longer count an exam line answered only on the held-out split. Such a line closes no train scenario by construction, so a 0-to-0 tie between two of them would have reverted a generation on an empty comparison. A generation needs a line on the train split (`fm exam run RUN --split train`). When its parent has none, the generation becomes the baseline.
