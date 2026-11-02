@@ -2302,9 +2302,6 @@ def _interpreter_reads(cmd, ctx):
     # a relative name opens in whichever folder the line may be in: where it started, or any folder it cds to
     bases = [ctx.cwd] + [_resolve(_expand(d, ctx), ctx.cwd) for d in re.findall(r"(?:^|[;&|(\n{])\s*cd\s+([^\s;&|)]+)",
                                                                               dry) if not _unresolvable(d)]
-    # T-2663: a bare name in text that calls no read API (a grep pattern, a log filter) reads nothing
-    reads_api = re.search(r"open\(|read_text|read_bytes|os\.path\.join|Path\(|shutil\.|subprocess|os\.listdir|glob|"
-                          r"readFile|File\.read|File\.join|require\(", code)
     lits = [m.group(1) for q in "'\"`" for m in re.finditer(f"{q}([^{q}\\n]*){q}", code)]
     for lit in lits:
         if not _PATHY.match(lit):
@@ -2317,13 +2314,13 @@ def _interpreter_reads(cmd, ctx):
                                              for d in _CRED_DIRS + _CRED_FILES for leaf in ("id_rsa", "credentials"))
             # an explicit home path is judged exactly; a bare ".aws" may be joined to the home folder at run time
             if not hits and not (explicit and _under(path, ctx.home)) and _CRED_PART.search(lit) and (
-                    (home and reads_api) or re.search(r"[*?\[]", lit) or re.match(r"/(?:home|Users|root|var/home)(?:/|$)", path)):
+                    home or re.search(r"[*?\[]", lit) or re.match(r"/(?:home|Users|root|var/home)(?:/|$)", path)):
                 hits = ["credentials"]  # ponytail: a joined known_hosts is refused too; name the whole path
             found += [(cat, f"{lit!r} in interpreter code reads a credential file") for cat in hits]
     # credential file names in the code's strings and heredoc bodies (quotes can be paired wrongly on purpose), not in
     # the shell words around it (ssh -i ~/.ssh/id_ed25519 uses a key)
     named = next((m for t in lits + [_heredocs(dry)[1]] for m in [_CRED_FILE_NAMES.search(t)] if m), None)
-    if home and named and reads_api:
+    if home and named:
         found.append(("credentials", f"interpreter code names {named.group(0)!r} beside the home folder"))
     # ponytail: interpreter code that changes CLAUDECODE before starting fm isn't read: edit scripts carry the same
     # words as text (env={"CLAUDE_CODE_ENTRYPOINT": …} in a test they write), and fm's verbs that matter fail closed
