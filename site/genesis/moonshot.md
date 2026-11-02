@@ -23,8 +23,9 @@
 - Novelty: 5
 - Needs: M-18
 - Unblocks: none
-- Kill: In the T-1232 spec-suite toy repo, delete three modules and have a headless `claude -p` rebuild each from its briefs and tests alone, two attempts each; pass if at least two of the three pass every original test, fail otherwise.
-- Stage: idea
+- Kill: In the T-1232 spec-suite toy repo, delete three modules and have a headless `claude -p` rebuild each from its briefs and tests alone, two attempts each; pass if at least two of the three pass every original test, fail otherwise. → viable: 3 of 3 modules (semver, table, ranges) rebuilt blind by a tool-less child passed every original test (T-2679). Caveat for the slice: the spec suite's specs are complete by construction; the slice must regenerate a module of Foreman's own, whose spec is its briefs.
+- Evidence: T-2679 (the kill run's output is its step 1 evidence)
+- Stage: kill
 
 ### M-03 · Run an owner-less project under a charter until an heir takes over
 - Tier: massive
