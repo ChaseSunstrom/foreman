@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-01T23:56:52Z",
- "rev": "d6c7f9eb",
+ "updated": "2026-11-02T00:01:55Z",
+ "rev": "112e6842",
  "capabilities": [
   {
    "n": 1,
@@ -1953,13 +1953,13 @@
       },
       {
        "id": "T-2499",
-       "title": "Bets settle with no session: fm night's tick runs fmoutcomes.maintain, and the nightly…",
-       "status": "captured",
+       "title": "Bets settle with no session: the night tick runs fmoutcomes.maintain; the digest names the kind whose Brier trails its base rate most",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
+       "steps": 2,
        "done": 0,
-       "current": ""
+       "current": "red tests: test_night (a settled-but-unwritten choice bet; tick; its outcome row exists) and test_outcomes (seeded 20+ scored rows across two kinds; ledger_lines names the worse one; under 20 says too few)"
       },
       {
        "id": "T-2500",
@@ -17995,11 +17995,11 @@
  },
  "not_yet": 5,
  "not_yet_open": 0,
- "unproven": 1054,
+ "unproven": 1055,
  "unproven_kinds": {
   "meaning": 582,
   "research-uncited": 29,
-  "typed": 42,
+  "typed": 43,
   "red": 61,
   "perf-typed": 51,
   "docs": 588,
