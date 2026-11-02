@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-02T04:36:06Z",
+ "updated": "2026-11-02T04:41:07Z",
  "rev": "ee895279",
  "capabilities": [
   {
@@ -2027,8 +2027,8 @@
        "type": "FEATURE",
        "tier": "S",
        "steps": 2,
-       "done": 1,
-       "current": "red test: after fm bench duel --ablate scope (stub: same passes), the inbox holds one candidate naming scope, the duel label and the every-kind plus long-horizon confirmation; a second run adds none"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2534",
