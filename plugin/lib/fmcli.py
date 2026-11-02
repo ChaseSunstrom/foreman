@@ -7320,7 +7320,11 @@ def _build_parser(only=None):
             "unreadable file); passes only when fm fsck or fm verify-ledger finds each or the day heals it, and "
             "nothing crashed. Your own home is never touched (T-1669)")
     s.add_argument("--seed", type=int, help="replay this plan (default: from the clock; the report names it)")
-    s.add_argument("--faults", type=int, default=3, help="how many kinds to plant at once, 3 to 6 (default 3)")
+    s.add_argument("--faults", type=int, default=3, help="how many kinds to plant at once, 3 to 7 (default 3)")
+    s.add_argument("--restore", nargs="?", const="", metavar="NAME",
+                   help="instead: lay an upgrade snapshot (default the newest; fm rollback --list names them) into a temp "
+                        "home and prove each project's record reads back: ledger chain, fsck, fm state and fm outcomes "
+                        "(T-2652)")
 
     s = add("adopt", lazy("fmeco", "cmd_adopt"), tier=("Project and settings", 660), help="take in an existing repo: map, gates (a flake rerun), secrets, "
                                                        "dependencies once; a baseline note and CLEAN/RESEARCH work queued")

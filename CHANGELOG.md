@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New: `fm drill --restore [NAME]` rehearses a host wipe. It lays an upgrade snapshot (the newest by default) into a temp home and passes only when each project's ledger chain verifies, fsck is clean, and `fm state` and `fm outcomes` run without a traceback. Your live state is never touched. Its first run, on the 1.2.50 snapshot, read back 22 of 23 projects and found a ledger torn mid-file on 2026-10-23 that nothing had reported.
 - `fm drill` has a seventh fault, a dropped ledger class: every `task_done` line is gone while briefs still say closed. `fm outcomes` and `fm digest` now say the class is missing and the rates built from it are unmeasured, instead of printing a zero rate as if it were measured.
 - `fm task evidence --bench CMD --under MS` is now a pass/fail proof. It exits 1 and records the median against the bar when the current tree's median is over MS milliseconds, and passes when it's under. `--under` needs `--bench` and a bar above 0.
 - Fixed: a `--bench` run whose command failed was recorded without the failed-run mark, so it read as a pass and checked its step off. It's now a failed run that the step and the finish gate both see.

@@ -282,6 +282,55 @@ def drill(seed, faults=3):
     return rep
 
 
+RESTORE_CHECKS = (("ledger chain", "verify-ledger"), ("fsck", "fsck"), ("readers", "state"), ("readers", "outcomes"))
+
+
+def restore(name=None):
+    """T-2652: a host-wipe rehearsal. An upgrade snapshot (fm rollback's, checked against its manifest) is laid into a
+    temp home, and each project's record must read back: its ledger chain verifies, fsck is clean, and fm state and fm
+    outcomes run without a traceback. Only read-only verbs run, so a restored meta naming a real repo root writes
+    nothing there; the live state is never touched."""
+    import tarfile
+
+    import fmrollback
+    names = fmrollback._listing()
+    name = name or next((s for s in names if not s.startswith(fmrollback.PRE)), None)
+    if name not in names:
+        raise ValueError(f"no snapshot named {name}; fm rollback --list shows them" if name else
+                         "no snapshot yet: one is taken when Foreman's version changes (fm rollback --list)")
+    day, rows = Day(), []
+    stage = os.path.join(day.home, "stage")
+    try:
+        slugs = fmrollback._stage(os.path.join(fmrollback._dir(), name), stage, True)
+    except (ValueError, OSError, tarfile.TarError) as e:
+        rows.append({"project": "(snapshot)", "ok": False, "detail": f"won't unpack: {e}"})
+        slugs = {}
+    for slug in sorted(slugs):
+        shutil.copytree(os.path.join(stage, slug), os.path.join(day.state, "projects", slug))
+        bad = []
+        for label, verb in RESTORE_CHECKS:
+            n = len(day.crashes)
+            r = day.fm(verb, "-p", slug)
+            if r.returncode or len(day.crashes) > n:
+                last = [ln for ln in ((r.stdout or "") + (r.stderr or "")).splitlines() if ln.strip()][-1:]
+                bad.append(f"{label} (fm {verb}, exit {r.returncode}): {last[0].strip()[:160] if last else ''}")
+        rows.append({"project": slug, "ok": not bad, "detail": "; ".join(dict.fromkeys(bad))})
+    ok = bool(rows) and all(x["ok"] for x in rows)
+    rep = {"ok": ok, "snapshot": name, "projects": rows, "home": day.home}
+    if ok:
+        day.remove()
+    return rep
+
+
+def render_restore(r):
+    lines = [f"fm drill --restore: {r['snapshot']}, {len(r['projects'])} project(s) laid into a temp home"]
+    lines += [f"  ✓ {x['project']}: ledger chain, fsck, readers" if x["ok"] else f"  ✗ {x['project']}: {x['detail']}"
+              for x in r["projects"]]
+    lines.append("OK: the snapshot restores and reads back" if r["ok"] else
+                 f"FAILED: the temp home is kept for a look: {r['home']}")
+    return "\n".join(lines)
+
+
 def render(r):
     lines = [f"fm drill: seed {r['seed']}, {len(r['faults'])} faults ({r['replay']} replays it)"]
     for f in r["faults"]:
@@ -297,6 +346,13 @@ def render(r):
 
 def cmd_drill(args):
     import fmcli
+    if getattr(args, "restore", None) is not None:  # T-2652
+        try:
+            r = restore(args.restore or None)
+        except ValueError as e:
+            raise fmcli.UsageError(str(e)) from None
+        fmcli.out(args, r, render_restore(r))
+        return 0 if r["ok"] else 1
     seed = args.seed if args.seed is not None else int(time.time()) % 1_000_000
     try:
         r = drill(seed, args.faults)

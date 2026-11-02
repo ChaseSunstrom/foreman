@@ -149,3 +149,46 @@ class StateErrors(ForemanTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RestoreDrill(ForemanTestCase):
+    """T-2652: fm drill --restore lays an upgrade snapshot into a temp home and proves each project's record reads
+    back; the live state is never touched."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.fm("capture", "a thing to keep")
+        self.state = os.path.join(self.home, "state")
+
+    def snap(self, name):
+        self.fm("rollback", "--snapshot", name)
+
+    def test_a_good_snapshot_restores_and_reads_back_without_touching_the_live_state(self):
+        self.snap("1.0.0")
+        before = {f: read_text(os.path.join(self.state, f)) for f in tree(self.state) if f.endswith((".json", ".md", ".jsonl"))
+                  and not f.startswith(("snapshots/", "logs/"))}
+        r = self.fm("drill", "--restore", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("1.0.0-", r.stdout)
+        self.assertRegex(r.stdout, r"✓ \S+: ledger chain, fsck, readers")
+        after = {f: read_text(os.path.join(self.state, f)) for f in before if os.path.exists(os.path.join(self.state, f))}
+        self.assertEqual({f for f in before if before[f] != after.get(f)} - {f for f in before if f.endswith("ledger.jsonl")},
+                         set())  # nothing but this run's own ledger lines moved
+
+    def test_a_snapshot_whose_ledger_chain_is_broken_fails_naming_its_project(self):
+        p = c.project_by_slug(os.listdir(os.path.join(self.state, "projects"))[0])
+        led = os.path.join(p.dir, "ledger.jsonl")
+        lines = read_text(led).splitlines(True)
+        lines[0] = lines[0].replace('"capture"', '"captured"') if '"capture"' in lines[0] else lines[0][:-3] + 'x"}\n'
+        with open(led, "w") as f:
+            f.writelines(lines)
+        self.snap("1.0.1")
+        r = self.fm("drill", "--restore", check=False)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertRegex(r.stdout, rf"✗ {os.path.basename(p.dir)}: ledger")
+
+    def test_no_snapshot_is_a_usage_error_naming_how_one_is_made(self):
+        r = self.fm("drill", "--restore", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("snapshot", r.stderr + r.stdout)
