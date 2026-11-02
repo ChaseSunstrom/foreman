@@ -195,6 +195,7 @@ def cmd_outcomes(args):
         pct = lambda x: "n/a" if x is None else f"{x:.0%}"  # noqa: E731
         return fmcli.out(args, {"kinds": rows}, "\n".join(
             f"{k['kind']}: {k['n']} scored, hit {pct(k['hit'])} vs baseline {pct(k['base_hit'])}"
+            + (f"; shown at session start: {k['shown_n']} scored, hit {pct(k['shown_hit'])}" if k.get("shown_n") else "")
             + (f" (muted: it trails the baseline; fm outcomes --predictions --unmute {k['kind']})" if k["muted"] else "")
             for k in rows))
     outs = outcomes(p)

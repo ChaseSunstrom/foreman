@@ -250,10 +250,11 @@ def _next_line(p):
     done = {r["id"] for r in rows if r.get("kind") in ("score", "shown")}
     mine = [r for r in rows if r.get("kind") == "next-request" and r["id"] not in done]
     k = next((k for k in prediction_kinds(p) if k["kind"] == "next-request"), None)
-    if not mine or not k or k["muted"] or k["hit"] is None or k["base_hit"] is None or k["hit"] <= k["base_hit"]:
+    if (not mine or not k or k["muted"] or k["hit"] is None or k["base_hit"] is None or k["hit"] <= k["base_hit"]
+            or k["n"] < MUTE_MIN):  # the same sample that may mute a kind: one lucky score proves nothing
         return []
     r, pred = mine[-1], mine[-1].get("pred") or {}
-    paths = ", ".join(c.plain(str(x))[:80] for x in (pred.get("paths") or [])[:3])
+    paths = c.joinmore([c.plain(str(x))[:80] for x in pred.get("paths") or []], 3)
     c.append_line(os.path.join(p.dir, PREDICTIONS), json.dumps({"kind": "shown", "id": r["id"]}) + "\n")
     return [f"You may ask next: {c.plain(str(pred.get('type')))[:20]}" + (f" on {paths}" if paths else "")
             + f" (guesses hit {k['hit']:.0%} vs {k['base_hit']:.0%} for 'same as last')."]
@@ -403,9 +404,12 @@ def prediction_kinds(p):
                            "base_hit": _rate([bh for _, _, bh in rows if bh is not None]),
                            "muted": len(fresh) >= MUTE_MIN and hit is not None and base is not None and hit < base},
                           **(extra or {})))
+    shown = {r.get("id") for r in book if r.get("kind") == "shown"}  # T-2681: guesses the user saw at session start
+    seen_rows = [r for r in scores if r.get("id") in shown]
     kind("next-request", [(str(r.get("at") or ""), r.get("type_hit") is True, r.get("base_type_hit") is True)
                           for r in scores],
-         {"overlap": _rate([r["overlap"] for r in scores if isinstance(r.get("overlap"), (int, float))]),
+         {"shown_n": len(seen_rows), "shown_hit": _rate([r.get("type_hit") is True for r in seen_rows]),
+          "overlap": _rate([r["overlap"] for r in scores if isinstance(r.get("overlap"), (int, float))]),
           "base_overlap": _rate([r["base_overlap"] for r in scores if isinstance(r.get("base_overlap"), (int, float))])})
     effort, seen = [], {}
     for r in fmoutcomes._closes(p):

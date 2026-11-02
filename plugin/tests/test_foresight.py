@@ -489,13 +489,21 @@ class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicte
         self.assertEqual(shown(), [])
         with open(os.path.join(self.p.dir, fs.PREDICTIONS), "w", encoding="utf-8") as f:
             f.write(json.dumps(pred) + "\n")
-        book(6, True, False)
+        book(fs.MUTE_MIN - 1, True, False)
+        self.assertEqual(fs.lines(self.p), [])  # beating it on too few scores shows nothing
+        book(1, True, False)
         (line,) = fs.lines(self.p)
         self.assertIn("FEATURE on b.py", line)
         self.assertIn("100% vs 0%", line)
         self.assertEqual(shown(), [{"kind": "shown", "id": pred["id"]}])
         self.assertEqual(fs.lines(self.p), [])  # once per prediction
         self.assertEqual(len(shown()), 1)
+        with open(os.path.join(self.p.dir, fs.PREDICTIONS), "a", encoding="utf-8") as f:  # its score, read apart
+            f.write(json.dumps({"kind": "score", "id": pred["id"], "at": c.now(), "type_hit": False,
+                                "base_type_hit": True}) + "\n")
+        k = next(k for k in fs.prediction_kinds(self.p) if k["kind"] == "next-request")
+        self.assertEqual((k["shown_n"], k["shown_hit"]), (1, 0.0))
+        self.assertIn("shown at session start: 1 scored, hit 0%", self.fm("outcomes", "--predictions").stdout)
 
     def test_session_start_says_nothing_of_a_sensitive_projects_prediction(self):
         for t, s in (("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py")):
