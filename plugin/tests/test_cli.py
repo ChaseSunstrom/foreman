@@ -234,6 +234,11 @@ class CaptureAndIntake(ForemanTestCase):
         self.fm("task", "step", "T-0001", "CHANGELOG")  # T-1903's lone word still adds
         self.assertEqual(steps(), ["one", "CHANGELOG"])
 
+    def test_intake_source_files_the_briefs_under_it(self):  # T-2554: the tower's briefs aren't the user's asks
+        made = json.loads(self.fm("intake", "--source", "genesis", "FEATURE: a tower brief", "--json").stdout)
+        tid = (made["created"] if isinstance(made, dict) else made)[0]["id"]
+        self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta.get("source"), "genesis")
+
     def test_capture_reads_a_leading_tag_as_the_type(self):  # T-1904: "FIX: …" was filed as a FEATURE
         self.fm("capture", "FIX: the send button stays grey")
         self.fm("capture", "bug: login loops", "--type", "CLEAN")  # --type wins; the words stay

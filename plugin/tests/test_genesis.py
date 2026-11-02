@@ -808,7 +808,7 @@ class GenesisStep(ForemanTestCase):
         self.put("gen-1/seed.md", SEED)
         self.at("mission", "mission-exam", "fm mission", "fm ideas")
         self.put("gen-1/mission-exam.md", MISSION.format(task=""))
-        self.at("intake", "0 of 2", "fm intake")
+        self.at("intake", "0 of 2", "fm intake --source genesis")  # T-2554: the tower's briefs under their own source
         a, b = self.task(), self.task()
         self.put("gen-1/mission-exam.md", MISSION.format(task=f"Task: {a} (brief 1)\n"))
         self.at("build", f"fm focus {a}")

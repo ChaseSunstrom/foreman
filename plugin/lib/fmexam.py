@@ -763,13 +763,16 @@ def _breakage_score(base, target):
     return int(any(at(w, k["planted"]) and early(w) for w in ws)), sum(at(w, k["twin"]) for w in ws)
 
 
-def replay_forecast(p):
+def replay_forecast(p, clean=True):
     """T-2409: the user's own request stream (fmforesight._requests) with its last third held out: each held-out request
     predicted from the ones before it by the tick's own predictor, beside the naive baseline (the last one again).
-    {held, type_hit, base_type_hit, overlap, base_overlap}; the overlaps are mean path Jaccards."""
+    {held, type_hit, base_type_hit, overlap, base_overlap}; the overlaps are mean path Jaccards. T-2554: clean=False
+    guesses from the old stream (the tower's briefs and mistaken captures in it) on the same held-out asks."""
     import fmforesight
-    reqs = fmforesight._requests(p)
-    held = list(range(max(1, len(reqs) - len(reqs) // 3), len(reqs))) if len(reqs) >= 3 else []
+    own = fmforesight._requests(p)  # T-2554: what is scored, either way: the user's own asks, the same held-out set
+    reqs = own if clean else fmforesight._requests(p, clean=False)  # the history each guess is made from
+    at = {b.id: j for j, (b, _, _) in enumerate(reqs)}
+    held = [at[b.id] for b, _, _ in own[max(1, len(own) - len(own) // 3):]] if len(own) >= 3 else []
     out = {"held": len(held), "type_hit": 0, "base_type_hit": 0, "overlap": None, "base_overlap": None}
     ov, bov = [], []
     for i in held:
@@ -3180,6 +3183,7 @@ def grade(p, run, agent):
     res["cost"] = round(res["cost"], 4)
     if agent == "foresight" and any(s.get("kind") == "forecast" for s in answered):  # T-2409: the user's own stream
         res["forecast_replay"] = replay_forecast(p)
+        res["forecast_replay_raw"] = replay_forecast(p, clean=False)  # T-2554: the stream before the cleanup
     if agent == "foresight":  # T-2487: the model layer's uses against the rules they would replace (zero tokens)
         res["model_replay"] = replay_models(p)
     if lean_rows:

@@ -503,3 +503,28 @@ class TimerWatch(ForemanTestCase):  # T-2542: the sweep caches a dead or failing
                 mock.patch.object(fs, "_ci", return_value=None):
             fs.refresh(p)
         self.assertNotIn("foreman-tick", "\n".join(fs.lines(p)), "a timer that recovered drops off")
+
+
+class OwnAsks(ForemanTestCase):  # T-2554: the user model learns from the user's asks, not the tower's briefs or slips
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def ask(self, title):
+        return json.loads(self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+                                  "--step", "s", "--json").stdout)["id"]
+
+    def test_mission_briefs_and_mistaken_captures_are_left_out(self):
+        import fmgenesis
+        mine, tower, slip = self.ask("fix the parser"), self.ask("a Mission brief"), self.ask("a sample line")
+        home = fmgenesis.home(self.p)
+        os.makedirs(os.path.join(home, "gen-2"), exist_ok=True)
+        with open(os.path.join(home, "gen-2", "mission-x.md"), "w", encoding="utf-8") as f:
+            f.write(f"# Mission\n\nTask: {tower} (brief 1).\n")
+        self.fm("task", "drop", slip, "captured by mistake: a sample line fed to fm intake")
+        ids = [b.id for b, _, _ in fs._requests(self.p)]
+        self.assertIn(mine, ids)
+        self.assertNotIn(tower, ids, "the tower's own Mission brief isn't the user's ask")
+        self.assertNotIn(slip, ids, "a capture dropped as a mistake isn't the user's ask")
+        self.assertEqual(len([b for b, _, _ in fs._requests(self.p, clean=False)]), 3, "clean=False keeps the old stream")
