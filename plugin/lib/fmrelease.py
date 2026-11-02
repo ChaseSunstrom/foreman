@@ -333,6 +333,7 @@ def _push_main(p, tid, sha, remote, by):
 
 
 SHIPPED = "refs/foreman/shipped"  # T-1945: the last commit fm ship landed; default picks start after it
+SHIPPED_TIP = "refs/foreman/shipped-tip"  # T-2527: the main commit that ship pushed (its sha differs once re-picked)
 
 
 def _affected_first(p, wt, base, env):
@@ -487,6 +488,8 @@ def ship(p, args):
             _push_main(p, b.id, tip, remote, "fm ship")
             if c._git(root, "update-ref", SHIPPED, picks[-1], timeout=60, proc=True).returncode:  # T-1951: main has them
                 print(f"warning: couldn't move {SHIPPED} to {picks[-1][:8]}; the next plain fm ship may offer these again")
+            if c._git(root, "update-ref", SHIPPED_TIP, tip, timeout=60, proc=True).returncode:  # T-2527: --last-ship
+                print(f"warning: couldn't move {SHIPPED_TIP} to {tip[:8]}; fm ci-watch --last-ship would watch an older ship")
         finally:
             _git(root, "worktree", "remove", "--force", wt, ok=True)
     print(f"shipped {n} to {remote} main at {tip} (the publish grant is spent)."

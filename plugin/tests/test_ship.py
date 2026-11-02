@@ -85,6 +85,8 @@ class Ship(ForemanTestCase):
         self.assertEqual(self.main_log()[:2], ["add b", "add a"])
         tip = sh(self.origin, "rev-parse", "main").strip()
         self.assertIn(tip, r.stdout, "the pushed sha, for fm ci-watch --commit")
+        self.assertEqual(sh(self.repo, "rev-parse", "refs/foreman/shipped-tip").strip(), tip,
+                         "T-2527: fm ci-watch --last-ship reads the pushed main tip")
         self.assertIn("ci-watch", r.stdout)
         self.assertFalse(self.granted(), "the yes covers one push")
         self.assertEqual(sh(self.repo, "worktree", "list").count("\n"), 1, "the scratch worktree is gone")
