@@ -685,6 +685,30 @@ def check_night_timers(p):
                   + (f"; {live} installed timer(s) firing, last runs ok (systemd)" if live else ""))
 
 
+RELEASE_DAYS, RELEASE_BULLETS = 14, 150  # T-2597: past either, the Unreleased notes are waiting on a release
+
+
+def check_release_age(root):
+    """T-2597: CHANGELOG.md's Unreleased section, its bullets and the days since the newest '## X.Y.Z — date' heading:
+    a WARN naming fm release past RELEASE_DAYS or RELEASE_BULLETS. No CHANGELOG or no Unreleased heading passes."""
+    import datetime
+    try:
+        with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return Result("release age", "PASS", "no CHANGELOG.md")
+    m = re.search(r"(?ms)^## Unreleased\n(.*?)(?=^## \d)", text + "\n## 0")
+    if not m:
+        return Result("release age", "PASS", "no Unreleased section")
+    n = len(re.findall(r"(?m)^- ", m.group(1)))
+    last = re.search(r"(?m)^## (\d+\.\d+\.\d+) — (\d{4}-\d{2}-\d{2})", text)
+    days = (datetime.date.today() - datetime.date.fromisoformat(last.group(2))).days if last else None
+    since = f"{days} days since {last.group(1)}" if last else "no release yet"
+    if n and ((days is not None and days >= RELEASE_DAYS) or n >= RELEASE_BULLETS):
+        return Result("release age", "WARN", f"{n} unreleased CHANGELOG entries, {since}: fm release")
+    return Result("release age", "PASS", f"{n} unreleased entr{'y' if n == 1 else 'ies'}, {since}")
+
+
 def check_anergy():
     """T-2563: permission prompts approved by reflex (5+, median within 2 s, every one read-only): the allow rule that
     would retire each. Advisory: Foreman never applies a rule; the user does."""
@@ -2544,6 +2568,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_worlds(here))  # T-2398
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
+    results.append(check_release_age(here.root if here else os.getcwd()))  # T-2597
     results.append(check_version_skew(c.all_projects()))
     home_p = c.find_project(home)  # T-1998: its active task's in-scope core edits aren't a warning
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),

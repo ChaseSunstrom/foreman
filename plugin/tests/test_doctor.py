@@ -1337,3 +1337,28 @@ class ProofWorlds(ForemanTestCase):  # T-2398: a proof run records the world it 
         self.assertEqual(r.status, "WARN")
         self.assertIn(f"{tid} (uv.lock changed)", r.detail)
         self.assertEqual(d.check_worlds(None).status, "PASS")
+
+
+class ReleaseAge(unittest.TestCase):  # T-2597: twelve days and 746 bullets went unreleased with no word from doctor
+    def write(self, text):
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, d)
+        with open(os.path.join(d, "CHANGELOG.md"), "w") as f:
+            f.write(text)
+        return d
+
+    def test_an_old_or_long_unreleased_section_warns_and_a_fresh_one_passes(self):
+        import datetime
+        old = (datetime.date.today() - datetime.timedelta(days=20)).isoformat()
+        fresh = datetime.date.today().isoformat()
+        r = d.check_release_age(self.write(f"# Changelog\n\n## Unreleased\n\n- a\n- b\n\n## 1.2.3 — {old}\n- c\n"))
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("20 days", r.detail)
+        self.assertIn("fm release", r.detail)
+        many = "".join(f"- item {i}\n" for i in range(160))
+        self.assertEqual(d.check_release_age(self.write(f"## Unreleased\n\n{many}\n## 1.2.3 — {fresh}\n")).status, "WARN")
+        self.assertEqual(d.check_release_age(self.write(f"## Unreleased\n\n- a\n\n## 1.2.3 — {fresh}\n")).status, "PASS")
+        self.assertEqual(d.check_release_age(self.write("no changelog here")).status, "PASS")
+        import tempfile
+        self.assertEqual(d.check_release_age(tempfile.gettempdir() + "/no-such-dir-T2597").status, "PASS")

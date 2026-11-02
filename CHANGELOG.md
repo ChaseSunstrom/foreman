@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `fm doctor` warns when the CHANGELOG's Unreleased section has gone 14 days or 150 entries without a release, and names `fm release`. 1.2.51 had waited 12 days with 746 entries before anyone noticed.
+
 ## 1.2.51 — 2026-11-02
 ### Highlights
 
