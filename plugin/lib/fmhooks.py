@@ -2701,6 +2701,8 @@ def permission_request(pl):
         if p and c.read_meta(p).get("approve_reads"):
             c.log_event(p, "read_approved", data={"cmd": c.fit(cmd, 200)}, session=pl.get("session_id"))
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
+    import fmanergy  # T-2563: a prompt a person sees; one answered above was never theirs
+    fmanergy.record("ask", pl)
     args = fmguard.lone_fm_ask(cmd) if cmd else None
     p = c.find_project(_cwd(pl)) if args else None
     if not p or not pl.get("session_id"):
@@ -2988,6 +2990,8 @@ def post_tool_use(pl, ok=True):
     if not ok:
         rec["error"] = str(pl.get("error") or "").split("\n")[0][:120]
     _event(rec)
+    import fmanergy  # T-2563: closes a permission prompt with the person's time
+    fmanergy.record("done", pl)
     if p and tool == "Bash" and not _oneoff():  # T-1004: a one-off session owns no task; its runs prove nothing here
         _outbound(pl, p, tool, ti)
         try:
