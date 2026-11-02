@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T04:24:11Z",
- "rev": "528be077",
+ "updated": "2026-11-02T04:36:06Z",
+ "rev": "ee895279",
  "capabilities": [
   {
    "n": 1,
@@ -2013,22 +2013,22 @@
       {
        "id": "T-2532",
        "title": "A non-tool hook event runs from the committed library when the working copy fails to import, logged, never silently off",
-       "status": "active",
+       "status": "done",
        "type": "FIX",
        "tier": "M",
        "steps": 2,
-       "done": 1,
-       "current": "red test: a committed copy with a syntax error in fmhooks.py: SessionStart prints its context from the committed library and hooks.log names the event"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2536",
-       "title": "Subtract by evidence: after an exam run with both the foreman and guard arms, fm doctor…",
-       "status": "blocked",
+       "title": "fm bench duel --ablate captures one subtraction candidate per feature whose off arm changed no pass and cost no more",
+       "status": "active",
        "type": "FEATURE",
-       "tier": "M",
-       "steps": 0,
-       "done": 0,
-       "current": ""
+       "tier": "S",
+       "steps": 2,
+       "done": 1,
+       "current": "red test: after fm bench duel --ablate scope (stub: same passes), the inbox holds one candidate naming scope, the duel label and the every-kind plus long-horizon confirmation; a second run adds none"
       },
       {
        "id": "T-2534",
@@ -18137,16 +18137,16 @@
  },
  "not_yet": 5,
  "not_yet_open": 0,
- "unproven": 1056,
+ "unproven": 1055,
  "unproven_kinds": {
   "meaning": 583,
   "research-uncited": 28,
-  "typed": 41,
-  "red": 62,
+  "typed": 39,
+  "red": 63,
   "perf-typed": 51,
-  "docs": 590,
+  "docs": 591,
   "ui-unshot": 52,
-  "tui-unshot": 52,
+  "tui-unshot": 51,
   "data": 4,
   "infra": 7,
   "perf-noise": 1
@@ -18154,8 +18154,8 @@
  "next": {
   "stage": "build",
   "gen": 2,
-  "action": "Mission 3 (staying-lean-and-safe): finish T-2532",
-  "command": "fm focus T-2532",
+  "action": "Mission 3 (staying-lean-and-safe): finish T-2536",
+  "command": "fm focus T-2536",
   "kind": "ok"
  },
  "docs": {
