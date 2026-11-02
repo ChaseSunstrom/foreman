@@ -2235,6 +2235,12 @@ def _interpreter_writes(cmd, ctx):
 _PATH_LITERAL = lazy(r"""(?:[~/.]|[\w.-]+/)[^'"\s]*""")  # what _QUOTED takes between its quotes
 
 
+def _is_sys_path_call(f):
+    import ast
+    return (isinstance(f, ast.Attribute) and f.attr in ("insert", "append") and isinstance(f.value, ast.Attribute)
+            and f.value.attr == "path" and isinstance(f.value.value, ast.Name) and f.value.value.id == "sys")
+
+
 def _quoted_paths(cmd):
     """T-2629: the quoted literals that could be paths. A python heredoc that parses gives its real string constants,
     each one a path, and any quoted path inside one (os.system('… > "/x"')): a quote scan over the code paired the close
@@ -2253,8 +2259,9 @@ def _quoted_paths(cmd):
         except Exception:  # SyntaxError, ValueError, and RecursionError or MemoryError on deep nesting: the quote scan
             text += "\n" + code
             continue
-        for n in ast.walk(tree):
-            if isinstance(n, ast.Constant) and isinstance(n.value, (str, bytes)):  # open(b'/x', 'w') writes /x too
+        skip = {id(a) for n in ast.walk(tree) if isinstance(n, ast.Call) and _is_sys_path_call(n.func) for a in n.args}
+        for n in ast.walk(tree):  # T-2662: sys.path.insert/append(…, "/lib") names an import folder, not a write
+            if id(n) not in skip and isinstance(n, ast.Constant) and isinstance(n.value, (str, bytes)):  # open(b'/x', 'w') writes /x too
                 v = n.value.decode("latin-1") if isinstance(n.value, bytes) else n.value
                 if _PATH_LITERAL.fullmatch(v):
                     out.append(v)
@@ -2295,6 +2302,9 @@ def _interpreter_reads(cmd, ctx):
     # a relative name opens in whichever folder the line may be in: where it started, or any folder it cds to
     bases = [ctx.cwd] + [_resolve(_expand(d, ctx), ctx.cwd) for d in re.findall(r"(?:^|[;&|(\n{])\s*cd\s+([^\s;&|)]+)",
                                                                               dry) if not _unresolvable(d)]
+    # T-2663: a bare name in text that calls no read API (a grep pattern, a log filter) reads nothing
+    reads_api = re.search(r"open\(|read_text|read_bytes|os\.path\.join|Path\(|shutil\.|subprocess|os\.listdir|glob|"
+                          r"readFile|File\.read|File\.join|require\(", code)
     lits = [m.group(1) for q in "'\"`" for m in re.finditer(f"{q}([^{q}\\n]*){q}", code)]
     for lit in lits:
         if not _PATHY.match(lit):
@@ -2307,13 +2317,13 @@ def _interpreter_reads(cmd, ctx):
                                              for d in _CRED_DIRS + _CRED_FILES for leaf in ("id_rsa", "credentials"))
             # an explicit home path is judged exactly; a bare ".aws" may be joined to the home folder at run time
             if not hits and not (explicit and _under(path, ctx.home)) and _CRED_PART.search(lit) and (
-                    home or re.search(r"[*?\[]", lit) or re.match(r"/(?:home|Users|root|var/home)(?:/|$)", path)):
+                    (home and reads_api) or re.search(r"[*?\[]", lit) or re.match(r"/(?:home|Users|root|var/home)(?:/|$)", path)):
                 hits = ["credentials"]  # ponytail: a joined known_hosts is refused too; name the whole path
             found += [(cat, f"{lit!r} in interpreter code reads a credential file") for cat in hits]
     # credential file names in the code's strings and heredoc bodies (quotes can be paired wrongly on purpose), not in
     # the shell words around it (ssh -i ~/.ssh/id_ed25519 uses a key)
     named = next((m for t in lits + [_heredocs(dry)[1]] for m in [_CRED_FILE_NAMES.search(t)] if m), None)
-    if home and named:
+    if home and named and reads_api:
         found.append(("credentials", f"interpreter code names {named.group(0)!r} beside the home folder"))
     # ponytail: interpreter code that changes CLAUDECODE before starting fm isn't read: edit scripts carry the same
     # words as text (env={"CLAUDE_CODE_ENTRYPOINT": …} in a test they write), and fm's verbs that matter fail closed
@@ -4821,6 +4831,9 @@ def _write_targets(name, args):
         outs += _git_writes(sub, rest)
         outs = [x for b in bases for o in outs for x in _under_git_c(b, o)]
         read_only = sub == "stash" and rest[:1] in (["list"], ["show"])  # T-0265: listing a stash writes nothing
+        if sub == "apply":  # T-2661: only these flags, at least one: nothing is applied (--stat --apply would apply)
+            flags = [a for a in rest if a.startswith("-") and a != "--"]
+            read_only = bool(flags) and all(f in ("--check", "--stat", "--numstat", "--summary") for f in flags)
         # T-0935: reset moves HEAD and the index; only --hard/--merge/--keep (or a unique prefix of one, git takes
         # those; or --recurse-submodules) rewrite files
         if sub in ("checkout", "switch") and _new_branch_only(sub, rest):  # T-1598: a branch at HEAD, no files
