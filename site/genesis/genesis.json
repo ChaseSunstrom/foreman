@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T09:47:16Z",
- "rev": "896cf76c",
+ "updated": "2026-11-02T09:57:56Z",
+ "rev": "45cecd25",
  "capabilities": [
   {
    "n": 1,
@@ -21019,7 +21019,7 @@
   "meaning": 563,
   "research-uncited": 29,
   "typed": 26,
-  "red": 66,
+  "red": 67,
   "perf-typed": 50,
   "docs": 596,
   "ui-unshot": 51,
