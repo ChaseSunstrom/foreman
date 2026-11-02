@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T19:00:48Z",
- "rev": "f73d4efb",
+ "updated": "2026-11-02T19:13:53Z",
+ "rev": "6b4fc57d",
  "capabilities": [
   {
    "n": 1,
@@ -24309,15 +24309,15 @@
  },
  "not_yet": 7,
  "not_yet_open": 5,
- "unproven": 974,
+ "unproven": 973,
  "unproven_kinds": {
-  "meaning": 571,
+  "meaning": 569,
   "research-uncited": 29,
   "typed": 26,
   "red": 73,
   "perf-typed": 50,
-  "ui-unshot": 51,
-  "docs": 419,
+  "ui-unshot": 52,
+  "docs": 418,
   "tui-unshot": 46,
   "data": 2,
   "infra": 8,
