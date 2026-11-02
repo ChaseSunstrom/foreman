@@ -474,6 +474,18 @@ class GoalPlan(GoalBase):  # T-2136
         import os
         self.assertFalse(os.path.exists(self.log))
 
+    def test_the_checklist_names_a_task_a_later_fix_touched(self):  # T-2417
+        from unittest import mock
+        import fmmandate
+        import fmoutcomes
+        outs = {"T-0005": {"fate": "fixed later", "by": ["T-0009"]}, "T-0006": {"fate": "held", "by": []},
+                "T-0007": {"fate": "reverted", "by": ["abc1234"]}}
+        with mock.patch.object(fmoutcomes, "outcomes", return_value=outs):
+            got = fmmandate._misses(self.p)
+        self.assertIn("T-0005 was fixed later by T-0009: check what it missed", got)
+        self.assertIn("T-0007 was reverted by abc1234: check what it missed", got)
+        self.assertFalse(any("T-0006" in x for x in got))
+
     def test_misses_become_checklist_lines(self):
         c.log_event(self.p, "goal_verdict", data={"verdict": "finished"})
         self.fm("goal", "item", "forgotten edge", "--done-when", "true")
