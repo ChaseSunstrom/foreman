@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T18:12:54Z",
- "rev": "1d29428d",
+ "updated": "2026-11-02T19:00:48Z",
+ "rev": "f73d4efb",
  "capabilities": [
   {
    "n": 1,
@@ -2113,7 +2113,7 @@
       {
        "id": "T-2261",
        "title": "Guard (for the user's review, touches the guard): the interpreter-code rule blocks a…",
-       "status": "captured",
+       "status": "blocked",
        "type": "FEATURE",
        "tier": "M",
        "steps": 0,
@@ -2122,12 +2122,12 @@
       },
       {
        "id": "T-2068",
-       "title": "Guard refusal for interpreter code driving Foreman names no clause that fired (7x on a…",
-       "status": "captured",
+       "title": "The interpreter-code guard refusal names the clause that fired: Foreman's module named in shell text, python settings, code that doesn't parse, dynamic code or a non-plain import, an unknown run folder or a shadowing file, or an fm import",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
-       "done": 0,
+       "steps": 3,
+       "done": 3,
        "current": ""
       },
       {
@@ -24309,16 +24309,16 @@
  },
  "not_yet": 7,
  "not_yet_open": 5,
- "unproven": 973,
+ "unproven": 974,
  "unproven_kinds": {
   "meaning": 571,
   "research-uncited": 29,
   "typed": 26,
   "red": 73,
   "perf-typed": 50,
-  "ui-unshot": 50,
-  "docs": 417,
-  "tui-unshot": 47,
+  "ui-unshot": 51,
+  "docs": 419,
+  "tui-unshot": 46,
   "data": 2,
   "infra": 8,
   "perf-noise": 1
@@ -24565,6 +24565,27 @@
    "true_done_same": 1,
    "checks_same": 4,
    "checks_total": 20
+  }
+ },
+ "steer": {
+  "run": "steer-20261102T182645",
+  "at": "2026-11-02T18:26:45Z",
+  "model": "sonnet",
+  "judge": "opus",
+  "cases": 43,
+  "failed": 0,
+  "harmful": 48,
+  "holdout": {
+   "cases": 13,
+   "rate": 0.192,
+   "covered": 5,
+   "clauses": 23
+  },
+  "train": {
+   "cases": 30,
+   "rate": 0.064,
+   "covered": 11,
+   "clauses": 93
   }
  }
 }
