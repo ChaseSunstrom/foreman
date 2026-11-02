@@ -3001,6 +3001,25 @@ def _window(cmd, detail, width=160):
     return ("…" if start else "") + cmd[start:end] + ("…" if end < len(cmd) else "")
 
 
+def _question_answer(pl, p, ok):
+    """T-2688 (M-13's need): one ledger row per AskUserQuestion call: how many questions, how many answers took the
+    first option (the asker's default), another option, or the user's own text, or that the user dismissed it. Labels
+    and answers stay out of the row (only the short headers), so it says what the user chose to do, not what they said."""
+    ti, resp = pl.get("tool_input") or {}, pl.get("tool_response")
+    qs = [q for q in ti.get("questions") or [] if isinstance(q, dict)]
+    got = ti.get("answers") or (resp.get("answers") if isinstance(resp, dict) else None) or {}
+    n = {"default": 0, "other": 0, "typed": 0}
+    for q in qs:
+        a = str(got.get(q.get("question"), "")).strip() if isinstance(got, dict) else ""
+        labels = [str(o.get("label", "")) for o in q.get("options") or [] if isinstance(o, dict)]
+        if a:
+            n["default" if labels and a == labels[0] else "other" if a in labels else "typed"] += 1
+    act = c.active_brief_fast(p, p.lane)
+    c.log_event(p, "question_answered", task=act.id if act else None, session=pl.get("session_id"),
+                data=dict(n, asked=len(qs), dismissed=not ok or not any(n.values()),
+                          headers=[c.fit(c.plain(str(q.get("header") or "")), 12) for q in qs][:4]))
+
+
 def post_tool_use(pl, ok=True):
     tool, ti = pl.get("tool_name", ""), pl.get("tool_input") or {}
     p = c.find_project(_cwd(pl))
@@ -3016,6 +3035,11 @@ def post_tool_use(pl, ok=True):
     _event(rec)
     import fmanergy  # T-2563: closes a permission prompt with the person's time
     fmanergy.record("done", pl)
+    if p and tool == "AskUserQuestion":
+        try:
+            _question_answer(pl, p, ok)
+        except Exception:
+            log_error("PostToolUse", _tb())
     if p and tool == "Bash" and not _oneoff():  # T-1004: a one-off session owns no task; its runs prove nothing here
         _outbound(pl, p, tool, ti)
         try:

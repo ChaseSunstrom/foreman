@@ -1,0 +1,49 @@
+"""T-2688 (M-13's need): each AskUserQuestion answer is a ledger row, so what the user takes, overrides or dismisses
+can be learned from. The ledger held 55 approvals and no refusal: chat-ask declines were logged, questions never."""
+import json
+import os
+
+from helpers import ForemanTestCase
+
+import fmcore as c
+import fmhooks
+
+
+class QuestionAnswers(ForemanTestCase):
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def rows(self):
+        path = os.path.join(self.p.dir, "ledger.jsonl")
+        return [json.loads(x)["data"] for x in open(path, encoding="utf-8")
+                if json.loads(x).get("event") == "question_answered"]
+
+    def payload(self, answers):
+        qs = [{"question": "Which store?", "header": "Store", "multiSelect": False,
+               "options": [{"label": "SQLite (Recommended)"}, {"label": "Postgres"}]},
+              {"question": "Ship now?", "header": "Ship", "multiSelect": False,
+               "options": [{"label": "Yes"}, {"label": "No"}]},
+              {"question": "Name?", "header": "Name", "multiSelect": False,
+               "options": [{"label": "alpha"}, {"label": "beta"}]}]
+        return {"tool_name": "AskUserQuestion", "tool_use_id": "q1", "session_id": "s", "cwd": self.repo,
+                "tool_input": {"questions": qs, "answers": answers}, "tool_response": {}}
+
+    def test_answers_split_into_default_other_and_typed(self):
+        fmhooks.post_tool_use(self.payload({"Which store?": "SQLite (Recommended)", "Ship now?": "No",
+                                            "Name?": "gamma, my own"}))
+        (row,) = self.rows()
+        self.assertEqual((row["asked"], row["default"], row["other"], row["typed"], row["dismissed"]),
+                         (3, 1, 1, 1, False))
+        self.assertEqual(row["headers"], ["Store", "Ship", "Name"])
+
+    def test_a_dismissed_question_is_a_row(self):
+        fmhooks.post_tool_use_failure(dict(self.payload({}), error="The user doesn't want to proceed"))
+        (row,) = self.rows()
+        self.assertEqual((row["asked"], row["dismissed"]), (3, True))
+
+    def test_other_tools_log_nothing(self):
+        fmhooks.post_tool_use({"tool_name": "Read", "tool_input": {"file_path": "x"}, "session_id": "s",
+                               "cwd": self.repo})
+        self.assertEqual(self.rows(), [])
