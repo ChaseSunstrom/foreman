@@ -120,6 +120,17 @@ class ExamGen(ForemanTestCase):
         r = self.fm("exam", "grade", run, "--agent", "empty", check=False)
         self.assertIn(f"ungraded {s0['id']}", r.stdout)
 
+    def test_runs_lists_each_run_with_its_split_and_graders(self):  # T-2601
+        res = self.gen("--seed", "4", "--per-kind", "3", "--lang", "python", "--kind", "clean")
+        row = next(r for r in self.fm_json("exam", "runs")["runs"] if r["run"] == res["run"])
+        self.assertEqual((row["tier"], row["scenarios"], row["held"]), ("short", 3, 1))
+        self.assertEqual(row["graded"], {})
+        self.assertIn("not graded", self.fm("exam", "runs").stdout)
+        self.fm_json("exam", "run", res["run"], "--agent", "empty")
+        self.fm("exam", "grade", res["run"], "--agent", "empty", check=False)
+        row = next(r for r in self.fm_json("exam", "runs")["runs"] if r["run"] == res["run"])
+        self.assertIn("empty", row["graded"])
+
     def test_a_pruned_work_copy_asks_for_a_rerun_and_a_rerun_clears_it(self):
         # T-2568: fm tidy removed the work copies the grade reads; grading goal kinds on nothing would fail them all
         res = self.gen("--seed", "4", "--per-kind", "1", "--lang", "python", "--kind", "clean")

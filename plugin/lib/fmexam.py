@@ -1213,9 +1213,40 @@ def runs(p):
 def load(p, run):
     path = os.path.join(root(p), run or "", "run.json")
     if not (run and RUN_ID.fullmatch(run) and os.path.isfile(path)):
-        raise ValueError(f"no exam run {run!r} (fm exam lists them)")
+        raise ValueError(f"no exam run {run!r} (fm exam runs lists them)")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def run_rows(p):
+    """T-2601: every exam run under exam/ and exam/long/, newest first: {run, tier, scenarios, held, graded}, graded
+    being {agent: {gen, model, at}} from the newest exam.jsonl line per agent."""
+    import fmgenesis
+    graded = {}
+    for raw in (fmgenesis._doc(fmgenesis.home(p), "exam.jsonl") or "").splitlines():
+        try:
+            x = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(x, dict) and x.get("run") and x.get("agent"):
+            g = graded.setdefault(("long" if x.get("tier") == "long" else "short", str(x["run"])), {})
+            at = str(x.get("at") or "")
+            if at >= g.get(str(x["agent"]), {}).get("at", ""):
+                g[str(x["agent"])] = {"gen": x.get("gen"), "model": x.get("model"), "at": at}
+    out = []
+    for tier, base in (("short", root(p)), ("long", os.path.join(root(p), "long"))):
+        for name in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+            path = os.path.join(base, name, "run.json")
+            try:
+                with open(path, encoding="utf-8") as f:
+                    sc = json.load(f).get("scenarios") or []
+            except (OSError, ValueError, AttributeError):
+                continue
+            out.append({"run": name, "tier": tier, "scenarios": len(sc), "made": os.path.getmtime(path),
+                        "held": sum(1 for s in sc if isinstance(s, dict) and s.get("split") == "holdout"),
+                        "graded": graded.get((tier, name), {})})
+    return sorted(out, key=lambda r: -r["made"])
+
 
 
 def _key(p, run, sid):
@@ -3353,6 +3384,12 @@ def cmd_exam(args):
             res = grade(p, args.run, args.agent or "oracle")
             fmcli.out(args, res, summary(res))
             return 1 if res.get("ungraded") else 0
+        if action == "runs":  # T-2601
+            rows = run_rows(p)
+            return fmcli.out(args, {"runs": rows}, "\n".join(
+                f"{r['run']} ({r['tier']}): {r['scenarios']} scenario(s), {r['held']} held out; " + ("; ".join(
+                    f"{a} gen {g['gen']} {g['model'] or 'unstamped'} {g['at'][:16]}" for a, g in sorted(r["graded"].items()))
+                    or "not graded") for r in rows) or "no exam runs yet: fm exam gen")
         if action == "check":
             res = check(p, args.run)
             fmcli.out(args, res, f"{args.run}: {res['checked']} scenarios checked, "

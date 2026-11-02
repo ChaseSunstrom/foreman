@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm exam runs` lists every exam run, newest first: its tier, how many scenarios it has and how many are held out, and for each agent that graded it, the generation, model and date of its newest grade. The "no exam run" error now points to it.
 - The Genesis sweep counts a Mission task deferred with a revisit date as carried, not as open work, the same way the build loop already does. Its line says how many are carried.
 - `fm scout --slow` and `fm lib` no longer list a path dependency, such as a Cargo workspace crate (`logic = { path = "logic" }`), as a stack that needs a card: it's the project's own code.
 - `fm release --push` now lands on a main that `fm ship` has been feeding by cherry-pick. When the release merge conflicts only because the histories split, it commits the release with main's CI-ignored data laid over it. That happens only if every other file main differs in holds a version the branch once had; a real change on main still stops it. Afterwards the branch moves to the landed release. And `fm release VERSION` continues from an unpushed release commit even after `--abandon`. 1.2.51 had to be landed by hand for both reasons.
