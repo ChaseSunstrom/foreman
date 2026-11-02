@@ -690,6 +690,9 @@ def check_anergy():
     would retire each. Advisory: Foreman never applies a rule; the user does."""
     import fmanergy
     r = fmanergy.report()
+    if not r["prompts"]:  # T-2588: an empty store says why, so the row isn't read as a verdict
+        return Result("reflex prompts", "PASS", "no permission prompts recorded yet (bypass mode shows none; "
+                                                "T-2565 checks after sessions that show prompts)")
     head = f"{r['prompts']} prompt(s), {r['timed']} timed"
     if not r["reflex"]:
         return Result("reflex prompts", "PASS", f"{head}; none qualified")

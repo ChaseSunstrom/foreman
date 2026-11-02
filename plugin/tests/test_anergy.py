@@ -94,7 +94,10 @@ class Anergy(ForemanTestCase):
         import fmdoctor
         r = fmdoctor.check_anergy()
         self.assertEqual(r.status, "PASS")
-        self.assertIn("none", r.detail)
+        self.assertIn("no permission prompts recorded yet", r.detail)  # T-2588: why it's empty, not a verdict
+        self.assertIn("bypass", r.detail)
+        a.record("ask", ask("x1", "git log"))
+        self.assertIn("none qualified", fmdoctor.check_anergy().detail)
         for i in range(5):
             self.prompt(f"q{i}", "git status", 0.4)
         r = fmdoctor.check_anergy()
