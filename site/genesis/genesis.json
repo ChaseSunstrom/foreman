@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T02:06:39Z",
- "rev": "e916a8db",
+ "updated": "2026-11-02T02:19:09Z",
+ "rev": "97599336",
  "capabilities": [
   {
    "n": 1,
@@ -18003,7 +18003,7 @@
   "typed": 43,
   "red": 61,
   "perf-typed": 51,
-  "docs": 591,
+  "docs": 590,
   "ui-unshot": 52,
   "tui-unshot": 52,
   "data": 4,
