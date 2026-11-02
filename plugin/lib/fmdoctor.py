@@ -634,6 +634,27 @@ def check_self_fixes(p, now=None):
                   + (f", {unmeasured} unmeasured" if unmeasured else ""))
 
 
+def check_worlds(p, days=30):
+    """T-2398: done tasks closed in the last `days` whose newest proof run leaned on another world than today's (the
+    interpreter's version or a repo-root lockfile changed since): their checks passed in a world that's gone."""
+    if not p:
+        return Result("proof worlds", "PASS", "no project here")
+    import fmoutcomes
+    now_h, now_parts = c.world(p.root)
+    kept, moved = c.worlds(), []
+    for b in c.load_briefs(p):
+        age = c.age_days(fmoutcomes.done_at(b)) if b.status == "done" else None
+        hs = re.findall(r"\[world ([0-9a-f]{10})\]", "\n".join(b.evidence())) if age is not None and age <= days else []
+        if hs and hs[-1] != now_h:
+            old = kept.get(hs[-1])
+            what = sorted(k for k in set(old or {}) | set(now_parts) if (old or {}).get(k) != now_parts.get(k))
+            moved.append(f"{b.id} ({', '.join(what)} changed)" if old else f"{b.id} (world {hs[-1]} not on record)")
+    if not moved:
+        return Result("proof worlds", "PASS", f"no done task of the last {days} days was proved in a world that moved")
+    return Result("proof worlds", "WARN", f"{len(moved)} done task(s) proved in a world that moved since: "
+                  + "; ".join(moved[:5]) + (" …" if len(moved) > 5 else "") + "; rerun their checks")
+
+
 def check_night_timers(p):
     """T-2357: night timers staged and waiting for the user's yes, and installed ones that run another Foreman home."""
     import glob
@@ -2494,6 +2515,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_predictions(here))
     results.append(check_model_backends(here))
     results.append(check_self_fixes(here))
+    results.append(check_worlds(here))  # T-2398
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
     results.append(check_version_skew(c.all_projects()))

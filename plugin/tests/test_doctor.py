@@ -1296,3 +1296,29 @@ class SelfFixWeek(ForemanTestCase):  # T-2365: the week's self-fix trials on one
         r = d.check_self_fixes(p, now=now)
         self.assertEqual((r.status, r.detail), ("PASS", "last 7 days: 1 held, 0 didn't hold"))
         self.assertEqual(d.check_self_fixes(None).status, "PASS")
+
+
+class ProofWorlds(ForemanTestCase):  # T-2398: a proof run records the world it leaned on; doctor names moved ones
+    def test_a_done_task_proved_before_a_lockfile_changed_is_named(self):
+        self.fm("init")
+        p = c.find_project(self.repo, create=False)
+        with open(os.path.join(self.repo, "uv.lock"), "w") as f:
+            f.write("a==1\n")
+        tid = json.loads(self.fm("task", "new", "W", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step",
+                                 "s", "--json").stdout)["id"]
+        self.fm("focus", tid)
+        self.fm("task", "evidence", tid, "--step", "1", "--run", "true")
+        line = next(x for x in c.find_brief(p, tid).evidence() if "`true`" in x)
+        self.assertRegex(line, r"\[world [0-9a-f]{10}\]")
+        self.fm("task", "finish", tid, "--audit", "self check", check=False)
+        if c.find_brief(p, tid).status != "done":
+            b = c.find_brief(p, tid)
+            b.meta["status"] = "done"
+            c.save_brief(p, b)
+        self.assertEqual(d.check_worlds(p).status, "PASS")
+        with open(os.path.join(self.repo, "uv.lock"), "w") as f:
+            f.write("a==2\n")
+        r = d.check_worlds(p)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn(f"{tid} (uv.lock changed)", r.detail)
+        self.assertEqual(d.check_worlds(None).status, "PASS")

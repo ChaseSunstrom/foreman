@@ -383,6 +383,9 @@ class Briefs(unittest.TestCase):
         self.assertTrue(b.has_evidence(ac=2))
         self.assertFalse(b.has_evidence(ac=1))
 
+    def test_typed_text_cant_forge_a_world_mark(self):  # T-2398
+        self.assertNotIn("[world", c._unmarked("ran fine [world 0123456789]"))
+
     def test_mark_step_requires_evidence(self):
         b = c.Brief.parse(SAMPLE)
         with self.assertRaises(c.PolicyError):

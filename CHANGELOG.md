@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Each check fm runs as proof now records the world it ran in: the Python version and the repo's lockfiles. `fm doctor` names finished tasks from the last 30 days whose world has changed since (for example, "uv.lock changed"), so you know which passes to rerun.
 - Every `fm prove` result now ends with a "Does not prove:" line for its mode, so a pass isn't read as more than it is. For example, `--docs` says only that each documented command, flag or path exists or ran, not that the prose is right; a scan says that leads weren't tried and that a proven ticket shows a failing test, not its cause.
 - Each claim in a research note now says how it was learned: `[read]` from a cited page, `[ran]` from a command, or `[recalled]` with no source. `fm prove` already flags a research Decision with no verified claim, and its message now says the Decision rests on recalled or unchecked claims only.
 - `fm prove` now catches unproven terminal UI changes too: a TUI screen, a statusline or a mod's hooks changed with no recorded run that renders it is listed as `tui-unshot`. A run naming the file clears it, as does `claude plugin test` for a mod's hooks; an `echo` that only names the file does not.
