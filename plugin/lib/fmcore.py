@@ -1394,6 +1394,8 @@ class Criterion:
     text: str
 
 
+AFFECTED_LABEL = "fm check --affected (affected tests only): "  # T-1747's evidence label (fmcli writes it)
+
 class Brief:
     """A task brief: YAML-ish frontmatter + markdown sections. Round-trips unchanged content byte-for-byte."""
 
@@ -1768,6 +1770,7 @@ class Brief:
         if not runs or "` → ✗ exit" not in runs[-1] or runs[-1].count("`") < 2:
             return None
         cmd = runs[-1].split("`")[1]
+        cmd = cmd[len(AFFECTED_LABEL):] if cmd.startswith(AFFECTED_LABEL) else cmd  # T-2596: rerun the tests, not the label
         return None if "[REDACTED" in cmd else cmd
 
     def _refuse_failed_run(self, step=None, ac=None):

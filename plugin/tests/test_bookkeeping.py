@@ -114,6 +114,13 @@ class FinishGaps(HookCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(c.find_brief(c.find_project(self.repo), "T-0001").status, "done")
 
+    def test_a_failed_affected_run_reruns_its_command_not_its_label(self):  # T-2596
+        self.fm("init")
+        self.fm("task", "new", "t", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        b = c.find_brief(c.find_project(self.repo), "T-0001")
+        b.add_evidence("fm check --affected (affected tests only): test -f ok", c.run_result(1, "no"), step=1, ran=True)
+        self.assertEqual(b.failed_cmd(1), "test -f ok")
+
 
 class Reproduce(ForemanTestCase):
     def test_a_handoff_is_accepted_only_while_its_failure_reproduces(self):

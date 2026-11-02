@@ -5564,7 +5564,7 @@ def _check_affected(p, args):
     if args.evidence:  # T-1747: recorded as what it is, never as the full gates (close still needs fm check)
         result = c.run_result(code, output)
         mutate(p, args.evidence, lambda b: b.add_evidence(
-            f"fm check --affected (affected tests only): {cmd}", result[:600], step=args.step, ac=args.ac,
+            c.AFFECTED_LABEL + cmd, result[:600], step=args.step, ac=args.ac,
             tree=c.worktree_id(p.root), ran=True),
             "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check --affected", "result": result[:200]})
     out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip, "unrunnable": odd},
