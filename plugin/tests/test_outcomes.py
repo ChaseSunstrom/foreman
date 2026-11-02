@@ -610,6 +610,28 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         self.assertEqual(len(self.bets("task")), 1)
 
 
+class CalibrationHarness(CalBase):  # T-2500: a bet records the harness that stated it; --by harness splits them
+    def test_a_bet_records_its_harness_and_by_harness_splits_them(self):
+        a, b = self.planned("A"), self.planned("B")
+        self.fm("focus", a, env={"FOREMAN_HARNESS": "fm-code", "FOREMAN_BENCH": ""})
+        self.fm("focus", b, env={"FOREMAN_HARNESS": "", "FOREMAN_BENCH": "", "CLAUDE_CODE_SESSION_ID": "s1"})
+        self.assertEqual({r["task"]: r["harness"] for r in self.bets("choice")}, {a: "fm-code", b: "claude-code"})
+        with open(os.path.join(self.p.dir, "calibration.jsonl"), "a", encoding="utf-8") as f:  # a row from before
+            f.write(json.dumps({"ts": c.now(), "id": "old-1", "kind": "decision", "stated": 70, "base": None,
+                                "task": None, "key": "old", "files": [], "tree": None}) + "\n")
+        self.assertEqual(sorted(self.cal("--by", "harness")["by"]), ["claude-code", "fm-code", "unknown"])
+
+    def test_the_harness_marker_is_read_from_the_environment(self):
+        from unittest import mock
+        for env, want in (({"FOREMAN_HARNESS": "fm-code"}, "fm-code"), ({"FOREMAN_BENCH": "1"}, "exam"),
+                          ({"CLAUDECODE": "1"}, "claude-code"), ({}, "unknown"),
+                          ({"FOREMAN_HARNESS": "Bad Name!"}, "unknown")):
+            clean = {k: v for k, v in os.environ.items()
+                     if k not in ("FOREMAN_HARNESS", "FOREMAN_BENCH", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID")}
+            with mock.patch.dict(os.environ, dict(clean, **env), clear=True):
+                self.assertEqual(c.harness(), want, env)
+
+
 class CalibrationTrails(CalBase):  # T-2499: the digest names the kind whose Brier trails its base rate most
     def test_the_digest_names_the_kind_whose_brier_trails_its_base_rate_most(self):
         self.seed("choice", 90, 6, 12, base=60)  # stated 90, held half: Brier 0.41 against the base rate's 0.26

@@ -6673,6 +6673,7 @@ def _build_parser(only=None):
     s.add_argument("--predictions", action="store_true", help="each prediction kind's hit rate beside its naive "
                                                               "baseline, and the ones muted for trailing it (T-2406)")
     s.add_argument("--unmute", metavar="KIND", help="--predictions: let a muted kind count again from now")
+    s.add_argument("--by", choices=["harness"], help="--judgment: the buckets and Briers per harness that stated the bets (T-2500)")
     s.add_argument("--readme", action="store_true", help="one sentence for a README: held, closed and ungraded "
                                                          "counts (T-0960)")
     for flag, why in (("settle", "log one outcome event per task whose 30-day window closed (survived or lost)"),

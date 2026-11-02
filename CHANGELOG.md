@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Each bet now records which harness stated it: fm code, the exam, or a Claude Code session. A harness it can't recognize reads "unknown" rather than a guess. `fm outcomes --judgment --by harness` shows the buckets and Brier scores for each harness.
 - Bets now settle even on nights when no task closes: fm night's tick writes the outcomes that are due. Once 20 bets are scored, `fm digest` names the kind of bet whose stated confidence scores worst against its base rate (or says none does).
 - `fm lane brief` now says when a task's own sections run past 4,000 characters, quotes the landing rates from `fm lane stats` (on this repo, long briefs landed 57% of the time against 97%), and suggests splitting the task or keeping it in the main thread. It still writes the brief.
 - Each check fm runs as proof now records the world it ran in: the Python version and the repo's lockfiles. `fm doctor` names finished tasks from the last 30 days whose world has changed since (for example, "uv.lock changed"), so you know which passes to rerun.

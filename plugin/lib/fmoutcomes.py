@@ -330,7 +330,7 @@ def bet(p, kind, stated, task=None, key="", files=(), tree=None, tier=None, typ=
     b = c.find_brief(p, task) if task else None
     row = {"ts": c.now(), "id": "", "kind": kind, "stated": stated, "base": base, "task": task, "key": key,
            "files": [str(f) for f in files][:20], "tree": tree or _tree(p), "tier": tier or (b.tier if b else None),
-           "type": typ or (b.type if b else None)}
+           "type": typ or (b.type if b else None), "harness": c.harness()}  # T-2500
     with c.lock(p.dir):
         if any(x.get("task") == task and x.get("kind") == kind and x.get("key") == key for x in ledger(p)[0]):
             return None
@@ -780,6 +780,16 @@ def cmd_calibration(args):
     outs = outcomes(p)
     settle(p, outs)
     d = ledger_data(p, outs)
+    if getattr(args, "by", None) == "harness":  # T-2500: the same buckets and Briers, one group per harness
+        rows = scored(p, outs)
+        d["by"] = {}
+        for h in sorted({r.get("harness") or "unknown" for r in rows}):
+            mine = [r for r in rows if (r.get("harness") or "unknown") == h]
+            done = [r for r in mine if r["outcome"]]
+            based = [r for r in done if r.get("base") is not None]
+            d["by"][h] = {"total": len(mine), "scored": len(done), "kinds": tables(mine),
+                          "brier": {"stated": brier(done), "base": brier(based, "base")} if len(done) >= LEDGER_MIN
+                          else None}
     raised, under, warns = adjust_bars(p, bar_rows(scored(p, outs)))
     d["bars"], d["raised"], d["under"] = bars(p), raised, under
     d.update(extras(p))  # T-2344: races and parked doors, so every surface reads one JSON
@@ -793,6 +803,8 @@ def cmd_calibration(args):
     lines += [f"Races: {r['run']} run; the stated first choice lost {r['first_lost']} of {r['judged']}"] if r["run"] else []
     lines += [f"Parked at a one-way door: {', '.join(d['doors_parked'])}"] if d["doors_parked"] else []
     lines.append(f"Bars: research {d['bars']['research']} · race {d['bars']['race']}")
+    lines += [f"{h}: {g['scored']} of {g['total']} scored" + (f", Brier stated {g['brier']['stated']:.2f}" if g["brier"] else ", too few for a Brier")
+              for h, g in (d.get("by") or {}).items()]  # T-2500
     return fmcli.out(args, d, "\n".join(lines))
 
 
