@@ -276,6 +276,30 @@
     box.appendChild(wrap).appendChild(t);
   }
 
+  /* T-2626: the moonshot campaign's catalogue: both tiers, domain, novelty, stage, what it unblocks, asked or not; textContent only */
+  function moonshotTable() {
+    var box = $("moonshots"), M = D.moonshots, t, tr, p, wrap,
+      rows = M && Array.isArray(M.rows) ? M.rows.filter(function (r) { return r && typeof r === "object"; }) : [];
+    box.textContent = "";
+    p = box.appendChild(document.createElement("p"));
+    if (!rows.length) { p.className = "muted"; p.textContent = "No moonshot in the catalogue yet."; return; }
+    p.textContent = String(M.total) + " of 100 moonshots; " + String(M.killed) + " of " + String(M.big)
+      + " extreme or massive kill-tested; " + String(M.built) + " built; " + String(M.not_yet) + " not yet. "
+      + rows.filter(function (r) { return r.asked === "no"; }).length + " were never asked for.";
+    wrap = box.appendChild(document.createElement("div")); wrap.className = "tbl";
+    t = wrap.appendChild(document.createElement("table"));
+    tr = t.appendChild(document.createElement("tr"));
+    ["ID", "Moonshot", "Tier (author → reviewer)", "Domain", "Novelty", "Stage", "Unblocks", "Asked"].forEach(function (h) {
+      tr.appendChild(document.createElement("th")).textContent = h;
+    });
+    rows.forEach(function (r) {
+      tr = t.appendChild(document.createElement("tr"));
+      [r.id, r.title, String(r.author || "?") + " → " + String(r.reviewer || "unrated"), r.domain, r.novelty, r.stage,
+        Array.isArray(r.unblocks) ? r.unblocks.join(", ") : "", r.asked === "no" ? "never asked" : String(r.asked)
+      ].forEach(function (v) { tr.appendChild(document.createElement("td")).textContent = v == null ? "" : String(v); });
+    });
+  }
+
   /* T-2625: the steer-expansion exam: raw words expanded into standing rules, a stronger judge, held-out coverage */
   function steerRow() {
     var box = $("steer"), S = D.steer, p, pct = function (v) { return typeof v === "number" ? Math.round(v * 100) + "%" : "?"; };
@@ -446,6 +470,7 @@
     exam();
     try { longRow(); } catch (e) {}
     try { steerRow(); } catch (e) {}
+    try { moonshotTable(); } catch (e) {}
     try { scorecard(); } catch (e) {}  // a odd scorecard row costs its table, never the docs or the route below
     docs();
     var h = location.hash.slice(1);

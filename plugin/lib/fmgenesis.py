@@ -15,7 +15,7 @@ import fmcore as c
 
 # not-yet.md: ideas no approach has landed yet, with their blockers (retried each generation, never dropped);
 # coverage.md: the capability-area x surface x stage grid every generation fills.
-SHAPE = re.compile(r"(gap-map|lineage|catalogue|report|not-yet|coverage|spec)\.md|exam\.jsonl"
+SHAPE = re.compile(r"(gap-map|lineage|catalogue|moonshot|report|not-yet|coverage|spec)\.md|exam\.jsonl"
                    r"|frame\.md|gen-[1-9][0-9]*/(seed|drift|sweep|frontier|gap-map|prediction|blind-spots"
                    r"|(mission|critique)-[a-z0-9][a-z0-9-]*)\.md")
 OWNED = re.compile(r"exam\.jsonl|frame\.md|gen-[1-9][0-9]*/((drift|sweep|select|confirm|frontier|review)\.md"
@@ -648,22 +648,30 @@ def moonshots(p):
     """Each generation's shipped moonshot (its spiked pick, 'Spike: shipped') and whether the user asked for it: a
     user-sourced brief or a user steer whose words hold the pick's (2 significant words, or all of them when it has
     fewer) names it, else 'no'. Computed, never judged."""
-    import fmrecall
-    d, out = home(p), []
-    asks = [(b.id, set(fmrecall.words(b.section("Raw request") or b.title)))
-            for b in c.load_briefs(p, include_archive=True) if b.meta.get("source") == "user"]
-    asks += [(f"steer {dt}", set(fmrecall.words(t))) for dt, t in c.steer_rules(p)]
+    d, out, asked = home(p), [], _asker(p)
     for k in _gens(d):
         text = _doc(d, f"gen-{k}/mission-moonshot.md") or ""
         pick, spike = PICK.search(text), SPIKE.search(text)
         if k < 2 or not (pick and spike and spike[1].lower() == "shipped"):
             continue
         title = c.plain(pick[1]).strip()
+        out.append({"gen": k, "title": title, "asked": asked(title)})
+    return out
+
+
+def _asker(p):
+    """title -> the user brief or steer whose words hold the title's (3 shared significant words, all of a shorter
+    title), else 'no': whether the user asked for a moonshot. Computed, never judged (T-2626: the campaign's too)."""
+    import fmrecall
+    asks = [(b.id, set(fmrecall.words(b.section("Raw request") or b.title)))
+            for b in c.load_briefs(p, include_archive=True) if b.meta.get("source") == "user"]
+    asks += [(f"steer {dt}", set(fmrecall.words(t))) for dt, t in c.steer_rules(p)]
+
+    def asked(title):
         want = set(fmrecall.words(title))
         need = min(3, len(want))  # 3 shared words (all of a shorter title): two common ones say nothing
-        out.append({"gen": k, "title": title,
-                    "asked": next((i for i, w in asks if need and len(want & w) >= need), None) or "no"})
-    return out
+        return next((i for i, w in asks if need and len(want & w) >= need), None) or "no"
+    return asked
 
 
 def moonshot_check(p):
@@ -713,7 +721,8 @@ def moonshot_check(p):
             if not any(_title(m["title"]) in _title(x) and want in x.lower() for x in report.splitlines()):
                 problems.append(f"report.md: no line lists the gen-{m['gen']} moonshot {c.fit(m['title'], 60)!r} "
                                 f"with '(asked: {m['asked']})'")
-    return {"problems": problems}
+    import fmmoonshot  # T-2626: the campaign every generation advances: its catalogue's shape and the floor
+    return {"problems": problems + fmmoonshot.check(p)}
 
 
 def marks(lineage):
@@ -844,7 +853,9 @@ def step(p):
         name, doc = file[8:], _doc(d, f"{pre}{file}.md")
         where = f"Mission {num} ({name})"
         if doc is None:
-            return act("mission", n, f"{where}, {caps.strip()}: fm mission, then {IDEAS}; file it as {pre}{file}.md",
+            return act("mission", n, f"{where}, {caps.strip()}: fm mission, then {IDEAS}; file it as {pre}{file}.md"
+                       + ("; it also advances the moonshot campaign: fm genesis moonshot names this generation's "
+                          "work (moonshot.md, rate, kill tests, the climb, the floor)" if name == "moonshot" else ""),
                        f"fm genesis put {pre}{file}.md --file -")
         ids = list(dict.fromkeys(re.findall(r"\bT-\d{4,}\b", " ".join(TASKS.findall(doc)))))
         block = BLOCK.search(doc)
@@ -1179,6 +1190,9 @@ def export(p, out):
     if (lr := card_long(p)) and lr["state"] != "no long run":  # T-2263: the deciding row
         data["long"] = lr
     import fmsteer
+    import fmmoonshot
+    if (ms := fmmoonshot.export(p))["total"]:  # T-2626: the moonshot catalogue, both tiers, stage, asked or not
+        data["moonshots"] = ms
     if st := fmsteer.latest(p, held=True):  # T-2625: the steer-expansion exam's newest run, its held-out rate on the page
         data["steer"] = {k: st.get(k) for k in ("run", "at", "model", "judge", "cases", "failed", "harmful", "holdout",
                                                 "train")}
@@ -2396,6 +2410,8 @@ def _seed(p, n, agent):
     table.append(f"| {len(table) + 1} | mission-moonshot.md | moonshot: no cell, no capability | judged on novelty "
                  "and value only (see Moonshot below) | — |")
     lens = FAR[(n - 2) % len(FAR)]
+    import fmmoonshot
+    campaign = fmmoonshot.seed_lines(p, n)  # T-2626: the moonshot campaign, advanced in every generation
     asks, sub = [], os.path.join(d, f"gen-{n - 1}")
     for fn in sorted(os.listdir(sub)) if os.path.isdir(sub) else ():
         if fn.startswith("critique-") and fn.endswith(".md"):
@@ -2449,7 +2465,8 @@ def _seed(p, n, agent):
            "`Better by:` (how ours beats it) and `Novelty: 1-5`. fm genesis novelty marks the obvious ones by a cold "
            "read; a mark typed into the file counts for nothing, and an obvious idea can't be the spiked pick while a "
            "non-obvious one exists.",
-           "- The pick is spiked; a failed spike goes to not-yet.md with its blocker, never dropped.", "",
+           "- The pick is spiked; a failed spike goes to not-yet.md with its blocker, never dropped.",
+           *campaign, "",
            "## Empty coverage cells (fill first)", "",
            *([f"- {r['area']}: {', '.join(r['empty'])}" for r in cov["rows"] if r["empty"]] or ["None."]), "",
            "## Not-yet items (each retried this generation)", "", *(ny or ["None."]), "",
@@ -3754,6 +3771,9 @@ def sweep(p, n, agent="foreman"):
     row("gap map", *_gapmap_row(p, n))  # T-2502 (user steer 2026-11-01, part 2)
     row("proof before presentation", *_claim_row(p))  # T-2504 (user steer 2026-11-01, part 4)
     row("prediction and blind spots", *_predict_row(p, n))  # T-2505 (user steer 2026-11-01, part 5)
+    import fmmoonshot  # T-2626 review: the floor holds inside its own generation, not only once the next one exists
+    row("moonshot floor", [x for x in fmmoonshot.floor(p, upto=n) if x.startswith(f"gen-{n}")],
+        f"gen-{n} advanced an extreme or massive moonshot by a stage")
     briefs = c.load_briefs(p)
     by_id = {b.id: b for b in c.load_briefs(p, include_archive=True)}  # fm tidy archives closed briefs after 14 days
     ids = [t for f in sorted(os.listdir(os.path.join(d, f"gen-{n}")) if os.path.isdir(os.path.join(d, f"gen-{n}")) else [])
@@ -3933,6 +3953,23 @@ def cmd_genesis(args):
         if action == "grow":
             r = grow(p, args.path, args.name, args.evidence, args.measure)
             return fmcli.out(args, r, f"Frame: {r['id']} {r['kind']}: {r['name']} ({r['measure']}), gen-{r['gen']}")
+        if action == "moonshot":  # T-2626: the campaign every generation advances
+            import fmmoonshot
+            verb = args.path or "status"
+            if verb == "rate":
+                r = fmmoonshot.rate(p)
+                return fmcli.out(args, r, f"Moonshot rate ({r['model']}): {r['rated']} tiered, {r['demoted']} demoted, "
+                                          f"{r['promoted']} promoted; {r['left']} unrated left"
+                                          + (" (run it again)" if r["left"] else ""))
+            if verb == "order":
+                r = fmmoonshot.order(p)
+                return fmcli.out(args, r, "\n".join(f"{x['id']} {x['next']} ({x['tier']}"
+                                                    + (f", unblocks {x['unblocks']}" if x["unblocks"] else "") + f"): "
+                                                    + x["title"] for x in r) or "Nothing to climb yet.")
+            if verb != "status":
+                raise fmcli.UsageError("fm genesis moonshot [status|rate|order]")
+            s = fmmoonshot.summary(p)
+            return fmcli.out(args, s, "\n".join(fmmoonshot.seed_lines(p, current(p) or 1)))  # this generation's work
         if action == "novelty":
             r = novelty(p, int(args.path))
             return fmcli.out(args, r, f"Novelty: {r['judged']} of {r['ideas']} idea(s) judged; obvious: "
