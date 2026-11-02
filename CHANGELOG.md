@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Every nonzero `fm` exit now ends with one `Next:` command. A refusal names `fm next`, a lock timeout repeats the same command, and corrupt or unreadable state names `fm fsck`. Exit codes are unchanged.
 - A contract's receipt now shows yield per dollar beside spend, for example "$0.50 a task (2.0 tasks a dollar)". `fm run` ends with the same line when it measured spend, which is under `--max-usd` or a USD contract. Zero spend or zero tasks show no ratio.
 - The brainstorm skill's grounding step now asks for MASTER.md first, three phrasings per idea and the verbs' own help strings before an idea counts as new, plus a spot check of two grounded items before any is built. In the 2 November run, three of the four items checked that the first pass had marked new or partial were already built.
 - `fm task finish` no longer re-runs a criterion whose exact command just passed on the same files and environment. If the newest run of that command was a pass recorded by fm on this tree and world, the close reuses it and says so ("Reused 1 run(s)…"). A different tree, a changed lockfile or interpreter, or a later failed run of the command still runs it again. The close's own gates still run.

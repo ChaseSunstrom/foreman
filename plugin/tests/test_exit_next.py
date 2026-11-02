@@ -49,6 +49,10 @@ class ExitNext(unittest.TestCase):
     def test_value(self):
         self.check(ValueError("x"), 4)
 
+    def test_unreadable_state_file(self):
+        with mock.patch.object(c, "in_state", return_value=True):
+            self.check(PermissionError(13, "denied", "/state/meta.json"), 4)
+
     def test_usage_keeps_its_own(self):
         e = fmcli.UsageError("u")
         e.then = "fm help"

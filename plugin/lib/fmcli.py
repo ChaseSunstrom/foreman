@@ -8453,6 +8453,7 @@ def main(argv=None):
             if isinstance(e, PermissionError) and e.filename and c.in_state(e.filename):  # T-1669: a state file's mode, not a bug: named
                 print(f"fm: can't open {e.filename}: permission denied; restore its permissions (fm fsck lists "
                       "unreadable state)", file=sys.stderr)
+                print("Next: fm fsck", file=sys.stderr)  # T-2653
                 return 4
             raise
         print(f"fm: can't read {e.filename}: {e.strerror.lower()}", file=sys.stderr)
