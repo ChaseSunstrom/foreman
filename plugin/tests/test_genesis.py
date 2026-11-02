@@ -862,6 +862,21 @@ class GenesisStep(ForemanTestCase):
         self.put("gen-1/mission-exam.md", f"Task: {t}\n")
         self.assertEqual(self.at("build", f"fm focus {t}")["kind"], "blocked")
 
+    def test_a_deferred_brief_with_a_revisit_date_is_carried_to_the_critique(self):  # T-2541
+        import fmgenesis
+        fmgenesis.init(self.p, GEN0_CAPS.encode())
+        self.put("gen-1/seed.md", SEED)
+        a, t = self.task(), self.task()
+        self.fm("task", "drop", a, "done elsewhere")
+        self.fm("task", "defer", t, "no failure yet")
+        self.put("gen-1/mission-exam.md", f"Task: {a}, {t}\n")
+        self.at("build", f"fm focus {t}")  # deferred with no revisit date: still unfinished work
+        self.fm("task", "set", t, "status=planned")
+        self.fm("task", "defer", t, "--until", "2026-12-01", "revives at the first failure")
+        s = self.at("critique", "gen-1/critique-exam.md")
+        self.assertIn("carried", s["action"])
+        self.assertIn(t, s["action"])
+
     def test_two_dry_generations_end_in_the_report_then_done(self):
         import fmgenesis
         fmgenesis.init(self.p, GEN0_CAPS.encode())

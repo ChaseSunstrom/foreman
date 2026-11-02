@@ -828,10 +828,14 @@ def step(p):
         items = c.parse_intake(block.group(1) if block else doc).items
         if (ids or items) and briefs is None:
             briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+        carried = []
         for t in ids:
             if t not in briefs:
                 return act("fatal", n, f"{pre}{file}.md names {t}, which isn't a task here",
                            f"fm genesis put {pre}{file}.md --file -", "fatal")
+            if briefs[t].status == "deferred" and briefs[t].meta.get("revisit"):  # T-2541: a dated deferral is
+                carried.append(t)                                                 # carried and named, never passed
+                continue                                                          # silently
             if briefs[t].status not in c.CLOSED:
                 return act("build", n, f"{where}: finish {t}", f"fm focus {t}",
                            "blocked" if briefs[t].status == "blocked" else "ok")
@@ -847,8 +851,9 @@ def step(p):
             return act("intake", n, f"{where}: {len(ids)} of {want} briefs intaken; fm intake the next line of its "
                                     "block, then add its id to the Task: line at once", "fm intake")
         if not os.path.isfile(os.path.join(d, f"{pre}critique-{name}.md")):
-            return act("critique", n, f"{where}: write its critique (closed vs planned, outside signals, what failed)",
-                       f"fm genesis put {pre}critique-{name}.md --file -")
+            return act("critique", n, f"{where}: write its critique (closed vs planned, outside signals, what failed)"
+                       + (f"; carried, deferred with a revisit date: {', '.join(carried)} (say why each waits)"
+                          if carried else ""), f"fm genesis put {pre}critique-{name}.md --file -")
     # T-2163: only gen-N/select.md, which fm genesis select alone writes (put refuses it), passes this stage; a lineage.md
     # heading is a file anyone can put and a ledger event is one fm log can append
     if not re.search(rf"^Gen: {n}$", _doc(d, f"{pre}select.md") or "", re.M):
