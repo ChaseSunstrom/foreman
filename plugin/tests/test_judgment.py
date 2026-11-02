@@ -560,6 +560,9 @@ class ShipBets(Base):  # T-2496: a ship bet is scored in hours by CI's blocking 
         self.assertEqual({r["key"]: r["outcome"] for r in o.scored(self.p)}, {green[:12]: "held", red[:12]: "missed"})
         with self.assertRaises(ValueError):
             o.ship_bet(self.p, 150, tid, "c" * 40)
+        kinds = o.ledger_data(self.p)["kinds"]  # T-2519: the scored ship bets show in the buckets the user reads
+        self.assertEqual([(b["lo"], b["n"], b["held"]) for b in kinds.get("ship", [])], [(80, 2, 1)])
+        self.assertEqual(o.bar_rows(o.scored(self.p)), [], "still no bar moves on them")
 
 
 class BaseRateNote(Base):  # T-2497 (Mission 2, #8): a plan's percent against its base rate, said while it is stated

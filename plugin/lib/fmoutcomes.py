@@ -277,7 +277,7 @@ BUCKETS = ((0, 59), (60, 79), (80, 94), (95, 100))
 LEDGER_MIN = 20  # scored rows before a Brier, a bar move or a route is believed
 BAR_DEFAULTS = {"research": 70, "race": 55}  # the confidence a plan or a race side needs before it skips research/the race
 BAR_MAX, BAR_STEP, BAR_GAP = 90, 10, 15  # a bar rises at most BAR_STEP, never past BAR_MAX, on a gap of BAR_GAP points
-KINDS = ("task", "choice", "assumption", "decision", "race")
+KINDS = ("task", "choice", "assumption", "decision", "race", "ship")  # T-2519: ship shows in the tables; bar_rows never reads it
 INTERIM_DAYS = 7  # T-2498: a task bet closed this long ago reads "held so far" (never scored) while survival settles
 
 
