@@ -8168,6 +8168,8 @@ def _build_parser(only=None):
     s.add_argument("--timeout", type=float, default=60, help="minutes per session")
     s.add_argument("--max-usd", type=float, help="stop starting tasks once this run's measured spend reaches it "
                                                  "(one at a time; T-1046)")
+    s.add_argument("--stall-usd", type=float, metavar="USD", help="stop starting tasks once the run has spent this "
+                   "many dollars since its last task close (a run that keeps closing is never stopped; T-2669)")
     s.add_argument("--stall", type=float, default=20, help="minutes a session's transcript may sit still before fm "
                                                           "run stops it and goes on (0: never; T-0447)")
     s.add_argument("--fit", action="store_true", help="small tasks first (S, M, then L), so more finish before a usage "

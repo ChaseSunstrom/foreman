@@ -464,6 +464,7 @@ def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
     import fmcontract
     return ["claude", "-p", _prompt(p, b)] + (["--output-format", "json"] if getattr(args, "max_usd", None) is not None
+                                              or getattr(args, "stall_usd", None) is not None
                                               or fmcontract.tracks_usd(p)
                                               else []) + (["--permission-mode", args.permission_mode] if args.permission_mode
                                               else []) + (["--model", model] if model else []) + (
@@ -897,7 +898,12 @@ def cmd_run(args):
     finished, skip, told, sessions, fails = 0, set(), set(), {}, 0  # fails: unfinished sessions in a row (T-0434)
     budget, step = args.wait * 3600, WAIT_FIRST  # usage-limit waiting left for this run, and the next wait
     cap, run_usd, capped = getattr(args, "max_usd", None), 0.0, False
+    stall_usd, since_close, stalled_usd = getattr(args, "stall_usd", None), 0.0, False  # T-2669
     import fmcontract
+    if stall_usd is not None and not stall_usd >= 0:
+        raise fmcli.UsageError("--stall-usd must be a number ≥ 0")
+    if stall_usd is not None:
+        args.parallel = 1  # lanes' sessions aren't measured
     if cap is not None or fmcontract.tracks_usd(p):
         args.parallel = 1  # lanes' sessions aren't measured (T-1158: nor under a USD contract)
     if cap is not None:
@@ -915,6 +921,11 @@ def cmd_run(args):
         if cap is not None and run_usd >= cap:  # T-1046: measured from each session's JSON result
             print(f"fm run: spend cap reached (${run_usd:.2f} of ${cap:.2f}); no more tasks started", flush=True)
             capped = True
+            break
+        if stall_usd is not None and since_close >= stall_usd:
+            print(f"fm run: --stall-usd reached (${since_close:.2f} spent since the last close, limit "
+                  f"${stall_usd:.2f}); no more tasks started", flush=True)
+            stalled_usd = True
             break
         b = _next_runnable(p, skip, told, fit=args.fit or bool(_ahead_of_pace(p)))
         if not b:
@@ -982,13 +993,14 @@ def cmd_run(args):
             streams = (so.read(), se.read())
         output = streams[0] + streams[1]
         import fmcontract
-        if cap is not None or fmcontract.tracks_usd(p):  # the result line's cost, counted even when the session didn't finish
+        if cap is not None or stall_usd is not None or fmcontract.tracks_usd(p):  # the result line's cost, counted even when the session didn't finish
             for line in reversed(streams[0].strip().splitlines()):
                 try:
                     usd = float(json.loads(line).get("total_cost_usd") or 0)
                 except (ValueError, AttributeError, TypeError):
                     continue
                 run_usd += usd  # (only read under --max-usd)
+                since_close += usd
                 import fmbudget
                 fmbudget.record("run", usd, project=p.slug, detail=b.id)
                 break
@@ -1027,7 +1039,7 @@ def cmd_run(args):
         how = f" ({model or 'default model'}, {spent:,} input-equivalent tokens)" if spent else ""
         after = c.find_brief(p, b.id)
         if after.status == "done":
-            finished, fails = finished + 1, 0
+            finished, fails, since_close = finished + 1, 0, 0.0
             print(f"{b.id} done{how}")
             _notify(p, f"{b.id} done: {b.title[:80]}")
         elif after.status in ("blocked", "dropped", "deferred"):
@@ -1048,7 +1060,7 @@ def cmd_run(args):
                 fail(f"{b.id} still not done after {SESSIONS_PER_TASK} sessions; stopping", quarantine=b.id)
     _notify(p, f"fm run finished: {finished} task(s) done")
     print(f"fm run: {finished} task{'s' if finished != 1 else ''} done"
-          + ("; spend cap reached" if capped else "; the queue has nothing else runnable" if finished < args.max
+          + ("; spend cap reached" if capped else "; --stall-usd reached: spent without a close" if stalled_usd else "; the queue has nothing else runnable" if finished < args.max
              else f"; stopped at --max {args.max}"))
     if run_usd > 0:  # T-2655: the run's spend (measured only under --max-usd or a USD contract) and what it bought
         import fmcontract

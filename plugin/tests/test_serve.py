@@ -217,6 +217,25 @@ class Run(RunCase):
         self.assertEqual(len(sessions), 2)  # 0.30 < 0.5 starts a second; 0.60 >= 0.5 stops the third
         self.assertIn("spend cap reached", out)
 
+    def test_stall_usd_stops_a_run_that_spends_without_closing(self):  # T-2669
+        for t in ("one", "two", "three"):
+            self.task(t)
+        fm = f"{sys.executable} {FM}"  # moves the brief each time (progress) but never closes the task
+        self.stub("claude", f't=$FOREMAN_DRIVE_TASK\n{fm} focus $t >/dev/null\n{fm} task evidence $t --run "echo $RANDOM" >/dev/null\n'
+                  'echo \'{"type":"result","total_cost_usd":0.30,"result":"ok"}\'\n')
+        r = self.run_fm("--stall-usd", "0.5", "--max", "5", check=False)
+        out = r.stdout + r.stderr
+        self.assertEqual(len([l for l in self.called().splitlines() if l.startswith("claude ")]), 2)
+        self.assertIn("--stall-usd", out, out)
+
+    def test_stall_usd_resets_on_each_close(self):  # T-2669
+        for t in ("one", "two", "three"):
+            self.task(t)
+        self.stub("claude", self.finisher + 'echo \'{"type":"result","total_cost_usd":0.30,"result":"ok"}\'\n')
+        out = self.run_fm("--stall-usd", "0.5").stdout
+        self.assertEqual(len([l for l in self.called().splitlines() if l.startswith("claude ")]), 3)
+        self.assertNotIn("--stall-usd", out)
+
     def test_all_projects_works_each_projects_queue_in_turn(self):  # T-1782
         a = self.task("one")
         other = git_repo(self.tmp, "other")
