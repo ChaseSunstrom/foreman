@@ -2011,6 +2011,30 @@ class PreToolUse(HookCase):
                 self.assertIn("committed guard", self.hooks_log())
                 subprocess.run(["git", "-C", copy, "checkout", "--", "."], check=True)
 
+    def test_a_broken_working_copy_leaves_non_tool_events_running_as_committed(self):
+        # T-2532: a self-edit that broke the library's import turned SessionStart, Stop and UserPromptSubmit off
+        # silently (exit 0, nothing run, no log) while tool events already fell back to the committed library
+        import shutil
+        import subprocess
+        import sys
+        self.fm("init")
+        self.task()
+        copy = os.path.join(self.tmp, "fcopy3")
+        shutil.copytree(c.PLUGIN_ROOT, os.path.join(copy, "plugin"), ignore=shutil.ignore_patterns("__pycache__", "tests"))
+        for args in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
+            subprocess.run(["git", "-C", copy, *args], check=True, capture_output=True)
+        with open(os.path.join(copy, "plugin", "lib", "fmhooks.py"), "a") as f:
+            f.write("\ndef broken(:\n")
+        payload = {"session_id": "sess-1", "cwd": self.repo, "hook_event_name": "SessionStart", "source": "startup"}
+        r = subprocess.run([sys.executable, os.path.join(copy, "plugin", "hooks", "hook"), "SessionStart"],
+                           input=json.dumps(payload), capture_output=True, text=True,
+                           env=dict(os.environ, FOREMAN_HOME=self.home), cwd=self.repo, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Foreman project", r.stdout, "the session context comes from the committed library")
+        log = self.hooks_log()
+        self.assertIn("SessionStart", log)
+        self.assertIn("committed library", log)
+
     def test_a_broken_core_library_keeps_grants_visible_and_protection_on(self):
         # T-0037: a bug in fmcore hid the active task's grants (core edits refused, even the fix); a syntax error in it
         # would make the hook script itself fail to import and block every tool call
