@@ -99,6 +99,12 @@ class CorruptState(ValueError):
     """T-1669: a state file that doesn't parse, named in one line (fm and the hooks print it, never a traceback)."""
 
 
+def more(items, n, flag=""):
+    """T-2673: (items[:n], note): note is '' when nothing was cut, else 'K left out (FLAG)' for the caller to print."""
+    k = len(items) - n
+    return items[:n], (f"{k} left out" + (f" ({flag})" if flag else "")) if k > 0 else ""
+
+
 def clock():
     """T-2645: aware UTC now; FOREMAN_NOW (ISO 8601, Z or an offset) pins it so a test can stand on a window's edge.
     A malformed value is ignored."""

@@ -141,7 +141,8 @@ def cmd_state(args):
     else:
         text = c.render_state(sd)
         if args.brief:
-            text = "\n".join(text.splitlines()[:15])
+            shown, left = c.more(text.splitlines(), 15, "drop --brief")
+            text = "\n".join(shown + [left] if left else shown)
         print(text.rstrip("\n"))
         if not args.brief:  # T-2276: the trigger whose tasks mostly get dropped
             import fmtriggers
@@ -883,7 +884,9 @@ def cmd_task(args):
             outside = c.scope_drift(b, files)
             if outside and not c.scope_reason_covers(b, touches, outside):
                 latest = max(outside, key=lambda f: touches.get(f, ""))  # T-0168: a reason counts after this edit
-                reasons.append(f"edited outside scope [{', '.join(b.meta.get('scope') or [])}]: {', '.join(outside[:8])}"
+                shown, left = c.more(outside, 8)
+                reasons.append(f"edited outside scope [{', '.join(b.meta.get('scope') or [])}]: "
+                               f"{', '.join(shown + [left] if left else shown)}"
                                f"; widen it (fm task set {b.id} scope=…) or say why after your last edit of {latest} "
                                f"(fm task log {b.id} \"scope: <why>\"; a reason logged before an edit doesn't cover it)")
             if b.type == "CLEAN" and first_edit and not b.section("Behaviour lock").strip() and not any(
@@ -923,7 +926,7 @@ def cmd_task(args):
             if gaps:  # T-0645: what this plan forgot, for the next similar plan (fm recall at focus)
                 b.set_section("Plan gaps", gaps)
             if files:  # recall's "Start here" and edit tripwires for the next related task
-                b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))
+                b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))  # not a list: a recall section; the diff has the rest
             b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
             logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"],
                           planned=len(b.meta.get("scope") or []), changed=len(files),  # T-0644
@@ -1013,7 +1016,8 @@ def cmd_task(args):
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
             if guessed else "") + "".join(f"\n{x}" for x in (assumed, doors) if x) + (
-            "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
+            "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(c.more(notes, 10)[0])
+            + (f"\n  … {c.more(notes, 10, 'fm docs')[1]}" if len(notes) > 10 else "") if notes else ""))
     if sub == "prove":
         return task_prove(p, args)
     if sub == "finish":
@@ -1280,7 +1284,8 @@ def task_finish(p, args):
     red = _red_full_check(p)
     if red:  # T-2526: T-2334 closed and committed right after its full gate failed on the same tree
         raise c.PolicyError(f"{b.id}: the newest full fm check on this tree failed ({c.fit(c.plain(red[0]), 80)}"
-                            + (f": {', '.join(c.plain(t) for t in red[1][:5])}" if red[1] else "")
+                            + (f": {', '.join(c.plain(t) for t in c.more(red[1], 5)[0])}"
+                               f"{', ' + c.more(red[1], 5)[1] if len(red[1]) > 5 else ''}" if red[1] else "")
                             + "): fix it and run fm check again before closing")
     lenses = []
     for spec in args.lens or []:
@@ -1668,12 +1673,14 @@ def _close_affected(p, b, runs, args):
         if e.get("event") == "check_run" and e.get("task") != b.id:
             before = {n for r in (e.get("data") or {}).get("results") or [] for n in r.get("failing") or []}
             break
+    n4, left4 = c.more(names, 4)
+    n6, left6 = c.more(names, 6)
     if names and set(names) <= before:
-        say(f"{b.id}: the linked tests fail, but were already red in the last full run ({', '.join(names[:4])}): "
-            f"its baseline task owns them")
+        say(f"{b.id}: the linked tests fail, but were already red in the last full run "
+            f"({', '.join(n4 + [left4] if left4 else n4)}): its baseline task owns them")
         return
     raise c.PolicyError(f"{b.id} not finished: the tests linked to its changes fail"
-                        + (f" ({', '.join(names[:6])})" if names else " (the runner names no test)")
+                        + (f" ({', '.join(n6 + [left6] if left6 else n6)})" if names else " (the runner names no test)")
                         + f": {cmd} → {c.run_result(code, output)}. Fix them; if they were red before this task, a "
                         "full fm check records that and the close goes through; or waive on the record: "
                         "--skip-affected \"<why>\"")
@@ -1931,7 +1938,7 @@ def _file_map_gaps(p, b):
     master = os.path.join(p.root, "MASTER.md")
     if not base or not os.path.exists(master):
         return []
-    entries = {"/".join(f.split("/")[:2]) for f in fmmap.changed(p.root, base) if f.startswith("plugin/")}
+    entries = {"/".join(f.split("/")[:2]) for f in fmmap.changed(p.root, base) if f.startswith("plugin/")}  # not a list: a path prefix
     if not entries:
         return []
     res = fmdoctor.check_file_map(p.root, master)
@@ -2038,7 +2045,8 @@ def _stale_index_lock(root, age=600):
         return False, f"{lock} is {int(old // 60)} min old; no /proc here to check for a live git: kept (remove it by hand)"
     holders = _lock_holders(root, st)
     if holders:
-        return False, f"{lock} kept: {'; '.join(holders[:5])}"
+        shown, left = c.more(holders, 5)
+        return False, f"{lock} kept: {'; '.join(shown + [left] if left else shown)}"
     try:  # ponytail: a re-stat narrows the race with a git starting now to microseconds; it doesn't close it
         now = os.stat(lock)
         if (now.st_ino, now.st_mtime_ns) != (st.st_ino, st.st_mtime_ns):
@@ -2422,7 +2430,8 @@ def task_prove(p, args):
                "not proved: it passes without the change too, so it doesn't test the fix" if not red[0] else
                "not proved: it fails on the current tree")
     if kept:  # T-1845 named them after a vacuous red run; T-1919 leaves them at the start
-        verdict += (f"\n  kept at its start version: {', '.join(kept[:5])} (in a tests folder and on the start tree, "
+        shown, left = c.more(kept, 5)
+        verdict += (f"\n  kept at its start version: {', '.join(shown + [left] if left else shown)} (in a tests folder and on the start tree, "
                     f"not test-named: code under change). If the new tests need its new code, record the red run in "
                     f"the Regression test section instead")
     out(args, {"proved": proved, "red": red[0], "green": green[0], "tests": tests, "kept": kept},
@@ -2644,8 +2653,9 @@ def _close_warnings_of(p, b, files):
                 continue
         stray = c.scope_drift(b, new)
         if stray:
+            shown, left = c.more(stray, 10)
             out.append(f"ignored files outside its scope [{', '.join(b.meta['scope'])}] left behind: "
-                       + ", ".join(stray[:10]))
+                       + ", ".join(shown + [left] if left else shown))
     drift = _tier_drift(p, b, files)  # T-0488
     bare = _not_verified(p, b, files)  # T-0474
     import fmsecond
@@ -2670,17 +2680,22 @@ def _close_warnings_of(p, b, files):
         elif n >= 3 and b.id not in proven:  # T-1947: its red prove is often a narrower command
             said.append(f"`{c.fit(cmd, 50)}` never failed in {n} run(s) here (does it test the change?)")
     if said:
-        honest.append("Check track record: " + "; ".join(said[:4]))
+        shown, left = c.more(said, 4)
+        honest.append("Check track record: " + "; ".join(shown + [left] if left else shown))
     debug, conflict = _scaffolding(p, b, files)
     if debug:
-        honest.append(f"debug scaffolding in added lines: {', '.join(debug[:6])} — remove it, or say why it stays")
+        shown, left = c.more(debug, 6)
+        honest.append(f"debug scaffolding in added lines: {', '.join(shown + [left] if left else shown)} — remove it, "
+                      f"or say why it stays")
     if conflict:  # T-0956
-        honest.append(f"conflict marker in added lines: {', '.join(conflict[:6])} — finish the merge")
+        shown, left = c.more(conflict, 6)
+        honest.append(f"conflict marker in added lines: {', '.join(shown + [left] if left else shown)} — finish the merge")
     gone = _deleted(p, b)
     why = b.section("Origins")
     unexplained = [f for f in gone if f not in why]
     if unexplained:  # T-0600: a Chesterton check — say why a thing existed before it goes
-        honest.append(f"deleted without saying why it existed: {', '.join(unexplained[:6])} — fm why <file>, then fm task "
+        shown, left = c.more(unexplained, 6)
+        honest.append(f"deleted without saying why it existed: {', '.join(shown + [left] if left else shown)} — fm why <file>, then fm task "
                       f"set {b.id} --section Origins --text \"- <file>: <why it was there>\"")
     if b.tier == "L" and not b.section("Risks and rollback").strip():  # T-0626
         honest.append("an L task closed with no Risks and rollback section: what undoes it if it goes wrong?")
@@ -3039,7 +3054,8 @@ def _plan_gaps(p, b):
     steps = {s.n: s.text for s in b.steps()}
     lines = [f"- added late: {t}" for t in late] + [f"- failed first: step {n} {c.fit(steps[n], 100)}"
                                                     for n, bad in sorted(failed.items()) if bad and n in steps]
-    return "\n".join(lines[:12]) + "\n" if lines else ""
+    shown, left = c.more(lines, 12)
+    return "\n".join(shown + [f"- {left}"] if left else shown) + "\n" if lines else ""
 
 
 _CONTRACT = re.compile(r"\((produces|requires):\s*([^)]+)\)")
@@ -3060,7 +3076,8 @@ def step_contracts(p, b):
                     notes.append(f"step {s.n} requires {path}: it doesn't exist and no earlier step produces it")
                 if kind == "produces":
                     made.add(path)
-    return ("Step contracts: " + "; ".join(notes[:4])) if notes else ""
+    shown, left = c.more(notes, 4)
+    return ("Step contracts: " + "; ".join(shown + [left] if left else shown)) if notes else ""
 
 
 _HARD = c.HARD_RE  # T-2341: one definition, the plan gate (fmcore.rival_gap) reads it too
@@ -3815,7 +3832,8 @@ def cmd_resume(args):
         goal = None  # a goal that can't be read never stops a resume
     r["resume"] = "\n".join(l for l in (r.get("resume") or "").splitlines() if not l.startswith("- Goal: "))  # stale
     if not r["id"]:
-        nxt = ", ".join(q["id"] for q in c.state_dict(p)["queue"][:3]) or "none"
+        shown, left = c.more([q["id"] for q in c.state_dict(p)["queue"]], 3, "fm queue")
+        nxt = ", ".join(shown + [left] if left else shown) or "none"
         return out(args, r, f"No active task. Next in queue: {nxt}" + (f"\n{goal}" if goal else ""))
     step = f"step {r['step']['n']}/{r['step']['of']}: {r['step']['text']}" if r["step"] else f"{r['steps_done']}/{r['steps_total']} steps done"
     stale = (f"\nStale since it started (gone from the repo now): {', '.join(r['stale'])} — re-check the brief before "
@@ -5312,8 +5330,9 @@ def cmd_bisect(args):
                                         f"at the good end too, passes at HEAD, or bisect couldn't run.")
     subject = c.plain(c._git(p.root, "log", "-1", "--format=%s", sha, timeout=10).strip())[:120]
     files = c._git(p.root, "show", "--name-only", "--format=", sha, timeout=10).split()
+    shown, left = c.more(files, 12, "--json")
     return out(args, {"sha": sha, "subject": subject, "files": files},
-               f"First bad commit: {sha[:10]} {subject}\n  files: {', '.join(files[:12]) or '(none)'}\n  "
+               f"First bad commit: {sha[:10]} {subject}\n  files: {', '.join(shown + [left] if left else shown) or '(none)'}\n  "
                f"git show {sha[:10]} for the diff")
 
 
@@ -5882,7 +5901,8 @@ def cmd_audit(args):
                     continue
                 if f not in shots and len(shots) < 8 and os.path.isfile(f):
                     shots.append(f)
-            extra = (f"\nUI files in the diff: {', '.join(ui[:20]) or 'none (named with --lens)'}\n"
+            shown, left = c.more(ui, 20)
+            extra = (f"\nUI files in the diff: {', '.join(shown + [left] if left else shown) or 'none (named with --lens)'}\n"
                      + ("Screenshots the task names (Read each image):\n" + "\n".join(f"- {s}" for s in shots)
                         if shots else "No screenshots named in the task: judge from the source, and put what only a "
                                       "screenshot would show under Not checked."))
@@ -6016,7 +6036,8 @@ def cmd_next(args):
     if b and b.status == "active":  # T-0631: beliefs still open, each with what would kill it
         beliefs = [f"A{n} {t.split(' — kill: ')[0]} (dead if {t.split(' — kill: ')[1]})"
                    for n, tag, _, t in b.assumptions() if tag in (None, "assumed") and " — kill: " in t]
-        over += f" · open beliefs: {'; '.join(c.fit(x, 120) for x in beliefs[:3])}" if beliefs else ""
+        shown, left = c.more([c.fit(x, 120) for x in beliefs], 3)
+        over += f" · open beliefs: {'; '.join(shown + [left] if left else shown)}" if beliefs else ""
     skill = c.skill_for(b, st)  # T-1697
     out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual, "skill": skill or None},
         f"Next: {action}" + (f" ({skill})" if skill else "")
@@ -8465,7 +8486,7 @@ def main(argv=None):
     args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm elsewhere: the tiers, not a usage error
     if os.environ.get("FOREMAN_WORKER_OF") and not _worker_may(args):
         print(f"fm: refused: this is a worker of an fm code run ({os.environ['FOREMAN_WORKER_OF']}), which only reads "
-              f"Foreman's state; `fm {' '.join(argv[:2])}` would change it, and that is the user's to do (or fm code's "
+              f"Foreman's state; `fm {' '.join(argv[:2])}` would change it, and that is the user's to do (or fm code's "  # not a list: the verb words
               "own harness's)", file=sys.stderr)
         return 2
     if args.cmd != "complete":  # a TAB press reads the briefs, never syncs or locks (round-7 review)
