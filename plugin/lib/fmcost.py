@@ -35,7 +35,7 @@ def transcripts_dir(root):
 
 
 def _since(days):
-    return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    return (c.clock() - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def one_hour(u):

@@ -106,7 +106,7 @@ def _survival(closed_at, bad):
     if not t0:
         return {"survival": "unknown"}
     end = t0 + datetime.timedelta(days=SURVIVE_DAYS)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = c.clock()
     hits = sorted((at, why) for at, why in bad if at and t0 <= at <= min(end, now))  # a future-dated commit waits
     left = (end - now).total_seconds() / 86400  # T-2584: only a finished window decides held or lost for good
     if hits:
@@ -124,7 +124,7 @@ def survival_lines(p, outs=None):
     if not outs:
         return []
     lost = [_ts(o["lost_at"]) for o in outs.values() if o.get("lost_at")]
-    since = (f"days since a lost task: {max(0, (datetime.datetime.now(datetime.timezone.utc) - max(lost)).days)}" if lost
+    since = (f"days since a lost task: {max(0, (c.clock() - max(lost)).days)}" if lost
              else "no lost task yet")
     total = n['survived'] + n['lost'] + n['settling']  # T-2037: a loss can land mid-window, survival only after it
     past = [o for o in outs.values() if o.get("window_done")]  # T-2584: the rate counts only finished windows
@@ -469,7 +469,7 @@ def _verdicts(p, bets, outs, first):
                   c.fit(str((e.get("data") or {}).get("decision") or "").lower(), 80))
                  for e in c.ledger_events(p, ("decision",)) if (e.get("data") or {}).get("reverses")]
     picks = [e.get("data") or {} for e in c.ledger_events(p, ("race_pick",))]
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = c.clock()
     ci = {}
     if any(r["kind"] == "ship" for r in bets):  # T-2496: the first finished run on a commit is what was bet on
         for e in c.ledger_events(p, ("ci_verdict",)):

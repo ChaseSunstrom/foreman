@@ -99,8 +99,21 @@ class CorruptState(ValueError):
     """T-1669: a state file that doesn't parse, named in one line (fm and the hooks print it, never a traceback)."""
 
 
+def clock():
+    """T-2645: aware UTC now; FOREMAN_NOW (ISO 8601, Z or an offset) pins it so a test can stand on a window's edge.
+    A malformed value is ignored."""
+    v = os.environ.get("FOREMAN_NOW")
+    if v:
+        try:
+            t = datetime.datetime.fromisoformat(v.strip().replace("Z", "+00:00"))
+            return t.astimezone(datetime.timezone.utc) if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            pass
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 def now():
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return clock().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def iso(epoch):
