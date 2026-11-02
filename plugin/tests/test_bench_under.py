@@ -1,10 +1,10 @@
 """T-2651: fm task evidence --bench CMD --under MS is a pass/fail proof on the current tree's median."""
-import json
-
-from test_evidence_quality import Bench
+import test_evidence_quality as q
 
 
-class BenchUnder(Bench):
+class BenchUnder(q._Base):  # the helpers only: subclassing Bench would rerun its tests
+    _commit, _perf = q.Bench._commit, q.Bench._perf
+
     def _slow(self):
         self._commit("import time\ntime.sleep(0.3)\n")
         tid = self._perf()
@@ -32,6 +32,15 @@ class BenchUnder(Bench):
         self.assertIn("--under", r.stderr + r.stdout)
         r = self.fm("task", "evidence", tid, "--bench", "true", "--under", "0", check=False)
         self.assertNotEqual(r.returncode, 0)
+
+    def test_a_bench_that_fails_is_recorded_as_a_failed_run(self):
+        tid = self._slow()
+        r = self.fm("task", "evidence", tid, "--step", "1", "--bench", "python3 work.py; exit 3", "--repeat", "1",
+                    check=False)
+        self.assertNotEqual(r.returncode, 0)
+        shown = self.fm("task", "show", tid).stdout
+        self.assertIn("→ ✗ exit 3", shown)  # the finish gate's failed-run mark
+        self.assertIn("1. [ ] speed it up", shown)  # a failed bench closes no step
 
 
 if __name__ == "__main__":

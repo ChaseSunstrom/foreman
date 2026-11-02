@@ -2840,7 +2840,8 @@ def _bench(p, b, cmd, n, timeout, under=None):
     for where, bad in (("the start tree", bad_before), ("the current tree", bad_after)):
         if bad:
             tail = "\n".join(bad[1].rstrip().splitlines()[-20:])
-            return bad[0], tail, f"{cmd}: failed on {where} (exit {bad[0]}) after {n} runs asked", ""
+            return bad[0], tail, f"✗ exit {bad[0]} · {cmd}: failed on {where} after {n} runs asked", ""  # T-2651: the
+            # finish gate's failed-run mark; without it a failed bench read as a pass and checked its step off
     in_tree = bool(mine) and any(w in mine for w in words) or any(
         os.path.realpath(os.path.join(p.root, w)).startswith(root + os.sep) and os.path.exists(os.path.join(p.root, w))
         for w in words)

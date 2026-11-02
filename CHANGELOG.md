@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `fm task evidence --bench CMD --under MS` is now a pass/fail proof. It exits 1 and records the median against the bar when the current tree's median is over MS milliseconds, and passes when it's under. `--under` needs `--bench` and a bar above 0.
+- Fixed: a `--bench` run whose command failed was recorded without the failed-run mark, so it read as a pass and checked its step off. It's now a failed run that the step and the finish gate both see.
 - Every nonzero `fm` exit now ends with one `Next:` command. A refusal names `fm next`, a lock timeout repeats the same command, and corrupt or unreadable state names `fm fsck`. Exit codes are unchanged.
 - A contract's receipt now shows yield per dollar beside spend, for example "$0.50 a task (2.0 tasks a dollar)". `fm run` ends with the same line when it measured spend, which is under `--max-usd` or a USD contract. Zero spend or zero tasks show no ratio.
 - The brainstorm skill's grounding step now asks for MASTER.md first, three phrasings per idea and the verbs' own help strings before an idea counts as new, plus a spot check of two grounded items before any is built. In the 2 November run, three of the four items checked that the first pass had marked new or partial were already built.
