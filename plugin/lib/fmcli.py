@@ -8435,9 +8435,12 @@ def main(argv=None):
         return rc if isinstance(rc, int) else 0  # evidence --run / check pass on the command's exit code
     except c.PolicyError as e:
         print(f"fm: refused: {e}", file=sys.stderr)
+        print("Next: fm next", file=sys.stderr)  # T-2653: the one required action, which names what the refusal waits on
         return 2
     except c.LockTimeout as e:
+        import shlex
         print(f"fm: {e} (another fm or hook is writing; retry)", file=sys.stderr)
+        print(f"Next: fm {shlex.join(argv)}", file=sys.stderr)  # T-2653: the same command again
         return 3
     except (UsageError, KeyError) as e:
         print(f"fm: {e.args[0] if e.args else e}", file=sys.stderr)
@@ -8456,9 +8459,11 @@ def main(argv=None):
         return 1
     except c.CorruptState as e:
         print(f"fm: {e}", file=sys.stderr)
+        print("Next: fm fsck", file=sys.stderr)  # T-2653
         return 4
     except ValueError as e:
         print(f"fm: state looks corrupt: {e} (fm fsck names corrupt state files)", file=sys.stderr)
+        print("Next: fm fsck", file=sys.stderr)  # T-2653
         return 4
     finally:
         if stop:
