@@ -287,7 +287,7 @@ def tick(p, fetch_ci=None):
     import fmorders
     if c.panicked():
         raise c.PolicyError(c.PAUSED)
-    res = {"orders": [], "captured": [], "fetched": [], "notes": []}
+    res = {"orders": [], "captured": [], "fetched": [], "notes": [], "settled": 0}
     lease = open(os.path.join(p.dir, "tick.lock"), "w")  # held until this returns (a second tick finds it taken)
     try:
         fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -325,7 +325,7 @@ def tick(p, fetch_ci=None):
                 res["notes"].append(f"shadow pass: {c.fit(c.plain(str(e)), 120)}")
             try:  # T-2499: bets settle on a night with no fm task finish (outcome rows written, the bar check run)
                 import fmoutcomes
-                fmoutcomes.maintain(p)
+                res["settled"] = fmoutcomes.maintain(p) or 0  # T-2520: on record when nonzero
             except Exception as e:
                 res["notes"].append(f"calibration: {c.fit(c.plain(str(e)), 120)}")
             try:
@@ -391,8 +391,9 @@ def tick(p, fetch_ci=None):
             res["captured"] = sorted({b.id for b in c.load_briefs(p, include_archive=True)} - before)
         for text, why in loud:
             _row(p, text, why)
-        if res["fetched"] or res["orders"] or res["captured"]:
-            c.log_event(p, "night_tick", data={k: res[k] for k in ("orders", "captured", "fetched")}, session=fmcli.session())
+        if res["fetched"] or res["orders"] or res["captured"] or res["settled"]:
+            c.log_event(p, "night_tick", data={k: res[k] for k in ("orders", "captured", "fetched", "settled")},
+                        session=fmcli.session())
     return res
 
 
@@ -430,6 +431,7 @@ def cmd_night(args):
         res = tick(p)
         return fmcli.out(args, res, "tick: " + ", ".join(
             [f"{len(res['orders'])} order(s) fired", f"{len(res['captured'])} captured"]
+            + ([f"{res['settled']} bet(s) settled"] if res.get("settled") else [])
             + [f"fetched {f['kind']} of {f['repo']}" for f in res["fetched"]] + res["notes"]))
     if c.panicked():
         raise c.PolicyError(c.PAUSED)

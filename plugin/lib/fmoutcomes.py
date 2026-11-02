@@ -674,15 +674,16 @@ def adjust_bars(p, rows):
 
 def maintain(p):
     """Run at each fm task finish: write the outcome rows that are due and apply the bar check. Cheap when no bet was
-    ever stated (one stat). Never raises: a ledger doesn't fail a close."""
+    ever stated (one stat). Never raises: a ledger doesn't fail a close. Returns the outcome rows written (T-2520)."""
     try:
         if not os.path.exists(_ledger_path(p)):
-            return
+            return 0
         outs = outcomes(p)
-        settle(p, outs)
+        n = settle(p, outs)
         adjust_bars(p, bar_rows(scored(p, outs)))
+        return n
     except Exception:
-        pass
+        return 0
 
 
 def ledger_data(p, outs=None):

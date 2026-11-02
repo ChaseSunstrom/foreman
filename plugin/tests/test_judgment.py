@@ -551,7 +551,8 @@ class ShipBets(Base):  # T-2496: a ship bet is scored in hours by CI's blocking 
         self.assertIsNone(o.ship_bet(self.p, 70, tid, green))  # write-once per commit: a restated number is ignored
         self.assertEqual([(r["kind"], r["outcome"]) for r in o.scored(self.p)], [("ship", None)])
         c.log_event(self.p, "ci_verdict", data={"commit": green, "green": True})
-        o.maintain(self.p)
+        self.assertEqual(o.maintain(self.p), 1)  # T-2520: it says how many outcome rows it wrote
+        self.assertEqual(o.maintain(self.p), 0)
         (r,) = o.scored(self.p)
         self.assertEqual((r["outcome"], r["src"]), ("held", "ci"))
         self.assertEqual(o.bar_rows(o.scored(self.p)), [])  # CI scores the kind, never moves a bar

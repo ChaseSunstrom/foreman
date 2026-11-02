@@ -538,9 +538,10 @@ class NightTick(ForemanTestCase):
 
     def test_the_tick_settles_bets_with_no_session(self):  # T-2499
         import fmoutcomes
-        with self.mock.patch.object(fmoutcomes, "maintain") as m:
-            self.tick()
+        with self.mock.patch.object(fmoutcomes, "maintain", return_value=2) as m:
+            self.assertEqual(self.tick()["settled"], 2)  # T-2520: what it settled is on record
         m.assert_called_once_with(self.p)
+        self.assertEqual([(e.get("data") or {}).get("settled") for e in c.ledger_events(self.p, ("night_tick",))], [2])
         with self.mock.patch.object(fmoutcomes, "maintain", side_effect=RuntimeError("ledger gone")):
             self.assertIn("calibration: ledger gone", self.tick()["notes"])
 
