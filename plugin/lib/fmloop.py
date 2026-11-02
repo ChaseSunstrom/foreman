@@ -13,6 +13,7 @@ import fmcore as c
 
 DRY_YIELD = 3  # a round that queues fewer grounded ideas than this is dry
 DRY_STOP = 2   # dry rounds in a row that end the loop
+GRACE_S = 900  # T-2569: --next on a round younger than this that made no task re-prints it instead of counting it dry
 # T-2004: a main-thread round reviewing only the last ship shrank to 1-3 follow-ups; these keep it broad
 MAIN_LENSES = ("user value", "unspoken needs", "reliability", "speed", "simplicity", "docs", "UI and motion")
 SEEN_MAX = 6   # ponytail: the newest earlier brainstorms only (each carries 300+ titles, all of them would swamp every
@@ -92,7 +93,9 @@ def round_brief(p, advance=False):
     round is counted first (the tasks made since it started), so the dry stop never depends on the session remembering
     fm loop yield; when that ends the loop, None."""
     s = state(p)
-    if is_open(s) and not advance:
+    age = c.age_days(s.get("last"))
+    fresh = age is not None and age * 86400 < GRACE_S and not made_since(p, s.get("last"))  # T-2569: just started
+    if is_open(s) and (not advance or fresh):
         return _brief(p, int(s["round"]), s.get("since", s.get("started") or ""))
     if is_open(s):
         s, stop = record_yield(p, made_since(p, s.get("last")))

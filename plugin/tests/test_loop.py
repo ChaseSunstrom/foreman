@@ -256,10 +256,30 @@ class LoopReview(ForemanTestCase):
         self.fm("loop", "on")
         self.fm("loop", "round")
         self.assertIn("fm loop round --next", self.fm("next").stdout, "a drained open round is ended with --next")
+        self.age_round()
         self.fm("loop", "round", "--next")  # nothing queued in round 1 and no yield: dry, counted by Foreman
         self.assertIn("1 dry", self.fm("loop").stdout)
+        self.age_round()
         self.fm("loop", "round", "--next")  # round 2: dry again, so the loop ends
         self.assertIn("off", self.fm("loop").stdout)
+
+    def age_round(self, minutes=20):
+        p = c.find_project(self.repo)
+        s = dict(c.read_meta(p)["loop"])
+        s["last"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - minutes * 60))
+        c.update_meta(p, loop=s)
+
+    def test_next_on_a_round_that_just_started_reprints_it(self):
+        # T-2569: three fm loop round --next calls to read the brief ended two rounds dry and switched the loop off
+        self.fm("loop", "on")
+        self.fm("loop", "round")
+        for _ in range(3):
+            again = self.fm("loop", "round", "--next").stdout
+            self.assertIn("round 1", again)
+        out = self.fm("loop").stdout
+        self.assertIn("round 1", out)
+        self.assertNotIn("dry", out)
+        self.assertIn("on", out)
 
     def test_reading_the_open_round_again_does_not_advance_it(self):
         # T-1153: a second fm loop round mid-round (re-reading the brief) counted round 1 dry and started round 2
