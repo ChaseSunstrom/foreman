@@ -59,6 +59,26 @@ class RedefinitionNote(HookCase):
     def test_a_write_of_a_shadowing_module_gets_the_note(self):
         self.assertIn("A", self.edit("w.py", "A = 1\nA = 2\n", "A = 1\nA = 2\n", tool="Write"))
 
+    def test_overloads_and_registered_handlers_and_files_outside_the_project_get_none(self):
+        # review: decorated repeats are deliberate; a file outside the project isn't this project's to note
+        over = ("from typing import overload\n\n@overload\ndef f(a: int) -> int: ...\n@overload\n"
+                "def f(a: str) -> str: ...\ndef f(a):\n    return a\n")
+        self.assertEqual(self.edit("o.py", over, "def f(a):\n    return a\n"), "")
+        reg = "import functools\n\n@functools.singledispatch\ndef h(x): ...\n\n@h.register\ndef _(x: int): ...\n\n@h.register\ndef _(x: str): ...\n"
+        self.assertEqual(self.edit("r.py", reg, "@h.register\ndef _(x: str): ...\n"), "")
+        outside = os.path.join(self.tmp, "elsewhere.py")
+        with open(outside, "w", encoding="utf-8") as f:
+            f.write("A = 1\nA = 2\n")
+        ctx = self.ctx_of(self.hook("PostToolUseValidate", {"tool_name": "Write", "tool_input": {
+            "file_path": outside, "content": "A = 1\nA = 2\n"}, "tool_response": {}, "session_id": "s9"}))
+        self.assertEqual(ctx, "")
+
+    def test_more_than_five_shadows_name_five_and_count_the_rest(self):
+        src = "".join(f"N{i} = 1\n" for i in range(7)) + "".join(f"N{i} = 2\n" for i in range(7))
+        note = self.edit("many.py", src, src, tool="Write")
+        self.assertIn("and 2 more", note)
+        self.assertIn("N6", self.edit("many.py", src, src, tool="Write"))  # the two not shown are told next time
+
 
 if __name__ == "__main__":
     unittest.main()

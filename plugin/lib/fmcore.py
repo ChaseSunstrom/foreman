@@ -5472,14 +5472,18 @@ def gate_lock(label, say=None, timeout=None):
         os.close(fd)  # closing the descriptor releases the flock
 
 
-def redefinitions(src):
+def redefinitions(src, skip_decorated=False):
     """T-2553, T-2630: [(line, name, first line)] for top-level defs, classes and plain assignments that replace an
-    earlier one. A rebinding that reads the old value (DEFS = {k: … for k, v in DEFS.items()}) is deliberate and passes."""
+    earlier one. A rebinding that reads the old value (DEFS = {k: … for k, v in DEFS.items()}) is deliberate and passes.
+    skip_decorated: a decorated def or class is left out (@overload stubs, @f.register handlers repeat a name on purpose);
+    the edit-time note in any project passes it, Foreman's own lib test doesn't."""
     import ast  # only the edit-time note and the test parse: not every hook's import
     seen, out = {}, []
     for node in ast.parse(src).body:
         names = []
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if skip_decorated and node.decorator_list:
+                continue
             names = [node.name]
         elif isinstance(node, ast.Assign):
             reads = {n.id for n in ast.walk(node.value) if isinstance(n, ast.Name)}
