@@ -1544,7 +1544,10 @@ class FdAndLiterals(GuardCase):
                     # review: the quoted argv on python's own line, and an fd glued after ; && | or (
                     "python3 - '{fhome}/state/x.json' <<'EOF'\nimport sys\nopen(sys.argv[1], 'w').write('x')\nEOF",
                     "echo a;2>{fhome}/state/x.json", "true&&2>{fhome}/state/x.json", "echo a|2>{fhome}/state/x.json",
-                    "(2>{fhome}/state/x.json)"):
+                    "(2>{fhome}/state/x.json)",
+                    # T-2634: an unquoted argument on python's own line is open(sys.argv[1])'s path too
+                    "python3 - {fhome}/state/x.json <<'EOF'\nimport sys\nopen(sys.argv[1], 'w').write('x')\nEOF",
+                    "python3 - ~/.claude/settings.json <<'EOF'\nimport sys\nopen(sys.argv[1], 'w').write('x')\nEOF"):
             self.assertIsNotNone(self.bash(cmd), cmd)
 
 

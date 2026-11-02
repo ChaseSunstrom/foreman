@@ -2244,6 +2244,9 @@ def _quoted_paths(cmd):
     import ast
     units, rest, starters, _ = _python_units(cmd)
     out, text = [], "\n".join(rest + starters)  # review: python - '/path' <<EOF: its argv is open(sys.argv[1])'s path
+    for s in starters:  # T-2634: unquoted too (python3 - ~/.claude/settings.json <<EOF), each word as the shell reads it
+        m = re.search(r"python[0-9.]*\s+-\s+(.*?)\s*<<", s)
+        out += [w for w in (_words(m.group(1)) if m else []) if _PATH_LITERAL.fullmatch(w) or w.startswith("$")]
     for code in units:
         try:
             tree = ast.parse(code)
