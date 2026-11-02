@@ -352,6 +352,17 @@ class Lanes(ForemanTestCase):
         for tid, model in ((a, "sonnet"), (b, "opus")):
             self.assertIn(f"builder_model: {model}", open(c.find_brief(c.find_project(self.repo), tid).path).read())
 
+    def test_a_big_task_s_brief_says_so_and_is_still_written(self):  # T-2517
+        mk = lambda t: json.loads(self.fm("task", "new", t, "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",  # noqa: E731
+                                          "--step", "s", "--json").stdout)["id"]
+        big, small = mk("Big"), mk("Small")
+        self.fm("task", "set", big, "--section", "Interpretation", "--text", "word " * 900)
+        out = self.fm("lane", "brief", big).stdout
+        self.assertIn(f"{big}'s own sections are", out)
+        self.assertIn("split it, or keep it in the main thread", out)
+        self.assertTrue(os.path.exists(os.path.join(c.find_project(self.repo).dir, "audits", f"{big}.builder.md")))
+        self.assertNotIn("own sections are", self.fm("lane", "brief", small).stdout)
+
     def test_lane_stats_rates_landing_by_brief_size(self):  # T-2368
         p = c.find_project(self.repo)
         c.log_event(p, "lane_builder", task="T-0901", data={"path": "a", "chars": 3000})
