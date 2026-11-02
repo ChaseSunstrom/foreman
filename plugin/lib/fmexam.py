@@ -2832,7 +2832,8 @@ GATE_MUTATIONS = (
         '            if event == "SessionStart" and isinstance(out, dict):\n'
         '                h = out.get("hookSpecificOutput") or {}\n'
         '                h["additionalContext"] = str(h.get("additionalContext") or "") + " A planted line." * 30\n'))]),
-    ("hook-delay", "p95", "hook", [("plugin/lib/fmhooks.py", "def run(event, raw):\n    t0 = time.monotonic()\n",
+    ("hook-delay", "hook ", "hook", [("plugin/lib/fmhooks.py",  # T-2605: every _slower row starts "hook <name>" (p95, or p50 wall when loaded)
+                                    "def run(event, raw):\n    t0 = time.monotonic()\n",
                                     "def run(event, raw):\n    t0 = time.monotonic()\n    time.sleep(0.25)\n")]),
     ("guard-allow", "guard: fm posture lite", "guard", [("plugin/lib/fmguard.py", _POSTURE, "")]),
     ("verb", "verbs", "verbs", [("plugin/lib/fmcli.py", '    s = add("night", ',

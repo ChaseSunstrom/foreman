@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The self-change gate catches a hook that waits (a sleep, slow I/O) on a busy machine more reliably. When the machine is loaded it now compares the hooks' median wall time rather than their p95, which load spikes inflate. This also fixes a test that failed now and then under the full suite.
 - `fm exam runs` lists every exam run, newest first: its tier, how many scenarios it has and how many are held out, and for each agent that graded it, the generation, model and date of its newest grade. The "no exam run" error now points to it.
 - The Genesis sweep counts a Mission task deferred with a revisit date as carried, not as open work, the same way the build loop already does. Its line says how many are carried.
 - `fm scout --slow` and `fm lib` no longer list a path dependency, such as a Cargo workspace crate (`logic = { path = "logic" }`), as a stack that needs a card: it's the project's own code.

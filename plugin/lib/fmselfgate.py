@@ -139,9 +139,11 @@ def _slower(base, branch):
             rows[k] = f"hook {k} p95 {b0} -> {b1} ms" + (f" (past its {budget} ms budget)" if over else
                                                           f" (+{(b1 - b0) * 100 / b0:.0f}%)")
         elif loaded:  # CPU time misses a hook that sleeps or waits on I/O: a doubling past 100 ms of wall is no load noise
-            w1, w0 = _ms(v, False), _ms(base.get(k) or {}, False)
-            if w0 and w1 and w1 >= w0 * (1 + WALL_RISE) and w1 - w0 >= WALL_FLOOR_MS:
-                rows[k] = f"hook {k} p95 {w0} -> {w1} ms wall (+{(w1 - w0) * 100 / w0:.0f}%; its CPU time didn't rise: it waits)"
+            q = "p50" if (base.get(k) or {}).get("p50") and v.get("p50") else "p95"  # T-2605: load spikes inflate p95
+            w1, w0 = v.get(q), (base.get(k) or {}).get(q)
+            if isinstance(w0, (int, float)) and isinstance(w1, (int, float)) and w0 and w1 >= w0 * (1 + WALL_RISE) \
+                    and w1 - w0 >= WALL_FLOOR_MS:
+                rows[k] = f"hook {k} {q} {w0} -> {w1} ms wall (+{(w1 - w0) * 100 / w0:.0f}%; its CPU time didn't rise: it waits)"
     return rows
 
 
