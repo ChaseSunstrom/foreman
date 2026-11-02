@@ -164,12 +164,28 @@ class Foresight(ForemanTestCase):
               "asks": [{"task": "T-1", "allow": ["publish"]}, {"task": "T-2", "allow": ["publish"]},
                        {"task": "T-3", "allow": ["core"]}]}
         line = fs.pile_lines(sd)[0]
-        self.assertIn("5 blocked, 2 of them wait on one answer: fm ask list (publish)", line)
+        self.assertIn("5 blocked, 2 of them wait on your yes to publish: fm ask list", line)
         self.assertLess(line.index("fm ask list"), line.index("fm tidy"))
         sd["asks"] = sd["asks"][:1]  # no group above one task: nothing new
         self.assertNotIn("of them", fs.pile_lines(sd)[0])
         sd["blocked"] = [b("T-6", waits_on=["T-9"]), b("T-7", waits_on=["T-9"]), b("T-8")]
         self.assertIn("2 of them wait on T-9 closing", fs.pile_lines(sd)[0])
+        sd["blocked"] = [b("T-6", freed=True), b("T-7", freed=True), b("T-8", waits_on=["T-9"])]
+        self.assertIn("2 of them wait on tasks already closed: fm task unblock T-6 T-7", fs.pile_lines(sd)[0])
+
+    def test_a_block_reason_naming_a_task_counts_as_its_wait(self):  # T-2683: real piles name waits in prose
+        def b(tid, status, why=""):
+            x = c.Brief.new(tid, f"task {tid}", "FIX", "S", now="2026-01-01T00:00:00Z")
+            x.meta["status"] = status
+            if why:
+                x.append_log(f"blocked: {why}")
+            return x
+        briefs = [b("T-0001", "planned"), b("T-0002", "done"), b("T-0003", "blocked", "waits for T-0001's lane"),
+                  b("T-0004", "blocked", "waits on T-0002 to land"), b("T-0005", "blocked", "depends on T-0002"),
+                  b("T-0006", "blocked", "needs the user's login"), b("T-0007", "blocked", "waits for T-0999")]
+        got = {x["id"]: (x["waits_on"], x["freed"]) for x in c.state_dict(self.p, briefs)["blocked"]}
+        self.assertEqual(got, {"T-0003": (["T-0001"], False), "T-0004": ([], True), "T-0005": ([], True),
+                               "T-0006": ([], False), "T-0007": ([], False)})  # an unknown id frees nothing
 
 
 SHA = "a" * 40

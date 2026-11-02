@@ -4190,6 +4190,20 @@ def _last_log(b):
     return re.sub(r"^- \S+\s*", "", lines[-1]) if lines else ""
 
 
+_WAITS = lazy(r"\b(?:waits? (?:for|on)|depends on)\s+(T-\d+)")
+
+
+def _blocked_entry(b, everything, open_ids):
+    """T-2683: a blocked task with the open tasks it waits on (depends_on, or named in its block reason as 'waits
+    for T-…'), and freed when every task it named has closed: its blocker is gone and fm task unblock frees it."""
+    reason = _last_log(b)
+    named = [d for d in dict.fromkeys(list(b.meta.get("depends_on") or []) + _WAITS.findall(reason)) if d != b.id]
+    known = {x.id for x in everything}
+    waits = [d for d in named if d in open_ids]
+    return dict(brief_summary(b), reason=reason, waits_on=waits,
+                freed=bool(named) and not waits and all(d in known for d in named))
+
+
 def state_dict(p, briefs=None):
     everything = load_briefs(p) if briefs is None else briefs
     briefs = lane_view(everything, p.lane)  # T-0134: another lane's work shows only under "lanes"
@@ -4213,9 +4227,7 @@ def state_dict(p, briefs=None):
         "lanes": [dict(brief_summary(b), lane=b.meta.get("lane") or "main") for b in everything
                   if held_elsewhere(b, p.lane) and b.status not in ("done", "dropped")],
         "inbox": [brief_summary(b) for b in rank_inbox(briefs)],
-        "blocked": [dict(brief_summary(b), reason=_last_log(b),  # T-2683: the open task it waits on, if any
-                         waits_on=[d for d in b.meta.get("depends_on") or [] if d in open_ids])
-                    for b in briefs if b.status == "blocked"],
+        "blocked": [_blocked_entry(b, everything, open_ids) for b in briefs if b.status == "blocked"],
         "deferred": [b.id for b in briefs if b.status == "deferred"],
         "cycles": cycles, "dangling": [list(d) for d in dangling],
         "sensitive": bool(meta.get("sensitive")), "drive": meta.get("drive", True), "paused": bool(meta.get("paused")),

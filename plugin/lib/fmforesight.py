@@ -192,7 +192,9 @@ def pile_lines(sd):
         keys = Counter()  # T-2683: the one user action that frees each blocked task
         for x in blocked:
             if x["id"] in asks:
-                keys["wait on one answer: fm ask list (" + (c.plain(", ".join(map(str, asks[x["id"]])))[:40] or "no category") + ")"] += 1
+                keys["wait on your yes to " + (c.plain(", ".join(map(str, asks[x["id"]])))[:40] or "a request") + ": fm ask list"] += 1  # not a list: one ask's categories, cut at 40 characters
+            elif x.get("freed"):
+                keys["wait on tasks already closed: fm task unblock " + c.joinmore([y["id"] for y in blocked if y.get("freed")], 6, " ")] += 1
             elif x.get("waits_on"):
                 keys[f"wait on {c.plain(str(x['waits_on'][0]))[:12]} closing"] += 1
         top = keys.most_common(1)
