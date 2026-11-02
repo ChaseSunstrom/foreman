@@ -1370,12 +1370,27 @@ def user_prompt_submit(pl):
                                            "mode": pl.get("permission_mode")}, session=sid)
     except Exception:
         log_error("UserPromptSubmit", _tb())
+    hc = None
     try:
         hc = _hook_claude()
         program, claude = _sent_by_program(hc), _claude_id(hc)
     except Exception:  # unknown: no approval from this prompt (the permission dialog still grants)
         log_error("UserPromptSubmit", _tb())
         program, claude = True, None
+    # T-2625: a steer-shaped message is expanded into a standing rule in the background, never in the hook's time; not
+    # a prompt a program sent (fm run, a lane, an exam session), nor one from a worker
+    if logged and not (hc and program) and not os.environ.get("FOREMAN_NO_BACKGROUND") \
+            and not os.environ.get("FOREMAN_WORKER_OF") and len(text.split()) >= 6 and not text.endswith("?"):
+        try:
+            if c.read_meta(p).get("steer_live") is not False:
+                import fmsteer
+                said = c.redact(c.plain_lines(text))[:2000]  # what the prompt event above logged
+                subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "exam", "steer", "expand", sid or "",
+                                  fmsteer.said_hash(said)],
+                                 cwd=p.root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception:  # an expansion that can't start never costs the message
+            log_error("UserPromptSubmit", _tb())
     asks = _asks(text)
     try:
         hashes = _pin_hashes(a.get("pin") for a in c.read_meta(p).get("pending_approvals") or [] if isinstance(a, dict))

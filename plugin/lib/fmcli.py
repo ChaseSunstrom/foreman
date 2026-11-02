@@ -750,6 +750,12 @@ def cmd_task(args):
             if args.text.strip().lower().startswith("replan:"):  # T-0603: the plan was re-read and revised
                 b.meta.pop("replan", None)
         b, _ = mutate(p, args.id, note, "note", {"text": args.text[:300]})
+        if b.meta.get("source") == "steer" and args.text.strip().lower().startswith("steer:"):
+            try:  # T-2625: a correction of a live expansion becomes a steer exam case
+                import fmsteer
+                fmsteer.correction(p, b, args.text.strip()[6:].strip())
+            except Exception as e:  # the log is kept whatever the case store does
+                print(f"fm: warning: steer case not saved: {e}", file=sys.stderr)
         return out(args, c.brief_summary(b), f"{b.id}: logged.")
     if sub == "hypo":
         return task_hypo(p, args)
@@ -7679,10 +7685,12 @@ def _build_parser(only=None):
                    "(exit 1), green is fixed (exit 0), a missing saved test can't be re-checked (exit 1)")
     s = add("exam", lazy("fmexam", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
-    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard", "long", "runs"),
+    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard", "long", "runs", "steer"),
                    help="scorecard: each gen-0 §2 capability's held-out pass rate from graded runs; exit 1 unless all "
                         "pass (T-2097); long: replayed past changes, fm exam long gen [--from PATH] [--n N] | run RUN | "
-                        "grade RUN (--agent oracle|empty; T-2258)")
+                        "grade RUN (--agent oracle|empty; T-2258); steer: raw words expanded into standing rules, graded by a "
+                        "stronger judge, fm exam steer [status] | cases [--from FILE] | run [--split S] [--model M] | "
+                        "expand SESSION | live on|off (T-2625)")
     s.add_argument("run", nargs="?", help="run/grade/check: the run id fm exam gen printed; long: gen|run|grade")
     s.add_argument("rest", nargs="*", help="long run|grade: the run id")
     s.add_argument("--from", dest="from_", metavar="PATH", help="long gen: the local git repo to replay (default Foreman's own)")
@@ -7700,7 +7708,8 @@ def _build_parser(only=None):
                         "and resume keys (kept only when fm exam check passes); only these decide fm exam scorecard")
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
     s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
-    s.add_argument("--jobs", type=int, default=1, help="run, long run: session scenarios at once (default 1, T-2292)")
+    s.add_argument("--jobs", type=int, help="run, long run: session scenarios at once (default 1, T-2292); steer run: "
+                                            "cases at once (default 4)")
     s.add_argument("--final", action="store_true", help="long run: this is the end-of-run exam (session arms wait for it)")
     s.add_argument("--regressing", type=int, metavar="N",
                    help="long run: a session arm for capability N, which a free or Haiku arm shows regressing")

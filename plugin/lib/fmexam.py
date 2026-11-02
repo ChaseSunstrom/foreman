@@ -3377,6 +3377,9 @@ def cmd_exam(args):
         if action == "long":  # T-2258: the long-horizon tier
             import fmlong
             return fmlong.cmd(p, args)
+        if action == "steer":  # T-2625: the steer-expansion exam (MOONSHOT.md part B)
+            import fmsteer
+            return fmsteer.cmd(p, args)
         if action == "gen":
             meta = gen(p, args.seed, args.per_kind, _list(args.lang, LANGS), _list(args.kind, KINDS), args.split,
                        args.author, args.model or "sonnet")
@@ -3387,7 +3390,7 @@ def cmd_exam(args):
                              + (f"; {len(meta['dropped'])} child-authored dropped (failed fm exam check)" if meta["dropped"] else ""))
         if action == "run":
             res = run_agent(p, args.run, args.agent or "oracle", args.split, args.limit, args.budget, args.model,
-                            request=args.request, jobs=args.jobs)
+                            request=args.request, jobs=1 if args.jobs is None else args.jobs)
             fmcli.out(args, res, summary(res))
             return 1 if res.get("ungraded") else 0
         if action == "grade":

@@ -1076,7 +1076,7 @@ def cmd(p, args):
                 f"a {agent} session arm runs only at the end-of-run exam (--final) or for one capability a free or "
                 "Haiku arm shows regressing (--regressing N); the free arms (oracle, empty) run any time")
         faults = [f for f in (args.faults or "").split(",") if f]
-        r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit, args.jobs) if verb == "run" else grade(p, rest[0], agent))
+        r = (run(p, rest[0], agent, args.model, args.budget, args.timeout, faults, args.limit, 1 if args.jobs is None else args.jobs) if verb == "run" else grade(p, rest[0], agent))
         text = (f"{agent} answered {len(r['answered'])} goal(s) of {rest[0]}" if verb == "run" else
                 f"{agent} {rest[0]}: {r['true_done']}/{r['scenarios']} true done, {r['checks_passed']}/{r['checks']} checks, "
                 f"{r['regressions']} regressions\n{went(r)}" + (f"\n{_split_line(r)}" if _split_line(r) else "")

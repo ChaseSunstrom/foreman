@@ -276,6 +276,19 @@
     box.appendChild(wrap).appendChild(t);
   }
 
+  /* T-2625: the steer-expansion exam: raw words expanded into standing rules, a stronger judge, held-out coverage */
+  function steerRow() {
+    var box = $("steer"), S = D.steer, p, pct = function (v) { return typeof v === "number" ? Math.round(v * 100) + "%" : "?"; };
+    box.textContent = "";
+    p = box.appendChild(document.createElement("p"));
+    if (!S || typeof S !== "object" || !S.holdout) {
+      p.className = "muted"; p.textContent = "No steer-expansion run yet."; return;
+    }
+    p.textContent = "Held out: " + pct(S.holdout.rate) + " of the reference clauses covered over " + String(S.holdout.cases)
+      + " case(s); train " + pct(S.train && S.train.rate) + ". Expanded by " + String(S.model) + ", judged by "
+      + String(S.judge) + "; " + String(S.harmful) + " harmful addition(s).";
+  }
+
   /* E: rules */
   var RUN = [["Held-out exam", "A third of the practice repos are never trained on. They decide \"done\"."], ["Subtract as you add", "Each round cuts as much as it adds. Hooks can't get slower."],
     ["Spikes, not vetoes", "\"Too ambitious\" is never a reason. A failed prototype is."], ["Two new tries, then move on", "Stuck tasks get two fresh angles, then a recorded diagnosis."],
@@ -432,6 +445,7 @@
     selectGen(D.generations[D.generations.length - 1].n);
     exam();
     try { longRow(); } catch (e) {}
+    try { steerRow(); } catch (e) {}
     try { scorecard(); } catch (e) {}  // a odd scorecard row costs its table, never the docs or the route below
     docs();
     var h = location.hash.slice(1);

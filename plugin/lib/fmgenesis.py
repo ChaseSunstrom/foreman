@@ -1178,6 +1178,10 @@ def export(p, out):
         data["scorecard"] = rows
     if (lr := card_long(p)) and lr["state"] != "no long run":  # T-2263: the deciding row
         data["long"] = lr
+    import fmsteer
+    if st := fmsteer.latest(p, held=True):  # T-2625: the steer-expansion exam's newest run, its held-out rate on the page
+        data["steer"] = {k: st.get(k) for k in ("run", "at", "model", "judge", "cases", "failed", "harmful", "holdout",
+                                                "train")}
     data = scrub(data)
     try:  # T-2084: a doc the last export listed and the tower lost goes; nothing else in DIR is ours to remove
         with open(os.path.join(out, "genesis.json"), encoding="utf-8") as f:
