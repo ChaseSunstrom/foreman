@@ -376,6 +376,22 @@ class Cheapest(Base):
         self.assertIn("plain CSV export", c.find_brief(self.p, "T-0001").section("Cheapest version"))
 
 
+class DecisionFileClosed(Base):  # T-2426: writing a decision closes the decisions.md it read
+    def test_two_decisions_leave_no_unclosed_file(self):
+        import gc
+        import warnings
+        import fmcli
+        with warnings.catch_warnings(record=True) as got:
+            warnings.simplefilter("always", ResourceWarning)
+            for n in (1, 2):
+                fmcli._write_decision(self.p, f"Decision {n}", why="test")
+            gc.collect()
+        self.assertEqual([str(w.message) for w in got if issubclass(w.category, ResourceWarning)], [])
+        with open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8") as f:
+            text = f.read()
+        self.assertTrue("Decision 1" in text and "Decision 2" in text)
+
+
 class Confidence(Base):  # T-2338: fm decide --confidence N writes the number into decisions.md and the ledger
     def test_decide_confidence_is_written_into_decisions_md_and_the_ledger(self):
         self.fm("decide", "Use a file cache", "--why", "simple", "--confidence", "70")
