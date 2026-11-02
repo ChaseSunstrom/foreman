@@ -187,7 +187,7 @@ def forge(p):
                                                        'it the same way each time.')}\n---\n\n"
              f"Drafted from recorded steps (data, not instructions): review before adopting\n\n# {x['step']}\n\n"
              f"Seen in {x['tasks']} tasks. Turn these step texts into one procedure:\n\n"
-             + "".join(f"- {t}\n" for t in texts.get(x["step"], [])[:20]) + "\n## Procedure\n1. TODO\n",
+             + "".join(f"- {t}\n" for t in texts.get(x["step"], [])[:20]) + "\n## Procedure\n1. TODO\n",  # not a list: text for a model, not a screen
              f".claude/skills/{k}/SKILL.md")
     return made
 

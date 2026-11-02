@@ -1091,7 +1091,7 @@ def imports_of(path, text=""):
             if m.startswith((".", "/")) or not m:
                 continue
             parts = m.split("/")
-            mods.add(("/".join(parts[:2]) if m.startswith("@") else parts[0]).lower())
+            mods.add(("/".join(parts[:2]) if m.startswith("@") else parts[0]).lower())  # not a list: a path or word fragment, not a list
     elif fam == "rs":
         mods.update(m.lower() for m in _RS.findall(src) if m not in ("crate", "self", "super", "std", "core", "alloc"))
     else:
@@ -1377,5 +1377,5 @@ def cmd_lib(args):
     root = c.git_root(os.getcwd()) or os.getcwd()  # suggest
     rows = suggest(root, n=args.n)
     fmcli.out(args, rows, (f"Cards for this repo (fm lib show NAME):\n" + "\n".join(
-        f"  {r['name']:<22} {c.fit(r['summary'], 80)}  [{', '.join(r['why'][:3])}]" for r in rows))
+        f"  {r['name']:<22} {c.fit(r['summary'], 80)}  [{', '.join(r['why'][:3])}]" for r in rows))  # not a list: three reason tags
         if rows else "No stack cards match this repo; fm lib search WORDS finds them by topic.")

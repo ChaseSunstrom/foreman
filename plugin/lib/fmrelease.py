@@ -541,7 +541,7 @@ def ship(p, args):
                         _err(f"{remote} main moved while testing; nothing was pushed: run fm ship again")
                     ignored = _ci_ignored(root, new)
                     if not all(any(g.match(f) for g in ignored) for f in moved):  # T-2572: an untested tree never ships
-                        _err(f"{remote} main moved while testing in files CI tests ({', '.join(sorted(moved)[:3])}); "
+                        _err(f"{remote} main moved while testing in files CI tests ({c.joinmore(sorted(moved), 3)}); "
                              "nothing was pushed: run fm ship again (it tests the new main)")
                     _git(wt, "checkout", "-q", "--detach", new)
                     for sha in picks:

@@ -63,7 +63,7 @@ def board(p, text):
 def line(p, text, top=3):
     """The failure hook's one line, or None when nothing points anywhere."""
     ranked = board(p, text)[:top]
-    return ("Suspects: " + "; ".join(f"{f} ({', '.join(r[:2])})" for f, _, r in ranked) + " (fm whyred --suspects, fm whyred)"
+    return ("Suspects: " + "; ".join(f"{f} ({', '.join(r[:2])})" for f, _, r in ranked) + " (fm whyred --suspects, fm whyred)"  # not a list: two reasons per file
             if ranked else None)
 
 

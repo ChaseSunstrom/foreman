@@ -112,7 +112,7 @@ def _npm(work, prefix, env, end, tmp, sandbox):
         meta = json.load(f)
     name, want = str(meta.get("name") or ""), meta.get("version")
     if meta.get("dependencies"):
-        raise Outcome("unproven", f"installing {name} needs {', '.join(sorted(meta['dependencies'])[:5])} from the registry")
+        raise Outcome("unproven", f"installing {name} needs {c.joinmore(sorted(meta['dependencies']), 5)} from the registry")
     out_dir = os.path.join(tmp, "dist")
     os.makedirs(out_dir)
     out, err, rc, why = _run(["npm", "pack", "--offline", "--silent", "--pack-destination", out_dir], work, env, end, sandbox)

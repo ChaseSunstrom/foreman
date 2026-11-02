@@ -214,11 +214,11 @@ def blast_line(p, scope, budget=BLAST_BUDGET, text=""):
         return ""
     bits = []
     if r["cochange"]:
-        bits.append("co-changes " + ", ".join(r["cochange"][:5]))
+        bits.append("co-changes " + ", ".join(r["cochange"][:5]))  # not a list: a sentence in a plan note
     if r["fixes"]:
-        bits.append("past FIXes " + ", ".join(f["id"] for f in r["fixes"][:5]))
+        bits.append("past FIXes " + ", ".join(f["id"] for f in r["fixes"][:5]))  # not a list: a sentence in a plan note
     if not bits:  # a graph that was read and found nothing says so, so the plan shows the check ran
-        return f"Blast radius (fm graph blast): unknown, no co-change history for {', '.join(paths[:5])}."
+        return f"Blast radius (fm graph blast): unknown, no co-change history for {c.joinmore(paths, 5)}."
     return "Blast radius (fm graph blast): " + "; ".join(bits) + "."
 
 
@@ -293,9 +293,11 @@ def cmd_graph(args):
     if args.action == "blast":
         paths = [os.path.relpath(os.path.abspath(w), p.root) if os.path.exists(w) else w for w in args.words]
         b = blast(p, paths, as_of)
+        dep, depn = c.more(b["dependents"], 15)
+        tst, tstn = c.more(b["tests"], 15)
         text = (f"Blast radius of {', '.join(paths)}" + (f" as of {as_of}" if as_of else "") + ":\n"
-                f"  dependents: {', '.join(b['dependents'][:15]) or 'none'}\n"
-                f"  tests: {', '.join(b['tests'][:15]) or 'none linked'}\n"
+                f"  dependents: {', '.join(dep) or 'none'}{f' ({depn})' if depn else ''}\n"
+                f"  tests: {', '.join(tst) or 'none linked'}{f' ({tstn})' if tstn else ''}\n"
                 f"  co-change: {', '.join(b['cochange']) or 'none'}\n"
                 f"  fixes that touched it: " + (", ".join(f"{x['id']} {c.fit(x['title'], 50)}" for x in b["fixes"][-6:])
                                                 or "none"))

@@ -84,7 +84,7 @@ def _grep(root, pattern, cap=10):
                              text=True, errors="replace", timeout=60, stdin=subprocess.DEVNULL).stdout
     except (OSError, subprocess.SubprocessError):
         return []
-    return [":".join(line.split(":", 2)[:2]) for line in out.splitlines()[:cap]]
+    return [":".join(line.split(":", 2)[:2]) for line in out.splitlines()[:cap]]  # not a list: a path or word fragment, not a list
 
 
 def sweep(fix, pattern=None, type_="FIX", dry_run=False, here=None):
@@ -208,7 +208,7 @@ def seed_history(p):
         subj, body, files = (chunk.split("\x00") + ["", ""])[:3]
         if not re.match(r"(?i)(fix|revert)\b", subj):
             continue
-        fl = ", ".join(files.split()[:5])
+        fl = ", ".join(files.split()[:5])  # not a list: files named in a capture title
         lines.append(f"- {subj.strip()}" + (f" ({fl})" if fl else ""))
         m = next(filter(None, (re.search(r"error: (.{1,300}?) → (.+)", ln) for ln in body[:2000].splitlines())), None)
         if m:
@@ -294,7 +294,7 @@ def _gh(p, args, timeout=120):
     """gh ARGS in p's root (the user's own gh: its login, its host): what it prints, or a UsageError saying what
     failed."""
     from fmcli import UsageError
-    what = "gh " + " ".join(args[:2])
+    what = "gh " + " ".join(args[:2])  # not a list: a path or word fragment, not a list
     try:
         r = subprocess.run(["gh", *args], cwd=p.root, capture_output=True, text=True, errors="replace",
                            timeout=timeout, stdin=subprocess.DEVNULL)
@@ -313,7 +313,7 @@ def _gh_json(p, args, timeout=120):
     try:
         return json.loads(_gh(p, args, timeout))
     except ValueError:
-        raise UsageError(f"gh {' '.join(args[:2])} didn't return JSON")
+        raise UsageError(f"gh {' '.join(args[:2])} didn't return JSON")  # not a list: a path or word fragment, not a list
 
 
 def inbox_gh(p, repo=None, limit=30):

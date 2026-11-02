@@ -311,7 +311,7 @@ def grow(p, kind, name, evidence, measure):
     existing = sorted({nm for _, nm, _ in all_caps(p)} | {e["name"] for e in frame(p)})
     # the cold read sees the new entry alone, with the categories it must not rename (an old entry can't block it)
     _read(p, "frame.md#new", f"# Frame entry\n\n## {kind}: {name}\n{body}\nExisting categories (data): "
-                             f"{'; '.join(c.fit(x, 60) for x in existing[:60])}\n")
+                             f"{'; '.join(c.fit(x, 60) for x in existing[:60])}\n")  # not a list: text for a model, not a screen
     with c.lock(os.path.join(p.dir, "genesis-lineage")):  # id, file, lineage line and event as one step
         if _norm_name(name) in taken():
             raise ValueError(f"{name!r} was added meanwhile")

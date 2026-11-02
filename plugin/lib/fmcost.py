@@ -464,7 +464,7 @@ def queue_quote(p, order, days=90):
 def quote_line(q):
     left = q["no_history"]
     return (f"Quote: {q['tasks']} task(s) ≈ {_human(q['tokens'])} tokens (each the median of its type and tier"
-            + (f"; no history: {', '.join(left[:5])}{' …' if left[5:] else ''}" if left else "")
+            + (f"; no history: {', '.join(left[:5])}{' …' if left[5:] else ''}" if left else "")  # not a list: ends in … when cut
             + f") · last 24 h {_human(q['last_day'])}"
             + (f" · week {q['week_used']:.0f}% used" if q["week_used"] is not None else "")
             + ". A quote: nothing is refused.")
@@ -957,8 +957,8 @@ def cmd_digest(args):
     import fmanergy  # T-2563: prompts approved by reflex, with the rule that would retire each (never applied here)
     reflex = fmanergy.report()["reflex"]
     lines += ["Approved by reflex (an allow rule would stop asking; your call): "
-              + " · ".join(f"{cls} ×{n}, median {m}s" for cls, n, m in reflex[:4])] if reflex else []
-    lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
+              + c.joinmore([f"{cls} ×{n}, median {m}s" for cls, n, m in reflex], 4, " · ")] if reflex else []
+    lines += [f"Blocked: {c.joinmore([f'{b.id} {c.fit(b.title, 40)}' for b in blocked], 5)}"] if blocked else []
     triage.sort(key=lambda r: ("do", "drop", "ask").index(r[1]))  # a do or drop never hides behind asks
     lines += [f"Deferred: {t} → {v} ({w})" for t, v, w in triage[:6]]
     lines += [f"Deferred: +{len(triage) - 6} more: fm tidy"] if len(triage) > 6 else []
@@ -1098,7 +1098,7 @@ def eval_case(p, b, out_dir=None):
     checks = [cmd for _, cmd in b.verify_cmds() if cmd]
     if checks:
         files["graders/ran-checks.md"] = (f"---\ntype: regex\ntarget: trace\npattern: "
-                                          f"{q('|'.join(re.escape(x) for x in checks[:3]))}\n---\n")
+                                          f"{q('|'.join(re.escape(x) for x in checks[:3]))}\n---\n")  # not a list: a grep pattern
     for rel, text in files.items():
         c.write_atomic(os.path.join(folder, rel), c.redact(text))
     return folder, files

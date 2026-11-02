@@ -80,7 +80,7 @@ def probe_lib_gaps(p, ctx):
     top = [d for d, _ in sorted(seen.items(), key=lambda kv: (-kv[1], kv[0]))[:8]]
     if not top:
         return []
-    return [Finding("libgap:" + ",".join(sorted(top)), f"Write stack cards for {', '.join(top[:5])}", "FEATURE", "S",
+    return [Finding("libgap:" + ",".join(sorted(top)), f"Write stack cards for {c.joinmore(top, 5)}", "FEATURE", "S",
                     f"dependencies in your projects with no stack card: {', '.join(top)}. Write one card each to the "
                     f"spec in plugin/skills/library/SKILL.md (a writer subagent per batch), then fm lib check")]
 
@@ -359,7 +359,7 @@ def probe_cc_changelog(p, ctx):
             text_ = c.plain(b.group(1))
             out.append(Finding(f"ccfeat:{ver}:{hashlib.sha1(text_.encode()).hexdigest()[:10]}",
                                f"Claude Code {ver}: {c.fit(text_, 100)}", "RESEARCH", "S",
-                               f"Claude Code's changelog for {ver} names {', '.join(c.plain(n) for n in names[:3])}, "
+                               f"Claude Code's changelog for {ver} names {c.joinmore([c.plain(n) for n in names], 3)}, "
                                "which nothing in Foreman mentions. Decide whether Foreman should use or adapt to it."))
     return out
 

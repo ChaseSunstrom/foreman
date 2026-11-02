@@ -252,7 +252,7 @@ def problems(root=ROOT, card_names=None, timeout=TIMEOUT, run=True):
                     out.append(f"{name}:{n}: {path} doesn't exist")
     folders = [(d, s) for d, s in named.items() if d.endswith("/")]  # T-1785: a line naming a folder covers its files
     for f in files:
-        stage = "/".join(f.split("/")[:2]) + "/INDEX.md"
+        stage = "/".join(f.split("/")[:2]) + "/INDEX.md"  # not a list: a path or word fragment, not a list
         by = named.get(f, set()).union(*(s for d, s in folders if f.startswith(d)))
         if not by & {"SKILL.md", stage}:
             out.append(f"{f}: in no index (SKILL.md, or {stage} named in SKILL.md)")
@@ -1142,7 +1142,8 @@ def cmd_show(args):
             return fmcli.out(args, {"recipes": got}, (
                 f"Recipes from {root}'s last 400 commits: files changed together\n" + "\n".join(
                     f"  {x['file']} ({x['commits']} commits): also "
-                    + ", ".join(f"{g} {round(s * 100)}%" for g, s in x["with"][:5]) for x in got[:30])
+                    + c.joinmore([f"{g} {round(s * 100)}%" for g, s in x["with"]], 5) for x in got[:30])
+                + (f"\n  {c.more(got, 30)[1]}" if len(got) > 30 else "")
                 if got else "no recipes: no file changed in 5 or more of the last 400 commits with the same others")) or 0
         got = counter(p, root)
         return fmcli.out(args, {"failures": got}, ("What failed here (don't repeat it)\n" + "\n".join(

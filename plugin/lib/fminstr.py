@@ -543,7 +543,7 @@ def _column(name, vals, decl):
     elif typ in ("text", "bool") and len(distinct) <= 20:
         parts.append("top " + ", ".join(f"{c.fit(v, 40)}×{n}" for v, n in distinct.most_common(3)))
     elif typ == "text":
-        parts.append("e.g. " + ", ".join(repr(c.fit(v, 30)) for v in list(distinct)[:2]))
+        parts.append("e.g. " + ", ".join(repr(c.fit(v, 30)) for v in list(distinct)[:2]))  # not a list: two example values
     return f"  {name:<14} {typ:<6} " + " · ".join(parts) + (f" ({decl})" if decl else "")
 
 

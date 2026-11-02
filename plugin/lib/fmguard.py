@@ -133,7 +133,7 @@ def rule_id(category, detail):
     words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|(?<!\w)'[^']*'(?!\w)|\"[^\"]*\"", " ", detail.lower())
     ext = os.path.splitext(detail.split()[0])[1].lstrip(".").lower() if "/" in detail else ""  # T-0894: kinds apart
     path = ("path-" + ext if ext.isalnum() else "path") if "/" in detail else "other"
-    return f"{category}:{'-'.join([w for w in re.findall(r'[a-z]+', words) if w not in _FILLER][:4]) or path}"
+    return f"{category}:{'-'.join([w for w in re.findall(r'[a-z]+', words) if w not in _FILLER][:4]) or path}"  # not a list: a path or word fragment, not a list
 
 
 def findings(tool_name, tool_input, ctx):
@@ -5075,7 +5075,7 @@ def _git_discards(args, cwd):
     short = "".join(a[1:] for a in rest if re.fullmatch(r"-[a-zA-Z]+", a))
     pos = [a for a in rest if not a.startswith("-")]
     if sub == "stash" and pos[:1] in (["drop"], ["clear"]):
-        return [(where, " ".join(["stash"] + pos[:2]))]
+        return [(where, " ".join(["stash"] + pos[:2]))]  # not a list: a path or word fragment, not a list
     if sub == "worktree" and pos[:1] == ["remove"] and pos[1:] and (flags & {"-f", "--force"} or "f" in short):
         return [(_here(pos[1], where), "tree")]
     # a word that names a file and no commit is a path (git checkout main beside a main/ folder is the branch)
@@ -5393,7 +5393,7 @@ def _check_publish(name, args):
     if re.match(r"^python[0-9.]*$", name) and args[:1] and args[0].endswith("/fm"):  # T-1881: python3 plugin/bin/fm
         name, args = "fm", args[1:]
     pos = _positionals(args)
-    joined = " ".join(pos[:2])
+    joined = " ".join(pos[:2])  # not a list: a path or word fragment, not a list
     for verb in _PUBLISH.get(name, []):
         if joined == verb or joined.startswith(verb + " ") or pos[:1] == [verb]:
             return [("publish", f"{name} {verb}")]

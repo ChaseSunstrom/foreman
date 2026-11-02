@@ -129,7 +129,7 @@ def _brief(p, n, since):
         f"2. fm mission --request \"forever loop round {n}: improve past everything shipped\", add the review to "
         "the pack, then:", f"   fm ideas --pack <pack> --rounds 2 --deepen 2 {seen_args}".rstrip()]
     left = lag(p)
-    areas = c.plain(", ".join(c._git(p.root, "ls-tree", "--name-only", "HEAD", timeout=10).splitlines()[:30]))
+    areas = c.plain(", ".join(c._git(p.root, "ls-tree", "--name-only", "HEAD", timeout=10).splitlines()[:30]))  # not a list: text for a model, not a screen
     lines += ["", f"Surfaces: every area of this repo ({areas or 'its top-level folders and docs'}), and every way its "
               "user meets it (commands, docs, site, demo, UI, install, CI). Files recent work left behind (git history):",
               *(["- unknown: git history unavailable"] if left is None else left

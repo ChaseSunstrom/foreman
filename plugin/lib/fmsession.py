@@ -169,7 +169,7 @@ def _codex(o, st):
             return _ev("tool", tool="Bash", detail=str(item.get("command") or "")[:300], id=iid)
         if it == "file_change":
             return _ev("tool", tool="Edit", id=iid,
-                       detail=", ".join(str(ch.get("path")) for ch in item.get("changes") or [] if isinstance(ch, dict))[:300])
+                       detail=", ".join(str(ch.get("path")) for ch in item.get("changes") or [] if isinstance(ch, dict))[:300])  # not a list: a detail cut at 300 characters
         if it == "mcp_tool_call":
             return _ev("tool", tool=f"{item.get('server')}.{item.get('tool')}", detail=_detail(item.get("arguments")), id=iid)
         if it == "web_search":

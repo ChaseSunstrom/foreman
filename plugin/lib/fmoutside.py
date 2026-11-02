@@ -240,7 +240,7 @@ def _calls(p, args, fmcli):
                      "names": names})
         files = len({x.rsplit(":", 1)[0] for x in sites})
         lines.append(f"{name} (requires {want}, installed {have or 'not here'}): " + (
-            f"{files} file(s) — {', '.join(sites[:5])}" + (f"; names used: {', '.join(names[:12])}" if names else "")
+            f"{files} file(s) — {c.joinmore(sites, 5)}" + (f"; names used: {c.joinmore(names, 12)}" if names else "")
             if sites else "no import site (unused, or imported under another name)"))
     return fmcli.out(args, {"dependencies": rows}, "\n".join(lines) + (
         "\nBefore trusting docs for one of these, read the installed version's source or --help (planning.md R2)."
@@ -292,5 +292,6 @@ def cmd_deps(args):
                         f"fm research ask \"{d['question']}\"" for d in outdated)
               + (f"\n  no upper bound (a new major installs as is): {', '.join(uncapped[:8])}" if uncapped else "")
               + (f"\n  not checked: {', '.join(x['name'] + ' (' + x['why'] + ')' for x in failed[:8])}" if failed else "")
+              + "".join(f"\n  {n} left out of the {w} list (fm deps --json)" for n, w in ((len(uncapped) - 8, "no-upper-bound"), (len(failed) - 8, "not-checked")) if n > 0)
               + "".join(f"\n  researched: {x}" for x in asked)
               + "".join(f"\n  captured {x['id']}: migrate {x['name']}" for x in captured))

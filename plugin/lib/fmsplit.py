@@ -131,8 +131,8 @@ def task_capsule(p, args):
     log = b.section("Log").splitlines()
     pick = lambda pat: [re.sub(r"^- \S+ ", "", x) for x in log if re.search(pat, x, re.I)][-2:]
     lines = [f"{b.id} {b.status}: {b.title}" + (f" (part of {b.meta['parent']})" if b.meta.get("parent") else ""),
-             "changed: " + (", ".join(f"{f} +{a}/-{d}" for f, (a, d) in sorted(changed.items())[:8]) or "nothing yet")
-             + (f" in {', '.join(commits[:3])}" if commits else ""),
+             "changed: " + (c.joinmore([f"{f} +{a}/-{d}" for f, (a, d) in sorted(changed.items())], 8) or "nothing yet")
+             + (f" in {c.joinmore(commits, 3)}" if commits else ""),
              f"verification: {grade} ({why})"]
     lines += [f"decision: {c.fit(x, 140)}" for x in pick(r"decid|interface|seam|steer")]
     lines += [f"lesson: {c.fit(x.lstrip('- '), 140)}" for x in b.section("Lessons").splitlines()[-1:] if x.strip()]

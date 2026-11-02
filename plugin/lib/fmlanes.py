@@ -601,14 +601,14 @@ def recover(p, b, main, args):
                          f"fm task unblock {b.id}")
     ignored = _ignored(path)
     if ignored:  # recover never forces: the person moves them, then recovers
-        raise c.PolicyError(f"{b.id}'s lane {path} has ignored files ({', '.join(ignored[:5])}) that removing it would "
+        raise c.PolicyError(f"{b.id}'s lane {path} has ignored files ({c.joinmore(ignored, 5)}) that removing it would "
                             f"delete: move them out, then fm lane recover {b.id}")
     args.force = None  # never --force over a process that might be alive
     if cause == "merge_conflict":
         files = next(((e.get("data") or {}).get("files") or [] for e in reversed(c.ledger_tail(p, 500))
                       if e.get("task") == b.id and e.get("event") == "lane_conflict"), [])
         brief = os.path.join(p.dir, "audits", f"{b.id}.conflict.md")
-        after = (f"Merging this branch into main conflicted in: {', '.join(files[:20]) or 'see the conflict brief'}. Run `git merge "
+        after = (f"Merging this branch into main conflicted in: {c.joinmore(files, 20) or 'see the conflict brief'}. Run `git merge "
                  f"{_git(main, 'rev-parse', '--abbrev-ref', 'HEAD').stdout.strip() or 'HEAD'}` in your worktree, resolve "
                  f"the clash keeping both sides' intent, run the task's tests and commit."
                  + (f" What clashed: {brief}" if os.path.exists(brief) else ""))
@@ -662,7 +662,7 @@ def resume(p, b, main, args, ended=False, recover=None, after=""):
     if path and os.path.isdir(path):
         ignored = _ignored(path)
         if ignored and not why:
-            raise c.PolicyError(f"lane {path} has ignored files ({', '.join(ignored[:5])}) that removing it would "
+            raise c.PolicyError(f"lane {path} has ignored files ({c.joinmore(ignored, 5)}) that removing it would "
                                 f"delete: move them, or fm lane resume {b.id} --force \"<why>\"")
         branch = _git(path, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or branch
         if _git(path, "status", "--porcelain").stdout.strip():
@@ -1866,11 +1866,11 @@ def merge(p, b, main, unverified=None):
         if e[0] not in " ?":
             staged.append(e[3:])
     if staged:
-        raise c.PolicyError(f"{main} has staged changes ({', '.join(staged[:5])}), which a merge commit would record: "
+        raise c.PolicyError(f"{main} has staged changes ({c.joinmore(staged, 5)}), which a merge commit would record: "
                             f"commit or unstage them, then merge")
     clash = sorted(dirty & set(files))
     if clash:
-        raise c.PolicyError(f"{main} has uncommitted changes to {', '.join(clash[:5])}, which {branch} also changes: "
+        raise c.PolicyError(f"{main} has uncommitted changes to {c.joinmore(clash, 5)}, which {branch} also changes: "
                             f"commit them first, then merge")
     # T-2312: the functions the branch changes (before the merge moves HEAD), so a stray edit stands out
     merge.functions = functions_changed(_git(main, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "diff",
@@ -1889,7 +1889,7 @@ def merge(p, b, main, unverified=None):
     if held:
         c.log_event(p, "enforce", task=b.id, data={"kind": "merge_refused", "reason": "self-change gate", "branch": branch})
         stop_mark(p, b.id, "guard", "core")  # T-2354: a grant to ask for, not a rebuild
-        raise c.PolicyError(f"{b.id}: the self-change gate holds {branch}:\n  " + "\n  ".join(held[:12])
+        raise c.PolicyError(f"{b.id}: the self-change gate holds {branch}:\n  " + c.joinmore(held, 12, "\n  ")
                             + f"\nOnly the user's yes passes it (not the standing yes, not a decision): fm ask {b.id} core "
                               f"--why \"<what the change needs and why it's safe>\", then merge again")
     if unverified is not None:  # T-0948: the waiver is on the ledger before the merge it allows

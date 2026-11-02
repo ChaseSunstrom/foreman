@@ -395,7 +395,7 @@ def city_html(files, name, when=None, tracked=0, history=True, estimated=0):
     hottest = [f for f in sorted(files, key=lambda f: (-f["churn"], f["path"])) if f["churn"]][:3]
     label = (f"{name} as a city: {len(files):,} files and {lines:,} lines in {len(plan['d'])} districts, one per "
              f"folder, each file a building as tall as its lines. Biggest: "
-             + "; ".join(_area(d) for d in plan["d"][:3]) + ". "
+             + "; ".join(_area(d) for d in plan["d"][:3]) + ". "  # not a list: the three biggest districts, a ranking
              + ("Commit history unavailable (git log failed): the windows show nothing." if not history else
                 "Lit windows mark commits in the last 180 days, most in "
                 + ", ".join(f"{f['path']} ({f['churn']})" for f in hottest) + "." if hottest

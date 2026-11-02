@@ -132,7 +132,7 @@ def _grade(wt, case, env, timeout=900, failed=None):
             failed += [m if m.endswith("." + t) else f"{m}.{t}"  # Python 3.11+ names the test in the brackets too
                        for t, m in re.findall(r"(?m)^(?:FAIL|ERROR): (\w+) \(([\w.]+)\)", output)]
             failed += re.findall(r"(?m)^FAILED ([^\s(]\S*)", output)  # not unittest's "FAILED (failures=…)"
-        out.append((cmd, code, " / ".join([x.strip() for x in output.splitlines() if x.strip()][-2:])[:200]))
+        out.append((cmd, code, " / ".join([x.strip() for x in output.splitlines() if x.strip()][-2:])[:200]))  # not a list: the last two lines of command output
     return out
 
 
@@ -944,7 +944,7 @@ def _contest(p, args):
         cases, skipped = court_cases(p, args.max)
         if not cases:
             raise fmcli.UsageError("no steer or correction was said during a task whose work is one commit"
-                                   + "".join(f"\n  {s}" for s in skipped[:6]))
+                                   + ("\n  " + c.joinmore(skipped, 6, "\n  ") if skipped else ""))
         with c.lock(p.dir):
             new = {x["id"] for x in cases}
             c.write_atomic(_cases_path(p), json.dumps(cases + [x for x in _load_cases(p) if x["id"] not in new],
@@ -1295,7 +1295,7 @@ def cmd_bench(args):
             lines += [f"  judge: {r}" for r in x.get("judge") or []]
             lines += [f"  had to repeat: {r}" for r in x.get("complaints") or []]
             lines.append("  tasks: " + (", ".join(f"{k} {v}" for k, v in (d.get("tasks") or {}).items()) or "none made"))
-            lines.append("  ledger: " + (", ".join(f"{k} {v}" for k, v in sorted(led.items(), key=lambda kv: -kv[1])[:10])
+            lines.append("  ledger: " + (", ".join(f"{k} {v}" for k, v in sorted(led.items(), key=lambda kv: -kv[1])[:10])  # not a list: a top-10 ranking by count
                                          or "nothing recorded"))
             if d.get("guard_blocks"):
                 lines.append("  guard blocks: " + ", ".join(f"{k} {v}" for k, v in d["guard_blocks"].items()))

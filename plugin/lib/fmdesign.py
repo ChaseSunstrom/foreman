@@ -1728,7 +1728,8 @@ def xray(args, fmcli):
         notes.append(f"stopped at {total} painted elements: the rest not read")
     lines = [f"xray: {on} of {total} element(s) wear token colours ({cover}%)"]
     if offc:
-        lines.append("off-token: " + ", ".join(f"{k} ×{v}" for k, v in list(offc.items())[:8]))
+        offs, offmore = fmcore.more(list(offc.items()), 8)
+        lines.append("off-token: " + ", ".join(f"{k} ×{v}" for k, v in offs) + (f" ({offmore})" if offmore else ""))
     if png:
         lines.append(f"shot: {out} (green outline: on token, red: off)")
     lines += [f"note: {cr.clean(n, 300)}" for n in notes]

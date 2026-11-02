@@ -194,7 +194,7 @@ def _call(p, name, args):
         if name == "research_list":
             names = sorted((n for n in os.listdir(folder) if n.endswith(".md")) if os.path.isdir(folder) else [],
                            key=lambda n: os.path.getmtime(os.path.join(folder, n)), reverse=True)
-            return "\n".join(n[:-3] for n in names[:200]) or "(no research notes)", False
+            return "\n".join(n[:-3] for n in names[:200]) or "(no research notes)", False  # not a list: text for a model, not a screen
         if name == "research_read":
             note = _need(args, "name", r"[A-Za-z0-9][A-Za-z0-9._-]{0,120}")
             path = os.path.join(folder, note + ".md")

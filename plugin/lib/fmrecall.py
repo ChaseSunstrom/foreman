@@ -226,7 +226,7 @@ def recall(p, query, skip=None, n=HITS, cover=0.0):
     for i, (score, kind, label, tier, extra) in enumerate(hits):
         gone = _stale(p.root, extra["at"], extra["cites"]) if kind == "research" else []
         if gone:  # T-0210: research about code that has changed since is a lead, not an answer
-            hits[i] = (score, kind, f"{label} [stale: {', '.join(gone[:3])} changed since it was written]", tier, extra)
+            hits[i] = (score, kind, f"{label} [stale: {', '.join(gone[:3])} changed since it was written]", tier, extra)  # not a list: text for a model, not a screen
     return hits
 
 
@@ -422,7 +422,7 @@ def render(hits, tier=None):
                      f"- the similar finished task took {steps[0]} steps")
     late = [f"{t} ({x['id']})" for _, x in done for t in x.get("late") or []]
     if late:  # T-0645: what similar plans had to add once work began
-        lines.append(c.plain("- steps similar plans added late: " + "; ".join(late[:4])))
+        lines.append(c.plain("- steps similar plans added late: " + "; ".join(late[:4])))  # not a list: text for a model, not a screen
     start = next((x for _, x in done if x.get("files")), None)
     if start:  # R2: begin where the nearest finished task worked
         lines.append(c.plain(f"- start here (files {start['id']} touched): {', '.join(start['files'][:6])}"))
@@ -826,7 +826,7 @@ def _render_lessons(rows):
     cold = [r["id"] for r in rows if not r["shown"] and r["age"] >= UNRECALLED_DAYS]
     lines += [f"- never recalled ({UNRECALLED_DAYS}+ days since it closed; reword it or retire it): "
               + ", ".join(cold[-15:])] if cold else []
-    back = [f"{r['id']} in {', '.join(r['recurred'][:3])}" for r in rows if r["recurred"]]
+    back = [f"{r['id']} in {', '.join(r['recurred'][:3])}" for r in rows if r["recurred"]]  # not a list: text for a model, not a screen
     lines += ["- recurred (its task's failure came back after it; the lesson didn't stop it): "
               + "; ".join(back[-10:])] if back else []
     return "\n".join(lines)

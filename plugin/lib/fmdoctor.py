@@ -741,7 +741,7 @@ def check_night_timers(p):
                + glob.glob(os.path.join(fmserve.unit_dir(), "foreman-tick-*.timer")))
     blind = "".join(f"; tick can't watch {c.plain(str(k))[:20]}: {c.plain(str(why))[:160]}"  # T-2607: info, not a WARN
                     for k, why in (fmnight.blind_state(p).get("blind") or [] if p else []))
-    return Result("night timers", "WARN" if notes else "PASS", ("; ".join(notes[:4]) or "none staged; none of another home"
+    return Result("night timers", "WARN" if notes else "PASS", (c.joinmore(notes, 4, "; ") or "none staged; none of another home"
                   + (f"; {live} installed timer(s) firing, last runs ok (systemd)" if live else "")) + blind)
 
 
@@ -781,7 +781,7 @@ def check_anergy():
     if not r["reflex"]:
         return Result("reflex prompts", "PASS", f"{head}; none qualified")
     return Result("reflex prompts", "PASS", f"{head}; approved by reflex, retire with an allow rule if you agree: "
-                  + "; ".join(f"{cls} ({n}×, median {m}s)" for cls, n, m in r["reflex"][:4]))
+                  + c.joinmore([f"{cls} ({n}×, median {m}s)" for cls, n, m in r["reflex"]], 4, "; "))
 
 
 def check_muted_triggers(p):
@@ -838,7 +838,7 @@ def check_core_integrity(home, task=None):
         outside = c.scope_drift(task, changed)
         if changed and not outside:
             return Result("core integrity", "PASS", f"core differs only inside {task.id}'s scope "
-                          f"({', '.join(changed[:6])}): it commits them when it finishes")
+                          f"({c.joinmore(changed, 6)}): it commits them when it finishes")
         changed = outside
     return Result("core integrity", "WARN" if changed else "PASS",
                   f"protected core differs from the last commit: {', '.join(changed[:6])}"
@@ -1015,7 +1015,7 @@ def check_version_skew(projects, changes=None):
         if lacks:
             behind.append(f"{p.slug} ran {ran}, lacks {len(lacks)} ({', '.join(lacks[:4])}{' …' if len(lacks) > 4 else ''})")
     return Result("version skew", "WARN" if behind else "PASS",
-                  "; ".join(behind[:6]) + " — restart their sessions on the new Foreman" if behind else
+                  c.joinmore(behind, 6, "; ") + " — restart their sessions on the new Foreman" if behind else
                   "every project's last session ran the newest released Foreman (or none recorded one yet)")
 
 
@@ -1610,7 +1610,7 @@ def check_disk(path=None, usage=None, projects=None):
             continue
         if n:
             lanes.append((n, os.path.basename(p.root.rstrip(os.sep))))
-    where = ", ".join(f"{name} {n}" for n, name in sorted(lanes, reverse=True)[:5])
+    where = c.joinmore([f"{name} {n}" for n, name in sorted(lanes, reverse=True)], 5)
     return Result("disk", "WARN", f"{free} on the disk holding Foreman's state: hooks fail when it fills"
                   + (f"; builder worktrees: {where} (git worktree list; fm lane rm the merged ones)" if where else ""))
 
@@ -2619,7 +2619,7 @@ def run_all(full=False, accept_supply=False):
     t0 = time.perf_counter()
     stale = [p.slug for p in projects if not views_match(p)]  # T-0494
     results.append(Result("views", "WARN" if stale else "PASS",
-                          f"views don't match the briefs in {', '.join(stale[:5])}: fm doctor --fix regenerates them"
+                          f"views don't match the briefs in {c.joinmore(stale, 5)}: fm doctor --fix regenerates them"
                           if stale else "status views match the briefs", int((time.perf_counter() - t0) * 1000)))
     here = c.find_project(os.getcwd())
     results.append(check_dual_install())

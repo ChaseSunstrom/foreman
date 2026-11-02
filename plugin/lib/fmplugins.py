@@ -836,7 +836,7 @@ def suggest(root, n=3):
         for h in find(f"{card['name']} {area}", n=3):
             if h["installed"] or h["id"] in seen:
                 continue
-            why = ", ".join(str(w) for w in (card.get("why") or [])[:2])
+            why = ", ".join(str(w) for w in (card.get("why") or [])[:2])  # not a list: two reason tags
             out.append({"id": h["id"], "description": h["description"], "tokens": h["tokens"], "trusted": h["trusted"],
                         "reason": f"the project uses {card['name']}" + (f", {area}" if area else "")
                                   + (f" ({why})" if why else "")})

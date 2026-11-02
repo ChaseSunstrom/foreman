@@ -897,6 +897,7 @@ def shader_problems(path, validator=None):
         for decl in re.findall(r"\buniform\s+\w+\s+([^;{]+);", block):
             declared |= {re.sub(r"\[.*", "", x).strip() for x in decl.split(",")}
         if validator:
+            import fmcore
             stage = "vert" if "gl_Position" in block else "frag"
             with tempfile.TemporaryDirectory(prefix="fm-shader-") as tmp:
                 src = os.path.join(tmp, f"shader.{stage}")
@@ -911,7 +912,7 @@ def shader_problems(path, validator=None):
             if r.returncode:
                 said = [x.strip() for x in (r.stdout + r.stderr).splitlines() if "ERROR" in x]
                 problems.append(f"{where}: doesn't compile as GLSL ({stage}): "
-                                + "; ".join(x.replace(src, "shader") for x in said[:3]))
+                                + fmcore.joinmore([x.replace(src, "shader") for x in said], 3, "; "))
     table = re.search(r"(?ms)^## Uniforms\n(.*?)(?=^## |\Z)", text) if path.endswith(".md") else None
     if table:
         listed = {x for row in table.group(1).splitlines() if row.startswith("| `")

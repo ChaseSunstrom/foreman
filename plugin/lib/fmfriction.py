@@ -139,7 +139,7 @@ def _mine(ledger, label):
             f"{s} ×{n}" for s, n in paths.most_common(3)],
         "smooth but unverified (few stage events, weak grade: check these held)": smooth[:MAX_LINES],
         "give-up points (failed runs before each block)": [
-            f"after {n} failed run(s): {', '.join(t[:5])}" for n, t in sorted(gave_up.items())][:MAX_LINES]}
+            f"after {n} failed run(s): {', '.join(t[:5])}" for n, t in sorted(gave_up.items())][:MAX_LINES]}  # not a list: five names per row
 
 
 def digest(p, recheck=True):

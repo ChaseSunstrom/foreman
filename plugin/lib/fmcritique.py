@@ -131,7 +131,7 @@ def _shadow(v):
         nums = [_px(w) for w in words if w != "inset"]
         if None in nums or not 2 <= len(nums) <= 4:
             return clean(t)
-        parts.append(("inset " if "inset" in words else "") + " ".join(_fmt(x) for x in (nums + [0.0] * 2)[:4]) + " "
+        parts.append(("inset " if "inset" in words else "") + " ".join(_fmt(x) for x in (nums + [0.0] * 2)[:4]) + " "  # not a list: four CSS numbers
                      + ((_colour(col[0]) or clean(col[0])) if col else "currentcolor"))
     return clean(", ".join(parts), 200)
 

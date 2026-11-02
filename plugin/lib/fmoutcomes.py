@@ -207,7 +207,7 @@ def cmd_outcomes(args):
     fates = collections.Counter(o["fate"] for o in bad.values())
     lines = [f"{len(outs)} finished task(s): {len(outs) - len(bad)} held"
              + "".join(f", {n} {k}" for k, n in fates.most_common())]
-    lines += [f"- {t} {o['fate']}: {c.fit(', '.join(o['by'][:3]), 140)}" for t, o in sorted(bad.items())[-20:]]
+    lines += [f"- {t} {o['fate']}: {c.fit(c.joinmore(o['by'], 3), 140)}" for t, o in sorted(bad.items())[-20:]]
     if getattr(args, "atlas", False):  # T-0620
         return fmcli.out(args, atlas(p, outs), "\n".join(atlas_lines(p, outs)))
     if getattr(args, "calibration", False):  # T-2290
@@ -1077,7 +1077,7 @@ def caution(p, scope):
     for k, total, bad, _ in atlas(p)["files"]:
         if bad >= 2 and bad / total >= 0.2 and any(k == s or k.startswith(s.rstrip("/") + "/") for s in scope):
             hits.append(f"{k}: {bad} of {total} tasks that touched it needed a later fix or revert")
-    out = ("Caution: " + "; ".join(hits[:3]) + " — test its edges first.") if hits else ""
+    out = ("Caution: " + "; ".join(hits[:3]) + " — test its edges first.") if hits else ""  # not a list: text for a model, not a screen
     hot = []
     if scope and c.git_root(p.root):
         try:  # wild C18: files git history keeps fixing; the map is a hint, it never stops a focus
@@ -1086,4 +1086,4 @@ def caution(p, scope):
                    if any(f == s or f.startswith(s.rstrip("/") + "/") for s in scope)]
         except Exception:
             pass
-    return "\n".join(filter(None, [out, ("Hotspot: " + ", ".join(hot[:5])) if hot else ""]))
+    return "\n".join(filter(None, [out, ("Hotspot: " + ", ".join(hot[:5])) if hot else ""]))  # not a list: text for a model, not a screen

@@ -2454,7 +2454,8 @@ class App:
         """T-1346: the line under the request box: where Enter sends it."""
         if self.input.startswith("/"):
             hits = self.palette(self.input)
-            return ("Enter runs: " + ", ".join(f"/{c} ({label})" for c, label in hits[:3])) if hits else \
+            return ("Enter runs: " + ", ".join(f"/{c} ({label})" for c, label in hits[:3])
+                    + (f" (+{len(hits) - 3} more)" if len(hits) > 3 else "")) if hits else \
                 "no app command matches"
         part = self.at_word()
         if part is not None:
@@ -4055,7 +4056,8 @@ def _style_error(name, spec, theme):
         return None if _colour(spec) else f"{spec!r} isn't a colour (#rrggbb or 0-255)"
     for k, v in spec.items():
         if k not in STYLE_FIELDS:
-            return f"{k}: not a style field ({', '.join(STYLE_FIELDS[:5])})"
+            import fmcore
+            return f"{k}: not a style field ({fmcore.joinmore(STYLE_FIELDS, 5)})"
         if k in ("fg", "bg") and not _colour(v):
             return f"{k} = {v!r} isn't a colour (#rrggbb or 0-255)"
         if k not in ("fg", "bg") and not isinstance(v, bool):

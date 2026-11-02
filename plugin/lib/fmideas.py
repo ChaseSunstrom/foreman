@@ -770,7 +770,7 @@ def _falsify(titles, args, p):
 
 def _crossbreed(titles, system, args, p):
     prompt = ("CROSS-BREED: combine the strongest of these ideas into 3-6 new ideas worth more together, in the "
-              "required format.\n" + "\n".join(f"- {t}" for t in titles[:30]))
+              "required format.\n" + "\n".join(f"- {t}" for t in titles[:30]))  # not a list: titles for a model prompt
     text = run_child("ideas", system, prompt, args.model, args.timeout, project=p.slug, detail="crossbreed")
     return [c.plain(t).strip() for t in _TITLE.findall(c.redact(text))]
 

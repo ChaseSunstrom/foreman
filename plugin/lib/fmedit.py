@@ -75,7 +75,7 @@ def _check(p, b, paths):
             why.append(f"{rel}: outside the project")
             continue
         if scope and not any(c.glob_match(rel, s) for s in scope):  # review: scope entries are globs
-            why.append(f"{rel}: outside {b.id}'s scope ({', '.join(scope[:4])}); widen it with fm task set {b.id} "
+            why.append(f"{rel}: outside {b.id}'s scope ({c.joinmore(scope, 4)}); widen it with fm task set {b.id} "
                        f"scope=… or use the Edit tool")
             continue
         blk = fmguard.check("Write", {"file_path": path}, ctx)

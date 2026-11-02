@@ -247,7 +247,7 @@ def _file_schema(path):
 
 
 def _diff(a, b):
-    return "; ".join(x[:120] for x in sorted(set(a) ^ set(b))[:5])
+    return c.joinmore([x[:120] for x in sorted(set(a) ^ set(b))], 5, "; ")
 
 
 def _cycle(r, schema, step, left, ok, words=("up", "down")):

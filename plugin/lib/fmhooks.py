@@ -193,7 +193,7 @@ def _note_key(text):
     t = re.sub(r"^Foreman(?: [\w-]+)?:\s*", "", str(text))
     t = re.sub(r"['’]s\b", "", t)  # T-2313: "T-0877's lesson" is not the word "s"
     t = re.sub(r"\bT-\d{4,}\b|\S*/\S*|\d+|[`'\"()\[\]]", " ", t)
-    return " ".join(re.findall(r"[A-Za-z][\w-]*", t)[:5]).lower()
+    return " ".join(re.findall(r"[A-Za-z][\w-]*", t)[:5]).lower()  # not a list: a path or word fragment, not a list
 
 
 _ADDONS = {}  # T-2589: chars a handler appended past its budget on purpose (the compact recap)
@@ -3213,7 +3213,7 @@ def _outbound(pl, p, tool, ti):
     elif tool == "WebSearch":
         targets = [c.redact(str(ti.get("query") or ""))[:80]]
     elif tool == "Bash":
-        targets = [_host(m) or " ".join(m.split()[:2]) for m in _NET_CMD.findall(str(ti.get("command") or ""))]
+        targets = [_host(m) or " ".join(m.split()[:2]) for m in _NET_CMD.findall(str(ti.get("command") or ""))]  # not a list: a path or word fragment, not a list
     else:
         targets = [tool[5:]]
     try:
@@ -3725,7 +3725,7 @@ def _push_nudge(sid, sd, drained):
     key = ("ask-" + "-".join(waiting)) if waiting else f"drain-{c.now()[:13]}" if drained else None
     if not key or not _first_time(sid, "push-" + re.sub(r"[^\w-]", "", key)):
         return None
-    lead = f"Foreman needs your yes on {', '.join(waiting[:3])}" if waiting else "Foreman: the queue is done"
+    lead = f"Foreman needs your yes on {', '.join(waiting[:3])}" if waiting else "Foreman: the queue is done"  # not a list: text for a model, not a screen
     return (f"Foreman: the user may be away from the terminal. Send one PushNotification (status proactive, one line "
             f"under 200 characters) that leads with what they'd act on, like \"{lead}: <the one thing>\", then end "
             f"the turn.")
@@ -3840,7 +3840,7 @@ def _headless_wait(pl):
     if not running:
         return None
     return (f"Foreman: this is a headless run (claude -p): it ends with this turn, so the background work still running "
-            f"({', '.join(running[:3])}) never reports back. Wait for it now (read its output until it finishes, or "
+            f"({', '.join(running[:3])}) never reports back. Wait for it now (read its output until it finishes, or "  # not a list: text for a model, not a screen
             f"rerun it in the foreground), then finish with its result.")
 
 
@@ -4020,7 +4020,7 @@ def _goal_gate(p, pl, g, sid, closed=()):
     d["count"] = d.get("count", 0) + 1
     c.log_event(p, "stop_gate", data={"goal": len(v["causes"])}, session=sid)
     return ("Foreman: the reply says it's done, but the goal's verdict is stopped: "
-            + "; ".join(c.fit(c.plain(str(x)), 100) for x in v["causes"][:5])
+            + "; ".join(c.fit(c.plain(str(x)), 100) for x in v["causes"][:5])  # not a list: text for a model, not a screen
             + ". Finish or capture each, then fm goal verdict.")
 
 
@@ -4149,7 +4149,7 @@ def _drive(p, sd, briefs, pl, g):
         if done:
             return ("Foreman drive: builder lane(s) finished and wait on a merge: " + "; ".join(
                 f"fm lane merge {i}" for i in done) + " (review the branch first), then fm lane rm and close it here.")
-        return (f"Foreman drive: builder lanes hold {', '.join(held[:4])}; nothing else is queued. Each builder's "
+        return (f"Foreman drive: builder lanes hold {', '.join(held[:4])}; nothing else is queued. Each builder's "  # not a list: text for a model, not a screen
                 f"notification wakes you: then review its branch, fm lane merge, fm lane rm, and close it here.")
     if d.get("hold"):
         return None  # the user asked for planning only this turn
@@ -4228,7 +4228,7 @@ def _drive(p, sd, briefs, pl, g):
             how = _start_how(offer, lanes_free(briefs, p), _economy())
             _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
                     "offer": offer["id"], "how": how})
-            return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "
+            return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "  # not a list: text for a model, not a screen
                     f"Start {offer['id']} ({offer['tier']} {offer['type']}: {c.fit(offer['title'], 80)}) now: {how}. "
                     f"A queued task that can't move now (it needs a device, a person, another task): fm task block ID "
                     f"\"why\", and take the next. The drive offers another when you stop; its notification still "
@@ -4247,7 +4247,7 @@ def _drive(p, sd, briefs, pl, g):
                     f"desktop and phone width, or every command; the main flows; the service logs), fm capture each "
                     f"defect or gap you find, then plan and work the first. Its notification still wakes you for "
                     f"{work['id']}.")
-        return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); its notification wakes "
+        return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); its notification wakes "  # not a list: text for a model, not a screen
                 f"you, so don't sleep or poll. Meanwhile do what doesn't need its result: the next step's test, the "
                 f"audit lenses on the current diff (fm audit prep), docs, "
                 + (f"grounding and planning {', '.join(more)}, or an independent S/M task in a builder lane "

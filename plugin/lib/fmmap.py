@@ -74,13 +74,13 @@ def build(p):
     big = next((d for d, n in layout.items() if d != "." and n > 0.6 * len(files)), None)
     if big:  # one folder holds most of the repo: show what's inside it instead
         del layout[big]
-        layout.update("/".join(f.split("/")[:2]) + "/" if f.count("/") >= 2 else big for f in files if f.startswith(big))
+        layout.update("/".join(f.split("/")[:2]) + "/" if f.count("/") >= 2 else big for f in files if f.startswith(big))  # not a list: a path or word fragment, not a list
     sources = [f for f in files if _CODE.search(f) and not _TEST.search(f)]
     tops = {f.split("/", 1)[0] for f in files if "/" in f}
     mix = collections.defaultdict(collections.Counter)  # T-2267: code vs not, per second-level folder (plugin/skills)
     for f in files:
         if f.count("/") >= 2:
-            mix["/".join(f.split("/")[:2])][bool(_CODE.search(f))] += 1
+            mix["/".join(f.split("/")[:2])][bool(_CODE.search(f))] += 1  # not a list: a path or word fragment, not a list
     prose = {d for d, n in mix.items() if n[False] > n[True]}
     links = {}
     for t in (f for f in files if _TEST.search(f) and _CODE.search(f)):
@@ -280,7 +280,7 @@ def _folders(root, test, tops, prose=()):
     except OSError:
         return []
     words = set(re.findall(r"""["']([^"'/\s]+)["']""", text))
-    up, own = test.split("/", 1)[0], "/".join(test.split("/")[:2])
+    up, own = test.split("/", 1)[0], "/".join(test.split("/")[:2])  # not a list: a path or word fragment, not a list
     side = {d for d in prose if d.startswith(up + "/") and d != own and d.split("/", 1)[1] in words}
     return [d + "/" for d in sorted(words & (tops - {up}))] + [d + "/" for d in sorted(side)]
 
@@ -302,7 +302,9 @@ def render(m):
     if m["hot"]:
         lines.append("most changed (180 days): " + ", ".join(m["hot"]))
     if m["tests"]:
-        lines.append("tests → sources: " + "; ".join(f"{t} → {', '.join(s[:2])}" for t, s in list(m["tests"].items())[:10]))
+        tpairs, tmore = c.more(list(m["tests"].items()), 10)
+        lines.append("tests → sources: " + "; ".join(f"{t} → {', '.join(s[:2])}" for t, s in tpairs)
+                     + (f" ({tmore})" if tmore else ""))
     if m.get("ci"):
         lines.append("CI runs: " + "; ".join(m["ci"]))
     if m.get("lib"):
@@ -331,10 +333,10 @@ def compact(p, limit=500):
             pass
     if not m:
         return None
-    parts = [f"gates: {'; '.join(m['gates'][:3]) or 'none'}"]
+    parts = [f"gates: {c.joinmore(m['gates'], 3, '; ') or 'none'}"]
     if m["entry"]:
-        parts.append(f"entry: {', '.join(m['entry'][:4])}")
-    parts.append("layout: " + ", ".join(f"{d} ({n})" for d, n in m["layout"][:5]))
+        parts.append(f"entry: {c.joinmore(m['entry'], 4)}")
+    parts.append("layout: " + c.joinmore([f"{d} ({n})" for d, n in m["layout"]], 5))
     if m["tests"]:
         parts.append("tests→src: " + "; ".join(f"{t}→{s[0]}" for t, s in list(m["tests"].items())[:4] if s))
     if m.get("lib"):  # T-0933: before the tests, which the 500-char cut trims first
@@ -375,7 +377,7 @@ def cmd_map(args):
         made = None
         if rows and args.capture and not any(b.meta.get("source") == "cold" and b.status not in c.CLOSED
                                              for b in c.load_briefs(p)):  # one open item at a time
-            files = ", ".join(f for f, _ in rows[:8])
+            files = c.joinmore([f for f, _ in rows], 8)
             with c.lock(p.dir):
                 made = fmcli._create(p, f"Read the hot files no session has read: {c.fit(files, 160)}", "RESEARCH",
                                      "S", "captured", raw=f"Research debt (fm map --cold, T-0660): read and note what "
@@ -400,9 +402,10 @@ def cmd_impact(args):
     stem = _name_stem(rel)
     users = [f for f in _git(p.root, "grep", "-l", "-w", "-I", "-e", stem).splitlines() if f != rel and _CODE.search(f)]
     tests = tests_for(m, [rel])
+    shown, umore = c.more(users, 15)
     data = {"path": rel, "tests": tests, "dependents": users[:15]}
     fmcli.out(args, data, c.plain_lines(f"{rel}\n  likely tests: {', '.join(tests) or 'none linked by name'}\n  mention "
-                                 f"'{stem}': {', '.join(users[:15]) or 'none'}"))
+                                 f"'{stem}': {', '.join(shown) or 'none'}{f' ({umore})' if umore else ''}"))
 
 
 _COMMON_STEMS = {"index", "main", "init", "__init__", "utils", "util", "types", "setup", "config", "common", "helpers"}
@@ -469,7 +472,7 @@ def _risk(p, m, f, add, rm, gone, changed, diff):
     why, score = [], 0
     hit = c.sensitive([f], diff)
     if hit:
-        why.append(f"security-sensitive ({', '.join(hit[:3])})")
+        why.append(f"security-sensitive ({c.joinmore(hit, 3)})")
         score += 3
     if c._RUNS_ELSEWHERE.search(f) or c._MANIFEST.search(f):
         why.append("runs in CI, on install, as a hook or brings dependencies")
@@ -619,7 +622,7 @@ def _dangling(root, diff):
     for name in sorted(removed - readded)[:10]:
         users = _git(root, "grep", "--untracked", "-l", "-w", "-I", "-e", name).splitlines()
         if users:
-            found.append(f"removed {name} is still named in {', '.join(users[:4])}")
+            found.append(f"removed {name} is still named in {c.joinmore(users, 4)}")
     return found
 
 
@@ -663,7 +666,7 @@ def pre_audit(root, diff, files, m=None):
             found.append(f"secret-looking value added in {cur}")
     code = [f for f in files if _CODE.search(f) and not _TEST.search(f)]
     if code and not any(_TEST.search(f) for f in files):
-        found.append(f"source changed with no test changed: {', '.join(code[:6])}")
+        found.append(f"source changed with no test changed: {c.joinmore(code, 6)}")
     for f in files:
         try:
             if os.path.getsize(os.path.join(root, f)) > 200_000:

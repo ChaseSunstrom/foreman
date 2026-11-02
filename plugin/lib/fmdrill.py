@@ -93,7 +93,7 @@ class Day:
         return p
 
     def fm(self, *a):
-        return self._run("fm " + " ".join(a[:2]), [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *a])
+        return self._run("fm " + " ".join(a[:2]), [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *a])  # not a list: a path or word fragment, not a list
 
     def hook(self, event, payload):
         if "tool_input" in payload:

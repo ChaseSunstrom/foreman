@@ -277,7 +277,7 @@ def check_project(p, apply, actions):
             out.append(finding(slug, "archive_task", "action", f"{b.id} {b.status} {int(age)}d ago: {b.title}",
                                "move to archive/YYYY-MM/", auto=True))
             if apply:
-                dest = os.path.join(p.dir, "archive", (b.meta.get("updated") or c.now())[:7])
+                dest = os.path.join(p.dir, "archive", (b.meta.get("updated") or c.now())[:7])  # not a list: a path or word fragment, not a list
                 os.makedirs(dest, exist_ok=True)
                 shutil.move(b.path, os.path.join(dest, os.path.basename(b.path)))
                 actions.append(("archive_task", b.id))
@@ -403,7 +403,7 @@ def _hygiene(p, apply, actions):
              if str(r.get("at") or "") < since and str(hit.get(r["pattern"]) or "") < since]
     if quiet:
         out.append(finding(slug, "quiet_rule", "info", f"rule(s) no call matched in {HINT_STALE_DAYS} days: "
-                           + ", ".join(quiet[:8]), "listed only: the user removes a rule (fm rule rm N) if it's obsolete"))
+                           + c.joinmore(quiet, 8), "listed only: the user removes a rule (fm rule rm N) if it's obsolete"))
     ignored = sorted(c.hints_quiet(p))
     if ignored:
         out.append(finding(slug, "ignored_hint", "info", f"hints shown {c.QUIET_AFTER}+ times running without use: "

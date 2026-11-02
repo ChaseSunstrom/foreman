@@ -460,7 +460,7 @@ def _imports(s, local, mods):
                     spec = spec[4:]
                 if spec.startswith((".", "/", "~", "@/", "#")) or ":" in spec:
                     continue
-                name = "/".join(spec.split("/")[:2]) if spec.startswith("@") else spec.split("/")[0]
+                name = "/".join(spec.split("/")[:2]) if spec.startswith("@") else spec.split("/")[0]  # not a list: a path or word fragment, not a list
                 if name not in NODE and name not in local:
                     out.append((i, name, [w for w in re.findall(r"\w+", clause) if w not in ("as", "type")]))
         elif s.lang == "rb":
@@ -872,7 +872,7 @@ def cmd_blindspots(p, args):
                     {"day": day, "filed": (filed + [f"{r['task']}|{r['file']}"])[-SPOT_KEEP:]}))
                 c.regen_views(p)
                 made.append(b.id)
-    text = "\n".join(c.plain(f"{r['task']}  {r['file']}:{','.join(str(n) for n in r['lines'][:20])}") for r in rows)
+    text = "\n".join(c.plain(f"{r['task']}  {r['file']}:{','.join(str(n) for n in r['lines'][:20])}") for r in rows)  # not a list: line numbers beside one file
     fmcli.out(args, {"blindspots": rows} | ({"captured": made} if getattr(args, "capture", None) else {}),
               c.plain_lines((text or "No blind spots recorded.") + (f"\nFiled {made[0]}." if made else f"\nFiled 0: {why}." if why else "")))
     return 0

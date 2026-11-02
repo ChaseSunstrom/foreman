@@ -462,7 +462,7 @@ def _misses(p):
     try:  # T-2417: the done tasks fm outcomes says a later fix or a revert touched, newest last
         import fmoutcomes
         later = [f"{c.plain(t)} was {o['fate']} by "
-                 f"{c.fit(c.plain(', '.join(map(str, (o.get('by') or [])[:2]))), 80) or 'a later change'}: "
+                 f"{c.fit(c.plain(c.joinmore(map(str, o.get('by') or []), 2)), 80) or 'a later change'}: "
                  f"check what it missed" for t, o in fmoutcomes.outcomes(p).items()
                  if isinstance(o, dict) and o.get("fate") in ("fixed later", "reverted")]
     except Exception:  # noqa: BLE001 — a history read never costs the plan

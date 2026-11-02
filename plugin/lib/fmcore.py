@@ -105,6 +105,12 @@ def more(items, n, flag=""):
     return items[:n], (f"{k} left out" + (f" ({flag})" if flag else "")) if k > 0 else ""
 
 
+def joinmore(items, n, sep=", ", flag=""):
+    """T-2676: sep.join of the first n strings, then 'K left out (FLAG)' as the last item when more were cut."""
+    shown, note = more(list(items), n, flag)
+    return sep.join(shown + ([note] if note else []))
+
+
 def clock():
     """T-2645: aware UTC now; FOREMAN_NOW (ISO 8601, Z or an offset) pins it so a test can stand on a window's edge.
     A malformed value is ignored."""
@@ -3497,7 +3503,7 @@ def note_flakes(p, runs, tree, commands=None):
                         flaky[i] = dict(f, count=_n(f.get("count")) + 1, fails=fails, passes=_n(f.get("passes")) + 1,
                                         last=now(), cmd=key[:120],
                                         **({"why": str(why[i])} if why.get(i) else {}))
-                    lines.append(f"flaky: {', '.join(was['tests'][:5])} failed on this same tree and now pass "
+                    lines.append(f"flaky: {joinmore(was['tests'], 5)} failed on this same tree and now pass "
                                  f"({fit(key, 60)}); fix the race, don't rerun past it")
                     said = lambda w: (re.findall(r"(?m)^[\w.]*(?:Error|Exception)\b.*$", w) or w.splitlines())[-1]
                     lines += [f"  {i}: {fit(said(str(why[i])), 140)}" for i in was["tests"][:3]
@@ -4272,9 +4278,9 @@ def render_state(sd, ts=None):
     out += ["", "## Hygiene", f"Last tidy: {sd['last_tidy'] or 'never'}"
             + (f" (overdue: {sd['tidy_overdue_days']}d)" if sd["tidy_overdue_days"] else "")]
     if sd["cycles"]:
-        out.append("Dependency cycles: " + "; ".join(" ↔ ".join(c) for c in sd["cycles"])[:200])
+        out.append("Dependency cycles: " + "; ".join(" ↔ ".join(c) for c in sd["cycles"])[:200])  # not a list: cut by characters
     if sd["dangling"]:
-        out.append("Dangling deps: " + ", ".join(f"{a}→{b}" for a, b in sd["dangling"])[:200])
+        out.append("Dangling deps: " + ", ".join(f"{a}→{b}" for a, b in sd["dangling"])[:200])  # not a list: cut by characters
     out += ["", "## Notes", f"Sensitive: {'yes' if sd['sensitive'] else 'no'} · Drive: {'on' if sd['drive'] else 'off'}"
             + (" · PAUSED" if sd["paused"] else "")]
     if sd.get("unproven"):  # T-2273
@@ -4284,7 +4290,7 @@ def render_state(sd, ts=None):
     g = sd.get("genesis")
     if g:  # T-2118
         out.append(f"Genesis: {genesis_line(g)}")
-    return "\n".join(out[:60]) + "\n"
+    return "\n".join(out[:60]) + "\n"  # not a list: text for a model, not a screen
 
 
 def render_inbox(sd, ts=None):
@@ -4544,7 +4550,7 @@ def _need_evidence(status):
             return None
         cmd = x["cmds"].get(got[0]) or ""  # what the line says: typed prose or a run; never a stand-in that passes
         bad = lint_verify(cmd, x["p"].root) if cmd else ["no command was recorded"]
-        return {"why": ", ".join(f"{k} {n}" for k, n in got[:4]),
+        return {"why": joinmore([f"{k} {n}" for k, n in got], 4),
                 "fmt": {"cmd": _q("<a command that can fail>" if bad else cmd)},
                 "blocked": f"needs a check that can fail ({bad[0]})" if bad else ""}
     return need
@@ -4552,7 +4558,7 @@ def _need_evidence(status):
 
 def _need_ui(x):
     ui = [f for f in x["files"] if _UI_FILE.search(f)]
-    return {"why": ", ".join(ui[:3]), "fmt": {"file": ui[0]}, "files": ui} if ui else None
+    return {"why": joinmore(ui, 3), "fmt": {"file": ui[0]}, "files": ui} if ui else None
 
 
 _SAYS = lazy(r"^(?:\w+=\S*\s+)*(?:echo|printf|true|:|test|\[|touch|mkdir|cat)\b")  # T-2396: names a file, renders nothing
@@ -4568,7 +4574,7 @@ def _need_tui(x):
     named = lambda f: any(("claude plugin test" if f.startswith("mods/") else  # noqa: E731
                            os.path.splitext(os.path.basename(f))[0]) in s for s in runs)
     left = [f for f in term if not named(f)]
-    return {"why": ", ".join(left[:3]), "fmt": {"file": left[0]}, "files": left} if left else None
+    return {"why": joinmore(left, 3), "fmt": {"file": left[0]}, "files": left} if left else None
 
 
 def _need_docs(x):
@@ -4617,12 +4623,12 @@ def _need_infra(x):
     if not got:
         return None
     tools = sorted({fminfra.CLASSES[k]["argv"][0] for _, k in got})
-    return {"why": ", ".join(f"{f} ({k})" for f, k in got[:3]), "tools": tools, "files": [f for f, _ in got]}
+    return {"why": joinmore([f"{f} ({k})" for f, k in got], 3), "tools": tools, "files": [f for f, _ in got]}
 
 
 def _need_migration(x):
     mig = [f for f in x["files"] if _MIGRATION.search(f)]
-    return {"why": ", ".join(mig[:3]), "files": mig} if mig else None
+    return {"why": joinmore(mig, 3), "files": mig} if mig else None
 
 
 def _need_data(x):
@@ -4630,7 +4636,7 @@ def _need_data(x):
     if not data:
         return None
     dbt = os.path.isfile(os.path.join(x["p"].root, "dbt_project.yml"))
-    return {"why": ", ".join(data[:3]), "tools": ["dbt" if dbt else "frictionless"], "files": data,
+    return {"why": joinmore(data, 3), "tools": ["dbt" if dbt else "frictionless"], "files": data,
             "fmt": {"cmd": _q("dbt test" if dbt else f"frictionless validate {data[0]}")}}
 
 
@@ -4750,7 +4756,7 @@ def _need_meaning(x):
     """T-2393: a clause of the request no green, failable criterion checks (fmrecall.bind); a label, never a block."""
     import fmrecall
     left = fmrecall.meaning_unproven(x["b"])
-    return {"why": "; ".join(f"meaning unproven: {fit(plain(cl), 70)} ({why})" for cl, why in left[:3]),
+    return {"why": joinmore([f"meaning unproven: {fit(plain(cl), 70)} ({why})" for cl, why in left], 3, "; "),
             "fmt": {"cmd": f'fm task ac {x["b"].id} add "<what {fit(plain(left[0][0]), 40)} means> :: <a check that can fail>"'}} \
         if left else None
 
@@ -5395,7 +5401,7 @@ def ruled_out(p, b):
     for r in reversed(tail_jsonl(os.path.join(p.dir, "failures.jsonl"), 300)):
         if r.get("task") == b.id and r.get("sig") and r["sig"] not in sigs:
             sigs.append(r["sig"])
-    return out + ([f"- failures met: {'; '.join(fit(s, 90) for s in sigs[:3])}"] if sigs else [])
+    return out + ([f"- failures met: {'; '.join(fit(s, 90) for s in sigs[:3])}"] if sigs else [])  # not a list: text for a model, not a screen
 
 
 def checkpoint(p, note=None, auto=False, session=None):

@@ -153,7 +153,7 @@ def unblocks(p, b, briefs=None):
     """What a yes frees: this task, and the open tasks that wait on it."""
     waiting = [x.id for x in (briefs if briefs is not None else c.load_briefs(p))
                if x.status not in c.CLOSED and b.id in (x.meta.get("depends_on") or [])]
-    return f"{b.id} {c.fit(b.title, 60)}" + (f" and {', '.join(waiting[:5])} waiting on it" if waiting else "")
+    return f"{b.id} {c.fit(b.title, 60)}" + (f" and {c.joinmore(waiting, 5)} waiting on it" if waiting else "")
 
 
 def _freed(b, briefs):

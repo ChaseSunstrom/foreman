@@ -361,7 +361,7 @@ def _ask(run, profile, messages, what):
         r = m.complete(run.capped(profile), messages, max_tokens=MAX_TOKENS)
     except m.ModelError:
         if run.unlean:  # T-1426: a lean planner stopped at its init line, as a lean worker is
-            raise CodeError(f"{profile['name']}'s claude session started with {', '.join(run.unlean[:5])}, which "
+            raise CodeError(f"{profile['name']}'s claude session started with {fmcore.joinmore(run.unlean, 5)}, which "
                             "a lean session never loads (a .mcp.json or .claude settings in the repo?); it was "
                             "stopped before it read anything: check the repo's Claude Code settings") from None
         raise
@@ -369,7 +369,7 @@ def _ask(run, profile, messages, what):
         after = fmcore.worktree_tree(run.root)
         if after != before:
             gone = os.fsdecode(_git(run.root, "diff", "--name-only", before, after or before).stdout).split()
-            raise CodeError(f"{profile['name']} changed {', '.join(gone[:5]) or 'files'} while planning, which "
+            raise CodeError(f"{profile['name']} changed {fmcore.joinmore(gone, 5) or 'files'} while planning, which "
                             "must change nothing: check them (git diff) before going on")
     run.usage(r, profile, what)
     check_truncated(profile, messages, r)
@@ -916,7 +916,7 @@ class Run:
                     self.spend(res.get("total_cost_usd"), sum(v for v in u.values() if type(v) is int), name)
             ended = True
             if self.unlean:  # T-1388: stopped at its first line, before it acted
-                raise Blocked(f"fm code: the worker's claude session started with {', '.join(self.unlean[:5])}, which "
+                raise Blocked(f"fm code: the worker's claude session started with {fmcore.joinmore(self.unlean, 5)}, which "
                               "a lean session never loads (a .mcp.json or .claude settings in the repo?); its turn was "
                               "stopped before it acted: check the repo's Claude Code settings before going on")
         finally:
@@ -935,7 +935,7 @@ class Run:
                 self.emit("revert", f"  reverted {rel}: {_one_line(why, 160)}", file=rel, reason=why)
                 self.log(kind="revert", phase=name, file=rel, reason=why)
         if lost:
-            raise Blocked(f"fm code: the worker changed {', '.join(lost[:5])}, which Foreman refuses, and it can't be "
+            raise Blocked(f"fm code: the worker changed {fmcore.joinmore(lost, 5)}, which Foreman refuses, and it can't be "
                           "put back: check it before going on")
         kind, at = failure_kind(code, out)
         if kind and self.failover(name, kind, at, argv[0], code):
@@ -2945,7 +2945,7 @@ def run_friction(cause, detail):
     try:
         import fmcli
         words = re.sub(r"\d+", "", fmcore.plain(fmcore.redact(str(detail)))).split()
-        key = f"{cause}: {' '.join(words[:8])}".strip()
+        key = f"{cause}: {' '.join(words[:8])}".strip()  # not a list: a path or word fragment, not a list
         home = fmcore.foreman_home()
         sp = fmcore.find_project(home, create=True) or fmcore.init_project(home)
         b = next((b for b in fmcore.load_briefs(sp) if b.status not in fmcore.CLOSED
