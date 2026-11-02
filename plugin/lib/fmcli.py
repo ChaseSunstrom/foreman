@@ -769,6 +769,9 @@ def cmd_task(args):
     if sub == "evidence":
         code, shown, tried, median = 0, "", None, ""
         bench =getattr(args, "bench", None)
+        under = getattr(args, "under", None)
+        if under is not None and (bench is None or not 0 < under < float("inf")):  # T-2651: nan/inf/0 are no bar
+            raise UsageError("--under MS (above 0) is the bar for --bench CMD; it needs --bench")
         if args.repeat is None:  # T-2284: --bench times 5 runs a side unless told
             args.repeat = 5 if bench is not None else 1
         if bench is not None and (args.run is not None or args.cmd is not None or args.inconclusive
@@ -782,7 +785,7 @@ def cmd_task(args):
         if bench is not None:  # T-2284: timed on the start tree and on this one, by Foreman
             pre = need_brief(p, args.id)
             cmd = bench
-            code, shown, result, median = _bench(p, pre, bench, args.repeat, args.timeout if args.timeout > 0 else None)
+            code, shown, result, median = _bench(p, pre, bench, args.repeat, args.timeout if args.timeout > 0 else None, under)
         elif args.run is not None:  # run it: the real exit code and output, never a typed summary
             if args.cmd is not None:
                 raise UsageError("give the command either as --run CMD or as CMD RESULT, not both")
@@ -2762,7 +2765,7 @@ def _repeat_runs(root, cmd, n, timeout):
     return code, output, f"{head}: median {med:.3f}s, spread {spread}, min {min(times):.3f}s, max {max(times):.3f}s"
 
 
-def _bench(p, b, cmd, n, timeout):
+def _bench(p, b, cmd, n, timeout, under=None):
     """T-2284: (exit code, output tail, result, Measurements line) of cmd timed n times in a throwaway worktree at the
     task's base and n times in the current tree, one deadline over all 2n runs. A side that fails or times out stops
     there and is recorded as the failure: no Measurements line then."""
@@ -2843,6 +2846,11 @@ def _bench(p, b, cmd, n, timeout):
         for w in words)
     line = (f"{cmd}: {statistics.median(before):.3f}s → {statistics.median(after):.3f}s ({n} runs each)"
             + ("" if in_tree else " · neither side's entry point is in the tree: both may time the same code") + "".join(notes))
+    if under is not None:  # T-2651: the current tree's median against the bar, in ms
+        ms = statistics.median(after) * 1000
+        if ms > under:
+            return 1, "", f"✗ exit 1 · {line} · median {ms:.0f}ms over --under {under:g}ms", line
+        line += f" · median {ms:.0f}ms under --under {under:g}ms"
     return 0, "", line, line
 
 
@@ -6534,6 +6542,8 @@ def _build_parser(only=None):
     t.add_argument("--bench", metavar="CMD",
                    help="time CMD --repeat N times (default 5) on the task's start tree (a throwaway worktree) and on "
                         "this one; records 'CMD: before median → after median' as run evidence and in Measurements (T-2284)")
+    t.add_argument("--under", type=float, default=None, metavar="MS",
+                   help="with --bench: fail (exit 1) when the current tree's median is over MS milliseconds (T-2651)")
     t.add_argument("--repeat", type=int, default=None, metavar="N",
                    help=f"with --run: run it N times (at most {REPEAT_MAX}) and record the median time, the spread "
                         "(median absolute deviation), min and max; any failing run fails it, with its count (T-1518)")
