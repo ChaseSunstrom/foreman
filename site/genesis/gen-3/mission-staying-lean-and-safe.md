@@ -1,6 +1,6 @@
 # Mission 5 — staying lean and safe (gen 3, #12)
 
-Task: T-2666 (the Mission's own grounding and filing). Briefs: below, taken in after this file is put.
+Task: T-2666 (the Mission's own grounding and filing), T-2667 (brief 1), T-2668 (brief 2), T-2669 (brief 3).
 
 Parent: gen-3/seed.md row 5 → gen-0.md #12 "Staying lean and safe". gen-0's goal, MUSTs and NEVERs are quoted in the
 seed and apply here unchanged.
