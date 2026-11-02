@@ -483,3 +483,23 @@ class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicte
             self.ask(t, s)
         self.fm("night", "--tick")
         self.assertEqual([r["kind"] for r in self.rows()], ["next-request"])
+
+
+class TimerWatch(ForemanTestCase):  # T-2542: the sweep caches a dead or failing timer; session start names it
+    def test_the_sweep_caches_it_and_lines_names_it(self):
+        import fmforesight as fs
+        import fmnight
+        p = c.find_project(self.repo, create=True)
+        rows = [("foreman-tick-proj-abc123", "hasn't fired in 7 h")]
+        with mock.patch.object(fmnight, "liveness", return_value=rows), \
+                mock.patch.object(fmnight, "tick", return_value=None), \
+                mock.patch.object(fs, "_ci", return_value=None):
+            fs.refresh(p)
+        text = "\n".join(fs.lines(p))
+        self.assertIn("foreman-tick-proj-abc123", text)
+        self.assertIn("journalctl --user -u foreman-tick-proj-abc123.service", text)
+        with mock.patch.object(fmnight, "liveness", return_value=[]), \
+                mock.patch.object(fmnight, "tick", return_value=None), \
+                mock.patch.object(fs, "_ci", return_value=None):
+            fs.refresh(p)
+        self.assertNotIn("foreman-tick", "\n".join(fs.lines(p)), "a timer that recovered drops off")

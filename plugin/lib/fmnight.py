@@ -191,6 +191,19 @@ def install(p):
     for n in names:
         if n.endswith(".timer"):
             fmserve._systemctl("enable", "--now", n)
+    first, tick = "", f"foreman-tick-{p.slug}.service"
+    if tick in names:  # T-2542: the yes is followed by one run in the timer's own environment, seen to work
+        r = fmserve._systemctl("start", tick, check=False)
+        try:
+            res = {} if r.returncode else _show(tick, "Result", "ExecMainStatus")
+        except (OSError, subprocess.SubprocessError):
+            res = {}
+        first = ("first tick ran: success" if res.get("Result") == "success" else
+                 f"first tick failed: {c.plain((r.stderr or '').strip())[:160]} → journalctl --user -u {tick}"
+                 if r.returncode else
+                 f"first tick failed ({c.plain(res['Result'])[:40]}, exit {c.plain(res.get('ExecMainStatus') or '?')[:10]})"
+                 f" → journalctl --user -u {tick}" if res.get("Result") else
+                 "first tick started; systemd recorded no result")
     w = plan.get("watch") if isinstance(plan.get("watch"), dict) else {}
     watch = {"ci": w.get("ci") is True, "issues": [r for r in w.get("issues") or [] if isinstance(r, str) and _REPO.fullmatch(r)]}
     with c.lock(p.dir):
@@ -198,9 +211,9 @@ def install(p):
         meta["watch"] = watch
         meta["night_units"] = {"units": names, "home": c.foreman_home(), "at": c.now()}
         c.write_meta(p, meta)
-    c.log_event(p, "night_installed", data={"units": names, "watch": watch})
+    c.log_event(p, "night_installed", data={"units": names, "watch": watch, "first": first})
     shutil.rmtree(_staged(p), ignore_errors=True)
-    return names, watch
+    return names, watch, first
 
 
 def uninstall(p):
@@ -273,6 +286,46 @@ def _num(v):
         return float(v or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+EVERY = {"tick": 3600, "night": 86400}  # T-2542: each installed timer's interval, in seconds
+
+
+def _show(unit, *props):
+    """systemd's own record of a user unit, {prop: value}; OSError when systemctl can't run."""
+    r = subprocess.run(["systemctl", "--user", "--timestamp=unix", "show", unit, *(f"--property={x}" for x in props)],
+                       capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
+    if r.returncode:
+        raise OSError(r.stderr.strip()[:200] or f"systemctl exited {r.returncode}")
+    return dict(x.split("=", 1) for x in r.stdout.splitlines() if "=" in x)
+
+
+def liveness(now=None, show=None):
+    """T-2542: [(unit, why)] for each installed foreman-night/tick timer that stopped firing (no trigger in three
+    intervals; a never-fired one is judged from its unit file's age) or whose last run failed, from systemd's record.
+    One ('systemd', why) row when units are installed but systemctl can't be read. A quiet tick logs nothing, so this
+    is the only way silence tells apart from a dead timer."""
+    import fmserve
+    show, now, out = show or _show, now or time.time(), []
+    for path in sorted(glob.glob(os.path.join(fmserve.unit_dir(), "foreman-*-*.timer"))):
+        name = os.path.basename(path)[:-len(".timer")]
+        kind = name.split("-")[1]
+        if kind not in EVERY:
+            continue
+        try:
+            last = show(f"{name}.timer", "LastTriggerUSec").get("LastTriggerUSec", "")
+            svc = show(f"{name}.service", "Result", "ExecMainStatus")
+            since = float(last[1:]) if last.startswith("@") else os.path.getmtime(path)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return [("systemd", "timers are installed but systemctl --user can't be read, so Foreman can't tell "
+                                "whether they fire")]
+        if now - since > 3 * EVERY[kind]:
+            out.append((name, f"hasn't fired in {int((now - since) // 3600)} h"
+                              + ("" if last.startswith("@") else " (never, since it was installed)")))
+        if svc.get("Result") not in (None, "", "success"):
+            out.append((name, f"last run failed ({c.plain(svc['Result'])[:40]}, exit "
+                              f"{c.plain(svc.get('ExecMainStatus') or '?')[:10]})"))
+    return out
 
 
 def tick(p, fetch_ci=None):
@@ -419,11 +472,11 @@ def cmd_night(args):
                          "\n".join([f"night timers staged in {_staged(p)}; {said}:"] + [f"- {x}" for x in lines]
                                    + ["After the yes: fm night --install."]))
     if getattr(args, "install", False):
-        names, watch = install(p)
-        return fmcli.out(args, {"units": names, "watch": watch},
+        names, watch, first = install(p)
+        return fmcli.out(args, {"units": names, "watch": watch, "first": first},
                          f"installed and started: {', '.join(n for n in names if n.endswith('.timer'))}; CI check "
                          f"{'on' if watch['ci'] else 'off'}; issue watch: {', '.join(watch['issues']) or 'none'}. "
-                         "Undo: fm night --uninstall")
+                         + (f"{first[0].upper()}{first[1:]}. " if first else "") + "Undo: fm night --uninstall")
     if getattr(args, "uninstall", False):
         names = uninstall(p)
         return fmcli.out(args, {"removed": names}, f"removed: {', '.join(names) or 'nothing installed'}; watch lines off")

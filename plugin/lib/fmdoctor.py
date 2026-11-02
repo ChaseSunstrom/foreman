@@ -676,7 +676,13 @@ def check_night_timers(p):
         if m and os.path.realpath(m.group(1)) != home:
             notes.append(f"{c.plain(os.path.basename(path))} runs another Foreman home ({c.plain(m.group(1))[:120]}): "
                          "fm night --uninstall from there, or remove the unit")
-    return Result("night timers", "WARN" if notes else "PASS", "; ".join(notes[:4]) or "none staged; none of another home")
+    import fmnight  # T-2542: an installed timer that stopped firing or fails, from systemd's own record
+    notes += [f"{u} {why}" + ("" if u == "systemd" else f" → journalctl --user -u {u}.service")
+              for u, why in fmnight.liveness()]
+    live = len(glob.glob(os.path.join(fmserve.unit_dir(), "foreman-night-*.timer"))
+               + glob.glob(os.path.join(fmserve.unit_dir(), "foreman-tick-*.timer")))
+    return Result("night timers", "WARN" if notes else "PASS", "; ".join(notes[:4]) or "none staged; none of another home"
+                  + (f"; {live} installed timer(s) firing, last runs ok (systemd)" if live else ""))
 
 
 def check_muted_triggers(p):

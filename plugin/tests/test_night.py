@@ -2,6 +2,7 @@
 self items (T-0244); fm night — budgeted background work while the user is away, refused at high usage (T-0236)."""
 import json
 import os
+from unittest import mock
 
 from helpers import ForemanTestCase, read_text
 
@@ -601,3 +602,62 @@ class NightTick(ForemanTestCase):
         with self.mock.patch.object(fmnight, "tick", side_effect=RuntimeError("boom")), \
                 self.mock.patch.object(self.fs, "ci_main", return_value=None):
             self.fs.refresh(self.p)  # a tick that fails never costs the sweep
+
+
+class TimerLiveness(ForemanTestCase):  # T-2542: an installed timer that stopped firing or fails is named, not silent
+    def setUp(self):
+        super().setUp()
+        self.xdg = os.path.join(self.tmp, "xdg")
+        self.units = os.path.join(self.xdg, "systemd", "user")
+        os.makedirs(self.units)
+        self.env = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": self.xdg})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        for kind in ("tick", "night"):
+            with open(os.path.join(self.units, f"foreman-{kind}-proj-abc123.timer"), "w") as f:
+                f.write("[Timer]\n")
+        self.now = 2_000_000_000.0
+        old = self.now - 10 * 86400
+        for f in os.listdir(self.units):
+            os.utime(os.path.join(self.units, f), (old, old))
+
+    def show(self, rec):
+        def fake(unit, *props):
+            return dict(rec.get(unit, {}))
+        return fake
+
+    def test_stale_failed_fresh_and_unreadable(self):
+        import fmnight
+        tick, night = "foreman-tick-proj-abc123", "foreman-night-proj-abc123"
+        fresh = {f"{tick}.timer": {"LastTriggerUSec": f"@{int(self.now - 600)}"}, f"{tick}.service": {"Result": "success"},
+                 f"{night}.timer": {"LastTriggerUSec": f"@{int(self.now - 3600)}"}, f"{night}.service": {"Result": "success"}}
+        self.assertEqual(fmnight.liveness(now=self.now, show=self.show(fresh)), [])
+        stale = dict(fresh, **{f"{tick}.timer": {"LastTriggerUSec": f"@{int(self.now - 5 * 3600)}"}})
+        (row,) = fmnight.liveness(now=self.now, show=self.show(stale))
+        self.assertEqual(row[0], tick)
+        self.assertIn("hasn't fired in 5 h", row[1])
+        failed = dict(fresh, **{f"{tick}.service": {"Result": "exit-code", "ExecMainStatus": "1"}})
+        (row,) = fmnight.liveness(now=self.now, show=self.show(failed))
+        self.assertIn("exit-code", row[1])
+        self.assertIn("exit 1", row[1])
+        never = dict(fresh, **{f"{night}.timer": {"LastTriggerUSec": ""}})
+        (row,) = fmnight.liveness(now=self.now, show=self.show(never))  # installed 10 days ago, never fired
+        self.assertEqual(row[0], night)
+        new = self.now - 3600
+        os.utime(os.path.join(self.units, f"{night}.timer"), (new, new))
+        self.assertEqual(fmnight.liveness(now=self.now, show=self.show(never)), [], "a nightly installed an hour ago")
+
+        def gone(unit, *props):
+            raise OSError("no systemctl")
+        (row,) = fmnight.liveness(now=self.now, show=gone)
+        self.assertIn("can't tell", row[1])
+
+    def test_doctor_names_the_unit_and_journalctl(self):
+        import fmdoctor
+        import fmnight
+        rows = [("foreman-tick-proj-abc123", "last run failed (exit-code, exit 1)")]
+        with mock.patch.object(fmnight, "liveness", return_value=rows):
+            r = fmdoctor.check_night_timers(None)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("foreman-tick-proj-abc123", r.detail)
+        self.assertIn("journalctl --user -u foreman-tick-proj-abc123.service", r.detail)
