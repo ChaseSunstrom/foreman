@@ -1,6 +1,6 @@
 # Mission 7 — anticipation (gen 3, #3)
 
-Task: T-2677 (the Mission's own grounding and filing).
+Task: T-2677 (the Mission's own grounding and filing), T-2681 (brief 1), T-2682 (brief 2), T-2683 (brief 3), T-2684 (brief 4).
 
 Parent: gen-3/seed.md row 7 → gen-0.md #3 "Anticipation". gen-0's goal, MUSTs and NEVERs are quoted in the seed and
 apply here unchanged.
