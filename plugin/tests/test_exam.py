@@ -1436,6 +1436,18 @@ class ProofKinds(JudgmentStub, ForemanTestCase):
     """T-2394 (Mission 7, #6 and #10): proof (claims each proven by a hidden check, one no local run can prove that must
     be labelled) and beyond (non-code deliverables graded by running them), with false proofs counted."""
 
+    def test_a_busy_tool_file_is_retried_not_read_as_a_failed_tool(self):  # T-2543
+        import errno
+        import subprocess
+        from unittest import mock
+        import fmexam
+        done = subprocess.CompletedProcess([], 0, "a,b\n", "")
+        busy = OSError(errno.ETXTBSY, "Text file busy")
+        with mock.patch.object(fmexam.subprocess, "run", side_effect=[busy, done]), mock.patch.object(fmexam.time, "sleep"):
+            self.assertEqual(fmexam._tool_out(__file__, self.tmp, "x"), "a,b\n")
+        with mock.patch.object(fmexam.subprocess, "run", side_effect=OSError(errno.ENOENT, "gone")):
+            self.assertIsNone(fmexam._tool_out(__file__, self.tmp, "x"))
+
     def says_verified(self, run, s):
         """An answer that calls every claim verified and fixes nothing: the false-proof column's foil."""
         import fmexam
