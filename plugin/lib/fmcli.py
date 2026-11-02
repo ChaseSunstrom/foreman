@@ -7702,6 +7702,8 @@ def _build_parser(only=None):
                    "inconclusive, UI unshot, docs, perf, meaning; T-2273, folded in from fm proof by T-2461)")
     s.add_argument("--days", type=int, default=30, help="--rollup: how far back closed tasks are read (default 30)")
     s.add_argument("files", nargs="*", help="--docs: the docs files to check (default: all the repo's markdown)")
+    s.add_argument("--steer", action="store_true", help="instead: run each unsettled user-steer rule's [check:] on the "
+                   "start tree of the task its row names; one that passes there too is vacuous (exit 1) (T-2636)")
     s.add_argument("--docs", action="store_true", help="instead: check what the docs say about the repo's own CLI "
                    "(paths, make/npm targets, flags, subcommands, fenced commands) against its files, each claim proven, "
                    "failed or unproven; a flag or subcommand no non-doc file has fails in any tree, one a file only "

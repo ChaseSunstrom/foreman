@@ -715,6 +715,54 @@ def cmd_docs_proof(args):
     return 1 if n["failed"] else 0 if n["proven"] else 2
 
 
+def cmd_steer(args):
+    """T-2636: each unsettled user-steer row's [check:] run on the start tree of the first task its text names. A check
+    that passes there tests nothing about its rule (vacuous). Exit 1 when any is; a check several rows share runs once
+    per task. ponytail: the first T-NNNN in the text is taken as the rule's task; the line names it so a reader can see."""
+    import fmcli
+    p = c.find_project(os.getcwd())
+    if not p:
+        print("fm prove --steer: run it inside a Foreman project", file=sys.stderr)
+        return 2
+    rows, briefs, ran, res = c._decision_rows(p), {}, {}, []
+    for i, (date, tags, text) in enumerate(rows):
+        if not c.STEER.search(tags) or c._settled([rows[i]] + [r for r in rows[i + 1:] if c.STEER.search(r[1])], 0):
+            continue
+        m = c.CHECK_TAG.search(tags)
+        if not m or c.CHECK_PENDING.fullmatch(m.group(1)):
+            continue
+        cmd, name, tid = m.group(1), c.fit(c.plain(text), 60), None
+        t = re.search(r"\bT-\d{4,}\b", text)
+        row = {"rule": name, "check": cmd, "task": t and t.group(0)}
+        if not t:
+            res.append(row | {"verdict": "skipped", "why": "no task named"})
+            continue
+        tid = t.group(0)
+        if tid not in briefs:
+            briefs[tid] = next((b for b in c.load_briefs(p, include_archive=True) if b.id == tid), None)
+        base = briefs[tid] and c.task_base(p.root, briefs[tid])
+        if not base:
+            res.append(row | {"verdict": "skipped", "why": f"{tid} has no start snapshot"})
+            continue
+        try:
+            c.check_argv(cmd)
+            if (base, cmd) not in ran:
+                ran[(base, cmd)] = fmcli._run_at(p, base, cmd, 900)[0]
+        except (ValueError, fmcli.UsageError) as e:
+            res.append(row | {"verdict": "skipped", "why": c.fit(c.plain(str(e)), 100)})
+            continue
+        res.append(row | {"verdict": "tests its rule" if ran[(base, cmd)] else "vacuous"})
+    lines = []
+    for r in res:
+        t = f" (task used: {r['task']})" if r["task"] else ""
+        lines.append(f"{'✗' if r['verdict'] == 'vacuous' else '·' if r['verdict'] == 'skipped' else '✓'} {r['rule']}: "
+                     + (f"{r['verdict']}: {r['why']}" if r["verdict"] == "skipped" else
+                        f"{r['verdict']}{t}: `{r['check']}`" + (" also passes before the task's change; write a check "
+                                                                  "that fails on the start tree" if r["verdict"] == "vacuous" else "")))
+    fmcli.out(args, {"rows": res}, "\n".join(lines) or "No unsettled steer row has a runnable check.")
+    return 1 if any(r["verdict"] == "vacuous" for r in res) else 0
+
+
 def _yes(args, root):
     """Whether fm prove may run this tree's code: --yes-run (kept for the tree), a kept yes, or the main checkout's."""
     if args.yes_run:
@@ -729,6 +777,7 @@ DOES_NOT = {  # T-2399: what each mode's receipt doesn't show, said last so a pa
     "scan": "that the code is right: leads and held-back findings were not tried, a proven ticket shows a failing test "
             "(not its cause or the fix), and nothing outside fm find's finders was looked at",
     "only": "that the root cause is gone: only that fm find no longer reports the finding, or its kept test passes",
+    "steer": "that a check that fails on the start tree is the right check: only that it isn't vacuous",
     "docs": "that the prose is right: only that each documented command, flag or path exists or ran",
     "infra": "that it deploys: each file passed its own validator offline, on a copy, never against a live system",
     "release": "that users can install it from the registry: the artifact was built, installed and run offline here",
@@ -739,7 +788,7 @@ DOES_NOT = {  # T-2399: what each mode's receipt doesn't show, said last so a pa
 
 def cmd_prove(args):
     rc = _prove(args)
-    mode = next((m for m in ("only", "docs", "infra", "release", "data", "migration") if getattr(args, m, None)), "scan")
+    mode = next((m for m in ("only", "steer", "docs", "infra", "release", "data", "migration") if getattr(args, m, None)), "scan")
     if not getattr(args, "rollup", False) and not getattr(args, "json", False) and (rc != 2 or mode == "docs"):
         print(f"Does not prove: {DOES_NOT[mode]}.")  # 2 is a usage or copy error, but --docs's "nothing checkable"
     return rc
@@ -750,6 +799,8 @@ def _prove(args):
     import fmfind
     if getattr(args, "rollup", False):  # T-2461: the unproven rollup (fm proof until it folded in here)
         return fmcli.cmd_proof(args)
+    if getattr(args, "steer", False):  # T-2636: steer checks that also pass before the task's change
+        return cmd_steer(args)
     if args.docs:  # T-2381: the docs' claims about the repo's own CLI
         return cmd_docs_proof(args)
     root = os.path.abspath(args.path)
