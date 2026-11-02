@@ -345,9 +345,13 @@ def check_state_size(projects, budget=STATE_BUDGET):
         total = sum(parts.values())
         if total > budget:
             big = max(parts, key=parts.get)
-            over.append(f"{p.slug} {total // 2**20} MB (most in {big}: {parts[big] // 2**20} MB)")
+            over.append(f"{p.slug} {total // 2**20} MB (most in {big}: {parts[big] // 2**20} MB"
+                        + ("; fm tidy doesn't prune exam runs: their work copies stay until removed by hand" if big == "exam"
+                           else "") + ")")  # T-2538: tidy never reaches exam/, so its advice there was a no-op
     return Result("state size", "WARN" if over else "PASS",
-                  f"{'; '.join(over)} > {budget // 2**20} MB: fm tidy --apply prunes and rolls it" if over
+                  f"{'; '.join(over)} > {budget // 2**20} MB" + (": fm tidy --apply prunes and rolls the rest"
+                                                                 if any("exam runs" in o for o in over) else
+                                                                 ": fm tidy --apply prunes and rolls it") if over
                   else f"{len(projects)} project(s) under {budget // 2**20} MB each")
 
 

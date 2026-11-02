@@ -37,6 +37,20 @@ class UsageBurn(ForemanTestCase):
             self.assertIn(words, text)
         self.assertEqual(len(found), 4)
 
+    def test_a_window_the_user_set_above_foremans_is_named_not_install_user(self):  # T-2537
+        from unittest import mock
+        ts = self._now()
+        self._write("-p/a.jsonl", [_msg(i, "a", "claude-sonnet-5-5", 300_000, ts) for i in range(30)])
+        folder = os.path.join(self.tmp, "projects")
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"}):
+            text = "\n".join(f"{a} → {b}" for a, b in fmcost.burn_findings(folder, forecast={}))
+        self.assertIn("1.0M", text, "the user's own window, named")
+        self.assertNotIn("fm install-user", text, "install-user leaves a set window alone: a no-op fix")
+        self.assertIn("/compact", text)
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200k"}):
+            text = "\n".join(f"{a} → {b}" for a, b in fmcost.burn_findings(folder, forecast={}))
+        self.assertNotIn("fm install-user", text, "Foreman's window is already set: the advice is /compact")
+
     def test_a_lean_week_says_nothing(self):
         self._write("-p/a.jsonl", [_msg(i, "a", "claude-sonnet-5-5", 60_000, self._now()) for i in range(30)])
         self.assertEqual(fmcost.burn_findings(os.path.join(self.tmp, "projects"), forecast={}), [])
