@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T19:13:53Z",
- "rev": "6b4fc57d",
+ "updated": "2026-11-02T19:18:54Z",
+ "rev": "21ac7e2b",
  "capabilities": [
   {
    "n": 1,
@@ -24309,14 +24309,14 @@
  },
  "not_yet": 7,
  "not_yet_open": 5,
- "unproven": 973,
+ "unproven": 971,
  "unproven_kinds": {
-  "meaning": 569,
-  "research-uncited": 29,
+  "meaning": 567,
+  "research-uncited": 28,
   "typed": 26,
   "red": 73,
-  "perf-typed": 50,
-  "ui-unshot": 52,
+  "perf-typed": 51,
+  "ui-unshot": 51,
   "docs": 418,
   "tui-unshot": 46,
   "data": 2,
@@ -24568,13 +24568,13 @@
   }
  },
  "steer": {
-  "run": "steer-20261102T182645",
-  "at": "2026-11-02T18:26:45Z",
+  "run": "steer-20261102T191506-7457",
+  "at": "2026-11-02T19:15:06Z",
   "model": "sonnet",
-  "judge": "opus",
-  "cases": 43,
+  "judge": "fable",
+  "cases": 13,
   "failed": 0,
-  "harmful": 48,
+  "harmful": 16,
   "holdout": {
    "cases": 13,
    "rate": 0.192,
@@ -24582,10 +24582,10 @@
    "clauses": 23
   },
   "train": {
-   "cases": 30,
-   "rate": 0.064,
-   "covered": 11,
-   "clauses": 93
+   "cases": 0,
+   "rate": null,
+   "covered": 0,
+   "clauses": 0
   }
  }
 }
