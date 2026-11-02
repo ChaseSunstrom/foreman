@@ -1217,6 +1217,19 @@ def _ablate(p, b, args):
         print(text)
 
 
+def _red_full_check(p):
+    """T-2526: (gate, failing tests) when the newest full check_run on this tree (no skipped tests) had a gate fail;
+    None when it passed, or no full run is on this tree (an edit since changes the tree: the close's own runs judge)."""
+    tree = c.worktree_id(p.root)
+    for e in reversed(c.ledger_tail(p, 3000)):
+        d = e.get("data") if isinstance(e.get("data"), dict) else {}
+        if e.get("event") != "check_run" or not tree or d.get("tree") != tree or d.get("skip_tests"):
+            continue
+        bad = [r for r in d.get("results") or [] if isinstance(r, dict) and r.get("exit")]
+        return (str(bad[0].get("cmd") or "a gate"), [str(t) for t in bad[0].get("failing") or []]) if bad else None
+    return None
+
+
 def task_finish(p, args):
     """One-call close-out (R1; any tier since T-0097): runs each open criterion's own verify command (else --run) and
     --run for each open step, records them as fm runs, checks what passed, records the audits (S: self; M/L: each
@@ -1233,6 +1246,11 @@ def task_finish(p, args):
         return 0
     if not args.audit:
         raise UsageError("fm task finish needs --audit \"<how the audits were done>\"")
+    red = _red_full_check(p)
+    if red:  # T-2526: T-2334 closed and committed right after its full gate failed on the same tree
+        raise c.PolicyError(f"{b.id}: the newest full fm check on this tree failed ({c.fit(c.plain(red[0]), 80)}"
+                            + (f": {', '.join(c.plain(t) for t in red[1][:5])}" if red[1] else "")
+                            + "): fix it and run fm check again before closing")
     lenses = []
     for spec in args.lens or []:
         lens, sep, result = spec.partition(":")

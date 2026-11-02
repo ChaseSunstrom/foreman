@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm task finish` now refuses to close, and commits nothing, while the newest full `fm check` on the same working tree failed. It names the failing gate and tests. A newer passing run on that tree lets the close go ahead, and so does any edit since, which changes the tree; the close's own checks then judge.
 - A task always gets a start point, so `fm task finish --commit` can tell its files apart. A git lookup that times out at focus is retried with a longer wait, and a timeout at finish no longer reads as "no start point". A task that still has none gets HEAD at its first evidence, with a log line saying so.
 - `fm goal plan`'s checklist of past misses now also names finished tasks that a later fix or a revert touched (for example "T-X was fixed later by T-Y"), from `fm outcomes`. Before, it only saw tasks reopened within 7 days, which missed every follow-up fix filed as new work.
 - `fm ci-watch` files one task per failing cause, not one per run. It names the cause by the failing test classes in the log, which stay the same across shards and commits. A repeat while that task is open is logged on it, and the same failure after the task closed files a new one. Blocking failures now join their open task too, as non-blocking ones already did; runs whose log names nothing still file one task each.
