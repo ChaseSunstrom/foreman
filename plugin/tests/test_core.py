@@ -1654,3 +1654,38 @@ class ConfidenceRoutes(ForemanTestCase):  # T-2338 (Mission 5, #8): one stated n
         rows = [json.loads(x) for x in open(os.path.join(self.p.dir, "calibration.jsonl"))]
         self.assertEqual(sorted((r["kind"], r["stated"]) for r in rows if r.get("task") == tid),
                          [("assumption", 85), ("choice", 75)])
+
+
+class StartPoint(ForemanTestCase):  # T-2334: a task always gets a start point; a git timeout is never "none"
+    def test_git_head_retries_a_timeout(self):
+        import subprocess
+        from unittest import mock
+        done = subprocess.CompletedProcess(["git"], 0, stdout="abc123\n")
+        with mock.patch.object(c.subprocess, "run", side_effect=[subprocess.TimeoutExpired(["git"], 10), done]) as run:
+            self.assertEqual(c.git_head(self.repo), "abc123")
+        self.assertGreater(run.call_args_list[1].kwargs["timeout"], run.call_args_list[0].kwargs["timeout"])
+
+    def test_a_timed_out_check_still_finds_the_start_point(self):
+        import subprocess
+        from unittest import mock
+        b = type("B", (), {"meta": {"base": "deadbeef"}})()
+        slow = subprocess.CompletedProcess(["git"], 124, "", "timed out after 10 s")
+        with mock.patch.object(c, "_git", return_value=slow):
+            self.assertEqual(c.task_base(self.repo, b), "deadbeef")
+        gone = subprocess.CompletedProcess(["git"], 1, "", "")
+        with mock.patch.object(c, "_git", side_effect=lambda *a, **k: gone if k.get("proc") else ""):
+            self.assertIsNone(c.task_base(self.repo, b))
+
+    def test_a_task_made_active_without_focus_gets_its_start_point_at_its_first_evidence(self):
+        self.fm("init")
+        p = c.find_project(self.repo)
+        tid = json.loads(self.fm("task", "new", "No focus", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+                                 "--step", "s", "--json").stdout)["id"]
+        b = c.find_brief(p, tid)  # active by a path that skipped focus (T-2332's log has no 'focused' line)
+        b.meta["status"] = "active"
+        c.save_brief(p, b)
+        self.assertFalse(c.find_brief(p, tid).meta.get("base"))
+        self.fm("task", "evidence", tid, "--step", "1", "--run", "true")
+        b = c.find_brief(p, tid)
+        self.assertEqual(b.meta.get("base"), c.git_head(self.repo))
+        self.assertIn("start point recorded late", b.section("Log"))
