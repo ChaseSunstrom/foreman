@@ -1292,7 +1292,63 @@ def _ledger(text, code=False):
 def _unmarked(text):
     """Typed text can't carry the marks fm appends ([tree …], [ran]): they would forge a worktree id or a run."""
     text = re.sub(r"\(cold read\b", "(cold-read", text)  # T-2338: the cold-read mark is fm's alone
-    return re.sub(r"\[(tree|ran|inconclusive|rewound)\b", r"(\1", text)
+    return re.sub(r"\[(tree|ran|inconclusive|rewound|world)\b", r"(\1", text)
+
+
+LOCKS = ("uv.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock", "Pipfile.lock", "Cargo.lock",
+         "go.sum", "Gemfile.lock", "requirements.txt", "requirements-dev.txt")  # T-2398: the world a proof leaned on
+_WORLDS = {}  # root -> (stat key, (hash, parts)): a hook calling world() per run rereads nothing unchanged
+
+
+def world(root):
+    """T-2398: (H, parts): the interpreter's version and each repo-root lockfile's content hash; H is 10 hex of them.
+    ponytail: a tool's own version (node, cargo) isn't asked: a --version per run is a process each time."""
+    key = []
+    for n in LOCKS:
+        with contextlib.suppress(OSError):
+            st = os.stat(os.path.join(root, n))
+            key.append((n, st.st_size, st.st_mtime_ns))
+    hit = _WORLDS.get(root)
+    if hit and hit[0] == key:
+        return hit[1]
+    parts = {"python": sys.version.split()[0]}
+    for n, *_ in key:
+        with contextlib.suppress(OSError), open(os.path.join(root, n), "rb") as f:
+            parts[n] = hashlib.sha256(f.read()).hexdigest()[:12]
+    h = hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:10]
+    _WORLDS[root] = (key, (h, parts))
+    return h, parts
+
+
+def worlds():
+    """T-2398: {H: parts} of every world a proof run recorded (state/worlds.json)."""
+    try:
+        with open(os.path.join(state_dir(), "worlds.json"), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def world_here():
+    """T-2398: H for the checkout this process runs in (cwd's nearest .git), kept in worlds.json; None off a checkout
+    or on any error: a proof run never fails for its world mark."""
+    try:
+        root = os.getcwd()
+        while not os.path.exists(os.path.join(root, ".git")):
+            up = os.path.dirname(root)
+            if up == root:
+                return None
+            root = up
+        h, parts = world(root)
+        if h not in worlds():
+            with lock(state_dir()):
+                d = worlds()
+                d[h] = parts
+                write_atomic(os.path.join(state_dir(), "worlds.json"), json.dumps(d, sort_keys=True))
+        return h
+    except (OSError, ValueError, LockTimeout):
+        return None
 _TS_TAIL = lazy(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
 DEFAULT_LENSES = ("intent", "adversary", "edge", "operator", "maintainer")  # what M/L reviews run by default
 # design (T-1501): advisory, never required; fm audit prep adds it only when the diff touches UI (ui_paths)
@@ -1680,6 +1736,8 @@ class Brief:
         result = defang(_unmarked(redact(str(result)).replace("\n", " ").strip()))
         # [ran]: fm ran it (only runs decide pass/fail); [tree]: the files it was recorded against (audit_blockers)
         mark = (_INCONCLUSIVE if inconclusive else "") + (_RAN_MARK if ran else "") + (f" [tree {tree}]" if tree else "")
+        w = world_here() if ran else None  # T-2398: the interpreter and lockfiles this run leaned on (fm doctor)
+        mark += f" [world {w}]" if w else ""
         self._append_line("Verification evidence", f"- {tag}`{cmd}` → {result}{mark} ({ts or now()})")
         if step is not None and not inconclusive:
             self.track_step(step)  # T-0406: every writer of step evidence moves the band and fm next with it
