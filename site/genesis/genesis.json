@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T12:49:32Z",
- "rev": "d2e94748",
+ "updated": "2026-11-02T12:59:01Z",
+ "rev": "76455d87",
  "capabilities": [
   {
    "n": 1,
@@ -2808,12 +2808,12 @@
       {
        "id": "T-2607",
        "title": "The tick names what it could not watch: each trigger kind it skipped (CI, issues) with the reason, in fm doctor and the session's Watch line",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 3,
-       "current": "red tests in test_night"
+       "done": 4,
+       "current": ""
       },
       {
        "id": "T-2356",
@@ -21445,14 +21445,14 @@
  },
  "not_yet": 5,
  "not_yet_open": 5,
- "unproven": 1046,
+ "unproven": 1047,
  "unproven_kinds": {
   "meaning": 568,
   "research-uncited": 29,
   "typed": 26,
   "red": 73,
   "perf-typed": 50,
-  "docs": 599,
+  "docs": 600,
   "ui-unshot": 50,
   "tui-unshot": 47,
   "data": 2,
@@ -21460,10 +21460,10 @@
   "perf-noise": 1
  },
  "next": {
-  "stage": "build",
+  "stage": "critique",
   "gen": 3,
-  "action": "Mission 1 (self-triggering): finish T-2607",
-  "command": "fm focus T-2607",
+  "action": "Mission 1 (self-triggering): write its critique (closed vs planned, outside signals, what failed)",
+  "command": "fm genesis put gen-3/critique-self-triggering.md --file -",
   "kind": "ok"
  },
  "docs": {
