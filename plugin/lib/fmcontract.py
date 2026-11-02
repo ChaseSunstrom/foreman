@@ -90,14 +90,23 @@ def clear_ended(p, meta):
         del meta["contract"]
 
 
+def yield_text(done, usd):
+    """T-2655: ' · $0.50 a task (2.0 tasks a dollar)'; empty when either count is zero (no ratio, no division)."""
+    if not done or not usd or usd <= 0:
+        return ""
+    return f" · ${usd / done:.2f} a task ({done / usd:.1f} tasks a dollar)"
+
+
 def _receipt(p, k):
     import fmcost
     end = k.get("ended_at")
     since = _iso(k["started"])
     done = [e["task"] for e in c.ledger_tail(p, 20000) if e.get("event") == "task_done" and e.get("task")
             and str(e.get("ts", "")) >= since and (not end or str(e["ts"]) <= _iso(end))]
+    usd = spent(p, k["started"], end)
     return (f"contract receipt: {len(done)} task(s) closed" + (": " + ", ".join(done) if done else "")
-            + f" · spend ${spent(p, k['started'], end):.2f}" + (f" of ${k['usd']:g}" if k.get("usd") is not None else "")
+            + f" · spend ${usd:.2f}" + (f" of ${k['usd']:g}" if k.get("usd") is not None else "")
+            + yield_text(len(done), usd)
             + (f" · {fmcost._human(tok)} tokens" + (f" of {fmcost._human(k['tokens'])}" if k.get("tokens") is not None else "")
                if (tok := k['tokens_used'] if end else used(p, k)) is not None else "")
             + f" · bound that ended it: {k.get('ended') or 'none yet'}")
