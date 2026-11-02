@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The exam no longer draws its package kind on a host whose Python has no setuptools (for example, a uv-managed Python), because nothing could build the package there. Before, that item was drawn anyway and always failed.
 - `fm ci-watch --last-ship` watches the main commit that the newest `fm ship` pushed (`fm ship` now records it in `refs/foreman/shipped-tip`). An empty `--commit` (for example, a sha extraction that found nothing) is now refused instead of quietly watching the branch's HEAD.
 - The exam has a new Python-only kind for capability #10 (beyond code): make the repo an installable package. It's graded by installing the package with no network into a throwaway environment and running its `app-total` command. It's a kind of its own, so no existing exam item moved.
 - `fm pr train` now runs the self-change gate on each pull request before merging it, as `fm lane merge` and `fm serve` already do. A PR that changes Foreman's own `plugin/` and would weaken the guard, slow a hook or grow the footprint stops the train; your yes to `fm ask ID core` lets it through.
