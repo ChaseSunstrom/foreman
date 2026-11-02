@@ -31,3 +31,11 @@ Tasks: T-2671 (grounding and filing), T-2672, T-2673, T-2674 (all done). Mission
 - A Mission's Exam names an outcome measure for every brief before it is filed; "the test asserts the text is there" is
   a format check, never the exam.
 - A brief that changes many output sites gets one output test per verb it touches, not only a scan.
+
+## Measures (read by Mission 7, research/brainstorm-20261102-m7.md)
+- Brief 1, grid lens: 27 of 41 grid-cell ideas grounded as new or partial, that is, as real gaps. Not zero, so the lens
+  passes its Done-when.
+- Brief 3, canary: 169 of 170 "new" verdicts carry a canary, but 156 of them used the generic term "def main". That
+  passes the letter of Done-when and fails its intent: such a canary shows the search ran, not that its phrasing could
+  find a neighbour. gen-3/critique-anticipation.md carries the fix to the next Seed: the canary must be a built feature
+  near the idea, and the catalogue counts distinct canary terms.
