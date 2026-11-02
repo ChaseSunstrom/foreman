@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T04:41:07Z",
- "rev": "ee895279",
+ "updated": "2026-11-02T04:46:10Z",
+ "rev": "912d89cc",
  "capabilities": [
   {
    "n": 1,
@@ -2023,7 +2023,7 @@
       {
        "id": "T-2536",
        "title": "fm bench duel --ablate captures one subtraction candidate per feature whose off arm changed no pass and cost no more",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "S",
        "steps": 2,
@@ -18137,14 +18137,14 @@
  },
  "not_yet": 5,
  "not_yet_open": 0,
- "unproven": 1055,
+ "unproven": 1056,
  "unproven_kinds": {
   "meaning": 583,
   "research-uncited": 28,
   "typed": 39,
   "red": 63,
   "perf-typed": 51,
-  "docs": 591,
+  "docs": 592,
   "ui-unshot": 52,
   "tui-unshot": 51,
   "data": 4,
@@ -18154,8 +18154,8 @@
  "next": {
   "stage": "build",
   "gen": 2,
-  "action": "Mission 3 (staying-lean-and-safe): finish T-2536",
-  "command": "fm focus T-2536",
+  "action": "Mission 3 (staying-lean-and-safe): finish T-2533",
+  "command": "fm focus T-2533",
   "kind": "ok"
  },
  "docs": {
