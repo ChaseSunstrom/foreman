@@ -1,17 +1,17 @@
 {
- "generated": "2026-11-01",
+ "generated": "2026-11-02",
  "totals": {
-  "tasks_done": 1571,
-  "evidence": 6998,
-  "proofs": 621,
-  "commits": 1260,
-  "gate_runs": 965,
+  "tasks_done": 1662,
+  "evidence": 7390,
+  "proofs": 690,
+  "commits": 1349,
+  "gate_runs": 1053,
   "subagents": 1436,
   "lanes_merged": 414,
   "findings": 2162,
-  "guard_blocks": 554,
-  "captures": 1314,
-  "lessons_shown": 2043
+  "guard_blocks": 570,
+  "captures": 1376,
+  "lessons_shown": 2225
  },
  "daily": [
   {
@@ -225,38 +225,49 @@
   },
   {
    "day": "2026-11-01",
-   "FEATURE": 2,
-   "FIX": 2,
+   "FEATURE": 37,
+   "FIX": 26,
+   "CLEAN": 1,
+   "PERFORMANCE": 0,
+   "SECURITY": 0,
+   "RESEARCH": 1,
+   "lanes": 0,
+   "evidence": 304
+  },
+  {
+   "day": "2026-11-02",
+   "FEATURE": 15,
+   "FIX": 15,
    "CLEAN": 0,
    "PERFORMANCE": 0,
    "SECURITY": 0,
    "RESEARCH": 0,
    "lanes": 0,
-   "evidence": 33
+   "evidence": 121
   }
  ],
  "tiers": {
-  "S": 748,
-  "M": 752,
-  "L": 71
+  "S": 799,
+  "M": 786,
+  "L": 77
  },
  "types": {
-  "FEATURE": 787,
-  "FIX": 503,
-  "CLEAN": 77,
+  "FEATURE": 837,
+  "FIX": 542,
+  "CLEAN": 78,
   "PERFORMANCE": 53,
   "SECURITY": 121,
-  "RESEARCH": 30
+  "RESEARCH": 31
  },
  "guard": {
-  "core": 209,
-  "brief": 177,
-  "state-direct": 58,
-  "system": 34,
-  "plugin": 27,
+  "core": 212,
+  "brief": 184,
+  "state-direct": 61,
+  "system": 35,
+  "plugin": 28,
   "rm-outside": 22,
   "pipe-shell": 11,
-  "credentials": 7
+  "credentials": 8
  },
  "findings": {
   "lenses": {
@@ -282,15 +293,15 @@
   "claude-code-guide": 8
  },
  "gate_seconds": {
-  "runs": 965,
-  "median": 176.8
+  "runs": 1053,
+  "median": 194.2
  },
  "tools": {
-  "misses": 1,
+  "misses": 3,
   "resolved": 0,
   "proved": 0,
-  "searches": 5,
-  "queued": 0,
+  "searches": 13,
+  "queued": 3,
   "refused": 0
  },
  "releases": [
@@ -407,13 +418,13 @@
   "hardware": 8
  },
  "code": {
-  "model_tests": 52,
+  "model_tests": 65,
   "endpoints": 9,
-  "tests": 5523
+  "tests": 5686
  },
  "calibration": {
-  "scored": 0,
-  "pending": 41,
+  "scored": 17,
+  "pending": 79,
   "brier": null,
   "bars": {
    "research": 70,
@@ -423,19 +434,63 @@
    "run": 0,
    "judged": 0,
    "first_lost": 0
-  }
+  },
+  "kinds": {
+   "choice": [
+    {
+     "lo": 60,
+     "hi": 79,
+     "n": 1,
+     "held": 0,
+     "pct": 0,
+     "stated": 70,
+     "gap": 70
+    },
+    {
+     "lo": 80,
+     "hi": 94,
+     "n": 3,
+     "held": 0,
+     "pct": 0,
+     "stated": 83,
+     "gap": 83
+    }
+   ],
+   "ship": [
+    {
+     "lo": 60,
+     "hi": 79,
+     "n": 1,
+     "held": 1,
+     "pct": 100,
+     "stated": 75,
+     "gap": -25
+    },
+    {
+     "lo": 80,
+     "hi": 94,
+     "n": 12,
+     "held": 12,
+     "pct": 100,
+     "stated": 85,
+     "gap": -15
+    }
+   ]
+  },
+  "interim": {}
  },
  "proof": {
-  "n": 1026,
+  "n": 1049,
   "counts": {
-   "meaning": 572,
-   "research-uncited": 30,
-   "typed": 46,
-   "red": 38,
-   "perf-typed": 52,
-   "docs": 572,
-   "ui-unshot": 57,
-   "data": 6,
+   "meaning": 577,
+   "research-uncited": 28,
+   "typed": 35,
+   "red": 64,
+   "perf-typed": 50,
+   "docs": 592,
+   "ui-unshot": 52,
+   "tui-unshot": 51,
+   "data": 4,
    "infra": 7,
    "perf-noise": 1
   },
@@ -443,9 +498,1601 @@
    {
     "day": "2026-11-01",
     "n": 1026
+   },
+   {
+    "day": "2026-11-02",
+    "n": 1049
    }
   ]
  },
+ "self_running": {
+  "triggers": [
+   {
+    "trigger": "discovered",
+    "fired": 671,
+    "precision": 0.771,
+    "route": "inbox"
+   },
+   {
+    "trigger": "followup",
+    "fired": 263,
+    "precision": 0.792,
+    "route": "inbox"
+   },
+   {
+    "trigger": "self",
+    "fired": 205,
+    "precision": 0.811,
+    "route": "inbox"
+   },
+   {
+    "trigger": "ci",
+    "fired": 33,
+    "precision": 0.312,
+    "route": "inbox"
+   },
+   {
+    "trigger": "baseline",
+    "fired": 22,
+    "precision": 0.727,
+    "route": "inbox"
+   },
+   {
+    "trigger": "scout",
+    "fired": 10,
+    "precision": 0.625,
+    "route": "inbox"
+   },
+   {
+    "trigger": "recurring-failure",
+    "fired": 4,
+    "precision": 0.0,
+    "route": "inbox"
+   },
+   {
+    "trigger": "foresight-cochange",
+    "fired": 3,
+    "precision": null,
+    "route": "inbox"
+   },
+   {
+    "trigger": "ci-red",
+    "fired": 2,
+    "precision": 1.0,
+    "route": "inbox"
+   }
+  ],
+  "installs": 0,
+  "recoveries": 0,
+  "trials": {
+   "due": 9
+  },
+  "predictions": [
+   {
+    "kind": "next-request",
+    "n": 16,
+    "hit": 0.625,
+    "base_hit": 0.562,
+    "muted": false,
+    "overlap": 0.274,
+    "base_overlap": 0.274
+   }
+  ],
+  "lean": [
+   {
+    "gen": 2,
+    "rules chars": 6391,
+    "descriptions chars": 4236,
+    "largest SKILL chars": 9269,
+    "verbs": 165
+   }
+  ]
+ },
+ "models": {},
+ "decisions": [
+  {
+   "date": "2026-11-02",
+   "text": "T-2546: the already-built nudge doesn't ship; the backtest harness stays",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Genesis build stage: a deferred Mission task is carried, named, not a blocker",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Correction: Mission 3 and the loop rounds run now, bounded by fm budget",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Forever loop round 24 and Mission 3 wait for the weekly usage reset",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "loop round 24: site/build.py, plugin.json, fmlib.py stay",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "T-2530: no second interpreter in fm check",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Correction to the T-2424 row: the door gate already stops only at irreversible AND ambiguous steps (a step the request names in an unambiguous brief runs as a costly decision); rival_split now counts ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "One-way doors keep parking whether or not the task is ambiguous; rival_split only words and orders the park (T-2424)",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Lean substance (T-2503): growth whose capability has no exam or outcome measurement yet waits: the sweep's lean row lists it as pending (not red, no task) until a measurement exists; only growth that ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule, every generation before its Seed is written: (1) a cross-cutting cold review on a stronger model than the Missions, reading only the generation's repo diff, exam lines, fm outcomes and ",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Gen-2 Missions are written without fm ideas' four-round brainstorm while the account's weekly usage is past 80% (economy mode): each Mission grounds its briefs in its coverage area's idea cells, the c",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule: never block on the user for a question about rules, gates or process: pick the option most consistent with gen-0 and the standing intent, record it with fm decide --kind costly so it la",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule: the tower advances itself. A red sweep creates its own fix tasks and re-runs when they close; a clean sweep writes the next Seed and starts its Missions immediately, every generation, u",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule (user steer 2026-10-31 #3): don't stop or skip work for budget, pace or 'optional work dropped'; wait out real usage limits and resume where stopped; if a cap only the user can raise is ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule (user steer 2026-10-31 #2): finish round 1 completely, in order: Mission 4's remaining work, then write and build Missions 5-8, then every Mission's critique, the drift check over all mi",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule (user steer 2026-10-31 #1): pause every long-horizon exam run now; keep the tier as built and run it again only at the end of the whole run, or for one capability when a free or Haiku ar",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule: exam recall for #1 is reported per language and per bug type, with child-authored scenarios in languages and kinds fm find wasn't written for",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule for #1 Initiative: fm find stays the free first pass, and detection beyond it is never hand-written per language. In order: the repo's own and the ecosystem's standard tools found from m",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Long-horizon tier is the deciding end-of-run score for every capability except pure finders: replayed real repos rolled back to a past commit with the change that followed as the goal; planted faults ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Defer the full foreman-vs-plain exam and the long-horizon tier to the end of the run, on the production model, once Missions 1-8 are built, then repeat after any fixes they trigger; a capability the H",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Testing cadence: every task keeps red-first unit tests, fm check and fm task finish audits; every generation runs only the zero-token arms (finders, oracle, empty) on all scenarios plus at most a Haik",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Coverage per generation: the sweep's coverage passes when no cell is templated or duplicated; the empty cells are handed to the next Seed to fill first. 'No empty cells' is a condition for ending the ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "genesis select gen-1: baseline (seed base gen-1)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Cold-read rule (tower filing): keep it, made reliable. (1) Haiku reads first; on any non-pass a Sonnet cold read with the same inputs decides, and Sonnet's verdict stands. (2) A FAIL counts only when ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "T-2462 waits with T-2441 until round 1 is done; the drive holds Foreman-filed items (ci, self, discovered) the same way",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "T-2462 (macOS 3.14 non-blocking CI jobs, filed by ci-watch for bd40b40 and again for 1d811ed) waits with T-2441 until round 1 is done",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Fold six verbs (proof, triggers, calibration, incident, sweep, instruments) into prove, outcomes, capture, projects and which, and trim skill descriptions, so gen-1's sweep lean line passes",
+   "later": null,
+   "confidence": 75,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule (user steer 2026-10-31, 3): with fm drive --pace off, usage pace drops no work (fmbudget.degrade); a real usage limit is waited out, and the fm budget cap and the risk budget stay as the",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule (user steer 2026-10-31, 2): with fm drive --round-first on, fm next offers no inbox item Foreman filed itself until the round's next seed is filed, unless it is urgent or an open task de",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Standing rule (user steer 2026-10-31, 1): session arms of fm exam long run wait for the end-of-run exam (--final) or name a capability a free or Haiku arm shows regressing (--regressing N); fm exam lo",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "T-2450 (the secrets finder reads a date as a credential) and the other captured maintenance (T-2444, T-2441) wait until round 1 is done; round 1's last steps (filing Missions 5-8 and the critiques, dr",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-01",
+   "text": "Recommendation: no new lexical finder rule from these misses (none of the 26 has a pattern a rule could match); gen 2's #1 work aims at logic bugs through proofs (the session arm with fm find prove's ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Parked T-2357 at a one-way, ambiguous step: red tests: staging writes nothing outside state; guard category; install after the yes; uninstall; doctor lines",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Parallel Missions 5-8 (user steer 2026-10-31) stays: an L stays in the main thread, its open S/M briefs run in parallel fm lanes, merged in mission order",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Parallel Missions 5-8 still holds: an L stays in the main thread, its open S/M briefs run in parallel fm lanes, merged in mission order",
+   "later": {
+    "date": "2026-10-31",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Standing rule (user steer 2026-10-31): gen 2 builds a model layer, small specialist models wherever a decision, ranking or lookup is the job, backends cheapest-first (rules, local selfjev-4b/jeff via ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Subagent pace gate hit (weekly usage 75% with 49% of the week gone; T-0320/T-0364's rule, no fm ask category): builders already out keep running; reviews and new tasks move to the main thread until th",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Mission 3 spikes T-2414/T-2415 deferred to the critique pass (standing rule 2 order: Missions 5-8, then every critique)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Friction pass deferred while round 1 runs (standing rule 2: no new maintenance or friction tasks until round 1 is done); T-2343 built in the main tree while all 6 lane slots are busy",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Merge order across lanes: a ready lane from a higher Mission waits only for lower-Mission lanes already in review or fixes, not for ones still building, so slots don't idle (user steer: merge in missi",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Tower filing waits for the user's call on the cold-read rule: Missions 5-8's files and the Mission 3-4 critiques stay unfiled after 4-12 puts each, because the reader doesn't converge (passed sections",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Mission 6 (tools, #5) approach A: wire the parts Foreman has into one loop on the active task (T-2270's hook notices the miss; fm which, fm lib and fm plugins find; fm new and fm mcp new build; fm tas",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Mission 7 (proof, #6 #10) approach A: grow fm prove into the one proof verb with a kind per domain (--docs, --infra, --migration, --data, --release; each pass, fail or unproven as exit 0/1/2); perf st",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "T-2373 (user-only install category in the guard) waits for the user, not a lane: its adversarial cases would enumerate install-command variants, which the standing stop on guard-bypass enumeration rul",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Mission-order merging, revised: lanes that are ready merge lowest Mission first; a ready lane doesn't wait for an earlier Mission's lane still building (holding finished branches stalled every slot)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Mission-order merging (user steer 2026-10-31): ready lanes merge lowest Mission first (5, 6, 7, 8); a later Mission's lane waits only for earlier-Mission lanes launched before it, so a finished branch",
+   "later": {
+    "date": "2026-10-31",
+    "how": "reversed"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Cold read clarification: a line that reports a requirement as unmet, open or unproven doesn't break it; the reader fails only what a line claims or hides (a MUST or NEVER the plan itself breaks, progr",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Parallel Missions 5-8 (user steer 2026-10-31): fm lane refuses an L task, so each Mission's L plan (its Mission file) stays in the main thread, drafted by one agent per Mission in parallel and filed t",
+   "later": {
+    "date": "2026-10-31",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Standing rule (user steer 2026-10-31): run the remaining independent Missions in parallel lanes \u2014 5, 6 and 8 have no dependency on each other and 7 needs only the exam, which is done \u2014 each in its own",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "budget raised: day 100 \u2192 200, run 100 \u2192 200",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "budget raised: day 40 \u2192 100, run 35 \u2192 100",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Raise the fm budget daily cap (now $40/day, $35 per command) so Genesis cold reads and exam arms can run today? It resets at local midnight otherwise. \u2192 keep $40/day and wait for the reset",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Standing rule (user steer 2026-10-31 #3): don't stop or skip work for budget, pace or 'optional work dropped'; wait out real usage limits and resume where stopped; if a cap only the user can raise is ",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Standing rule (user steer 2026-10-31 #2): finish round 1 completely, in order: Mission 4's remaining work, then write and build Missions 5-8, then every Mission's critique, the drift check over all mi",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Standing rule (user steer 2026-10-31 #1): pause every long-horizon exam run now; keep the tier as built and run it again only at the end of the whole run, or for one capability when a free or Haiku ar",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "User's blanket approval (13:2xZ) applied: T-2246 (cold-read FAILs block only when they quote the clause they break), T-2247 (steer provenance) and T-2252 (guard fm mandate set/off as user-only) unbloc",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Forever loop round 24 brainstorm deferred to tomorrow: fm ideas bills the $40/day fm budget (fmideas.py:834 fmbudget.check) and today's spend is $42.36, so it would be refused; waiting out the limit, ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "l002 long tier result recorded as measured: foreman = plain on hidden checks (4/20 each), foreman 0/6 vs plain 1/6 true done, 2x wall time; no Foreman advantage shown on long goals, a top gap (capture",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Forever loop round 22: did the review (2 tasks captured: T-2322 pinned-literal check for long goals, T-2323 affected pre-check in fm ship); steps 2-4 (fm mission + fm ideas, which bill headless runs t",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Long tier l001's foreman 0/6 is an exam defect, not a score: hidden checks need private names the goal never states (fmwatch._shown, fmlong.KILL_T) and include tests from other tasks interleaved in th",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Deferred scout captures T-2301 (stack cards for other projects' deps) and T-2302 (upstream voltagent source moved) under gen-0's MUST (tokens into Foreman's code and tests) and NEVER (no sweeping outs",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Narrow the code freeze during the long-tier runs: lanes off the session path (T-2294 builder doc, T-2156 ci-watch, T-2279 doctor, T-2296 friction digest, T-2293 ui tests) merge now; T-2297 changes wha",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Long tier: run the foreman arm (6 goals, all four faults, jobs 3, production default model) before the plain arm, sequentially, so the first arm's real cost sizes the second within the $40/day cap; li",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "End-of-run exam: one fresh child-authored draw (seed 70, 18 per kind, all six languages, 6 held out per kind), the zero-token arms on all, then the foreman and plain session arms on the held-out split",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Mission 6's install-grant queue is the capability-miss captures (one durable task per missing tool, filed once ever by the hook, the tool rung and the tree-sitter rung) plus fm ask ID plugin at the en",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "While the Genesis tower waits on T-2221 (Mission 3's critique; the cold-read rule change is the user's steer-2 call, T-2246), build the gap map's Mission 5-8 gaps (#2 thinking, #5 tools, #6 proof, #7 ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Genesis self-start (gen-0 #13, reconciling T-2105): under full autonomy, a drained queue in a project with a track record and no tower starts Genesis by itself only when a standing goal or mandate hol",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Mission 4 as built: the goal ledger lives on fm mandate's record (one standing goal: text, clauses, until, usd, items with a guarded done-when and linked tasks); fm goal set/plan/item/link/show/verdic",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Standing rule from gen 2 on (steer #6): gen-0 never changes; Genesis may add capabilities, areas, surfaces, stages, lenses, sources and exam kinds to frame.md through fm genesis grow, each with eviden",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Standing rule from gen 2 on: one Mission per generation is a moonshot (ideas that fit no coverage.md cell and no gen-0 \u00a72 capability, judged only on novelty and value), with a far-domain lens, a front",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "fm goal: open work outside the goal is read from each brief's created time against the goal's set_at, not a goal: stamp on every new brief; only an explicit link or --goal stamps goal: N (nothing infe",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "fm find --rank's proof lift is up to 1.25x, capped at 0.98x the lowest unproven score of any more severe kind in the run, so a proven lead never passes one; the lift can shrink when a more severe lead",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Genesis gen 1's tower step waits on Mission 3's critique (T-2221, blocked: the cold read doesn't converge on it after 18 puts; proposal T-2246 goes to the user in the final report). Meanwhile the run ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "T-2059 dropped: fm next's second finished_lanes call reads a 60 s disk cache, and 5 timed runs each way showed no difference beyond noise (median 0.205 s before, 0.229 s after); an extra next_for para",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-31",
+   "text": "Mission 4's deepen rounds rerun now that the risk budget reset (fm ideas --rounds 1 --deepen 3 --seen the earlier ideas.md); new ideas merge into mission-finish.md through fm genesis put",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Cold reads converge by per-line acceptance (keyed on line text + charter hash), not by majority reads or diff-only reads: every line still gets a whole-file Haiku read; advisories print",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "fm prove's yes is the user's --yes-run, kept per tree path in Foreman state; no Foreman-home or author-email exception. A session that points FOREMAN_STATE at a list it wrote is set on running the cod",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule: the user's standing intent (templates/standing-intent.md, one source) sits under gen-0 and over every steer, for every project fm genesis runs on; every cold read's charter fences it, e",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "The Genesis line and the exam_scorecard MCP tool show the held-out scorecard to sessions: aggregate N/M pass on the shared line, per-capability counts and top gaps only through the tool",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule (user 2026-10-30: 'I approve all changes btw, you don't need to ask for my approval'): an L plan is approved on this yes once its brief is complete (criteria, steps, build vs reuse); nev",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "fm genesis select keeps reading Haiku-graded lines and names the model on its provisional line; fm exam scorecard (the done gate) skips them",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Until the end-of-run exam, selection between rewritten Seeds and mission templates uses the free arms, the Haiku smoke run, fm outcomes and cold fm second reads, and lineage.md marks each choice provi",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "The user's standing intent (on top of every earlier steer, under gen-0, for every project fm genesis runs on): a harness that figures out and does everything itself; his only jobs are gen-0's goals an",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule from gen 2 on: the Genesis frame may grow, never shrink, and gen-0 stays fixed as the constitution; a generation may add a capability as spec.md \u00a72+N, coverage areas, surfaces or stages,",
+   "later": {
+    "date": "2026-10-31",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule from gen 2 on: one Mission per generation is a moonshot (ideas that fit no coverage.md cell and no gen-0 \u00a72 capability, judged only on novelty and value), with a far-domain lens, a front",
+   "later": {
+    "date": "2026-10-31",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule: a capability whose free arm beats the session arm on the same scenarios is a top gap: fm exam scorecard prints it first (held out) and the next seed opens with it (train only)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule: every capability Genesis builds must be called by a real session path (session start, fm next, the drive, a skill or a hook), not only exist as a verb: fm genesis check's reach names a ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule: exam recall for #1 is reported per language and per bug type, with child-authored scenarios in languages and kinds fm find wasn't written for",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule for #1 Initiative: fm find stays the free first pass, and detection beyond it is never hand-written per language. In order: the repo's own and the ecosystem's standard tools found from m",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule: a capability whose free arm beats the session arm on the same scenarios is a top gap in the next Seed",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule: every capability Genesis builds must be called by a real session path (session start, fm next, the drive, a skill or a hook), not only exist as a verb a session might never run",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Until the end-of-run exam, selection between rewritten Seeds and mission templates uses the free arms, the Haiku smoke run, fm outcomes and cold fm second reads, and lineage.md marks each choice provi",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Long-horizon tier is the deciding end-of-run score for every capability except pure finders: replayed real repos rolled back to a past commit with the change that followed as the goal; planted faults ",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Defer the full foreman-vs-plain exam and the long-horizon tier to the end of the run, on the production model, once Missions 1-8 are built, then repeat after any fixes they trigger; a capability the H",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Testing cadence: every task keeps red-first unit tests, fm check and fm task finish audits; every generation runs only the zero-token arms (finders, oracle, empty) on all scenarios plus at most a Haik",
+   "later": {
+    "date": "2026-11-01",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule: Foreman isn't specific to Claude Code: install.sh, fm, fm doctor and the task loop work with no claude on PATH, and the docs call it the discipline layer for coding agents",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule: the site follows Genesis on its own: every tower change publishes site/genesis data to main (fm genesis live), so the page is always current",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Push grant: the user said \"feel free to push to main at any time without asking me!\"; each push still goes through fm ship, gated by the full suite, with a publish grant set on the one task and spent ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Every user steer becomes a standing rule plus an automatic check in the same task: fm decide --check stores it, fm genesis sweep runs it, fm doctor names a missing one",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Every tower file gets a cold Haiku fm second read when written, against gen-0's MUSTs and NEVERs and for metric-gaming; a failure goes back to the writer and nothing is filed",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Coverage must be real: a coverage.md cell counts only when it names a concrete capability grounded in a file or a real gap, with no phrasing reused across rows; a templated cell (the same words with t",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule: weakness-finding uses signals Foreman didn't author: outcome survival, cold reviews by a different model, foreman vs plain on the same held-out scenarios; exam scenarios come from a sep",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis standing rule: coverage by grid: coverage.md rows are the 13 capabilities plus every harness area, columns are surfaces by stages; every cell holds a grounded idea, an existing feature path or",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis standing rule: no idea is killed for ambition: a failed spike gets 2 or more different approaches, then goes to not-yet.md with its blocker; every Seed retries items a new capability may unblo",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Claude Code runs on claude-opus-5-5[1m] with CLAUDE_CODE_AUTO_COMPACT_WINDOW 1000000 (was 200k from T-1796), so the 1M window is usable; compaction still at 70%",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Push grant (the user's own words, after gen-0): \"feel free to push to main at any time without asking me!\" \u2014 each push still goes through fm ship, gated by the full suite, with a publish grant set on ",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2166: 'exam entry' in steer 2 means spec.md; exam.jsonl grade lines stay exempt",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Recommendation: keep the free finders arm as the zero-token per-generation check for the find capabilities; on s0-001 it found 90/108 (held out 30/36) with 0 false alarms, against the 0/108 baseline; ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Every user steer becomes a standing rule plus an automatic check in the same task, so the same class of problem never needs a second steer",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Every tower file (seed, mission, critique, coverage, not-yet, exam entry) gets a cold Haiku fm second read when written, checked against gen-0's MUSTs and NEVERs and for metric-gaming (filler, templat",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Until the end-of-run exam, selection between rewritten Seeds and mission templates uses the free arms, the Haiku smoke run, fm outcomes and cold fm second reads, and lineage.md marks each choice provi",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Long-horizon tier is the deciding end-of-run score for every capability except pure finders: replayed real repos (Foreman's own history included) rolled back to a past commit with the multi-task chang",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Coverage must be real: a coverage.md cell counts only when it names a concrete capability grounded in a file or a real gap with no phrasing reused across rows; templated cells are reset to empty and a",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Defer the full foreman-vs-plain exam and the long-horizon tier to the end of the run, on the production model, once Missions 1-8 are built, then repeat after any fixes they trigger; exception: a capab",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Testing cadence: every task keeps red-first unit tests, fm check and fm task finish audits; every generation runs only the zero-token deterministic arms (finders, oracle, empty) on all scenarios plus ",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2151: no clearing of the recorded clause list on later prompts; T-2146's hold-once-per-clause already bounds a stale list to one hold per clause, and clearing on a one-clause prompt would drop the g",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "#4 exam keys reuse the defect machinery: the child writes one key item (its gap), the goal text is the template's, resume's done items are vuln and docs",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2138 clauses gate staleness: a one-day window, not the current turn's start",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Mission 4 brainstorm ran without --deepen: the spent risk budget drops optional rounds; rerun the deepen rounds after the reset and merge into mission-finish.md",
+   "later": {
+    "date": "2026-10-31",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Mission 4: the goal ledger grows fm mandate (one standing goal per project: text, clauses, until, usd, plus contents items linked to tasks and a verdict); fm mandate stays an alias",
+   "later": {
+    "date": "2026-10-31",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Foreman Code reaches fm find through its run tool",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Home's 5-open scout cap is shared by doctor items routed from every project",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "A dry scout run doesn't mark which findings would go to the home inbox",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Scout's home inbox comes from find_project walking up from Foreman's home, like every other caller",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Proven kinds (dep, docs, secret) file without a cold re-run; scout never refiles a regression",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Ownership = git user.email authored one of the last 50 commits",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Doctor faults from user projects go to Foreman's own inbox as source scout, deduped by the self project's scout_keys",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2122/T-2123 (L) wait for tomorrow's risk-budget reset; M/S work today",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "fm find stays read-only: the failing-gates finder and each candidate's probe move to the prove gate (T-2122), which already runs repo code under a stripped env",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2112: #13's draft kinds live in fmgenesis (fm genesis exam) reusing fmexam.draw/render and cover; G-tower is a 'genesis' session arm on fmexam's defect scenarios",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2112: G-sweep's 'a tier on every brief' is read as 'no unmapped \u00a72 capability' (no briefs exist at draft time; an unmapped capability can't be examined)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Exam baseline stays: the finders arm still scores 0/108; T-2102 only added closed-scenario ids and a gen stamp, no finder changed",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2105: the breaker stops after three reverted generations in a row, not two",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2105: no rules routing line for /foreman:genesis; the skill is user-only",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2105: Genesis offers itself through fm scout (probe_genesis, once ever, \u226510 done tasks, no tower, nothing queued) as a confirm task, not a new fm genesis propose verb",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Drift freshness stays mtime-based, with drift.md dated at the check's start, not a content hash: the tower is local git-ignored state, so a hash only adds format and fixture churn; a forged drift.md i",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis sweep counts briefs (planned/active/verifying/blocked), not captured inbox items, as the tasks gen-0 \u00a77 means; the active task running the sweep is exempt",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis drift skips the paid cold read when the deterministic check already found drift: one read per clean candidate",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis drift counts a cold-read DRIFT line only when a seed line holds the quote, and writes the seed's line, never the reader's words",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis drift skips MUST/NEVER lines inside a fenced block: a fenced intake block is a brief, whose MUSTs bind one task, not the tower",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis select: gen N's bar is gen N-1's exam line even when gen N-1's text was reverted",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis select: a tie on train scenarios closed reverts to the parent whatever the cost (gen-0 \u00a73.6 verbatim: stays only if it closed more); cost per verified result is reported in lineage, not used a",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis selection (fm genesis select) scores the exam's train split, never the held-out third; held-out only grades a capability done",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Exam baseline: the finders arm (fmdocs.scan + fmsecrets, no session) scores 0/108 on s0-001; recorded as is, not tuned to score",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis live: one publish grant opens data-only pushes until fm genesis live off",
+   "later": null,
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Turn on fm genesis live for the Foreman repo: tower changes push site/genesis data to origin main automatically",
+   "later": null,
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2080: push the Genesis export to main on the user's explicit ask ('can you push what you have in the genesis stuff to main?'); grant spent on this task's ship",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Standing rule (user steer): weakness-finding uses signals Foreman didn't author \u2014 outcome survival (fm outcomes: reverts, re-fixes, corrections within 30 days), cold reviews by a different model (fm s",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis standing rule: coverage by grid \u2014 coverage.md (fm genesis put): rows = the 13 capabilities plus every harness/plugin area (onboarding, UX, docs, ecosystem, multi-user, observability, security,",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis standing rule: no idea is killed for ambition \u2014 a failed spike gets \u22652 genuinely different approaches, then goes to not-yet.md (fm genesis put) with its blocker; every Seed re-reads not-yet.md",
+   "later": {
+    "date": "2026-10-30",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2079: no spike lane; the unknown (six renderers from one spec) is proven by the red tests themselves in step 1-2",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2079 exam design: one app API rendered in six languages with defect variants, keys outside the repo, hash holdout one in three; finders arm free, claude arm budgeted",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "T-2076's push and any later push of Genesis work wait for a publish grant: they go in the final report",
+   "later": null,
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-10-30",
+   "text": "Genesis setup: autonomy full, drive on, loop on, contract off, lane max 6, mandate until 2026-11-13; T-2077 is the umbrella; gen-0 saved byte-identical and read-only via the new fm genesis verb (T-207",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-29",
+   "text": "T-2040 plan self-approved: pure CSS scroll-driven motion plus existing IO, build.py fills counts, no new dependencies",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-29",
+   "text": "T-2052 L plan self-approved under the user's standing 'don't ask my permission on anything' while autonomy is stepped down by the risk budget; docs-only change, revertable",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-29",
+   "text": "T-2036 dropped: keep the once-per-wait-set nudge even when the reply names the job",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-29",
+   "text": "Round 6 runs lean: review ideas only, no fm ideas fan-out",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-29",
+   "text": "Deferred T-0863/0864/0866/0867/0869 a month: each waits on evidence nobody has produced yet",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-29",
+   "text": "Keep the drive offering a new side task each Stop even when one was ignored",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-28",
+   "text": "DESIGN.md is read by default as Foreman's own record of the look; fm looks history reads another path only when it is named",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-28",
+   "text": "T-1626: the foreman-ui pane keeps its own timers",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-28",
+   "text": "T-1838 step 3: the per-turn hint still does not name the top routed book",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-28",
+   "text": "T-1803 step 3: the next-step hint does not name the top routed book",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-28",
+   "text": "Self-approve T-1803 (L) despite the risk-budget step-down",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-28",
+   "text": "T-1822: route map lives in test_plugin_parity, not fmcodetui \u2014 nothing at runtime reads it and the help view shows terminal lines (CLI), not Claude Code routes",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-28",
+   "text": "T-1798 brainstorm: build T-1818 now; capture cache-miss costs, panic stop, plugin parity test, redo-from-drop (T-1820\u2013T-1823)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-27",
+   "text": "Start T-1800 at the 02:00 weekly reset, not now",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1670: left out the recorded-time clock, the fm page timeline and forked-skill QA",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1615: the desk card is a file, never a listener",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1556: left out swipe-to-approve and margin sketches",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1555: fm marks is the Claude Code surface; no pane card or /foreman: command",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1549: leave out a demo teleprompter pane, a guard near-miss gallery and per-dependency decision cards",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1547: leave out a process cast, a client packet, a receipts GitHub Action and a cold-reader model test",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1546: leave out the isometric layout builder, golden frames against a terminal-emulator oracle, springy draggable panels and a wear-in UI",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1538: leave out nudge keys on a live dev server, a gamut-cube picker, a nightly design residency and a weekly design PR",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1536: leave out the blind multi-runner taste panel",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1530 (L) self-approved after self-critique: offline-first 3D checks in fm scene; browser soak and frame budget split to T-1788",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1525: leave out 'borrow from' analogy cards and live exemplars on the field guide",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1787: the ablation and equal-spend duels are built and tested with the fake claude; their paid runs wait for usage",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1266 deferred to 2026-10-28: Foreman's measured small-task overhead is about 1 cent a task (+4% and +13% on sonnet suites, level on haiku); a lean profile needs a paid duel to show it keeps the pass",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1265: fm ideas caches the pack as the lens children's shared system text, with a warm first child, instead of fork subagents",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1264: the paid three-way duel (plain, the one-file rules, full Foreman) waits for usage; the arm is built and tested with the fake claude",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1259: build the compaction storm and the window sweep, tested with the bench's fakes; the measured sweep (real Haiku sessions) waits until weekly usage is back on pace",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1650: build the trading cards now (fm page looks --cards); the shader sketchbook and the site gallery become their own items",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1623: the five UI contract rules are written down from what the UI playbooks already require: motion (reduced motion as its own path), contrast (proven, never colour alone), keyboard (every action, ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1779 correction: --all-projects is captured as its own item, not covered by fm night",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1779: 'a stop line' read as the s key; --all-projects left out",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "Gates behind volt's 2-hour cargo test lock: stop our own queued fm check runs and land the drafted tasks first, then one gate covers all of them before the push",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "A broken code.toml: fm code config falls back to defaults and names the line; runs keep refusing it",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "fm code runners --ping is its own flag, not part of --check",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "fm code's spend counts toward fm budget's day cap like any other Foreman spend",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "Reverse the backlog pause: keep working the feature inbox in the main thread (no subagents), pausing only near 90% weekly usage",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "Pause the feature backlog (112 FEATURE items: 77 M, 34 S, 1 L) until weekly usage is back on pace; every FIX, SECURITY, PERFORMANCE and CLEAN item is done, gates are green and main is pushed",
+   "later": {
+    "date": "2026-10-23",
+    "how": "reversed"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "T-1314 (a half-block canvas for the token and time charts) is superseded, not built",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "Usage pace: subagents paused at 75% weekly usage with 27% of the week gone; work continues in the main thread, security items first (T-1751, T-1749), then small fixes; no new builders or reviewers unt",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "fm settings chords, not keys, for the key-press probe",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "Cause: hooks handed Claude the exact fm command each turn, so it never loaded the skill describing the step; descriptions used Foreman jargon or user words a long autonomous run never contains; the li",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-23",
+   "text": "Edit the main checkout while a background fm check runs under heavy builder load",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-10-22",
+   "text": "Skill listing cap 2,000 \u2192 2,200 characters for the four job skills (ui-design, debug-test, release, research)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  }
+ ],
  "bench": {
   "SessionStart": {
    "p50": 55.9,
