@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The exam's tool-build and tool-find grading no longer marks a correct tool as failed when its file is briefly busy. Grading runs on several threads, and running a file that another thread's process still has open for writing fails with "text file busy". That exec is now retried, which removes a flaky failure in the full test run.
 - Foreman now notices when an installed `fm night` timer stops firing or its runs fail. It reads systemd's own record of each timer's last trigger and each run's result. `fm doctor` names the timer and the `journalctl` command to read; with nothing wrong, it says how many timers are firing. The Stop hook's background sweep caches the finding, so the next session's Watch line shows it with no one asking. `fm night --install` now runs the tick once and reports how that first run went.
 - `fm task step ID remove 2` (or `delete`, or `del`) now removes step 2. Before, it added a step named "remove" and quietly dropped the number. Two bare words where step text belongs, such as `fm task step ID fix it`, are now refused rather than half-added; quote the text instead.
 - `fm genesis step` no longer stalls a generation on a Mission task that was deferred with a revisit date (`fm task defer --until`). The task is carried: the critique step names it and asks why it waits. A task deferred without a date, or still planned, still holds the build stage.

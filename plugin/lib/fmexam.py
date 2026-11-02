@@ -7,6 +7,7 @@ import concurrent.futures
 import contextlib
 import datetime
 import difflib
+import errno
 import glob
 import hashlib
 import json
@@ -1967,11 +1968,17 @@ def _tool_out(tool, cwd, text):
     """The tool's stdout on text (run directly when executable, else by sh), or None when it fails or hangs."""
     import fmbench  # model-written code: no forge, cloud or registry credentials reach it
     env = dict({k: v for k, v in os.environ.items() if not fmbench.CREDENTIALS.match(k)}, **ENV)
-    try:
-        r = subprocess.run([tool] if os.access(tool, os.X_OK) else ["sh", tool], cwd=cwd, input=text, env=env,
-                           capture_output=True, text=True, timeout=EXEC_T)
-    except (subprocess.TimeoutExpired, OSError):
-        return None
+    for i in range(3):  # T-2543: a file another thread's fork still holds open for writing can't be exec'd (ETXTBSY)
+        try:
+            r = subprocess.run([tool] if os.access(tool, os.X_OK) else ["sh", tool], cwd=cwd, input=text, env=env,
+                               capture_output=True, text=True, timeout=EXEC_T)
+            break
+        except OSError as e:
+            if e.errno != errno.ETXTBSY or i == 2:
+                return None
+            time.sleep(0.2)
+        except subprocess.TimeoutExpired:
+            return None
     return r.stdout.replace("\r\n", "\n") if not r.returncode else None
 
 
