@@ -807,7 +807,7 @@ BLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)  # a mission's intake 
 # a mission's 'Task: T-2093 (brief 1), …' paragraph: the briefs intaken so far. T-2213: its wrapped lines too, up to a
 # blank line, a heading or a code fence (an intake block right under it names its own #T-ids)
 TASKS = re.compile(r"^Task:(.*(?:\n(?!```|#+ |\s*$).+)*)", re.M)
-IDEAS = "fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen"
+IDEAS = "fm ideas --rounds 4 --deepen 3 --falsify --crossbreed --seen-latest 6"  # T-2559: no typed --seen paths
 
 
 def step(p):

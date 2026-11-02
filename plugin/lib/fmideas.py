@@ -844,6 +844,9 @@ def cmd_ideas(args):
         print(f"fm: warning: the pack is {len(pack.split())} words; every lens and round pays for it (aim for "
               f"≤ {PACK_WORDS})", file=sys.stderr)
     results, titles, seen, by_round, rounds, lens_yield = [], [], [], [], 0, dict.fromkeys(lenses, 0)
+    if getattr(args, "seen_latest", None):  # T-2559: the newest earlier runs that left an ideas.md, this one excluded
+        runs = sorted(glob.glob(os.path.join(p.dir, "research", "brainstorm-*", "ideas.md")), reverse=True)
+        args.seen = (args.seen or []) + [x for x in runs if os.path.dirname(x) != out_dir][:max(0, args.seen_latest)]
     for path in args.seen or []:  # earlier brainstorms' ideas.md: don't repeat them, go past them (recursion)
         try:
             with open(path, encoding="utf-8") as f:

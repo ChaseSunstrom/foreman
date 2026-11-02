@@ -7905,6 +7905,7 @@ def _build_parser(only=None):
     s.add_argument("--rounds", type=int, default=1, help="super brainstorm: each round builds on every idea so far")
     s.add_argument("--dry", type=int, default=3, help="stop when a later round adds fewer new ideas than this")
     s.add_argument("--seen", action="append", help="an earlier ideas.md whose ideas this run must go past (repeatable)")
+    s.add_argument("--seen-latest", type=int, metavar="N", help="T-2559: the newest N earlier runs' ideas.md, as if each were a --seen (no typed paths)")
     s.add_argument("--deepen", type=int, default=0, help="then a yes-and round for each of the K biggest idea categories")
     s.add_argument("--falsify", action="store_true", help="one more child: the quickest kill test for each idea (T-0606)")
     s.add_argument("--crossbreed", action="store_true", help="one more child: the top ideas combined (T-0628)")

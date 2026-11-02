@@ -174,6 +174,23 @@ class Ideas(Stubbed):
         self.assertIn("- Cache the parser", stdin)
         self.assertNotIn("- user value: 2", stdin, "the per-lens tally isn't an idea")
 
+    def test_seen_latest_reads_the_newest_earlier_runs_without_typed_paths(self):  # T-2559
+        p = c.find_project(self.repo, create=True)
+        idea = "# Ideas by round\n\n## Round 1\n- {}\n"
+        for stamp, text in (("20260101-000000", "An old idea nobody repeats"), ("20260102-000000", "Idea for user value"),
+                            ("20260103-000000", None)):  # the newest run has no ideas.md (it failed): skipped
+            d = os.path.join(p.dir, "research", f"brainstorm-{stamp}")
+            os.makedirs(d, exist_ok=True)
+            if text:
+                with open(os.path.join(d, "ideas.md"), "w") as f:
+                    f.write(idea.format(text))
+        res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "user value", "--lens", "bold bets",
+                                 "--seen-latest", "1", "--json", env=self.env).stdout)
+        self.assertEqual(res["ideas"], 1, "the newest run with ideas (user value) was seen; only bold bets is new")
+        stdin = self.calls()[0]["stdin"]
+        self.assertIn("Idea for user value", stdin)
+        self.assertNotIn("An old idea nobody repeats", stdin, "only the newest 1")
+
     def test_ideas_name_the_finished_task_they_resemble(self):
         # T-0208: most ideas in a dry run were already built; say which before the main thread greps for it
         tid = json.loads(self.fm("task", "new", "Idea for user value", "--type", "FEATURE", "--tier", "S", "--ac",
