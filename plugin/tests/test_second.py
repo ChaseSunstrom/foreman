@@ -19,7 +19,7 @@ if "plan" in system.lower():
     text = ("## Objections\n- HIGH: the cache has no invalidation step — stale tokens survive logout\n"
             "- LOW: step 3 duplicates step 2\nVerdict: revise — add invalidation before building")
 else:
-    text = "## Missed\n- export the report as CSV — asked twice, no task or answer followed\n"
+    text = os.environ.get("STUB_MISSED") or "## Missed\n- export the report as CSV — asked twice, no task or answer followed\n"
 print(json.dumps({"result": text, "total_cost_usd": 0.01}))
 '''
 
@@ -342,6 +342,21 @@ class Session(_Stubbed):
         self.assertNotIn(secret, self.calls()[0]["stdin"])
         brief = self.fm("task", "show", "T-0001").stdout
         self.assertIn("explore: true", brief)
+
+    def test_a_credential_line_is_no_task_and_closed_work_is_shown(self):
+        # T-2624: "try these: KEY=…" became an inbox task (redacted, still noise), and an ask a closed task already
+        # settled read as unanswered because the child saw only open work
+        self.transcript("old-session", ["try these: MODELS_API_KEY=sk-ant-api03-" + "B" * 40,  # pragma: allowlist secret
+                                        "export the report as CSV please"])
+        tid = json.loads(self.fm("task", "new", "Drop the print-timer flag", "--type", "FIX", "--tier", "S", "--json").stdout)["id"]
+        self.fm("task", "drop", tid, "not needed")
+        missed = ("## Missed\n- try these: MODELS_API_KEY=[REDACTED] — no follow-up\n"
+                  "- export the report as CSV — asked, not done\n")
+        out = self.fm("second", "session", env=dict(self.env, FOREMAN_SESSION_ID="new-session",
+                                                    STUB_MISSED=missed)).stdout
+        self.assertIn("export the report as CSV", out)
+        self.assertNotIn("MODELS_API_KEY", self.fm("state").stdout)
+        self.assertIn("Drop the print-timer flag", self.calls()[0]["stdin"])
 
     def test_a_failed_review_is_recorded_and_claims_the_day(self):
         self.transcript("old-session", ["export the report as CSV please"])
