@@ -2229,8 +2229,9 @@ def confirm(p, n, agent="foreman"):
         _file(p, f"gen-{n}/confirm.md", f"# Confirm\n\nGen: {n}\nVerdict: {mark}\nRun: {shown}\nAgent: {agent}\n"
                                         f"Model: {model}\nTrain closed: {counts}\nReason: {why}\n")
         if not have:
-            line = (f"- {mark}: production-model exam run {shown} (agent {agent}, model {model}): train closed "
-                    f"{counts}; select's comparison says {verdict}: {why}")
+            line = (f"- {mark}: production-model exam run {shown} (agent {agent}, model {model}): gen {n} closed "
+                    f"{res['closed']} train" + (f" vs gen {n - 1}'s {res['parent']}" if res["parent"] is not None else "")
+                    + f"; select's comparison says {verdict}: {why}")  # T-2691: whose grade is whose
             new = re.sub(r"^- provisional:.*$", lambda _: line, body, count=1, flags=re.M)
             if mark == "reversed":  # the choice lost: the next seed builds on what production kept
                 keep = f"gen-{n}" if kind.group(1) == "reverted" else (_base(old, n - 1) or f"gen-{n - 1}")
@@ -2294,7 +2295,7 @@ def _select(p, n, agent):
     lineage = _doc(d, "lineage.md")
     base = f"gen-{n}" if verdict != "revert" else (_base(lineage, n - 1) or f"gen-{n - 1}")
     sec = (f"## gen-{n}\n- {dict(keep='kept', revert='reverted', baseline='baseline')[verdict]}: {why}\n"
-           f"- run {shown} (agent {agent}): train closed {a}" + (f" vs parent {b}" if mom else "")
+           f"- run {shown} (agent {agent}): gen {n} closed {a} train" + (f" vs gen {n - 1}'s {b}" if mom else "")  # T-2691: whose grade is whose
            + f"; reopened: {', '.join(map(str, reopened)) or 'none'}; held out never used; cost {res['cost']['gen']}"
            + (f" vs {res['cost']['parent']}" if mom else "")
            + f"\n- provisional: until the end-of-run exam on the production model confirms or reverses it; rests on exam "

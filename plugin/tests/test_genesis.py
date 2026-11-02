@@ -1662,6 +1662,9 @@ class GenesisSelect(ForemanTestCase):
             self.assertRegex(text, r"(?m)^- provisional: until the end-of-run exam .*exam run r1 only \(1 graded line "
                                    r"from foreman, train only; no other signal recorded\)")  # T-2171: steer 1 rule 4
             self.assertEqual(fmgenesis.check(self.p)["lineage"]["problems"], [])
+            # T-2691: the line names whose grade is whose: a later gen graded on the same run can't be mistaken for it
+            self.assertIn(f"- run r1 (agent foreman): gen 2 closed {len(r['closed']) if isinstance(r['closed'], list) else r['closed']}"
+                          f" train vs gen 1's 2", text)
         self.assertIn("genesis select gen-2: keep", self.decisions())
 
     def test_a_line_answered_only_on_held_out_never_decides(self):
