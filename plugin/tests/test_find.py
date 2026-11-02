@@ -481,7 +481,10 @@ class FindProve(ForemanTestCase):
         receipt = os.path.join(p.dir, "research", "prove-receipt.md")
         self.assertIn(receipt, out.stdout)
         with open(receipt) as f:
-            self.assertRegex(f.read(), r"nothing proven .*: fm find reported \d+ finding\(s\), \d+ held back, \d+ tried")
+            text = f.read()
+        self.assertRegex(text, r"nothing proven .*: fm find reported \d+ finding\(s\), \d+ held back, \d+ tried")
+        self.assertTrue(text.strip().splitlines()[-1].startswith("Does not prove: that the code is right"), text)  # T-2399
+        self.assertTrue(out.stdout.strip().splitlines()[-1].startswith("Does not prove: that the code is right"))
         odd = os.path.join(self.repo, "a\nb")
         write(odd, {"app.py": APP, "tests/test_app.py": SUITE})
         self.assertEqual(self.fm("prove", odd, "--capture", "1", check=False).returncode, 2)  # it would split a criterion

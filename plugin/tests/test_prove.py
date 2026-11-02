@@ -1051,6 +1051,12 @@ class DocsProof(ForemanTestCase):
     def by(self, out):
         return {(c["kind"], c["detail"]): c["verdict"] for c in out["claims"]}
 
+    def test_the_text_ends_with_what_it_does_not_prove_and_json_stays_json(self):  # T-2399
+        self.tree("Run `mycli --help`.\n")
+        text = self.fm("prove", "--docs", check=False).stdout
+        self.assertTrue(text.strip().splitlines()[-1].startswith("Does not prove: that the prose is right"), text)
+        self.assertIsInstance(self.prove()[1], dict)
+
     def test_docs_proof_static_a_flag_or_subcommand_no_file_has_fails_and_text_in_a_file_is_unproven(self):
         self.tree("Use `mycli build --out x`, `mycli build --gone` and `mycli frobnicate`.\n"
                   "See `src/missing.py` and `src/mycli.py`.\n")
