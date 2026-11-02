@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- When the cold rival reads a request differently from the plan, the door gate now treats the task as ambiguous. A one-way step in it parks for you instead of running as a costly decision, even if the request names the step. Before, that signal was recorded but nothing read it.
 - The base rate that stated confidences are compared against now counts "held" the same way bets are scored: only a revert or a later fix (or a failed first finish) is a miss. A correction or a smoke-test failure used to count against the base rate but not against the bet, which made the base rate look worse than it was.
 - The night tick now records how many bets it settled: its printed line says "N bet(s) settled", and the ledger event it writes carries the count, so settling with no session can be checked rather than assumed.
 - Foreman's known-fix store no longer learns a no-op as a fix. A failed `mytool --check` followed by `touch mytool` (or `mkdir`, `test`, `true`, `:`) used to be stored as "run `touch mytool` instead"; now only a real retry pairs.

@@ -265,6 +265,22 @@ class DoorPark(DoorBase):
         self.assertEqual(c.find_brief(self.p, tid).status, "active")
         self.assertIn("[costly]", self.fm("decide", "--review").stdout)
 
+    def test_a_rival_split_makes_a_named_step_ambiguous_so_it_parks(self):  # T-2424: brief 8 reads rival_split
+        self.data(text="x" * 400)
+        one = ("Reading 1: delete the stale data/old.csv. There is no other honest reading, because the request names "
+               "the file.")
+        plain = self.brief("delete data/old.csv", raw="Delete data/old.csv, it is stale", tier="M", interp=one)
+        self.fm("focus", plain, env={"FM_DOOR_CAP": "100"})
+        self.assertIsNone(self.waits(plain), "one written reading, no split: it runs as a costly decision")
+        self.fm("task", "drop", plain, "next")
+        self.data(text="x" * 400)
+        tid = self.brief("delete data/old.csv", raw="Delete data/old.csv, it is stale", tier="M", interp=one)
+        b = c.find_brief(self.p, tid)
+        b.meta["rival_split"] = True
+        c.save_brief(self.p, b)
+        self.fm("focus", tid, check=False, env={"FM_DOOR_CAP": "100"})
+        self.assertEqual(self.waits(tid), "one-way and ambiguous: step 1: delete data/old.csv")
+
     def test_a_path_outside_the_repo_cannot_be_snapshotted(self):
         outside = os.path.join(self.tmp, "elsewhere.dat")
         with open(outside, "w") as f:

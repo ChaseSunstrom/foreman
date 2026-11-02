@@ -317,8 +317,10 @@ def _named(raw, tok):
 
 
 def _ambiguous(b):
-    """M/L: the Interpretation holds two or more distinct readings (one ruled out with a reason doesn't count)."""
-    return b.tier in ("M", "L") and c._distinct(c._split_options(b.section("Interpretation"), bullets=False)) >= 2
+    """M/L: the Interpretation holds two or more distinct readings (one ruled out with a reason doesn't count), or the
+    cold rival read the request differently (rival_split, fmsecond; T-2424: T-2341's brief 8 reads it here)."""
+    return b.tier in ("M", "L") and (bool(b.meta.get("rival_split"))
+                                     or c._distinct(c._split_options(b.section("Interpretation"), bullets=False)) >= 2)
 
 
 def _decide(p, tid, text, why, rejected, kind, confidence=None):
