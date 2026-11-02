@@ -6,6 +6,8 @@ import re
 import subprocess
 import sys
 import os
+import unittest
+from unittest import mock
 
 from helpers import ForemanTestCase
 
@@ -58,3 +60,15 @@ class ClockWindows(ForemanTestCase):
         for mod in ("fmoutcomes.py", "fmcost.py"):
             with open(os.path.join(LIB, mod), encoding="utf-8") as f:
                 self.assertNotRegex(f.read(), r"datetime\.now\(")
+
+
+class PinnedClockDoctor(unittest.TestCase):
+    """T-2645 review: FOREMAN_NOW left set outside a test pins every timestamp; fm doctor says so."""
+
+    def test_doctor_warns_while_the_clock_is_pinned(self):
+        import fmdoctor
+        with mock.patch.dict(os.environ, {"FOREMAN_NOW": "2026-01-01T00:00:00Z"}):
+            self.assertEqual(fmdoctor.check_pinned_clock().status, "WARN")
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("FOREMAN_NOW", None)
+            self.assertEqual(fmdoctor.check_pinned_clock().status, "PASS")

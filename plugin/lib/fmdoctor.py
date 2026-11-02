@@ -1482,6 +1482,13 @@ def check_state_dir(home, state):
                   f"every process there).{tmp} fm doctor --restore-state moves it back once {default} is writable")
 
 
+def check_pinned_clock():
+    """T-2645: FOREMAN_NOW is for tests; set anywhere else it pins every timestamp Foreman writes and every window."""
+    v = os.environ.get("FOREMAN_NOW")
+    return Result("clock", "WARN", f"FOREMAN_NOW={v} pins every timestamp Foreman writes and every window it reads: "
+                  "unset it outside tests") if v else Result("clock", "PASS", "the system clock")
+
+
 def _fs_type(path):
     """The filesystem type path is on, from /proc/mounts (longest mount point that holds it); 'unknown' elsewhere."""
     path, best = os.path.realpath(path), ("", "unknown")
@@ -2570,7 +2577,7 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(home, ".claude-plugin", "marketplace.json"),
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
-               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_lock_probe(c.state_dir()), check_disk(), check_env(settings, manifest),
+               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_pinned_clock(), check_lock_probe(c.state_dir()), check_disk(), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
                check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
                check_invisible_text(instruction_files()), check_rule_conflicts(rule_files(c.git_root(os.getcwd())))]
