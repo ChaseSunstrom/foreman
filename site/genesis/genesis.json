@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T07:19:53Z",
- "rev": "699a3aea",
+ "updated": "2026-11-02T07:30:14Z",
+ "rev": "6f5ee52d",
  "capabilities": [
   {
    "n": 1,
@@ -2556,12 +2556,12 @@
       {
        "id": "T-2563",
        "title": "Anergy for permission prompts: time each prompt to its PostToolUse and report reflex-approved command classes (spike)",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
-       "current": "red tests (test_anergy): paired prompts give latencies; 5 reflex prompts of one read class are reported with a rule; a destructive class never is; an unpaired prompt is counted, not timed"
+       "done": 1,
+       "current": "fmanergy: record on PermissionRequest (all prompts, not only fm ask), close on PostToolUse by tool_use_id, report; fmhooks wires both; fmdoctor advisory row"
       },
       {
        "id": "T-0617",
@@ -20299,18 +20299,18 @@
  },
  "not_yet": 5,
  "not_yet_open": 0,
- "unproven": 1048,
+ "unproven": 1045,
  "unproven_kinds": {
-  "meaning": 572,
+  "meaning": 570,
   "research-uncited": 29,
-  "typed": 29,
+  "typed": 27,
   "red": 64,
   "perf-typed": 50,
   "docs": 596,
   "ui-unshot": 52,
-  "tui-unshot": 51,
+  "tui-unshot": 50,
   "data": 4,
-  "infra": 7,
+  "infra": 8,
   "perf-noise": 1
  },
  "next": {
