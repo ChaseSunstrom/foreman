@@ -136,6 +136,15 @@ def train(p, args):
                 lines.append(f"#{n} red re-test, train stopped: {why}")
                 code = 1
                 break
+            files = [f for f in _git(p.root, "diff", "--name-only", "--no-renames", "-z",
+                                     f"origin/{x['baseRefName']}...{head}").stdout.split("\0") if f]
+            import fmselfgate  # T-2430: the gate fm lane merge and fm serve run, on the head the merge is pinned to
+            held = fmselfgate.gate(p, b, p.root, head, files)
+            if held:
+                lines.append(f"#{n} held by the self-change gate, train stopped: {c.fit(c.plain(held[0]), 160)} "
+                             f"(fm ask {b.id} core, then run the train again)")
+                code = 1
+                break
             _gh(p, "pr", "merge", str(n), "--merge", "--match-head-commit", head)  # a push since the re-test refuses
             merged.append(n)
             lines.append(f"#{n} re-tested green and merged")

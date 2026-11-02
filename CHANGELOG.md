@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm pr train` now runs the self-change gate on each pull request before merging it, as `fm lane merge` and `fm serve` already do. A PR that changes Foreman's own `plugin/` and would weaken the guard, slow a hook or grow the footprint stops the train; your yes to `fm ask ID core` lets it through.
 - `fm task finish` now refuses to close, and commits nothing, while the newest full `fm check` on the same working tree failed. It names the failing gate and tests. A newer passing run on that tree lets the close go ahead, and so does any edit since, which changes the tree; the close's own checks then judge.
 - A task always gets a start point, so `fm task finish --commit` can tell its files apart. A git lookup that times out at focus is retried with a longer wait, and a timeout at finish no longer reads as "no start point". A task that still has none gets HEAD at its first evidence, with a log line saying so.
 - `fm goal plan`'s checklist of past misses now also names finished tasks that a later fix or a revert touched (for example "T-X was fixed later by T-Y"), from `fm outcomes`. Before, it only saw tasks reopened within 7 days, which missed every follow-up fix filed as new work.

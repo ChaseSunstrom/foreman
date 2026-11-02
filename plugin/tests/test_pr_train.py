@@ -77,7 +77,7 @@ class PrTrain(ForemanTestCase):
         self.assertFalse(any("already fixed" in s for s in added))
 
     # a bare origin whose pull/N/head refs hold each PR; PR n passes the gate unless n is in `red`
-    def origin(self, red=()):
+    def origin(self, red=(), plugin=()):
         bare = os.path.join(self.tmp, "origin.git")
         subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
         g = lambda *a: subprocess.run(["git", "-C", self.repo, *a], check=True, capture_output=True)
@@ -89,6 +89,10 @@ class PrTrain(ForemanTestCase):
                 with open(os.path.join(self.repo, "ok.txt"), "w") as f:
                     f.write("ok")
                 g("add", "ok.txt")
+                if n in plugin:  # T-2430: this PR also changes Foreman's own plugin/
+                    with open(os.path.join(self.repo, "plugin", "lib", "x.py"), "w") as f:
+                        f.write("x = 1\n")
+                    g("add", "plugin/lib/x.py")
                 g("commit", "-qm", f"pr{n}")
             g("push", "-q", "origin", f"HEAD:refs/pull/{n}/head")
             g("checkout", "-q", "main")
@@ -109,6 +113,21 @@ class PrTrain(ForemanTestCase):
         self.gh_state(prs=[pr(3), pr(2, decision="CHANGES_REQUESTED"), pr(1), pr(4, checks="FAILURE")])
         r = self.fm("pr", "train", env=self.env)
         self.assertEqual(self.merged(), ["1", "3"], r.stdout + r.stderr)
+
+    def test_a_pr_that_changes_foreman_s_plugin_stops_at_the_self_change_gate(self):  # T-2430
+        os.makedirs(os.path.join(self.repo, "plugin", "lib"), exist_ok=True)  # the repo looks like Foreman's
+        with open(os.path.join(self.repo, "plugin", "lib", "fmguard.py"), "w") as f:
+            f.write("# guard\n")
+        for a in (("add", "plugin/lib/fmguard.py"), ("-c", "user.name=t", "-c", "user.email=t@t", "-c",
+                                                     "commit.gpgsign=false", "commit", "-qm", "guard")):
+            subprocess.run(["git", "-C", self.repo, *a], check=True, capture_output=True)
+        self.origin(plugin=(2,))
+        self.grant()
+        self.gh_state(prs=[pr(1), pr(2), pr(3)])
+        r = self.fm("pr", "train", env=self.env, check=False)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(self.merged(), ["1"], r.stdout + r.stderr)
+        self.assertIn("self-change gate", r.stdout + r.stderr)
 
     def test_train_stops_at_the_first_red_retest(self):
         self.origin(red=(2,))
