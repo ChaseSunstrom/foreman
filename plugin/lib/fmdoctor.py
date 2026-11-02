@@ -2688,7 +2688,8 @@ def cmd_doctor(args):
         print(json.dumps({"ok": ok, "results": [asdict(r) for r in results], "slowest": slowest(results)},
                          indent=2, ensure_ascii=False))
     else:
-        for r in results:  # T-0844: only what needs a look, unless -v
+        for r in sorted(results, key=lambda r: r.status == "FAIL"):  # T-0844: only what needs a look; T-2567: failures
+            # print last, next to the verdict, so a failure's signature is the failing check
             if r.status != "PASS" or getattr(args, "verbose", False):
                 print(f"{r.status:4}  {r.name:<20} {r.detail}")
         if getattr(args, "verbose", False):

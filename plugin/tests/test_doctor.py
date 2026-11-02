@@ -555,6 +555,9 @@ class Command(ForemanTestCase):
         self.assertIn("PASS ", loud)
         self.assertIn("fm doctor:", quiet)
         self.assertIn("pass", quiet.splitlines()[-1], "the summary still counts them")
+        rows = [x[:4] for x in quiet.splitlines() if x[:4] in ("WARN", "FAIL")]
+        self.assertIn("FAIL", rows, "a fresh HOME has a failing check, so the order below is tested")
+        self.assertEqual(rows, sorted(rows, key=lambda s: s == "FAIL"), "T-2567: failures print last, by the verdict")
 
     def test_the_tests_skip_the_hook_bench_and_doctor_says_so(self):
         # T-1379: the bench is ~100 hook runs (13 of doctor's 18 s at load 44, past 30 s at 60), and the tests that run
