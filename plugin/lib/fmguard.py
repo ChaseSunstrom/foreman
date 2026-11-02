@@ -3382,6 +3382,18 @@ def _track_vars(words, env, home=None):
     return None if _setter(name, words[words.index(word) + 1:] if word in words else []) else env
 
 
+def _subst_depth(cmd):
+    """The deepest run of `$(` open at once, counted on the raw text (quotes ignored: it only has to be an upper bound)."""
+    d = m = 0
+    for a, b in zip(cmd, cmd[1:]):
+        if a == "$" and b == "(":
+            d += 1
+            m = max(m, d)
+        elif a == ")" and d:
+            d -= 1
+    return m
+
+
 def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
@@ -3390,6 +3402,8 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     # git command read here is saved where it runs, not in the hook's cwd
     if not depth:
         _DCWD.clear()  # T-1921 review: fmmcp calls this directly, in a process that lives on
+        if _subst_depth(cmd) > 8:  # T-2668: every level re-reads its tails, so work grows ~n^4 until the cap above
+            return [("rm-outside", "command nesting too deep to analyse: split the command")]  # fires: 500 deep hung
     starts = _DCWD.get(depth - 1, [ctx.cwd]) if depth else [ctx.cwd]
     if at is False and starts != [ctx.cwd]:  # T-1921: and judged there, once per folder (None: one it can't name,
         out, seen = [], _DCWD.setdefault("seen", {})  # judged from here with every relative path unknown); a text a
