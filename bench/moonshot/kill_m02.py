@@ -1,5 +1,6 @@
 """M-02 kill test (T-2679): can a module be rebuilt from its spec and tests alone?
 
+Sample: all three modules of the spec suite (semver, table, ranges), fixed before the first run; no selection.
 Builds the spec suite (bench/spec-suite/make.py) in OUT/kit, then for each module deletes kit/<m>.py and asks a
 tool-less child (fmideas.run_child: no tools, no hooks, no MCP) for it, given only the task commit's message (the
 complete spec), the module's test file and the package's base files. Two attempts each; a module passes when either

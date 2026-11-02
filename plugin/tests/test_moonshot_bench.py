@@ -31,6 +31,13 @@ class MoonshotBench(unittest.TestCase):
     def test_every_kill_script_has_its_result(self):
         self.assertEqual(missing(BENCH), [])
 
+    def test_every_kill_script_states_its_sample_before_it_runs(self):  # T-2724: M-12's run 1 drew its classes
+        import ast  # from different eras; a trial pre-registers how its arms are drawn for this reason
+        for script in sorted(glob.glob(os.path.join(BENCH, "kill_*.py"))):
+            with open(script, encoding="utf-8") as f:
+                doc = ast.get_docstring(ast.parse(f.read())) or ""
+            self.assertRegex(doc, r"(?m)^Sample\b.*:", os.path.basename(script))
+
     def test_a_script_without_its_result_is_named(self):
         import tempfile
         with tempfile.TemporaryDirectory() as d:
