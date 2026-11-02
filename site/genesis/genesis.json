@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T00:28:07Z",
- "rev": "86738884",
+ "updated": "2026-11-02T00:39:26Z",
+ "rev": "9925ea55",
  "capabilities": [
   {
    "n": 1,
@@ -1954,7 +1954,7 @@
       {
        "id": "T-2499",
        "title": "Bets settle with no session: the night tick runs fmoutcomes.maintain; the digest names the kind whose Brier trails its base rate most",
-       "status": "active",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
@@ -1964,12 +1964,12 @@
       {
        "id": "T-2500",
        "title": "Bets carry their harness; fm outcomes --judgment --by-harness splits buckets and Brier by it",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 2,
-       "done": 0,
-       "current": "red test: two focuses with different env write two bet rows with their harness; --by-harness --json groups them; the flag is named in --help"
+       "done": 2,
+       "current": ""
       },
       {
        "id": "T-2338",
@@ -17995,14 +17995,14 @@
  },
  "not_yet": 5,
  "not_yet_open": 0,
- "unproven": 1057,
+ "unproven": 1058,
  "unproven_kinds": {
   "meaning": 582,
   "research-uncited": 29,
   "typed": 43,
   "red": 61,
   "perf-typed": 51,
-  "docs": 590,
+  "docs": 591,
   "ui-unshot": 53,
   "tui-unshot": 53,
   "data": 4,
@@ -18012,8 +18012,8 @@
  "next": {
   "stage": "build",
   "gen": 2,
-  "action": "Mission 2 (calibrated-judgment): finish T-2499",
-  "command": "fm focus T-2499",
+  "action": "Mission 2 (calibrated-judgment): finish T-2500",
+  "command": "fm focus T-2500",
   "kind": "ok"
  },
  "docs": {
