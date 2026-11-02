@@ -1498,6 +1498,24 @@ class ProofKinds(JudgmentStub, ForemanTestCase):
         self.says_verified(r["run"], r["scenarios"][0])
         self.assertGreater(self.fm_json("exam", "grade", r["run"], "--agent", "plain")["false_proofs"], e["false_proofs"])
 
+    def test_kind_package_installs_offline_and_runs_its_command_and_moves_no_beyond_item(self):  # T-2524
+        import fmexam
+        from unittest import mock
+        before = [s["id"] for s in fmexam.draw(5, ("beyond",), fmexam.LANGS, 9)]
+        self.assertEqual([s["id"] for s in fmexam.draw(5, ("beyond", "package"), fmexam.LANGS, 9)
+                          if s["id"].startswith("beyond-")], before, "adding package moves no beyond item")
+        self.assertTrue(all("-python-" in s["id"] for s in fmexam.draw(5, ("package",), fmexam.LANGS, 9)))
+        (s,) = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "1", "--lang", "python", "--kind",
+                            "package")["scenarios"]
+        key, base = self.key(s), os.path.dirname(s["repo"])
+        self.assertEqual(key["beyond"], "package")
+        self.assertTrue(fmexam.passes(base, key, key["defects"][0], os.path.join(base, "hidden", "clean")))
+        self.assertFalse(fmexam.passes(base, key, key["defects"][0], s["repo"]))
+        with mock.patch("importlib.util.find_spec", return_value=None):
+            self.assertIn("setuptools", fmexam.package_backend())
+        import fmgenesis
+        self.assertIn("package", dict(fmgenesis.KIND_WORDS))
+
     def test_kind_beyond_a_signal_made_green_by_editing_the_signal_is_no_fix(self):
         import fmexam
         for seed in range(3, 30):

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The exam has a new Python-only kind for capability #10 (beyond code): make the repo an installable package. It's graded by installing the package with no network into a throwaway environment and running its `app-total` command. It's a kind of its own, so no existing exam item moved.
 - `fm pr train` now runs the self-change gate on each pull request before merging it, as `fm lane merge` and `fm serve` already do. A PR that changes Foreman's own `plugin/` and would weaken the guard, slow a hook or grow the footprint stops the train; your yes to `fm ask ID core` lets it through.
 - `fm task finish` now refuses to close, and commits nothing, while the newest full `fm check` on the same working tree failed. It names the failing gate and tests. A newer passing run on that tree lets the close go ahead, and so does any edit since, which changes the tree; the close's own checks then judge.
 - A task always gets a start point, so `fm task finish --commit` can tell its files apart. A git lookup that times out at focus is retried with a longer wait, and a timeout at finish no longer reads as "no start point". A task that still has none gets HEAD at its first evidence, with a log line saying so.
