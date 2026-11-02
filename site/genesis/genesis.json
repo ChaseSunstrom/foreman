@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T01:11:09Z",
- "rev": "180aef8b",
+ "updated": "2026-11-02T01:18:45Z",
+ "rev": "e913482a",
  "capabilities": [
   {
    "n": 1,
@@ -18005,7 +18005,7 @@
   "perf-typed": 51,
   "docs": 593,
   "ui-unshot": 52,
-  "tui-unshot": 53,
+  "tui-unshot": 52,
   "data": 4,
   "infra": 7,
   "perf-noise": 1
