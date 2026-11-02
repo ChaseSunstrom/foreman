@@ -531,6 +531,7 @@ class Run:
         can't print one into its own transcript or the journal; in a worker run, without what worker_env drops too.
         T-1407: the pinned toolchain's bin folders first on PATH."""
         env = {k: v for k, v in (worker_env() if self.worker else os.environ).items() if k not in self.secret_envs}
+        env["FOREMAN_HARNESS"] = "fm-code"  # T-2500: its bets say fm code stated them, even inside a Claude session
         if getattr(self, "tool_dirs", None):
             env["PATH"] = os.pathsep.join(self.tool_dirs + [env.get("PATH") or os.defpath])
         return env

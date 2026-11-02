@@ -1330,6 +1330,17 @@ def worlds():
         return {}
 
 
+def harness():
+    """T-2500: the harness this process works under: FOREMAN_HARNESS when one set it (fm code), exam inside a bench or
+    exam run (FOREMAN_BENCH, fmbench._env), claude-code under a Claude Code session, else unknown (never a guess)."""
+    h = os.environ.get("FOREMAN_HARNESS", "")
+    if re.fullmatch(r"[a-z][a-z0-9-]{0,23}", h):
+        return h
+    if os.environ.get("FOREMAN_BENCH"):
+        return "exam"
+    return "claude-code" if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID") else "unknown"
+
+
 def world_here():
     """T-2398: H for the checkout this process runs in (cwd's nearest .git), kept in worlds.json; None off a checkout
     or on any error: a proof run never fails for its world mark."""
