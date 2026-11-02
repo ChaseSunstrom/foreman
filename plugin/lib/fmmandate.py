@@ -429,7 +429,8 @@ def _grounded(root, line, found, files, verbs):
 
 def _misses(p):
     """T-2136: the top 5 recent past misses: items added after a finished verdict (the goal_verdict event), and tasks
-    reopened (a task_set to an open status) within 7 days of their task_done."""
+    reopened (a task_set to an open status) within 7 days of their task_done, and (T-2417) the newest done tasks fm
+    outcomes says a later fix or a revert touched."""
     t = lambda e: c.parse_ts(e.get("ts"))  # noqa: E731
     out, done, claimed = [], {}, False
     for e in c.ledger_events(p, kinds=["goal_set", "goal_verdict", "goal_item", "task_done", "task_set"]):
@@ -448,7 +449,15 @@ def _misses(p):
             st = d.get("status") or (d.get("changes") or {}).get("status")
             if st and st not in c.CLOSED and (t(e) - done.pop(e["task"])).days < 7:
                 out.append(f"{c.plain(e['task'])} reopened within 7 days of closing: check what it missed")
-    return list(dict.fromkeys(out))[-5:]
+    try:  # T-2417: the done tasks fm outcomes says a later fix or a revert touched, newest last
+        import fmoutcomes
+        later = [f"{c.plain(t)} was {o['fate']} by "
+                 f"{c.fit(c.plain(', '.join(map(str, (o.get('by') or [])[:2]))), 80) or 'a later change'}: "
+                 f"check what it missed" for t, o in fmoutcomes.outcomes(p).items()
+                 if isinstance(o, dict) and o.get("fate") in ("fixed later", "reverted")]
+    except Exception:  # noqa: BLE001 — a history read never costs the plan
+        later = []
+    return (later[-3:] + list(dict.fromkeys(out))[-3:])[-5:]  # reopens and late items last: rarer, and the user's
 
 
 def plan(p, m):
