@@ -433,3 +433,63 @@ class AnyRepo(ForemanTestCase):
         any_part = text.split("## Foreman's own repo")[0]
         self.assertIn("fm release VERSION", any_part)
         self.assertIn("--push", any_part)
+
+
+class LandAfterShips(ReleaseCase):
+    """T-2598: fm ship lands each commit on main as a cherry-pick, so by release time the branch and main share content
+    but not history, and the --no-ff merge conflicts; 1.2.51 had to be landed by hand."""
+
+    def shipped(self, origin, files, msg):  # what fm ship does: the same change as a new commit on origin's main
+        clone = os.path.join(self.tmp, "clone")
+        if not os.path.isdir(clone):
+            subprocess.run(["git", "clone", "-q", origin, clone], check=True)
+        sh(clone, "pull", "-q", "origin", "main")
+        for path, text in files.items():
+            put(clone, path, text)
+        sh(clone, "add", "-A")
+        sh(clone, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", msg)
+        sh(clone, "push", "-q", "origin", "HEAD:main")
+
+    def setup_ci(self):
+        put(self.repo, ".github/workflows/test.yml", "on:\n  push:\n    paths-ignore:\n      - site/genesis/**\n")
+        sh(self.repo, "add", ".")
+        sh(self.repo, "commit", "-qm", "ci")
+        origin = self.origin()
+        put(self.repo, "a.txt", "one\n")
+        sh(self.repo, "add", "a.txt")
+        sh(self.repo, "commit", "-qm", "T-1: one")
+        return origin
+
+    def test_a_main_fed_by_cherry_picks_still_takes_the_release_and_the_branch_follows(self):
+        origin = self.setup_ci()
+        self.shipped(origin, {"a.txt": "one\n", "site/genesis/genesis.json": '{"tower": 2}\n'}, "T-1: one (shipped)")
+        put(self.repo, "a.txt", "two\n")
+        sh(self.repo, "add", "a.txt")
+        sh(self.repo, "commit", "-qm", "T-2: two")
+        self.tid(grant=True)
+        r = self.rel("9.9.9", "--push", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(sh(origin, "show", "main:a.txt"), "two\n")
+        self.assertEqual(sh(origin, "show", "main:site/genesis/genesis.json"), '{"tower": 2}\n', "main's data kept")
+        self.assertEqual(sh(origin, "log", "-1", "--format=%s", "main").strip(), "Foreman 9.9.9")
+        self.assertEqual(sh(self.repo, "rev-parse", "HEAD").strip(), sh(origin, "rev-parse", "main").strip(),
+                         "the branch fast-forwards to the landed release")
+
+    def test_a_change_main_has_and_the_branch_never_had_still_refuses(self):
+        origin = self.setup_ci()
+        self.shipped(origin, {"a.txt": "three\n"}, "someone else's change")
+        before = sh(origin, "rev-parse", "main").strip()
+        self.tid(grant=True)
+        r = self.rel("9.9.9", "--push", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("a.txt", r.stdout + r.stderr)
+        self.assertEqual(sh(origin, "rev-parse", "main").strip(), before)
+
+    def test_an_abandoned_release_already_committed_continues(self):
+        origin = self.origin()
+        self.rel("9.9.9")
+        self.rel("--abandon")
+        self.tid(grant=True)
+        r = self.rel("9.9.9", "--push", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(sh(origin, "log", "-1", "--format=%s", "main").strip(), "Foreman 9.9.9")

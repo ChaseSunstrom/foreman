@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm release --push` now lands on a main that `fm ship` has been feeding by cherry-pick. When the release merge conflicts only because the histories split, it commits the release with main's CI-ignored data laid over it. That happens only if every other file main differs in holds a version the branch once had; a real change on main still stops it. Afterwards the branch moves to the landed release. And `fm release VERSION` continues from an unpushed release commit even after `--abandon`. 1.2.51 had to be landed by hand for both reasons.
 - `fm doctor` warns when the CHANGELOG's Unreleased section has gone 14 days or 150 entries without a release, and names `fm release`. 1.2.51 had waited 12 days with 746 entries before anyone noticed.
 
 ## 1.2.51 — 2026-11-02

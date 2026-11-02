@@ -310,11 +310,46 @@ def _push(ctx):
         wt = os.path.join(tmp, "rel")
         _git(root, "worktree", "add", "-q", "--detach", wt, "FETCH_HEAD")
         try:
-            _git(wt, "merge", "-q", "--no-ff", sha, "-m", f"Foreman {v}")
-            _push_main(p, b.id, _git(wt, "rev-parse", "HEAD").strip(), remote, "fm release --push")
+            if c._git(wt, "merge", "-q", "--no-ff", sha, "-m", f"Foreman {v}", timeout=300, proc=True).returncode:
+                _git(wt, "merge", "--abort", ok=True)
+                _land_over_picks(wt, sha, v)  # T-2598: ship cherry-picked the branch onto main
+            landed = _git(wt, "rev-parse", "HEAD").strip()
+            _push_main(p, b.id, landed, remote, "fm release --push")
         finally:
             _git(root, "worktree", "remove", "--force", wt, ok=True)
     print(f"  pushed Foreman {v} to {remote} main (the publish grant is spent)")
+    clean = not _git(root, "status", "--porcelain", ok=True).strip()
+    if clean and not c._git(root, "merge-base", "--is-ancestor", "HEAD", landed, timeout=60, proc=True).returncode:
+        if not c._git(root, "merge", "-q", "--ff-only", landed, timeout=300, proc=True).returncode:
+            print("  the branch follows the landed release, so the next one merges from main's history")
+
+
+def _land_over_picks(wt, sha, v):
+    """T-2598: fm ship lands the branch's commits on main as cherry-picks, so their histories split while their content
+    matches, and a --no-ff merge conflicts. When main's version of every file it differs in, outside its CI-ignored
+    data, is one the branch once had, commit the release tree with main's ignored files laid over it, parents (main,
+    release), in the worktree wt (at main); otherwise refuse, naming the file."""
+    main = _git(wt, "rev-parse", "HEAD").strip()
+    ignored = _ci_ignored(wt, main)
+    diff = [x for x in _git(wt, "diff", "--name-only", main, sha).splitlines() if x]
+    data = [x for x in diff if any(g.match(x) for g in ignored)]
+    for f in (x for x in diff if x not in data):
+        blob = c._git(wt, "rev-parse", "-q", "--verify", f"{main}:{f}", timeout=30, proc=True).stdout.strip()
+        if not blob:
+            continue  # the branch added it: nothing of main's is lost
+        seen = re.findall(r"(?m)^:\d+ \d+ \w+ (\w+) ", _git(wt, "log", "--no-abbrev", "--format=", "--raw", sha, "--", f))
+        if blob not in seen:
+            _err(f"main has a change to {f} the release branch never had; nothing was pushed: bring it into the "
+                 f"branch, then fm release {v} --resume")
+    _git(wt, "read-tree", "--reset", "-u", sha)
+    for f in data:
+        if c._git(wt, "rev-parse", "-q", "--verify", f"{main}:{f}", timeout=30, proc=True).returncode:
+            _git(wt, "rm", "-q", "--ignore-unmatch", "--", f)  # main removed its data file
+        else:
+            _git(wt, "checkout", main, "--", f)  # main's newer data wins
+    new = _git(wt, "commit-tree", _git(wt, "write-tree").strip(), "-p", main, "-p", sha, "-m", f"Foreman {v}").strip()
+    _git(wt, "reset", "-q", "--hard", new)
+    print(f"  {v}: main held the branch's commits as cherry-picks; landed the release tree over it with main's data")
 
 
 def _push_main(p, tid, sha, remote, by):
@@ -751,10 +786,15 @@ def run(p, args):
         cur = _json(pj).get("version", "")
         if not re.fullmatch(SEMVER, cur):
             _err(f"plugin.json's version {cur!r} isn't MAJOR.MINOR.PATCH; fix it first")
-        if tuple(map(int, v.split("."))) <= tuple(map(int, cur.split("."))):
+        done = []
+        if v == cur and _git(root, "log", "-1", "--format=%s").strip() == f"Foreman {v}":
+            done = ["tree", "check", "bump", "changelog", "commit"]  # T-2598: committed, checkpoints abandoned: go on
+        elif tuple(map(int, v.split("."))) <= tuple(map(int, cur.split("."))):
             _err(f"{v} isn't newer than {cur}")
-        state = {"version": v, "old": cur, "done": [], "skipped": [], "ui": args.ui, "push": bool(args.push),
+        state = {"version": v, "old": cur, "done": done, "skipped": [], "ui": args.ui, "push": bool(args.push),
                  "remote": args.remote, "no_check": bool(args.no_check)}
+        if done:
+            state["sha"] = _git(root, "rev-parse", "HEAD").strip()
     state["remote"] = state.get("remote") or "origin"
     if state["remote"].startswith("-"):
         _err(f"--remote {state['remote']!r} reads as a git option; name a remote or a URL")
