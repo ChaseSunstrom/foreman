@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T00:01:55Z",
- "rev": "112e6842",
+ "updated": "2026-11-02T00:06:56Z",
+ "rev": "18abf408",
  "capabilities": [
   {
    "n": 1,
@@ -1963,13 +1963,13 @@
       },
       {
        "id": "T-2500",
-       "title": "Bets carry their harness: each bet row records which harness stated it (claude-code, fm…",
-       "status": "captured",
+       "title": "Bets carry their harness; fm outcomes --judgment --by-harness splits buckets and Brier by it",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
-       "steps": 0,
+       "steps": 2,
        "done": 0,
-       "current": ""
+       "current": "red test: two focuses with different env write two bet rows with their harness; --by-harness --json groups them; the flag is named in --help"
       },
       {
        "id": "T-2338",
@@ -17995,15 +17995,15 @@
  },
  "not_yet": 5,
  "not_yet_open": 0,
- "unproven": 1055,
+ "unproven": 1056,
  "unproven_kinds": {
   "meaning": 582,
   "research-uncited": 29,
   "typed": 43,
   "red": 61,
   "perf-typed": 51,
-  "docs": 588,
-  "ui-unshot": 54,
+  "docs": 589,
+  "ui-unshot": 53,
   "tui-unshot": 53,
   "data": 4,
   "infra": 7,
