@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New: `fm run --stall-usd N` stops starting tasks once the run has spent N dollars since its last task close, and its end line says why. A run that keeps closing tasks is never stopped by it. Like `--max-usd`, it runs one task at a time so each session's cost is measured.
 - Fixed: `fm burden` undercounted Foreman's injected context. Claude Code delivers SessionStart's context as `hook_success` stdout, which the count never read. With it, the last 7 days read 76 characters per turn instead of 48. The new `fm burden --by-source` splits that figure by hook, biggest first: SessionStart 42.9, Stop 14.5, PreToolUse 9.0. PostToolUse's rewritten tool output isn't counted, since that's the tool's own output.
 - New: `fm prove --steer` runs each unsettled user-steer rule's `[check:]` on the start tree of the task the rule's row names. A check that passes there too doesn't test the rule, so it's listed as vacuous, together with the task it used, and the run exits 1. Rows that name no task or no start snapshot are skipped with the reason. It runs this tree's tests at older commits, so like the other modes that run code it needs `--yes-run` once.
 - A capture that matches a deferred task of its type now wakes that task instead of being refused as a near-duplicate. Your words go on the deferred task's log and it's due back today, so `fm next` names it. No second task is made. A match with an open task is still refused as before.
