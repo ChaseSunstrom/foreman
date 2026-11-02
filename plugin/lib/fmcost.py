@@ -861,8 +861,10 @@ def weekly_line(p):
     done, lessons, review = _week(p, 7)
     if not done:
         return None
-    strong = sum(b.meta.get("verified") == "strong" for b in done)
-    return (f"This week: {len(done)} task(s) done ({strong} strongly verified), {len(lessons)} lesson(s)"
+    open_ = sum(bool(b.meta.get("unproven")) for b in done)  # T-2635: fm prove still lists them, whatever the grade
+    strong = sum(b.meta.get("verified") == "strong" and not b.meta.get("unproven") for b in done)
+    return (f"This week: {len(done)} task(s) done ({strong} strongly verified"
+            + (f", {open_} closed unproven" if open_ else "") + f"), {len(lessons)} lesson(s)"
             + (f", {len(review)} decision(s) to review" if review else "") + "; fm digest shows it.")
 
 

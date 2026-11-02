@@ -901,13 +901,21 @@ def cmd_task(args):
                 b.set_section("Lessons", (old + "\n" if old else "") + f"- {lesson}")
             b.meta["status"] = "done"
             b.meta["verified"] = b.grade()[0]
+            try:  # T-2635: what fm prove still lists for this close, kept beside its grade (a rollup read never fails it)
+                kinds = sorted({n["kind"] for n in c.proof_needs(p, b, files, live=True)})
+            except Exception:
+                kinds = []
+            b.meta.pop("unproven", None)
+            if kinds:
+                b.meta["unproven"] = kinds
             if gaps:  # T-0645: what this plan forgot, for the next similar plan (fm recall at focus)
                 b.set_section("Plan gaps", gaps)
             if files:  # recall's "Start here" and edit tripwires for the next related task
                 b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))
             b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
             logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"],
-                          planned=len(b.meta.get("scope") or []), changed=len(files))  # T-0644
+                          planned=len(b.meta.get("scope") or []), changed=len(files),  # T-0644
+                          **({"unproven": b.meta["unproven"]} if b.meta.get("unproven") else {}))
             # T-1061: the plan as it was at first focus (scope, predictions) against what happened
             if b.meta.get("plan0_at") and b.meta.get("plan0_scope"):
                 logged["outside"] = len(c.scope_drift(types.SimpleNamespace(meta={"scope": b.meta["plan0_scope"]}), files))
@@ -984,7 +992,8 @@ def cmd_task(args):
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
                                                         else {}),
                               **({"ablation": args.ablation} if getattr(args, "ablation", None) else {})),
-                   f"{b.id} done (verification: {grade} — {why})." + (
+                   f"{b.id} done (verification: {grade} — {why}"
+                   + (f"; unproven: {', '.join(b.meta['unproven'])}" if b.meta.get("unproven") else "") + ")." + (
             f"\nNot verified ({len(by_hand)}; no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:5])
             + (f"\n  … and {len(by_hand) - 5} more" if len(by_hand) > 5 else "")
             if by_hand else "\nNothing needed from you: each criterion was proved by its own check."
