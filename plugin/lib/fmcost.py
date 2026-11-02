@@ -925,7 +925,7 @@ def cmd_digest(args):
             and str(e.get("ts", ""))[:19] >= since and (d := e.get("data") or {}).get("planned") and "changed" in d]
     lines += [f"Planned vs changed files: {len(grew)} task(s) with a scope changed ×{statistics.median(grew):.1f} "
               f"the paths they planned (median; T-0644)"] if grew else []
-    lines += fmoutcomes.survival_lines(p, outs) + fmoutcomes.track_lines(p, outs) + fmoutcomes.ledger_lines(p, outs) + fmoutcomes.plan_lines(p)  # T-1060, T-0641, T-0619, T-1061
+    lines += fmoutcomes.dropped_class_lines(p, outs) + fmoutcomes.survival_lines(p, outs) + fmoutcomes.track_lines(p, outs) + fmoutcomes.ledger_lines(p, outs) + fmoutcomes.plan_lines(p)  # T-1060, T-0641, T-0619, T-1061
     raised = [e for e in c.ledger_events(p, ("cost_cap_changed",), since=since)  # T-1083 review: caps raised
               if (e.get("data") or {}).get("to", 0) > (e.get("data") or {}).get("from", 0)]
     lines += ["Cost caps raised: " + ", ".join(f"{e.get('task')} {_human(e['data']['from'])} → {_human(e['data']['to'])}"

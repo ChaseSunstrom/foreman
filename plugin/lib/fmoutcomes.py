@@ -167,6 +167,15 @@ def track_lines(p, outs=None):
         f"{t} {tier}: {_row(r)}" for (t, tier), r in rows[:6])] if rows else []
 
 
+def dropped_class_lines(p, outs):
+    """T-2648: done tasks but not one task_done event in the ledger (a class dropped or rolled away): every close rate
+    built from those events is unmeasured, and a bare zero would read as a measurement."""
+    if outs and not c.ledger_events(p, ("task_done",)):
+        return [f"{len(outs)} done task(s) but no task_done events in the ledger: the class is missing, so close "
+                "times, calibration and rates built from it are not measured (fm verify-ledger)"]
+    return []
+
+
 def cmd_outcomes(args):
     import fmcli
     if getattr(args, "judgment", False):  # T-2461: fm calibration folded in here
@@ -208,7 +217,7 @@ def cmd_outcomes(args):
         if getattr(args, flag, False):
             res = globals()["_" + flag](p, outs)
             return fmcli.out(args, res, "\n".join(res["lines"]))
-    lines += survival_lines(p, outs) + track_lines(p) + ledger_lines(p, outs)
+    lines += dropped_class_lines(p, outs) + survival_lines(p, outs) + track_lines(p) + ledger_lines(p, outs)
     rows = track(p, outs)
     return fmcli.out(args, {"tasks": outs, "track": {f"{a} {b}": dict(r) for (a, b), r in rows.items()}},
                      "\n".join(lines))

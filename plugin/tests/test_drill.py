@@ -5,6 +5,7 @@ state file is named in one line, never a traceback, and an append after a torn t
 import json
 import os
 import shutil
+import subprocess
 import unittest
 from unittest import mock
 
@@ -19,6 +20,26 @@ def tree(root):
 
 
 class Drill(ForemanTestCase):
+    def test_a_dropped_ledger_class_passes_a_reader_that_names_it_and_fails_one_that_prints_a_zero(self):
+        """T-2648: every task_done line gone; fm outcomes and fm digest must say the class is missing."""
+        plans = [{"kind": "dropped class", "at": 3}, {"kind": "stale lock", "at": 1}, {"kind": "torn journal", "at": 2}]
+        with mock.patch.object(fmdrill, "plan", return_value=[dict(f) for f in plans]):
+            r = fmdrill.drill(1, 3)
+        got = {f["kind"]: f for f in r["faults"]}
+        self.assertEqual(got["dropped class"]["verdict"], "found", got)
+        self.assertEqual(r["crashes"], [])
+        self.assertTrue(r["ok"], r)
+        self.assertIn("dropped class", fmdrill.KINDS)
+        zero = subprocess.CompletedProcess([], 0, "0 finished task(s): 0 held\nLast 7 day(s): 0 task(s) done", "")
+        real = fmdrill.Day.fm
+        fake = lambda self, *a: zero if a[0] in ("outcomes", "digest") else real(self, *a)  # noqa: E731
+        with mock.patch.object(fmdrill, "plan", return_value=[dict(f) for f in plans]), \
+                mock.patch.object(fmdrill.Day, "fm", fake):
+            bad = fmdrill.drill(1, 3)
+        self.assertEqual({f["kind"]: f["verdict"] for f in bad["faults"]}["dropped class"], "missed")
+        self.assertFalse(bad["ok"])
+        shutil.rmtree(bad["home"], ignore_errors=True)
+
     def test_a_seed_replays_the_same_plan(self):
         self.assertEqual(fmdrill.plan(7, 3), fmdrill.plan(7, 3))
         plans = {json.dumps(fmdrill.plan(s, 3)) for s in range(8)}
@@ -44,11 +65,11 @@ class Drill(ForemanTestCase):
         self.assertFalse(os.path.exists(got["home"]), "a passing drill removes its temp home")
 
     def test_every_kind_at_once_still_passes(self):
-        p = self.fm("drill", "--seed", "11", "--faults", "6", check=False)
+        p = self.fm("drill", "--seed", "11", "--faults", "7", check=False)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         for kind in fmdrill.KINDS:
             self.assertIn(kind, p.stdout)
-        self.assertIn("fm drill --seed 11 --faults 6", p.stdout, "the replay command")
+        self.assertIn("fm drill --seed 11 --faults 7", p.stdout, "the replay command")
 
     def test_a_missed_fault_fails_and_keeps_the_home(self):
         with mock.patch.object(fmdrill, "_verdict", return_value=("missed", "planted, not found")):

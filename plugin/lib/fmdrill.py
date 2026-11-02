@@ -5,6 +5,7 @@ repaired the day's work is still there. A seed replays the same plan."""
 import json
 import os
 import random
+import re
 import shutil
 import stat
 import subprocess
@@ -13,7 +14,8 @@ import time
 
 import fmcore as c
 
-KINDS = ("torn ledger", "torn journal", "stale lock", "broken lane", "corrupt state", "unreadable")
+KINDS = ("torn ledger", "torn journal", "stale lock", "broken lane", "corrupt state", "unreadable",
+         "dropped class")
 STATE_FILES = ("meta.json", "gate.json", "status.json", "skill-index.json")  # the project files fm reads whole
 TB = "Traceback (most recent call last)"
 CUT = '{"drill": "cut'  # a planted torn line: no closing quote, brace or newline
@@ -118,7 +120,7 @@ class Day:
 
 def _target(day, f, kinds):
     k = f["kind"]
-    if k == "torn ledger":
+    if k in ("torn ledger", "dropped class"):
         return os.path.join(day.pdir(), "ledger.jsonl")
     if k == "torn journal":
         return os.path.join(day.state, "events.jsonl")
@@ -138,6 +140,16 @@ def _plant(day, f, saved):
         c.append_line(path, "")  # whole lines before the cut, so the cut line is the planted one alone
         with open(path, "a") as fh:
             fh.write(CUT)
+    elif k == "dropped class":  # a done task whose every task_done line is gone: the briefs say closed, the ledger doesn't
+        brief = _brief_path(day, "T-0003")
+        with open(brief) as fh:
+            text = fh.read()
+        with open(brief, "w") as fh:
+            fh.write(re.sub(r"(?m)^status: .*$", "status: done", text, count=1))
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            keep = [ln for ln in fh.read().splitlines(True) if '"task_done"' not in ln]
+        with open(path, "w") as fh:
+            fh.writelines(keep)
     elif k == "stale lock":
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as fh:
@@ -173,6 +185,11 @@ def _brief_path(day, tid):
 def _verdict(day, f, found, ledger):
     """(verdict, detail): found by fsck or verify-ledger, healed by the day, skipped, or missed."""
     k, path = f["kind"], f["path"]
+    if k == "dropped class":  # not fsck's to find: the readers that lean on task_done must say it's gone
+        bare = [r for r in ("outcomes", "digest") if "no task_done events" not in day.fm(r).stdout]
+        if bare:
+            return "missed", f"fm {' and fm '.join(bare)} printed a rate as if task_done events were there"
+        return "found", "fm outcomes and fm digest both name the missing task_done class"
     mine = [x for x in found if x["kind"] == k and (x["path"] == path or k == "broken lane" and x.get("task") == "T-0002")]
     if k == "torn ledger" and not mine:
         mine = [x for x in found if x["kind"] == "torn journal" and x["path"] == path]
@@ -212,6 +229,7 @@ def drill(seed, faults=3):
         day.fm("task", "new", "Drill a thing", "--type", "FIX", "--tier", "S", "--ac", "works :: true", "--step",
                "do it", "--focus")
         day.fm("capture", "a later idea")
+        day.fm("capture", "a closed idea")  # T-0003: the dropped-class fault marks it done (T-0002 is the broken lane's)
         for f in planned:
             f["path"] = _target(day, f, kinds)
             f["skipped"] = f["kind"] == "unreadable" and os.geteuid() == 0
