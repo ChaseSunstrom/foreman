@@ -595,6 +595,29 @@ def check_predictions(p):
         f"(fm outcomes --predictions --unmute {k['kind']})" for k in muted))
 
 
+def check_flaky_rates(p, top=3):
+    """T-2657: the flaky tests (flakes.json) with the highest fail rate, each with the command that flakes it. An
+    entry without whole fail and pass counts is skipped (an old or damaged one), never a failed doctor."""
+    if not p:
+        return Result("flaky tests", "PASS", "no project here")
+    try:
+        with open(os.path.join(p.dir, "flakes.json"), encoding="utf-8") as f:
+            flaky = json.load(f).get("flaky")
+    except (OSError, ValueError, AttributeError):
+        flaky = None
+    rows = []
+    for name, e in (flaky if isinstance(flaky, dict) else {}).items():
+        if isinstance(e, dict) and type(e.get("fails")) is int and type(e.get("passes")) is int \
+                and e["fails"] > 0 and e["fails"] + e["passes"] > 0:
+            rows.append((e["fails"] / (e["fails"] + e["passes"]), -e["fails"], str(name)[:100], e))
+    if not rows:
+        return Result("flaky tests", "PASS", "no flaky test with a fail rate")
+    rows.sort(key=lambda r: (-r[0], r[1], r[2]))  # worst rate, then most fails, then name
+    return Result("flaky tests", "WARN", "; ".join(
+        f"{n} {r:.0%} ({e['fails']} of {e['fails'] + e['passes']}; {c.plain(str(e.get('cmd') or '?'))[:80]})"
+        for r, _, n, e in rows[:top]))
+
+
 def check_model_backends(p):
     """T-2489: the model layer's backends (fmmodels.registry: configured, reachable local, keyed cloud), local or
     cloud, and which uses are live; information only, so it never fails the doctor."""
@@ -2568,6 +2591,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_model_backends(here))
     results.append(check_self_fixes(here))
     results.append(check_worlds(here))  # T-2398
+    results.append(check_flaky_rates(here))  # T-2657
     results.append(check_idle_stops(here))
     results.append(check_usage_burn())
     results.append(check_release_age(here.root if here else os.getcwd()))  # T-2597

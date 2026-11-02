@@ -3415,6 +3415,13 @@ def failure_excerpt(output, test, most=700):
     return redact("\n".join(block).strip())[-most:]
 
 
+def _n(x):
+    try:
+        return max(int(x or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def note_flakes(p, runs, tree, commands=None):
     """Record each gate's failing tests against (command, tree); the same command passing on the same tree later turns
     them flaky. Returns the lines fm check adds: flakes found now, and known flakes failing again. Never a pass."""
@@ -3436,6 +3443,8 @@ def note_flakes(p, runs, tree, commands=None):
             if code:
                 ids = failing_tests(output)
                 known = [i for i in ids if isinstance(flaky.get(i), dict)]
+                for i in known:  # T-2657: a known flake failing again is one more fail
+                    flaky[i] = dict(flaky[i], fails=_n(flaky[i].get("fails", flaky[i].get("count"))) + 1)
                 if known:
                     lines.append("known flaky, failing again: " + ", ".join(
                         f"{i} ({flaky[i].get('count', 1)}× before)" for i in known[:5]))
@@ -3447,7 +3456,10 @@ def note_flakes(p, runs, tree, commands=None):
                     why = was.get("why") if isinstance(was.get("why"), dict) else {}
                     for i in was["tests"]:
                         f = flaky.get(i) if isinstance(flaky.get(i), dict) else {"count": 0}
-                        flaky[i] = dict(f, count=int(f.get("count") or 0) + 1, last=now(), cmd=key[:120],
+                        # T-2657: a new flake brings its one pending fail; a known one counted its fails as they came
+                        fails = _n(f.get("fails", f.get("count"))) + (0 if i in flaky else 1)
+                        flaky[i] = dict(f, count=_n(f.get("count")) + 1, fails=fails, passes=_n(f.get("passes")) + 1,
+                                        last=now(), cmd=key[:120],
                                         **({"why": str(why[i])} if why.get(i) else {}))
                     lines.append(f"flaky: {', '.join(was['tests'][:5])} failed on this same tree and now pass "
                                  f"({fit(key, 60)}); fix the race, don't rerun past it")
