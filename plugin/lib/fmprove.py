@@ -724,6 +724,10 @@ def cmd_steer(args):
     if not p:
         print("fm prove --steer: run it inside a Foreman project", file=sys.stderr)
         return 2
+    if not _yes(args, p.root):  # each check runs this tree's code at an older commit: the other modes' consent
+        print("fm prove --steer runs this tree's tests at older commits: pass --yes-run once to allow it here",
+              file=sys.stderr)
+        return 2
     rows, briefs, ran, res = c._decision_rows(p), {}, {}, []
     for i, (date, tags, text) in enumerate(rows):
         if not c.STEER.search(tags) or c._settled([rows[i]] + [r for r in rows[i + 1:] if c.STEER.search(r[1])], 0):

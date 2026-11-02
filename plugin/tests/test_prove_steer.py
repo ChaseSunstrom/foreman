@@ -36,7 +36,11 @@ class ProveSteer(ForemanTestCase):
         self.rule(f"{tid}: old rule", "test_old")
         self.rule("no task named here", "test_new")
         self.rule("T-9999: unknown task", "test_new")
-        r = self.fm("prove", "--steer", check=False)
+        r = self.fm("prove", "--steer", check=False)  # runs this tree's tests: never without the run consent
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("--yes-run", r.stderr)
+        self.assertNotIn("vacuous", r.stdout)
+        r = self.fm("prove", "--steer", "--yes-run", check=False)
         out = r.stdout
         self.assertEqual(r.returncode, 1, out + r.stderr)
         line = {k: next(x for x in out.splitlines() if k in x) for k in ("new rule", "old rule", "no task", "unknown")}
@@ -55,7 +59,7 @@ class ProveSteer(ForemanTestCase):
                                  "done :: true", "--step", "s", "--focus", "--json").stdout)["id"]
         self.put("test_new.flag")
         self.rule(f"{tid}: new rule", "test_new")
-        r = self.fm("prove", "--steer", check=False)
+        r = self.fm("prove", "--steer", "--yes-run", check=False)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("tests its rule", r.stdout)
 
