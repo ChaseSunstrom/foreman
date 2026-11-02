@@ -7321,7 +7321,9 @@ def _build_parser(only=None):
                                                            "failure's log tail becomes a FIX brief (data), up to --max-retries; it can run "
                                                            "max-polls x interval: use run_in_background, or let fm next or a Monitor wake you")
     s.add_argument("--branch", help="default: the branch gh finds here")
-    s.add_argument("--commit", metavar="SHA", help="the commit to watch (default: git HEAD, followed as fixes are pushed)")
+    w = s.add_mutually_exclusive_group()
+    w.add_argument("--commit", metavar="SHA", help="the commit to watch (default: git HEAD, followed as fixes are pushed)")
+    w.add_argument("--last-ship", action="store_true", help="the main commit the newest fm ship pushed (T-2527)")
     s.add_argument("--max-retries", type=int, default=3)
     s.add_argument("--interval", type=float, default=30, help="seconds between polls")
     s.add_argument("--max-polls", type=int, default=120)

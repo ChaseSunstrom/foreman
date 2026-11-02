@@ -83,6 +83,25 @@ class CiWatch(ForemanTestCase):
         r = self.fm("ci-watch", "--interval", "0", "--commit", head[:7], env=env)  # gh reports full shas
         self.assertIn("green", r.stdout)
 
+    def test_last_ship_watches_the_shipped_tip_and_an_empty_commit_refuses(self):  # T-2527
+        self.fm("init")
+        env = self.fake_gh(0, script=[("HEAD", "success")])
+        head = subprocess.run(["git", "-C", self.repo, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        with open(os.path.join(self.tmp, "bin", "gh")) as f:
+            src = f.read()
+        with open(os.path.join(self.tmp, "bin", "gh"), "w") as f:
+            f.write(src.replace("'HEAD'", repr(head)))
+        r = self.fm("ci-watch", "--interval", "0", "--commit", "", env=env, check=False)
+        self.assertNotEqual(r.returncode, 0, "an empty sha (a failed extraction) never falls back to HEAD")
+        self.assertNotIn("watching", r.stdout)
+        r = self.fm("ci-watch", "--interval", "0", "--last-ship", env=env, check=False)
+        self.assertNotEqual(r.returncode, 0, "no fm ship recorded yet")
+        self.assertIn("fm ship", r.stdout + r.stderr)
+        subprocess.run(["git", "-C", self.repo, "update-ref", "refs/foreman/shipped-tip", head], check=True)
+        r = self.fm("ci-watch", "--interval", "0", "--last-ship", env=env)
+        self.assertRegex(r.stdout, r"watching %s on " % head[:7])
+        self.assertIn("green", r.stdout)
+
     def test_the_same_run_is_never_briefed_twice(self):
         self.fm("init")
         env = self.fake_gh(99, same_run=True)

@@ -333,6 +333,13 @@ def _ci_verdict(p, run, commit, green):
 def cmd_ci_watch(args):
     import fmcli
     p = fmcli.resolve(args)
+    if args.commit is not None and not args.commit.strip():  # T-2527: a failed $(…) extraction never means HEAD
+        raise fmcli.UsageError("--commit is empty: name the sha, or use --last-ship for the one fm ship pushed")
+    if args.last_ship:
+        import fmrelease
+        args.commit = c._git(p.root, "rev-parse", "--verify", "-q", fmrelease.SHIPPED_TIP, timeout=30).strip()
+        if not args.commit:
+            raise fmcli.UsageError("--last-ship: no fm ship has recorded a pushed commit here yet")
     commit = _head(p, args.commit) if args.commit else None
     if args.commit and not commit:
         raise fmcli.UsageError(f"--commit {args.commit}: not a commit in this repo")
