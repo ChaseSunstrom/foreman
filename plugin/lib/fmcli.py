@@ -1267,7 +1267,13 @@ def task_finish(p, args):
     runs = {}
     args.timings, t_close = [], time.monotonic()  # T-1462: (cmd, seconds) of every run, to name the slowest
 
+    here = (c.worktree_id(p.root), c.world_here())  # T-2644: the files and the world a reused pass must match
+    args.reused = []
+
     def run(cmd):
+        if cmd not in runs and (at := b.passed_here(cmd, *here)):  # T-2644: it just passed on these very files
+            args.reused.append(cmd)
+            runs[cmd] = (0, f"reused: the same command passed on this tree and world at {at}")
         if cmd not in runs:
             guard_stored(p, b, cmd)  # T-0901
             t0 = time.monotonic()
@@ -1398,6 +1404,9 @@ def task_finish(p, args):
             os.environ.get("FOREMAN_SLOW_CLOSE_S") or 60):  # T-1462: which run made the close slow
         cmd, secs = max(args.timings, key=lambda t: t[1])
         print(f"Slowest: {c.fit(c.plain(cmd), 80)} {secs:.0f} s (of {total:.0f} s)")
+    if not rc and not getattr(args, "json", False) and getattr(args, "reused", None):  # T-2644
+        print(f"Reused {len(args.reused)} run(s) that already passed on this tree and world: "
+              + "; ".join(c.fit(c.plain(x), 60) for x in args.reused[:3]))
     started = None
     if not rc:
         try:  # T-2241: a closed FIX no finder flagged is a blind spot; best effort, never the close's failure

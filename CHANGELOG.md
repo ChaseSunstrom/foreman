@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `fm task finish` no longer re-runs a criterion whose exact command just passed on the same files and environment. If the newest run of that command was a pass recorded by fm on this tree and world, the close reuses it and says so ("Reused 1 run(s)…"). A different tree, a changed lockfile or interpreter, or a later failed run of the command still runs it again. The close's own gates still run.
 - A removed `fm` flag now says what replaced it and which task removed it, instead of argparse's bare error. The first one is `fm night --print-timer`, removed in T-2475, whose replacements are `fm night --stage` and `fm night --install`. It exits 2.
 - `flakes.json` now counts each flaky test's fails and passes, and `fm doctor` lists the three worst by fail rate, with the command that makes each one flake.
 - `fm ship` refuses to push when the tree it would push isn't the tree its tests ran on, for example when a test command committed in the scratch worktree. It names both tree hashes and pushes nothing.

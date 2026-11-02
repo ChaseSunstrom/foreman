@@ -1735,6 +1735,23 @@ class Brief:
         self.append_log(f"rewind: the working files (tree {now}) are back to before the proof of step(s) "
                         f"{', '.join(map(str, steps))}: reopened, their proofs kept as rewound")
 
+    def passed_here(self, cmd, tree, world):
+        """T-2644: the time of the newest evidence line for exactly `cmd` when it is a [ran] pass stamped with this tree
+        and world, else None (another tree or world, a typed line, or a newer failed run of it): fm task finish reuses
+        that run instead of running the same command again on the same files."""
+        if not (cmd and tree and world):
+            return None
+        want = _unmarked(redact(str(cmd)).replace("`", "'").strip())
+        for line in reversed(self.evidence()):
+            m = re.match(r"- (?:\((?:step|ac) \d+\) )?`(.*?)` → (.*)$", line)
+            if not m or m.group(1) != want:
+                continue
+            t = _TS_TAIL.search(line)
+            fresh = m.group(2).startswith("exit 0") and _RAN_MARK in line and f"[tree {tree}]" in line \
+                and f"[world {world}]" in line
+            return (t.group(1) if t else "earlier") if fresh else None
+        return None
+
     def inconclusive(self, step=None):
         return [l for l in self.section("Verification evidence").splitlines() if _INCONCLUSIVE in l
                 and (step is None or ((m := _EV_RE.match(l)) and (m.group(1), int(m.group(2))) == ("step", step)))]
