@@ -1021,6 +1021,13 @@ def _contest(p, args):
                         "no difference on these cases")
                 lines.append(f"  {f} off: {so:g}/{len(cases)} passed (full {sf:g}/{len(cases)}) · ${co:.2f} "
                              f"(full ${cf:.2f}) → {says}")
+                if so == sf and co <= cf:  # T-2536: a candidate, never a cut: duel cases alone don't decide
+                    import fmeco
+                    fmeco.capture_once(p, f"Ablate candidate: the {f} hook feature changed no pass with it off "
+                                          f"({r['label']}: {so:g}/{len(cases)}, ${co:.2f} vs full ${cf:.2f}); cut it only "
+                                          f"if its off arm scores no lower on every exam kind, held-out included, and on "
+                                          f"the long-horizon tier", "CLEAN", "bench",
+                                          key=f"Ablate candidate: the {f} hook feature")  # in the text: reruns ask once
             ok, data = True, {"full": full["label"], "arms": arms, "lines": lines,
                               "verdict": f"{len(feats)} feature(s) switched off one at a time against full Foreman"}
         elif args.bench_cmd == "duel" and args.vs:  # T-0963: Foreman against Claude with no plugins (T-1264: or

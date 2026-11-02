@@ -375,6 +375,18 @@ class Ablation(_Bench):  # T-1375, T-1376
             p = self.fm("bench", "duel", *bad, "--ids", self.calc, env=self.env, check=False)
             self.assertNotEqual(p.returncode, 0, bad)
 
+    def test_a_feature_whose_off_arm_ties_full_foreman_files_one_subtraction_candidate(self):  # T-2536
+        self.fm("bench", "build", env=self.env)
+        self.fm("bench", "duel", "--ablate", "scope", "--ids", self.calc, env=self.env)
+        briefs = lambda: c.load_briefs(c.find_project(self.repo), include_archive=True)  # noqa: E731
+        cands = [b for b in briefs() if "ablate" in b.title.lower() and "scope" in b.title]
+        self.assertEqual(len(cands), 1, [b.title for b in briefs()])
+        raw = open(cands[0].path, encoding="utf-8").read()
+        self.assertIn("duel-ablate-scope-", raw, "names the run")
+        self.assertIn("long-horizon", raw, "a tie on duel cases is a candidate, never a cut")
+        self.fm("bench", "duel", "--ablate", "scope", "--ids", self.calc, env=self.env)
+        self.assertEqual(len([b for b in briefs() if "ablate" in b.title.lower() and "scope" in b.title]), 1)
+
     def test_equal_spend_retries_the_plain_arm_up_to_foremans_spend(self):
         self.fm("bench", "build", env=self.env)
         res = json.loads(self.fm("bench", "duel", "--vs", "none", "--equal-spend", "--ids", self.calc, "--json",
