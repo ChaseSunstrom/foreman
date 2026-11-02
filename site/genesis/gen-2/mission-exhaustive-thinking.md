@@ -1,6 +1,6 @@
 # Mission 5 — exhaustive thinking (gen 2, #2)
 
-Task: briefs 1-2 in order (ids assigned at intake).
+Task: T-2546, T-2547 (briefs 1-2 in order).
 
 Parent: gen-2/seed.md row 5 → gen-0.md #2 ("Exhaustive thinking. Before acting on anything non-trivial: list the
 readings of the request, every approach (including 'use what exists' and 'do less')…"). gen-0's goal, MUSTs and
