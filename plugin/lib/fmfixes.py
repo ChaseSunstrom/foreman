@@ -66,7 +66,13 @@ def _subject(cmd):
     return ""
 
 
+NOOPS = {"touch", "mkdir", "true", ":", "test", "["}  # T-2413: they succeed with anything, so pairing one proves nothing
+
+
 def _relates(failed, cmd):
+    steps = [t.split() for t in _norm(cmd).split("&&")]
+    if all(not t or os.path.basename(t[0]) in NOOPS for t in steps):
+        return False  # T-2413: 'touch mytool' names the subject without doing it; 'touch x && mytool' is a retry
     s = _subject(failed)
     return bool(s) and len(s) >= 2 and re.search(rf"(?<![\w-]){re.escape(s)}(?![\w-])", _norm(cmd)) is not None
 
