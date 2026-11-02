@@ -1658,6 +1658,19 @@ class GenesisSelect(ForemanTestCase):
             self.assertEqual(fmgenesis.check(self.p)["lineage"]["problems"], [])
         self.assertIn("genesis select gen-2: keep", self.decisions())
 
+    def test_a_line_answered_only_on_held_out_never_decides(self):
+        """T-2566: a line whose run answered only held-out scenarios closed no train one by construction; a 0-0 tie on
+        such lines would revert a generation on an empty comparison."""
+        import json
+        import fmgenesis
+        held = lambda run, gen: json.dumps(dict(json.loads(line(run, gen, [], ["h1"])), split="holdout")) + "\n"
+        tower_file(self.tower, "exam.jsonl", held("r1", 1) + held("r1", 2))
+        with self.assertRaisesRegex(ValueError, "train"):
+            fmgenesis.select(self.p, 2)
+        tower_file(self.tower, "exam.jsonl", held("r1", 1) + line("r2", 2, ["a"]))
+        r = fmgenesis.select(self.p, 2)
+        self.assertEqual((r["verdict"], r["base"]), ("baseline", "gen-2"))
+
     def graded(self, gen, train, model, run="r1"):
         import json
         return json.dumps({"run": run, "agent": "foreman", "gen": gen, "cost": 1.0, "model": model,
