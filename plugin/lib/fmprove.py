@@ -725,7 +725,27 @@ def _yes(args, root):
     return args.yes_run or trusted(root) or _lane_trusted(c.find_project(os.getcwd()), root)
 
 
+DOES_NOT = {  # T-2399: what each mode's receipt doesn't show, said last so a pass isn't read as more than it is
+    "scan": "that the code is right: leads and held-back findings were not tried, a proven ticket shows a failing test "
+            "(not its cause or the fix), and nothing outside fm find's finders was looked at",
+    "only": "that the root cause is gone: only that fm find no longer reports the finding, or its kept test passes",
+    "docs": "that the prose is right: only that each documented command, flag or path exists or ran",
+    "infra": "that it deploys: each file passed its own validator offline, on a copy, never against a live system",
+    "release": "that users can install it from the registry: the artifact was built, installed and run offline here",
+    "data": "that the command is safe on the real data: it ran on a copy, checked only by the invariants named",
+    "migration": "that it is safe on production data: the migrations ran on a copy, not on live data",
+}
+
+
 def cmd_prove(args):
+    rc = _prove(args)
+    mode = next((m for m in ("only", "docs", "infra", "release", "data", "migration") if getattr(args, m, None)), "scan")
+    if not getattr(args, "rollup", False) and not getattr(args, "json", False) and (rc != 2 or mode == "docs"):
+        print(f"Does not prove: {DOES_NOT[mode]}.")  # 2 is a usage or copy error, but --docs's "nothing checkable"
+    return rc
+
+
+def _prove(args):
     import fmcli
     import fmfind
     if getattr(args, "rollup", False):  # T-2461: the unproven rollup (fm proof until it folded in here)
@@ -838,7 +858,8 @@ def cmd_prove(args):
             f"{len(found)} finding(s), {sum(1 for f in found if f.get('held'))} held back, {len(res['tickets'])} tried "
             f"(--limit {args.limit}; held back: a muted finder or a score under the bar).\n\n"
             + "".join(f"- lead {json.dumps(c.plain(t['file']))}:{t['line']} {t['kind']} {json.dumps(t['symbol'] or '-')}: "
-                      f"{c.plain(t['evidence'])}\n" for t in res["tickets"]))))
+                      f"{c.plain(t['evidence'])}\n" for t in res["tickets"])
+            + f"\nDoes not prove: {DOES_NOT['scan']}.\n")))
     fmcli.out(args, res | ({"captured": made or [], "receipt": receipt} if cap else {}), c.plain_lines(
         f"{len(proven)} proven, {len(res['tickets']) - len(proven)} lead(s) of {len(res['tickets'])} candidate(s) "
         f"under {root}" + (f" (suite: {res['suite']}; control: {res['control']})" if res["suite"] else "") + "\n"
