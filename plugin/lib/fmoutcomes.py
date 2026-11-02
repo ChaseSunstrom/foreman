@@ -110,7 +110,8 @@ def _survival(closed_at, bad):
     hits = sorted((at, why) for at, why in bad if at and t0 <= at <= min(end, now))  # a future-dated commit waits
     left = (end - now).total_seconds() / 86400  # T-2584: only a finished window decides held or lost for good
     if hits:
-        return {"survival": "lost", "lost_at": c.iso(hits[0][0].timestamp()), "lost_by": hits[0][1], "window_done": left <= 0}
+        return {"survival": "lost", "lost_at": c.iso(hits[0][0].timestamp()), "lost_by": hits[0][1], "window_done": left <= 0,
+                **({"days_left": int(left) + 1} if left > 0 else {})}  # T-2610: the interim reads an early loss's age
     return ({"survival": "survived", "window_done": True} if left <= 0
             else {"survival": "settling", "days_left": int(left) + 1, "window_done": False})
 
@@ -142,8 +143,9 @@ def track(p, outs=None):
         r = rows[(o["type"], o["tier"])]
         r["n"] += 1
         r["first"] += first.get(tid, True)
-        r["settled"] += o["fate"] != "held" or bool(o.get("window_done"))  # T-2584: a hold counts once its window ends
-        r["held"] += o["fate"] == "held" and bool(o.get("window_done"))
+        done = bool(o.get("window_done"))  # T-2610: a miss lands mid-window, a hold only after it: both wait for the end
+        r["settled"] += done
+        r["held"] += o["fate"] == "held" and done
     return rows
 
 
@@ -384,6 +386,7 @@ def base_rate(outs, first, typ, tier):
     """The forecast with no stated number: the share of earlier closes of this type and tier that held on the first
     finish (a clean first fm task finish, then nothing undid it); every close counts while the pair has under
     LEDGER_MIN. None with no history."""
+    outs = {t: o for t, o in outs.items() if o.get("window_done") is not False}  # T-2610: an open window isn't a hold yet
     pair = [t for t, o in outs.items() if o.get("type") == typ and o.get("tier") == tier]
     pool = pair if len(pair) >= LEDGER_MIN else list(outs)
     if not pool:
@@ -478,7 +481,9 @@ def _verdicts(p, bets, outs, first):
 
 def scored(p, outs=None, first=None):
     """Every bet with its outcome ('held', 'missed' or None while pending): a grade row already written stands,
-    else the signals above decide."""
+    else the signals above decide. T-2610: a task or choice bet whose task's survival window is still open reads
+    pending, its grade kept as `early`: a miss lands mid-window and a hold only after it, so every reader (buckets,
+    Briers, routes, trails, the bar check, the trial grader) would otherwise read the record worse than it is."""
     bets, grades = ledger(p)
     if not bets:
         return []
@@ -489,8 +494,10 @@ def scored(p, outs=None, first=None):
     for r in bets:
         g = grades.get(r["id"])
         v = verdicts[r["id"]]
-        out.append(dict(r, outcome=g["outcome"] if g else v[0], by=g.get("by") if g else v[1],
-                        src=g.get("src") if g else v[2]))
+        row = dict(r, outcome=g["outcome"] if g else v[0], by=g.get("by") if g else v[1], src=g.get("src") if g else v[2])
+        if row["outcome"] and r["kind"] in ("task", "choice") and (outs.get(r.get("task")) or {}).get("window_done") is False:
+            row.update(outcome=None, early=row["outcome"])
+        out.append(row)
     return out
 
 
@@ -549,11 +556,12 @@ def tables(rows):
 
 def interim(rows, outs):
     """T-2498: per kind and bucket, the pending task and choice bets whose task closed INTERIM_DAYS+ ago, and how many
-    held so far (nothing undid or corrected it yet). A read, never a score: it moves no bar and no Brier."""
+    held so far (nothing undid or corrected it yet). A read, never a score: it moves no bar and no Brier. T-2610: a
+    task lost inside its open window is pending too (scored() holds its grade back), and counts as not held so far."""
     out = {}
     for r in rows:
         o = outs.get(r.get("task")) or {}
-        if r["outcome"] or r["kind"] not in ("task", "choice") or o.get("survival") != "settling" \
+        if r["outcome"] or r["kind"] not in ("task", "choice") or o.get("survival") not in ("settling", "lost") \
                 or o.get("days_left", SURVIVE_DAYS) > SURVIVE_DAYS - INTERIM_DAYS:
             continue
         lo, hi = BUCKETS[_bucket(r["stated"])]
@@ -703,6 +711,7 @@ def ledger_data(p, outs=None):
     table = tables(rows)
     based = [r for r in done if r.get("base") is not None]
     return {"total": len(rows), "scored": len(done), "pending": len(rows) - len(done), "kinds": table,
+            "open_missed": sum(r.get("early") == "missed" for r in rows),  # T-2610
             "brier": {"stated": brier(done), "base": brier(based, "base")} if len(done) >= LEDGER_MIN else None,
             "bars": bars(p), "routes": routes(p, rows) if len(done) >= LEDGER_MIN else {}, "interim": interim(rows, outs),
             "trails": _trails(done) if len(done) >= LEDGER_MIN else None}  # T-2499
@@ -710,6 +719,11 @@ def ledger_data(p, outs=None):
 
 def _bucket_line(kind, b):
     return f"{kind} {b['lo']}–{b['hi']}%: n {b['n']}, held {b['held']} ({b['pct']}%), gap {b['gap']:+d}"
+
+
+def _open_line(d):
+    return (f"{d['open_missed']} task or choice bet(s) missed inside a {SURVIVE_DAYS}-day window still open: scored when "
+            "it ends" if d.get("open_missed") else "")
 
 
 def _too_few(d):
@@ -727,8 +741,8 @@ def ledger_lines(p, outs=None):
     if not d["total"]:
         return []
     if not d["brier"]:
-        return [_too_few(d)]
-    return ["Calibration ledger: " + "; ".join(_bucket_line(k, b) for k, bs in d["kinds"].items() for b in bs)
+        return [_too_few(d)] + list(filter(None, [_open_line(d)]))
+    return list(filter(None, [_open_line(d)])) + ["Calibration ledger: " + "; ".join(_bucket_line(k, b) for k, bs in d["kinds"].items() for b in bs)
             + f"; {_brier_line(d)}" + (  # T-2499
                 "; trails its base rate most: {} (Brier stated {:.2f} vs base {:.2f}, n {})".format(*d["trails"])
                 if d["trails"] else "; no kind's stated Brier trails its base rate")]
@@ -807,6 +821,7 @@ def cmd_calibration(args):
     lines = [_too_few(d) + ": no bar moves" if not d["brier"] else "Calibration ledger: " + _brier_line(d)]
     lines += [_bucket_line(k, b) for k, bs in d["kinds"].items() for b in bs]
     lines += [_interim_line(d)] if d["interim"] else []
+    lines += list(filter(None, [_open_line(d)]))  # T-2610
     lines += [f"Raised the {bar} bar {old} → {new}." for bar, old, new in raised] + under + warns
     lines += [f"{pair}: the base rate's {v}% replaces the stated numbers (they scored a worse Brier)"
               for pair, v in d["routes"].items()]

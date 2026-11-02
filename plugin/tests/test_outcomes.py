@@ -459,8 +459,8 @@ class CalBase(Base):
 class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning has one
     def test_a_stated_confidence_writes_one_write_once_row_per_kind(self):
         first = self.done("Earlier 0")  # earlier closes: the base rate is their held-on-first-finish share (2 of 3)
-        self.done("Earlier 1")
-        self.done("Earlier 2")
+        for tid in (first, self.done("Earlier 1"), self.done("Earlier 2")):
+            self.age(tid, 31)  # T-2610: only finished windows pool into the base rate
         self.fm("capture", f"Crash in what {first} added", "--type", "FIX", "--tier", "S")
         tid = self.planned(conf=90, assume=["the cache is read-only (70%)", "no network (75%) in tests"])
         self.assertEqual(self.bets(), [], "nothing is a bet before first focus")
@@ -516,10 +516,11 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         data = self.cal()
         by = {r["task"]: r for r in fmoutcomes.scored(self.p)}
         self.assertEqual({t: by[t]["outcome"] for t in (held, broke, fresh)},
-                         {held: "held", broke: "missed", fresh: None}, "settling is pending, never held")
-        self.assertEqual((data["scored"], data["pending"]), (2, 1))
+                         {held: "held", broke: None, fresh: None}, "settling is pending, never held")
+        self.assertEqual(by[broke]["early"], "missed", "T-2610: a loss inside the window waits for it too")
+        self.assertEqual((data["scored"], data["pending"], data["open_missed"]), (1, 2, 1))
         (b,) = [x for x in data["kinds"]["task"] if x["lo"] == 80]
-        self.assertEqual((b["n"], b["held"], b["gap"]), (2, 1, 40))  # stated 90, held 50%
+        self.assertEqual((b["n"], b["held"], b["gap"]), (1, 1, -10))  # stated 90, held 100%
         self.assertEqual(sorted(r["outcome"] for r in self.rows() if "outcome" in r), ["held", "missed"])
         self.fm("outcomes", "--judgment")
         self.assertEqual(len([r for r in self.rows() if "outcome" in r]), 2, "settling twice adds no second grade")
@@ -790,7 +791,71 @@ class CalibrationBars(CalBase):
         self.seed("choice", 90, 10, 20)
         self.cal()
         t = fmtrials.load(self.p)[0]
-        later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=t["by"] + 1)
-        verdict, detail = fmtrials.grade(self.p, t, now=later)
+        later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=t["by"] + 1 + fmoutcomes.SURVIVE_DAYS)
+        verdict, detail = fmtrials.grade(self.p, t, now=later)  # T-2610: past the windows, whichever side the seeds fell
         self.assertEqual(verdict, "revert")
         self.assertIn("Brier", detail)
+
+    def test_a_brier_trial_waits_while_the_bets_since_the_move_are_inside_their_windows(self):  # T-2610
+        t = {"what": "research bar 70 → 75", "moves": "brier", "by": 30, "at": c.now()}
+        due = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=31)
+        verdict, detail = fmtrials.grade(self.p, t, now=due)
+        self.assertEqual(verdict, "pending", detail)
+        self.assertIn("30-day windows", detail)
+        verdict, detail = fmtrials.grade(self.p, t, now=due + datetime.timedelta(days=fmoutcomes.SURVIVE_DAYS))
+        self.assertEqual(verdict, "revert", "the wait is capped: no bet scored by then is no movement")
+
+
+class CensoredReads(CalBase):  # T-2610: a miss lands mid-window, a hold only after it; reads count finished windows
+    def lost_now(self, conf=None):
+        """A planned task closed now, then a crash fix captured against it: lost inside its still-open window."""
+        tid = self.planned(tier="S", conf=conf)
+        self.fm("focus", tid)
+        self.fm("task", "finish", tid, "--audit", "self", "--run", "true")
+        self.fm("capture", f"Crash after {tid}", "--type", "FIX", "--tier", "S")
+        return tid
+
+    def test_the_track_record_counts_a_close_only_once_its_window_finished(self):
+        old = self.done("Old")
+        self.age(old, 31)
+        fresh = self.done("Fresh")
+        self.fm("capture", f"Crash after {fresh}", "--type", "FIX", "--tier", "S")
+        outs = fmoutcomes.outcomes(self.p)
+        self.assertEqual(outs[fresh]["survival"], "lost")
+        self.assertEqual(fmoutcomes._row(fmoutcomes.track(self.p, outs)[("FEATURE", "S")]).split(", ", 1)[1],
+                         "1 of 1 held, 1 still in the 30-day window", "the fresh loss waits with the fresh holds")
+
+    def test_a_bet_missed_inside_an_open_window_is_pending_and_named_apart(self):
+        tid = self.lost_now(conf=90)
+        rows = [r for r in fmoutcomes.scored(self.p) if r["task"] == tid]
+        self.assertEqual({r["kind"] for r in rows}, {"task", "choice"})
+        self.assertTrue(all(r["outcome"] is None and r["early"] == "missed" for r in rows), rows)
+        self.assertEqual(fmoutcomes.bar_rows(fmoutcomes.scored(self.p)), [], "the bar check waits for the window")
+        d = self.cal()
+        self.assertEqual((d["scored"], d["kinds"], d["open_missed"]), (0, {}, 2))
+        self.assertIn("2 task or choice bet(s) missed inside a 30-day window still open: scored when it ends",
+                      self.fm("outcomes", "--judgment").stdout)
+        self.assertEqual(len([r for r in self.rows() if r.get("of")]), 2, "the grade rows are still written at once")
+
+    def test_a_seeded_bet_with_no_window_on_record_still_counts(self):
+        self.seed("task", 90, 14, 20, base=70)
+        self.assertEqual((self.cal()["scored"], self.cal()["open_missed"]), (20, 0))
+
+    def test_the_base_rate_pools_only_finished_or_unknown_windows(self):
+        outs = {"A": {"type": "FEATURE", "tier": "S", "fate": "reverted", "window_done": False},
+                "B": {"type": "FEATURE", "tier": "S", "fate": "held", "window_done": True},
+                "C": {"type": "FEATURE", "tier": "S", "fate": "held"}}
+        self.assertEqual(fmoutcomes.base_rate(outs, {}, "FEATURE", "S"), 100, "A's window is still open")
+        self.assertIsNone(fmoutcomes.base_rate({"A": outs["A"]}, {}, "FEATURE", "S"), "only open windows: no forecast")
+
+    def test_the_interim_read_counts_an_early_loss_as_not_held_so_far(self):
+        rows = [{"kind": "choice", "stated": 75, "outcome": None, "early": "missed", "task": "T-1"},
+                {"kind": "choice", "stated": 75, "outcome": None, "task": "T-2"}]
+        outs = {"T-1": {"survival": "lost", "days_left": 22, "fate": "fixed later", "window_done": False},
+                "T-2": {"survival": "settling", "days_left": 22, "fate": "held", "window_done": False}}
+        self.assertEqual(fmoutcomes.interim(rows, outs), {"choice": [{"lo": 60, "hi": 79, "n": 2, "held": 1, "pct": 50}]})
+
+    def test_a_loss_inside_an_open_window_carries_its_days_left(self):
+        fresh = self.done("Fresh")
+        self.fm("capture", f"Crash after {fresh}", "--type", "FIX", "--tier", "S")
+        self.assertGreater(fmoutcomes.outcomes(self.p)[fresh]["days_left"], 25)

@@ -129,6 +129,9 @@ def grade(p, t, now=None, act=False):
         rows = fmoutcomes.bar_rows(fmoutcomes.scored(p))  # the survival-scored rows, the only ones that moved the bar
         b = fmoutcomes.brier([r for r in rows if str(r["ts"]) < fmt(at)])
         a = fmoutcomes.brier([r for r in rows if fmt(at) <= str(r["ts"]) < fmt(due)])
+        if a is None and now < due + datetime.timedelta(days=fmoutcomes.SURVIVE_DAYS):  # T-2610: reads wait for windows
+            return "pending", (f"pending: the bets placed since the move score as their {fmoutcomes.SURVIVE_DAYS}-day "
+                               "windows end")
         if b is not None and a is not None and a < b:
             return "moved", f"moved (Brier {b:.2f} -> {a:.2f})"
         return "revert", "no movement: propose revert (Brier " + (f"{b:.2f} -> {a:.2f})" if None not in (a, b)
