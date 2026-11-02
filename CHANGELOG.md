@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New brainstorm lens, `fm ideas --lens grid`. It crosses the request's surfaces with its actors (you, the agent, other agents, an unattended run) and failure modes (missing, wrong, slow, unsafe, unclear), asks for one idea per cell that matters, and names the cells it left empty. The brainstorm skill names it for exhaustive requests.
 - The brainstorm skill's grounding step now runs a canary before it accepts a "not found": the same tool and scope must find a term known to be there. Otherwise a search that couldn't find anything reads the same as an idea that isn't built. Each "new" verdict records its canary, so a catalogue can count them.
 - Foreman's windowed readers (the survival and calibration windows in `fm outcomes`, and `fm digest`'s days) now read one clock, `c.clock()`. Tests can pin it with `FOREMAN_NOW`, and new tests stand exactly on each window's edge: a close at the end counts, one a second earlier doesn't. Outside tests the variable pins every timestamp Foreman writes, so `fm doctor` warns while it's set.
 - `fm doctor`'s state-dir row now warns when Foreman's state directory is on a RAM filesystem (tmpfs or ramfs), wherever it lives: the default, `FOREMAN_STATE` or a fallback. Before, it warned only when a fallback was under the temp dir. Every brief and ledger there is lost at reboot.
