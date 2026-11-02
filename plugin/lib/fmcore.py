@@ -4476,6 +4476,7 @@ PERF_NOISE = 0.15  # T-2391: a bench whose median moved by less than this share 
 DOCS_DIFF_MAX = 40  # git diffs one cold rollup spends on docs claims; the verdicts are kept, so the rest come on later calls
 _BENCH = lazy(r"([\d.]+)s → ([\d.]+)s \((\d+) runs each\)")  # what fm task evidence --bench records
 _DOC_FILE = lazy(r"(?i)\.(md|mdx|rst|adoc)$")
+_HISTORY_DOC = lazy(r"(?i)(changelog|changes|history|news)(\.\w+)?\.md")  # T-2616: fmdocs._HISTORY: records fm prove --docs skips
 # a line a run can check: a --flag, a backticked path, `make X` or npm run X; prose alone never counts
 _DOC_CLAIM = lazy(r"--[A-Za-z][\w-]*|`[^`\s]*[/.][\w-]+[^`\s]*`|`make\s+[\w.-]+|\b(?:npm|pnpm|yarn|bun) run\s+[\w:.-]+")
 _MIGRATION = lazy(r"(?i)(^|/)(migrations?|alembic/versions|db/migrate|prisma/migrations)/")
@@ -4523,15 +4524,15 @@ def _need_tui(x):
 
 
 def _need_docs(x):
-    """A checkable claim in the doc lines this task added (git diff from its start). ponytail: the diff runs to HEAD, so
-    a later task's edit to the same doc counts its lines too (a claim it added shows on this task as well); a task with
-    no start commit can't tell prose from a claim, so it is listed as unknown. A diff that failed (a timeout) is no
+    """A checkable claim in the doc lines this task added (git diff from its start to its own newest commit, the one
+    whose subject starts with its id; HEAD when none is found, so there a later task's lines still count: T-2616); a
+    task with no start commit can't tell prose from a claim, so it is listed as unknown. A diff that failed (a timeout) is no
     verdict: it is not kept, and the rollup is not kept either (sh["deferred"]) so the next call retries it."""
-    mds = [f for f in x["files"] if _DOC_FILE.search(f)]
+    mds = [f for f in x["files"] if _DOC_FILE.search(f) and not _HISTORY_DOC.fullmatch(os.path.basename(f))]
     b, sh = x["b"], x["shared"]
     if not mds:
         return None
-    key = f"{b.id}@{b.meta.get('updated', '')}"
+    key = f"{b.id}@{b.meta.get('updated', '')}@r{ROLLUP_RULES}"  # T-2616: a rule change retires memoized verdicts
     if key not in sh["old"]:
         if sh["left"] <= 0:
             sh["deferred"] = True
@@ -4542,7 +4543,11 @@ def _need_docs(x):
         else:
             base = None
         if base:
-            r = _git(x["p"].root, "diff", "-U0", "--no-color", base, *([] if x["live"] else ["HEAD"]), "--", *mds[:20],
+            end = []
+            if not x["live"]:  # T-2616: to the task's own landing commit, so a later task's doc lines aren't this one's
+                land = _git(x["p"].root, "log", "-1", "--format=%H", f"--grep=^{re.escape(b.id)}:", timeout=20)
+                end = [(land or "").strip() or "HEAD"]
+            r = _git(x["p"].root, "diff", "-U0", "--no-color", base, *end, "--", *mds[:20],
                      timeout=20, proc=True)
             if r.returncode:
                 sh["deferred"] = True
@@ -4736,6 +4741,9 @@ def _done_briefs(p, seen):
     return sig, files
 
 
+ROLLUP_RULES = 3  # T-2616: bump when a proof kind's rule changes, so the cached rollup is computed again
+
+
 def unproven_summary(p, days=30, budget=DOCS_DIFF_MAX):
     """T-2273: {n, counts, rows, cold_s} of unproven(p, days), kept in unproven.json (for PROOF_DAYS only) and
     recomputed when its key moves: today, the done briefs (name and mtime: an open task's saves don't move it) and
@@ -4759,7 +4767,7 @@ def unproven_summary(p, days=30, budget=DOCS_DIFF_MAX):
     old = old if isinstance(old, dict) else {}
     memo = old.get("memo") if isinstance(old.get("memo"), dict) else {}
     sig, files = _done_briefs(p, old.get("files") if isinstance(old.get("files"), dict) else {})
-    key = [days, now()[:10], sig] + [[dp] + stat(dp) for dp, _, _ in os.walk(os.path.join(p.dir, "archive"))]
+    key = [days, now()[:10], sig, ROLLUP_RULES] + [[dp] + stat(dp) for dp, _, _ in os.walk(os.path.join(p.dir, "archive"))]
     if days == PROOF_DAYS and old.get("key") == key and isinstance(old.get("n"), int) \
             and isinstance(old.get("rows"), list):
         return old

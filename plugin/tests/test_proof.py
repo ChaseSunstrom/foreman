@@ -164,6 +164,32 @@ class Proof(ForemanTestCase):
         self.assertNotIn(prose, got, "a prose-only edit never counts")
         self.assertIn("fm prove --docs", self.needs(claim)["docs"]["upgrade"])
 
+    def test_proof_kind_docs_reads_only_the_lines_the_task_itself_landed(self):  # T-2616
+        def commit(msg, text):
+            with open(os.path.join(self.repo, "docs", "guide.md"), "a", encoding="utf-8") as f:
+                f.write(text)
+            c._git(self.repo, "add", "-A")
+            c._git(self.repo, "-c", "user.email=t@e.c", "-c", "user.name=t", "commit", "-qm", msg)
+        os.makedirs(os.path.join(self.repo, "docs"), exist_ok=True)
+        base = c._git(self.repo, "rev-parse", "HEAD").strip()
+        prose = self.task("docs/guide.md", evidence=[("--step", "1", "--run", "true")], base=base)
+        commit(f"{prose}: prose", "Only prose about nothing you could run.\n")
+        base = c._git(self.repo, "rev-parse", "HEAD").strip()
+        claim = self.task("docs/guide.md", evidence=[("--step", "1", "--run", "true")], base=base)
+        commit(f"{claim}: a claim", "Run `fm proof --days 7` to see it.\n")  # lands after prose's commit
+        got = self.listed()
+        self.assertNotIn(prose, got, "a later task's claim is not this task's")
+        self.assertEqual(got[claim], ["docs"])
+
+    def test_proof_kind_docs_skips_history_files_fm_prove_docs_never_reads(self):  # T-2616
+        base = c._git(self.repo, "rev-parse", "HEAD").strip()
+        with open(os.path.join(self.repo, "CHANGELOG.md"), "a", encoding="utf-8") as f:
+            f.write("- `fm ship --chance N` books a bet.\n")  # a record of the time, not a claim fmdocs checks (T-1817)
+        c._git(self.repo, "add", "-A")
+        c._git(self.repo, "-c", "user.email=t@e.c", "-c", "user.name=t", "commit", "-qm", "changelog")
+        tid = self.task("CHANGELOG.md", evidence=[("--step", "1", "--run", "true")], base=base)
+        self.assertNotIn(tid, self.listed())
+
     def test_proof_kind_docs_is_cleared_by_a_green_prove_docs_run(self):
         t = self._doc_task("Use `make test` first.\n")
         with c.lock(self.p.dir):
