@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-02T13:25:27Z",
- "rev": "c5fbfafc",
+ "updated": "2026-11-02T13:42:04Z",
+ "rev": "221357ee",
  "capabilities": [
   {
    "n": 1,
@@ -2901,22 +2901,22 @@
       {
        "id": "T-2610",
        "title": "Calibration reads compare like with like: a close or a task or choice bet counts once its 30-day window finished",
-       "status": "active",
+       "status": "done",
        "type": "FIX",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "red: test_outcomes.CensoredReads for the track record, the ledger and base_rate"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2611",
        "title": "fm ship --chance names the ship record when the chance sits 15+ points from 20+ settled ship bets",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "S",
        "steps": 3,
-       "done": 0,
-       "current": "red: test_judgment.ShipNote"
+       "done": 1,
+       "current": "docs: CHANGELOG, ship-to-main.md"
       },
       {
        "id": "T-2338",
@@ -21558,14 +21558,14 @@
  },
  "not_yet": 5,
  "not_yet_open": 5,
- "unproven": 1047,
+ "unproven": 1048,
  "unproven_kinds": {
-  "meaning": 568,
+  "meaning": 569,
   "research-uncited": 29,
   "typed": 26,
   "red": 73,
   "perf-typed": 50,
-  "docs": 600,
+  "docs": 601,
   "ui-unshot": 50,
   "tui-unshot": 47,
   "data": 2,
@@ -21575,8 +21575,8 @@
  "next": {
   "stage": "build",
   "gen": 3,
-  "action": "Mission 2 (calibrated-judgment): finish T-2610",
-  "command": "fm focus T-2610",
+  "action": "Mission 2 (calibrated-judgment): finish T-2611",
+  "command": "fm focus T-2611",
   "kind": "ok"
  },
  "docs": {
