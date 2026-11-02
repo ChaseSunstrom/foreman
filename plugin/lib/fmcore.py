@@ -3998,7 +3998,8 @@ def next_for(p, briefs=None):
         queued = ""
     if queued:
         action += f" · {queued}"
-    if b is None and st == "idle" and not p.lane:  # T-2682: only when nothing runnable is open
+    if b is None and st in ("idle", "genesis") and not p.lane:  # T-2682: only when no task is open; T-2722: an
+        # open tower's stage is 'genesis', never 'idle', so the rule must fire there too
         try:
             ship = ship_waiting(p)
         except Exception:  # git trouble never costs the next action

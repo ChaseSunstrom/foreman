@@ -48,6 +48,15 @@ class ShipNext(ForemanTestCase):
         self.assertIn("ship 1 commit(s) main lacks under the user's standing push grant", out)
         self.assertIn("fm task set ID --allow publish, fm ship", out)  # fm ship needs the active task's grant
 
+    def test_an_open_genesis_tower_does_not_hide_the_ship_step(self):  # T-2722: the tower's stage is never idle
+        self.fm("genesis", "init", "--file", "-",
+                input="go\n\n## 2. The capability spec\n\n1. **Correctness.** Fixes. Exam: bug.\n\n## 3. The tower\n")
+        self.commit("a.txt")
+        self.grant()
+        out = self.nxt()
+        self.assertIn("Genesis", out)  # the tower's step is still named
+        self.assertTrue(out.startswith("Next: ship 1 commit(s) main lacks under the user's standing push grant"), out)
+
     def test_a_steer_that_forbids_pushing_to_main_is_no_grant(self):
         self.commit("a.txt")
         self.grant()
