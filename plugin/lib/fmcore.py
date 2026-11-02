@@ -3907,6 +3907,23 @@ def finished_lanes(p, briefs, quiet_min=30):
     return out
 
 
+PUSH_GRANT = lazy(r"\bpush(?:ing)?\b.*\bmain\b|\bmain\b.*\bpush(?:ing)?\b", re.I)
+
+
+def ship_waiting(p):
+    """T-2682: (n, granted) when HEAD has n commits the remote's main lacks (git cherry, by patch) and its tree differs
+    from main's (a merge-landed copy shows '+' with the same content), else None. granted: a user-steer decision in force
+    says to push to main. Local refs only: no fetch, so a stale origin/main can only overcount until the next fm ship."""
+    root = p.root
+    ref = next((r for r in ("origin/main", "main") if _git(root, "rev-parse", "--verify", "-q", r)), None)
+    if not ref:
+        return None
+    n = sum(1 for ln in _git(root, "cherry", ref, "HEAD").splitlines() if ln.startswith("+ "))
+    if not n or _git(root, "diff", "--quiet", ref, "HEAD", proc=True).returncode == 0:
+        return None
+    return n, any(PUSH_GRANT.search(t) for _, t in steer_rules(p))
+
+
 def next_for(p, briefs=None):
     """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111);
     T-0247: a decision whose revisit trigger fired rides along."""
@@ -3976,6 +3993,15 @@ def next_for(p, briefs=None):
         queued = ""
     if queued:
         action += f" · {queued}"
+    if b is None and st == "idle" and not p.lane:  # T-2682: only when nothing runnable is open
+        try:
+            ship = ship_waiting(p)
+        except Exception:  # git trouble never costs the next action
+            ship = None
+        if ship and ship[1]:
+            action = "fm ship (the user's standing push grant is on record; commits main lacks wait) · " + action
+        elif ship:
+            action += f" · {ship[0]} commit(s) main lacks: fm ship (needs a publish grant)"
     return b, st, action
 
 
