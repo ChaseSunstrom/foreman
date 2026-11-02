@@ -189,6 +189,8 @@
   "app.keys.u": "undo",
   "app.keys.P": "pr",
   "app.keys.F": "photo",
+  "app.keys.B": "breakout",
+  "app.keys.I": "backlog",
   "plugin.freshAt": 40,
   "plugin.freshTokens": 200000,
   "plugin.mascot": "blue",

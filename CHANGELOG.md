@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+## 1.2.51 — 2026-11-02
 ### Highlights
 
 - **Genesis.** `fm genesis` runs self-directed generations: a seed, Missions with exams, critiques, a drift check, a cross-cutting review on a stronger model, then selection. The tower is published as a live page (`fm genesis live`).
