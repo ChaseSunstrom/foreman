@@ -1,6 +1,6 @@
 # Mission 3 — staying lean and safe (gen 2, #12)
 
-Task: briefs 1-5 below, in order (ids assigned at intake).
+Task: T-2532, T-2533, T-2534, T-2535, T-2536 (briefs 1-5 in order).
 
 Parent: gen-2/seed.md row 3 → gen-0.md #12: "Staying lean and safe. Each of the above keeps the hooks fast, keeps
 context small and keeps the guard intact (see §6)." gen-0's goal, MUSTs and NEVERs are quoted in the seed and apply
