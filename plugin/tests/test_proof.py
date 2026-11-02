@@ -374,7 +374,7 @@ class Proof(ForemanTestCase):
         self.assertEqual(c.unproven_summary(self.p)["n"], 1, "the timed out rollup was not kept as the answer")
 
     def test_review_a_docs_edit_with_no_start_commit_is_reported_unknown(self):
-        t = self.task("docs/guide.md", evidence=[("--step", "1", "--run", "true")])
+        t = self.task("docs/guide.md", lines=[(1, "true", self.GREEN)])  # T-2525: no fm evidence writer, so no late start
         need = self.needs(t)["docs"]
         self.assertIn("unknown", need["why"])
         self.assertIn("fm prove --docs", need["upgrade"])

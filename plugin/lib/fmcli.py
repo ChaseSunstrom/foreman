@@ -811,7 +811,8 @@ def cmd_task(args):
             tried = None
         # T-2334: a task made active without fm focus (fm task set status=active) or whose focus timed out on git has
         # no start point to tell its files apart; HEAD now, not a snapshot (one now would hide the edits made so far)
-        late = None if need_brief(p, args.id).meta.get("base") or not c.git_root(p.root) else c.git_head(p.root)
+        cur = need_brief(p, args.id)  # T-2525: an open task only: one after a closed task's commit gives an empty diff
+        late = None if cur.meta.get("base") or cur.status in c.CLOSED or not c.git_root(p.root) else c.git_head(p.root)
 
         def record(b):
             if late and not b.meta.get("base"):

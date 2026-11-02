@@ -1689,3 +1689,14 @@ class StartPoint(ForemanTestCase):  # T-2334: a task always gets a start point; 
         b = c.find_brief(p, tid)
         self.assertEqual(b.meta.get("base"), c.git_head(self.repo))
         self.assertIn("start point recorded late", b.section("Log"))
+
+    def test_evidence_on_a_closed_task_records_no_late_start_point(self):  # T-2525: one after its commit = empty diff
+        self.fm("init")
+        p = c.find_project(self.repo)
+        tid = json.loads(self.fm("task", "new", "Done one", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
+                                 "--step", "s", "--json").stdout)["id"]
+        b = c.find_brief(p, tid)
+        b.meta["status"] = "done"
+        c.save_brief(p, b)
+        self.fm("task", "evidence", tid, "--run", "true", check=False)
+        self.assertFalse(c.find_brief(p, tid).meta.get("base"))
