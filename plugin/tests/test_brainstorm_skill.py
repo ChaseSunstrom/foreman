@@ -15,5 +15,18 @@ class Grounding(unittest.TestCase):
             self.assertIn(want, step)
 
 
+
+class Canary(unittest.TestCase):
+    """T-2674: an empty search proves absence only if the same search finds something known to be there."""
+
+    def test_step_4_runs_a_canary_before_any_not_found(self):
+        with open(SKILL, encoding="utf-8") as f:
+            step = f.read().split("4. **Merge, cluster, ground", 1)[1].split("\n5. ", 1)[0]
+        self.assertIn("canary", step)
+        self.assertIn("same tool and scope", step)
+        self.assertIn("canary:", step)  # the verdict records it, so a catalogue can count the "new" verdicts that carry one
+
+
+
 if __name__ == "__main__":
     unittest.main()

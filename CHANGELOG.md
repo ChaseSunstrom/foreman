@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The brainstorm skill's grounding step now runs a canary before it accepts a "not found": the same tool and scope must find a term known to be there. Otherwise a search that couldn't find anything reads the same as an idea that isn't built. Each "new" verdict records its canary, so a catalogue can count them.
 - Foreman's windowed readers (the survival and calibration windows in `fm outcomes`, and `fm digest`'s days) now read one clock, `c.clock()`. Tests can pin it with `FOREMAN_NOW`, and new tests stand exactly on each window's edge: a close at the end counts, one a second earlier doesn't. Outside tests the variable pins every timestamp Foreman writes, so `fm doctor` warns while it's set.
 - `fm doctor`'s state-dir row now warns when Foreman's state directory is on a RAM filesystem (tmpfs or ramfs), wherever it lives: the default, `FOREMAN_STATE` or a fallback. Before, it warned only when a fallback was under the temp dir. Every brief and ledger there is lost at reboot.
 - Fixed: the guard could hang on a command with deeply nested `$(`. Every level re-read the rest of the command, so the work grew about n⁴: 20 levels took 19 seconds and 500 never finished. More than 8 nested at once is now refused at once with the guard's existing "nesting too deep" message. A new latency test times ten pathological commands (a 50,000-character line, 200 heredocs, 10,000 `;`-joined commands and others) against CPU-time bars, and a planted slow regex proves the test can fail.
