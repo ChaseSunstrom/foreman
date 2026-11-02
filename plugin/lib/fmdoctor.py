@@ -1489,6 +1489,21 @@ def check_pinned_clock():
                   "unset it outside tests") if v else Result("clock", "PASS", "the system clock")
 
 
+def check_notify(projects):
+    """T-2684: a notify command that failed its last 3 or more deliveries in a row (fm run's alerts go nowhere)."""
+    bad, has = [], False
+    for p in projects:
+        m = c.read_meta(p)
+        has = has or bool(m.get("notify"))
+        r = m.get("notify_result") or {}
+        if m.get("notify") and isinstance(r.get("fails"), int) and r["fails"] >= 3:
+            cmd = " ".join(c.plain(str(m["notify"])).split())
+            bad.append(f"{p.slug}: `{cmd[:80]}` failed {r['fails']} in a row, last: {c.plain(str(r.get('error')))[:80]}")
+    if bad:
+        return Result("notify", "WARN", "; ".join(bad) + " (fm notify --test, or fm notify to change it)")
+    return Result("notify", "PASS", "deliveries ok" if has else "no notify command")
+
+
 def _fs_type(path):
     """The filesystem type path is on, from /proc/mounts (longest mount point that holds it); 'unknown' elsewhere."""
     path, best = os.path.realpath(path), ("", "unknown")
@@ -2606,6 +2621,7 @@ def run_all(full=False, accept_supply=False):
                 check_frontmatter(), check_unloaded_skills()]
     projects = [p for p, _ in c.all_projects()]
     results.append(check_heartbeats(projects))
+    results.append(check_notify(projects))
     results.append(check_state_size(projects))
     results.append(check_fsck(projects))
     results.append(check_cut_off_lanes(projects, getattr(c.find_project(os.getcwd()), "slug", None)))

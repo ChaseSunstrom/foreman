@@ -742,13 +742,21 @@ def _notify(p, message):
     """The user's notify command (fm notify), with the message as $1: never part of the shell text."""
     cmd = c.read_meta(p).get("notify")
     if cmd:
+        err = None  # T-2684: the last delivery's result and the failures in a row, in meta, for fm doctor
         try:
             import fmcli
             import fmguard  # T-0901: a stored command; $1 read as code-shaped text, so one that runs it is refused
             fmcli.guard_stored(p, None, re.sub(r"\$\{?1\}?", fmguard.NOTIFY_PROBE, cmd))
-            subprocess.run(["bash", "-c", cmd, "fm-notify", c.plain(message)[:300]], cwd=p.root, timeout=30,
-                           stdin=subprocess.DEVNULL, capture_output=True)
-        except (OSError, subprocess.SubprocessError, c.PolicyError):
+            r = subprocess.run(["bash", "-c", cmd, "fm-notify", c.plain(message)[:300]], cwd=p.root, timeout=30,
+                               stdin=subprocess.DEVNULL, capture_output=True)
+            if r.returncode:
+                err = f"exit {r.returncode}"
+        except (OSError, subprocess.SubprocessError, c.PolicyError) as e:
+            err = c.plain(f"{type(e).__name__}: {e}")[:120]
+        try:
+            fails = 0 if err is None else int((c.read_meta(p).get("notify_result") or {}).get("fails", 0)) + 1
+            c.update_meta(p, notify_result={"at": c.now(), "ok": err is None, "error": err, "fails": fails})
+        except (OSError, ValueError, TypeError):
             pass
 
 
