@@ -215,6 +215,12 @@ class SplitVerify(TaskErgonomics):
         self.assertEqual(c.split_verify("plain"), ("plain", None))
         self.assertEqual(c.split_verify("a ::  "), ("a", None))
 
+    def test_a_criterion_quoting_the_dash_form_runs_its_trailing_command(self):
+        # T-2839: T-2789's own criterion quoted "— verify with `CMD`" and ran 'CMD`... python3' (exit 127)
+        stored = "parses 'TEXT — verify with `CMD`' at every entry point — verify with `python3 run.py test_x`"
+        self.assertEqual(c.verify_of(stored), "python3 run.py test_x")
+        self.assertEqual(c.strip_verify(stored), "parses 'TEXT — verify with `CMD`' at every entry point")
+
     def acs(self, tid):
         return self.brief(tid).section("Acceptance criteria")
 

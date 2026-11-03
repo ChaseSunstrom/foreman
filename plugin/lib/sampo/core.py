@@ -5174,7 +5174,7 @@ def scope_drift(b, files):
     return [f for f in files if scope and not f.startswith(".foreman/") and not any(glob_match(f, s) for s in scope)]
 
 
-_VERIFY_OF = lazy(r"— verify with `(.+)`\s*$")
+_VERIFY_OF = lazy(r"— verify with `((?:(?!— verify with `).)+)`\s*$")  # T-2839: the last one, not a quoted one
 
 
 def strip_verify(criterion_text):
