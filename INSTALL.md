@@ -10,7 +10,7 @@ assume yes.
    If Python is older or missing, the installer can install one (Homebrew on macOS, `uv` elsewhere, no sudo); say so.
 
 2. **Read the installer before running it.** Fetch
-   `https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh` and read it. Tell the person, in plain
+   `https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/install.sh` and read it. Tell the person, in plain
    words, what it will do by default:
    - clone Sampo to `~/.claude/foreman` and, with Claude Code, register it as a Claude Code plugin; without Claude
      Code, put `sampo` on PATH and run `sampo agents install` for each of Codex, Gemini CLI and opencode it finds;
@@ -25,7 +25,7 @@ assume yes.
    Every change is recorded so `~/.claude/foreman/plugin/uninstall.sh` can undo it.
 
 3. **Ask which of those they want**, and build the command from the answers, for example
-   `curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash -s -- --no-plugins --bypass`.
+   `curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/install.sh | bash -s -- --no-plugins --bypass`.
    Run it only after they agree. The options (`install.sh --help` prints the same):
 
    | Flag | What it does |

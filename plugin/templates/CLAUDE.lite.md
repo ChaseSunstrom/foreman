@@ -1,7 +1,7 @@
 # Working rules: Foreman in one file
 
 Foreman's discipline without its plugin. No hook enforces these rules: they hold as long as you follow them.
-The full version (a guard, task state, gates, a live pane) is at https://github.com/ChaseSunstrom/foreman.
+The full version (a guard, task state, gates, a live pane) is at https://github.com/ChaseSunstrom/sampo.
 
 ## Every request
 1. Name it in one line: FIX, FEATURE, CLEAN, PERF, SECURITY or RESEARCH, and a size: S (about 30 lines, 1-2 files),

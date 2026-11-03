@@ -1117,7 +1117,7 @@ class DoctorDualInstall(ForemanTestCase):
             json.dump({"foreman": {"source": source}}, f)
 
     def test_a_github_install_beside_this_home_at_another_version_warns(self):
-        self.known_as({"source": "github", "repo": "ChaseSunstrom/foreman"})
+        self.known_as({"source": "github", "repo": "ChaseSunstrom/sampo"})
         r = d.check_dual_install(self.fmhome, self.known, self.installed)
         self.assertEqual(r.status, "WARN")
         self.assertIn("1.2.20", r.detail)

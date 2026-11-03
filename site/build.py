@@ -369,7 +369,7 @@ def layout(title, desc, body, pages, here, depth=1):
 <meta name="description" content="{esc(desc)}">
 <meta property="og:title" content="{esc(title)} · Sampo">
 <meta property="og:description" content="{esc(desc)}">
-<meta property="og:image" content="https://chasesunstrom.github.io/foreman/assets/share.png">
+<meta property="og:image" content="https://chasesunstrom.github.io/sampo/assets/share.png">
 <link rel="icon" href="{up}{ICON}" type="image/svg+xml">
 <link rel="icon" href="{up}{FAVICON}" sizes="32x32">
 <link rel="stylesheet" href="{up}{CSS}">
@@ -381,7 +381,7 @@ def layout(title, desc, body, pages, here, depth=1):
     <nav class="nav" aria-label="Main">
       <a class="hide-sm" href="{up}features/index.html">Features</a>
       <a href="{up}index.html#install">Install</a>
-      <a href="https://github.com/ChaseSunstrom/foreman">GitHub</a>
+      <a href="https://github.com/ChaseSunstrom/sampo">GitHub</a>
       <button class="theme" type="button" aria-label="Switch between light and dark" title="Light or dark">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
       </button>
@@ -396,9 +396,9 @@ def layout(title, desc, body, pages, here, depth=1):
   <div class="wrap">
     <a class="brand" href="{up}index.html"><img src="{up}{ICON}" alt="" width="22" height="22">Sampo</a>
     <nav aria-label="Links">
-      <a href="https://github.com/ChaseSunstrom/foreman">Source</a>
-      <a href="https://github.com/ChaseSunstrom/foreman/blob/main/README.md">Read me</a>
-      <a href="https://github.com/ChaseSunstrom/foreman/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/ChaseSunstrom/sampo">Source</a>
+      <a href="https://github.com/ChaseSunstrom/sampo/blob/main/README.md">Read me</a>
+      <a href="https://github.com/ChaseSunstrom/sampo/blob/main/CHANGELOG.md">Changelog</a>
     </nav>
     <p class="fine">A community project for coding agents. Not made by or affiliated with Anthropic or any agent's maker. Charts are drawn from Sampo's own record of building itself.</p>
   </div>

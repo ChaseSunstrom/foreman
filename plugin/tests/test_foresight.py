@@ -143,7 +143,7 @@ class Foresight(ForemanTestCase):
             scan.assert_not_called()  # burn.json is fresh: the account-wide scan waits its 10 min
 
     def test_github_repo_reads_origin(self):
-        for url, want in (("git@github.com:ChaseSunstrom/foreman.git", "ChaseSunstrom/foreman"),
+        for url, want in (("git@github.com:ChaseSunstrom/sampo.git", "ChaseSunstrom/sampo"),
                           ("https://github.com/o/r", "o/r"), ("https://gitlab.com/o/r.git", None)):
             with mock.patch.object(c, "run_command", return_value=(0, url + "\n")):
                 self.assertEqual(fs.github_repo("/x"), want)

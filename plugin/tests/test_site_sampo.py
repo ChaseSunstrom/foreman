@@ -18,7 +18,6 @@ from test_site_build import site
 ROOT = os.path.dirname(PLUGIN)
 LOGO = os.path.join(ROOT, "design", "sampo", "logo")
 CSS = os.path.join(ROOT, "site", "style.css")
-REPO = re.compile(r"chasesunstrom(?:\.github\.io)?/foreman", re.I)  # the repo's address moves only when it is renamed
 KEY = re.compile(r"\.foreman\b")  # a data key the exporter in plugin/lib writes; it renames with the internals (T-2748)
 QUOTED = re.compile(  # text a built page quotes verbatim from files this task leaves alone: it renames with its source
     r"duel-\w+-foreman-\d{8}"  # recorded bench run ids, which sampo bench repro takes as they are
@@ -37,7 +36,7 @@ def roles(theme):
 
 
 def names_foreman(text):
-    return re.search(r"\bforeman\b", KEPT.sub("", KEY.sub("", REPO.sub("", text))), re.I)
+    return re.search(r"\bforeman\b", KEPT.sub("", KEY.sub("", text)), re.I)
 
 
 class Tokens(unittest.TestCase):

@@ -19,7 +19,6 @@ KEPT = re.compile(r"foreman(?:-ui)?@foreman|foreman-ui|/foreman:|(?-i:foreman:(?
                   r"\.claude/foreman|(?-i:/foreman/)|'foreman'|(?-i:Continue the Foreman drive)|"
                   r"(?-i:Foreman guard:|Foreman asks |Foreman\(\?: guard\)\?:)|"  # the last: register.tsx's guard regex source
                   r"formerly Foreman|was called Foreman|renamed from Foreman|"
-                  r"chasesunstrom(?:\.github\.io)?/foreman|"  # the repo's address moves only when it is renamed
                   # T-2810: lowercase ids a page names as code (.foreman/, refs/foreman/, foreman-ui, foreman.md, a `foreman` arm,
                   # `claude mcp add foreman`): a folder, ref, file, plugin or arm name, kept like the plugin id; a capital F is prose
                   r"(?-i:[`|/.$~-]foreman|foreman[`|/.:=-]|mcp add foreman)|"
@@ -49,6 +48,11 @@ def library_strings():
     return rows
 
 
+# T-2811: the repo is ChaseSunstrom/sampo now; its old address (and the Pages one, which 404s) counts wherever it appears.
+# KEPT can't hide it: its lowercase-id forms keep any /foreman. (foreman-desktop is a separate repo, so `-` is not a match)
+OLD_ADDR = re.compile(r"sunstrom(?:\.github\.io)?/foreman(?!-)", re.I)
+
+
 def leftover():
     """The (path, line) pairs on a surface that name Foreman outside the kept forms."""
     out = subprocess.run(["git", "-C", ROOT, "grep", "-niw", "foreman", "--", *SURFACES], capture_output=True,
@@ -57,7 +61,7 @@ def leftover():
     for ln in out.splitlines():
         path, _, rest = ln.partition(":")
         text = rest.partition(":")[2]
-        if re.search(r"\bforeman\b", KEPT.sub("", text), re.I):
+        if OLD_ADDR.search(text) or re.search(r"\bforeman\b", KEPT.sub("", text), re.I):
             rows.append((path, text.strip()[:100]))
     return rows
 
@@ -75,6 +79,13 @@ class RenameScan(unittest.TestCase):
         self.assertFalse(re.search(r"\bforeman\b", KEPT.sub("", "Continue the Foreman drive: x"), re.I))
         self.assertFalse(re.search(r"\bforeman\b", KEPT.sub("", "Foreman guard: blocked core"), re.I))
         self.assertTrue(re.search(r"\bforeman\b", KEPT.sub("", "Foreman: open the pane"), re.I))  # display, not a kept form
+
+    def test_old_repo_address_counts(self):  # T-2811
+        for old in ("https://github.com/ChaseSunstrom/foreman/blob/main/INSTALL.md", "https://chasesunstrom.github.io/foreman/",
+                    "raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh", "gh repo clone ChaseSunstrom/foreman"):
+            self.assertTrue(OLD_ADDR.search(old), old)
+        self.assertFalse(OLD_ADDR.search("github.com/ChaseSunstrom/foreman-desktop"))
+        self.assertFalse(OLD_ADDR.search("https://chasesunstrom.github.io/sampo/"))
 
     def test_lowercase_ids_are_kept_but_prose_is_not(self):  # T-2810
         for kept in ("the `foreman` arm", "writes .foreman/ in the repo", "refs/foreman/shipped", "foreman-ui mod", "rules/foreman.md",

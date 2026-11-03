@@ -607,10 +607,10 @@ class Site(unittest.TestCase):
             self.assertEqual(len(build.outside_loads(page, ".html")), 1, page)
         self.assertTrue(build.outside_loads("body { background: url(https://x.test/a.png) }", ".css"))
         self.assertTrue(build.outside_loads('fetch("https://x.test/a")', ".js"))
-        good = ['<a href="https://github.com/ChaseSunstrom/foreman">Source</a>', "<code>curl https://x.test/i.sh</code>",
+        good = ['<a href="https://github.com/ChaseSunstrom/sampo">Source</a>', "<code>curl https://x.test/i.sh</code>",
                 '<svg xmlns="http://www.w3.org/2000/svg"><a href="https://x.test">x</a></svg>',
                 '<meta property="og:image" content="https://x.test/poster.jpg">', '<img src="assets/a.png">',
-                '<link rel="icon" href="https://chasesunstrom.github.io/foreman/assets/foreman.svg">',
+                '<link rel="icon" href="https://chasesunstrom.github.io/sampo/assets/foreman.svg">',
                 '<img src="data:image/png;base64,iVBOR//x.test">', '<script>// see //x.test\nvar a = 1;</script>']
         for page in good:
             self.assertEqual(build.outside_loads(page, ".html"), [], page)

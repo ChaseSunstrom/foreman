@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Foreman bootstrap. Public repo:
-#   curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/install.sh | bash
 # Private repo (uses your gh login):
-#   gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
+#   gh repo clone ChaseSunstrom/sampo ~/.claude/foreman && ~/.claude/foreman/install.sh
 #
 # Options:
 #   --build          open Claude Code on the Sampo build (rebuild or resume from BUILD_PROMPT.md)
@@ -19,7 +19,7 @@
 #   FOREMAN_DESKTOP_REPO  GitHub owner/repo the desktop app's releases come from (default below)
 set -euo pipefail
 
-FOREMAN_REPO="${FOREMAN_REPO:-https://github.com/ChaseSunstrom/foreman.git}"
+FOREMAN_REPO="${FOREMAN_REPO:-https://github.com/ChaseSunstrom/sampo.git}"
 FOREMAN_HOME="${FOREMAN_HOME:-$HOME/.claude/foreman}"
 FOREMAN_DESKTOP_REPO="${FOREMAN_DESKTOP_REPO:-ChaseSunstrom/foreman-desktop}"
 

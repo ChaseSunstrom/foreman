@@ -13,7 +13,7 @@ Claude Code, Codex, Gemini CLI, opencode, or its own <code>sampo smith</code> on
 It plans before it edits, proves its work with commands it really ran, keeps to one task at a time<br>
 and works through the queue, while a Ward stops the commands you'd never want run in bypass mode.</p>
 
-<p align="center"><a href="https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml"><img src="https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml/badge.svg" alt="tests"></a></p>
+<p align="center"><a href="https://github.com/ChaseSunstrom/sampo/actions/workflows/test.yml"><img src="https://github.com/ChaseSunstrom/sampo/actions/workflows/test.yml/badge.svg" alt="tests"></a></p>
 
 <p align="center">
   <a href="#quick-start"><b>Install</b></a> ·
@@ -22,7 +22,7 @@ and works through the queue, while a Ward stops the commands you'd never want ru
   <a href="#features"><b>Features</b></a> ·
   <a href="#smith-any-model-sampos-loop"><b>Any model</b></a> ·
   <a href="MASTER.md"><b>Docs</b></a> ·
-  <a href="https://chasesunstrom.github.io/foreman/"><b>Site</b></a>
+  <a href="https://chasesunstrom.github.io/sampo/"><b>Site</b></a>
 </p>
 
 <p align="center">
@@ -66,13 +66,13 @@ Every request, however terse, goes round the same loop:
 ## Quick start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/install.sh | bash
 ```
 
 Or from inside Claude Code:
 
 ```
-/plugin marketplace add ChaseSunstrom/foreman
+/plugin marketplace add ChaseSunstrom/sampo
 /plugin install foreman@foreman
 ```
 
@@ -104,12 +104,12 @@ The first session puts `sampo` on your PATH (`~/.local/bin/fm`, made when nothin
 
 The plugin-system install changes nothing outside the plugin: the hooks and the Ward run, and the first session reads Sampo's rules from the plugin. Say "finish setting up Sampo" later to add the rest (status line, deny rules, the bypass question, `sampo` in your shell). `sampo uninstall-user` undoes it.
 
-**Having Claude install it for you?** Tell it: "install Sampo following https://github.com/ChaseSunstrom/foreman/blob/main/INSTALL.md". [INSTALL.md](INSTALL.md) has it explain the defaults and ask before each change.
+**Having Claude install it for you?** Tell it: "install Sampo following https://github.com/ChaseSunstrom/sampo/blob/main/INSTALL.md". [INSTALL.md](INSTALL.md) has it explain the defaults and ask before each change.
 
 **Private repo** (uses your `gh` login):
 
 ```bash
-gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
+gh repo clone ChaseSunstrom/sampo ~/.claude/foreman && ~/.claude/foreman/install.sh
 ```
 
 **Requirements:** Linux, macOS or WSL (not native Windows), `git`, and Python 3.12.7 or newer as `python3`. Claude Code (`claude`, tested on 2.1.304; the pane needs 2.1.299 or later) is optional: without it the installer skips the Claude Code plugin and settings, puts `sampo` on your PATH and wires Codex, Gemini CLI or opencode if it finds them (or points you at `sampo smith`). When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
@@ -520,7 +520,7 @@ Every edit and command goes past Sampo's Ward first, the harness runs each check
 - A new project: in an empty `git init` folder, `sampo smith "make a Python CLI that counts lines, words and characters, with tests"`.
 - The app: `sampo smith` on its own opens it, the way `claude` does, and `sampo smith tui --tour` plays a 30-second guided run.
 
-Real runs of each kind are on the [Smith page](https://chasesunstrom.github.io/foreman/features/code.html#ex-fix), recorded in `demo/examples/`.
+Real runs of each kind are on the [Smith page](https://chasesunstrom.github.io/sampo/features/code.html#ex-fix), recorded in `demo/examples/`.
 
 <details>
 <summary><b>How a run works</b></summary>
@@ -566,12 +566,12 @@ Real runs of each kind are on the [Smith page](https://chasesunstrom.github.io/f
 - `Enter` or `r` on a task runs it there (`sampo smith --task ID`: the task's own criteria and steps are the plan, no planner call; one run per task at a time), `Enter` on a past run replays it, `n` starts a new request in that project's folder, and `m` picks the runner.
 - On a terminal, `sampo smith "make calc.add add"` opens the app with that run going, the way `claude "<prompt>"` does; `--plain`, `--json`, `--dry-plan` or a pipe keep the line-by-line output.
 - `sampo smith tui "make calc.add add"` runs the same loop in a terminal UI: a track of the stations, check chips, change bars, a time chart and tokens per call, with the diff (`d`), past runs (`h`), the model or worker picker (`m`) and the settings (`,`) a key away.
-- It draws in 24-bit colour and moves: the working station pulses, counters and bars ease to their values, a Ward refusal flashes and the close sweeps the track (`motion = reduced` or `off` stills it; `--record run.mp4 --events RUN.jsonl` films a run, [demo](https://chasesunstrom.github.io/foreman/features/code.html)). `z` hushes motion to reduced, then off, then full again, for the Claude Code pane too.
+- It draws in 24-bit colour and moves: the working station pulses, counters and bars ease to their values, a Ward refusal flashes and the close sweeps the track (`motion = reduced` or `off` stills it; `--record run.mp4 --events RUN.jsonl` films a run, [demo](https://chasesunstrom.github.io/sampo/features/code.html)). `z` hushes motion to reduced, then off, then full again, for the Claude Code pane too.
 - After a run closes, `u` twice undoes it (a `git revert` of its commit, marked undone in past runs) and `P` shows its pull request text from `sampo pr`, which Enter posts when the task holds the publish grant.
 - During a run, `n` asks about the code beside it, and Tab turns that box into a ticket for after it: tickets ride a rail under the track and start one by one as each run closes (`T` reorders or drops them).
 - When a run stalls or stops, `x` on its card hands the task to a live CLI in this terminal, with the task's brief as the opening prompt; when you exit it, the app re-runs the task's checks through the Ward (`sampo smith --recheck ID`) and says whether it can close.
 - Before a project's first run its welcome shows what a run needs (sampo on PATH, a runner, the folder as a project), each missing one with the key that fixes it, and `e` asks "explain this repo". The app's header names what holds the run in: Landlock (with its ABI) or Sampo's Ward only. The runners screen (`,` then `r`) shows each one's last answer as a lamp, and `p` pings the selected runner.
-- `sampo smith tui --tour` plays a 30-second guided run with a caption naming each panel as it comes alive; `--tour --snapshot FILE.svg` writes it as one animated SVG, no video tools needed ([the tour](https://chasesunstrom.github.io/foreman/assets/code-tui-tour.svg), drawn from today's code at each site build).
+- `sampo smith tui --tour` plays a 30-second guided run with a caption naming each panel as it comes alive; `--tour --snapshot FILE.svg` writes it as one animated SVG, no video tools needed ([the tour](https://chasesunstrom.github.io/sampo/assets/code-tui-tour.svg), drawn from today's code at each site build).
 - Themes: night, paper, signal for colour-blind eyes, mono, and `theme = "riso"` for risograph inks on a paper stock (`palette = "riso"` puts the inks on any theme, and on the pane). On a terminal that draws a half block one column wide, the built track stands up as a lit rail; `?` shows the keys as a poster.
 - `sampo smith tui --print-config > ~/.claude/foreman/tui.toml` gives you its theme, motion, layout and keys to edit. `sampo settings list` shows them beside the Claude Code pane's, `sampo settings set motion reduced` changes one in place, keeping your comments, `sampo settings diff` lists the ones you changed, `sampo settings export` prints them as one share code for `sampo settings import CODE`, and `sampo settings undo` puts the last set or import back.
 - Inside the app, `,` lists the settings by group with search, changed-only and `:set KEY VALUE`; a theme, palette or motion change is a preview until a key keeps it, and goes back after 10 s without one.
@@ -610,7 +610,7 @@ Some calls can go to a model: a request's type and size, whether two items are t
 To add the lite rules to a project:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/plugin/templates/CLAUDE.lite.md >> CLAUDE.md
+curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/plugin/templates/CLAUDE.lite.md >> CLAUDE.md
 ```
 
 ## Documentation
@@ -621,13 +621,13 @@ curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/plugin/t
 | [`INSTALL.md`](INSTALL.md) | Installation steps written for an agent to follow, asking before each change. |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release notes. |
 | [`BUILD_PROMPT.md`](BUILD_PROMPT.md) | The spec Sampo was built from, including the plugin choices (§4.6 and Appendix A). |
-| [The site](https://chasesunstrom.github.io/foreman/) | A page per feature, with recorded runs. |
+| [The site](https://chasesunstrom.github.io/sampo/) | A page per feature, with recorded runs. |
 
 ## Updating and removing
 
 <details><summary>Upgrading (formerly Foreman)</summary>
 
-**Upgrading.** Sampo was formerly Foreman, and nothing you have breaks: `fm` stays as an alias that works as before and prints one deprecation line a day; the plugin ids `foreman@foreman` and `foreman-ui@foreman`, the `/foreman:` commands, the `foreman:` agents, the `FOREMAN_*` variables and the `Foreman-Task` commit trailer keep working; and `~/.claude/foreman` is migrated once by `sampo migrate` (`sampo migrate --undo` restores it exactly). The renamed verbs keep their old spellings too: `code` is `sampo smith`, `genesis` is `sampo rune`, `exam` is `sampo louhi` and `guard` is `sampo ward`. The GitHub repo is still ChaseSunstrom/foreman until it is renamed, so the install lines above are unchanged.
+**Upgrading.** Sampo was formerly Foreman, and nothing you have breaks: `fm` stays as an alias that works as before and prints one deprecation line a day; the plugin ids `foreman@foreman` and `foreman-ui@foreman`, the `/foreman:` commands, the `foreman:` agents, the `FOREMAN_*` variables and the `Foreman-Task` commit trailer keep working; and `~/.claude/foreman` is migrated once by `sampo migrate` (`sampo migrate --undo` restores it exactly). The renamed verbs keep their old spellings too: `code` is `sampo smith`, `genesis` is `sampo rune`, `exam` is `sampo louhi` and `guard` is `sampo ward`. The GitHub repo is still ChaseSunstrom/sampo until it is renamed, so the install lines above are unchanged.
 
 </details>
 
