@@ -129,8 +129,9 @@ class LacksPage(unittest.TestCase):  # T-2378: #5 on the site, its figures from 
         for name in ("README.md", "MASTER.md", "CHANGELOG.md"):  # each surface named where a reader looks
             with open(os.path.join(root, name), encoding="utf-8") as f:
                 doc = f.read()
-            for word in ("`grants`", "fm which", "PostToolUseFailure"):
+            for word in ("`grants`", "PostToolUseFailure"):
                 self.assertIn(word, doc, f"{name}: {word}")
+            self.assertRegex(doc, r"\b(?:sampo|fm) which\b", name)  # either name while the docs move to Sampo
 
 
 class ProofPage(unittest.TestCase):  # T-2395: #6/#10 on the site, built from Foreman's own code and data
