@@ -3787,12 +3787,13 @@ CHECK_PENDING = lazy(r"pending (T-\d{4,})")  # a rule whose check waits on a nam
 CHECK_FM = (["fm", "genesis", "check"], ["fm", "exam", "scorecard"], ["sampo", "rune", "check"], ["sampo", "louhi", "scorecard"],
             ["sampo", "genesis", "check"], ["sampo", "exam", "scorecard"])
 TEST_ID = lazy(r"test_\w+(?:\.\w+)*")
+CHECK_ISO = lazy(r"\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d(?:\.\d+)?)?Z?)?")
 
 
 def check_argv(cmd):
     """T-2167: a steer rule's check as argv, else ValueError. A check runs later from fm genesis sweep and fm doctor,
-    outside the PreToolUse guard, so only fm genesis check, fm exam scorecard or the test runner on test ids pass, and
-    none ever goes through a shell."""
+    outside the PreToolUse guard, so only fm genesis check, fm exam scorecard, fm outcomes --questions --none or the
+    test runner on test ids pass, and none ever goes through a shell."""
     try:
         argv = shlex.split(cmd)
     except ValueError:
@@ -3800,8 +3801,11 @@ def check_argv(cmd):
     if argv in CHECK_FM or (argv[:2] == ["python3", "plugin/tests/run.py"] and len(argv) > 2
                             and all(TEST_ID.fullmatch(a) for a in argv[2:])):
         return argv
-    raise ValueError(f"a check is `sampo rune check` (fm genesis check), `sampo louhi scorecard` (fm exam scorecard) "
-                     f"or `python3 plugin/tests/run.py test_…`, "
+    if argv[:4] in (["fm", "outcomes", "--questions", "--none"], ["sampo", "outcomes", "--questions", "--none"]) and (
+            len(argv) == 4 or (len(argv) == 6 and argv[4] == "--since" and CHECK_ISO.fullmatch(argv[5]))):
+        return argv  # T-2840: read-only, no questions asked since the steer
+    raise ValueError(f"a check is `sampo rune check` (fm genesis check), `sampo louhi scorecard` (fm exam scorecard), "
+                     f"`sampo outcomes --questions --none [--since TS]` or `python3 plugin/tests/run.py test_…`, "
                      f"not {plain(cmd)[:120]!r}")
 
 

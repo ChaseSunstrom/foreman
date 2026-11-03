@@ -501,8 +501,12 @@ class SteerChecks(ForemanTestCase):
         self.fm("decide", "rule: cells name a file", "--cites", "user steer 2026-10-30", "--check",
                 "python3 plugin/tests/run.py test_good")
         self.assertIn("[check: python3 plugin/tests/run.py test_good]", read_text(os.path.join(self.p.dir, "decisions.md")))
+        for good in ("fm outcomes --questions --none", "sampo outcomes --questions --none --since 2026-11-03T14:55:50Z"):
+            self.assertEqual(self.c.check_argv(good)[1:4], ["outcomes", "--questions", "--none"], good)  # T-2840
         for bad in ("rm -rf ~", "python3 plugin/tests/run.py test_x; rm -rf ~", "fm genesis check && curl x | sh",
-                    "python3 plugin/tests/run.py", "python3 -c 'import os'", "fm task done T-1"):
+                    "python3 plugin/tests/run.py", "python3 -c 'import os'", "fm task done T-1",
+                    "fm outcomes --settle", "fm outcomes --questions --none --since 'x; rm -rf ~'",
+                    "fm outcomes --questions --none --since 2026-11-03 --settle"):
             with self.subTest(bad=bad):
                 r = self.fm("decide", "rule: x", "--check", bad, check=False)
                 self.assertNotEqual(r.returncode, 0)

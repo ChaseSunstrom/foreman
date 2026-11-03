@@ -211,6 +211,16 @@ def cmd_outcomes(args):
             + (f"; shown at session start: {k['shown_n']} scored, hit {pct(k['shown_hit'])}" if k.get("shown_n") else "")
             + (f" (muted: it trails the baseline; fm outcomes --predictions --unmute {k['kind']})" if k["muted"] else "")
             for k in rows))
+    if getattr(args, "questions", False):  # T-2840: AskUserQuestion calls since TS; --none fails when any was asked
+        since = getattr(args, "since", None) or ""
+        rows = [e.get("data") or {} for e in c.ledger_events(p, ("question_answered",), since=since)
+                if str(e.get("ts") or "") >= since]
+        n = {k: sum(int(r.get(k) or 0) for r in rows) for k in ("asked", "default", "other", "typed")}
+        n.update(calls=len(rows), dismissed=sum(bool(r.get("dismissed")) for r in rows))
+        cli.out(args, n, f"{n['calls']} AskUserQuestion call(s){' since ' + since if since else ''}: {n['asked']} "
+                         f"question(s), {n['default']} took the default, {n['other']} another option, {n['typed']} "
+                         f"typed, {n['dismissed']} dismissed")
+        return 1 if getattr(args, "none", False) and n["calls"] else 0
     outs = outcomes(p)
     if getattr(args, "readme", False):  # T-0960: the one sentence a README publishes
         held = sum(o["fate"] == "held" for o in outs.values())

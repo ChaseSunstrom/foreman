@@ -6463,7 +6463,8 @@ def _build_parser(only=None):
                                                      "a bet in the calibration ledger (T-2337)")
     s.add_argument("--cites", metavar="REF", help="what it rests on: the user's message, a veto or a decision (T-0654)")
     s.add_argument("--check", metavar="CMD", help="what proves a standing rule holds: fm genesis check, fm exam "
-                                                  "scorecard or python3 plugin/tests/run.py test_…; fm genesis sweep "
+                                                  "scorecard, fm outcomes --questions --none [--since TS] or python3 "
+                                                  "plugin/tests/run.py test_…; fm genesis sweep "
                                                   "runs it (T-2167)")
     s.add_argument("--revisit", metavar="TRIGGER",
                    help='"after YYYY-MM-DD" or "when PATH changes": fm next brings the decision back then')
@@ -6831,6 +6832,10 @@ def _build_parser(only=None):
     s.add_argument("--predictions", action="store_true", help="each prediction kind's hit rate beside its naive "
                                                               "baseline, and the ones muted for trailing it (T-2406)")
     s.add_argument("--unmute", metavar="KIND", help="--predictions: let a muted kind count again from now")
+    s.add_argument("--questions", action="store_true", help="AskUserQuestion calls by outcome: default taken, "
+                                                             "another option, typed, dismissed (T-2840)")
+    s.add_argument("--since", metavar="TS", help="--questions: only calls at or after this ISO time")
+    s.add_argument("--none", action="store_true", help="--questions: exit 1 when any was asked (a steer's check)")
     s.add_argument("--by", choices=["harness"], help="--judgment: the buckets and Briers per harness that stated the bets (T-2500)")
     s.add_argument("--readme", action="store_true", help="one sentence for a README: held, closed and ungraded "
                                                          "counts (T-0960)")
