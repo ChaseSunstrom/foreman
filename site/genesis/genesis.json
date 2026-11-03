@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-03T19:56:36Z",
- "rev": "50cfca43",
+ "updated": "2026-11-03T20:28:32Z",
+ "rev": "768b6aa3",
  "capabilities": [
   {
    "n": 1,
@@ -25420,12 +25420,12 @@
  },
  "not_yet": 8,
  "not_yet_open": 8,
- "unproven": 740,
+ "unproven": 742,
  "unproven_kinds": {
-  "meaning": 586,
+  "meaning": 587,
   "research-uncited": 30,
   "perf-typed": 49,
-  "typed": 26,
+  "typed": 28,
   "red": 74,
   "tui-unshot": 4,
   "docs": 78,
@@ -25539,7 +25539,7 @@
   ],
   [
    "Truth over self-image",
-   "signals Foreman didn't author; a check that measures format instead of substance is a bug."
+   "signals Sampo didn't author; a check that measures format instead of substance is a bug."
   ],
   [
    "Spend where it decides something",
