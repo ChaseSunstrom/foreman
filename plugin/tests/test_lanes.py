@@ -124,6 +124,22 @@ class Lanes(ForemanTestCase):
         p = self.fm("task", "finish", mine, "--audit", "reviewed", "--lesson", "none: test", "--docs", "none: test", check=False)
         self.assertIn("audit missing", p.stderr)
 
+    def _finish_with_fmproved(self, glob):
+        self._write(self.repo, ".fmproved", glob + "\n")
+        self.git("add", ".fmproved")
+        self.git("commit", "-qm", "fmproved")
+        mine = self._audited_task_then_two_merges("elsewhere/b.py", "elsewhere/c.py")
+        return self.fm("task", "finish", mine, "--audit", "reviewed", "--lesson", "none: test", "--docs", "none: test", check=False)
+
+    def test_another_lanes_merge_of_a_proved_file_asks_no_proof(self):
+        # T-2791: _proved_gaps counted files only another lane's merge brought in
+        p = self._finish_with_fmproved("elsewhere/*")
+        self.assertNotIn(".fmproved", p.stderr)
+
+    def test_own_change_to_a_proved_file_still_asks_proof(self):
+        p = self._finish_with_fmproved("src/*")
+        self.assertIn(".fmproved", p.stderr)
+
     def _audited_task_then_two_merges(self, f1, f2):
         mine = first(self.fm("task", "new", "Mine", "--type", "FEATURE", "--tier", "M", "--interpretation", valid_m_plan()[0], "--approach", valid_m_plan()[1], "--ac", "ok :: true",
                              "--step", "s", "--scope", "src/**", "--json", "--focus").stdout)["id"]

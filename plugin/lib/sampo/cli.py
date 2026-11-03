@@ -1937,7 +1937,9 @@ def _proved_gaps(p, b, then=()):
     except OSError:
         return []
     base = c.task_base(p.root, b) if globs and b.type != "FIX" and c.git_root(p.root) else None
-    hit = sorted(x for x in smap.changed(p.root, base) if any(fnmatch.fnmatch(x, g) for g in globs)) if base else []
+    mine = smap.changed(p.root, base) if base else []
+    mine = sorted(set(mine) - set(_theirs(p, b, mine)))  # T-2791: other lanes' merges aren't this task's change
+    hit = sorted(x for x in mine if any(fnmatch.fnmatch(x, g) for g in globs))
     gap = b.proof_gap(then=then, force=True) if hit else None
     return [f"{', '.join(hit[:3])}{' …' if len(hit) > 3 else ''} {'is' if len(hit) == 1 else 'are'} listed in "
             f".fmproved: {gap}"] if gap else []
