@@ -225,7 +225,7 @@ def digest(p, recheck=True):
     mach = [x for x in slow if per_run[x[1][1]] > 1 or (x[1][2] or 0) > 1]  # together, or the box was over one per core
     lines = [f"{cmd}: {last[0]:.0f}s vs usual {med:.0f}s" for cmd, last, med in slow if (cmd, last, med) not in mach]
     if mach:
-        lines.insert(0, f"{len(mach)} gate{'s' if len(mach) != 1 else ''} slow together under load "
+        lines.insert(0, f"{len(mach)} gate{'s slow together' if len(mach) != 1 else ' slow'} under load "
                         f"({', '.join(x[0] for x in mach)}): likely the machine, not the code")
     out["slow gates (latest vs usual)"] = lines[:MAX_LINES]
 
