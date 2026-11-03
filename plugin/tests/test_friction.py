@@ -106,6 +106,28 @@ class Friction(ForemanTestCase):
         self.assertNotIn("fm replay", out)  # 12 s against its real runs' 11 s isn't slow
         self.assertIn("pytest: 30s vs usual 10s", out)
 
+    def _runs(self, rows):
+        from sampo import core as c
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            for results, load in rows:  # T-2763
+                data = {"results": [{"cmd": g, "exit": 0, "s": s} for g, s in results], **({"load": load} if load is not None else {})}
+                f.write(json.dumps({"ts": c.now(), "event": "check_run", "data": data}) + "\n")
+
+    def test_gates_slow_together_or_under_load_are_one_machine_line(self):
+        usual = [(("doctor", 10), ("roundtrip", 10), ("bench", 10), ("lone", 10))] * 3
+        self._runs([(r, 0.2) for r in usual] + [((("doctor", 40), ("roundtrip", 50), ("bench", 60), ("lone", 10)), 2.5)])
+        out = self.fm("friction").stdout
+        self.assertIn("3 gates slow together under load (doctor, roundtrip, bench)", out)
+        self.assertNotIn("doctor: 40s", out)
+
+    def test_a_lone_slow_gate_on_a_quiet_machine_stays_a_slow_gate_line(self):
+        usual = [(("doctor", 10), ("lone", 10))] * 3
+        self._runs([(r, 0.2) for r in usual] + [((("doctor", 40), ("lone", 10)), 0.2)])
+        out = self.fm("friction").stdout
+        self.assertIn("doctor: 40s vs usual 10s", out)
+        self.assertNotIn("slow together", out)
+
     def test_fm_next_calls_for_a_pass_every_n_closed_tasks_at_a_task_boundary(self):
         nxt = lambda: self.fm("next").stdout
         self.close_one(1)

@@ -212,14 +212,22 @@ def digest(p, recheck=True):
         f"{kinds['task_block']}× a task was blocked" if kinds["task_block"] else "") if x]
 
     runs = collections.defaultdict(list)
-    for _, e in ledger:
+    for i, (_, e) in enumerate(ledger):
         if e.get("event") == "check_run":
-            for r in (e.get("data") or {}).get("results") or []:
+            d = e.get("data") or {}
+            load = d.get("load") if isinstance(d.get("load"), (int, float)) else None  # T-2763: load per core
+            for r in d.get("results") or []:
                 if isinstance(r, dict) and isinstance(r.get("s"), (int, float)) and r["s"] > 0:  # T-0424: a reused pass is 0.0 s
-                    runs[r.get("cmd")].append(r["s"])
-    out["slow gates (latest vs usual)"] = [
-        f"{cmd}: {xs[-1]:.0f}s vs usual {statistics.median(xs):.0f}s" for cmd, xs in runs.items()
-        if len(xs) >= 3 and xs[-1] > 1.5 * statistics.median(xs) and xs[-1] > 5][:MAX_LINES]
+                    runs[r.get("cmd")].append((r["s"], i, load))
+    slow = [(cmd, xs[-1], statistics.median(x[0] for x in xs)) for cmd, xs in runs.items()
+            if len(xs) >= 3 and xs[-1][0] > 1.5 * statistics.median(x[0] for x in xs) and xs[-1][0] > 5]
+    per_run = collections.Counter(x[1][1] for x in slow)  # T-2763: gates slow in the same run
+    mach = [x for x in slow if per_run[x[1][1]] > 1 or (x[1][2] or 0) > 1]  # together, or the box was over one per core
+    lines = [f"{cmd}: {last[0]:.0f}s vs usual {med:.0f}s" for cmd, last, med in slow if (cmd, last, med) not in mach]
+    if mach:
+        lines.insert(0, f"{len(mach)} gate{'s' if len(mach) != 1 else ''} slow together under load "
+                        f"({', '.join(x[0] for x in mach)}): likely the machine, not the code")
+    out["slow gates (latest vs usual)"] = lines[:MAX_LINES]
 
     ms = sorted(e["ms"] for e in events if e.get("kind") == "hook_ms" and isinstance(e.get("ms"), (int, float)))
     if ms:

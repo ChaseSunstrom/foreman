@@ -4980,7 +4980,8 @@ def _cmd_check(args):
     except Exception:
         pass  # failure memory is a hint; the gate's verdict stands either way
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
-                data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
+                data={"tree": tree, "env": c.env_id(), **({"load": round(os.getloadavg()[0] / (os.cpu_count() or 1), 2)} if hasattr(os, "getloadavg") else {}),
+                      "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
                                                                      **({"failing": c.failing_tests(out_)[:50]} if code else {}),
                                                                      **skipped.get(cmd, {})} for cmd, code, out_, s in results],
                       **({"skip_tests": sorted(skip)} if skip else {}),
