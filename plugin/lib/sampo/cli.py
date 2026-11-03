@@ -3583,12 +3583,22 @@ def task_ac(p, args):
     if args.action == "edit":
         if args.verify is None and not args.text:
             raise UsageError("fm task ac ID edit N needs --verify CMD and/or --text TEXT")
-        _refuse_unrunnable(p, [args.verify])
+        text, verify = args.text, args.verify
+        if text:  # T-2786: 'TEXT :: CMD' or 'TEXT — verify with `CMD`' carries the verify; --verify wins
+            head, sep, tail = text.rpartition(" :: ")
+            if sep:
+                text, found = head, tail.strip()
+            elif m := re.search(r"\s*—\s*verify with `(.*?)`?\s*$", text):
+                text, found = text[:m.start()], m.group(1).strip()
+            else:
+                found = None
+            verify = verify if verify is not None else found
+        _refuse_unrunnable(p, [verify])
         try:
-            b, _ = mutate(p, args.id, lambda b: b.edit_ac(n, args.text, args.verify), "ac_edit", {"ac": n})
+            b, _ = mutate(p, args.id, lambda b: b.edit_ac(n, text, verify), "ac_edit", {"ac": n})
         except KeyError as e:
             raise UsageError(str(e).strip("'\""))
-        _lint_verify(p, [args.verify])
+        _lint_verify(p, [verify])
         _door_check(p, b)
         return out(args, c.brief_summary(c.find_brief(p, b.id) or b), f"{b.id}: criterion {n} edited.")
     ev = args.evidence

@@ -372,6 +372,22 @@ class CaptureAndIntake(ForemanTestCase):
         self.fm("task", "set", "T-0002", "status=captured")
         self.assertEqual(status("T-0002"), "captured")  # set by hand: kept
 
+    def test_ac_edit_text_carrying_a_verify_phrase_sets_the_verify(self):
+        # T-2786: --text 'X — verify with `cmd`' stored the phrase as text and kept the old verify: two verifies
+        self.fm("capture", "one")
+        self.fm("task", "ac", "T-0001", "add", "old", "--verify", "true")
+        for text, want in (("X — verify with `python3 -c pass", "- [ ] X — verify with `python3 -c pass`"),
+                           ("Y — verify with `python3 -c pass`", "- [ ] Y — verify with `python3 -c pass`"),
+                           ("Z :: python3 -c pass", "- [ ] Z — verify with `python3 -c pass`")):
+            self.fm("task", "ac", "T-0001", "edit", "1", "--text", text)
+            shown = self.fm("task", "show", "T-0001").stdout
+            self.assertIn(want, shown)
+            self.assertEqual(shown.count("verify with"), 1)
+        self.fm("task", "ac", "T-0001", "edit", "1", "--text", "W — verify with `false`", "--verify", "true")
+        shown = self.fm("task", "show", "T-0001").stdout  # --verify wins, the phrase leaves the text
+        self.assertIn("- [ ] W — verify with `true`", shown)
+        self.assertNotIn("false", shown)
+
     def test_section_criteria_and_steps_in_the_task_new_forms_are_parsed(self):
         # T-1894: "- [ ] X :: cmd" and "1. go" given with --section stayed plain text: no verify command, no steps,
         # so fm focus refused the task as not planned
