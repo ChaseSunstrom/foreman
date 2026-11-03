@@ -54,13 +54,17 @@ def old_names(tree, old):
             yield from ((n.lineno, f"import {a.name}") for a in n.names if head(a.name) in old)
         elif isinstance(n, ast.ImportFrom) and not n.level and head(n.module or "") in old:
             yield n.lineno, f"from {n.module} import"
-        elif isinstance(n, ast.Call) and n.args and isinstance(n.args[0], ast.Constant) and \
-                isinstance(n.args[0].value, str) and head(n.args[0].value) in old:
+        elif isinstance(n, ast.Call):
             f = n.func
             name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
             owner = getattr(f.value, "attr", getattr(f.value, "id", "")) if isinstance(f, ast.Attribute) else ""
             if name in CALLS or owner == "patch":
-                yield n.lineno, f"{name}({n.args[0].value!r})"
+                for a in [*n.args, *(k.value for k in n.keywords)]:  # any argument, keywords too
+                    if isinstance(a, ast.Constant) and isinstance(a.value, str) and head(a.value) in old:
+                        yield n.lineno, f"{name}({a.value!r})"
+                    elif isinstance(a, ast.JoinedStr) and a.values and isinstance(a.values[0], ast.Constant) and \
+                            re.match(r"fm([a-z]|$)", str(a.values[0].value)):  # f'fm{x}': only the constant part shows
+                        yield n.lineno, f"{name}(f'{a.values[0].value}…')"
         elif isinstance(n, ast.Subscript) and isinstance(n.value, ast.Attribute) and n.value.attr == "modules" and \
                 isinstance(n.slice, ast.Constant) and head(str(n.slice.value)) in old:
             yield n.lineno, f"sys.modules[{n.slice.value!r}]"
@@ -151,6 +155,12 @@ class RenameAliases(SampoTestCase):
                          "sys.modules['fmx']\nimport fmguard\nlazy('sampo.x', 'f')\nprint('fmx')\n"
                          "fmx.f(design.g)\n")  # a merge can bring in a use of the old name with no import of it
         self.assertEqual([line for line, _ in old_names(tree, {"fmx"})], [1, 2, 3, 4, 5, 6, 7, 8, 12])
+
+    def test_the_scan_sees_keyword_second_argument_and_fstring_targets(self):  # T-2783
+        tree = ast.parse("mock.patch('sampo.x', new=1, target='fmx.y')\nmock.patch(target='fmx.f')\n"
+                         "importlib.import_module(f'fm{name}')\nlazy('sampo.x', 'fmx')\nfind_spec(name=f'fmx.{y}')\n"
+                         "print(f'fm{name}')\nlazy(f'{p}.x', 'f')\nlazy('sampo.x', 'f', 'fmxy')\n")
+        self.assertEqual([line for line, _ in old_names(tree, {"fmx"})], [1, 2, 3, 4, 5])
 
 
 if __name__ == "__main__":
