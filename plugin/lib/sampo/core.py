@@ -473,9 +473,47 @@ def host_load():
         return None
 
 
+LOAD_BAR = 1.5  # T-2797: load per CPU past which a lane isn't started and a gate waits (and above which it gets longer)
+
+
+def load_scaled(timeout):
+    """T-2797: a gate's run timeout times max(1, load per CPU), so a slow-but-correct run under load isn't failed for
+    timing; None (no limit) and an unreadable load leave it as it is."""
+    hl = host_load()
+    if timeout is None or not hl or hl[1] < 1:
+        return timeout
+    return timeout * max(1.0, hl[0] / hl[1])
+
+
+def wait_for_load(who, limit=None, out=None):
+    """T-2797: wait (at most limit seconds; default FOREMAN_LOAD_WAIT or 300) while the 1-minute load is over LOAD_BAR per
+    CPU, saying why; True when it waited. An unreadable load never waits: the caller goes ahead and its run timeout is
+    scaled by load_scaled."""
+    if limit is None:
+        try:
+            limit = max(0.0, float(os.environ.get("FOREMAN_LOAD_WAIT") or 300))
+        except ValueError:
+            limit = 300.0
+    busy = lambda: (hl := host_load()) is not None and hl[1] > 0 and hl[0] / hl[1] > LOAD_BAR
+    if not busy():
+        return False
+    out = out or sys.stderr
+    load, cpus = host_load()
+    print(f"{who}: waiting for the machine's load ({load:.1f} over {cpus} CPUs) to fall under {LOAD_BAR:g} per CPU "
+          f"(at most {limit:g} seconds)", file=out, flush=True)
+    end = time.time() + limit
+    while busy():
+        if time.time() >= end:
+            print(f"{who}: the load is still over {LOAD_BAR:g} per CPU; going ahead, with a longer timeout", file=out,
+                  flush=True)
+            break
+        time.sleep(min(5, max(0.0, end - time.time())))
+    return True
+
+
 def host_strain():
-    """T-0465: why this machine shouldn't take another lane (load over twice its CPUs, or under 512 MB available), or
-    None. FOREMAN_HOST="load=…,cpus=…,mem_mb=…" stands in for /proc in tests; unreadable: None (never blocks)."""
+    """T-0465: why this machine shouldn't take another lane (load over LOAD_BAR times its CPUs, or under 512 MB
+    available), or None. FOREMAN_HOST="load=…,cpus=…,mem_mb=…" stands in for /proc in tests; unreadable: None (never blocks)."""
     try:
         fake = dict(kv.split("=", 1) for kv in os.environ.get("FOREMAN_HOST", "").split(",") if "=" in kv)
         load = float(fake["load"]) if "load" in fake else os.getloadavg()[0]
@@ -487,7 +525,7 @@ def host_strain():
                 mem = next(int(x.split()[1]) for x in f if x.startswith("MemAvailable:")) / 1024
     except (OSError, ValueError, StopIteration, KeyError):
         return None
-    if load > 2 * cpus:
+    if load > LOAD_BAR * cpus:
         return f"the host is loaded ({load:.1f} with {cpus} CPUs)"
     if mem < 512:
         return f"the host is low on memory ({mem:.0f} MB available)"

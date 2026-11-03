@@ -810,7 +810,9 @@ def cmd_task(args):
             if getattr(args, "expect_fail", False) and args.step is None:
                 raise UsageError("--expect-fail is for a step's red run (--step N); a criterion only takes a passing run")
             pre = need_brief(p, args.id)
-            code, output, timing = _repeat_runs(p.root, args.run, args.repeat, args.timeout if args.timeout > 0 else None)
+            c.wait_for_load("fm task evidence")  # T-2797
+            code, output, timing = _repeat_runs(p.root, args.run, args.repeat,
+                                                c.load_scaled(args.timeout if args.timeout > 0 else None))
             cmd, result, shown = args.run, c.run_result(code, output, args.run), "\n".join(output.rstrip().splitlines()[-20:])
             if code and not getattr(args, "expect_fail", False):  # T-2370: fm ran it, so no hook is needed for the miss
                 try:
@@ -1311,8 +1313,10 @@ def task_finish(p, args):
             runs[cmd] = (0, f"reused: the same command passed on this tree and world at {at}")
         if cmd not in runs:
             guard_stored(p, b, cmd)  # T-0901
+            if not args.timings:  # T-2797: the first run waits for the load to fall; every run's limit scales with it
+                c.wait_for_load(f"fm task finish {b.id}")
             t0 = time.monotonic()
-            runs[cmd] = c.run_command(p.root, cmd, args.timeout)
+            runs[cmd] = c.run_command(p.root, cmd, c.load_scaled(args.timeout))
             args.timings.append((cmd, time.monotonic() - t0))
         return runs[cmd]
     # T-0142: an open step whose evidence is already recorded (fm task evidence --step) just closes; --run is only for
@@ -1653,7 +1657,8 @@ def _close_affected(p, b, runs, args):
                {"cmd": c.fit(cmd, 200), "waived": c.fit(waive, 200)})
         return
     guard_stored(p, b, cmd)
-    env, timeout = _skip_env(skip), (args.timeout if args.timeout > 0 else None)
+    c.wait_for_load(f"fm task finish {b.id}")  # T-2797
+    env, timeout = _skip_env(skip), c.load_scaled(args.timeout if args.timeout > 0 else None)
     t0 = time.monotonic()
     code, output = c.run_command(p.root, cmd, timeout, env=env)
     if code and code != 124:
@@ -4941,6 +4946,8 @@ def _cmd_check(args):
     from sampo import ambient
     # T-1964: never two suites at once; edits meanwhile start none (gates_running is set)
     c.wait_while(lambda: ambient.running(p), "the ambient test run", "fm check", limit=300)
+    c.wait_for_load("fm check")  # T-2797: gates that can only time out wait; the run limit then scales with the load
+    gate_timeout = c.load_scaled(args.timeout if args.timeout > 0 else None)
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
     for cmd in _gate_order(p, checks):  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
@@ -4951,11 +4958,11 @@ def _cmd_check(args):
             continue
         guard_stored(p, act, cmd)  # T-0901 review: a stored gate (fm smoke set cmd adds one too)
         t0 = time.monotonic()
-        code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=env)
+        code, output = c.run_command(p.root, cmd, gate_timeout, env=env)
         slow = time.monotonic() - t0 > _slow_gate()  # a slow gate isn't rerun whole: its failure costs enough already
         narrow = _narrow_rerun(cmd, output) if code == 1 and slow and not failure_class(output) else None  # T-1678
         if code and (not slow or narrow):
-            code2, output2 = c.run_command(p.root, narrow or cmd, args.timeout if args.timeout > 0 else None, env=env)
+            code2, output2 = c.run_command(p.root, narrow or cmd, gate_timeout, env=env)
             if not code2 and _flaky_count(p, cmd) >= 2:  # a racy bug passes half the time: not "flaky" forever
                 notes[cmd] = "flaky again (failed first in 3+ recent runs): treated as a failure; find the race"
             elif not code2:
@@ -5654,7 +5661,9 @@ def _check_affected(p, args):
                    (f"all {len(skip)} linked test module(s) skipped (other lanes' red-first tests); run the full "
                     f"gates: fm check\n! {_left_out(skip)}" if skip else
                     f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") + note) or 0
-    code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=_skip_env(skip))
+    c.wait_for_load("fm check --affected")  # T-2797
+    code, output = c.run_command(p.root, cmd, c.load_scaled(args.timeout if args.timeout > 0 else None),
+                                 env=_skip_env(skip))
     if args.evidence:  # T-1747: recorded as what it is, never as the full gates (close still needs fm check)
         result = c.run_result(code, output)
         mutate(p, args.evidence, lambda b: b.add_evidence(

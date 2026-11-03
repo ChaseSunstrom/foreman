@@ -1632,6 +1632,9 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
     if len(out) >= cap:
         raise c.PolicyError(f"{len(out)} builders are already out ({', '.join(out)}), the cap is {cap}: merge and close "
                             f"one first (fm lane max N raises the cap, up to {BUILDERS_MAX})")
+    if strain := c.host_strain():  # T-2797: five lanes and a design agent drove load to 3.5 per core: gates timed out
+        raise c.PolicyError(f"{strain}: no new lane until it eases; "
+                            f"{len(out)} builder(s) out{': ' + ', '.join(out) if out else ''}")
     try:
         budget.check_subagent()
     except budget.BudgetError as e:
@@ -1768,8 +1771,9 @@ def _verify(b):
         raise cli.UsageError(f"{b.id}: its lane worktree is gone, so its criteria can't be re-run there: fm lane "
                                f"new {b.id} re-attaches its kept branch {b.meta.get('lane_branch') or ''}, or fm lane "
                                f"merge {b.id} --unverified \"<why>\" merges it as it stands (logged)")
+    c.wait_for_load(f"fm lane merge {b.id}")  # T-2797: a gate that can only time out waits; then it gets a longer one
     for n, cmd in cmds:
-        code, out = c.run_command(wt, cmd, 600)
+        code, out = c.run_command(wt, cmd, c.load_scaled(600))
         if code:
             raise c.PolicyError(f"{b.id}: criterion {n} is red in {wt}: `{cmd}` → exit {code}\n"
                                 + "\n".join(out.rstrip().splitlines()[-15:]) + f"\nFix it on the branch, then merge "

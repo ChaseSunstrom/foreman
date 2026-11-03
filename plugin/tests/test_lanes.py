@@ -672,6 +672,52 @@ class BuilderGates(unittest.TestCase):
                 self.assertIn(w, text)
 
 
+class LoadGates(ForemanTestCase):
+    """T-2797: on 2026-11-03 load hit 3.5 per core: gates hit their 600 s cap and failed for timing alone."""
+
+    def test_a_brief_waits_for_a_calmer_host_naming_the_load_and_the_lanes_out(self):
+        mk = lambda t: first(self.fm("task", "new", t, "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                                     "--step", "s", "--json").stdout)["id"]
+        self.fm("init")
+        a, b = mk("Out one"), mk("Held two")
+        self.fm("lane", "brief", a)
+        r = self.fm("lane", "brief", b, check=False, env={"FOREMAN_HOST": "load=13,cpus=8,mem_mb=8192"})  # 1.6 per CPU
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("13.0", r.stderr)
+        self.assertIn(a, r.stderr)
+        self.assertEqual(self.fm("lane", "brief", b, check=False,
+                                 env={"FOREMAN_HOST": "load=11,cpus=8,mem_mb=8192"}).returncode, 0)  # 1.4 per CPU
+
+    def test_a_gate_scales_its_timeout_by_load_per_cpu_and_never_shrinks_it(self):
+        for load, want in ((1, 600), (8, 600), (16, 1200), (28, 2100)):
+            os.environ["FOREMAN_HOST"] = f"load={load},cpus=8"
+            self.addCleanup(os.environ.__setitem__, "FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
+            self.assertEqual(c.load_scaled(600), want)
+        self.assertIsNone(c.load_scaled(None))
+        os.environ["FOREMAN_HOST"] = "load=x,cpus=8"  # unreadable: the timeout stands
+        self.assertEqual(c.load_scaled(600), 600)
+
+    def test_a_gate_waits_while_the_host_is_over_the_bar_then_goes_ahead(self):
+        import io
+        out = io.StringIO()
+        os.environ["FOREMAN_HOST"] = "load=20,cpus=8"
+        self.addCleanup(os.environ.__setitem__, "FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
+        self.assertTrue(c.wait_for_load("fm check", limit=0, out=out))
+        self.assertIn("load (20.0 over 8 CPUs)", out.getvalue())
+        self.assertIn("going ahead", out.getvalue())
+        os.environ["FOREMAN_HOST"] = "load=4,cpus=8"
+        out = io.StringIO()
+        self.assertFalse(c.wait_for_load("fm check", limit=0, out=out))
+        self.assertEqual(out.getvalue(), "")
+
+    def test_fm_check_says_why_it_waits(self):
+        self.fm("init")
+        self.fm("check", "add", "true")
+        r = self.fm("check", "--fresh", check=False,
+                    env={"FOREMAN_HOST": "load=40,cpus=8,mem_mb=8192", "FOREMAN_LOAD_WAIT": "0"})
+        self.assertIn("waiting for the machine's load", r.stderr)
+
+
 class BuilderContractOneSource(unittest.TestCase):
     def test_every_contract_rule_is_in_the_builder_agent(self):
         # T-1290: the rules live once, in fm-builder.md; the brief carries each of them with the real ids
