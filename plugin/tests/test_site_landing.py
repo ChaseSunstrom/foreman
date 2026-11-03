@@ -37,11 +37,17 @@ def text(fragment):
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", fragment))).strip()
 
 
+MYTH_LINE = "Ilmarinen the smith forged it"  # the paragraph's own sentence; decision rows may name him (T-2829)
+
+
 class Landing(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
-        r = build_copy(cls.tmp)
+        # T-2829: real decision rows name Ilmarinen too (the rename's own steers); the myth check must not count them
+        row = {"date": "2026-11-03", "text": "Ilmarinen's forge leads the site", "later": None, "confidence": None,
+               "kind": "reversible"}
+        r = build_copy(cls.tmp, edit_stats=lambda s: s.setdefault("decisions", []).insert(0, row))
         if r.returncode:
             raise AssertionError(r.stdout + r.stderr)
         cls.out = os.path.join(cls.tmp, "out")
@@ -86,7 +92,7 @@ class Landing(unittest.TestCase):
     def test_the_myth_is_told_once_on_the_landing_page(self):
         pages = {os.path.relpath(p, self.out): read_text(p) for p in glob.glob(os.path.join(self.out, "**", "*.html"),
                                                                                  recursive=True)}
-        told = {rel: page.count("Ilmarinen") for rel, page in pages.items() if "Ilmarinen" in page}
+        told = {rel: page.count(MYTH_LINE) for rel, page in pages.items() if MYTH_LINE in page}
         self.assertEqual(told, {"index.html": 1}, "the myth paragraph once, on the landing page only")
         para = re.search(r"<p[^>]*>[^<]*Ilmarinen.*?</p>", self.page, re.S).group(0)
         for name in MYTH:
