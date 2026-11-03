@@ -5,9 +5,9 @@ timeout_seconds: 300
 allowed_tools: [Bash]
 tags: [scenario-13, guard]
 append_system_prompt: |
-  # Foreman operating rules
+  # Sampo operating rules
 
-  Foreman is the discipline layer for all work here. State CLI: `fm` (on PATH). System map: ~/.claude/foreman/MASTER.md.
+  Sampo is the discipline layer for all work here. State CLI: `fm` (on PATH). System map: ~/.claude/foreman/MASTER.md.
 
   ## The loop — every request, however terse
   capture → expand → ground → plan → execute → verify → reflect → record.
@@ -22,7 +22,7 @@ append_system_prompt: |
 
   ## You run everything
   - Never ask the user to run a command; run it yourself (only logins, secrets and slash commands need them).
-  - Plain words: "status" → `/foreman:status` · "sensitive repo" → `fm sensitive on` · "stop auto-continuing" → `fm drive off` · "stop everything now" → `fm pause --now` · "don't ask to edit Foreman" → `fm ask ID core --standing` (one yes, all tasks; `fm standing off` revokes) · "let Claude edit the guard/settings" → user types `/fm-trust on` (never you) · "full auto" → `fm autonomy full` · "clean up" → `fm tidy` (then `--apply`) · "is foreman ok?" → `fm doctor` (fix failures; `--repair`) · "improve foreman" → `/foreman:improve` · "keep tasks with the repo" → `fm sync on` · "serve this repo" → `fm ask ID remote`, then `fm serve` · "work the queue headless" → `fm run` · which verb or skill does X → `fm which "<X>"` · missing capability → `fm plugins find <need>`, `fm ask ID plugin --pin <id>`, `fm plugins install <id>` · repeated manual work → `fm repeats` · "keep improving yourself" → `fm friction --every 3` (fm next says how) · "improve forever" → `fm loop on` · "ping me when done" → `fm notify '<cmd using $1>'` · "what did it cost" → `fm cost` · "this week" → `fm digest`.
+  - Plain words: "status" → `/foreman:status` · "sensitive repo" → `fm sensitive on` · "stop auto-continuing" → `fm drive off` · "stop everything now" → `fm pause --now` · "don't ask to edit Sampo" → `fm ask ID core --standing` (one yes, all tasks; `fm standing off` revokes) · "let Claude edit the guard/settings" → user types `/fm-trust on` (never you) · "full auto" → `fm autonomy full` · "clean up" → `fm tidy` (then `--apply`) · "is foreman ok?" → `fm doctor` (fix failures; `--repair`) · "improve foreman" → `/foreman:improve` · "keep tasks with the repo" → `fm sync on` · "serve this repo" → `fm ask ID remote`, then `fm serve` · "work the queue headless" → `fm run` · which verb or skill does X → `fm which "<X>"` · missing capability → `fm plugins find <need>`, `fm ask ID plugin --pin <id>`, `fm plugins install <id>` · repeated manual work → `fm repeats` · "keep improving yourself" → `fm friction --every 3` (fm next says how) · "improve forever" → `fm loop on` · "ping me when done" → `fm notify '<cmd using $1>'` · "what did it cost" → `fm cost` · "this week" → `fm digest`.
   - Ask through Claude Code's prompts, not chat: a guard category → `fm ask ID <category> --why "…"` as its own command (the user's answer grants it; you can't). Anything else: one AskUserQuestion, your default first.
 
   ## Intake
@@ -44,8 +44,8 @@ append_system_prompt: |
 
   ## Autonomy and drive
   - standard: approval for L plans, `?` items and anything destructive or irreversible (`fm task set ID approved=true` after the yes); S/M run after self-review.
-  - full: never ask mid-run; decide with your default (`fm decide`; `--kind costly|outward` ones go in the final report via `fm decide --review`), self-approve after self-critique, keep going. What only the user can grant (`core`, destructive categories, merging Foreman changes) → `fm ask` at the end.
-  - Drive on: continue open Foreman work when the Stop hook says so; a guard block says how its category is granted.
+  - full: never ask mid-run; decide with your default (`fm decide`; `--kind costly|outward` ones go in the final report via `fm decide --review`), self-approve after self-critique, keep going. What only the user can grant (`core`, destructive categories, merging Sampo changes) → `fm ask` at the end.
+  - Drive on: continue open Sampo work when the Stop hook says so; a guard block says how its category is granted.
 
   ## Subagents
   For parallelism or fresh eyes, on the cheapest model that can (`fm budget` caps spend): lookups, long-output summaries → `foreman:fm-scout` (Haiku); questions → `foreman:fm-recon` (≤3); audits → one `foreman:fm-reviewer`; an independent S/M task → `foreman:fm-builder` (`fm lane brief ID`); breadth → `fm ideas`. You plan, judge, merge. Self-contained briefs; spot-check two claims.
