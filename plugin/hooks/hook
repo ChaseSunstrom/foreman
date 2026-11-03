@@ -53,22 +53,38 @@ def committed_library():
                  if n.endswith(".py") and os.path.basename(n) != "__init__.py"]
         if not {"core", "hooks"} <= set(names) or git("cat-file", "-e", "HEAD:plugin/lib/fmguard.py") is None:
             return False
-        pkg = types.ModuleType("sampo")  # T-2748: the library is the sampo package; the old fm* paths are shims
-        pkg.__path__ = [os.path.join(LIB, "sampo")]
-        pkg.__file__ = os.path.join(LIB, "sampo", "__init__.py")
-        sys.modules["sampo"] = pkg
-        for name in ["core", "fmguard"] + sorted(set(names) - {"core"}):  # core first: the rest import it
-            rel = "lib/fmguard.py" if name == "fmguard" else f"lib/sampo/{name}.py"
-            src = git("show", f"HEAD:plugin/{rel}")
-            if src is None:
-                return False
-            full = name if name == "fmguard" else f"sampo.{name}"
-            mod = types.ModuleType(full)
-            mod.__file__ = os.path.join(PLUGIN, rel)
-            sys.modules[full] = mod
-            if full != name:
-                setattr(pkg, name, mod)
-            exec(compile(src, f"HEAD:plugin/{rel}", "exec"), mod.__dict__)
+        # T-2781: every sampo.* and fmguard import resolves to HEAD source through a finder, in normal import order,
+        # with an empty package __path__: a sibling never falls back to the working tree, and a name HEAD lacks raises
+        import importlib.abc
+        import importlib.util
+
+        class HeadFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname == "sampo":
+                    return importlib.util.spec_from_loader(fullname, self, is_package=True)
+                if fullname == "fmguard" or (fullname.startswith("sampo.") and fullname[6:] in names):
+                    return importlib.util.spec_from_loader(fullname, self)
+                if fullname.startswith("sampo."):
+                    raise ImportError(f"{fullname} is not in the committed library")
+
+            def exec_module(self, mod):
+                rel = "lib/fmguard.py" if mod.__name__ == "fmguard" else f"lib/sampo/{mod.__name__[6:]}.py"
+                if mod.__name__ == "sampo":
+                    mod.__path__ = []
+                    return
+                src = git("show", f"HEAD:plugin/{rel}")
+                if src is None:
+                    raise ImportError(f"{rel} is not in HEAD")
+                mod.__file__ = os.path.join(PLUGIN, rel)
+                exec(compile(src, f"HEAD:plugin/{rel}", "exec"), mod.__dict__)
+
+        for k in [k for k in sys.modules if k == "sampo" or k.startswith("sampo.") or k == "fmguard"]:
+            del sys.modules[k]  # stale working-tree entries from the failed import
+        sys.meta_path.insert(0, HeadFinder())
+        import importlib
+        importlib.invalidate_caches()
+        for m in ("sampo.core", "fmguard", "sampo.hooks"):
+            importlib.import_module(m)
         return True
     except Exception:
         return False

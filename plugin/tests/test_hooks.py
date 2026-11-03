@@ -2053,6 +2053,36 @@ class PreToolUse(HookCase):
         self.assertIn("SessionStart", log)
         self.assertIn("committed library", log)
 
+    def test_the_committed_fallback_never_runs_working_tree_siblings(self):
+        # T-2781: the fallback exec'd HEAD modules with the working tree's __path__, so a sibling a HEAD module
+        # imports before its own turn (doctor imports setup) loaded from disk: uncommitted code ran under the guard
+        import shutil
+        import subprocess
+        import sys
+        self.fm("init")
+        self.task()
+        copy = os.path.join(self.tmp, "fcopy4")
+        marker = os.path.join(self.tmp, "ran-uncommitted")
+        shutil.copytree(c.PLUGIN_ROOT, os.path.join(copy, "plugin"), ignore=shutil.ignore_patterns("__pycache__", "tests"))
+        for args in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
+            subprocess.run(["git", "-C", copy, *args], check=True, capture_output=True)
+        lib = os.path.join(copy, "plugin", "lib", "sampo")
+        with open(os.path.join(lib, "hooks.py"), "a") as f:
+            f.write("\ndef broken(:\n")
+        with open(os.path.join(lib, "setup.py"), "a") as f:
+            f.write(f"\nopen({marker!r}, 'w').write('x')\n")
+        hook = os.path.join(copy, "plugin", "hooks", "hook")
+        env = dict(os.environ, FOREMAN_HOME=self.home)
+        for event, extra in (("SessionStart", {"source": "startup"}),
+                             ("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": "/x/y", "content": "x"}})):
+            payload = {"session_id": "sess-1", "cwd": self.repo, "hook_event_name": event, **extra}
+            r = subprocess.run([sys.executable, hook, event], input=json.dumps(payload), capture_output=True, text=True,
+                               env=env, cwd=self.repo, timeout=60)
+            self.assertIn(r.returncode, (0, 2), r.stderr)
+            self.assertNotIn("Fix the plugin", r.stderr, "the committed library must load")
+            self.assertFalse(os.path.exists(marker), f"{event}: an uncommitted sibling ran")
+        self.assertIn("committed library", self.hooks_log())
+
     def test_a_broken_core_library_keeps_grants_visible_and_protection_on(self):
         # T-0037: a bug in fmcore hid the active task's grants (core edits refused, even the fix); a syntax error in it
         # would make the hook script itself fail to import and block every tool call
