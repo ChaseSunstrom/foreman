@@ -82,3 +82,23 @@ class AffectedHubs(ForemanTestCase):
         broke = smap.load(p)["broke"]  # the code fix links; its changelog line, a record, doesn't
         self.assertEqual(broke.get("src/count.py"), ["tests/test_docs.py"], broke)
         self.assertNotIn("CHANGELOG.md", broke)
+
+    def test_a_names_runner_gets_only_the_tests_in_its_folder(self):
+        # T-2836: "python3 plugin/tests/run.py {names}" was handed plugin/templates/mcp-server/test_server.py by bare
+        # name; run.py found no such module and every close touching that template was refused
+        from sampo import cli
+        self.fm("init")
+        self.commit({"tests/run.py": "pass\n", "tests/test_a.py": "N = 0\n", "src/a.py": "N = 0\n",
+                     "templates/srv/test_server.py": "N = 0\n", "templates/srv/server.py": "N = 0\n"}, "base")
+        self.fm("check", "affected", "python3 tests/run.py {names}")
+        self.fm("task", "new", "note it", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s", "--focus")
+        for rel in ("tests/test_a.py", "templates/srv/test_server.py"):
+            with open(os.path.join(self.repo, rel), "a") as f:
+                f.write("M = 1\n")
+        p = c.find_project(self.repo, create=False)
+        cmd, tests, _ = cli.affected(p)
+        self.assertEqual(cmd, "python3 tests/run.py test_a")
+        self.assertEqual(tests, ["tests/test_a.py"])
+        self.fm("check", "affected", "python3 -m pytest -q {tests}")  # a path template can run either: unchanged
+        cmd, tests, _ = cli.affected(p)
+        self.assertIn("templates/srv/test_server.py", tests)

@@ -5629,10 +5629,17 @@ def affected(p, b=None, skipped=None, since=None):
     fill = lambda tpl, ts: tpl.replace("{tests}", " ".join(shlex.quote(t) for t in ts)).replace(  # noqa: E731
         "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in ts))
 
+    def home(tpl, ts):  # T-2836: a {names} runner finds tests by bare name, so only the ones in its own folder
+        if "{names}" not in tpl:
+            return ts
+        run = next((w for w in shlex.split(tpl.replace("{names}", "")) if os.path.isfile(os.path.join(p.root, w))), None)
+        d = os.path.dirname(run) + "/" if run and os.path.dirname(run) else ""
+        return [t for t in ts if t.startswith(d)]
+
     def build(every):
         rest = [x for x in every if not any(x.endswith(e) for e in by)]
-        groups = [("", template, _runnable(template, rest))] if template else []
-        groups += [(e, t, [x for x in every if x.endswith(e)]) for e, t in by.items()]
+        groups = [("", template, home(template, _runnable(template, rest)))] if template else []
+        groups += [(e, t, home(t, [x for x in every if x.endswith(e)])) for e, t in by.items()]
         return [fill(t, ts) for _, t, ts in groups if ts], sorted({x for _, _, ts in groups for x in ts})
     cmds, tests = build(every)
     red = set()  # T-1101: another open task's red-first test files
