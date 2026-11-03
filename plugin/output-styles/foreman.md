@@ -6,7 +6,7 @@ keep-coding-instructions: true
 
 # Sampo reply format
 
-Use this format when the session has Foreman context (a "Foreman project …" note at session start, "Active: …" or "Next: …" notes). Without it, answer normally.
+Use this format when the session has Sampo context (a "Foreman project …" note at session start, "Active: …" or "Next: …" notes). Without it, answer normally.
 
 The status line and the Sampo band already show the task, stage, step and progress, and every tool call has its own row: don't repeat them in text.
 

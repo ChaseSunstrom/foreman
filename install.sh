@@ -5,13 +5,13 @@
 #   gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 #
 # Options:
-#   --build          open Claude Code on the Foreman build (rebuild or resume from BUILD_PROMPT.md)
+#   --build          open Claude Code on the Sampo build (rebuild or resume from BUILD_PROMPT.md)
 #   --desktop        also install Foreman Desktop from its newest release (Linux x86_64 AppImage, macOS app)
 #   --no-plugins     skip setup-plugins.sh
 #   --bypass         make bypassPermissions the default permission mode without asking
 #   --no-bypass      don't set it, and don't ask (on a terminal the installer asks; with no terminal it doesn't set it)
 #   --no-mod         don't install the foreman-ui mod (band above the prompt, dashboard pane, toasts)
-#   --no-wiring      don't wire Foreman into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)
+#   --no-wiring      don't wire Sampo into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)
 #   anything else    passed through to setup-plugins.sh (e.g. --security, --docs, --apply-conflicts)
 # Environment:
 #   FOREMAN_REPO     git URL to clone (default below)
@@ -39,14 +39,14 @@ for arg in "$@"; do
 done
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
-die() { printf 'foreman: %s\n' "$*" >&2; exit 1; }
+die() { printf 'sampo: %s\n' "$*" >&2; exit 1; }
 command -v git >/dev/null 2>&1 || die "'git' is required but not on PATH"
 # Claude Code is one surface, not a requirement (T-2174): without it the CC-only steps (plugins, the plugin itself,
 # the permission mode, ~/.claude wiring) are skipped and Foreman goes into whichever other agents are here.
 CLAUDE=1; command -v claude >/dev/null 2>&1 || CLAUDE=0
 if [ "$CLAUDE" = 0 ]; then
   [ "$BUILD" = 1 ] && die "--build runs Claude Code on BUILD_PROMPT.md; install Claude Code first, or drop --build"
-  [ "$PLUGINS" = 1 ] && [ ${#PASS[@]} -gt 0 ] && echo "foreman: no Claude Code, so its plugin flags are ignored: ${PASS[*]}"
+  [ "$PLUGINS" = 1 ] && [ ${#PASS[@]} -gt 0 ] && echo "sampo: no Claude Code, so its plugin flags are ignored: ${PASS[*]}"
   PLUGINS=0 BYPASS=0
 fi
 
@@ -54,19 +54,19 @@ fi
 #    on a closed stdin, and argparse before 3.12.7 (and in 3.13.0) drops `fm task evidence ID --ac N CMD RESULT`.
 py_ok() { python3 -c 'import sys; v = sys.version_info[:3]; sys.exit(not (v >= (3, 12, 7) and v != (3, 13, 0)))' >/dev/null 2>&1; }
 if ! py_ok; then
-  case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) die "Foreman needs Linux or macOS; on Windows, install it inside WSL" ;; esac
+  case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) die "Sampo needs Linux or macOS; on Windows, install it inside WSL" ;; esac
   have="$(python3 --version 2>&1)" || have="no python3"
   if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
-    say "Installing Python with Homebrew (found: $have; Foreman needs 3.12.7+)"
+    say "Installing Python with Homebrew (found: $have; Sampo needs 3.12.7+)"
     brew install python
   else
     if ! command -v uv >/dev/null 2>&1; then
-      command -v curl >/dev/null 2>&1 || die "found $have; Foreman needs Python 3.12.7+ (install it, or curl so uv can)"
+      command -v curl >/dev/null 2>&1 || die "found $have; Sampo needs Python 3.12.7+ (install it, or curl so uv can)"
       say "Installing uv to install Python (no sudo needed)"
       curl -LsSf https://astral.sh/uv/install.sh | sh
       export PATH="$HOME/.local/bin:$PATH"
     fi
-    say "Installing Python 3.13 with uv (found: $have; Foreman needs 3.12.7+)"
+    say "Installing Python 3.13 with uv (found: $have; Sampo needs 3.12.7+)"
     uv python install 3.13 --default
     uv python update-shell   # later shells, and so the hooks, find it too
     export PATH="$(uv python dir --bin):$PATH"
@@ -82,7 +82,7 @@ if [ -d "$FOREMAN_HOME/.git" ]; then
      [ "$(git -C "$FOREMAN_HOME" rev-parse --abbrev-ref HEAD)" = main ]; then
     git -C "$FOREMAN_HOME" pull --ff-only --quiet || say "Couldn't fast-forward; leaving the local copy as is"
   else
-    say "Local changes or a non-main branch checked out (e.g. a Foreman build in progress); not pulling"
+    say "Local changes or a non-main branch checked out (e.g. a Sampo build in progress); not pulling"
   fi
 elif [ -e "$FOREMAN_HOME" ]; then
   die "$FOREMAN_HOME exists but isn't a git repo; move it aside first"
@@ -107,7 +107,7 @@ fi
 
 # 3. The Foreman plugin itself, from this repo as a local marketplace (loads in place: edits apply on /reload-plugins)
 if [ "$CLAUDE" = 1 ]; then
-say "Installing the Foreman plugin"
+say "Installing the Sampo plugin"
 claude plugin marketplace add "$FOREMAN_HOME" >/dev/null 2>&1 || true
 claude plugin install foreman@foreman --scope user >/dev/null 2>&1 || die "couldn't install foreman@foreman (run: claude plugin validate $FOREMAN_HOME)"
 # The UI mod (band, pane, toasts) is optional: builds without function-hook plugins keep the statusline and fm watch
@@ -125,13 +125,13 @@ fi
 if [ "$BYPASS" = ask ]; then
   BYPASS=0
   if (exec </dev/tty) 2>/dev/null; then
-    printf '\nForeman works best with Claude Code in bypassPermissions mode: Claude runs commands without asking each\n'
-    printf 'time, and Foreman'"'"'s guard blocks the dangerous ones (rm -rf ~, force-push to main, secrets...) instead.\n'
+    printf '\nSampo works best with Claude Code in bypassPermissions mode: Claude runs commands without asking each\n'
+    printf 'time, and Sampo'"'"'s guard blocks the dangerous ones (rm -rf ~, force-push to main, secrets...) instead.\n'
     printf 'Make bypassPermissions your default mode in ~/.claude/settings.json? (undo: plugin/uninstall.sh) [y/N] '
     read -r ans </dev/tty || ans=""
     case "$ans" in y|Y|yes|YES) BYPASS=1 ;; esac
   fi
-  [ "$BYPASS" = 1 ] || say "Permission mode left as it was (Foreman's guard still runs; rerun with --bypass to turn bypass on)"
+  [ "$BYPASS" = 1 ] || say "Permission mode left as it was (Sampo's guard still runs; rerun with --bypass to turn bypass on)"
 fi
 if [ "$BYPASS" = 1 ]; then
   settings="$HOME/.claude/settings.json"
@@ -168,7 +168,7 @@ fi
 
 # 5. Foreman user wiring (reversible: plugin/uninstall.sh or `fm uninstall-user`)
 if [ "$WIRING" = 1 ] && [ "$CLAUDE" = 1 ]; then
-  say "Wiring Foreman into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)"
+  say "Wiring Sampo into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)"
   python3 "$FOREMAN_HOME/plugin/bin/fm" install-user || say "Wiring failed; run: $FOREMAN_HOME/plugin/bin/fm install-user --dry-run"
 elif [ "$WIRING" = 1 ]; then
   say "No Claude Code here: putting fm on PATH and wiring the agents found"
@@ -181,7 +181,7 @@ elif [ "$WIRING" = 1 ]; then
     found=1
     python3 "$FOREMAN_HOME/plugin/bin/fm" agents install "$agent" || say "Couldn't wire $agent; run: fm agents install $agent"
   done
-  [ "$found" = 1 ] || say "No coding agent found: fm code runs Foreman's loop on any model (fm code --help); fm agents install codex|gemini|opencode wires one later"
+  [ "$found" = 1 ] || say "No coding agent found: fm code runs Sampo's loop on any model (fm code --help); fm agents install codex|gemini|opencode wires one later"
 fi
 
 # 6. Foreman Desktop (--desktop): the newest release's build for this machine, no Rust or bun needed here
@@ -216,11 +216,11 @@ print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if 
   esac
 fi
 
-say "Foreman is installed at $FOREMAN_HOME"
+say "Sampo is installed at $FOREMAN_HOME"
 if [ "$BUILD" = 1 ] && (: </dev/tty) 2>/dev/null; then   # a terminal we can actually open (not just a device node)
   say "Starting the build (it pauses once for plan approval unless BUILD_GATE is off)"
   cd "$FOREMAN_HOME"
-  exec claude "Run the Foreman build: read $FOREMAN_HOME/BUILD_PROMPT.md in full and execute it. If $FOREMAN_HOME/local/PLAN.md exists, resume from it instead of starting over." </dev/tty
+  exec claude "Run the Sampo build: read $FOREMAN_HOME/BUILD_PROMPT.md in full and execute it. If $FOREMAN_HOME/local/PLAN.md exists, resume from it instead of starting over." </dev/tty
 fi
 if [ "$CLAUDE" = 1 ]; then
   printf '\nNext: start Claude Code in any repo and give it a request (e.g. FIX: ...).\n      /foreman:status shows where things stand; %s/MASTER.md explains everything.\n' "$FOREMAN_HOME"
