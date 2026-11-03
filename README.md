@@ -629,7 +629,7 @@ curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/plugin/tem
 
 <details><summary>Upgrading (formerly Foreman)</summary>
 
-**Upgrading.** Sampo was formerly Foreman, and nothing you have breaks: `fm` stays as an alias that works as before and prints one deprecation line a day; the plugin ids `foreman@foreman` and `foreman-ui@foreman`, the `/foreman:` commands, the `foreman:` agents, the `FOREMAN_*` variables and the `Foreman-Task` commit trailer keep working; and `~/.claude/foreman` is migrated once by `sampo migrate` (`sampo migrate --undo` restores it exactly). The renamed verbs keep their old spellings too: `code` is `sampo smith`, `genesis` is `sampo rune`, `exam` is `sampo louhi` and `guard` is `sampo ward`. The GitHub repo is still ChaseSunstrom/sampo until it is renamed, so the install lines above are unchanged.
+**Upgrading.** Sampo was formerly Foreman, and nothing you have breaks: `fm` stays as an alias that works as before and prints one deprecation line a day; the plugin ids `foreman@foreman` and `foreman-ui@foreman`, the `/foreman:` commands, the `foreman:` agents, the `FOREMAN_*` variables and the `Foreman-Task` commit trailer keep working; and `~/.claude/foreman` is migrated once by `sampo migrate` (`sampo migrate --undo` restores it exactly). The renamed verbs keep their old spellings too: `code` is `sampo smith`, `genesis` is `sampo rune`, `exam` is `sampo louhi` and `guard` is `sampo ward`. The GitHub repo is ChaseSunstrom/sampo (GitHub forwards links that use its old name), and the install lines above use it.
 
 </details>
 
