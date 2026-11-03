@@ -2094,7 +2094,7 @@ def _pre_tool_use(raw):
             return 2
     try:
         _record_asks(pl, p, guard)
-        decision = _ask_prompt(pl, p, guard) or (_taint_check(pl, p) if tool == "Bash" else None) or _wait_loop(pl) or _self_match(pl) or _stdin_hang(pl)
+        decision = _ask_prompt(pl, p, guard) or (_taint_check(pl, p) if tool == "Bash" else None) or _gate_pipe_deny(pl) or _wait_loop(pl) or _self_match(pl) or _stdin_hang(pl)
     except Exception:
         log_error("PreToolUse", _tb())
         decision = None
@@ -2119,7 +2119,7 @@ def _pre_tool_use(raw):
                     ("lessons", lambda: _tripwire_note(pl, p, act)), ("steps", lambda: _step_note(pl, p, act)),
                     ("ambient", lambda: _ambient_note(p)), ("bus", lambda: _bus_note(pl)),
                     ("cards", lambda: _card_note(pl, p, act)), ("test-first", lambda: _test_first_note(pl, p, act)),
-                    ("design", lambda: _design_note(pl, p, act)), ("gate-pipe", lambda: _gate_pipe_note(pl)),
+                    ("design", lambda: _design_note(pl, p, act)),
                     ("gates", lambda: _gates_note(pl, p)))
         off = c.ablated()  # T-1375: a bench arm's features switched off (never the guard, which spoke above)
         note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn]
@@ -2367,21 +2367,19 @@ def _snapshot_note(pl, guard):
 SNAPSHOT_S = 3.0  # of the PreToolUse hook's 5 s
 
 
-_GATE_PIPE = c.lazy(r"(?m)(?:^\s*|[;&|(]\s*)(?:\w+=\S*\s+)*fm\s+(?:quiet\s+(?:--\s+)?fm\s+)?check\b(?![-\w])"
+_GATE_PIPE = c.lazy(r"(?m)(?:^\s*|[;&|(]\s*)(?:\w+=\S*\s+)*(?:fm|sampo)\s+(?:quiet\s+(?:--\s+)?(?:fm|sampo)\s+)?check\b(?![-\w])"
                         r"(?:[^|;&\n]|>&)*\|(?!\|)")  # a command's first word; 2>&1 before the pipe
 
 
-def _gate_pipe_note(pl):
-    """T-1759: `fm check … | tail` exits with tail's status, so a red gate reads green: T-1758 reached main that way."""
+def _gate_pipe_deny(pl):
+    """T-1759, T-2765: `fm check … | tail` exits with tail's status, so a red gate reads green (T-1758 reached main
+    that way). The note was ignored three times a week: refuse the call and say how to run it."""
     ti = pl.get("tool_input") or {}
     cmd = re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", "''", ti.get("command") or "")  # T-1768: quoted text isn't a command
     if pl.get("tool_name") != "Bash" or "pipefail" in cmd or not _GATE_PIPE.search(cmd):
         return None
-    sid = pl.get("session_id")
-    if sid and not _first_time(sid, "keep.gate-pipe"):  # T-1889: the session heard it in full once; a compaction too
-        return "Foreman: fm check is piped: read its ✓/✗ line, not the exit status."
-    return ("Foreman: fm check is piped here, so this call's exit status is the last program's, not the gates': read "
-            "its ✓/✗ line before you push or close (or drop the pipe: fm check prints a short summary already).")
+    return ("deny", "Foreman: a piped gate's exit status is the last program's, so a red gate reads green: drop the pipe "
+                    "(its summary is short) or start with set -o pipefail; (then read its ✓/✗ line).")
 
 
 def _bus_note(pl):

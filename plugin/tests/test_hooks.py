@@ -19,20 +19,37 @@ def parse(proc):
     return json.loads(out) if out.startswith("{") else None
 
 
-class GatePipe(unittest.TestCase):  # T-1759
-    def test_a_piped_fm_check_is_told_its_exit_is_the_last_programs(self):
+class GatePipe(ForemanTestCase):  # T-1759, T-2765: a refusal, not a note
+    def test_a_piped_gate_is_denied_with_how_to_run_it(self):
         from sampo import hooks
-        note = lambda cmd, **ti: hooks._gate_pipe_note({"tool_name": "Bash", "tool_input": dict(command=cmd, **ti)})  # noqa: E731
+        deny = lambda cmd: hooks._gate_pipe_deny({"tool_name": "Bash", "tool_input": {"command": cmd}})  # noqa: E731
         for cmd in ("fm check 2>&1 | tail -5", "FOREMAN_GATE_WAIT=600 fm quiet -- fm check | tail -3",
-                    "cd x && fm check --evidence T-1 --step 2 | grep ✓"):
-            self.assertIn("✓/✗ line", note(cmd) or "", cmd)
-        self.assertIn("✓/✗ line", note("fm check | tail", run_in_background=True) or "", "a background gate too")
-        for cmd in ("fm check", "set -o pipefail; fm check | tail -5", "fm check || echo red", "fm checkpoint | tail",
-                    "fm quiet -- fm check", "echo fm check | wc",
-                    'grep -n "fm check playbooks\\|fm check onwrite" README.md | cut -c1-80',  # T-1768: quoted text
-                    "grep 'x|fm check y' f | wc"):
-            self.assertIsNone(note(cmd), cmd)
-        self.assertIsNone(hooks._gate_pipe_note({"tool_name": "Read", "tool_input": {"command": "fm check | tail"}}))
+                    "cd x && fm check --evidence T-1 --step 2 | grep ✓", "sampo check | head", "sampo check --affected | tail"):
+            d = deny(cmd)
+            self.assertEqual(d[0], "deny", cmd)
+            self.assertIn("drop the pipe (its summary is short) or start with set -o pipefail;", d[1])
+        for cmd in ("fm check", "set -o pipefail; fm check | tail -5", "fm check || true", "fm check || echo red",
+                    "fm checkpoint | x", "fm quiet -- fm check", "echo fm check | wc", "sampo checkpoint | tail",
+                    'grep -n "fm check playbooks\\|fm check onwrite" README.md | cut -c1-80', "grep 'x|sampo check y' f | wc"):
+            self.assertIsNone(deny(cmd), cmd)
+        self.assertIsNone(hooks._gate_pipe_deny({"tool_name": "Read", "tool_input": {"command": "fm check | tail"}}))
+
+    def test_pretooluse_carries_the_deny(self):
+        import contextlib
+        import io
+        from sampo import hooks
+        raw = json.dumps({"session_id": "s2765", "cwd": self.repo, "hook_event_name": "PreToolUse",
+                          "tool_name": "Bash", "tool_input": {"command": "fm check | tail -3"}})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = hooks.run("PreToolUse", raw)
+        o = json.loads(out.getvalue())["hookSpecificOutput"]
+        self.assertEqual((code, o["permissionDecision"]), (2, "deny"))
+        self.assertIn("set -o pipefail", o["permissionDecisionReason"])
+        r = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "sampo check | head"}})
+        self.assertEqual(parse(r)["hookSpecificOutput"]["permissionDecision"], "deny")
+        r = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "set -o pipefail; fm check | tail"}})
+        self.assertNotIn("permissionDecision", r.stdout)
 
 
 class NoteKeyPossessive(unittest.TestCase):  # T-2313
@@ -40,20 +57,6 @@ class NoteKeyPossessive(unittest.TestCase):  # T-2313
         from sampo import hooks
         self.assertEqual(hooks._note_key("T-0877's lesson for this file: x"), "lesson for this file x")
         self.assertEqual(hooks._note_key("Foreman: don't edit \"quoted\" files"), "don t edit quoted files")
-
-
-class GatePipeOnce(ForemanTestCase):
-    def test_a_later_piped_gate_in_the_session_gets_the_one_line_form(self):
-        # T-1889: the full note came back after every compaction (8x in a week); the session already knows it
-        from sampo import hooks
-        pl = {"tool_name": "Bash", "tool_input": {"command": "fm check | tail -3"}, "session_id": "s1889"}
-        first = hooks._gate_pipe_note(pl)
-        self.assertIn("the last program's, not the gates'", first)
-        self.hook("SessionStart", {"source": "compact", "session_id": "s1889"})  # re-arms one-shot notes, not this
-        again = hooks._gate_pipe_note(pl)
-        self.assertIn("✓/✗", again)
-        self.assertLess(len(again), len(first) // 2)
-        self.assertIn("the last program's, not the gates'", hooks._gate_pipe_note(dict(pl, session_id="s2")))
 
 
 class BatchNoteOnce(ForemanTestCase):
