@@ -2,10 +2,10 @@
 instrumented on a throwaway copy to leave a marker file when it runs. It is proven when the suite stays green, a
 control function the tests name leaves its marker, and the candidate leaves none: no test runs it. Repo code runs only
 on the copy, and only in a tree the user said yes to with --yes-run (a flag the guard keeps the user's; the yes is kept
-per tree path, not per version of its code, in Foreman state, which only fm writes). Anything inside a tree, a commit's
-author email included, is only a claim, so elsewhere untested candidates stay leads (T-2202). The yes governs Foreman's
+per tree path, not per version of its code, in Sampo state, which only fm writes). Anything inside a tree, a commit's
+author email included, is only a claim, so elsewhere untested candidates stay leads (T-2202). The yes governs Sampo's
 own initiative; it isn't a sandbox against a session set on running the code, which could run the tests directly.
-The isolation is the environment's only: credential, Foreman, Claude, D-Bus, XDG and GPG
+The isolation is the environment's only: credential, Sampo, Claude, D-Bus, XDG and GPG
 variables are dropped and HOME is the throwaway folder, but the code still runs as the user, with the network. fm find
 itself never runs repo code, and this verb never touches the tree it reads."""
 import ast
@@ -85,7 +85,7 @@ def _copy(root):
 
 
 def _env(home):
-    """The environment repo code runs with: no credentials, no Foreman, Claude, keyring or XDG state, HOME the
+    """The environment repo code runs with: no credentials, no Sampo, Claude, keyring or XDG state, HOME the
     throwaway folder."""
     from sampo import bench
     env = {k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k) and not k.startswith(DROP)}
@@ -304,7 +304,7 @@ def _fence(text):
 
 
 def _proj(root):
-    """The Foreman project a tree belongs to, else the one we run in (T-2242 review: the cwd alone is the wrong tree)."""
+    """The Sampo project a tree belongs to, else the one we run in (T-2242 review: the cwd alone is the wrong tree)."""
     return c.find_project(root) or c.find_project(os.getcwd())
 
 
@@ -318,7 +318,7 @@ def _keep(root, f, code, lang):
     rerun it. An error text when it can't be kept."""
     p, pid = _proj(root), proof_id(f.get("key") or "")
     if not p:
-        return "no Foreman project to keep it in"
+        return "no Sampo project to keep it in"
     try:
         with c.lock(p.dir):
             d = os.path.join(p.dir, "prove-tests")
@@ -722,7 +722,7 @@ def cmd_steer(args):
     from sampo import cli
     p = c.find_project(os.getcwd())
     if not p:
-        print("fm prove --steer: run it inside a Foreman project", file=sys.stderr)
+        print("fm prove --steer: run it inside a Sampo project", file=sys.stderr)
         return 2
     if not _yes(args, p.root):  # each check runs this tree's code at an older commit: the other modes' consent
         print("fm prove --steer runs this tree's tests at older commits, so it needs the user's yes, once per tree: "
@@ -836,7 +836,7 @@ def _prove(args):
             return 2
     p, cap = c.find_project(os.getcwd()), args.capture
     bad = ("--capture N: N is how many tasks to file, at least 1" if cap is not None and cap < 1
-           else "--capture files tasks: run it inside a Foreman project" if cap and not p
+           else "--capture files tasks: run it inside a Sampo project" if cap and not p
            else "--capture: the tree's path holds a control character, which would split its tasks' criteria"
            if cap and re.search(r"[\x00-\x1f\x7f]", root)
            else "--bugs finds candidates to prove; --only re-checks one: not both" if args.bugs and args.only else None)

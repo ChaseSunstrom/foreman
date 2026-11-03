@@ -1,4 +1,4 @@
-"""fm plugins: find a capability in the known marketplaces, check enabled plugins for conflicts with Foreman and with
+"""fm plugins: find a capability in the known marketplaces, check enabled plugins for conflicts with Sampo and with
 each other, and install one after the user's yes (guard category `plugin`, granted only through `fm ask`).
 
 Everything is read from disk (~/.claude/plugins): marketplace indexes, their local plugin copies and the install
@@ -22,12 +22,12 @@ FOREMAN_OWNS = {
 }
 # Measured conflicts, by plugin name; setup-plugins.sh warns about the same ones (test_docs keeps the lists equal).
 KNOWN_CONFLICTS = {
-    "ecc": "~41k always-on tokens and 24 hook handlers, with its own memory, learning and planning; Foreman ports "
+    "ecc": "~41k always-on tokens and 24 hook handlers, with its own memory, learning and planning; Sampo ports "
            "its useful procedures as /foreman:playbooks",
-    "superpowers": "a second orchestrator (brainstorm → plan → execute); Foreman ports its debugging, TDD and "
+    "superpowers": "a second orchestrator (brainstorm → plan → execute); Sampo ports its debugging, TDD and "
                    "verification procedures",
-    "feature-dev": "duplicates Foreman's intake and planning",
-    "ralph-loop": "keeps Claude running via a Stop hook; collides with Foreman's completion gate",
+    "feature-dev": "duplicates Sampo's intake and planning",
+    "ralph-loop": "keeps Claude running via a Stop hook; collides with Sampo's completion gate",
     "example-skills": "12 mostly unrelated skills; duplicates skill-creator and frontend-design",
 }
 _STOP = {"a", "an", "the", "for", "and", "or", "of", "to", "with", "in", "on", "my", "i", "need", "plugin"}
@@ -267,7 +267,7 @@ def repo_config(root):
         ("settings", settings, 6), ("hook commands", hooks, 4), ("MCP servers", mcp, 4), ("allow rules", allow, 8))
         if items]
     note = ("This repo's own Claude config (" + ", ".join(present) + "; Claude Code may already have started these "
-            "when the session opened, Foreman names them and can't stop them; review before trusting the repo): "
+            "when the session opened, Sampo names them and can't stop them; review before trusting the repo): "
             + "; ".join(parts or ["nothing"]) + ".")
     return h.hexdigest()[:16], c.fit(c.defang(note), _NOTE_CAP)
 
@@ -386,7 +386,7 @@ def _frontmatter_hooks(root):
 def capabilities(root, prof=None):
     """T-1392: what a plugin tree runs on its own (hook events, each hook handler as "event matcher: command", MCP
     server names and "name digest" of each server's spec, scripts: bin/ and the files its hooks and MCP servers name
-    under ${CLAUDE_PLUGIN_ROOT}, and spec files it names but Foreman won't read) and what it adds to the session
+    under ${CLAUDE_PLUGIN_ROOT}, and spec files it names but Sampo won't read) and what it adds to the session
     (command, agent and skill names), each a sorted list. fm doctor holds an update that adds to the first group.
     T-1434: also hooks in skill, agent and command frontmatter (fm_hooks "Event (skill s)", fm_hook_specs "skill s
     digest"), LSP servers (lsp, lsp_specs, like MCP) and a hooks file's modules (paths as written, normalised).
@@ -424,7 +424,7 @@ def capabilities(root, prof=None):
 
 def _marketplace_files():
     """Each known marketplace's marketplace.json: the cached ones, and directory sources registered where they live
-    (known_marketplaces.json installLocation, e.g. Foreman's own repo)."""
+    (known_marketplaces.json installLocation, e.g. Sampo's own repo)."""
     files = glob.glob(os.path.join(claude_dir(), "plugins", "marketplaces", "*", ".claude-plugin", "marketplace.json"))
     known = _json(os.path.join(claude_dir(), "plugins", "known_marketplaces.json"), {}) or {}
     for entry in known.values() if isinstance(known, dict) else ():
@@ -534,7 +534,7 @@ def trust(row, ledger=None):
     if had == row["identity"]:
         return True, ""
     if row["renamed_from"]:
-        return False, f"renamed from {', '.join(row['renamed_from'])}: a new plugin to Foreman, not the one you had"
+        return False, f"renamed from {', '.join(row['renamed_from'])}: a new plugin to Sampo, not the one you had"
     if had:
         return False, "its name, source or sha changed since fm plugins installed it"
     return False, ""
@@ -632,22 +632,22 @@ def find(need, n=10, skipped=None):
 
 
 def _own_findings(pid, prof):
-    """Conflicts a plugin brings on its own: a Stop hook, process skills that duplicate Foreman."""
+    """Conflicts a plugin brings on its own: a Stop hook, process skills that duplicate Sampo."""
     found = []
     if prof["sync_stop"]:
-        found.append({"plugin": pid, "kind": "stop-hook", "detail": "a Stop hook that can hold the turn open: it competes with Foreman's "
+        found.append({"plugin": pid, "kind": "stop-hook", "detail": "a Stop hook that can hold the turn open: it competes with Sampo's "
                       "evidence gate and drive for when a turn may end",
                       "action": f"fm plugins disable {pid} (after fm ask ID plugin)"})
     for name, _ in prof["skills"] + prof["commands"]:
         owner = next((b for b, keys in FOREMAN_OWNS.items() if any(k in name.lower() for k in keys)), None)
         if owner:
-            found.append({"plugin": pid, "kind": "overlaps-foreman", "detail": f"{name} duplicates Foreman's {owner}",
-                          "action": "use Foreman's; disable the plugin if both keep triggering"})
+            found.append({"plugin": pid, "kind": "overlaps-foreman", "detail": f"{name} duplicates Sampo's {owner}",
+                          "action": "use Sampo's; disable the plugin if both keep triggering"})
     return found
 
 
 def check(only=None):
-    """Conflicts among enabled plugins and with Foreman: [{plugin, kind, detail, action}]."""
+    """Conflicts among enabled plugins and with Sampo: [{plugin, kind, detail, action}]."""
     found, mcp = [], {}
     for pid, info in sorted(installed().items()):
         if not info["enabled"] or pid.startswith("foreman@") or (only and pid != only):

@@ -2,7 +2,7 @@
 something happens. The bus: typed messages to a session or all, delivered by the hooks that already run (a note on
 the next tool call; a session about to stop is held for its mail), and --wake types one short line into a session's
 tmux pane. Leases: an edit leases the function it lands in; another session's edit inside it is refused, naming the
-holder. The conductor: live sessions, their mail and leases, and one steer for all. Files under Foreman's state."""
+holder. The conductor: live sessions, their mail and leases, and one steer for all. Files under Sampo's state."""
 import json
 import os
 import re
@@ -107,7 +107,7 @@ def render(msgs):
 def note(sid):
     """The PreToolUse note: this session's unread mail, once."""
     msgs = unread(sid)
-    return ("Foreman mail: " + render(msgs)) if msgs else None
+    return ("Sampo mail: " + render(msgs)) if msgs else None
 
 
 def watched(sid):
@@ -130,7 +130,7 @@ def wake(sid):
     if not pane or not re.fullmatch(r"%\d+", str(pane)):
         return False
     try:
-        subprocess.run(["tmux", "send-keys", "-t", pane, "-l", "Foreman mail waiting: read it (fm bus read) and act on it"],
+        subprocess.run(["tmux", "send-keys", "-t", pane, "-l", "Sampo mail waiting: read it (fm bus read) and act on it"],
                        capture_output=True, timeout=10, check=True)
         subprocess.run(["tmux", "send-keys", "-t", pane, "Enter"], capture_output=True, timeout=10, check=True)
         return True
@@ -332,7 +332,7 @@ def watch(sid=None, interval=2.0, out=None, stop=None):
                         msgs = []
                     for m in msgs:
                         if m.get("t", 0) > since and _for(m, _sid(sid)):
-                            out.write(f"Foreman {m.get('type', 'note')} from {str(m.get('from'))[:8]}: "
+                            out.write(f"Sampo {m.get('type', 'note')} from {str(m.get('from'))[:8]}: "
                                       f"{c.fit(' '.join(str(m.get('text', '')).split()), 160)} (read it: fm bus read)\n")
                             out.flush()
                     since = max([since] + [m.get("t", 0) for m in msgs])
@@ -559,7 +559,7 @@ def conflict(pl, p, path):
         if hit:
             left = int((v["until"] - time.time()) // 60) + 1
             what = rel if v["symbol"] == "*" else f"{rel}::{v['symbol']}"
-            return (f"Foreman lease: {what} is leased by {_who(v)} for {left} more min, which is editing it now. "
+            return (f"Sampo lease: {what} is leased by {_who(v)} for {left} more min, which is editing it now. "
                     f"Work elsewhere meanwhile, or ask it: fm bus send {_sh(v['session'])} \"<what you need>\".")
     return None
 

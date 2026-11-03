@@ -1,9 +1,9 @@
 """fm evolve (T-0224): one generation of bench-gated self-improvement. A tool-less `claude -p` child (no tools, no MCP,
-no user settings, like fm ideas) revises one Foreman instruction file — a skill, a reference, the rules — from what
+no user settings, like fm ideas) revises one Sampo instruction file — a skill, a reference, the rules — from what
 the bench and the friction digest say went wrong; with --drop the file is emptied instead (an ablation: does it earn
-its tokens?). The candidate is committed on its own branch, evolve/<time>, in a worktree beside Foreman's repo, never
+its tokens?). The candidate is committed on its own branch, evolve/<time>, in a worktree beside Sampo's repo, never
 in the live plugin. Both arms replay the same bench cases (fm bench run_arm; --live reuses earlier live results) and
-fm bench's gate decides: a candidate no worse stays on its branch for the user's review and yes (merging Foreman
+fm bench's gate decides: a candidate no worse stays on its branch for the user's review and yes (merging Sampo
 changes is always the user's call); anything else is removed, worktree and branch."""
 import json
 import os
@@ -15,7 +15,7 @@ from sampo import budget as sbudget
 from sampo import core as c
 from sampo import bench
 
-SYSTEM = """You revise one Foreman instruction file. Foreman is a discipline layer for Claude Code: these files are
+SYSTEM = """You revise one Sampo instruction file. Sampo is a discipline layer for Claude Code: these files are
 read by Claude while it works (skills, references, rules). Your revision is tested by replaying real past tasks with
 it: it must make Claude finish them more reliably and with fewer tokens and turns.
 Use the evidence: failed replays, friction (what went wrong or slow), the user's own words. Prefer cutting, sharpening
@@ -144,7 +144,7 @@ def generation(p, repo, target, plugin_dir="plugin", drop=False, cases=None, liv
     try:
         with open(os.path.join(wt, target), "w", encoding="utf-8") as f:
             f.write(new)
-        r = git(wt, "-c", "user.name=Foreman evolve", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
+        r = git(wt, "-c", "user.name=Sampo evolve", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
                 "commit", "-q", "--no-verify", "-am", f"evolve: {target} — {c.fit(why, 100)}")
         if r.returncode:
             raise ValueError(f"git commit in {wt}: {(r.stderr or r.stdout).strip()[:200]}")

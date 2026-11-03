@@ -1,4 +1,4 @@
-"""fm mcp (T-0245): Foreman's memory and state as read-only MCP tools over stdio — JSON-RPC 2.0, one message a line,
+"""fm mcp (T-0245): Sampo's memory and state as read-only MCP tools over stdio — JSON-RPC 2.0, one message a line,
 stdlib only — so other agents and clients can read the project's state, next action, recall, research notes and
 briefs. Each tool runs the matching read-only fm command (the CLI stays the one implementation); everything sent is
 redacted; a sensitive project serves nothing. Registering it (`claude mcp add foreman -- fm mcp`) is the user's
@@ -47,7 +47,7 @@ def _say(name):
 
 _FAIL = dict(_instr("fail"), properties={"text": _str("the test runner's failure output", TEXT_CAP)}, required=["text"])
 TOOLS = [
-    ("state", "The project's Foreman state: active task, queue, inbox, blocked work.", _TEXT, lambda a, p: ["state"]),
+    ("state", "The project's Sampo state: active task, queue, inbox, blocked work.", _TEXT, lambda a, p: ["state"]),
     ("next", "The one next required action and its procedure.", _TEXT, lambda a, p: ["next"]),
     ("recall", "Past work, decisions, lessons and research related to a question.",
      {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
@@ -77,7 +77,7 @@ TOOLS = [
      lambda a, p: ["outline", _inside(p, a, "path")]),
     ("impact", "Likely tests and dependents of a path.", _obj(["path"], path=_str("a path in the project")),
      lambda a, p: ["impact", _inside(p, a, "path")]),
-    ("why", "The commits and Foreman tasks behind FILE[:LINE], with their lessons.",
+    ("why", "The commits and Sampo tasks behind FILE[:LINE], with their lessons.",
      _obj(["target"], target=_str("FILE or FILE:LINE in the project")),
      lambda a, p: ["why", _inside(p, a, "target", r"(.*?)(?::\d+)?")]),
     ("sym", _say("sym"), _instr("sym"), lambda a, p: ["sym", _inside(p, a, "target", r"(.*):[^:/]+")]),
@@ -109,7 +109,7 @@ TOOLS = [
      lambda a, p: ["prove", "--rollup", "--json"]),
     ("grants", "Install grants queued for the user (T-2374): per open task, what is asked and why, the miss behind it, "
      "what was searched, the fallback, and what a yes unblocks. Read-only: a grant is the user's to answer.", _TEXT, None),
-    ("decide", "One choice among 2 to 12 by Foreman's model layer (T-2489): local backends before cloud, the first "
+    ("decide", "One choice among 2 to 12 by Sampo's model layer (T-2489): local backends before cloud, the first "
      "answer whose probability clears 0.8, as {choice, probability, backend, cleared, tried}; booked as mcp-KIND for "
      "calibration. It advises; it gates nothing.",
      _obj(["kind", "prompt", "choices"], kind=_str("what is decided, e.g. intake-type", cap=40),
@@ -438,7 +438,7 @@ def cmd_register(args):
                      "then restart Desktop:\n" + json.dumps(stanza, indent=2))
     if harness not in ("claude", "codex", "gemini") or len(rest) > 1:
         raise cli.UsageError("fm mcp register claude|codex|gemini|desktop [DIR]: DIR is a folder fm mcp new wrote "
-                               "(default: Foreman's own server)")
+                               "(default: Sampo's own server)")
     name, cmd = "foreman", ["fm", "mcp"]
     if rest:
         server = os.path.join(os.path.abspath(rest[0]), "server.py")
@@ -462,4 +462,4 @@ def cmd_register(args):
     # T-0946: only formats confirmed in the harness's current docs are printed; none is confirmed here yet
     print(f"No {harness} registration format is confirmed against {harness}'s current docs, so none is printed: check "
           f"its MCP docs and register this stdio server as {name!r}, command: {shlex.join(cmd)}"
-          + ("" if rest else f"\n(fm agents install {harness} already wires Foreman's own server into its config.)"))
+          + ("" if rest else f"\n(fm agents install {harness} already wires Sampo's own server into its config.)"))

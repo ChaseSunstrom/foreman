@@ -43,7 +43,7 @@ async function draw($: Kit, on: On) {
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({
     plugin: 'foreman-ui', surface: 'terminal', component: 'Pane', requestId: 'foreman',
-    props: { title: 'Foreman', isFocused: true, bodyColumns: REPLAY.columns, placement: 'dock', scroll: { offset: 0, bodyRows: REPLAY.rows }, view: {} },
+    props: { title: 'Sampo', isFocused: true, bodyColumns: REPLAY.columns, placement: 'dock', scroll: { offset: 0, bodyRows: REPLAY.rows }, view: {} },
   } as never)
   const drawn = frame(await ui.drawn())
   await ui.unmount()

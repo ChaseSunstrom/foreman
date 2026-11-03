@@ -1,5 +1,5 @@
 """fm release VERSION (T-1188): the release ritual as named steps with a checkpoint after each (state/release.json),
-so `--resume` continues from the first unfinished one and `--dry-run` only prints the plan. Foreman's own repo only
+so `--resume` continues from the first unfinished one and `--dry-run` only prints the plan. Sampo's own repo only
 (plugin/.claude-plugin/plugin.json at its root; release.py is a thin wrapper over this). --push merges into the
 remote's main (origin by default) from a temporary worktree behind the active task's publish grant, which it spends
 before the push. The first run's flags (--ui, --push, --remote, --no-check) are kept in release.json for a resume;
@@ -33,7 +33,7 @@ STEPS = [("tree", "the working tree is clean"),
          # T-1199: never fatal, so it never holds the push; 12 projects one by one held 1.2.34's for ~35 min
          ("canary", "fm sentinel in every local project, 4 at a time, started detached (report: fm release --canary-status)")]
 GATES = ("check", "release-check", "canary")
-MARK = r"^Foreman [0-9]+\.[0-9]+\.[0-9]+"  # a release commit's subject
+MARK = r"^(Sampo|Foreman) [0-9]+\.[0-9]+\.[0-9]+"  # a release commit's subject
 SEMVER = r"\d+\.\d+\.\d+"
 
 
@@ -175,7 +175,7 @@ def _changelog(ctx):
 
 def _commit(ctx):
     root, v = ctx["root"], ctx["version"]
-    if _git(root, "log", "-1", "--format=%s").strip() != f"Foreman {v}":
+    if _git(root, "log", "-1", "--format=%s").strip() != f"Foreman {v}":  # the subject is a protocol: resumes compare it, so it keeps the name old releases carry
         files = ["plugin/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "CHANGELOG.md",
                  "plugin/defaults.json"]  # T-1549: the defaults this release ships, for the next one to compare
         if ctx["ui"]:
@@ -278,8 +278,8 @@ def _canary_worker(v, root):
         print(f"  (no rerun for {', '.join(skipped)}: the reruns' {RERUN_S:g} s were spent)", flush=True)
     failed = still
     from sampo import eco
-    for x, title in [(x, f"Canary after Foreman {v}: {line[:200]}") for x, line in failed] + [
-            (x, f"Canary load flap after Foreman {v}: {line[:200]}") for x, line in flaps]:
+    for x, title in [(x, f"Canary after Sampo {v}: {line[:200]}") for x, line in failed] + [
+            (x, f"Canary load flap after Sampo {v}: {line[:200]}") for x, line in flaps]:
         try:  # a project's past check failing now, or only under load: an item in that project's inbox
             q = c.find_project(x["root"])
             if q:
@@ -292,7 +292,7 @@ def _canary_worker(v, root):
         try:
             from sampo import serve
             p = c.find_project(root)
-            serve._notify(p, f"Foreman {v} canary: " + "; ".join(
+            serve._notify(p, f"Sampo {v} canary: " + "; ".join(
                 ([f"{len(failed)} project(s) failing: " + ", ".join(x["project"] for x, _ in failed)] if failed else [])
                 + ([flapped] if flaps else [])))
         except Exception:
@@ -321,7 +321,7 @@ def _push(ctx):
             _push_main(p, b.id, landed, remote, "fm release --push")
         finally:
             _git(root, "worktree", "remove", "--force", wt, ok=True)
-    print(f"  pushed Foreman {v} to {remote} main (the publish grant is spent)")
+    print(f"  pushed Sampo {v} to {remote} main (the publish grant is spent)")
     clean = not _git(root, "status", "--porcelain", ok=True).strip()
     if clean and not c._git(root, "merge-base", "--is-ancestor", "HEAD", landed, timeout=60, proc=True).returncode:
         if not c._git(root, "merge", "-q", "--ff-only", landed, timeout=300, proc=True).returncode:
@@ -638,8 +638,8 @@ def _manifest(root):
 
 
 def run_any(p, args, root, state, state_path):
-    """T-2390: fm release VERSION outside Foreman's repo, a checkpoint after each of ANY_STEPS (state/release.json, as
-    Foreman's own). A red or unproven fm prove --release stops before the commit; --push without this repo's active
+    """T-2390: fm release VERSION outside Sampo's repo, a checkpoint after each of ANY_STEPS (state/release.json, as
+    Sampo's own). A red or unproven fm prove --release stops before the commit; --push without this repo's active
     task's publish grant stops after the local tag and names the push."""
     import datetime
     v = args.version
@@ -837,7 +837,7 @@ def run(p, args):
     todo = [i for i, (n, _) in enumerate(STEPS)
             if n not in state["done"] and n not in state["skipped"] and (n != "push" or state["push"])]
     if not todo:
-        print(f"Foreman {v} is already released: every step is done")
+        print(f"Sampo {v} is already released: every step is done")
         return 0
     if resume:
         print(f"resuming at step {todo[0] + 1} ({STEPS[todo[0]][0]})")
@@ -863,7 +863,7 @@ def run(p, args):
                 raise
             state["done"].append(name)
         _dump(state_path, state)
-    print(f"Foreman {v} released: " + (f"{len(state['skipped'])} gate(s) skipped ({', '.join(state['skipped'])}); "
+    print(f"Sampo {v} released: " + (f"{len(state['skipped'])} gate(s) skipped ({', '.join(state['skipped'])}); "
                                        if state["skipped"] else "") + ("pushed" if "push" in state["done"] else "not pushed"))
     return 0
 

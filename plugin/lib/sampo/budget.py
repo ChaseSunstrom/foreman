@@ -1,4 +1,4 @@
-"""fm budget (T-0227): bounded use of model work, not avoidance. Everything Foreman spawns — tool-less children (fm ideas,
+"""fm budget (T-0227): bounded use of model work, not avoidance. Everything Sampo spawns — tool-less children (fm ideas,
 oracle, research ask, evolve's mutation), headless replays (fm bench) and Claude's Agent subagents — records what it
 cost in one global ledger (state/spend.jsonl: USD from claude's JSON result, tokens for subagents), and caps
 (state/budget.json) refuse a command whose estimate would pass the per-command or the day's limit. Past 80% of weekly

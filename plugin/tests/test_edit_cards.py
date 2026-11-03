@@ -14,7 +14,7 @@ from test_hooks import HookCase
 from sampo import core as c
 
 PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HEAD = "Foreman: stack card"
+HEAD = "Sampo: stack card"
 
 
 def card(name, area, score, *detect):
@@ -61,7 +61,7 @@ class EditCards(_CardCase):
         self.fm("task", "new", "Second", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
         pointer = self.edit("app.py")
         self.assertNotIn("Mutable default arguments", pointer, "a new task in the same session gets only a pointer")
-        self.assertTrue(pointer.startswith("Foreman: stack card python") and "fm lib show python Foreman: " in pointer + " Foreman: ", pointer)
+        self.assertTrue(pointer.startswith("Sampo: stack card python") and "fm lib show python Sampo: " in pointer + " Sampo: ", pointer)
         self.assertNotIn("\n- ", pointer, "one line, not the bullets")
         self.assertEqual(self.edit("app.py"), "", "the pointer comes once per card per task")
         self.fm("task", "new", "Third", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")

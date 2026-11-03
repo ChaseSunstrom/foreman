@@ -1,4 +1,4 @@
-"""fmpy (T-0368): fm and every hook start with `env python3`; when that one is below Foreman's floor (JARVIS: 3.11.2,
+"""fmpy (T-0368): fm and every hook start with `env python3`; when that one is below Sampo's floor (JARVIS: 3.11.2,
 where argparse drops `fm task evidence ID --step N CMD RESULT`), re-run under a supported interpreter found on this
 machine. The first old-Python call searches once and saves the answer in state/python ("none" when there is none);
 `fm doctor` searches again. Standard library only, and syntax old interpreters still parse."""

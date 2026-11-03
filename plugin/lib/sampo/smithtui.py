@@ -1,4 +1,4 @@
-"""T-1283: Foreman Code's terminal UI (`fm code tui`). It runs fm code as a child with --json and draws only from that
+"""T-1283: Smith Code's terminal UI (`fm code tui`). It runs fm code as a child with --json and draws only from that
 event stream (fmcode.EVENTS), so the harness stays the source of truth: the TUI never edits, verifies or closes.
 
 Layers, each testable without a terminal: State (events → what happened); Canvas and the panels (a grid of styled
@@ -192,7 +192,7 @@ class State:
 
     def _on_start(self, e):
         if int(e.get("schema") or 1) > SCHEMA:
-            raise NewerStream(f"fm code's event stream is schema {e.get('schema')}; this TUI reads {SCHEMA}: update Foreman")
+            raise NewerStream(f"fm code's event stream is schema {e.get('schema')}; this TUI reads {SCHEMA}: update Smith")
         if e.get("resume") and self.plan:  # fm code --resume sends no plan again: the screen keeps the run's
             self.task, self.status = e.get("task") or self.task, "running"
             return
@@ -679,10 +679,10 @@ def brief_prompt(st):
     """T-1341: the opening prompt of a live CLI that takes over a stopped run: the task, its plan, its checks, why it
     stopped, and what happens on exit."""
     plain = lambda s: " ".join("".join(ch for ch in str(s) if ch.isprintable()).split())  # noqa: E731
-    lines = [f"Foreman task {st.task}: {plain((st.plan or {}).get('title') or st.request or '')}"]
+    lines = [f"Smith task {st.task}: {plain((st.plan or {}).get('title') or st.request or '')}"]
     lines += [f"- {plain(c.get('text'))} (check: {plain(c.get('verify'))})" for c in st.criteria]
     lines.append(f"The automatic run stopped: {plain(st.error or st.stall or 'it was stopped')}.")
-    lines.append("Finish the task here. When you exit, Foreman re-runs these checks and records them.")
+    lines.append("Finish the task here. When you exit, Smith re-runs these checks and records them.")
     return "\n".join(lines)
 
 
@@ -1142,7 +1142,7 @@ def _log(st, w, h, app):
 
 
 def _welcome(w, h, fx, app=None):
-    """The screen before any run: Foreman's mark, breathing, and the keys that start something; before a project's
+    """The screen before any run: Smith's mark, breathing, and the keys that start something; before a project's
     first run (T-1333), what a run needs, each missing one with the key that fixes it, and the first question."""
     a, b = fx.c("accent"), fx.c("accent2")
     keys = [("n", "new request"), ("h", "past runs"), ("m", "model"), ("?", "keys")]
@@ -1150,7 +1150,7 @@ def _welcome(w, h, fx, app=None):
     used = sum(width(t) for t, _ in chips)
     left = lambda n: [(" " * max(0, (w - n) // 2), "text")]
     lines = [left(1) + [("◆", rgb(fg=mix(a, b, fx.wave(3.2)), bold=True) if a else "accent")], [],
-             left(12) + [("Foreman Code", "strong")],
+             left(12) + [("Smith Code", "strong")],
              left(42) + [("plan, edit, check and close, each guarded", "dim")], []]
     checks = app.first_run() if app is not None else []
     if checks:
@@ -1402,7 +1402,7 @@ def render(st, w, h, cfg, app=None, t=None):
 KEY_NAMES = {"\t": "Tab", "\n": "Enter", "KEY_ENTER": "Enter", "KEY_UP": "↑", "KEY_DOWN": "↓", "KEY_PPAGE": "PgUp",
              "KEY_NPAGE": "PgDn"}
 COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume", "resume it"),
-                  ("diff", "the run's changes"), ("history", "past runs"), ("projects", "every Foreman project"),
+                  ("diff", "the run's changes"), ("history", "past runs"), ("projects", "every Sampo project"),
                   ("model", "model or worker"), ("settings", "settings: look, layout, keys"),
                   ("looks", "your taste: 12 pairs of looks"),
                   ("backlog", "the deferred pile: revive, keep or drop each"),
@@ -1504,14 +1504,14 @@ DIFF_RATE = 40  # T-1312: lines a second the diff view reveals on open
 
 def card(st, app):
     """T-1762: the card a failure or a live stall shows over the run, or None: (kind, title, rows, keys). A failure's
-    rows: what happened, what Foreman did, the next command (Enter runs it); a stall's: w waits, k stops the run,
+    rows: what happened, what Smith did, the next command (Enter runs it); a stall's: w waits, k stops the run,
     m stops it and picks another runner to resume with. Esc hides it until the next one."""
     if app is None or app.mode != "main":
         return None
     if st.status in ("error", "blocked") and st.error:
         did = (f"blocked {st.task}: its log says why" if st.status == "blocked" else
                f"stopped; {st.task} stays as it was" if st.task else "stopped before any task: nothing ran")
-        kind, rows = "failure", [("what happened", str(st.error)), ("Foreman did", did),
+        kind, rows = "failure", [("what happened", str(st.error)), ("Smith did", did),
                                  ("next", st.next or "nothing to run")]
         cli = live_cli(st.worker) if st.task else None  # T-1341
         keys = ("Enter runs it · " if st.next else "") + (f"x hands it to {cli[0]} · " if cli else "") + "Esc hides"
@@ -1519,7 +1519,7 @@ def card(st, app):
     elif st.stall and st.status in LIVE:
         kind, title = "stall", "Stalled"
         cli = live_cli(st.worker) if st.task else None  # T-1341
-        rows = [("what happened", st.stall), ("Foreman did", "kept the turn going; nothing is lost"),
+        rows = [("what happened", st.stall), ("Smith did", "kept the turn going; nothing is lost"),
                 ("next", "w wait · k stop the run · m stop and resume with another runner"
                  + (f" · x take it over in {cli[0]}" if cli else ""))]
         keys = "w · k · m · " + ("x · " if cli else "") + "Esc hides"
@@ -1636,11 +1636,11 @@ DECK_STAGE = {"planning": 0, "ready": 0, "executing": 1, "verifying": 2, "auditi
 
 
 def _deck_view(cv, st, app, cfg):
-    """T-1345: the home as a deck: a card per project (what Foreman noticed first), as many columns as fit. The focus
+    """T-1345: the home as a deck: a card per project (what Smith noticed first), as many columns as fit. The focus
     ring glides from the last card to the selected one (fx.ease: at once with motion reduced or off), which is drawn
     focused once the ring lands. Each card's place is kept for the keys (deck_cols) and Enter's grow (deck_rects)."""
     note = f"/{app.jump} · Esc stops" if app.jump is not None else HOME_NOTE
-    iy, ix, ih, iw = _overlay(cv, cfg, "Foreman projects", note, cv.w - 2, cv.h - 2)
+    iy, ix, ih, iw = _overlay(cv, cfg, "Smith projects", note, cv.w - 2, cv.h - 2)
     if app.home_note and ih > 2:  # T-1344: what changed since the last open
         cv.line(iy, ix, [(_printable(app.home_note, iw), "dim")], ix + iw)
         iy, ih = iy + 1, ih - 1
@@ -1651,7 +1651,7 @@ def _deck_view(cv, st, app, cfg):
     cw, ch = (iw - (cols - 1)) // cols, CARD_H
     app.deck_cols = cols
     if not app.items:
-        cv.line(iy, ix, [("no Foreman projects yet: fm init in a repository makes one", "dim")], ix + iw)
+        cv.line(iy, ix, [("no Sampo projects yet: fm init in a repository makes one", "dim")], ix + iw)
         return
     rows = max(1, ih // ch)
     top = max(0, app.item_index // cols - rows + 1)
@@ -1689,7 +1689,7 @@ def _project_card(cv, p, y, x, h, w, cfg, focused):
     noticed = p.get("kind") == "noticed"
     runner = _printable(p.get("runner") or "", 20) if isinstance(p.get("runner"), str) else ""
     note = _printable(p.get("task") or "", 12) if noticed else (f"◆ {runner}" if runner else "")
-    iy, ix, ih, iw = box(cv, y, x, h, w, "Foreman noticed" if noticed else str(p.get("project") or "?"), cfg,
+    iy, ix, ih, iw = box(cv, y, x, h, w, "Smith noticed" if noticed else str(p.get("project") or "?"), cfg,
                          focused=focused, note=note)
     for r, segs in enumerate(_card_lines(p)[:ih]):
         cv.line(iy + r, ix, segs, ix + iw)
@@ -1750,7 +1750,7 @@ def _work_row(it):
 
 
 def fm_projects():
-    """Every Foreman project on this machine, as fm projects --json lists them."""
+    """Every Sampo project on this machine, as fm projects --json lists them."""
     from sampo import core
     rows = [p for p in (_fm_json("projects").get("projects") or []) if isinstance(p, dict)]
     for p in rows:  # T-1344: a project whose last run ended blocked or in error ranks as failed
@@ -2688,7 +2688,7 @@ class App:
         return True
 
     def take_photo(self):
-        """T-1546, the photo booth: F writes the frame on screen to Foreman's photos folder, as an SVG and (with
+        """T-1546, the photo booth: F writes the frame on screen to Smith's photos folder, as an SVG and (with
         rsvg-convert installed) a PNG."""
         from sampo import core
         try:
@@ -3066,7 +3066,7 @@ class App:
         from sampo import eco
         self.backlog_p = core.find_project(self.root)
         if not self.backlog_p:
-            self.message = "backlog: this folder is not a Foreman project (fm init makes it one)"
+            self.message = "backlog: this folder is not a Sampo project (fm init makes it one)"
             return
         self.items, self.item_index, self.mode = eco.swipe_list(self.backlog_p), 0, "backlog"
         self.backlog_undo, self.backlog_kept = [], set()  # T-1871: u takes back the newest answer given in this view
@@ -3643,7 +3643,7 @@ class App:
     def _init_project(self):
         from sampo import core
         p = core.find_project(self.root or os.getcwd(), create=True)
-        return f"{p.slug} is a Foreman project now" if p else "not a project: no git repository here"
+        return f"{p.slug} is a Sampo project now" if p else "not a project: no git repository here"
 
     def start_tour(self):
         """T-1309: the sample run played on this app's clock, a caption over it naming each panel."""
@@ -4014,7 +4014,7 @@ class _Late(BaseException):
 
 
 def load_extensions(folder=None, budget=None):
-    """Run setup(API()) of each *.py in Foreman's home folder's tui/ (a project's files never: they'd run as you).
+    """Run setup(API()) of each *.py in Smith's home folder's tui/ (a project's files never: they'd run as you).
     [one line per file that failed or was skipped]; the others still load. T-1657: whatever one raises, SystemExit
     too, is its line; `budget`, seconds a file may take to load (SIGALRM: the main thread only), or it's skipped."""
     import importlib.util

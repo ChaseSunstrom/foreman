@@ -300,7 +300,7 @@ def load(path, parse=loads):
 
 
 HEAD = """// Built by fm scene compile (T-1633) from a scene.json: edit that and compile again. Needs three.js r155 or later,
-// resolved as "three" by an import map or a bundler. Modelled on Foreman's templates/scene.html (references/ui/
+// resolved as "three" by an import map or a bundler. Modelled on Sampo's templates/scene.html (references/ui/
 // scene-3d.md): the page holds <figure class="scene" data-state="poster"> with the poster, a <canvas role="img"
 // aria-label="..."> and the text twin, and its CSS fades the canvas in at data-state="live". Load it after first paint:
 //   import("./scene.js").then(m => m.mount(figure)).catch(err => console.error("scene: showing the poster", err));
@@ -1645,7 +1645,7 @@ def _builtin(action, a):
     from sampo import core
     p = core.find_project(os.getcwd())
     if not p:
-        raise ValueError("not in a Foreman project: the guard's record is per project")
+        raise ValueError("not in a Sampo project: the guard's record is per project")
     held, through = guard_counts(p, days)
     if not held and not through and getattr(a, "need_data", False):  # T-1873 review: the gallery's sample instead
         raise ValueError(f"no guard record over {days} days")

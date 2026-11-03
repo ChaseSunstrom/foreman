@@ -1,4 +1,4 @@
-"""fm scout (T-0950): Foreman finds its own work, so nobody has to ask. Zero-token probes look for a newer Claude Code to
+"""fm scout (T-0950): Sampo finds its own work, so nobody has to ask. Zero-token probes look for a newer Claude Code to
 adopt, dependencies in the user's projects that no stack card covers, doctor failures, skill sources gone stale, and an
 empty queue that wants a brainstorm round. Each finding is captured once, under a key of its own, into the inbox; the
 drive then plans and works it under full autonomy. Bounded: MAX_CAPTURES a run, MAX_OPEN open at once, one quick run
@@ -62,15 +62,15 @@ def probe_claude_code(p, ctx):
     if latest <= have:
         return []
     v = ctx["latest"]
-    return [Finding(f"cc:{v}", f"Adopt Claude Code {v}: install it and take its new features and fixes into Foreman",
-                    "FEATURE", "M", f"published {v}; installed {ctx.get('installed') or 'unknown'}; Foreman tested on "
+    return [Finding(f"cc:{v}", f"Adopt Claude Code {v}: install it and take its new features and fixes into Sampo",
+                    "FEATURE", "M", f"published {v}; installed {ctx.get('installed') or 'unknown'}; Sampo tested on "
                     f"{CC_TESTED}. Read its changelog since {CC_TESTED}, adopt what helps, re-verify the hooks and the "
                     f"pane, then raise CC_TESTED and the README")]
 
 
 def probe_lib_gaps(p, ctx):
     """Dependencies used in the user's projects that no card's dep: signal covers and no earlier finding named, most
-    used first. Cards live in Foreman's own repo, so without named roots it runs there only."""
+    used first. Cards live in Sampo's own repo, so without named roots it runs there only."""
     from sampo import lib
     if not ctx.get("roots") and os.path.realpath(p.root or "") != os.path.realpath(os.path.dirname(c.PLUGIN_ROOT)):
         return []
@@ -96,7 +96,7 @@ def probe_brainstorm(p, ctx):
     if any(s >= recent for s in stamps):
         return []
     week = time.strftime("%G-W%V", time.gmtime())
-    return [Finding(f"brainstorm:{week}", "Brainstorm round: what Foreman should build or fix next", "RESEARCH", "M",
+    return [Finding(f"brainstorm:{week}", "Brainstorm round: what Sampo should build or fix next", "RESEARCH", "M",
                     "the queue and inbox are empty and no brainstorm ran this week: /foreman:brainstorm, a cheap "
                     "probe first (two lenses), ground every idea, queue the ones worth building")]
 
@@ -174,7 +174,7 @@ def probe_genesis(p, ctx):
 
 def probe_friction(p, ctx):
     """No self-improvement pass scheduled (fm friction --every), none in 7 days, and at least 3 tasks closed since:
-    one pass this week, so Foreman fixes its own friction without being asked."""
+    one pass this week, so Sampo fixes its own friction without being asked."""
     meta = c.read_meta(p)
     if int(meta.get("rsi_every") or 0) > 0 or (meta.get("rsi_at") and (c.age_days(meta["rsi_at"]) or 0) < 7):
         return []
@@ -184,7 +184,7 @@ def probe_friction(p, ctx):
     if done < 3:
         return []
     from sampo import friction
-    return [Finding("friction:" + time.strftime("%G-W%V", time.gmtime()), "Self-improvement pass: Foreman's own "
+    return [Finding("friction:" + time.strftime("%G-W%V", time.gmtime()), "Self-improvement pass: Sampo's own "
                     "friction since the last one", "RESEARCH", "S", f"{done} tasks closed and no pass in a week: "
                     + friction.ACTION)]
 
@@ -194,7 +194,7 @@ def _is_home(p):
 
 
 def probe_find(p, ctx):
-    """T-2124: fm find on the user's own project (Foreman's home runs it by hand): proven kinds only, FIND_DAY a day,
+    """T-2124: fm find on the user's own project (Sampo's home runs it by hand): proven kinds only, FIND_DAY a day,
     never a key in fmfind.settled (dropped, a reverted fix, still open). Refused, with the reason, in a tree whose last
     50 commits have none by git's user.email: a clone isn't the user's to file work in. An email is only a claim, so
     where others commit too each lead waits for your yes. At most FIND_DAY open and FIND_DAY in any 24 hours."""
@@ -300,7 +300,7 @@ def probe_sources(p, ctx):
                                        f"−{len(minus)} ~{len(renamed)}", "RESEARCH", "S",
                                        f"fm lib source {name} ({new[0].get('class') or 'ideas-only'}) moved from "
                                        f"{str(meta['commit'])[:8]}. {'; '.join(lines)}. Read what changed (fm lib "
-                                       "show NAME) and decide what Foreman takes; nothing was installed."))
+                                       "show NAME) and decide what Sampo takes; nothing was installed."))
             moved = lib.class_change(meta, new[0]) if isinstance(new, tuple) else ""
             if moved:  # T-1389: a licence class that moved is one finding, never silent
                 out.append(Finding(f"licence:{new[0].get('name')}:{new[0].get('class')}:"
@@ -314,7 +314,7 @@ _OWN = None
 
 
 def _foreman_text():
-    """Foreman's own words, once a run: README, MASTER, CHANGELOG, the rules, the skills and plugin/lib."""
+    """Sampo's own words, once a run: README, MASTER, CHANGELOG, the rules, the skills and plugin/lib."""
     global _OWN
     if _OWN is None:
         import glob
@@ -333,8 +333,8 @@ def _foreman_text():
 
 
 def probe_cc_changelog(p, ctx):
-    """T-1391: each bullet of Claude Code's changelog past CC_TESTED that names something in backticks Foreman's own
-    text never mentions: a finding to decide whether Foreman should use or adapt to it. The changelog is the indexed
+    """T-1391: each bullet of Claude Code's changelog past CC_TESTED that names something in backticks Sampo's own
+    text never mentions: a finding to decide whether Sampo should use or adapt to it. The changelog is the indexed
     anthropic-claude-code source's checkout (data, never run); FOREMAN_SCOUT_CHANGELOG names another file (tests)."""
     from sampo import lib
     path = os.environ.get("FOREMAN_SCOUT_CHANGELOG") or os.path.join(lib._sources_dir(), "anthropic-claude-code",
@@ -360,7 +360,7 @@ def probe_cc_changelog(p, ctx):
             out.append(Finding(f"ccfeat:{ver}:{hashlib.sha1(text_.encode()).hexdigest()[:10]}",
                                f"Claude Code {ver}: {c.fit(text_, 100)}", "RESEARCH", "S",
                                f"Claude Code's changelog for {ver} names {c.joinmore([c.plain(n) for n in names], 3)}, "
-                               "which nothing in Foreman mentions. Decide whether Foreman should use or adapt to it."))
+                               "which nothing in Sampo mentions. Decide whether Sampo should use or adapt to it."))
     return out
 
 

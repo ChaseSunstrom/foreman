@@ -87,7 +87,7 @@ class BoardPosture(ForemanTestCase):
         for cmd in ("grep -q done .foreman/tasks/T-0001.md",
                     "test -f ~/.claude/foreman/state/projects/app-1/tasks/T-0001.md",
                     "cat state/briefs/T-0001.md"):
-            self.assertTrue(any("Foreman's state" in x for x in c.lint_verify(cmd, self.repo)), cmd)
+            self.assertTrue(any("Sampo's state" in x for x in c.lint_verify(cmd, self.repo)), cmd)
         self.assertEqual(c.lint_verify("python3 -c 'import os'", self.repo), [])
 
     def test_a_hollow_builder_return_is_logged_and_fm_next_names_it(self):

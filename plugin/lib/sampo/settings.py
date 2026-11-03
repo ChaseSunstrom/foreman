@@ -1,4 +1,4 @@
-"""T-1496: every setting Foreman's two UIs read, in one schema: the fm code app's tui.toml (in Foreman's home) and the
+"""T-1496: every setting Sampo's two UIs read, in one schema: the fm code app's tui.toml (in Sampo's home) and the
 foreman-ui mod's userConfig (Claude Code keeps its values in settings.json pluginConfigs). Where the two overlap
 (motion, palette) they share one name and one value set; an old word is still read (the mod's "calm" is reduced).
 
@@ -9,9 +9,9 @@ would allow that write, and otherwise printed as the change to make. Stdlib only
 
 T-1510: fm settings diff (the keys the files change from the defaults; a key nothing reads is flagged dead), export
 and import (a share code: those keys as one pasteable word, every key and value checked before any is written) and
-undo (each set or import is one entry of a history in Foreman's state; undo puts the last one back).
+undo (each set or import is one entry of a history in Sampo's state; undo puts the last one back).
 
-T-1543: settings safety. Each start the app draws with keeps tui.toml as the last good copy (in Foreman's state); one it
+T-1543: settings safety. Each start the app draws with keeps tui.toml as the last good copy (in Sampo's state); one it
 can't draw with starts that copy instead and says so, the file left as written. An edit made to tui.toml while the app
 runs is read back into it (applied when it can draw with it); a write from the app names the text it last saw, and a
 key changed there since is refused, never overwritten unseen. fm settings bisect names the setting that breaks the
@@ -523,7 +523,7 @@ def _plan_app(key, value, path, table, name, text=None):
 
 
 def check_render(cfg):
-    """T-1612: [(way, why)] for each way Foreman draws this config that fails where the others may not: the app (every
+    """T-1612: [(way, why)] for each way Sampo draws this config that fails where the others may not: the app (every
     layout, wide and narrow: render_error), a headless snapshot (the sample run's frame as SVG, as --snapshot and the
     docs draw it) and the plain lines --plain prints. [] when every way draws."""
     from sampo import smithtui as T
@@ -1224,7 +1224,7 @@ def words(text, model="haiku", p=None):
             now[r["key"]] = r["value"]
             kind = f"one of {', '.join(map(str, r['choices']))}" if r.get("choices") else r["type"]
             lines.append(f"- {r['key']}: {kind}; now {_plain(r['value'])}; {r.get('help') or ''}")
-    system = ("You turn a request about how Foreman's fm code app and its foreman-ui pane look and behave into "
+    system = ("You turn a request about how Sampo's fm code app and its foreman-ui pane look and behave into "
               'settings. Reply with one JSON object, {"setting": value, ...}, naming only settings listed here, and '
               "nothing else.\nSettings (name: what it takes; its value now; what it does):\n" + "\n".join(lines)
               + ("\nNever propose these; the user undid them twice or more: " + "; ".join(never) if never else ""))
@@ -1507,7 +1507,7 @@ def _cmd_extras(args):
 # ---------------------------------------------------------------- T-1543: last good copy, outside edits, bisect
 
 def good_path():
-    """The last tui.toml the fm code app started and drew with, kept in Foreman's state."""
+    """The last tui.toml the fm code app started and drew with, kept in Sampo's state."""
     from sampo import core
     return os.path.join(core.state_dir(), "settings", "tui.good.toml")
 
@@ -1968,7 +1968,7 @@ def _text(r, width=22):
 
 
 def extensions():
-    """T-1657: the fm code app's extensions (Foreman's home tui/*.py, as the app runs them) loaded into this process
+    """T-1657: the fm code app's extensions (Sampo's home tui/*.py, as the app runs them) loaded into this process
     once, for the settings they declare: [why each that failed did]. The app has loaded them already: none run twice."""
     from sampo import smithtui as T
     if T.extensions_dir() in T.EXT_LOADED:

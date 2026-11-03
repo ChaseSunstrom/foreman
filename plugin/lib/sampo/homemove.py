@@ -1,4 +1,4 @@
-"""T-2746: fm migrate moves the Foreman home and its siblings (foreman.draft, .evolve, .lanes) to the sampo names, once.
+"""T-2746: fm migrate moves the Sampo home and its siblings (foreman.draft, .evolve, .lanes) to the sampo names, once.
 
 Each folder is renamed (never copied), and a symlink is left at the old path so every absolute path in settings, links
 and worktree gitdir files still resolves. The record is backed up first and a manifest (with a hash of each tree) is

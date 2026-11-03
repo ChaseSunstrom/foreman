@@ -255,7 +255,7 @@ def note(p, cmd):
     f = check(p, cmd)
     if not f:
         return None
-    return "Foreman: install check (a note, not a block): " + "; ".join(
+    return "Sampo: install check (a note, not a block): " + "; ".join(
         f"{x['kind']}: {x['why']}" for x in f[:4]) + ". Make sure these are the packages meant."
 
 

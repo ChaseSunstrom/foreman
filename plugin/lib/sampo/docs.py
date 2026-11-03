@@ -21,7 +21,7 @@ _SAFE = ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")  # T-21
 
 
 def _markdown(root):
-    """The repo's markdown: tracked, or untracked and not ignored (ignored notes, like Foreman's state/, are
+    """The repo's markdown: tracked, or untracked and not ignored (ignored notes, like Sampo's state/, are
     point-in-time records, not docs). Outside git, every .md not in a skipped or hidden folder."""
     try:
         r = subprocess.run(["git", "-C", root, *_SAFE, "ls-files", "-z", "--cached", "--others", "--exclude-standard",

@@ -1,4 +1,4 @@
-"""fm home export / import (T-1665): Foreman's projects (tasks, archive, research, decisions, ledger, meta) and tui.toml as
+"""fm home export / import (T-1665): Sampo's projects (tasks, archive, research, decisions, ledger, meta) and tui.toml as
 one tarball without secrets, checked on import into an empty home.
 
 What travels is an allowlist, the same both ways: per project tasks/, archive/ and research/ markdown, decisions.md,

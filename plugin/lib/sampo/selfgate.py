@@ -1,4 +1,4 @@
-"""T-2352: the self-change gate at fm lane merge. A branch that changes Foreman's own plugin/ merges only when it keeps
+"""T-2352: the self-change gate at fm lane merge. A branch that changes Sampo's own plugin/ merges only when it keeps
 what the base has: the guard blocks no less (its labelled cases and allow-corpus, the union of base's and branch's so a
 deleted case can't hide, plus recent real commands, judged with no grants by each tree's own guard), no hook gets
 slower (the hooks of each tree on the base's bench), and the always-on footprint doesn't grow with no cut to pay for it
@@ -84,7 +84,7 @@ def _corpus():
 
 
 def _env(state):
-    """What the tree's code sees: the real home and Foreman home (so core and home rules judge real paths), an empty
+    """What the tree's code sees: the real home and Sampo home (so core and home rules judge real paths), an empty
     state (no grants, trust or standing yes), and nothing else of this session's environment (no tokens)."""
     keep = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "FOREMAN_HOME")
     return dict({k: os.environ[k] for k in keep if k in os.environ}, FOREMAN_STATE=state)
@@ -187,7 +187,7 @@ def _benched(f):  # what a hook can run or read: any plugin file but tests and p
 
 
 def gate(p, b, main, ref, files):
-    """[refusal lines] for a commit that changes Foreman's own plugin/, [] when it holds, isn't one, or the user said yes
+    """[refusal lines] for a commit that changes Sampo's own plugin/, [] when it holds, isn't one, or the user said yes
     after its last refusal of this same commit. Each refusal is a self_change_refused ledger event with the sha."""
     if not os.path.isfile(os.path.join(main, "plugin", "lib", "fmguard.py")) or not any(
             f.startswith("plugin/") for f in files):

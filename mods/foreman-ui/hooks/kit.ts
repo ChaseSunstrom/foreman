@@ -712,7 +712,7 @@ export function diffRows(hunks: unknown, context = 1): DiffRow[] {
   return out
 }
 
-/** T-0143: one part of a Foreman report line in a reply (Changed:, ✓/✗, ⚑ Captured, ◆ Decided, Next:, ⚠ Needs you) */
+/** T-0143: one part of a Sampo report line in a reply (Changed:, ✓/✗, ⚑ Captured, ◆ Decided, Next:, ⚠ Needs you) */
 export type ReplyPart = { text: string; color?: number; bold?: boolean }
 export type ReplyBlock = { kind: 'md'; text: string } | { kind: 'line'; parts: ReplyPart[] } | { kind: 'gap' }
 
@@ -732,7 +732,7 @@ function reportLine(line: string): ReplyPart[] | null {
   return null
 }
 
-/** A reply's text as markdown runs and Foreman report lines (outside code fences), in order; a blank line between
+/** A reply's text as markdown runs and Sampo report lines (outside code fences), in order; a blank line between
  * two of them stays as a gap (live: the groups ran together without it) */
 export function replyBlocks(text: string): ReplyBlock[] {
   const out: ReplyBlock[] = []

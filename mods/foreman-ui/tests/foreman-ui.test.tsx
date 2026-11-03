@@ -58,7 +58,7 @@ const band = (isWorking = false) =>
 const PANE = {
   component: 'Pane',
   requestId: 'foreman',
-  props: { title: 'Foreman', isFocused: true, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+  props: { title: 'Sampo', isFocused: true, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 const tall = (bodyRows: number) => ({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows } } }) // a taller dock
 
@@ -144,7 +144,7 @@ function world(on: On, views: FmView[]) {
   })
   const session = { id: 'sess-1' }
   on('session.id', async () => ({ value: session.id }))
-  const panes = { shown: false } // whether the Foreman pane is docked and showing
+  const panes = { shown: false } // whether the Sampo pane is docked and showing
   on('ui.panes', async () => ({ value: panes.shown ? [{ id: 'foreman', isShown: true }] : [] }))
   const agentStatus = { now: 'running', listed: true } // what the engine's list says of every subagent
   on('agent.list', async () => ({
@@ -276,8 +276,8 @@ test('signal glyph: quiet when calm, the worst first with a count (T-0472)', () 
     .toEqual({ level: 'red', text: 'gate failing: pytest +1' })
 })
 
-test('a grant is put to a person: Foreman\'s ask for fm ask comes back as this plugin\'s own; other verdicts pass (T-1262)', async ($, on) => {
-  const asked = 'Foreman asks you to grant core for T-0007: x. Yes grants it to that task; No refuses. Only your answer here can grant it.'
+test('a grant is put to a person: Sampo\'s ask for fm ask comes back as this plugin\'s own; other verdicts pass (T-1262)', async ($, on) => {
+  const asked = 'Sampo asks you to grant core for T-0007: x. Yes grants it to that task; No refuses. Only your answer here can grant it.'
   on('tool.check', { tool: 'Bash' }, ($, e) => {
     const cmd = String((e.input as { command?: unknown }).command ?? '')
     if (cmd.startsWith('fm ask')) return { decision: 'ask', reason: asked, hook: 'PreToolUse' }
@@ -293,13 +293,13 @@ test('a grant is put to a person: Foreman\'s ask for fm ask comes back as this p
   }
 })
 
-test('guard refusals are recognised by their Foreman prefix only', () => {
+test('guard refusals are recognised by their Sampo, Ward or Foreman prefix only', () => {
   expect(guardReason({ deny: 'PreToolUse:Edit hook error: Foreman guard: blocked core: x.py' })).toBe('blocked core: x.py')
-  expect(guardReason({ isError: true, text: 'Foreman: run fm ask as its own Bash command' })).toBe(
+  expect(guardReason({ isError: true, text: 'Sampo: run fm ask as its own Bash command' })).toBe(
     'run fm ask as its own Bash command',
   )
   expect(guardReason({ deny: 'some other plugin said no' })).toBeUndefined()
-  expect(guardReason({ isError: true, text: 'grep output: Foreman: a line in some file' })).toBeUndefined()
+  expect(guardReason({ isError: true, text: 'grep output: Sampo: a line in some file' })).toBeUndefined()
   expect(guardReason({})).toBeUndefined()
 })
 
@@ -367,7 +367,7 @@ const NEWS: FmView = {
     cases: 8,
     last: { label: 'soak-20261004-001230', passed: 0, total: 1, cost_usd: 0.13, score: 3.5, repeats: 2 },
     evolve: [{ kept: false, branch: 'evolve/20261004-001230', target: 'plugin/skills/intake/SKILL.md', why: 'tighter verify lines' }],
-    verdicts: [{ kind: 'duel', ok: true, verdict: 'no difference on these cases: rival may duplicate what Foreman does' }],
+    verdicts: [{ kind: 'duel', ok: true, verdict: 'no difference on these cases: rival may duplicate what Sampo does' }],
   },
   research: [{ name: 'ask-tomllib-since-which-version-20261004-0000', claims: 8, verified: 7, not_found: 1, unchecked: 0, conflicts: 2, single: 3 }],
   revisit: [{ date: '2026-09-01', decision: 'keep the 60s token TTL', why: 'auth.py changed' }],
@@ -470,7 +470,7 @@ test('the pane is one panel of sections, no boxes inside; a waiting plan shows w
     await ui.press({ key: 'drive' })
     expect(calls).toContainEqual(['fm', 'drive', 'off'])
     await ui.press({ key: 'drop-T-0011' })
-    expect(calls).toContainEqual(['fm', 'task', 'drop', 'T-0011', 'dropped from the Foreman pane'])
+    expect(calls).toContainEqual(['fm', 'task', 'drop', 'T-0011', 'dropped from the Sampo pane'])
     await ui.unmount()
   }
 })
@@ -512,14 +512,14 @@ test('a subagent turn starting mid-turn leaves the main turn counts alone (Claud
   await line.unmount()
 })
 
-test('the spinner names the Foreman step; the closing line says what the turn did', async ($, on) => {
+test('the spinner names the Sampo step; the closing line says what the turn did', async ($, on) => {
   world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const spinner = await $.ui.mount({
     plugin: 'foreman-ui', surface: 'terminal', component: 'Spinner',
     props: { word: 'Baking', message: null, suffix: '…', mode: 'tool-use' },
   })
-  // T-0143: 'get rid of … the "Seasoning" thing … and have it be a foreman thing': Foreman's working line, no engine word
+  // T-0143: 'get rid of … the "Seasoning" thing … and have it be a foreman thing': Sampo's working line, no engine word
   expect(await spinner.find({ type: 'Text', text: /Baking/ })).toBeUndefined()
   expect(await spinner.find({ type: 'Text', text: /T-0007/ })).toBeDefined()
   expect(await spinner.find({ type: 'Text', text: /step 2\/2/ })).toBeDefined()
@@ -532,14 +532,14 @@ test('the spinner names the Foreman step; the closing line says what the turn di
   await $.turn.complete({ answer: '', durationMs: 3100, isAborted: false, turnId: 't2', reason: 'answer' })
   const line = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'TurnDuration', props: { word: 'Baked', durationMs: 3100 } })
   expect(await line.find({ type: 'Text', text: /2 tools · 1 edit \+2 −1/ })).toBeDefined()
-  expect(await line.find({ type: 'Text', text: /Baked/ })).toBeUndefined() // T-0143: no engine word, Foreman's line
+  expect(await line.find({ type: 'Text', text: /Baked/ })).toBeUndefined() // T-0143: no engine word, Sampo's line
   await line.unmount()
   expect(summaryText({ durationMs: 1, tools: 1, edits: 0, add: 0, del: 0, agents: 2, step: 'T-1 step 2/3' })).toBe(
     '1 tool · 2 subagents · ✓ T-1 step 2/3',
   )
 })
 
-test('band stays out of the way outside a Foreman project', async ($, on) => {
+test('band stays out of the way outside a Sampo project', async ($, on) => {
   world(on, [{ v: 1, project: null }])
   await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
@@ -553,7 +553,7 @@ test('a guard refusal of a tool call becomes a toast', async ($, on) => {
   answer.deny = 'Foreman guard: blocked core: plugin/lib/fmcore.py is protected core.'
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'Bash', command: 'rm -rf plugin/lib' })
-  expect(toasted.some(t => t.startsWith('⛔ Foreman: blocked core'))).toBe(true)
+  expect(toasted.some(t => t.startsWith('⛔ Ward: blocked core'))).toBe(true)
 })
 
 test('Today: closes per day beside four tanks, each with its value over it and its name under it (T-1002)', async ($, on) => {
@@ -630,7 +630,7 @@ test('edits show on the edit lane: how many, and the latest file (T-1002)', asyn
   await ui.unmount()
 })
 
-test('the band shows context; at 85% Foreman checkpoints once', async ($, on) => {
+test('the band shows context; at 85% Sampo checkpoints once', async ($, on) => {
   const { calls, toasted, clock, usage } = world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await clock.advance(2000)
@@ -640,7 +640,7 @@ test('the band shows context; at 85% Foreman checkpoints once', async ($, on) =>
   await clock.advance(2000)
   await clock.advance(2000)
   expect(calls.filter(c => c[1] === 'checkpoint').length).toBe(1)
-  expect(toasted.some(t => t.startsWith('Context 90% · Foreman checkpointed'))).toBe(true)
+  expect(toasted.some(t => t.startsWith('Context 90% · Sampo checkpointed'))).toBe(true)
   expect(await ui.find({ type: 'Text', text: '90%' })).toBeDefined()
   usage.percent = 20 // a /compact
   await clock.advance(2000)
@@ -692,7 +692,7 @@ test('the footer points at what waits, and names the autonomy', async ($, on) =>
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const hint = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'PromptHint', props: { isDraft: false, isWorking: false, hint: '? for shortcuts' } })
   // the engine draws its own separator before a tail (the live render showed '· ·' when the tail brought one too)
-  expect(await hint.find({ type: 'Text', text: '? for shortcuts⚠ Foreman needs you: /fm' })).toBeDefined()
+  expect(await hint.find({ type: 'Text', text: '? for shortcuts⚠ Sampo needs you: /fm' })).toBeDefined()
   await hint.unmount()
   // the band says the autonomy in words; the engine's mode pills stay its own
   const mode = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
@@ -747,7 +747,7 @@ test('a task closing with context at the threshold compacts once, so the next ta
   await clock.advance(33000) // the refresh that sees T-0007 close
   await clock.advance(1000)
   expect(compacted.length).toBe(1)
-  expect(compacted[0]).toContain('Foreman task boundary')
+  expect(compacted[0]).toContain('Sampo task boundary')
   expect(toasted.some(t => t.includes('compacting'))).toBe(true)
   await clock.advance(70000)
   expect(compacted.length).toBe(1)
@@ -807,7 +807,7 @@ test('a paused hook shows in the band and, before anything else, in the pane (T-
   world(on, [{ ...VIEW, health: { hook_p95_ms: 31, guard_blocks: 0, hook_errors: 3, paused_hooks: ['Stop'] } }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
-  expect(await ui.find({ type: 'Text', text: /⚠ Foreman's Stop hook is paused: it failed 3 times in a row/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /⚠ Sampo's Stop hook is paused: it failed 3 times in a row/ })).toBeDefined()
   await ui.unmount()
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await pane.find({ type: 'Text', text: /⚠ Stop hook is paused after failing 3 times in a row/ })).toBeDefined() // above the plan waiting
@@ -834,12 +834,12 @@ test('mascot off means no mascot', { options: { mascot: 'off' } }, async ($, on)
   await ui.unmount()
 })
 
-test('a Foreman permission prompt gets a plain-words note under it', async ($, on) => {
+test('a Sampo permission prompt gets a plain-words note under it', async ($, on) => {
   const { noticed, clock, answer } = world(on, [VIEW])
   answer.hold = 1000
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   expect(askNote('fm ask T-0095 plugin --pin foreman-ui@foreman --why "update the mod"')).toBe(
-    '⚠ Foreman asks: a yes grants plugin for T-0095 — update the mod',
+    '⚠ Sampo asks: a yes grants plugin for T-0095 — update the mod',
   )
   expect(askNote('fm ask T-0001 core; rm -rf ~')).toBeNull()
   // a note never summarises a chained or substituting command as one clean ask
@@ -849,7 +849,7 @@ test('a Foreman permission prompt gets a plain-words note under it', async ($, o
   expect(askNote(`fm ask T-0001 core --why "${'a'.repeat(170)}"`)).toBeNull() // too long to show whole: no note
   void $.tool.call({ tool: 'Bash', command: 'fm ask T-0001 core --why "edit the guard"' })
   await clock.advance(200)
-  expect(noticed).toContain('⚠ Foreman asks: a yes grants core for T-0001 — edit the guard')
+  expect(noticed).toContain('⚠ Sampo asks: a yes grants core for T-0001 — edit the guard')
   await clock.advance(1000)
 })
 
@@ -988,7 +988,7 @@ test('with the mascot off a quiet subagent row still counts up (T-1437)', { opti
 })
 
 test('/fm-trust works only when the person types it; it writes the trust record itself; the band warns', async ($, on) => {
-  // T-0120: no tool call may write Foreman state and fm has no "on": the typed command is the only way in
+  // T-0120: no tool call may write Sampo state and fm has no "on": the typed command is the only way in
   const { calls } = world(on, [{ ...CALM, mode: { ...CALM.mode!, trust: true }, trust_file: '/h/foreman/state/trust.json' }])
   const written: { path: string; text: string }[] = []
   on('fs.write', async ($, e) => {
@@ -1055,7 +1055,7 @@ test('kit: a command output, short: failures first, else the tail, each line ton
   expect(bad.failures).toBe(true)
 })
 
-test('a finished shell command is a Foreman row in the chat: status, command, time, its output formatted inline', { options: { chat: 'full' } }, async ($, on) => {
+test('a finished shell command is a Sampo row in the chat: status, command, time, its output formatted inline', { options: { chat: 'full' } }, async ($, on) => {
   // T-0137: 'in the actual claude code chat … not just results, but tool calls'; no Output card in the pane
   const { clock } = world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -1091,7 +1091,7 @@ test('a finished shell command is a Foreman row in the chat: status, command, ti
   await pane.unmount()
 })
 
-test('a finished edit is a Foreman row: the path, +added −removed, and its changed lines as coloured text', { options: { chat: 'full' } }, async ($, on) => {
+test('a finished edit is a Sampo row: the path, +added −removed, and its changed lines as coloured text', { options: { chat: 'full' } }, async ($, on) => {
   // T-0141: 'the text output and formatting is not formatted/clean, especially with the tool calls like update'
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -1166,25 +1166,25 @@ test('a reloaded mod resumes the drive its turn end was for, once, and only in i
   const RESUME: FmView = { ...CALM, resume_after_reload: { session: 'sess-1', at: '2026-10-03T06:30:00Z', task: 'T-0007' } }
   const { submitted, toasted } = world(on, [RESUME])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-  expect(submitted).toEqual(['Continue the Foreman drive: the Foreman UI reloaded (T-0007)'])
-  expect(toasted.join('\n')).toContain('Foreman UI reloaded · the drive continues') // seen, not just done
+  expect(submitted).toEqual(['Continue the Sampo drive: the Sampo UI reloaded (T-0007)'])
+  expect(toasted.join('\n')).toContain('Sampo UI reloaded · the drive continues') // seen, not just done
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true }) // a later reload, same record
   expect(submitted.length).toBe(1)
 })
 
-test('the resume prompt the mod submits draws as one quiet Foreman line', async ($, on) => {
+test('the resume prompt the mod submits draws as one quiet Sampo line', async ($, on) => {
   // T-0143 live: the engine drew it as a four-line grey block with its own explanation
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'UserMessage',
-    props: { text: 'Continue the Foreman drive: the Foreman UI reloaded (T-0143)', origin: { kind: 'plugin', name: 'foreman-ui' },
+    props: { text: 'Continue the Sampo drive: the Sampo UI reloaded (T-0143)', origin: { kind: 'plugin', name: 'foreman-ui' },
       isExpanded: false } })
   expect(await row.find({ type: 'Box', key: 'fm-resumed' })).toBeDefined()
   expect(await row.find({ type: 'Text', text: /UI reloaded/ })).toBeDefined()
   await row.unmount()
 })
 
-test('a subagent call is a Foreman row: type, task, tools, time, tokens, its report\'s first line; a background one says so', async ($, on) => {
+test('a subagent call is a Sampo row: type, task, tools, time, tokens, its report\'s first line; a background one says so', async ($, on) => {
   // T-0148: the engine drew the agent's name on a highlighted block and 'Backgrounded agent (↓ to manage …)'
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -1212,7 +1212,7 @@ test('a subagent call is a Foreman row: type, task, tools, time, tokens, its rep
 test('the resume prompt is one quiet line even when its origin isn\'t marked as the plugin\'s', async ($, on) => {
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-  const text = 'The foreman-ui plugin sent a message:\nContinue the Foreman drive: the Foreman UI reloaded (T-0143)\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns.'
+  const text = 'The foreman-ui plugin sent a message:\nContinue the Sampo drive: the Sampo UI reloaded (T-0143)\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns.'
   const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'UserMessage',
     props: { text, origin: { kind: 'unclassified' }, isExpanded: false } })
   expect(await row.find({ type: 'Box', key: 'fm-resumed' })).toBeDefined()
@@ -1320,7 +1320,7 @@ test('a shell row with a description reads like the running row: the description
   await row.unmount()
 })
 
-test('under a shell row the engine\'s result block is replaced; file changes, a commit and a timeout are Foreman lines', async ($, on) => {
+test('under a shell row the engine\'s result block is replaced; file changes, a commit and a timeout are Sampo lines', async ($, on) => {
   // T-0143 audit: the output drew twice (our │ lines, then the engine's ⎿ block), with a full-context diff and '(timeout 10m)'
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -1345,7 +1345,7 @@ test('under a shell row the engine\'s result block is replaced; file changes, a 
   await row.unmount()
 })
 
-test('a reply opens with a Foreman mark; Foreman report lines are coloured; the rest stays markdown', async ($, on) => {
+test('a reply opens with a Sampo mark; Sampo report lines are coloured; the rest stays markdown', async ($, on) => {
   // T-0143: 'just your normal text output looks weird with everything else'
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -1503,7 +1503,7 @@ test('a quiet project: nothing active, the news under the gauges, an empty queue
   await ui.unmount()
 })
 
-test('idle, the pane says what Foreman learned this week (T-1045)', async ($, on) => {
+test('idle, the pane says what Sampo learned this week (T-1045)', async ($, on) => {
   const learned = 'Learned: 1 new fix(es), 2 worked, 1 missed · 0 rule(s) to propose · 2 interventions per closed task'
   world(on, [{ ...VIEW, active: null, queue: [], inbox: [], inbox_total: 0, learned }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -2084,7 +2084,7 @@ const railFrames = async ($: Parameters<Parameters<typeof test>[1]>[0], on: On) 
     seen.add(((await ui.findAll({ type: 'Raster' })).find(r => r.key === 'stage-rail')?.props as { cells?: string } | undefined)?.cells)
     await clock.advance(40)
   }
-  const spinning = await ui.find({ type: 'Text', text: /^[·✢✳✶✻✽] Foreman$/ })
+  const spinning = await ui.find({ type: 'Text', text: /^[·✢✳✶✻✽] Sampo$/ })
   await clock.advance(3000)
   await ui.unmount()
   return { seen: seen.size, spinning: !!spinning, blits: blits.length }
@@ -2442,7 +2442,7 @@ test('the chat is a tree: your prompt the root, each row a branch on one rail, f
   expect(await huge.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
   await huge.unmount()
   // T-1088: the resume row and a background task's note hang on the rail too; before, the rail broke at them
-  const resumed = await mount('UserMessage', { text: 'continue the Foreman run', origin: { kind: 'plugin', name: 'foreman-ui' }, isExpanded: false })
+  const resumed = await mount('UserMessage', { text: 'continue the Sampo run', origin: { kind: 'plugin', name: 'foreman-ui' }, isExpanded: false })
   expect(await resumed.find({ type: 'Text', text: '├─ ' })).toBeDefined()
   expect(await resumed.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
   await resumed.unmount()

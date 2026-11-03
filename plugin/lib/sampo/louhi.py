@@ -2319,7 +2319,7 @@ def _empty(base, key):
 
 
 def _finders(base, key):
-    """Foreman's deterministic finders over the repo (fm find, T-2121), no session. They find, never fix, so the work
+    """Louhi's deterministic finders over the repo (fm find, T-2121), no session. They find, never fix, so the work
     is the repo as planted. Listed worst first (fm find --rank at the prior, T-2125), so a rank scenario grades order."""
     from sampo import find
     repo = os.path.join(base, "repo")
@@ -2328,8 +2328,8 @@ def _finders(base, key):
 
 
 def _triggers(base, key):
-    """T-2360: #11 with no session and no tokens. repo/events.jsonl replayed through Foreman's own path in a throwaway
-    copy, project and Foreman home. The setup is filed the way a user's yes files it (fm night --stage, then --install
+    """T-2360: #11 with no session and no tokens. repo/events.jsonl replayed through Louhi's own path in a throwaway
+    copy, project and Louhi home. The setup is filed the way a user's yes files it (fm night --stage, then --install
     with a systemctl stand-in) plus fm orders add; then per event the CI result is cached where fmforesight reads it, an
     issue joins what a gh stand-in lists, or the file is written (one tick per write), and fm night --tick runs; a quiet
     spell is a tick with nothing new. The fake clock: the tick's issue-poll stamp is cleared before each tick. Each task
@@ -2433,7 +2433,7 @@ def _triggers(base, key):
 
 
 def _foresight(base, key):
-    """T-2409: #3 with no session and no tokens, through Foreman's own tick in a throwaway copy, project and home.
+    """T-2409: #3 with no session and no tokens, through Louhi's own tick in a throwaway copy, project and home.
     forecast: each request of repo/requests.jsonl filed in order as the user's (fm task new), then one fm night --tick:
     the prediction book's newest next-request row is the answer (work/forecast.json). breakage: one fm night --tick
     a fake day (FOREMAN_TODAY) for the 15 days from the scenario's today; each warning the tick's detectors filed is
@@ -2495,7 +2495,7 @@ def _lanes_drill(base, key):
     and home, each in its own lane (fm lane new, then fm lane brief under a stand-in session named claude: the process
     fm records as the builder's, so killing it is a builder that ended). A stub builder makes the key's fix in steps
     (the edit, a note, a commit) and stops where key["stops"] plants it: killed after the edit, at the usage wall, hung,
-    its note clashing with one committed on main, or reporting without the edit. The drill then does only what Foreman
+    its note clashing with one committed on main, or reporting without the edit. The drill then does only what Louhi
     says: fm lane recover's recovery for the cause, the usage window reset (a stand-in clock), the hung session stopped
     before fm lane recover --agent-stopped, fm lane merge for a lane that ended with its commit; anything asking a person
     (a grant) is recorded as human and the lane left. A relaunched stub resumes at its next step, trusting the lane kept
@@ -2885,7 +2885,7 @@ print(json.dumps(g.gate(p, types.SimpleNamespace(id="T-0000", meta={"created": "
 
 def gate_mutations(runs=2):
     """T-2363: GATE_MUTATIONS through fmselfgate.gate, each as a branch of a throwaway repo holding a copy of plugin/
-    (a throwaway Foreman home, so no refusal reaches a real ledger), the refusals read, then each growth again with its
+    (a throwaway Louhi home, so no refusal reaches a real ledger), the refusals read, then each growth again with its
     own check dropped: [{name, metric, refused, rows, dropped_refused}]. dropped_refused is whether a refusal still
     names the metric, so it says the check refused it, whatever bench noise the run adds; a control must pass whole."""
     tmp = tempfile.mkdtemp(prefix="fm-gatemut-")
@@ -2946,7 +2946,7 @@ def gate_mutations(runs=2):
 
 
 def _session_arm(agent, base, key, work, model, budget, timeout, request=None):
-    """One session in a temp copy of the repo (with .git), outside Foreman's state where the guard blocks edits; the
+    """One session in a temp copy of the repo (with .git), outside Louhi's state where the guard blocks edits; the
     tree it leaves is copied back to work for grading. T-2192: a reply with no findings object (s31-006's Rust
     sessions fixed the planted bugs, then ended on prose) gets one resumed turn for the JSON, the same for every arm."""
     from sampo import bench

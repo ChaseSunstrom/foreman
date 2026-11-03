@@ -68,7 +68,7 @@ class ExplainBlock(TrustCase):
         self.fm("drive", "on")
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Continuing with the fix next.",
                                "session_id": "sess-1"})
-        self.assertIn(f"Foreman drive: {tid}", json.loads(p.stdout)["reason"])
+        self.assertIn(f"Sampo drive: {tid}", json.loads(p.stdout)["reason"])
         # another project's later drive record with the same task id is not this project's decision
         with open(os.path.join(self.home, "state", "events.jsonl"), "a") as f:
             f.write(json.dumps({"ts": c.now(), "kind": "drive_wait", "session_id": "other", "project": "elsewhere-1",

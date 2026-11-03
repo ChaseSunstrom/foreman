@@ -1,6 +1,6 @@
-"""Foreman across projects, machines and the tools around it (T-0673): fm projects --sweep asks sibling projects about a fix
+"""Sampo across projects, machines and the tools around it (T-0673): fm projects --sweep asks sibling projects about a fix
 (T-0443), fm adopt takes in an existing repo (T-0444), version skew per project (T-0463), fm inbox gh turns open issues
-into briefs (T-0481), fm canary checks Foreman against a new Claude Code (T-0482) and fm machine names this machine
+into briefs (T-0481), fm canary checks Sampo against a new Claude Code (T-0482) and fm machine names this machine
 (T-0574). Stdlib only. Nothing here edits another repo's files or sends anything anywhere; gh is only read."""
 import hashlib
 import json
@@ -136,7 +136,7 @@ def cmd_sweep(args):
 # ---------------------------------------------------------------- fm adopt (T-0444)
 
 def adopt(p):
-    """One baseline pass over a repo Foreman is taking in: the map, each gate run once (a failure rerun once: passing
+    """One baseline pass over a repo Sampo is taking in: the map, each gate run once (a failure rerun once: passing
     then is a flake), the secrets audit with history, the declared dependencies (no registry call). Writes the
     baseline research note and captures CLEAN, SECURITY and RESEARCH work for what it found."""
     from sampo import map as smap
@@ -157,8 +157,8 @@ def adopt(p):
     deps = outside.dependencies(p.root)
     failing = [g["cmd"] for g in gates if g["result"] == "fail"]
     flaky = [g["cmd"] for g in gates if g["result"] == "flaky"]
-    work = [("CLEAN", f"Make the gate `{g}` pass (it failed when Foreman adopted the repo)") for g in failing[:5]]
-    work += [("CLEAN", f"Fix the flaky gate `{g}` (it failed, then passed on a rerun, when Foreman adopted the repo)")
+    work = [("CLEAN", f"Make the gate `{g}` pass (it failed when Sampo adopted the repo)") for g in failing[:5]]
+    work += [("CLEAN", f"Fix the flaky gate `{g}` (it failed, then passed on a rerun, when Sampo adopted the repo)")
              for g in flaky[:5]]
     if untested:
         work.append(("CLEAN", "Characterization tests for the hot files no test covers: " + ", ".join(untested)
@@ -274,7 +274,7 @@ def lacks(have, text):
 
 
 def stamp():
-    """What a session start records in the project's meta: the Foreman it runs, on which machine."""
+    """What a session start records in the project's meta: the Sampo it runs, on which machine."""
     return {"version": version(), "machine": machine()["name"], "at": c.now()}
 
 
@@ -299,7 +299,7 @@ def _gh(p, args, timeout=120):
         r = subprocess.run(["gh", *args], cwd=p.root, capture_output=True, text=True, errors="replace",
                            timeout=timeout, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
-        raise UsageError("gh isn't installed (https://cli.github.com); Foreman reads GitHub issues through it")
+        raise UsageError("gh isn't installed (https://cli.github.com); Sampo reads GitHub issues through it")
     except subprocess.TimeoutExpired:
         raise UsageError(f"{what} timed out")
     if r.returncode:
@@ -540,7 +540,7 @@ def swipe_page(p, seen, nonce, msg="", bad=False, undo=()):
     from sampo import settingsserve
     e, left = html.escape, [x for x in swipe_list(p) if x["id"] not in seen]
     out = ['<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
-           f'content="width=device-width,initial-scale=1"><title>Foreman backlog</title><style nonce="{nonce}">'
+           f'content="width=device-width,initial-scale=1"><title>Sampo backlog</title><style nonce="{nonce}">'
            f'{SWIPE_STYLE}{settingsserve.BASE_STYLE}</style></head><body><h1>Backlog</h1>']
     if msg:
         out.append(f'<p class="msg{" bad" if bad else ""}">{e(msg)}</p>')
@@ -774,7 +774,7 @@ def fetch_ticket(service, key):
 
 
 def fetch_gh(p, key):
-    """T-1869: (text, ref) for GitHub issue key (OWNER/REPO#N, or #N here), asked of the user's gh; Foreman holds no
+    """T-1869: (text, ref) for GitHub issue key (OWNER/REPO#N, or #N here), asked of the user's gh; Sampo holds no
     token. The key becomes OWNER/REPO#N from the issue's URL, so #7 and gh:acme/app#7 are one issue."""
     repo, n = key.split("#")
     i = _gh_json(p, ["issue", "view", n, "--json", "number,title,body,labels,url"] + ([f"--repo={repo}"] if repo else []),
@@ -823,7 +823,7 @@ def post_ticket(p, tid):
            if not c._git(p.root, "branch", "-r", "--contains", sha, timeout=30).strip() else None)
     if why:
         raise cli.UsageError(f"fm inbox ticket --post {b.id}: nothing posted: {why}")
-    (svc, key), body = src, f"Closed in commit {sha} (Foreman {b.id})."
+    (svc, key), body = src, f"Closed in commit {sha} (Sampo {b.id})."
 
     def claim(x):  # under the lock: two runs at once post once
         marks = _POSTED.findall(x.section("Log"))
@@ -971,7 +971,7 @@ def cmd_inbox(args):
         raise cli.UsageError("fm inbox swipe --serve: a page, so no --apply and no --json")
     if args.serve:
         from sampo import settingsserve
-        return settingsserve.run(*swipe_server(p), "Foreman backlog")
+        return settingsserve.run(*swipe_server(p), "Sampo backlog")
     if args.source == "swipe" and args.apply:
         done = swipe_apply(p, args.apply)
         return cli.out(args, {"applied": done}, "; ".join(done) + "." if done else "No verdicts given.")
@@ -1101,7 +1101,7 @@ def canary_due(hours=1.0):
 
 def canary(version=None, if_changed=False, checks=None):
     """Claude Code's version against the last one seen; when it changed (or always, without if_changed) the checks
-    run, and a failure captures a FIX brief in Foreman's own project (once per version and failing checks)."""
+    run, and a failure captures a FIX brief in Sampo's own project (once per version and failing checks)."""
     path = os.path.join(c.state_dir(), "canary.json")
     try:
         with open(path, encoding="utf-8") as f:

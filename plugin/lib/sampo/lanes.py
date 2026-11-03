@@ -630,7 +630,7 @@ def _ignored(path):
 
 def _is_cache(path, rel):
     """T-1685: a cache removing the lane may delete: a known cache path, or an ignored folder git lists whole that
-    holds nothing else (a Foreman lane's state/ with only the guard's script cache in it)."""
+    holds nothing else (a Sampo lane's state/ with only the guard's script cache in it)."""
     if _CACHE.search(rel) or _LANE_CACHE.search(rel):
         return True
     full = os.path.join(path, rel)
@@ -1830,7 +1830,7 @@ def functions_line(fns):
 
 
 def merge(p, b, main, unverified=None):
-    """T-0377: merge a reviewed builder branch into the main checkout (--no-ff) through fm. On Foreman's own repo the
+    """T-0377: merge a reviewed builder branch into the main checkout (--no-ff) through fm. On Sampo's own repo the
     guard refuses `git merge` (a tree write over core); here every file the branch changes must pass the guard as a
     write by its task would (its grants, the standing yes, trust), so fm is no way around it. Refused over staged
     changes or uncommitted edits to a file the branch changes (T-0403); a merge that conflicts is aborted."""

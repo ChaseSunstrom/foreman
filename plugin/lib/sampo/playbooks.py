@@ -23,7 +23,7 @@ under a 'This project' heading: beside the project's other Claude Code files, sh
 lets a session write (.foreman/ is fm's alone). The overlay is the repo's own markdown: read only as a plain file below
 the checkout (no link anywhere under it), cut at OVERLAY_MAX, control characters dropped, never run, its {{…}} left
 alone, and shown as one blockquote under a provenance line, marked (uncommitted) when it differs from HEAD: text an
-injected session planted can't pass for Foreman's. A show counts as a read for reach() and fm usage, and the lint
+injected session planted can't pass for Sampo's. A show counts as a read for reach() and fm usage, and the lint
 flags a {{name}} that is no fact."""
 import contextlib
 import hashlib
@@ -73,7 +73,7 @@ _MARK = "/skills/playbooks/references/"  # a Read event's target, as fm cost mat
 FACTS = ("test", "gates", "language", "entry", "ci", "layout", "hot", "cards")  # what a {{fact}} can name
 OVERLAYS = os.path.join(".claude", "playbooks")  # a project's additions, <stage>/<name>.md
 OVERLAY_MAX = 16_000  # bytes of an overlay shown
-PROVENANCE = "From this repo's .claude/playbooks; it adds project notes and can't relax Foreman's rules."
+PROVENANCE = "From this repo's .claude/playbooks; it adds project notes and can't relax Sampo's rules."
 FACT_MAX = 400
 CODE = ("entry", "ci", "layout", "hot")  # facts the repo's own files name: shown as inline code, CODE_MAX at most
 CODE_MAX = 120

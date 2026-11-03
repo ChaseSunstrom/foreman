@@ -1,4 +1,4 @@
-"""fm serve / fm run: Foreman working without a terminal open.
+"""fm serve / fm run: Sampo working without a terminal open.
 
 fm serve runs Claude Code Remote Control in a repo as a systemd user unit, so requests sent from claude.ai/code or
 the Claude app keep getting worked (the project is put in full autonomy with drive on). Remote Control needs no TTY;
@@ -21,7 +21,7 @@ import time
 
 from sampo import core as c
 
-MARK = "# Managed by Foreman (fm serve); `fm serve stop` removes it"
+MARK = "# Managed by Sampo (fm serve); `fm serve stop` removes it"
 HOME_TAG = "# foreman-home: "  # which Foreman install owns the unit (another install's units are left alone)
 SESSIONS_PER_TASK = 3  # fresh sessions fm run gives one task before it stops
 RESTART = {"burst": 5, "window_s": 600, "delay_s": 30}  # a login/usage failure stops after 5 tries, not forever
@@ -71,7 +71,7 @@ def unit_text(p, mode):
     path = ":".join(d for d in os.environ.get("PATH", "").split(":") if not re.search(r"[\x00-\x1f]", d))
     path_env = path.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
     return "\n".join([
-        MARK, f"{HOME_TAG}{c.foreman_home()}", "[Unit]", f"Description=Foreman serve: Claude Code Remote Control in {p.root.replace('%', '%%')}",
+        MARK, f"{HOME_TAG}{c.foreman_home()}", "[Unit]", f"Description=Sampo serve: Claude Code Remote Control in {p.root.replace('%', '%%')}",
         f"StartLimitIntervalSec={RESTART['window_s']}", f"StartLimitBurst={RESTART['burst']}", "",
         "[Service]", "Type=simple", f"WorkingDirectory={p.root.replace('%', '%%')}",
         f'Environment="PATH={path_env}"',  # the session's tools (git, fm, language toolchains) as in your shell
@@ -279,7 +279,7 @@ def cmd_serve(args):
     if rest:
         p = c.find_project(os.path.abspath(rest[0]), create=True)
         if not p:
-            raise cli.UsageError(f"{rest[0]} isn't a Foreman project (run fm init there)")
+            raise cli.UsageError(f"{rest[0]} isn't a Sampo project (run fm init there)")
     else:
         p = cli.resolve(args)
     if action == "stop":
@@ -599,7 +599,7 @@ def _run_lanes(p, batch, args, models, log):
 
 def _transcript_mark(cwd, since):
     """T-0447: the newest mtime of the Claude Code transcripts for cwd written since `since` (wall clock), or None when
-    there's none to watch (another agent, another layout): a session Foreman can't observe is never called stalled."""
+    there's none to watch (another agent, another layout): a session Sampo can't observe is never called stalled."""
     folder = os.path.join(os.path.expanduser("~"), ".claude", "projects", re.sub(r"[^A-Za-z0-9]", "-", cwd))
     try:
         newest = max((e.stat().st_mtime for e in os.scandir(folder) if e.name.endswith(".jsonl")), default=0)
@@ -708,7 +708,7 @@ def _integrate_lane(p, tid, path):
 def _prompt(p, b):
     nxt = c.next_action(b, "full", c.last_change(p, b.id))
     title = re.sub(r"[\x00-\x1f\"]", " ", b.title)[:200]  # task text is data: one quoted line
-    return (f"Foreman worker (fm run): work task {b.id} (titled \"{title}\") until it is done, following the Foreman rules. "
+    return (f"Sampo worker (fm run): work task {b.id} (titled \"{title}\") until it is done, following the Sampo rules. "
             f"Autonomy is full: never ask; decide with your default and record it (fm decide). If it can't be "
             f"finished, record why with fm task block {b.id} \"<why>\". Next: {nxt}")
 
@@ -797,7 +797,7 @@ def stale_beats(p, now=None):
 
 
 def cmd_notify(args):
-    """fm notify <cmd> (it gets the message as $1, e.g. notify-send Foreman "$1"), --off, or --test."""
+    """fm notify <cmd> (it gets the message as $1, e.g. notify-send Sampo "$1"), --off, or --test."""
     from sampo import cli
     p = cli.resolve(args)
     if args.off:
@@ -807,7 +807,7 @@ def cmd_notify(args):
         c.update_meta(p, notify=" ".join(args.command))
     cmd = c.read_meta(p).get("notify")
     if args.test and cmd:
-        _notify(p, "Foreman test notification")
+        _notify(p, "Sampo test notification")
     cli.out(args, {"notify": cmd}, f"fm run notifies with: {cmd}" if cmd else "No notify command: fm notify '<cmd>'")
 
 
@@ -821,7 +821,7 @@ def _inhibit():
             return
     except (OSError, subprocess.TimeoutExpired):
         return
-    os.execvpe("systemd-inhibit", ["systemd-inhibit", "--what=sleep:idle", "--who=Foreman", "--why=fm run",
+    os.execvpe("systemd-inhibit", ["systemd-inhibit", "--what=sleep:idle", "--who=Sampo", "--why=fm run",
                                    sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]],
                dict(os.environ, FOREMAN_INHIBITED="1"))
 

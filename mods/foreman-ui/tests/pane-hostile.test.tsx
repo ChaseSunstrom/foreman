@@ -74,7 +74,7 @@ for (const [name, s] of Object.entries(HOSTILE))
     for (const [w, h] of [[20, 12], [26, 12], [40, 16], [80, 24], [121, 34]] as const) {
       const ui = await $.ui.mount({
         plugin: 'foreman-ui', surface: 'terminal', component: 'Pane', requestId: 'foreman',
-        props: { title: 'Foreman', isFocused: true, bodyColumns: w, placement: 'dock', scroll: { offset: 0, bodyRows: h }, view: {} },
+        props: { title: 'Sampo', isFocused: true, bodyColumns: w, placement: 'dock', scroll: { offset: 0, bodyRows: h }, view: {} },
       } as never)
       if (w >= 26 && h >= 24 && !(await ui.find({ type: 'Text', text: /T-0007/ }))) bad.push(`${w}x${h} drew no task`)
       if (w < 26 && !(await ui.find({ type: 'Text', text: /26\+ columns/ }))) bad.push(`${w}x${h} said nothing of its floor`)

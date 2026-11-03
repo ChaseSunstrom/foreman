@@ -48,7 +48,7 @@ class Landscape(ForemanTestCase):
         self.assertIn("voice control", new)
         self.assertNotIn("parallel fresh-context reviewers", new)  # the last scan had it
         self.assertIn("Statusline", gone)
-        self.assertIn("(Foreman: fm ", since)  # a new item an fm command already covers is marked
+        self.assertIn("(Sampo: fm ", since)  # a new item an fm command already covers is marked
         again = self.fm("landscape", "--if-due", "--no-verify", env=self.env).stdout
         self.assertIn("ran", again.lower())  # within 30 days: not again
 

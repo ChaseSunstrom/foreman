@@ -5,7 +5,7 @@ import os
 
 from test_hooks import HookCase
 
-HEAD = "Foreman: test first"
+HEAD = "Sampo: test first"
 
 
 class TestFirstNote(HookCase):

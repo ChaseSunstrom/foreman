@@ -14,12 +14,12 @@ export const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost tur
 export const QUIET_MS = 2 * 60 * 1000 // a running subagent with no tool call this long shows how long it has been quiet
 export const STOP_MS = 10 * 60 * 1000 // and from here offers Stop
 export const SHELL_MAX_MS = 2 * 3600 * 1000 // a background command runs at most 2 h; past that its notice was lost
-export const CHECKPOINT_AT = 85 // context percent at which Foreman checkpoints once, so a compaction resumes exactly
+export const CHECKPOINT_AT = 85 // context percent at which Sampo checkpoints once, so a compaction resumes exactly
 export const FRESH = [
-  'Foreman task boundary: a task just closed.',
+  'Sampo task boundary: a task just closed.',
   "Keep: the user's standing requests and preferences, decisions still in force, and what the next queued task needs.",
   "Drop: finished tasks' file contents, diffs, logs and back-and-forth.",
-  "Foreman's record (fm state, the briefs) is the source of truth for tasks: after this, check `fm next` and re-read",
+  "Sampo's record (fm state, the briefs) is the source of truth for tasks: after this, check `fm next` and re-read",
   'files before editing them, since what was read earlier may be out of date.',
 ].join(' ')
 

@@ -1,4 +1,4 @@
-"""T-1085: a snapshot of every project's record before a new Foreman version runs on it, and fm rollback to restore it.
+"""T-1085: a snapshot of every project's record before a new Sampo version runs on it, and fm rollback to restore it.
 The ledger is append-only and never restored; consent the user has since changed (standing, approvals, autonomy,
 briefs' allow/approved) stays as it is now, so a rollback can't bring back what was revoked."""
 import hashlib
@@ -193,7 +193,7 @@ def cmd_rollback(args):
             print(json.dumps([{"name": s, "bytes": os.path.getsize(os.path.join(d, s)),
                                "pre_rollback": s.startswith(PRE)} for s in snaps], indent=2))
         else:
-            print("\n".join(snaps) if snaps else "no snapshots yet: one is taken when Foreman's version changes")
+            print("\n".join(snaps) if snaps else "no snapshots yet: one is taken when Sampo's version changes")
         return 0 if snaps or args.list else 1
     name = args.to or next((s for s in snaps if not s.startswith(PRE)), None)
     if name not in snaps:

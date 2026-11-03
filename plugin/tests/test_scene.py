@@ -803,7 +803,7 @@ class Airlock(ForemanTestCase):
         other = os.path.join(self.tmp, "plain")
         os.makedirs(other)
         r = self.fm("scene", "airlock", cwd=other, check=False)
-        self.assertEqual((r.returncode, "not in a Foreman project" in r.stderr), (2, True), r.stderr)
+        self.assertEqual((r.returncode, "not in a Sampo project" in r.stderr), (2, True), r.stderr)
 
 
 class BenchScene(ForemanTestCase):

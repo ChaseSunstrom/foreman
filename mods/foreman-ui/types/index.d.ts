@@ -1,4 +1,4 @@
-// The `fm ui --json` view model (v1): one snapshot of a Foreman project, rendered by every surface.
+// The `fm ui --json` view model (v1): one snapshot of a Sampo project, rendered by every surface.
 export type FmStep = { n: number; text: string; done: boolean; current: boolean }
 export type FmCriterion = { n: number; text: string; verify: string | null; checked: boolean }
 export type FmItem = {
@@ -81,7 +81,7 @@ export type FmView = {
   palette_custom?: Record<string, string> // T-1717: fm design tokens --to pane --save, checked: C's keys, #rrggbb
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
-  learned?: string | null // T-1045: what Foreman learned this week (fixes, rules, interventions per closed task)
+  learned?: string | null // T-1045: what Sampo learned this week (fixes, rules, interventions per closed task)
   look?: string | null // T-1672: the look of the day, rolled with the taste ledger's lean (null until it has taste)
   blocked_total?: number // T-1026: tasks blocked, for the work bar
   done_days?: number[] // T-0909: tasks closed per day, the last 14 days, today last
@@ -95,7 +95,7 @@ export type FmView = {
   research?: FmResearchAsk[] // T-0228: the newest fm research ask notes
   revisit?: { date: string; decision: string; why: string }[] // T-0247: decisions whose revisit trigger fired
   vetoes?: string[] // T-0251: the user's recorded 'never/don't' corrections, newest first (checked before matching calls)
-  trust_file?: string // where /fm-trust on writes the trust record (Foreman state)
+  trust_file?: string // where /fm-trust on writes the trust record (Sampo state)
   /** T-0145: a driven turn ended so this session's mod could reload; the reloaded mod starts the next turn */
   resume_after_reload?: { session: string; at: string; task?: string } | null
   typical?: Record<string, number> // median minutes focus → done per "TYPE/TIER" (3+ closed tasks)

@@ -12,7 +12,7 @@ _CHAINED = b'{"prev": "'
 
 def chain(p, anchor=None):
     """The ledger's chain: head (the hash the next line will carry; None when broken), chained/lines counts, start (where the chain
-    begins: lines before it predate it), gaps (unchained lines after the start: an older Foreman wrote them; the line
+    begins: lines before it predate it), gaps (unchained lines after the start: an older Sampo wrote them; the line
     before each is unproven), broken (the first break, else None) and, given an anchor, whether a line hashes to it."""
     r = {"head": None, "chained": 0, "lines": 0, "start": None, "gaps": [], "broken": None, "damaged": []}
     prev, prev_at, found, pending, damage = c.ledger_hash(b""), "the start of the ledger", False, {}, None
@@ -150,7 +150,7 @@ def cmd_verify_ledger(args):
         text += "\nCrash damage (accepted; the events written just before each were lost): " + \
                 ", ".join(f"{d['at']} ({d['what']})" for d in r["damaged"][:10])
     if r["gaps"] and not r["broken"]:
-        text += f"\n{len(r['gaps'])} unchained line(s) after the start (an older Foreman wrote them; the line before " \
+        text += f"\n{len(r['gaps'])} unchained line(s) after the start (an older Sampo wrote them; the line before " \
                 f"each is unproven): " + ", ".join(r["gaps"][:10])
     cli.out(args, r, text)
     return 1 if r["broken"] or lost else 0

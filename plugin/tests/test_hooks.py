@@ -253,7 +253,7 @@ class SessionStart(HookCase):
         self.assertIsNone(first(self.run_ss("resume")), "no open work: nothing to continue")
         self.task()
         msg = first(self.run_ss("resume"))
-        self.assertIn("Continue the Foreman drive", msg or "")
+        self.assertIn("Continue the Sampo drive", msg or "")
         self.assertIn("T-0001", msg)
         self.assertIsNone(first(self.run_ss("startup")), "a fresh start may be for something else")
         self.fm("autonomy", "standard")
@@ -2048,7 +2048,7 @@ class PreToolUse(HookCase):
                            input=json.dumps(payload), capture_output=True, text=True,
                            env=dict(os.environ, FOREMAN_HOME=self.home), cwd=self.repo, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("Foreman project", r.stdout, "the session context comes from the committed library")
+        self.assertIn("Sampo project", r.stdout, "the session context comes from the committed library")
         log = self.hooks_log()
         self.assertIn("SessionStart", log)
         self.assertIn("committed library", log)
@@ -2190,7 +2190,7 @@ class PreToolUse(HookCase):
     def test_guard_fails_closed_on_malformed_input(self):
         p = self.pre("Bash", "not-a-dict")
         self.assertEqual(p.returncode, 2)
-        self.assertIn("guard", p.stderr.lower())
+        self.assertIn("ward", p.stderr.lower())
 
     def test_state_file_write_is_denied(self):
         self.fm("init")
@@ -2213,7 +2213,7 @@ class PreToolUse(HookCase):
 class DesignNudge(HookCase):
     """T-1514: a task's first UI edit in a repo with no DESIGN.md gets one note naming the design-direction playbook;
     once per task, never a block."""
-    HEAD = "Foreman: design direction"
+    HEAD = "Sampo: design direction"
 
     def setUp(self):
         super().setUp()
@@ -2744,7 +2744,7 @@ class Stop(HookCase):
         tid = self.task()
         p = self.stop("Continuing with the retry helper next.")
         self.assertEqual(self.decision(p), "block")
-        self.assertIn(f"Foreman drive: {tid}", parse(p)["reason"])
+        self.assertIn(f"Sampo drive: {tid}", parse(p)["reason"])
         self.assertIn(f"Next: {tid} step 1/2", parse(p)["reason"])
         self.assertNotIn("only your final message", parse(p)["reason"])  # interactive: the chat shows every message
 

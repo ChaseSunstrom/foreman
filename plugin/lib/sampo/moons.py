@@ -24,7 +24,7 @@ _HEAD = re.compile(r"^###\s+(M-\d+)\s*[·:—-]+\s*(.+?)\s*$", re.M)
 _LINE = re.compile(r"^\s*[-*]?\s*\**([A-Za-z][A-Za-z ]*?):\**[ \t]*(.*?)\s*$", re.M)
 _ADV = re.compile(r"^\s*[-*]?\s*\**Advanced:\**\s*(M-\d+)\s+(kill|slice|full)\b[^\n]*?\((T-\d{4,})\)", re.M | re.I)
 RATE_SYSTEM = (
-    "You are a cold reviewer rating moonshot ideas for a coding harness (Foreman: it plans, proves and finishes "
+    "You are a cold reviewer rating moonshot ideas for a coding harness (Sampo: it plans, proves and finishes "
     "software work). Rate each on this ambition scale; the anchors are calibration, not ideas to copy. low: an "
     "existing loop gets a clever new signal or check. medium: a mechanism borrowed from another field, inside one "
     "capability (anchor: reflex-approved prompts become allow rules). high: a new capability class that spans the "
@@ -289,7 +289,7 @@ def seed_lines(p, n):
         f"100 — {mix} (author's tiers); {s['unrated']} unrated; {s['killed']} of {s['big']} extreme or massive "
         f"kill-tested; {s['built']} built; {s['not_yet']} not-yet.",
         "- This generation: add moonshots toward the mix under the lens above (for xhigh and up also inversion, 'what "
-        "makes Foreman obsolete?', and 2030 worked back; crossbreed the best across domains and name the parents), each "
+        "makes Sampo obsolete?', and 2030 worked back; crossbreed the best across domains and name the parents), each "
         "a '### M-NN · title' block with Tier, Domain, Lens, Prior art, Better by, Novelty, Needs, Unblocks, Kill and "
         "Stage lines; then fm genesis moonshot rate (the strongest model tiers what's unrated, blind to yours; a tier "
         "typed into the file counts for nothing).",

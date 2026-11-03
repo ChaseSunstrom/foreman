@@ -18,8 +18,8 @@ if args == ["--version"]:  # T-1255: run_arm stamps the Claude Code version
 system = args[args.index("--append-system-prompt") + 1] if "--append-system-prompt" in args else ""
 stdin = "" if "--plugin-dir" in args else sys.stdin.read()
 with open(os.environ["STUB_LOG"], "a") as f:
-    f.write(json.dumps({"args": args, "mutate": "Foreman instruction file" in system, "stdin": stdin}) + "\n")
-if "Foreman instruction file" in system:
+    f.write(json.dumps({"args": args, "mutate": "Sampo instruction file" in system, "stdin": stdin}) + "\n")
+if "Sampo instruction file" in system:
     print("<file>\nREVISED: say less, verify more\n</file>\nWhy: shorter rules cost fewer tokens")
     sys.exit(0)
 plugin = args[args.index("--plugin-dir") + 1]

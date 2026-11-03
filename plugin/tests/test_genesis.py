@@ -1318,7 +1318,7 @@ class GenesisDraft(ForemanTestCase):
         self.assertEqual(json.loads(r.stdout)["smoke"], 2)  # the older s9 line takes the stamp its regrade gave
         self.assertIn("2 Haiku smoke lines not counted", self.fm("exam", "scorecard", check=False).stdout)
         self.assertIn("top gap: finders found 3/4 held-out defects on s9 where foreman found 0/4: the session doesn't use "
-                      "what Foreman built (from a Haiku smoke run)", self.fm("exam", "scorecard", check=False).stdout)
+                      "what Rune built (from a Haiku smoke run)", self.fm("exam", "scorecard", check=False).stdout)
         self.assertIn("s9 (foreman, model claude-haiku-5-5: a smoke signal): ",
                       rune._exam_tail(rune.home(self.p)))  # what a cold read and the site table see
         low = self.fm_json("exam", "scorecard", "--bar", "0.5", check=False)["rows"]
@@ -1879,9 +1879,9 @@ class GenesisSelect(ForemanTestCase):
                                      "holdout": {"found": 1, "keyed": 1}, "answered": {"holdout": ["a"]}})  # T-2219: 1 of 3
         r = rune.scorecard(self.p)
         self.assertEqual(r["gaps"], ["finders found 6/6 held-out defects on r1 where foreman found 1/6: the session "
-                                     "doesn't use what Foreman built",
+                                     "doesn't use what Rune built",
                                      "finders found 6/6 held-out defects on r2 where foreman found 2/6: the session "
-                                     "doesn't use what Foreman built"])
+                                     "doesn't use what Rune built"])
         self.put("lineage.md", "# Lineage\n\n## gen-1\n- baseline: first\n- seed base: gen-1\n\n"
                                "## gen-2\n- kept: closed more\n- seed base: gen-2\n")
         reviewed(self.p, 2, rows=[{"key": "complaint", "ground": "fm next", "claim": "says too much", "handled": "gap"}])

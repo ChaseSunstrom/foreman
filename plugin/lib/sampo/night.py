@@ -123,17 +123,17 @@ def units(p, max_usd=2.0):
     path = ":".join(d for d in os.environ.get("PATH", "").split(":") if d and not re.search(r"[\x00-\x1f\"%\s]", d))
     home, out, cron = c.foreman_home(), {}, []
     if re.search(r"[\x00-\x1f\x7f]", p.root + home + fm):  # a newline would add a line to the unit
-        raise c.PolicyError("the project or Foreman home path holds a control character: no timer unit is written for it")
+        raise c.PolicyError("the project or Sampo home path holds a control character: no timer unit is written for it")
     sd = lambda s: s.replace("%", "%%")  # noqa: E731 - systemd expands %-specifiers in these fields
     for kind, every, when, args, minute in (("night", "nightly", "*-*-* 02:30", f"night --max-usd {max_usd:g}", "30 2"),
                                             ("tick", "hourly", "hourly", "night --tick", "0 *")):
         name = f"foreman-{kind}-{p.slug}"
         out[name + ".service"] = "\n".join([
-            "[Unit]", f"Description=Foreman {kind} ({p.slug})", "", "[Service]", "Type=oneshot",
+            "[Unit]", f"Description=Sampo {kind} ({p.slug})", "", "[Service]", "Type=oneshot",
             f"WorkingDirectory={sd(p.root)}", f'Environment="FOREMAN_HOME={sd(home)}"', f'Environment="PATH={path}"',
             f"ExecStart={sd(fm)} {args}", ""])
         out[name + ".timer"] = "\n".join([
-            "[Unit]", f"Description=Foreman {kind} ({p.slug}), {every}", "", "[Timer]", f"OnCalendar={when}",
+            "[Unit]", f"Description=Sampo {kind} ({p.slug}), {every}", "", "[Timer]", f"OnCalendar={when}",
             "Persistent=true", "", "[Install]", "WantedBy=timers.target", ""])
         cron.append(f"{minute} * * * cd {shlex.quote(p.root)} && FOREMAN_HOME={shlex.quote(home)} "
                     f"PATH={shlex.quote(path)} {fm} {args}")
@@ -343,7 +343,7 @@ def liveness(now=None, show=None):
             svc = show(f"{name}.service", "Result", "ExecMainStatus")
             since = float(last[1:]) if last.startswith("@") else os.path.getmtime(path)
         except (OSError, ValueError, subprocess.SubprocessError):
-            return [("systemd", "timers are installed but systemctl --user can't be read, so Foreman can't tell "
+            return [("systemd", "timers are installed but systemctl --user can't be read, so Sampo can't tell "
                                 "whether they fire")]
         if now - since > 3 * EVERY[kind]:
             out.append((name, f"hasn't fired in {int((now - since) // 3600)} h"

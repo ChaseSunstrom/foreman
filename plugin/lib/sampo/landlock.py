@@ -2,7 +2,7 @@
 
 The worker's whole process tree may read everything but write only beneath its writable set: the run's tree, its git
 objects/refs/logs and own git dir (never a shared repo's hooks or config), scratch, a few devices, Claude Code's
-working folders (never its settings, hooks, plugins or Foreman's code), Foreman's state and the common tool caches.
+working folders (never its settings, hooks, plugins or Sampo's code), Sampo's state and the common tool caches.
 The ruleset is built in the parent (prepare); the child only locks itself (enter), so nothing is loaded after fork.
 Inherited by everything the worker starts and impossible to undo from inside. Optional: on another OS, an older
 kernel or with the LSM off, available() says why and nothing changes.

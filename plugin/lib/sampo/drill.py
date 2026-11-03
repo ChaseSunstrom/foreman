@@ -297,7 +297,7 @@ def restore(name=None):
     name = name or next((s for s in names if not s.startswith(rollback.PRE)), None)
     if name not in names:
         raise ValueError(f"no snapshot named {name}; fm rollback --list shows them" if name else
-                         "no snapshot yet: one is taken when Foreman's version changes (fm rollback --list)")
+                         "no snapshot yet: one is taken when Sampo's version changes (fm rollback --list)")
     day, rows = Day(), []
     stage = os.path.join(day.home, "stage")
     try:

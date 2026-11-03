@@ -97,7 +97,7 @@ def _grade_fix(p, t, now, act=False):
 
 def held_fixes(p):
     """{trigger: held self-fixes}, from the verdicts the digest stored (no regrading here), counted only once fm outcomes
-    also shows the task survived (no revert, re-fix or user correction within its window): a signal Foreman didn't author."""
+    also shows the task survived (no revert, re-fix or user correction within its window): a signal Sampo didn't author."""
     held = [t for t in load(p) if isinstance(t, dict) and t.get("kind") == "self-fix" and t.get("verdict") == "held"]
     if not held:
         return {}

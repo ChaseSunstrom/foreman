@@ -741,7 +741,7 @@ class MissionEightFaults(Long):
             f.write("x = 1\n")
         r = self.hook("PreToolUse", call, env=env)
         self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertIn("exam fault", r.stderr)
+        self.assertIn("Louhi fault", r.stderr)
         self.assertTrue(os.path.isfile(marker))
         self.assertEqual(self.hook("PreToolUse", call, env=env).returncode, 0)  # once
         self.assertEqual(self.hook("PreToolUse", dict(call, cwd=self.repo), env={}).returncode, 0)

@@ -3,7 +3,7 @@ else the event's source); a captured brief's final status says whether it was wo
 closed captures were mostly dropped files at low priority (demote, never silence). Stdlib only; fm triggers reads the
 ledger and the briefs and writes nothing. T-2355: one table routes every trigger (inbox, queue, lane, muted) with a tier
 cap, a daily budget and a burst window; the user sets rows (fm triggers set, the user's to run), the digest moves
-routes on outcomes Foreman didn't author (settle_routes), each move an fm decide row."""
+routes on outcomes Sampo didn't author (settle_routes), each move an fm decide row."""
 import datetime
 import json
 import os
@@ -171,7 +171,7 @@ def _override(v):
 
 
 def row(p, trigger):
-    """T-2355: the trigger's row: the defaults, Foreman's settled route, then the user's row; an urgent trigger is never
+    """T-2355: the trigger's row: the defaults, Sampo's settled route, then the user's row; an urgent trigger is never
     muted and has no budget or burst. Two small JSON reads, so capture_once can afford it."""
     r = dict(DEFAULT, trigger=trigger, by="default")
     auto = _load(p, "trigger-routes.json").get(trigger)

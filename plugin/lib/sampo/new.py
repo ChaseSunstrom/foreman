@@ -400,7 +400,7 @@ def cmd_new(args):
         cli.out(args, {"templates": rows}, "Templates, strict by default (fm new NAME [DIR]; fm new check PATH):\n"
                   + "\n".join(f"  {r['name']:<6} {r['file']:<11} {r['what']}" for r in rows)
                   + "".join(f"\n  {k:<6} {'NAME':<11} {v[2]}" for k, v in SCAFFOLDS.items())
-                  + "\n  (fm new tool|skill NAME [DIR] never overwrites; a panel lands in fm code's tui/ folder in Foreman's home unless DIR is given)")
+                  + "\n  (fm new tool|skill NAME [DIR] never overwrites; a panel lands in fm code's tui/ folder in Sampo's home unless DIR is given)")
         return 0
     if words[0] == "check":
         if len(words) < 2:

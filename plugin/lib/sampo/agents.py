@@ -1,4 +1,4 @@
-"""Foreman on other coding agents (T-0324). Codex, Gemini CLI and opencode run the hook Claude Code runs, as
+"""Sampo on other coding agents (T-0324). Codex, Gemini CLI and opencode run the hook Claude Code runs, as
 `hook --agent X EVENT`: their payload is read into Claude Code's shape, fmhooks decides exactly as it does for Claude,
 and the answer goes back in the agent's own format. `fm agents install X` wires those hooks, the `fm mcp` server and an
 instructions block into the agent's user config; `uninstall` takes out exactly what install put in."""
@@ -101,14 +101,14 @@ def hook(agent, event, raw):
             shooks.log_error(event, f"fm agents ({agent}): {e!r}")
         except Exception:
             pass
-        return _deny(agent, f"Foreman guard internal error ({type(e).__name__}); the tool call was blocked "
+        return _deny(agent, f"Ward internal error ({type(e).__name__}); the tool call was blocked "
                             f"(fail-closed)")
 
 
 def _hook(agent, event, raw):
     tool = event in TOOL_EVENTS
     if agent not in EVENTS:
-        print(f"Foreman: no hook adapter for agent {agent!r} (known: {', '.join(NAMES)}); "
+        print(f"Sampo: no hook adapter for agent {agent!r} (known: {', '.join(NAMES)}); "
               f"{'the tool call was refused' if tool else 'nothing ran'}", file=sys.stderr)
         return 2 if tool else 0
     ev = EVENTS[agent].get(event)
@@ -118,7 +118,7 @@ def _hook(agent, event, raw):
         pl = None
     if ev is None or not isinstance(pl, dict):
         if tool:
-            print("Foreman: unreadable tool event; the tool call was refused (fail-closed)", file=sys.stderr)
+            print("Sampo: unreadable tool event; the tool call was refused (fail-closed)", file=sys.stderr)
         return 2 if tool else 0
     cwd = str(pl.get("cwd") or os.getcwd())
     # Claude Code's transcript fields are left out: another agent's transcript isn't in Claude Code's format
@@ -141,9 +141,9 @@ def _hook(agent, event, raw):
         o, text = _parse(out)
         hs = o.get("hookSpecificOutput") or {}
         if ev == "PreToolUse" and (code == 2 or hs.get("permissionDecision") in ("deny", "ask")):
-            reason = hs.get("permissionDecisionReason") or err.strip() or "Foreman's guard refused this tool call"
+            reason = hs.get("permissionDecisionReason") or err.strip() or "Sampo's guard refused this tool call"
             if hs.get("permissionDecision") == "ask":
-                reason += (f" ({agent} can't show Foreman's permission prompt: grant this from a Claude Code session "
+                reason += (f" ({agent} can't show Sampo's permission prompt: grant this from a Claude Code session "
                            f"in this project)")
             return _deny(agent, reason)
     ctx = hs.get("additionalContext") or text
@@ -229,7 +229,7 @@ def _load_json(path):
     try:
         o = json.loads(text)
     except ValueError as e:
-        raise ValueError(f"{path} isn't plain JSON ({e.msg}, line {e.lineno}); left it alone — add Foreman to it by "
+        raise ValueError(f"{path} isn't plain JSON ({e.msg}, line {e.lineno}); left it alone — add Sampo to it by "
                          f"hand or remove the comments first")
     if not isinstance(o, dict):
         raise ValueError(f"{path} isn't a JSON object; left it alone")
@@ -289,7 +289,7 @@ def _add_hooks(cfg, agent):
 
 
 def _block(text, start, end, body):
-    """text with Foreman's marked block removed (body None) or replaced/appended (body str)."""
+    """text with Sampo's marked block removed (body None) or replaced/appended (body str)."""
     # the separator install added goes with the block; text the user put after it keeps a line break before it
     text = re.sub(r"(\n?)" + re.escape(start) + r".*?" + re.escape(end) + r"\n?",
                   lambda m: "\n" if m.group(1) and m.end() < len(m.string) else "", text or "", flags=re.S)
@@ -300,8 +300,8 @@ def _block(text, start, end, body):
 
 
 def rules_text():
-    return (f"## Foreman\n"
-            f"Foreman keeps the work here disciplined. Its CLI is `fm` ({FM}); the `fm` MCP server has the same state.\n"
+    return (f"## Sampo\n"
+            f"Sampo keeps the work here disciplined. Its CLI is `fm` ({FM}); the `fm` MCP server has the same state.\n"
             f"- No brief, edits refused: `fm task new \"<t>\" --type T --tier S|M --ac \"<done> :: <cmd>\" "
             f"--step \"<s>\" --focus`; M: 2 readings, 3+ fails-if options, Choice N (NN%) (`fm outcomes --judgment`).\n"  # T-2344
             f"- Follow `fm next`: the one next required action and how to do it; what starts by itself: "
@@ -319,7 +319,7 @@ def _opencode_plugin():
 
 
 def apply(agent, on=True):
-    """Install (on) or uninstall Foreman's wiring for one agent. Returns (changed paths, notes)."""
+    """Install (on) or uninstall Sampo's wiring for one agent. Returns (changed paths, notes)."""
     if agent not in NAMES:
         raise ValueError(f"unknown agent {agent!r} (known: {', '.join(NAMES)})")
     f, notes, planned = _files(agent), [], {}
@@ -359,7 +359,7 @@ def apply(agent, on=True):
         cur = _read(f["plugin"])
         if cur is not None and PLUGIN_MARK not in cur:
             if on:
-                raise ValueError(f"{f['plugin']} is a plugin of your own, not Foreman's; left it alone")
+                raise ValueError(f"{f['plugin']} is a plugin of your own, not Sampo's; left it alone")
         else:
             planned[f["plugin"]] = _opencode_plugin() if on else ""
     planned[f["rules"]] = _block(_read(f["rules"]), MD_START, MD_END, rules_text() if on else None)
@@ -426,7 +426,7 @@ def cmd_agents(args):
             notes = notes + [f"built to {args.agent}'s documented hook format, not yet verified against a live "
                              f"{args.agent}: check a refused command there before relying on the guard"]
         verb = "wired into" if on else "taken out of"
-        text = "\n".join([f"Foreman {verb} {args.agent}" + (f": {', '.join(changed)}" if changed else
+        text = "\n".join([f"Sampo {verb} {args.agent}" + (f": {', '.join(changed)}" if changed else
                                                             " (nothing to change)")] + [f"note: {n}" for n in notes])
         return cli.out(args, dict(status(args.agent), changed=changed, notes=notes), text)
     except (ValueError, OSError) as e:

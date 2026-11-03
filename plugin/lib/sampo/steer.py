@@ -18,7 +18,7 @@ LIVE_DAY = 40  # ponytail: a flat daily cap on live expansions (one child each);
 MIN_WORDS = 6
 
 EXPAND = (  # T-2627: four variants measured on the train split under one judge; none beat this on coverage and harm
-    "You turn the raw words a user typed to Foreman, the harness that plans, proves and finishes their software work, "
+    "You turn the raw words a user typed to Sampo, the harness that plans, proves and finishes their software work, "
     "into the complete standing rule they mean. Generalize past the instance to the pattern behind it; make it "
     "complete (every surface, test, doc and measure it touches); concrete enough to check; act, don't advise; keep "
     "anything outward, destructive or irreversible behind the user's grant. Return \"## Rule\" with one bullet per "

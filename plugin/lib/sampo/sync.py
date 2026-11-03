@@ -1,4 +1,4 @@
-"""fm sync: an opt-in mirror of a project's Foreman state inside the repo (.foreman/), committed with the code, so
+"""fm sync: an opt-in mirror of a project's Sampo state inside the repo (.foreman/), committed with the code, so
 another clone or machine can pick the work up.
 
 Briefs (and their archive), decisions and research travel; the ledger, meta, sessions, pending asks, gates and views
@@ -39,7 +39,7 @@ def settle(b, new, why="it arrived from the repo's .foreman/ (fm sync), not from
 BRIEFS = ("tasks/", "archive/")
 README = """# .foreman
 
-Foreman's task briefs, decisions and research for this repository, mirrored by `fm sync` so another clone or machine
+Sampo's task briefs, decisions and research for this repository, mirrored by `fm sync` so another clone or machine
 can pick the work up (`fm sync import`, or automatically at session start). fm writes this folder; change the work
 through fm, not by editing these files. Approvals, run marks, audits and focus never count on another machine.
 """
@@ -278,7 +278,7 @@ def cmd_sync(args):
                  "clone." if c.mirror_ignored(c.main_view(p).root) else "",
                  " This repo is marked sensitive: review .foreman/ before pushing (evidence is redacted, but briefs "
                  "describe the work)." if c.read_meta(p).get("sensitive") else ""]
-        return print(f"Mirroring Foreman state to {mirror(p)} ({n} file(s) written); commit it with your work. "
+        return print(f"Mirroring Sampo state to {mirror(p)} ({n} file(s) written); commit it with your work. "
                      f"Approvals stay on this machine." + "".join(notes)
                      + "".join(f"\n  conflict: {x}" for x in res["conflicts"]))
     if args.action == "off":

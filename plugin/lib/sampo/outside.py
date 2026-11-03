@@ -80,7 +80,7 @@ def cmd_landscape(args):
         gone = [y for y in before if not any(_same(y, x) for x in now_items)]
     covered = {x: recall.covered(x) for x in new}
     section = ([f"## Since {prev}" if prev else "## First scan (nothing to compare with)"]
-               + [f"- new: {x}" + (f" (Foreman: fm {covered[x][0][0]})" if covered[x] else "") for x in new]
+               + [f"- new: {x}" + (f" (Sampo: fm {covered[x][0][0]})" if covered[x] else "") for x in new]
                + (["", "Gone (in the last scan, not this one):"] + [f"- {y}" for y in gone] if gone else []) + [""])
     with c.lock(p.dir):
         with open(res["path"], encoding="utf-8") as f:
@@ -91,7 +91,7 @@ def cmd_landscape(args):
         c.write_meta(p, meta)
     lacking = [x for x in new if not covered[x]]
     cli.out(args, dict(res, previous=prev, new=new, gone=gone, lacking=lacking),
-              text + f"\n  since {prev or 'nothing'}: {len(new)} new ({len(lacking)} Foreman lacks), {len(gone)} gone"
+              text + f"\n  since {prev or 'nothing'}: {len(new)} new ({len(lacking)} Sampo lacks), {len(gone)} gone"
               + "".join(f"\n  lacks: {x}" for x in lacking[:5]))
 
 
@@ -174,7 +174,7 @@ def latest(eco, name, timeout=10):
     if not (research.public_https(url) or env in os.environ and (
             u.scheme == "https" or u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1", "::1"))):
         return None, "not a public https URL (or a loopback override)"
-    req = urllib.request.Request(url, headers={"User-Agent": "Foreman fm deps (dependency release check)",
+    req = urllib.request.Request(url, headers={"User-Agent": "Sampo fm deps (dependency release check)",
                                                "Accept": "application/json"})
     try:  # review: redirects re-checked as public https, like fm research's fetch
         with urllib.request.build_opener(research._Redirect).open(req, timeout=timeout) as resp:

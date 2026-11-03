@@ -110,7 +110,7 @@ def _root(p):
 
 
 def _own():
-    """Foreman's own repo: the toplevel holding this plugin (never an enclosing repo that merely contains it), else None."""
+    """Sampo's own repo: the toplevel holding this plugin (never an enclosing repo that merely contains it), else None."""
     top = find._git(c.PLUGIN_ROOT, "rev-parse", "--show-toplevel")
     top = os.path.realpath(top.decode().strip()) if top else None
     return top if top and os.path.isfile(os.path.join(top, "plugin", "lib", "sampo", "long.py")) else None
@@ -126,7 +126,7 @@ def _top(path):
 def _may_run(p, src):
     if src != _own() and not prove.trusted(src) and not prove._lane_trusted(p, src):
         raise ValueError(f"{c.plain(src)} is not a tree you trusted, so its tests don't run: fm prove {c.plain(src)} "
-                         "--yes-run says yes to it (only Foreman's own repo runs without)")
+                         "--yes-run says yes to it (only Sampo's own repo runs without)")
 
 
 def _ids(text, rel):
@@ -189,7 +189,7 @@ def _overlay(dst, src, target, files):
 def _passed(tree, ids, pypath, end=None, why=None):
     """The ids that pass in tree, or None when the runner failed or timed out (distinct from all red): run by a script
     outside the tree under -I (the stdlib first, the tree appended), in its own process group (c.run_command kills it
-    whole), a throwaway home, no credentials, no Foreman state. T-2613: a dict `why` gets each failing id's last
+    whole), a throwaway home, no credentials, no Sampo state. T-2613: a dict `why` gets each failing id's last
     traceback line (the tree's own text: plain'd, cut)."""
     from sampo import bench
     if not ids:
@@ -515,7 +515,7 @@ def _stamp(p, run, agent):
 
 def _activity(sids, state, claim):
     """T-2325: where a session's time went, as counts: tool calls by name, Bash commands by first word (fm by verb), turns,
-    the temp Foreman state's events and ledger events by kind (None without that state) and the fitted final claim. Read from
+    the temp Sampo state's events and ledger events by kind (None without that state) and the fitted final claim. Read from
     claude's transcripts before fmbench._compactions removes them; nothing else from the repo or the transcript is kept."""
     import collections
     import glob
@@ -834,7 +834,7 @@ def _recur_state(wt, tdir):
 
 
 def _state_says(state, needles, pattern):
-    """T-2384: whether any file matching pattern under the session's Foreman projects holds one of the needles."""
+    """T-2384: whether any file matching pattern under the session's Sampo projects holds one of the needles."""
     for path in glob.glob(os.path.join(state, "projects", "*", pattern)):
         with contextlib.suppress(OSError), open(path, encoding="utf-8", errors="replace") as f:
             text = f.read(1 << 22)
@@ -945,7 +945,7 @@ def _read_list(path):
 
 
 def _missing(shim_log, miss, true_done):
-    """T-2377: one goal's missing-fault fields, read from outside signals only (never Foreman's ledger): installs_attempted
+    """T-2377: one goal's missing-fault fields, read from outside signals only (never Sampo's ledger): installs_attempted
     from the shim log, miss_resolved = the hidden checks pass (outside the session, the real PATH) with no install call,
     shadow_calls beside them as a diagnostic. All None for a goal the fault didn't run on, or whose shim log is gone."""
     none = {"binary": None, "installs_attempted": None, "shadow_calls": None, "miss_resolved": None}

@@ -1,6 +1,6 @@
-"""T-1215: fm code bench grades a model or worker CLI as a Foreman worker on a fixed set of seeded tasks.
+"""T-1215: fm code bench grades a model or worker CLI as a Smith worker on a fixed set of seeded tasks.
 
-Each seed runs `fm code` in its own throwaway repo with its own Foreman home and (for a model) its own home folder, so
+Each seed runs `fm code` in its own throwaway repo with its own Smith home and (for a model) its own home folder, so
 nothing reaches the user's repos, tasks or files; a dangerous-command seed aims at a canary file in that home. A seed
 counts as closed only when the bench puts the seed's own tests back and re-runs its check afterwards: what the model
 said doesn't count. Each run appends one line to <state>/code-bench.jsonl."""
@@ -111,7 +111,7 @@ def _run_in(tmp, seed, model, worker, timeout, max_steps, t0):
     git("add", ".")
     git("commit", "-qm", "the seed")
     argv = [sys.executable, FM, "code", seed["request"], "--json", "--max-steps", str(max_steps),
-            "--stale-ok", "fm code bench: a throwaway seed repo in its own Foreman home (T-1401)"]
+            "--stale-ok", "fm code bench: a throwaway seed repo in its own Smith home (T-1401)"]
     argv += ["--model", model] if model else ["--worker", worker, "--verify", seed["verify"]]
     p = subprocess.Popen(argv, cwd=repo, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE, text=True, start_new_session=True)

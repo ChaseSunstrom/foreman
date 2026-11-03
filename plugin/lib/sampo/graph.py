@@ -1,5 +1,5 @@
 """T-0707 (Frontier 07, first slice): one local graph joining code, tasks and commits, with time on every edge that has
-one, so a query can be asked as of any moment (and backtested). sqlite in the project's Foreman folder; nothing leaves
+one, so a query can be asked as of any moment (and backtested). sqlite in the project's Sampo folder; nothing leaves
 the machine. Code edges come from graphify's graph.json when the project has one, else from the name-stem mentions
 fm impact uses; test links from fm map; task→file edges from Foreman-Task commit trailers and touched events;
 co-change from commits. fm graph blast: what a change reaches. fm graph pack: a task's ranked read-set (personalized

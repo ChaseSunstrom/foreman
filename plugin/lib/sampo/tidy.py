@@ -1,4 +1,4 @@
-"""fm tidy: hygiene for Foreman state, auto memory, CLAUDE.md and rules (BUILD_PROMPT §9).
+"""fm tidy: hygiene for Sampo state, auto memory, CLAUDE.md and rules (BUILD_PROMPT §9).
 
 Dry-run by default. --apply performs only safe, reversible actions (archive, rotate, roll up, dedupe after
 archiving a copy) and logs them; everything needing judgment (stale inbox items, dead paths, cycles,
@@ -640,7 +640,7 @@ def _check_memory(p, apply, actions):
         full = os.path.join(d, f)
         if f != "MEMORY.md" and re.search(r"progress|status|todo|tasks", f, re.I) and os.path.getsize(full) > 20_000:
             out.append(finding(p.slug, "memory_progress_log", "info", f"memory/{f} is {os.path.getsize(full) // 1024} KB of "
-                               "progress notes", "task status belongs in Foreman briefs/STATE; keep memory for durable learnings"))
+                               "progress notes", "task status belongs in Sampo briefs/STATE; keep memory for durable learnings"))
     return out
 
 
@@ -741,7 +741,7 @@ def check_global(apply, actions, plugins=False):
               and not any(files for _, _, files in os.walk(os.path.join(projects, d)))]
     if shells:
         out.append(finding(None, "child_shells", "action", f"{len(shells)} empty ~/.claude/projects folder(s) left by "
-                           "Foreman's own claude -p runs", "delete (no files in them)", auto=True))
+                           "Sampo's own claude -p runs", "delete (no files in them)", auto=True))
         if apply:
             for d in shells:
                 shutil.rmtree(d, ignore_errors=True)

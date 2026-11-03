@@ -1,5 +1,5 @@
 """fm smoke (T-0417): the product checked the way its user uses it. JARVIS closed 34 tasks with its tests green while
-two panels of its web UI never loaded; nothing Foreman ran had ever opened the page. `fm smoke set web <url>` records
+two panels of its web UI never loaded; nothing Sampo ran had ever opened the page. `fm smoke set web <url>` records
 the address and makes `fm smoke` one of the project's gates; `fm smoke` opens it in a headless browser (the project's
 own Playwright) at desktop and phone width, clicks every tab, and names each defect a user would see.
 
@@ -51,7 +51,7 @@ def playwright(root):
 
 
 def _runner():
-    """FOREMAN_SMOKE_RUNNER stands in for the browser, only for a Foreman home in a temp folder (the tests'), so a
+    """FOREMAN_SMOKE_RUNNER stands in for the browser, only for a Sampo home in a temp folder (the tests'), so a
     command can't forge a passing gate with it (review)."""
     runner = os.environ.get("FOREMAN_SMOKE_RUNNER")
     tmp = os.path.realpath(tempfile.gettempdir()) + os.sep

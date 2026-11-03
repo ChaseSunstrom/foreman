@@ -762,7 +762,7 @@ def graph_page(p, args):
 
 def _out(args, default, mark):
     """Where the page goes. Review of T-1649: an --out that already exists is replaced only when it holds mark, the
-    template's own opening comment, so the user's own page is never overwritten (the default path is Foreman's)."""
+    template's own opening comment, so the user's own page is never overwritten (the default path is Sampo's)."""
     from sampo import cli
     path = os.path.abspath(args.out) if args.out else default
     if not path.endswith(".html") or os.path.islink(path):  # review: --out never overwrites another kind of file
@@ -859,9 +859,9 @@ def cmd_page(args):
     catalogue = load_catalogue(p, args.catalogue) if args.catalogue else []
     if getattr(args, "picks", None):
         return save_picks(p, args, catalogue)
-    data = {"eyebrow": f"Foreman · {time.strftime('%Y-%m-%d')} · {p.slug}" + (f" · {os.path.basename(args.catalogue).removesuffix('.json')}" if args.catalogue else ""),
+    data = {"eyebrow": f"Sampo · {time.strftime('%Y-%m-%d')} · {p.slug}" + (f" · {os.path.basename(args.catalogue).removesuffix('.json')}" if args.catalogue else ""),
             "title": f"{os.path.basename(p.root.rstrip('/')).replace('-', ' ').title()} Board",  # a name, stable
-            "lede": "What Foreman is working on, what waits, and what just closed.",
+            "lede": "What Sampo is working on, what waits, and what just closed.",
             "now": now_data(p), "catalogue": catalogue}
     try:
         data = clean(data)

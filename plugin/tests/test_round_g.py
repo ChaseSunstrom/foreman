@@ -97,7 +97,7 @@ class RoundG(ForemanTestCase):
         out = self.fm("pr", "T-0001").stdout
         self.assertIn("## empty carts total zero", out)
         self.assertIn("- [x] total([]) is 0 — `true → exit 0", out)
-        self.assertIn("Foreman task T-0001 (FIX S)", out)
+        self.assertIn("Sampo task T-0001 (FIX S)", out)
 
     def test_map_lists_ci_commands(self):
         self.write(".github/workflows/ci.yml", "jobs:\n  t:\n    steps:\n      - uses: actions/checkout@v4\n"

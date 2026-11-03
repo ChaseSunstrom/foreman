@@ -168,7 +168,7 @@ class Trial(ForemanTestCase):
             f.write(CSS)
         p = self.fm("design", "check", root, check=False, cwd=root)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn("no Foreman project", p.stdout)
+        self.assertIn("no Sampo project", p.stdout)
 
 
 class Audit(ForemanTestCase):

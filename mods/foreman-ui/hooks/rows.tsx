@@ -5,7 +5,7 @@ import type { DiffRow, LabelRun } from './kit'
 import { OUT_LINES, TINY_OUT, TREE_MS, cfg, diffCap, took } from './state'
 import type { FeedItem, Said, ToolUseRender } from './state'
 
-// T-0130: the transcript's Foreman rows and the small drawings the band and pane share; pure but for the
+// T-0130: the transcript's Sampo rows and the small drawings the band and pane share; pure but for the
 // atoms they read and the shared timing maps. They take the resolved element table, not $: the engine follows
 // $ only into functions declared in the file that uses it.
 export type UI = ReturnType<EngineInterface['ui']['resolve']>
@@ -221,7 +221,7 @@ export function mascotTree(ui: UI, e: ResolveInput, state: 'work' | 'idle' | 'ha
   )
 }
 
-/** T-1031: a diff as Foreman text: a line of context dim, a ┄ break between hunks, the line number dim, the +/- sign
+/** T-1031: a diff as Sampo text: a line of context dim, a ┄ break between hunks, the line number dim, the +/- sign
  * in ok/err, the text in the softer add/del colours (T-0143), and in a changed line only the words that differ washed
  * in the sign's colour, never the whole width ('the green/red are weird in contrast'). */
 export function diffLines(ui: UI, e: ResolveInput, rows: readonly DiffRow[], key: string) {
@@ -274,7 +274,7 @@ export function takeChanges(rows: readonly DiffRow[], max: number): { rows: Diff
 
 export const more = (n: number, what: string) => `… ${n} more ${what}${n === 1 ? '' : 's'}`
 
-/** T-0137/T-0143: a finished shell command as a Foreman row that reads like the running one: its mark, `❯ Ran` and the
+/** T-0137/T-0143: a finished shell command as a Sampo row that reads like the running one: its mark, `❯ Ran` and the
  * description (or the command's first line), time and lines; the command under it, dim, whole up to three lines and
  * never silently cut (a chained or multi-line command must not read as a plain one: the T-0095 review's HIGH
  * finding); then the output (failures first when it failed, else the tail), the files it changed, a commit, a
@@ -389,7 +389,7 @@ export function editChanges(tool: string, output: unknown) {
   return changed.length ? { changed, rows: diffRows(hunks), created, userModified: o.userModified === true } : null
 }
 
-/** T-0141: a finished Edit or Write as a Foreman row: its head (the path, +added −removed), then the diff (diffLines).
+/** T-0141: a finished Edit or Write as a Sampo row: its head (the path, +added −removed), then the diff (diffLines).
  * Null without a patch to show: the engine's row then says what happened. */
 export function editRow(ui: UI, e: ToolUseRender) {
   const c = editChanges(e.props.tool, e.props.output)
@@ -423,7 +423,7 @@ export const agentOut = (tool: string, output: unknown) =>
     ? (output as AgentOut)
     : null
 
-/** T-0148: a subagent call as a Foreman row: its type and task, tools · time · tokens, the first line of its report
+/** T-0148: a subagent call as a Sampo row: its type and task, tools · time · tokens, the first line of its report
  * (the engine drew the name on a highlighted block); a background launch says so. Null for anything else. */
 export function agentRow(ui: UI, e: ToolUseRender) {
   const o = agentOut(e.props.tool, e.props.output)

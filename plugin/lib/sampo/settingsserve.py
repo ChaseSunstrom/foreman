@@ -108,8 +108,8 @@ def page(nonce, msg, bad=False):
     e = html.escape
     problems = []
     got = settings.rows(problems=problems)
-    out = [f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Foreman settings</title>'
-           f'<style nonce="{e(nonce)}">{STYLE}</style></head><body><h1>Foreman settings</h1>']
+    out = [f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sampo settings</title>'
+           f'<style nonce="{e(nonce)}">{STYLE}</style></head><body><h1>Sampo settings</h1>']
     if msg:
         out.append(f'<p class="msg{" bad" if bad else ""}">{e(msg)}</p>')
     out += [f'<p class="msg bad">{e(s)}: {e(x)}</p>' for s, x in problems]
@@ -317,7 +317,7 @@ def cmd_serve(args):
     from sampo import cli
     if args.key or args.value or args.surface:
         raise cli.UsageError("fm settings serve: takes no key, value or --surface (the page has every setting)")
-    return run(*make(settings._project(args)), "Foreman settings")
+    return run(*make(settings._project(args)), "Sampo settings")
 
 
 def run(server, token, label):

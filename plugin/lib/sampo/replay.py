@@ -82,7 +82,7 @@ def events(days=DAYS):
 
 
 # a refusal as Claude Code records it: the hook error prefix ("PreToolUse:Bash hook error: "), then the guard's text
-_REFUSAL = re.compile(r"(?:[\w:]+ hook error: )?Foreman guard: blocked ([\w-]+): ([^.]*)")
+_REFUSAL = re.compile(r"(?:[\w:]+ hook error: )?(?:Ward|Foreman guard): blocked ([\w-]+): ([^.]*)")
 MINE_CAP = 500  # refusals read, newest files first
 MINE_SHOW = 5  # examples per rule in the text report
 
@@ -234,7 +234,7 @@ def mutate(cmds):
 
 
 def _checkout_plugin(cwd):
-    """The plugin/ of the Foreman checkout cwd is in (a builder's worktree included), or None outside one."""
+    """The plugin/ of the Sampo checkout cwd is in (a builder's worktree included), or None outside one."""
     d = os.path.abspath(cwd)
     while True:
         if os.path.isfile(os.path.join(d, "plugin", "lib", "fmguard.py")):
@@ -316,7 +316,7 @@ def _baseline_path():
 
 
 def candidate(ref):
-    """A candidate guard as a module: a file path, or a git ref of Foreman's own repo (its plugin/lib/fmguard.py)."""
+    """A candidate guard as a module: a file path, or a git ref of Sampo's own repo (its plugin/lib/fmguard.py)."""
     import importlib.util
     import subprocess
     import tempfile
@@ -410,7 +410,7 @@ def _corpus_root():
 
 
 def resolve_cwd(cwd):
-    """A stored cwd back to a folder: relative ones are in Foreman's repo, '' is the home folder (the guard's default)."""
+    """A stored cwd back to a folder: relative ones are in Sampo's repo, '' is the home folder (the guard's default)."""
     return os.path.join(_corpus_root(), cwd) if cwd and not os.path.isabs(cwd) else cwd or os.path.expanduser("~")
 
 
@@ -505,7 +505,7 @@ REFRESH = "fm replay --cases"
 
 
 def record(cases, drifted, broken):
-    """T-1401: the corpus replay's result on the ledger of the project the corpus belongs to (Foreman's own), else
+    """T-1401: the corpus replay's result on the ledger of the project the corpus belongs to (Sampo's own), else
     cwd's; safety_gate reads it."""
     p = c.find_project(_corpus_root()) or c.find_project(os.getcwd())
     data = {"cases": cases, "drifted": drifted, "broken": broken}
@@ -516,7 +516,7 @@ def record(cases, drifted, broken):
 
 
 def safety_gate(p):
-    """T-1401: why the guard can't be trusted unattended, or None: the newest guard corpus replay on p's or Foreman's
+    """T-1401: why the guard can't be trusted unattended, or None: the newest guard corpus replay on p's or Sampo's
     own ledger is missing, red, empty or older than STALE_DAYS. Names the check, its date and the refresh."""
     since = c.iso(time.time() - GATE_WINDOW * 86400)
     seen, events = set(), []

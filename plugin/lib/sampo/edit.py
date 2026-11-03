@@ -10,7 +10,7 @@ fm edit takes a batch of exact replacements on stdin, as JSON ([{"file", "old", 
     >>>
 
 and applies them all or none: every old text must be there (once, unless all), every file inside the active task's
-scope, and every file one the guard would let an Edit write (Foreman core, state, settings stay the guard's call).
+scope, and every file one the guard would let an Edit write (Sampo core, state, settings stay the guard's call).
 fm sub PATTERN REPL --glob G is a regex codemod: a per-file count first, --apply to write, --max to cap the files."""
 import glob
 import json

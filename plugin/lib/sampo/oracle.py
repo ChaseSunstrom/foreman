@@ -113,8 +113,8 @@ def _guard():
 
 
 def disagreements(cases, guard=None):
-    """[{cmd, cwd, ran, verdict}] for each (cmd, cwd) the guard (default: Foreman's) lets through whole while a
-    command the shell runs for it, judged alone by Foreman's guard, is refused; verdict "unable: …" where the sandbox
+    """[{cmd, cwd, ran, verdict}] for each (cmd, cwd) the guard (default: Sampo's) lets through whole while a
+    command the shell runs for it, judged alone by Sampo's guard, is refused; verdict "unable: …" where the sandbox
     didn't start or the guard raised. Judged as a hook judges: Python's path variables cleared (T-1599)."""
     from sampo import replay
     real = _guard()

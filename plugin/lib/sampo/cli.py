@@ -1,4 +1,4 @@
-"""fm — the only writer of Foreman state.
+"""fm — the only writer of Sampo state.
 
 Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt · 5 fm capture
 refused a near-duplicate (T-1662).
@@ -66,9 +66,9 @@ def resolve(args, create=True):
     if not p and os.environ.get("FOREMAN_PROJECT"):
         p = c.project_by_slug(os.environ["FOREMAN_PROJECT"])
     if not p and os.environ.get("FOREMAN_WORKER_OF"):  # T-1438: fm init is refused inside a worker
-        raise UsageError("not in a Foreman project, and a worker of an fm code run can't run `fm init`; pass -p SLUG")
+        raise UsageError("not in a Sampo project, and a worker of an fm code run can't run `fm init`; pass -p SLUG")
     if not p:
-        raise UsageError("not in a Foreman project; run `fm init` here or pass -p SLUG")
+        raise UsageError("not in a Sampo project; run `fm init` here or pass -p SLUG")
     return p
 
 
@@ -1914,7 +1914,7 @@ def _finish_gaps(b, args, lenses, p=None):
 
 
 def _self_docs_gaps(p, b):
-    """CLEAN T-0764: a close that touches fmcli.py or plugin/skills must leave Foreman's own docs naming real commands
+    """CLEAN T-0764: a close that touches fmcli.py or plugin/skills must leave Sampo's own docs naming real commands
     and skills (fm doctor's self docs check), so the close is refused, not caught later."""
     from sampo import doctor
     from sampo import map as smap
@@ -1972,7 +1972,7 @@ def _dirty_file(p, tid):
 
 def _save_dirty(p, b, snap):
     """T-1169: the user's own uncommitted files when the task was first focused: those in the working-tree snapshot that
-    differ from HEAD, less any file an earlier task touched (that one is Foreman work, see _theirs). Capped."""
+    differ from HEAD, less any file an earlier task touched (that one is Sampo work, see _theirs). Capped."""
     out = c._git(p.root, "diff-tree", "-r", "--name-only", "--no-renames", "-z", "HEAD", snap, timeout=30, fail=None)
     tasks = {os.path.relpath(f, p.root) for e in c.ledger_tail(p, c.TASK_WINDOW)
              if e.get("event") == "touched" and e.get("task") not in (None, b.id)
@@ -2294,7 +2294,7 @@ def task_prove_hunks(p, b, args):
         return 0 if getattr(args, "quiet", False) else out(
             args, args.hunks_result, f"{b.id}: no code hunks to prove (tests and docs aren't mutated)")
     shown = hunks[:args.max]
-    commit = c._git(p.root, "-c", "user.name=Foreman", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
+    commit = c._git(p.root, "-c", "user.name=Sampo", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
                     "commit-tree", "--no-gpg-sign", tree, "-m", "fm prove --hunks", timeout=60).strip()
     if not commit:
         raise UsageError("git commit-tree of the current tree failed: prove --hunks needs a scratch commit of it")
@@ -2324,7 +2324,7 @@ def task_prove_hunks(p, b, args):
         if foreman:  # T-0297: Foreman's hook falls back to HEAD's library when the working copy crashes; HEAD must be
             # the task's base, or a crashing mutation runs the unmutated code and passes (the scratch commit stays in
             # the index and the files)
-            base_commit = c._git(p.root, "-c", "user.name=Foreman", "-c", "user.email=foreman@localhost",
+            base_commit = c._git(p.root, "-c", "user.name=Sampo", "-c", "user.email=foreman@localhost",
                                  "commit-tree", "--no-gpg-sign", f"{base}^{{tree}}", "-m", "fm prove --hunks base",
                                  timeout=60).strip()
             if not base_commit or c._git(wt, "reset", "-q", "--soft", base_commit, fail=None, timeout=60) is None:
@@ -4127,7 +4127,7 @@ def cmd_ask(args):
         c.write_meta(p, meta)
         c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=sid)
         c.regen_views(p)  # the statusline shows what a yes would grant
-    reload = (" The user approved Claude Code's permission dialog, but this session hasn't loaded Foreman's "
+    reload = (" The user approved Claude Code's permission dialog, but this session hasn't loaded Sampo's "
               "PermissionRequest hook, so the dialog can't grant it: they should run /reload-plugins.") \
         if seen.get("dialog") else ""
     n, cat = max((mine[x], x) for x in cats)
@@ -4193,7 +4193,7 @@ def cmd_todo(args):
 
 def cmd_trust(args):
     """T-0120: whether Claude may edit the guard and Claude Code settings. Only the foreman-ui mod's /fm-trust on,
-    typed by the user (its command.run checks the origin), turns it on, by writing the trust record into Foreman state
+    typed by the user (its command.run checks the origin), turns it on, by writing the trust record into Sampo state
     itself; no tool call may write there, and fm has no "on". Off removes it, from anywhere. Status records each new
     trust in the ledger (the mod asks right after writing it)."""
     p = resolve(args)
@@ -4210,7 +4210,7 @@ def cmd_trust(args):
                 c.write_meta(p, meta)
                 c.log_event(p, "trust_on", data={"at": rec.get("at")}, session=session())
     return out(args, {"trust": bool(rec)},
-               "Trust on: Claude may edit the guard and Claude Code settings (Foreman state only through fm); "
+               "Trust on: Claude may edit the guard and Claude Code settings (Sampo state only through fm); "
                "/fm-trust off or fm trust off ends it." if rec else
                "Trust off: the guard and Claude Code settings need your yes per task (/fm-trust on, typed by you).")
 
@@ -4227,11 +4227,11 @@ def cmd_standing(args):
             c.write_meta(p, meta)
             c.log_event(p, "standing_off", data={"was": sorted(had)}, session=session())
     if args.state == "off":
-        return out(args, {"standing": {}}, "Standing yeses off: Foreman's core asks per task again." if had
+        return out(args, {"standing": {}}, "Standing yeses off: Sampo's core asks per task again." if had
                    else "No standing yes to turn off.")
     return out(args, {"standing": had}, "\n".join(f"Standing yes: {k} since {v.get('at')} ({v.get('why') or 'no reason'}); "
                                                  f"fm standing off revokes it" for k, v in had.items())
-               or "No standing yes: Foreman's core asks per task.")
+               or "No standing yes: Sampo's core asks per task.")
 
 
 def _decision_row(line):
@@ -4695,7 +4695,7 @@ def cmd_research_show(args):
 
 def cmd_drive(args):
     """T-2327: --pace off (a user steer: never drop work for usage pace) and --round-first on (no new maintenance
-    Foreman filed itself until the open Genesis round's next seed is filed) ride along."""
+    Sampo filed itself until the open Genesis round's next seed is filed) ride along."""
     p = resolve(args)
     extra = {}
     if getattr(args, "pace", None):
@@ -4727,7 +4727,7 @@ def cmd_posture(args):
 
 
 def cmd_approve_reads(args):
-    """T-0974: Foreman answers Claude Code's permission dialog for a command that only reads (fmguard.read_only); on is
+    """T-0974: Sampo answers Claude Code's permission dialog for a command that only reads (fmguard.read_only); on is
     the user's to type (the guard refuses it from Claude), off is anyone's."""
     p = resolve(args)
     if args.state:
@@ -4736,7 +4736,7 @@ def cmd_approve_reads(args):
             c.log_event(p, "approve_reads", data={"on": args.state == "on"}, session=session())
     on = bool(c.read_meta(p).get("approve_reads"))
     out(args, {"approve_reads": on}, f"{p.slug}: " + (
-        "Foreman approves commands that only read (ls, cat, grep, git status …); anything else still asks." if on
+        "Sampo approves commands that only read (ls, cat, grep, git status …); anything else still asks." if on
         else "every permission dialog is yours, as Claude Code shows it."))
 
 
@@ -5243,7 +5243,7 @@ def first_bad(p, cmd, good, bad, timeout):
 
 
 def cmd_snapshots(args):
-    """T-0884: the working files Foreman saved before a command discarded uncommitted work, newest first, each with
+    """T-0884: the working files Sampo saved before a command discarded uncommitted work, newest first, each with
     the command that brings it back (it restores the saved files and leaves newer ones alone)."""
     rows = _snapshot_rows(resolve(args))
     text = "\n".join(f"{r['at']}  {r['sha']}  {'stash: ' if r['kind'] == 'stash' else 'before: '}{r['before']}\n"
@@ -5251,7 +5251,7 @@ def cmd_snapshots(args):
     return out(args, {"snapshots": rows}, text or _NO_SNAPSHOTS)
 
 
-_NO_SNAPSHOTS = ("No snapshots: Foreman saves one before a command discards uncommitted work (git reset --hard, "
+_NO_SNAPSHOTS = ("No snapshots: Sampo saves one before a command discards uncommitted work (git reset --hard, "
                  "checkout --, clean -f…).")
 
 
@@ -5263,7 +5263,7 @@ def _snapshot_rows(p):
         ref, sha, subject = (ln.split("\t", 2) + ["", ""])[:3]
         stash = ref.endswith("-stash")
         rows.append({"ref": ref, "sha": sha[:12], "at": ref[len(c.SNAPSHOTS):].split("-", 1)[0],
-                     "before": c.plain(subject.removeprefix("Foreman snapshot before: ")),
+                     "before": c.plain(re.sub(r"^(?:Sampo|Foreman) snapshot before: ", "", subject)),  # saves made before the rename say Foreman
                      "kind": "stash" if stash else "tree", "top": top,
                      "restore": c.restore_line(top, sha[:12], "stash" if stash else "tree")})
     return rows
@@ -6215,8 +6215,8 @@ def cmd_help(args):
 # T-0845: fm --help is where a newcomer starts: the everyday commands, not argparse's 100-verb blob
 START_HERE = """usage: fm [-p PROJECT] <command> [options]
 
-Foreman state CLI (the only writer of Foreman state). Start here:
-  fm demo                  watch Foreman fix a seeded bug in a throwaway repo (no model calls)
+Sampo state CLI (the only writer of Sampo state). Start here:
+  fm demo                  watch Sampo fix a seeded bug in a throwaway repo (no model calls)
   fm init                  register this repo (once; most commands do it for you)
   fm capture "<request>"   put a request in the inbox
   fm task new "<title>" --type FIX --tier S --ac "<done when> :: <cmd>" --step "<step>" --focus
@@ -6229,7 +6229,7 @@ Foreman state CLI (the only writer of Foreman state). Start here:
                            close a task in one call
   fm queue                 what's planned, in order
   fm inbox                 captured requests waiting
-  fm doctor                is Foreman healthy here?
+  fm doctor                is Sampo healthy here?
 
 fm help --all lists every command; fm <command> -h for its options; -p SLUG picks a project from elsewhere.
 """
@@ -6326,7 +6326,7 @@ def _prog():
 def _build_parser(only=None):
     prog = _prog()
     ap = _Parser(prog=prog, usage=f"{prog} [-p PROJECT] <command> [options]",
-                 description="Foreman state CLI (the only writer of Foreman state).")
+                 description="Sampo state CLI (the only writer of Sampo state).")
     # only the root: subparsers keep argparse's own help
     ap.format_help = lambda: START_HERE.replace("usage: fm", f"usage: {prog}", 1)
     ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
@@ -6345,7 +6345,7 @@ def _build_parser(only=None):
         return s
 
     s = add("help", cmd_help, tier=("Finding your way", 200), help="every command, in tiers: the everyday ones first; "
-            "with words, can Foreman do X? answered from the commands' help")
+            "with words, can Sampo do X? answered from the commands' help")
     s.add_argument("--all", action="store_true", help="the same: every command (fm --help: the everyday ones)")
     s.add_argument("words", nargs="*", help="a question in plain words: the commands whose help answers it")
     s = add("dev", lazy("sampo.new", "cmd_dev"), tier=("Every task", 99), help="the contributor's loop: when a tracked file "
@@ -6408,7 +6408,7 @@ def _build_parser(only=None):
                                                          "without it fm capture refuses it, exit 5, naming the task "
                                                          "(only fm capture checks; fm intake, fm task new and fm "
                                                          "research --from-agent don't)")
-    s.add_argument("--self", dest="self_", action="store_true", help="capture into Foreman's own project (self-improvement)")
+    s.add_argument("--self", dest="self_", action="store_true", help="capture into Sampo's own project (self-improvement)")
     s.add_argument("--incident", nargs="+", metavar="WORDS", help="live harm (T-2388; fm incident until T-2461): "
                    "'<impact>' --signal CMD opens an urgent FIX on a signal red now; log '<action>' --expect "
                    "'<effect>'; follow-up '<what stops this recurring>'; closes on the signal green twice plus one "
@@ -6575,7 +6575,7 @@ def _build_parser(only=None):
                                             "one reading and the one you ruled out and why)")
     t.add_argument("--approach", help="options → choice → why (M/L plan gate: '1) … fails if: … 2) use what exists: … "
                                       "3) do less: … Choice N: why'; each option with its likely outcome or failure mode)")
-    t.add_argument("--harness-plan", metavar="WHO", help="Foreman's own harness (code, hook) wrote this plan: the M/L plan "
+    t.add_argument("--harness-plan", metavar="WHO", help="Sampo's own harness (code, hook) wrote this plan: the M/L plan "
                                                          "gate skips its readings and options (not for hand-written plans)")
     t.add_argument("--focus", action="store_true", help="focus it right away (the plan gate still applies)")
     t.add_argument("--goal", metavar="ITEM", help="it builds item ITEM of the standing goal (fm goal show)")
@@ -6751,8 +6751,8 @@ def _build_parser(only=None):
     s.add_argument("action", nargs="?", default="suggest", choices=["suggest", "search", "show", "list", "check", "source",
                                                                     "inject", "stats", "gaps", "draft", "admit"])
     s.add_argument("--root", action="append", help="gaps: scan this project root (repeatable; default: all registered); "
-                   "check: the Foreman checkout whose cards to lint (default: the one you're in, else the installed one)")
-    s.add_argument("--into", help="admit: the library's cards folder (default: Foreman's own)")
+                   "check: the Sampo checkout whose cards to lint (default: the one you're in, else the installed one)")
+    s.add_argument("--into", help="admit: the library's cards folder (default: Sampo's own)")
     s.add_argument("words", nargs="*", help="search: topic words; show: a card name or plugin:skill")
     s.add_argument("--area", help="list: one area's cards")
     s.add_argument("-n", type=int, default=12, help="suggest: at most this many cards")
@@ -6790,7 +6790,7 @@ def _build_parser(only=None):
     s.add_argument("--ablate", action="store_true", help="eval: each ## section's share of the lift, dropped one at "
                    "a time; zero share is a cut candidate (T-1619)")
     s = add("which", lazy("sampo.which", "cmd"), tier=("Finding your way", 205), help="a need in plain words → every shelf: past fixes, "
-            "project tools, MCP servers, installed skills, binaries, Foreman's skills, playbooks and commands, stack cards, "
+            "project tools, MCP servers, installed skills, binaries, Sampo's skills, playbooks and commands, stack cards, "
             "marketplace plugins; each hit with its source and any grant it needs (T-1699, T-2371)")
     s.add_argument("task", nargs="*", help="the work, e.g. make a 3D hero with motion")
     s.add_argument("--instruments", action="store_true", help="instead: the zero-token instruments, typed tools with "
@@ -6918,7 +6918,7 @@ def _build_parser(only=None):
     s.add_argument("--sweep", action="store_true", help=argparse.SUPPRESS)  # T-1810: the Stop hook's detached sweep
     s.add_argument("--sessions", action="store_true",
                    help="per session: turns, context per turn, the cache read/write/output split and cache busts")
-    s = add("burden", lazy("sampo.cost", "cmd_burden"), tier=("Reports", 1000), help="Foreman's own cost on real sessions per version: bookkeeping "
+    s = add("burden", lazy("sampo.cost", "cmd_burden"), tier=("Reports", 1000), help="Sampo's own cost on real sessions per version: bookkeeping "
                                                           "turns, refusals, injected context (T-0712)")
     s.add_argument("--days", type=float, default=14)
     s.add_argument("--by-verb", action="store_true", help="the fm verbs no session called in the window (T-0959)")
@@ -6978,7 +6978,7 @@ def _build_parser(only=None):
     s.add_argument("--if-due", action="store_true", help="only once a day, when 3+ open tasks are new since the last run")
     s.add_argument("--model", default="haiku", help="the child's model (default haiku)")
     s.add_argument("--timeout", type=float, default=300)
-    s = add("mcp", lazy("sampo.mcp", "cmd_mcp"), tier=("Running elsewhere", 1230), help="serve Foreman's state, next action, recall, research, briefs, stack "
+    s = add("mcp", lazy("sampo.mcp", "cmd_mcp"), tier=("Running elsewhere", 1230), help="serve Sampo's state, next action, recall, research, briefs, stack "
                                                  "library and instruments as read-only MCP tools over stdio; new: "
                                                  "scaffold a tested MCP server wrapping any CLI; register: the "
                                                  "harness's add line (T-0946)")
@@ -7044,7 +7044,7 @@ def _build_parser(only=None):
     s.add_argument("--status", action="store_true", help="sweep a stale draft and say what is waiting; draft nothing")
     s = add("landscape", lazy("sampo.outside", "cmd_landscape"), tier=("Finding your way", 470),
             help="research what people want from coding-agent harnesses now: what's new since the last scan, what "
-                 "Foreman lacks")
+                 "Sampo lacks")
     s.add_argument("--if-due", action="store_true", help="only when the last scan is 30+ days old")
     s.add_argument("--fanout", type=int, default=3)
     s.add_argument("--model", default="sonnet")
@@ -7071,9 +7071,9 @@ def _build_parser(only=None):
     s.add_argument("--out", metavar="PATH",
                    help="where to write it (default: AGENTS.md, .cursor/rules/foreman.mdc or GEMINI.md at the project root)")
     s.add_argument("--force", action="store_true", help="replace a file fm export didn't write")
-    s = add("why", lazy("sampo.map", "cmd_why"), tier=("Finding your way", 310), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
+    s = add("why", lazy("sampo.map", "cmd_why"), tier=("Finding your way", 310), help="the commits and Sampo tasks behind FILE[:LINE], with their lessons")
     s.add_argument("target")
-    add("snapshots", cmd_snapshots, tier=("Finding your way", 320), help="uncommitted work Foreman saved before a command discarded it, and how to "
+    add("snapshots", cmd_snapshots, tier=("Finding your way", 320), help="uncommitted work Sampo saved before a command discarded it, and how to "
                                          "bring it back")
     s = add("oops", cmd_oops, tier=("Finding your way", 330), help="the newest work snapshot and its restore command; --apply restores it (T-0960)")
     s.add_argument("--apply", action="store_true", help="restore it (the files as they are now are saved first)")
@@ -7081,7 +7081,7 @@ def _build_parser(only=None):
     s.add_argument("words", nargs="+")
     s = add("round", cmd_round, tier=("Project and settings", 960), help="close a round: tag HEAD round-N, list the tasks closed since the last (T-0960)")
     s.add_argument("action", choices=["close"])
-    s = add("release", cmd_release, tier=("Project and settings", 905), help="release Foreman as named steps with a checkpoint after each: "
+    s = add("release", cmd_release, tier=("Project and settings", 905), help="release Sampo as named steps with a checkpoint after each: "
             "check, bump, changelog, commit, release-check, canary, --push, round close (T-1188)")
     s.add_argument("version", nargs="?", help="MAJOR.MINOR.PATCH")
     s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
@@ -7125,7 +7125,7 @@ def _build_parser(only=None):
                                                          "is a line it misread; with --cmd, that one command (T-1553; needs bwrap)")
     s.add_argument("--cmd", metavar="TEXT", help="only this command: the guard's default verdict, never run it")
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
-    s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
+    s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Sampo's repo, or a "
                                                           "fmguard.py file) against the working one (T-0712)")
     s = add("dojo", lazy("sampo.dojo", "cmd_dojo"), tier=("Finding your way", 307),
             help="a short drill of commands the guard refuses and why: allow or refuse, then the guard's own verdict "
@@ -7200,7 +7200,7 @@ def _build_parser(only=None):
                                                          "cited file:line (T-0659)")
     s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
                                                      "BM25), each passage citing its task ids")
-    s = add("explain", lazy("sampo.recall", "cmd_explain"), tier=("Finding your way", 250), help="why Foreman did it: the rule, inputs and ledger events "
+    s = add("explain", lazy("sampo.recall", "cmd_explain"), tier=("Finding your way", 250), help="why Sampo did it: the rule, inputs and ledger events "
                                                              "behind the last guard block or drive/Stop decision")
     s.add_argument("what", nargs="?", choices=["block", "drive"], help="only guard blocks, or only drive/Stop decisions")
 
@@ -7239,7 +7239,7 @@ def _build_parser(only=None):
     s.add_argument("state", choices=["on", "off"])
     s.add_argument("--pace", choices=["on", "off"], help="off: usage pace never drops work (a spent risk budget still slows)")
     s.add_argument("--round-first", choices=["on", "off"],
-                   help="on: no new maintenance Foreman filed itself until the open Genesis round's next seed is filed")
+                   help="on: no new maintenance Sampo filed itself until the open Genesis round's next seed is filed")
 
     s = add("edit", lazy("sampo.edit", "cmd_edit"), tier=("Finding your way", 260), help="a batch of exact replacements across files from stdin (JSON or "
             "@@ file / <<< old / === new / >>> blocks), all or none, inside the task's scope (T-1089)")
@@ -7262,11 +7262,11 @@ def _build_parser(only=None):
     s = add("posture", cmd_posture, tier=("Project and settings", 710), help="lite: only the guard's hook runs in this project; full: every hook (T-0963)")
     s.add_argument("state", nargs="?", choices=["lite", "full"])
 
-    s = add("approve-reads", cmd_approve_reads, tier=("Project and settings", 760), help="on: Foreman answers Claude Code's permission dialog for commands "
+    s = add("approve-reads", cmd_approve_reads, tier=("Project and settings", 760), help="on: Sampo answers Claude Code's permission dialog for commands "
                                                        "that only read (yours to turn on; T-0974)")
     s.add_argument("state", nargs="?", choices=["on", "off"])
 
-    s = add("pause", cmd_pause, tier=("Project and settings", 720), help="stop everything Foreman runs unattended, in every project (fm pause off lifts it)")
+    s = add("pause", cmd_pause, tier=("Project and settings", 720), help="stop everything Sampo runs unattended, in every project (fm pause off lifts it)")
     s.add_argument("state", nargs="?", choices=["on", "off"], default="on")
     s.add_argument("--now", action="store_true", help="also stop what runs now: fm sessions, serve units, fm run's "
                    "session, leases (T-1821)")
@@ -7298,7 +7298,7 @@ def _build_parser(only=None):
     s.add_argument("--contains", action="append", metavar="TEXT", help="office: text a docx must hold (repeatable)")
     s.add_argument("--for", dest="for_ext", metavar="EXT", help="affected: the command is for tests with this extension "
                                                                 "(.tsx), run beside the default (T-1135)")
-    s.add_argument("--python", metavar="VER", help="run the gates with python VER (3.12) or 'oldest' (the lowest Foreman "
+    s.add_argument("--python", metavar="VER", help="run the gates with python VER (3.12) or 'oldest' (the lowest Sampo "
                                                    "supports) as python3: once before a push to main or a release "
                                                    "(T-1805)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
@@ -7314,7 +7314,7 @@ def _build_parser(only=None):
     g.add_argument("--ac", type=int)
 
     s = add("friction", lazy("sampo.friction", "cmd_friction"), tier=("Reports", 1040),
-            help="Foreman's own friction since the last self-improvement pass: a digest, or a brief for one subagent")
+            help="Sampo's own friction since the last self-improvement pass: a digest, or a brief for one subagent")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--brief", action="store_true", help="write a self-contained brief for one read-only subagent")
     g.add_argument("--mark", action="store_true", help="record a finished pass: the next digest starts after it")
@@ -7375,7 +7375,7 @@ def _build_parser(only=None):
     s.add_argument("--plugins", action="store_true", help="also report plugin footprint (slow: runs claude plugin details)")
 
     s = add("rollback", lazy("sampo.rollback", "cmd_rollback"), tier=("Project and settings", 950), help="restore the state as the snapshot taken at the last "
-                                                             "Foreman upgrade had it (T-1085)", allow_abbrev=False)
+                                                             "Sampo upgrade had it (T-1085)", allow_abbrev=False)
     s.add_argument("--list", action="store_true")
     s.add_argument("--snapshot", metavar="OLD", help=argparse.SUPPRESS)  # the upgrade hook's detached child
     s.add_argument("--to", metavar="NAME", help="a snapshot from --list (default: the newest upgrade snapshot)")
@@ -7396,11 +7396,11 @@ def _build_parser(only=None):
     s.add_argument("--why", default="", help="with --wrong: what went wrong")
     s.add_argument("--cwd", metavar="DIR", help="with --wrong: the folder it ran in (default: here)")
     s = add("fsck", lazy("sampo.doctor", "cmd_fsck"), tier=("Project and settings", 872), help="a deeper read-only check "
-            "of Foreman's state: open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, "
+            "of Sampo's state: open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, "
             "journals whose last line is torn, state files that aren't JSON; exit 1 on any (T-1667, T-1669)")
     s.add_argument("--fix", action="store_true", help="remove only the stale locks; a broken lane or a torn journal "
                    "is left for a person")
-    s = add("migrate", lazy("sampo.homemove", "cmd_migrate"), tier=("Project and settings", 874), help="move the Foreman home "
+    s = add("migrate", lazy("sampo.homemove", "cmd_migrate"), tier=("Project and settings", 874), help="move the Sampo home "
             "and its siblings (foreman.draft, .evolve, .lanes) to the sampo names once, leaving symlinks at the old "
             "paths, a backup of the record and a manifest; safe to rerun, resumes a half-done move (T-2746)")
     s.add_argument("--undo", action="store_true", help="put the old layout back and check it against the manifest's hashes")
@@ -7468,7 +7468,7 @@ def _build_parser(only=None):
                                                            "fm projects and, once named, in brief logs fm sync carries)")
     s.add_argument("--name", help="name this machine")
 
-    s = add("bench", lazy("sampo.bench", "cmd_bench"), tier=("Reports", 1090), help="Foreman's benchmark from finished tasks: build cases, replay "
+    s = add("bench", lazy("sampo.bench", "cmd_bench"), tier=("Reports", 1090), help="Sampo's benchmark from finished tasks: build cases, replay "
                                                          "them with a candidate plugin, compare runs (T-0212)")
     bsp = s.add_subparsers(dest="bench_cmd", required=True)
     b = bsp.add_parser("seed-review", help="bench a reviewer on planted one-line bugs (T-0646)")
@@ -7497,10 +7497,10 @@ def _build_parser(only=None):
     b.add_argument("--json", action="store_true")
     b.add_argument("-p", "--project", default=argparse.SUPPRESS)
     b = bsp.add_parser("repro", help="rerun one duel row on both sides with its saved model and settings: fm bench "
-                                     "repro LABEL CASE, as the benchmarks page's Where Foreman loses names it (T-1261)")
+                                     "repro LABEL CASE, as the benchmarks page's Where Sampo loses names it (T-1261)")
     b.add_argument("--json", action="store_true")
     b.add_argument("-p", "--project", default=argparse.SUPPRESS)
-    b.add_argument("label", help="the Foreman side's results label (duel-none-foreman-<time>)")
+    b.add_argument("label", help="the Sampo side's results label (duel-none-foreman-<time>)")
     b.add_argument("case", help="the case id")
     b.add_argument("--budget", type=float, help="USD per session (default: the run's own, else 3)")
     b.add_argument("--timeout", type=int, default=30, help="minutes per session")
@@ -7538,7 +7538,7 @@ def _build_parser(only=None):
                            "tests fail at their own commit too); a judge passes a run only when it says so, and a "
                            "duel counts each arm's false dones (T-1377)")
         if name == "run":
-            b.add_argument("--plugin", help="the plugin folder to test (default: this Foreman)")
+            b.add_argument("--plugin", help="the plugin folder to test (default: this Sampo)")
             b.add_argument("--max", type=int, default=3, help="cases to run")
             b.add_argument("--model")
             b.add_argument("--budget", type=float, default=3.0, help="USD per case (claude --max-budget-usd)")
@@ -7556,8 +7556,8 @@ def _build_parser(only=None):
         if name == "compare":
             b.add_argument("a")
             b.add_argument("b")
-    contests = {"duel": "replay cases with Foreman alone and with another plugin beside it, and gate the two (T-0240)",
-                "versions": "replay cases on Foreman at an earlier git revision and on this one, and gate the two (T-0241)",
+    contests = {"duel": "replay cases with Sampo alone and with another plugin beside it, and gate the two (T-0240)",
+                "versions": "replay cases on Sampo at an earlier git revision and on this one, and gate the two (T-0241)",
                 "court": "turn the user's steers and corrections into judged cases and replay them (T-0242)",
                 "soak": "replay a case as a conversation with a child playing the user; report what they had to repeat "
                         "(T-0243)",
@@ -7569,20 +7569,20 @@ def _build_parser(only=None):
         b.add_argument("-p", "--project", default=argparse.SUPPRESS)
         if name == "duel":
             b.add_argument("plugin", nargs="?", help="a plugin folder, or an installed plugin's id")
-            b.add_argument("--ablate", metavar="F1,F2", help="Foreman against itself with each named hook feature "
+            b.add_argument("--ablate", metavar="F1,F2", help="Sampo against itself with each named hook feature "
                            "switched off in turn (fix, deps, veto, scope, lessons, steps, ambient, bus, cards, "
                            "test-first, design, drive, or all; never the guard), a verdict each (T-1375)")
             b.add_argument("--equal-spend", action="store_true", help="with --vs none: Claude with no plugins gets "
-                           "Foreman's spend on each case as fresh attempts (5 at most, stopping at a pass) (T-1376)")
-            b.add_argument("--vs", choices=["none", "snippet"], help="none: Foreman against Claude with no plugins "
+                           "Sampo's spend on each case as fresh attempts (5 at most, stopping at a pass) (T-1376)")
+            b.add_argument("--vs", choices=["none", "snippet"], help="none: Sampo against Claude with no plugins "
                            "(only the guard, as a settings hook) instead of a rival (T-0963); snippet: against Claude "
-                           "with no plugins reading Foreman's rules as one CLAUDE.md, plugin/templates/CLAUDE.lite.md "
+                           "with no plugins reading Sampo's rules as one CLAUDE.md, plugin/templates/CLAUDE.lite.md "
                            "(T-1264)")
         if name == "versions":
-            b.add_argument("rev", help="the earlier Foreman revision (a commit, tag or HEAD~N)")
-            b.add_argument("--source", help="the Foreman checkout REV is in (default: the running one's repo)")
+            b.add_argument("rev", help="the earlier Sampo revision (a commit, tag or HEAD~N)")
+            b.add_argument("--source", help="the Sampo checkout REV is in (default: the running one's repo)")
         if name in ("court", "soak", "stranger"):
-            b.add_argument("--plugin", dest="plugin_dir", help="the plugin folder to test (default: this Foreman)")
+            b.add_argument("--plugin", dest="plugin_dir", help="the plugin folder to test (default: this Sampo)")
         if name not in ("court", "stranger"):
             b.add_argument("--ids", nargs="+", help="only these case ids")
         if name == "soak":
@@ -7605,7 +7605,7 @@ def _build_parser(only=None):
                            "nears TOKENS (CLAUDE_CODE_AUTO_COMPACT_WINDOW), as a long session would; results count "
                            "the compactions (T-1242)")
         if name == "duel":
-            b.add_argument("--marathon", type=int, metavar="N", help="after the asked work, Foreman's arm finds and "
+            b.add_argument("--marathon", type=int, metavar="N", help="after the asked work, Sampo's arm finds and "
                            "does work nobody asked for, N passes, until its --budget cap (T-1242)")
         if name == "court":
             b.add_argument("--label", help="name for these results (default: court-<time>)")
@@ -7686,17 +7686,17 @@ def _build_parser(only=None):
                    "newcomer.json; T-1661)")
     s.add_argument("--real", action="store_true", help="newcomer: a model plays, shown only the screen")
     s = add("home", lazy("sampo.home", "cmd_home"), tier=("Project and settings", 785),  # T-1665
-            help="export: Foreman's state as one tarball, secrets redacted and credential files left out; import FILE: "
+            help="export: Sampo's state as one tarball, secrets redacted and credential files left out; import FILE: "
                  "into an empty home, every member's path and hash checked first")
     s.add_argument("action", choices=["export", "import"])
     s.add_argument("file", nargs="?", help="import: the tarball fm home export wrote")
     s.add_argument("--out", metavar="FILE", help="export: where to write it (default: foreman-home-DATE.tar.gz here)")
 
-    s = add("evolve", lazy("sampo.evolve", "cmd_evolve"), tier=("Reports", 1100), help="one bench-gated generation: revise (or --drop) one Foreman "
+    s = add("evolve", lazy("sampo.evolve", "cmd_evolve"), tier=("Reports", 1100), help="one bench-gated generation: revise (or --drop) one Sampo "
                                                             "instruction file on an evolve branch, bench both, gate (T-0224)")
     s.add_argument("--target", required=True, help="the file to revise, relative to the repo (e.g. plugin/skills/x/SKILL.md)")
     s.add_argument("--drop", action="store_true", help="empty the file instead (ablation)")
-    s.add_argument("--repo", help="Foreman's repo (default: the one holding this plugin)")
+    s.add_argument("--repo", help="Sampo's repo (default: the one holding this plugin)")
     s.add_argument("--plugin-dir", default="plugin", help="the plugin folder inside the repo")
     s.add_argument("--ids", nargs="+", help="only these bench cases")
     s.add_argument("--max", type=int, default=3)
@@ -7739,7 +7739,7 @@ def _build_parser(only=None):
     s.add_argument("--seed", type=int, default=0, help="exam: the scenario draw")
     s.add_argument("--author", choices=("self", "child"), default="self",
                    help="exam: child = each project's defect and G-line's MUST/NEVER lines come from a tool-less model, "
-                        "so #13 scores on scenarios Foreman didn't write (T-2215)")
+                        "so #13 scores on scenarios Sampo didn't write (T-2215)")
     s.add_argument("--model", help="exam: the child author's model (default sonnet)")
     s.add_argument("--lang", help="exam: comma list of languages to draw projects in (default all six)")
     s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
@@ -7758,7 +7758,7 @@ def _build_parser(only=None):
     s.add_argument("--blindspots", action="store_true", help="instead: closed FIXes whose changed lines no finder flagged "
                    "(with --capture 1: file one 'add a rule, tool or check' task a day; T-2241)")
     s.add_argument("--ladder", action="store_true", help="also run each stack's own analyzer (ruff, go vet, gosec) from "
-                   "Foreman's registry, only in a tree you said yes to (fm prove --yes-run); its findings are tool:NAME (T-2239)")
+                   "Sampo's registry, only in a tree you said yes to (fm prove --yes-run); its findings are tool:NAME (T-2239)")
     s.add_argument("--hotspots", action="store_true", help="instead: tracked files by how many fix commits touched them "
                    "in the last 500 non-merge commits, counting those whose subject has a fix word (git only, no repo code; not with "
                    "--rank or --capture; T-2238)")
@@ -7816,7 +7816,7 @@ def _build_parser(only=None):
                         "expand SESSION | live on|off (T-2625)")
     s.add_argument("run", nargs="?", help="run/grade/check: the run id fm exam gen printed; long: gen|run|grade")
     s.add_argument("rest", nargs="*", help="long run|grade: the run id")
-    s.add_argument("--from", dest="from_", metavar="PATH", help="long gen: the local git repo to replay (default Foreman's own)")
+    s.add_argument("--from", dest="from_", metavar="PATH", help="long gen: the local git repo to replay (default Sampo's own)")
     s.add_argument("--n", type=int, help="long gen: goals to make (default 6, at most 20)")
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--per-kind", type=int, default=9, help="scenarios per kind; a third (rounded) is held out")
@@ -7841,7 +7841,7 @@ def _build_parser(only=None):
     s.add_argument("--request", help="run: session arms get these words instead of each scenario's request")
     s.add_argument("--timeout", type=float, help="long run: minutes a session turn may take (default 60)")
     s.add_argument("--faults", help="long run --agent foreman|plain: comma list of kill, pause, compaction, misleading (T-2262), missing (T-2377), door (T-2343)")
-    s = add("demo", lazy("sampo.demo", "cmd_demo"), tier=("Finding your way", 210), help="see Foreman work on a seeded bug in a throwaway repo, with no "
+    s = add("demo", lazy("sampo.demo", "cmd_demo"), tier=("Finding your way", 210), help="see Sampo work on a seeded bug in a throwaway repo, with no "
                                                       "model calls and nothing left behind (T-0870)")
     s.add_argument("--pace", type=float, default=0, metavar="SECONDS",
                    help="pause per stage and type the commands out, for watching or recording (try 1)")
@@ -8065,7 +8065,7 @@ def _build_parser(only=None):
                    "graph: the task graph in 3D, open and linked tasks in layers by what they wait on, depends_on as "
                    "edges, status as colour, over an SVG poster; run it again to refresh (graph.html; T-1654)")
     s = add("code", lazy("sampo.smith", "cmd_code"), tier=("Running elsewhere", 1135),
-            help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
+            help="Sampo Code: run a request through Sampo's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
                  "closes. fm code models lists the profiles (T-1212); on a terminal a request runs in the app, as fm code tui [REQUEST] does (--plain, --json or piped: lines; T-1283, T-1343); fm code bench grades a model or worker on seeded tasks (T-1215); fm code runners lists every coding CLI and model it can use (T-1328); claude's -p, -c and "
                  "--output-format json work too (T-1399)",
@@ -8137,7 +8137,7 @@ def _build_parser(only=None):
                                                                "defaults with yours over them)")
     s.add_argument("--themes", action="store_true", help="fm code tui: every theme side by side on a sample run "
                                                          "(T-1311); choose one with fm settings set theme NAME")
-    s.add_argument("--recheck", metavar="ID", help="fm code: run task ID's checks again, each through Foreman's guard "
+    s.add_argument("--recheck", metavar="ID", help="fm code: run task ID's checks again, each through Sampo's guard "
                                                    "and recorded, after a person worked it (the app's x; T-1341)")
     s.add_argument("--tour", action="store_true", help="fm code tui: a 30-second guided run, a caption naming each "
                                                        "panel; --snapshot FILE.svg writes it as one animated SVG, "
@@ -8216,7 +8216,7 @@ def _build_parser(only=None):
     s.add_argument("--from", dest="from_line", type=int, default=0, help="tail: start at this event line")
     s.add_argument("--follow", action="store_true", help="tail: keep printing new events; list: a new list whenever a session changes")
     s.add_argument("--interval", type=float, default=0.3, help="tail --follow: seconds between checks")
-    s = add("agents", lazy("sampo.agents", "cmd_agents"), tier=("Running elsewhere", 1180), help="Foreman's guard, context, MCP server and rules in Codex, "
+    s = add("agents", lazy("sampo.agents", "cmd_agents"), tier=("Running elsewhere", 1180), help="Sampo's guard, context, MCP server and rules in Codex, "
                                                              "Gemini CLI and opencode: list, install AGENT, uninstall "
                                                              "AGENT")
     s.add_argument("action", choices=["list", "install", "uninstall"])
@@ -8258,7 +8258,7 @@ def _build_parser(only=None):
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
     s.add_argument("--runner", metavar="NAME", help="work each task with fm code --task on this runner (fm code "
                                                    "runners lists them) instead of a claude -p session")
-    s.add_argument("--all-projects", action="store_true", help="work every Foreman project's queue in turn with "
+    s.add_argument("--all-projects", action="store_true", help="work every Sampo project's queue in turn with "
                    "these options (each with its own run lock); a project with nothing queued is skipped")
     s.add_argument("--save", action="store_true", help="keep --models for later runs")
     s = add("sandbox", lazy("sampo.serve", "cmd_sandbox"), tier=("Project and settings", 900), help="fm run's sandbox as a project setting: on, off, allow "
@@ -8266,7 +8266,7 @@ def _build_parser(only=None):
     s.add_argument("action", nargs="?", default="show", choices=["on", "off", "allow", "show"])
     s.add_argument("domains", nargs="*")
     s = add("notify", lazy("sampo.serve", "cmd_notify"), tier=("Project and settings", 810), help="command fm run uses to tell you a task finished or blocked")
-    s.add_argument("command", nargs="*", help="gets the message as $1, e.g. notify-send Foreman \"$1\"")
+    s.add_argument("command", nargs="*", help="gets the message as $1, e.g. notify-send Sampo \"$1\"")
     s.add_argument("--off", action="store_true")
     s.add_argument("--test", action="store_true")
 
@@ -8286,7 +8286,7 @@ def _build_parser(only=None):
     s.add_argument("--follow", action="store_true", help="print a new view line whenever the project changes")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s.add_argument("--demo", action="store_true", help="print a canned view (every key a real one has) as JSON")
-    s = add("projects", lazy("sampo.watch", "cmd_projects"), tier=("Running elsewhere", 1250), help="every Foreman project on this device (the desktop "
+    s = add("projects", lazy("sampo.watch", "cmd_projects"), tier=("Running elsewhere", 1250), help="every Sampo project on this device (the desktop "
                                                                 "app's list): --json, --follow, --next")
     s.add_argument("--follow", action="store_true", help="print a new list whenever a project changes")
     s.add_argument("--next", action="store_true", help="one ranked list of every project's next action")
@@ -8301,10 +8301,10 @@ def _build_parser(only=None):
     s.add_argument("--once", action="store_true")
     s.add_argument("--interval", type=float, default=1.0)
 
-    s = add("install-user", lazy("sampo.setup", "cmd_install"), tier=("Internal (hooks and installer)", 1330), help="wire Foreman into ~/.claude (used by install.sh)")
+    s = add("install-user", lazy("sampo.setup", "cmd_install"), tier=("Internal (hooks and installer)", 1330), help="wire Sampo into ~/.claude (used by install.sh)")
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--record-disabled", action="append", metavar="PLUGIN_ID",
-                   help="record a plugin Foreman disabled (listed by uninstall.sh for re-enabling)")
+                   help="record a plugin Sampo disabled (listed by uninstall.sh for re-enabling)")
     s = add("compact-output", lazy("sampo.setup", "cmd_compact_output"), tier=("Project and settings", 820),
             help="shorten big Bash outputs for the model (head, failure lines, tail; full text in a file)")
     s.add_argument("state", nargs="?", choices=["on", "off", "shadow", "status"],
@@ -8416,7 +8416,7 @@ _TASK_IDS = re.compile(r"^T-\d{1,9}(?:\.\.(?:T-)?\d{1,9})?(?:,T-\d{1,9}(?:\.\.(?
 def _task_shape(parser, argv):
     """T-1231: `fm task <sub>` without an id means the active task; ac and step take their action on either side of
     the id (and no action is add); drop, block and defer take --reason as well as a positional reason. The duel's
-    transcripts showed these costing Foreman turns: a lost id, `ac add T-1`, `drop --reason`."""
+    transcripts showed these costing Sampo turns: a lost id, `ac add T-1`, `drop --reason`."""
     lead = 2 if argv[:1] in (["-p"], ["--project"]) else 0
     if argv[lead:lead + 1] != ["task"] or len(argv) < lead + 2:
         return argv
@@ -8566,7 +8566,7 @@ def main(argv=None):
     args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm elsewhere: the tiers, not a usage error
     if os.environ.get("FOREMAN_WORKER_OF") and not _worker_may(args):
         print(f"fm: refused: this is a worker of an fm code run ({os.environ['FOREMAN_WORKER_OF']}), which only reads "
-              f"Foreman's state; `fm {' '.join(argv[:2])}` would change it, and that is the user's to do (or fm code's "  # not a list: the verb words
+              f"Sampo's state; `fm {' '.join(argv[:2])}` would change it, and that is the user's to do (or fm code's "  # not a list: the verb words
               "own harness's)", file=sys.stderr)
         return 2
     if args.cmd != "complete":  # a TAB press reads the briefs, never syncs or locks (round-7 review)

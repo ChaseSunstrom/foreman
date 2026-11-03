@@ -88,7 +88,7 @@ def cmd_draft(args):
         subprocess.run(cmd, cwd=wt, capture_output=True, text=True,
                        timeout=TIMEOUT)
         c._git(wt, "add", "-A", timeout=60)
-        c._git(wt, "-c", "user.name=Foreman draft", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
+        c._git(wt, "-c", "user.name=Sampo draft", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
                "commit", "-q", "--no-verify", "-m", f"draft: {top.id} (not reviewed)", timeout=60)
     except (OSError, subprocess.SubprocessError) as e:
         _drop(p, top.id)
@@ -165,7 +165,7 @@ def ahead(p):
         return None
     src = max(enumerate(past), key=lambda x: (len(wp & set(x[1][1])), x[0]))[1][0]  # most shared paths, then newest
     body = lambda name: re.sub(r"(?m)^#+\s*", "", src.section(name)).strip() or "(none)"  # noqa: E731
-    plan = c.redact(f"Speculative: Foreman predicted the next request is a {want.get('type')} touching "
+    plan = c.redact(f"Speculative: Sampo predicted the next request is a {want.get('type')} touching "
                     f"{', '.join(sorted(wp)) or 'no known paths'} ({pred['id']}); this is the plan of {src.id} "
                     f"({c.plain(src.title)}), the closest past one. A plan only, no code; never pushed or merged.\n\n"
                     f"Approach:\n{body('Approach (options → choice → why)')}\n\nSteps:\n{body('Steps')}\n")
@@ -177,7 +177,7 @@ def ahead(p):
     with open(os.path.join(wt, "DRAFTED-AHEAD.md"), "w", encoding="utf-8") as f:
         f.write(f"# Drafted ahead\n\n{plan}")
     c._git(wt, "add", "DRAFTED-AHEAD.md", timeout=60)
-    c._git(wt, "-c", "user.name=Foreman draft", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
+    c._git(wt, "-c", "user.name=Sampo draft", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
            "commit", "-q", "--no-verify", "-m", f"draft ahead: {pred['id']} (speculative, not reviewed)", timeout=60)
     doc = {"id": pred["id"], "tid": tid, "wt": wt, "at": c.now(), "keys": _keys(src.title, wp), "plan": plan}
     with c.lock(p.dir):
@@ -191,7 +191,7 @@ def ahead(p):
 def adopt(p, b, source="user"):
     """T-2407: at task creation (fm task new, fm capture); one stat when no draft waits. A request covering ADOPT+ of
     the draft's words and paths takes its plan (returned, for the caller to attach as 'Drafted ahead') and the draft is
-    removed and scored adopted; any other request, and every capture Foreman files itself (source: the request's,
+    removed and scored adopted; any other request, and every capture Sampo files itself (source: the request's,
     not a reused capture's), leaves it."""
     if source != "user" or not os.path.exists(os.path.join(p.dir, AHEAD)):
         return None

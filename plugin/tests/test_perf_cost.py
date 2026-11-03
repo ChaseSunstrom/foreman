@@ -235,7 +235,7 @@ class UnexplainedSpend(HookCase):
         d = json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]
         self.assertEqual((d["sessions"], d["tokens"], round(d["share"])), (["stray"], 400000, 67))
         for cmd in ("cost", "digest"):
-            self.assertIn("Unexplained spend: 67% (≈ 400k tokens) in 1 session(s) with no Foreman activity within 30 min; top: stray", self.fm(cmd, env=env).stdout)
+            self.assertIn("Unexplained spend: 67% (≈ 400k tokens) in 1 session(s) with no Sampo activity within 30 min; top: stray", self.fm(cmd, env=env).stdout)
 
     def test_a_turn_past_the_gap_from_its_sessions_events_counts(self):
         env = self.setup_spend([("known", 85, 10000), ("known", 45, 100000)], events=(90, 2))

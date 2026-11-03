@@ -318,7 +318,7 @@ class Snippet(_Bench):  # T-1264
         self.assertEqual(len(bare), 1)
         self.assertIn(rules.strip(), bare[0]["claude_md"] or "", "Claude with no plugins reads the rules")
         self.assertIsNone(next(s for s in tasks if "--plugin-dir" in s["args"])["claude_md"], "Foreman's side doesn't")
-        self.assertIn("Claude with Foreman's rules as one CLAUDE.md", json.dumps(res))
+        self.assertIn("Claude with Sampo's rules as one CLAUDE.md", json.dumps(res))
         p = self.fm("bench", "duel", "some-plugin", "--vs", "snippet", "--ids", self.calc, env=self.env, check=False)
         self.assertNotEqual(p.returncode, 0)
 
@@ -352,9 +352,9 @@ class Impossible(_Bench):  # T-1377
         res = json.loads(self.fm("bench", "duel", "--vs", "none", "--ids", cid, "--json",
                                  env=dict(self.env, STUB_SCORE="1")).stdout)
         self.assertEqual(res["false_done"], {"foreman": 1, "rival": 1, "cases": 1})
-        self.assertIn("false done: Foreman 1/1, Claude with no plugins 1/1", res["gate"]["lines"])
+        self.assertIn("false done: Sampo 1/1, Claude with no plugins 1/1", res["gate"]["lines"])
         text = self.fm("bench", "duel", "--vs", "none", "--ids", cid, env=dict(self.env, STUB_SCORE="5")).stdout
-        self.assertIn("false done: Foreman 0/1, Claude with no plugins 0/1", text)
+        self.assertIn("false done: Sampo 0/1, Claude with no plugins 0/1", text)
 
 
 class Ablation(_Bench):  # T-1375, T-1376
@@ -411,7 +411,7 @@ class Repro(_Bench):  # T-1261
         before = len(tasks())
         out = self.fm("bench", "repro", res["without"], self.calc, env=self.env).stdout
         self.assertIn(f"fm bench repro {res['without']} {self.calc}", out)
-        self.assertRegex(out, r"Foreman: then [✓✗].*, now [✓✗]")
+        self.assertRegex(out, r"Sampo: then [✓✗].*, now [✓✗]")
         self.assertRegex(out, r"Claude Code: then [✓✗].*, now [✓✗]")
         self.assertEqual(len(tasks()) - before, 2, "one session a side")
         for bad in ((res["with"], self.calc), (res["without"], "nope"), ("duel-none-foreman-missing", self.calc)):

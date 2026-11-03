@@ -1,4 +1,4 @@
-"""Foreman's own friction since the last self-improvement pass (T-0125): the digest one read-only subagent turns into
+"""Sampo's own friction since the last self-improvement pass (T-0125): the digest one read-only subagent turns into
 fixes for the self-inbox, and the trigger fm next uses. A pass is recursive: the next digest reports what became of
 the self items, so a fix that didn't remove its friction shows up again. Reads the global events and every project's
 ledger; writes only this project's meta (rsi_at, rsi_every), under its lock."""
@@ -336,7 +336,7 @@ def digest(p, recheck=True):
 
 
 def render(d):
-    lines = [f"Foreman friction since {d['since']}:"]
+    lines = [f"Sampo friction since {d['since']}:"]
     for title, items in d["sections"].items():
         lines.append(f"\n{title}:")
         lines += [f"  - {x}" for x in items]
@@ -345,11 +345,11 @@ def render(d):
     return "\n".join(lines)
 
 
-BRIEF = """# Foreman self-improvement pass
+BRIEF = """# Sampo self-improvement pass
 
-You review Foreman (a Claude Code plugin: `~/.claude/foreman`, CLI `fm`, library `plugin/lib/sampo/*.py`, hooks
+You review Sampo (a Claude Code plugin: `~/.claude/foreman`, CLI `fm`, library `plugin/lib/sampo/*.py`, hooks
 `plugin/hooks/`, UI mod `mods/foreman-ui/`) from its own friction, read-only. The digest below is what went wrong or
-slow since the last pass, from Foreman's ledgers and events.
+slow since the last pass, from Sampo's ledgers and events.
 
 {digest}
 

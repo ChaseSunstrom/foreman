@@ -908,7 +908,7 @@ class Motion(unittest.TestCase):
         app, cfg = self.app([])
         a, b = self.frame(app, cfg, 100.0), self.frame(app, cfg, 100.9)
         text = a.text()
-        for words in ("Foreman Code", "new request", "past runs"):
+        for words in ("Smith Code", "new request", "past runs"):
             self.assertIn(words, text)
         self.assertNotEqual([r for r in a.cells], [r for r in b.cells], "its mark breathes")
 
@@ -2329,7 +2329,7 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
         T, app = self.app()
         app.feed({"event": "error", "text": "fm code: model: boom", "task": "T-0001", "next": "fm task show T-0001"})
         text = self.text(T, app)
-        for want in ("Stopped", "what happened", "boom", "Foreman did", "T-0001 stays as it was", "fm task show T-0001"):
+        for want in ("Stopped", "what happened", "boom", "Smith did", "T-0001 stays as it was", "fm task show T-0001"):
             self.assertIn(want, text)
         app.fm_output = lambda argv: f"ran {' '.join(argv)}\nline two"
         app.key("\n")
@@ -2479,7 +2479,7 @@ class Noticed(unittest.TestCase):  # T-1339
         app.show_home()
         self.assertEqual(app.items[0]["kind"], "noticed")
         text = T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text()
-        self.assertIn("Foreman noticed", text)
+        self.assertIn("Smith noticed", text)
         self.assertIn("stalled: launch", text)
         app.key("\n")
         self.assertEqual((app.mode, app.project["project"]), ("project", "foreman-x"))
@@ -2694,7 +2694,7 @@ class Command(CodeCase):
             self.assertIn("add export", seen, seen[-1500:])
             self.assertIn(slug.decode(), seen, "the project's own view")
             os.write(fd, b"\x1b")
-            self.assertIn("Foreman projects", until("Foreman projects"))
+            self.assertIn("Smith projects", until("Smith projects"))
             os.write(fd, b"q")
             while time.time() < deadline:
                 done, status = os.waitpid(pid, os.WNOHANG)

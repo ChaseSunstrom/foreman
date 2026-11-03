@@ -7,7 +7,7 @@ import subprocess
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BASELINE = 475  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768); the goal is 0
+BASELINE = 402  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry); the goal is 0
 SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", "plugin/skills/**/*.md",
             "plugin/commands/*.md", "plugin/agents/*.md", ".claude-plugin/marketplace.json",
             "plugin/.claude-plugin/plugin.json", "plugin/output-styles/*", "mods/foreman-ui/**", "plugin/rules/*.md")
@@ -16,6 +16,27 @@ SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", 
 KEPT = re.compile(r"foreman(?:-ui)?@foreman|/foreman:|foreman:fm-|FOREMAN_|Foreman-Task|\.claude/foreman|"
                   r"formerly Foreman|was called Foreman|renamed from Foreman|"
                   r"chasesunstrom(?:\.github\.io)?/foreman", re.I)  # the repo's address moves only when it is renamed
+
+
+LIB_KEPT = re.compile(r"Foreman(?=\)-Task|-Task|\(\?)|user\.name=Foreman|Foreman@|;Foreman-|foreman:Foreman|\(\?:Foreman\||Foreman guard\)|Foreman \{v\}|\(\?:Sampo\|Foreman\)|\(Sampo\|Foreman\)|Foreman\) snapshot")
+# kept: trailer, git identity, the output style id, and the old name as a regex alternative (older transcripts say it)
+
+
+def library_strings():
+    """T-2779: the (path, text) pairs for string literals in the sampo library and the compact hook that say Foreman
+    outside the kept forms (comments are not user-visible; docstrings are counted)."""
+    import glob
+    import io
+    import tokenize
+    mid = getattr(tokenize, "FSTRING_MIDDLE", -1)
+    rows = []
+    for f in sorted(glob.glob(os.path.join(ROOT, "plugin/lib/sampo/*.py"))) + [os.path.join(ROOT, "plugin/hooks/compact")]:
+        with open(f, encoding="utf-8") as fh:
+            src = fh.read()
+        for t in tokenize.generate_tokens(io.StringIO(src).readline):
+            if t.type in (tokenize.STRING, mid) and re.search(r"(?<![\w/.@-])Foreman\b", LIB_KEPT.sub("", t.string)):
+                rows.append((os.path.relpath(f, ROOT), t.string.strip()[:100]))
+    return rows
 
 
 def leftover():
@@ -33,7 +54,7 @@ def leftover():
 
 class RenameScan(unittest.TestCase):
     def test_user_visible_foreman_only_goes_down(self):
-        rows = leftover()
+        rows = leftover() + library_strings()
         self.assertLessEqual(len(rows), BASELINE, f"{len(rows)} lines still say Foreman (baseline {BASELINE}); "
                                                   f"first: {rows[:3]}")
 

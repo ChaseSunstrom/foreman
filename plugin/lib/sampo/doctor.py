@@ -1,4 +1,4 @@
-"""fm doctor: Foreman self-check (BUILD_PROMPT §12). Each check returns a Result; FAIL makes the command exit 1."""
+"""fm doctor: Sampo self-check (BUILD_PROMPT §12). Each check returns a Result; FAIL makes the command exit 1."""
 import functools
 import glob
 import hashlib
@@ -160,7 +160,7 @@ def hook_p95(runs=60, spread=False):
 
 
 def check_hook_slo():
-    """T-0486: the guard's real latency, from the hooks' own timings, against bench_hooks' budget; over it, the Foreman
+    """T-0486: the guard's real latency, from the hooks' own timings, against bench_hooks' budget; over it, the Sampo
     revision where it rose (the first whose own p95 is over, after one under). In-process time: import time isn't in it."""
     try:
         if os.path.join(PLUGIN, "tests") not in sys.path:
@@ -263,7 +263,7 @@ def _num(x):
 
 
 def _metrics(rec):
-    """A footprint record's metrics, or {} when missing or measured on a tree with no Foreman rules (no baseline)."""
+    """A footprint record's metrics, or {} when missing or measured on a tree with no Sampo rules (no baseline)."""
     ok = isinstance(rec, dict) and isinstance(rec.get("metrics"), dict) and rec["metrics"].get("rules chars")
     return rec["metrics"] if ok else {}
 
@@ -372,7 +372,7 @@ def _frontmatter(path):
 
 
 def _description_problems(skills):
-    """T-1698: the model sees only each model-invocable skill's name and description; flag Foreman jargon in place of
+    """T-1698: the model sees only each model-invocable skill's name and description; flag Sampo jargon in place of
     task words, and two descriptions sharing over 60% of the shorter one's words."""
     words, bad = {}, []
     for name in sorted(os.listdir(skills)) if os.path.isdir(skills) else []:
@@ -381,7 +381,7 @@ def _description_problems(skills):
         if not desc or meta.get("disable-model-invocation") == "true":
             continue
         if jargon := sorted(set(re.findall(r"\b(?:STATE|STATUS|RESUME|briefs?)\b", desc))):
-            bad.append(f"skill {name}: Foreman jargon in the description ({', '.join(jargon)}); say what the person is doing")
+            bad.append(f"skill {name}: Sampo jargon in the description ({', '.join(jargon)}); say what the person is doing")
         words[name] = set(re.findall(r"[a-z]{3,}", desc.lower()))
     names = sorted(words)
     for i, a in enumerate(names):
@@ -515,7 +515,7 @@ def check_briefs(p):
     if errors:
         return Result("briefs", "FAIL", f"{p.slug}: unparseable " + ", ".join(os.path.basename(e[0]) for e in errors))
     if (c.read_meta(p).get("schema") or 0) > c.STATE_SCHEMA:
-        return Result("briefs", "FAIL", f"{p.slug}: state written by a newer Foreman (schema "
+        return Result("briefs", "FAIL", f"{p.slug}: state written by a newer Sampo (schema "
                                         f"{c.read_meta(p)['schema']} > {c.STATE_SCHEMA}); update this install")
     current = _read(os.path.join(p.dir, "STATE.md"))
     expected = c.render_state(c.state_dict(p, briefs))
@@ -720,7 +720,7 @@ def check_worlds(p, days=30):
 
 
 def check_night_timers(p):
-    """T-2357: night timers staged and waiting for the user's yes, and installed ones that run another Foreman home."""
+    """T-2357: night timers staged and waiting for the user's yes, and installed ones that run another Sampo home."""
     import glob
     from sampo import serve
     notes = ["night timers staged, waiting for your yes (fm todo)"] if p and os.path.isfile(
@@ -734,7 +734,7 @@ def check_night_timers(p):
         except OSError:
             continue
         if m and os.path.realpath(m.group(1)) != home:
-            notes.append(f"{c.plain(os.path.basename(path))} runs another Foreman home ({c.plain(m.group(1))[:120]}): "
+            notes.append(f"{c.plain(os.path.basename(path))} runs another Sampo home ({c.plain(m.group(1))[:120]}): "
                          "fm night --uninstall from there, or remove the unit")
     from sampo import night  # T-2542: an installed timer that stopped firing or fails, from systemd's own record
     notes += [f"{u} {why}" + ("" if u == "systemd" else f" → journalctl --user -u {u}.service")
@@ -773,7 +773,7 @@ def check_release_age(root):
 
 def check_anergy():
     """T-2563: permission prompts approved by reflex (5+, median within 2 s, every one read-only): the allow rule that
-    would retire each. Advisory: Foreman never applies a rule; the user does."""
+    would retire each. Advisory: Sampo never applies a rule; the user does."""
     from sampo import anergy
     r = anergy.report()
     if not r["prompts"]:  # T-2588: an empty store says why, so the row isn't read as a verdict
@@ -863,12 +863,12 @@ def check_git_hygiene(repo):
 def check_statusline(settings, manifest, wrapper):
     if manifest is None:
         return Result("statusline", *(("PASS", NO_CC) if not shutil.which("claude") else
-                                      ("WARN", "Foreman not wired into ~/.claude (fm install-user)")))
+                                      ("WARN", "Sampo not wired into ~/.claude (fm install-user)")))
     cmd = ((settings or {}).get("statusLine") or {}).get("command")
     if cmd == wrapper and "statusLine_original" in manifest:
         orig = (manifest.get("statusLine_original") or {}).get("command")
-        return Result("statusline", "PASS", f"Foreman wrapper in place; original preserved ({orig or 'none'})")
-    return Result("statusline", "FAIL", f"statusLine is {cmd!r}, not the Foreman wrapper recorded at install")
+        return Result("statusline", "PASS", f"Sampo wrapper in place; original preserved ({orig or 'none'})")
+    return Result("statusline", "FAIL", f"statusLine is {cmd!r}, not the Sampo wrapper recorded at install")
 
 
 def check_deny_rules(settings, manifest):
@@ -877,7 +877,7 @@ def check_deny_rules(settings, manifest):
     deny = set(((settings or {}).get("permissions") or {}).get("deny") or [])
     missing = [r for r in manifest.get("deny_added", []) if r not in deny]
     return Result("deny rules", "FAIL" if missing else "PASS",
-                  f"missing: {', '.join(missing)}" if missing else f"{len(manifest.get('deny_added', []))} Foreman deny rules present")
+                  f"missing: {', '.join(missing)}" if missing else f"{len(manifest.get('deny_added', []))} Sampo deny rules present")
 
 
 def check_rules_symlink(plugin=PLUGIN):
@@ -915,7 +915,7 @@ def _profile_fix(shell):
 
 
 def check_fm_link(link=None, target=None, path=None, shell=None):
-    """T-1324: fm in any shell (T-0853): ~/.local/bin/fm points at this Foreman's plugin/bin/fm, and a new login shell
+    """T-1324: fm in any shell (T-0853): ~/.local/bin/fm points at this Sampo's plugin/bin/fm, and a new login shell
     finds it (T-1333: FAIL with the profile line when it doesn't; shell False, or no shell to ask: this process's PATH).
     An install from before T-0853 never made the link, so fm worked only inside Claude Code; session start makes it now."""
     link = link or os.path.join(os.path.expanduser("~"), ".local", "bin", "fm")
@@ -925,7 +925,7 @@ def check_fm_link(link=None, target=None, path=None, shell=None):
         return Result("fm link", "WARN", f"{link} is missing, so a shell can't find fm: rerun install.sh or "
                                          "fm install-user (a Claude Code session start makes it too)")
     if os.path.realpath(link) != os.path.realpath(target):
-        return Result("fm link", "WARN", f"{link} → {os.path.realpath(link)}, not this Foreman's {target}: move it "
+        return Result("fm link", "WARN", f"{link} → {os.path.realpath(link)}, not this Sampo's {target}: move it "
                                          "aside and run fm install-user")
     found = None if shell is False else _login_fm(shell)
     if found is not None:
@@ -945,13 +945,13 @@ def _version(root):
 
 
 def check_dual_install(home=None, known=None, installed=None):
-    """T-0923: Foreman installed from a marketplace that isn't this home (GitHub, another folder) beside install.sh's
+    """T-0923: Sampo installed from a marketplace that isn't this home (GitHub, another folder) beside install.sh's
     copy here: sessions run whichever they started with, and the two drift apart. Different versions warn."""
     home = home or c.foreman_home()
     entry = next(iter(((_load_json(installed or os.path.expanduser("~/.claude/plugins/installed_plugins.json")) or {})
                        .get("plugins") or {}).get("foreman@foreman") or []), None)
     if not entry or not os.path.isdir(os.path.join(home, "plugin")):
-        return Result("installs", "PASS", "one Foreman install")
+        return Result("installs", "PASS", "one Sampo install")
     src = ((_load_json(known or os.path.expanduser("~/.claude/plugins/known_marketplaces.json")) or {})
            .get("foreman") or {}).get("source") or {}
     if src.get("source") == "directory" and os.path.realpath(src.get("path") or "") == os.path.realpath(home):
@@ -960,8 +960,8 @@ def check_dual_install(home=None, known=None, installed=None):
     here = _version(os.path.join(home, "plugin"))
     where = src.get("repo") or src.get("url") or src.get("path") or "another marketplace"
     if there == here:
-        return Result("installs", "PASS", f"two Foreman installs at {here}: {where} and {home}")
-    return Result("installs", "WARN", f"two Foreman installs: {there} from {where} and {here} in {home}; a session runs "
+        return Result("installs", "PASS", f"two Sampo installs at {here}: {where} and {home}")
+    return Result("installs", "WARN", f"two Sampo installs: {there} from {where} and {here} in {home}; a session runs "
                   "whichever it started with. Keep one: claude plugin update foreman@foreman (or uninstall it and keep "
                   "this home's)")
 
@@ -977,7 +977,7 @@ def check_product(p):
 
 
 def check_running_code(ledger, installed, plugin=PLUGIN):
-    """T-0391: the Foreman code this project's last session ran (session_start records its plugin root) against the
+    """T-0391: the Sampo code this project's last session ran (session_start records its plugin root) against the
     one installed (or this copy, without an install record). A session keeps the folder it started with, so a fix
     copied anywhere else never reaches it (JARVIS ran 1.2.3 from its Folder marketplace while 1.2.4 sat in caches)."""
     root = None
@@ -998,16 +998,16 @@ def check_running_code(ledger, installed, plugin=PLUGIN):
     want_root = max(filter(None, [(entry or {}).get("installPath"), plugin]), key=lambda r: num(_version(r)))
     want = _version(want_root)
     if not root:
-        return Result("running code", "PASS", f"newest Foreman here {want} ({want_root}); no session recorded its root yet")
+        return Result("running code", "PASS", f"newest Sampo here {want} ({want_root}); no session recorded its root yet")
     ran = _version(root)
     if num(ran) < num(want):
-        return Result("running code", "WARN", f"the last session ran Foreman {ran} from {root}, but {want} is at "
+        return Result("running code", "WARN", f"the last session ran Sampo {ran} from {root}, but {want} is at "
                                               f"{want_root}: restart that session, or put the fix in {root}")
-    return Result("running code", "PASS", f"sessions run Foreman {ran} from {root}")
+    return Result("running code", "PASS", f"sessions run Sampo {ran} from {root}")
 
 
 def check_version_skew(projects, changes=None):
-    """T-0463: projects whose last session ran a Foreman older than released fixes, with the task ids they lack."""
+    """T-0463: projects whose last session ran a Sampo older than released fixes, with the task ids they lack."""
     from sampo import eco
     changes = eco.changelog() if changes is None else changes
     behind = []
@@ -1017,23 +1017,23 @@ def check_version_skew(projects, changes=None):
         if lacks:
             behind.append(f"{p.slug} ran {ran}, lacks {len(lacks)} ({', '.join(lacks[:4])}{' …' if len(lacks) > 4 else ''})")
     return Result("version skew", "WARN" if behind else "PASS",
-                  c.joinmore(behind, 6, "; ") + " — restart their sessions on the new Foreman" if behind else
-                  "every project's last session ran the newest released Foreman (or none recorded one yet)")
+                  c.joinmore(behind, 6, "; ") + " — restart their sessions on the new Sampo" if behind else
+                  "every project's last session ran the newest released Sampo (or none recorded one yet)")
 
 
 def check_python(v=sys.version_info[:3], refresh=None, child=False):
     """T-0319: fm and every hook start on the python3 on PATH. Before 3.12.7 (and in 3.13.0) argparse drops
-    `fm task evidence ID --ac N CMD RESULT`; install.sh installs a newer one, and T-0368 re-runs Foreman under a
+    `fm task evidence ID --ac N CMD RESULT`; install.sh installs a newer one, and T-0368 re-runs Sampo under a
     supported one it finds (`child`: this run already is one; `refresh`: search again and save the answer)."""
     have = ".".join(map(str, v))
     if py.ok(v):
         return Result("python", "WARN" if child else "PASS",
-                      f"python3 on PATH is below 3.12.7; Foreman runs under {sys.executable} ({have})" if child
+                      f"python3 on PATH is below 3.12.7; Sampo runs under {sys.executable} ({have})" if child
                       else f"python3 {have}")
     exe = refresh() if refresh else None
     if exe:
-        return Result("python", "WARN", f"python3 is {have}, below 3.12.7; Foreman now runs under {exe}")
-    return Result("python", "FAIL", f"python3 is {have}; Foreman needs 3.12.7+ (rerun install.sh to install one)")
+        return Result("python", "WARN", f"python3 is {have}, below 3.12.7; Sampo now runs under {exe}")
+    return Result("python", "FAIL", f"python3 is {have}; Sampo needs 3.12.7+ (rerun install.sh to install one)")
 
 
 # T-0785: (feature, minimum Claude Code, globs under plugin/, regex showing it is used); a feature no file uses isn't checked
@@ -1052,7 +1052,7 @@ CC_FEATURES = [
 
 
 def check_cc_features(version=None, plugin=PLUGIN):
-    """T-0785: WARN naming each Foreman feature in use that the installed Claude Code is too old for (it would
+    """T-0785: WARN naming each Sampo feature in use that the installed Claude Code is too old for (it would
     silently do nothing). `version`: stubbed (tuple); default fmhooks._cc_version(); () = unknown, nothing to compare."""
     if version is None:
         from sampo import hooks as shooks
@@ -1071,7 +1071,7 @@ def check_cc_features(version=None, plugin=PLUGIN):
     have = ".".join(map(str, version))
     return Result("claude code features", "WARN" if old else "PASS",
                   f"Claude Code {have} is too old for {', '.join(old)}; upgrade it (claude update)" if old
-                  else f"Claude Code {have} supports every Claude Code feature Foreman uses")
+                  else f"Claude Code {have} supports every Claude Code feature Sampo uses")
 
 
 def check_scripts(home, full=False):
@@ -1134,7 +1134,7 @@ def check_hook_writers(settings, home):
                     if "foreman/state" in text or state in text or "foreman/plugin/hooks/hook" in text:
                         bad.append(f"{src} {event}: {text[:80]}")
     return Result("hook state writers", "FAIL" if bad else "PASS",
-                  "; ".join(bad) or "only Foreman's own hooks write Foreman state; no duplicate registrations")
+                  "; ".join(bad) or "only Sampo's own hooks write Sampo state; no duplicate registrations")
 
 
 def recent_hook_errors(days=1):
@@ -1150,7 +1150,7 @@ def recent_hook_errors(days=1):
 
 
 def feed_self_failures(p, results, sid):
-    """T-2349: Foreman's own failures enter the signal-to-fix loop: each FAIL of this run (a hook over its latency budget
+    """T-2349: Sampo's own failures enter the signal-to-fix loop: each FAIL of this run (a hook over its latency budget
     is one), a hook SLO miss, and each hook traceback of the last week still live in hooks.log (one run per hour: a
     storm of one bug in one session is one run). fmrecall.note_own files one FIX when a signature recurs across 3+
     runs; a feed that raises is told on stderr and the others still go. The first doctor run also replays old failures
@@ -1256,7 +1256,7 @@ _FRAME = re.compile(r'^\s*File "([^"]+)", line (\d+), in ')
 
 
 def _stale(err):
-    """T-1139: the error's last frame in Foreman's code shows a line the file no longer has there (the code changed
+    """T-1139: the error's last frame in Sampo's code shows a line the file no longer has there (the code changed
     since: a half-written edit, a bug already fixed)."""
     frames = [(m.group(1), int(m.group(2)), i) for i, ln in enumerate(err) if (m := _FRAME.match(ln))
               and os.path.realpath(m.group(1)).startswith(os.path.realpath(PLUGIN) + os.sep)]
@@ -1327,7 +1327,7 @@ _INVISIBLE = re.compile(  # emoji glue (a ZWJ between non-ASCII characters) is f
 
 
 def instruction_files(plugin=PLUGIN):
-    """The files Claude reads as instructions: the user's CLAUDE.md, CLAUDE.local.md and rules; Foreman's rules,
+    """The files Claude reads as instructions: the user's CLAUDE.md, CLAUDE.local.md and rules; Sampo's rules,
     skills (with their references and cards), agents, commands and output styles."""
     claude = os.path.join(os.path.expanduser("~"), ".claude")
     mine = [os.path.join(claude, "CLAUDE.md"), os.path.join(claude, "CLAUDE.local.md")] + glob.glob(
@@ -1371,8 +1371,8 @@ def rule_files(root):
 
 
 def check_rule_conflicts(paths, plugin=PLUGIN):
-    """T-1267: WARN with file:line, Foreman's rule and a fix for each line that contradicts Foreman's rules; Foreman's
-    own files, its block in CLAUDE.md, code fences and lines about Foreman itself are left alone."""
+    """T-1267: WARN with file:line, Sampo's rule and a fix for each line that contradicts Sampo's rules; Sampo's
+    own files, its block in CLAUDE.md, code fences and lines about Sampo itself are left alone."""
     hits, home, mine = [], os.path.expanduser("~"), os.path.realpath(plugin) + os.sep
     for path in dict.fromkeys(paths):
         if os.path.realpath(path).startswith(mine):
@@ -1386,11 +1386,11 @@ def check_rule_conflicts(paths, plugin=PLUGIN):
             elif not fence and not re.search(r"\b(?:fm|foreman)\b", line, re.I):
                 rule = next(((r, fix) for pat, r, fix in CONFLICTS if re.search(pat, line, re.I)), None)
                 if rule:
-                    hits.append(f"{path.replace(home, '~', 1)}:{n} \"{c.fit(line.strip(), 70)}\" contradicts Foreman's "
+                    hits.append(f"{path.replace(home, '~', 1)}:{n} \"{c.fit(line.strip(), 70)}\" contradicts Sampo's "
                                 f"rule ({rule[0]}): {rule[1]}")
     return Result("rule conflicts", "WARN" if hits else "PASS",
                   ("; ".join(hits[:6]) + (f"; and {len(hits) - 6} more" if len(hits) > 6 else "")) if hits else
-                  "no line in CLAUDE.md, rules or memory contradicts Foreman's")
+                  "no line in CLAUDE.md, rules or memory contradicts Sampo's")
 
 
 def check_invisible_text(paths):
@@ -1407,7 +1407,7 @@ def check_invisible_text(paths):
 
 
 def check_self_docs(home=None, plugin=PLUGIN):
-    """Foreman's own docs vs its code: fm commands named in docs exist, MASTER.md lists every command, skill and
+    """Sampo's own docs vs its code: fm commands named in docs exist, MASTER.md lists every command, skill and
     agent, and README's install flags match install.sh --help."""
     home = home or os.path.dirname(os.path.abspath(plugin))
     cmds, bad = _fm_commands(), []
@@ -1490,9 +1490,9 @@ def check_state_dir(home, state):
 
 
 def check_pinned_clock():
-    """T-2645: FOREMAN_NOW is for tests; set anywhere else it pins every timestamp Foreman writes and every window."""
+    """T-2645: FOREMAN_NOW is for tests; set anywhere else it pins every timestamp Sampo writes and every window."""
     v = os.environ.get("FOREMAN_NOW")
-    return Result("clock", "WARN", f"FOREMAN_NOW={v} pins every timestamp Foreman writes and every window it reads: "
+    return Result("clock", "WARN", f"FOREMAN_NOW={v} pins every timestamp Sampo writes and every window it reads: "
                   "unset it outside tests") if v else Result("clock", "PASS", "the system clock")
 
 
@@ -1527,7 +1527,7 @@ def _fs_type(path):
 
 
 def check_lock_probe(state):
-    """T-1405: every Foreman lock is an flock under state/; on a filesystem where flock doesn't exclude (NFS, some FUSE)
+    """T-1405: every Sampo lock is an flock under state/; on a filesystem where flock doesn't exclude (NFS, some FUSE)
     they all silently protect nothing. A child holds an flock on a probe file; this process's LOCK_NB must be refused.
     That proves exclusion between processes on this host only, not across hosts sharing the filesystem."""
     try:
@@ -1561,7 +1561,7 @@ def check_lock_probe(state):
             except OSError:
                 return Result("lock probe", "PASS", f"flock excludes between processes on this host in {state} ({fs})")
             return Result("lock probe", "FAIL", f"a second process here took an flock the probe child held on {state} "
-                          f"({fs} filesystem): Foreman's locks may protect nothing there; move state to a local disk "
+                          f"({fs} filesystem): Sampo's locks may protect nothing there; move state to a local disk "
                           "(FOREMAN_STATE)")
     finally:
         child.stdin.close()
@@ -1633,7 +1633,7 @@ def check_disk(path=None, usage=None, projects=None):
         if n:
             lanes.append((n, os.path.basename(p.root.rstrip(os.sep))))
     where = c.joinmore([f"{name} {n}" for n, name in sorted(lanes, reverse=True)], 5)
-    return Result("disk", "WARN", f"{free} on the disk holding Foreman's state: hooks fail when it fills"
+    return Result("disk", "WARN", f"{free} on the disk holding Sampo's state: hooks fail when it fills"
                   + (f"; builder worktrees: {where} (git worktree list; fm lane rm the merged ones)" if where else ""))
 
 
@@ -1689,7 +1689,7 @@ def check_heartbeats(projects, now=None):
 
 
 def check_env(settings, manifest):
-    """The env values fm install-user sets (drive continuation cap, earlier compaction), unless Foreman isn't wired."""
+    """The env values fm install-user sets (drive continuation cap, earlier compaction), unless Sampo isn't wired."""
     if manifest is None:
         return Result("env", "PASS", "not wired (fm install-user hasn't run)")
     env = settings.get("env") or {}
@@ -1732,14 +1732,14 @@ def _empty_objects(root):
 
 
 def integrity_roots(projects=None):
-    """Foreman's own repo and every project's root."""
+    """Sampo's own repo and every project's root."""
     projects = [p for p, _ in c.all_projects()] if projects is None else projects
     return list(dict.fromkeys([c.foreman_home()] + [p.root for p in projects]))
 
 
 def check_integrity(roots, projects, current=None):
     """T-0268: crash damage — empty git objects, zero-byte briefs, state JSON that no longer parses. T-0293: damage in
-    Foreman's own repo or the current project fails; another project's only warns (its own doctor run fails it), so
+    Sampo's own repo or the current project fails; another project's only warns (its own doctor run fails it), so
     one broken repo doesn't fail every project's gate."""
     bad, scanned = [], 0
     # current: the project doctor runs in (a lane counts as its main checkout); None: every finding fails (direct
@@ -1785,7 +1785,7 @@ def check_routing(path=None):
 
 
 def repair(roots):
-    """Move every zero-byte loose object into Foreman's quarantine (never deleted): [(from, to or the error)]."""
+    """Move every zero-byte loose object into Sampo's quarantine (never deleted): [(from, to or the error)]."""
     stamp, moved = time.strftime("%Y%m%d-%H%M%S"), []
     for root in roots:
         for path in _empty_objects(root) or []:
@@ -2182,7 +2182,7 @@ def check_enforce(p, days=7):
     (T-0947; their first events carry no kind), lane merges refused red or waived (T-0948), cards injected at edit
     time. Information, never a failure."""
     if not p:
-        return Result("enforcement", "PASS", "none: not in a Foreman project")
+        return Result("enforcement", "PASS", "none: not in a Sampo project")
     counts = dict.fromkeys(ENFORCE_KINDS, 0)
     since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - days * 86400))
     try:
@@ -2248,7 +2248,7 @@ def check_idle_stops(p, days=7):
     """T-0957: stops with open work that nothing kept going (the drive was off, paused or done nudging). Information:
     many of them mean the drive gave up early or the user keeps stopping it."""
     if not p:
-        return Result("idle stops", "PASS", "none: not in a Foreman project")
+        return Result("idle stops", "PASS", "none: not in a Sampo project")
     since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - days * 86400))
     try:  # bytes first, as check_enforce does: prompt events make the ledger large
         with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
@@ -2390,7 +2390,7 @@ def _broken_lanes(projects, here=None):
 
 
 def fsck(projects=None, state=None, here=None):
-    """T-1667: what a crash or a hand edit left broken in Foreman's own state, as {kind, path, detail, project[, task]}:
+    """T-1667: what a crash or a hand edit left broken in Sampo's own state, as {kind, path, detail, project[, task]}:
     open tasks' lanes whose folder or branch is gone, *.pid locks whose process is dead, journals (*.jsonl) whose last
     line is torn, state *.json that doesn't parse (T-1669), and files it can't read. project is None for state no
     project owns. Reads only."""
@@ -2427,7 +2427,7 @@ def _corrupt_json(path):
         try:
             json.load(f)
         except ValueError as e:
-            return f"isn't valid JSON ({e}); Foreman can't read it: fix it by hand or restore it"
+            return f"isn't valid JSON ({e}); Sampo can't read it: fix it by hand or restore it"
     return ""
 
 
@@ -2799,7 +2799,7 @@ def cmd_doctor(args):
         return report_wrong(args)
     if args.restore_state:
         try:
-            return print(f"Foreman state is in {c.restore_default_state()}")
+            return print(f"Sampo state is in {c.restore_default_state()}")
         except OSError as e:
             print(f"fm doctor: {e}", file=sys.stderr)
             sys.exit(1)
@@ -2865,7 +2865,7 @@ def views_match(p):
 
 
 def cmd_wiring(args):
-    """T-0469: one screen of what is wired: Foreman's version and where it runs from, its hooks, this project's flags,
+    """T-0469: one screen of what is wired: Sampo's version and where it runs from, its hooks, this project's flags,
     the standing yeses, trust, the pause, the budget and the enabled plugins. Read-only."""
     from sampo import budget as sbudget
     from sampo import cli
@@ -2889,7 +2889,7 @@ def cmd_wiring(args):
             "sensitive": bool(meta.get("sensitive")), "sync": bool(meta.get("sync")),
             "standing": sorted(meta.get("standing") or {}), "trust": bool(c.trusted()), "paused": c.panicked(),
             "budget": caps, "budget_halved": high, "plugins": plugins}
-    lines = [f"Foreman version {version} from {PLUGIN}",
+    lines = [f"Sampo version {version} from {PLUGIN}",
              "hooks: " + " · ".join(e + (f" ({', '.join(m for m in ms if m)})" if any(ms) else "")
                                     for e, ms in data["hooks"].items()),
              f"{p.slug}: autonomy {data['autonomy']} · drive {'on' if data['drive'] else 'off'} · sensitive "

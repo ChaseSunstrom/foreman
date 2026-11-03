@@ -3,7 +3,7 @@
 A Dockerfile, compose file, Terraform folder, Helm chart, Kubernetes manifest, CI workflow, shell script or systemd unit
 is checked by the tool its ecosystem ships (hadolint, docker compose config, terraform validate, helm lint, kubeconform,
 actionlint, shellcheck, systemd-analyze verify). A tool that fails fails the file; one that isn't on PATH leaves the file
-unproven, names the tool and files one capability-miss task (fm plugins find); Foreman installs nothing, downloads nothing
+unproven, names the tool and files one capability-miss task (fm plugins find); Sampo installs nothing, downloads nothing
 and runs no verb that touches an account (the CLASSES table holds validate-only verbs; fmcore._LIVE and the guard stay the
 boundary for what a session may run). Exit 0 none failed and one passed, 1 one failed, 2 nothing checked."""
 import fnmatch
@@ -207,8 +207,8 @@ def touched(p, b):
 def infra(root, allowed=False, p=None, only=None, budget=None):
     """{"root", "files": [{"file", "class", "tool", "verdict": pass|fail|unproven, "why"}], "verdict": fail|pass|unchecked}.
     allowed: the tree is trusted (terraform validate loads the folder's own provider plugins, the tree's code, so it
-    runs only then). p: a Foreman project that gets one capability-miss task per missing tool. Nothing runs outside a
-    throwaway copy of root; the environment is Foreman's minimal one (no credentials), HOME the copy's folder; the
+    runs only then). p: a Sampo project that gets one capability-miss task per missing tool. Nothing runs outside a
+    throwaway copy of root; the environment is Sampo's minimal one (no credentials), HOME the copy's folder; the
     tool runs under `unshare -r -n` (no network) when that works unprivileged here, plain when it doesn't."""
     from sampo import find
     root = os.path.realpath(root)
@@ -242,7 +242,7 @@ def infra(root, allowed=False, p=None, only=None, budget=None):
         exe = _which(k["argv"][0], env, root)
         if not exe:
             miss(k["argv"][0])
-            return "unproven", f"{k['argv'][0]} is not on PATH (Foreman installs nothing: fm plugins find {k['argv'][0]})"
+            return "unproven", f"{k['argv'][0]} is not on PATH (Sampo installs nothing: fm plugins find {k['argv'][0]})"
         schemas = os.environ.get(SCHEMAS_ENV, "")
         if name == "terraform":
             if not os.path.isdir(os.path.join(root, d, ".terraform")) or os.path.islink(os.path.join(root, d, ".terraform")):

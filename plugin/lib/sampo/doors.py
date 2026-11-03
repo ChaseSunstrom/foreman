@@ -1,4 +1,4 @@
-"""T-2342: Foreman stops only at an irreversible, ambiguous step. Each plan step and verify command is sorted by door
+"""T-2342: Sampo stops only at an irreversible, ambiguous step. Each plan step and verify command is sorted by door
 when the task is focused: a command the guard puts in a category (or can't read) is the guard's, with its run-time
 stop and grant path untouched; a step naming a path git doesn't track is a local one-way step; the rest are two-way.
 A local one-way step gets a verified snapshot and an Undo line, or runs only when the request asked for it and the
@@ -50,7 +50,7 @@ def _ctx(p, b):
 
 def _cats(cmds, ctx):
     """The guard's own category for each command, whichever it puts one on; a command it can't read counts too
-    (fail closed: a stop the guard would make at run time is never Foreman's to decide)."""
+    (fail closed: a stop the guard would make at run time is never Sampo's to decide)."""
     import fmguard
     out = []
     for cmd in cmds:

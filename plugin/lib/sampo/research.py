@@ -92,7 +92,7 @@ def fetch(url):
     """(page text, None) or (None, why)."""
     if not public_https(url):
         return None, "not a public https URL"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Foreman research check)",
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Sampo research check)",
                                                "Accept": "text/html,text/plain,*/*"})
     deadline, raw = time.monotonic() + FETCH_S, b""
     try:

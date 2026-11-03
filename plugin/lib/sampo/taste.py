@@ -1,7 +1,7 @@
 """T-1537: the taste ledger for looks (plugin/skills/library/cards/looks). It learns only from what the user says or
 does: a look kept, reverted or met with 'not like that', twelve A-or-B calibration answers, and the local files the
 user names (read-only, capped, never the network). It ranks the looks by it; the directions skill drafts from the top.
-Stored in Foreman's state (state/taste/looks.json), one file for every project: taste is the user's. Stdlib only."""
+Stored in Sampo's state (state/taste/looks.json), one file for every project: taste is the user's. Stdlib only."""
 import datetime
 import errno
 import json
@@ -446,12 +446,12 @@ def learn(paths):
                 skipped.append({"file": name, "why": f"couldn't read the image: {_why(e)[:120] or type(e).__name__}"})
                 continue
             if colours is None:
-                skipped.append({"file": name, "why": "a photo needs Pillow to read (not found; Foreman never "
+                skipped.append({"file": name, "why": "a photo needs Pillow to read (not found; Sampo never "
                                                      "installs it: pip install pillow, then run this again)"})
                 continue
             text = ""
         elif b"\0" in data[:4096]:  # another binary (a HEIC photo, a PDF's streams): its bytes would read as noise
-            skipped.append({"file": name, "why": "not text, and not a photo Foreman reads (PNG, JPEG, GIF, WebP)"})
+            skipped.append({"file": name, "why": "not text, and not a photo Sampo reads (PNG, JPEG, GIF, WebP)"})
             continue
         else:
             text = data.decode("utf-8", "replace")
@@ -546,7 +546,7 @@ def _direction(text, known):
 
 
 def history(path="DESIGN.md", now=None):
-    """T-1672: kept and reverted read from PATH's git history. DESIGN.md is Foreman's own record of the look the user
+    """T-1672: kept and reverted read from PATH's git history. DESIGN.md is Sampo's own record of the look the user
     picked (the directions skill writes it), so it is the default; any other file only when named. Each run of versions
     naming one bank look is a stint: replaced within KEEP_DAYS, reverted; KEEP_DAYS or longer, open or not, kept.
     Read-only (git log and git show, HISTORY_MAX versions at most); each stint is recorded once (source FILE@sha).

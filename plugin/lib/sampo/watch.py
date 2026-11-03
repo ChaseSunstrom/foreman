@@ -1,4 +1,4 @@
-"""fm watch: live Foreman dashboard (curses) and its plain-text twin (--once). Stdlib only, read-only."""
+"""fm watch: live Sampo dashboard (curses) and its plain-text twin (--once). Stdlib only, read-only."""
 import json
 import os
 import re
@@ -145,7 +145,7 @@ def _pct(vals, q):
 
 def render(d, width=100):
     sd, act, p = d["sd"], d["active"], d["project"]
-    out = [f"Foreman · {p.slug} · {time.strftime('%H:%M:%S')}", ""]
+    out = [f"Sampo · {p.slug} · {time.strftime('%H:%M:%S')}", ""]
     if act:
         a = sd["active"]
         out.append(f"Active: {a['id']} [{a['type']} {a['tier']}] {a['title']}")
@@ -358,7 +358,7 @@ def _kept(p, name, build):
 
 
 def _learned_line(p):
-    """T-1045: what Foreman learned this week, the pane's idle line (a week's ledger and briefs cost ~0.45 s to count)."""
+    """T-1045: what Sampo learned this week, the pane's idle line (a week's ledger and briefs cost ~0.45 s to count)."""
     from sampo import cost
     return _kept(p, "learned-line.json", lambda: cost.learned(p, 7, len(cost._week(p, 7)[0]))["line"])
 
@@ -752,7 +752,7 @@ def cmd_ui(args):
         print(json.dumps(v))
     else:
         a = v.get("active")
-        print(f"{v['project'] or 'not a Foreman project'}" + (f" · {a['id']} {a['stage']}" if a else "")
+        print(f"{v['project'] or 'not a Sampo project'}" + (f" · {a['id']} {a['stage']}" if a else "")
               + (f"\nNext: {v['next']}" if v.get("next") else ""))
 
 
@@ -787,7 +787,7 @@ def _follow(build, paths, interval, refresh=30.0):
 
 
 def projects():
-    """T-0322: every Foreman project on this device with a light summary, most recently active first."""
+    """T-0322: every Sampo project on this device with a light summary, most recently active first."""
     from sampo import eco
     out, changes = [], eco.changelog()
     for p, meta in c.all_projects():
@@ -869,6 +869,6 @@ def cmd_projects(args):
         a, ran, lacks = r.get("active"), r.get("foreman") or {}, r.get("lacks") or []
         print(f"{r['project']}  {r['root']}" + (f"  · {a['id']} {a['stage']}" if a else "")
               + f"  · queue {r.get('queue', 0)} · inbox {r.get('inbox', 0)}"
-              + (f"  · Foreman {ran['version']}" + (f" on {ran['machine']}" if ran.get("machine") else "") if
+              + (f"  · Sampo {ran['version']}" + (f" on {ran['machine']}" if ran.get("machine") else "") if
                  ran.get("version") else "")
               + (f", lacks {len(lacks)} fixes ({', '.join(lacks[:5])}{' …' if len(lacks) > 5 else ''})" if lacks else ""))

@@ -408,7 +408,7 @@ class InstallScript(unittest.TestCase):
         home = self.env["HOME"]
         link = os.path.join(home, ".local", "bin", "fm")
         self.assertEqual(os.path.realpath(link), os.path.realpath(os.path.join(self.fhome, "plugin", "bin", "fm")))
-        self.assertIn("Foreman wired into codex", out)
+        self.assertIn("Sampo wired into codex", out)
         self.assertFalse(os.path.exists(os.path.join(home, ".claude", "settings.json")), out)  # no CC wiring
         self.assertFalse(os.path.exists(self.args_file), "the Claude Code plugins aren't set up")
 
@@ -420,7 +420,7 @@ class InstallScript(unittest.TestCase):
         p, out = self.install_without_claude("codex")
         self.assertEqual(p.returncode, 0, out)
         self.assertEqual(os.path.realpath(link), os.path.realpath(os.path.join(self.fhome, "plugin", "bin", "fm")))
-        self.assertIn("Foreman wired into codex", out)
+        self.assertIn("Sampo wired into codex", out)
 
     def test_without_any_agent_it_points_at_fm_code(self):
         p, out = self.install_without_claude()

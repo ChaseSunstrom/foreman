@@ -1,10 +1,10 @@
-"""fm which TASK (T-1699): the Foreman skills, playbooks and fm commands that fit a task in plain words, each with the
+"""fm which TASK (T-1699): the Sampo skills, playbooks and fm commands that fit a task in plain words, each with the
 call that loads it. With a dozen skills, eighty playbooks and a hundred commands nobody knows what exists.
 
 Lexical, stdlib only: a document per skill (its name and description, from the skills folder as it is when this runs,
 so a skill added later is indexed with no list to update), per playbook (its path and header: title and the lines above
 its first section, HEADER_MAX characters at most) and per command (name, help and options' help, as fm help reads them;
-not Foreman's own-repo tools, FOREMAN_ONLY). The words are fmrecall.words (\\w+, so 3d and ui count; its stems and
+not Sampo's own-repo tools, FOREMAN_ONLY). The words are fmrecall.words (\\w+, so 3d and ui count; its stems and
 stop words). A document scores the idf of each task word it holds, 1 + NAMED times when its name holds it; it can be
 listed when it holds at least half the task's words or its name holds one, and is when it is within CUT of its kind's
 best and FLOOR of the best overall. When the listed ones together hold under half the task's words, nothing matches:

@@ -1,5 +1,5 @@
 """fm cost / fm usage (T-0064, T-0056): where the tokens went — per session, per task and per tool — read from Claude
-Code's own transcripts, and which Foreman skills, playbooks and commands actually get used. Read-only; stdlib only."""
+Code's own transcripts, and which Sampo skills, playbooks and commands actually get used. Read-only; stdlib only."""
 import bisect
 import collections
 import datetime
@@ -91,7 +91,7 @@ _TWO_WORD = ("task", "bench", "lib", "lane")  # verbs whose subcommand names the
 
 def _fm_verb(cmd):
     """T-1276: the fm verb of a Bash command made of fm calls alone ("task show"; a cd, a redirect and a trailing tail,
-    head or grep allowed), else None: 'fm task log … && python3 -m unittest' is a test run's output, not Foreman's.
+    head or grep allowed), else None: 'fm task log … && python3 -m unittest' is a test run's output, not Sampo's.
     ponytail: split on && || ; outside quotes too, so a quoted ';' undercounts a command, never overcounts."""
     verb = None
     for seg in re.split(r"\s*(?:&&|\|\||;)\s*", cmd.strip()):
@@ -103,12 +103,12 @@ def _fm_verb(cmd):
             return None
         verb = verb or m[1] + (f" {m[2]}" if m[1] in _TWO_WORD and m[2] else "")
     return verb
-_FM_NOTE = re.compile(r"\bForeman\b|^Ambient tests:")  # how every note of Foreman's hooks opens
+_FM_NOTE = re.compile(r"\b(?:Foreman|Sampo|Ward|Smith|Rune|Louhi)\b|^Ambient tests:")  # how every note of the hooks opens (Foreman: older transcripts)
 _STYLE_NOTE = " output style is active. Remember to follow the specific guidelines for this style."
 
 
 def _share(a, share):
-    """T-1257: add a transcript attachment's characters to share["all"], and Foreman's part of them to its source."""
+    """T-1257: add a transcript attachment's characters to share["all"], and Sampo's part of them to its source."""
     def add(source, n, ours):
         share["all"] += n
         if ours:
@@ -137,7 +137,7 @@ def _share(a, share):
 def scan(folder, since, share=None, sidechains=True):
     """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
     repeats on each of its content blocks: counted once per message id. A `share` Counter gets what entered the
-    context: "all", and Foreman's part by source (T-1257). A subagent's replies carry its parent's session id:
+    context: "all", and Sampo's part by source (T-1257). A subagent's replies carry its parent's session id:
     `sidechains=False` leaves them out (T-1797)."""
     msgs, tools, names, fm_ids = {}, collections.Counter(), {}, {}
     for path, e in _entries(folder, since):
@@ -197,10 +197,10 @@ def burn_findings(folder=None, days=2, forecast=None):
     if len(ctx) >= 20 and sum(ctx) / len(ctx) > BURN_CONTEXT:
         from sampo import setup
         w = _window()  # T-2537: fm install-user leaves a window the user set alone, so naming it as the fix is a no-op
-        fix = (f"sessions compact late: your settings set a {_human(w)} compact window (Foreman leaves your choice "
+        fix = (f"sessions compact late: your settings set a {_human(w)} compact window (Sampo leaves your choice "
                f"alone); /compact long sessions at task boundaries" if w and w > parse_tokens(setup.COMPACT_WINDOW)
                else "sessions compact late: /compact long sessions at task boundaries" if w
-               else "sessions compact late: fm install-user sets Foreman's 200k compact window; /compact long ones")
+               else "sessions compact late: fm install-user sets Sampo's 200k compact window; /compact long ones")
         out.append((f"context per reply averages {_human(sum(ctx) / len(ctx))} over {len(ctx)} replies", fix))
     peak = max(map(len, hours.values()), default=0)
     if peak >= 3:
@@ -363,7 +363,7 @@ def unexplained_spend(p, msgs, days):
 def unexplained_line(u):
     if u["share"] >= UNEXPLAINED_MIN_PCT and u["tokens"] >= UNEXPLAINED_MIN_TOKENS:
         return (f"Unexplained spend: {u['share']:.0f}% (≈ {_human(u['tokens'])} tokens) in {len(u['sessions'])} session(s) "
-                f"with no Foreman activity within {UNEXPLAINED_GAP_S // 60} min; top: {u['sessions'][0][:8]}")
+                f"with no Sampo activity within {UNEXPLAINED_GAP_S // 60} min; top: {u['sessions'][0][:8]}")
     return ""
 
 
@@ -1014,7 +1014,7 @@ def say(text, most=4000):
 
 
 def learned(p, days, closed):
-    """T-1045: what Foreman learned in the window, for the digest and the pane's idle line: fixes new/worked/missed,
+    """T-1045: what Sampo learned in the window, for the digest and the pane's idle line: fixes new/worked/missed,
     rules proposed from corrections, and interventions (corrections plus guard blocks) per closed task."""
     from sampo import fixes as sfixes, ideas
     since = _since(days)
@@ -1177,7 +1177,7 @@ def cmd_pr(args):
     lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
     if lesson:
         lines += ["", "### Notes", f"- {c.plain(lesson)}"]
-    lines += ["", f"Foreman task {b.id} ({b.type} {b.tier})"]
+    lines += ["", f"Sampo task {b.id} ({b.type} {b.tier})"]
     body = c.redact("\n".join(lines))
     if getattr(args, "post", False):  # T-1167: outward, behind the task's publish grant
         from sampo import pr
@@ -1186,10 +1186,10 @@ def cmd_pr(args):
     cli.out(args, {"id": b.id, "body": "\n".join(lines)}, body)
 
 
-AGENTS_MARK = "<!-- generated by Foreman (fm export agents); edits here are replaced when it runs again -->"
+AGENTS_MARK = "<!-- generated by Sampo (fm export agents); edits here are replaced when it runs again -->"
 AGENTS_CAP = 32 * 1024  # Codex reads AGENTS.md up to project_doc_max_bytes, 32 KiB by default
 AGENTS_RULES = """## How work is done here
-This repo's work is tracked by Foreman. With its `fm` CLI on PATH (`fm --help`):
+This repo's work is tracked by Sampo. With its `fm` CLI on PATH (`fm --help`):
 - Before editing, write the plan: `fm task new "<title>" --type FIX|FEATURE|CLEAN|PERFORMANCE|SECURITY --tier S|M|L --ac "<done when> :: <verify cmd>" --step "<step>" --focus`; `fm next` names the one next action.
 - Nothing is done without a check that ran: `fm task evidence ID --step N --run "<cmd>"`; every gate at once: `fm check`.
 - Close with `fm task finish ID --audit "<how it was reviewed>" --lesson "<what the next similar task should know>"`.
@@ -1197,7 +1197,7 @@ Without `fm`: say what "done" means before starting, run the checks below and sh
 
 
 EXPORTS = {"agents": "AGENTS.md", "gemini": "GEMINI.md", "cursor": os.path.join(".cursor", "rules", "foreman.mdc")}
-CURSOR_HEAD = "---\ndescription: How work is done in this repo (Foreman): rules, corrections, fixes, lessons\nalwaysApply: true\n---\n"
+CURSOR_HEAD = "---\ndescription: How work is done in this repo (Sampo): rules, corrections, fixes, lessons\nalwaysApply: true\n---\n"
 
 
 def agents_md(p, target="agents"):
@@ -1262,7 +1262,7 @@ def agents_md(p, target="agents"):
             path = os.path.join(group, n)
             with open(path, encoding="utf-8", errors="replace") as f:
                 title = next((x[2:].strip() for x in f.read(4000).splitlines() if x.startswith("# ")), n[:-3])
-            books.append(f"- {c.plain(title)}: {os.path.relpath(path, c.PLUGIN_ROOT)} in the Foreman plugin")
+            books.append(f"- {c.plain(title)}: {os.path.relpath(path, c.PLUGIN_ROOT)} in the Sampo plugin")
     if books:
         parts += ["", "## Playbooks (read the one that fits before a stage)"] + books[:60]
     text = (CURSOR_HEAD if target == "cursor" else "") + c.redact("\n".join(parts)) + "\n"
@@ -1528,8 +1528,8 @@ def _text(x):
 
 
 def burden(folder, since):
-    """{session: counts}: turns, turns that were only Foreman bookkeeping, guard refusals, refused fm calls and the
-    characters Foreman's hooks put into the context."""
+    """{session: counts}: turns, turns that were only Sampo bookkeeping, guard refusals, refused fm calls and the
+    characters Sampo's hooks put into the context."""
     out = {}
     for dirpath, _, files in os.walk(folder):
         for n in files:
@@ -1552,7 +1552,7 @@ def burden(folder, since):
                         for x in content:
                             if isinstance(x, dict) and x.get("type") == "tool_result":
                                 t = _text(x.get("content"))
-                                s["guard_refusals"] += "Foreman guard: blocked" in t
+                                s["guard_refusals"] += "Foreman guard: blocked" in t or "Ward: blocked" in t
                                 s["fm_refusals"] += bool(re.search(r"\bfm: (?:refused|give --run)", t))
                         a = e.get("attachment") if isinstance(e.get("attachment"), dict) else {}
                         t, src = "", str(a.get("hookName") or a.get("type") or "?").split(":")[0]
@@ -1567,7 +1567,7 @@ def burden(folder, since):
                             h = j.get("hookSpecificOutput") if isinstance(j.get("hookSpecificOutput"), dict) else {}
                             # not updatedToolOutput: that is the tool's own output
                             t = "\n".join(x for x in (h.get("additionalContext"), j.get("systemMessage")) if isinstance(x, str))
-                        if "Foreman" in t or "fm " in t:
+                        if "Sampo" in t or "Foreman" in t or "fm " in t:
                             s["injected_chars"] += len(t)
                             s["src:" + src] += len(t)
             except OSError:
@@ -1589,7 +1589,7 @@ def by_source(sessions, turns=None):
 
 
 def cmd_burden(args):
-    """fm burden: Foreman's own cost on real sessions, per Foreman version — the objective a self-change must lower."""
+    """fm burden: Sampo's own cost on real sessions, per Sampo version — the objective a self-change must lower."""
     from sampo import cli
     p = cli.resolve(args)
     if getattr(args, "by_verb", False):  # T-0959: the verbs no session called carry their weight for nothing
@@ -1610,7 +1610,7 @@ def cmd_burden(args):
         v.update(s)
         v["sessions"] += 1
     rate = lambda v, k: 100 * v[k] / max(v["turns"], 1)
-    text = (f"Foreman's burden, last {args.days:g} day(s), per version (lower is better):\n" + "\n".join(
+    text = (f"Sampo's burden, last {args.days:g} day(s), per version (lower is better):\n" + "\n".join(
         f"  {k}: {v['sessions']} session(s), {v['turns']} turns · bookkeeping-only turns {rate(v, 'bookkeeping_turns'):.0f}% · "
         f"guard refusals {rate(v, 'guard_refusals'):.1f}/100 turns · refused fm calls {rate(v, 'fm_refusals'):.1f}/100 · "
         f"injected {v['injected_chars'] / max(v['turns'], 1):.0f} chars/turn"

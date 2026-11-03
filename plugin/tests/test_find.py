@@ -370,7 +370,7 @@ class FindLearns(ForemanTestCase):
         write(out, {"q.py": SQL})
         r = self.fm("find", ".", "--capture", "1", cwd=out, check=False)
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
-        self.assertIn("inside a Foreman project", r.stderr + r.stdout)
+        self.assertIn("inside a Sampo project", r.stderr + r.stdout)
         self.assertEqual(self.fm("find", "nope", check=False).returncode, 2)
 
     def test_a_tree_outside_the_project_waits_for_a_yes(self):

@@ -1,5 +1,5 @@
-"""fm demo (T-0870): Foreman at work in under a minute, with no model calls. A throwaway git repo with a seeded bug, a
-Foreman home of its own, and the real fm CLI and PreToolUse guard hook playing Claude's part with canned moves: an edit
+"""fm demo (T-0870): Sampo at work in under a minute, with no model calls. A throwaway git repo with a seeded bug, a
+Sampo home of its own, and the real fm CLI and PreToolUse guard hook playing Claude's part with canned moves: an edit
 refused for want of a task, the task planned, rm -rf ~ refused, a red test recorded, the fix, a green test, a close
 refused for a missing audit and then made. Everything lives in one temp folder, deleted at the end (Ctrl-C too)."""
 import json
@@ -46,7 +46,7 @@ def _out(text="", pause=0.0, typed=False):
 
 
 class Off(Exception):
-    """A real command did something the demo didn't expect: Foreman's behaviour changed."""
+    """A real command did something the demo didn't expect: Sampo's behaviour changed."""
 
 
 def _env(work):
@@ -115,7 +115,7 @@ def demo(work):
         if _run(cmd, env, repo).returncode:
             raise Off(f"{' '.join(cmd)} failed: is git installed?")
     _run([sys.executable, FM, "init"], env, repo)
-    _out(_c("1", "Foreman demo") + ": no model is called; the real fm and guard hook run in a throwaway repo and Foreman "
+    _out(_c("1", "Sampo demo") + ": no model is called; the real fm and guard hook run in a throwaway repo and Sampo "
          "home.", 0.5)
     _say(1, "The repo has a bug: calc.add(2, 3) returns -1. Claude tries to edit calc.py before any task exists.")
     show("  " + _c("1;31", "Refused") + ": " + _hook(env, repo, "Edit", {"file_path": os.path.join(repo, "calc.py"),
@@ -170,7 +170,7 @@ def fences(root=None):
 
 
 def _fence_env(d):
-    """A fence's variables: HOME, Foreman's home and state and TMPDIR in its own temporary folder, this checkout's fm
+    """A fence's variables: HOME, Sampo's home and state and TMPDIR in its own temporary folder, this checkout's fm
     first on PATH, and a claude that only fails (a fence never calls a model)."""
     env = _env(d)
     keep = ("HOME", "FOREMAN_HOME", "XDG_STATE_HOME", "FOREMAN_NO_BACKGROUND", "PYTHONDONTWRITEBYTECODE",
@@ -183,7 +183,7 @@ def _fence_env(d):
 
 def run_fences(root=None, timeout=FENCE_TIMEOUT):
     """['doc:line: why'] for each runnable fence that failed. Each runs as bash -e through fm check playbooks' runner:
-    its own new temporary folder (the cwd, holding HOME, Foreman's home and state, TMPDIR and the claude stub), stdin
+    its own new temporary folder (the cwd, holding HOME, Sampo's home and state, TMPDIR and the claude stub), stdin
     closed, its limits and timeout, then its process group killed. A fence is trusted like the repo's tests: that is
     hygiene, not a sandbox, so it can still reach any path and the network."""
     from sampo import playbooks
@@ -193,7 +193,7 @@ def run_fences(root=None, timeout=FENCE_TIMEOUT):
 
 
 def release_env(work):
-    """A newcomer's environment: nothing of the user's Foreman, Claude Code or git, except FOREMAN_DOCTOR_BENCH, so
+    """A newcomer's environment: nothing of the user's Sampo, Claude Code or git, except FOREMAN_DOCTOR_BENCH, so
     the suite's run can skip hook timings that a loaded machine makes fail (T-1829)."""
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("FOREMAN_", "CLAUDE", "GIT_")) or k == "FOREMAN_DOCTOR_BENCH"}
@@ -205,7 +205,7 @@ def release_env(work):
 
 def cmd_release_check(args):
     """T-0960: what a newcomer runs first, the way they run it: fm doctor and fm demo on this checkout with a temporary
-    HOME and Foreman state (nothing of the user's), each passing, and (T-1519) the docs' runnable fences, which are
+    HOME and Sampo state (nothing of the user's), each passing, and (T-1519) the docs' runnable fences, which are
     trusted like tests (run_fences). Exit 0 when all do. fm demo stubs claude itself."""
     work = tempfile.mkdtemp(prefix="fm-release-")
     try:
@@ -240,12 +240,12 @@ def cmd_demo(args):
         print("\nStopped.")
         return 130
     except (Off, OSError, subprocess.TimeoutExpired) as e:
-        print(f"\nfm demo: Foreman didn't do what the demo expects: {e}", file=sys.stderr)
+        print(f"\nfm demo: Sampo didn't do what the demo expects: {e}", file=sys.stderr)
         return 1
     finally:
         shutil.rmtree(work, ignore_errors=True)
     here = c.find_project(os.getcwd())  # T-0919: run inside a project, end on that project's own next step
-    print("\nThe demo's repo and Foreman home are deleted: nothing was left behind. " + (
+    print("\nThe demo's repo and Sampo home are deleted: nothing was left behind. " + (
         f"Back in this project ({here.slug}), next: {c.next_for(here)[2].split(' — ')[0]}" if here else
         "To start for real: fm init in your repo, or just give Claude a request."))
     return 0

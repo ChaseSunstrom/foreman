@@ -536,7 +536,7 @@ def suggest(root, files=None, n=None):
 # ---------------------------------------------------------------- search, with installed plugins' skills
 
 def plugin_skills():
-    """[{name: plugin:skill, description, path, enabled}] for installed plugins other than Foreman. A disabled
+    """[{name: plugin:skill, description, path, enabled}] for installed plugins other than Sampo. A disabled
     plugin's SKILL.md is still worth reading as a reference, so it is listed and marked."""
     from sampo import plugins as splugins
     out = []
@@ -1166,7 +1166,7 @@ def avoid_note(name, text, limit=AVOID_MAX):
     items = [b.strip() for b in re.split(r"\n(?=- )", m.group(1).strip())] if m and m.group(1).strip() else []
     if not items:
         return None
-    out = f"Foreman: stack card {name}, what to avoid in this edit (fm lib show {name} for the rest):"
+    out = f"Sampo: stack card {name}, what to avoid in this edit (fm lib show {name} for the rest):"
     full = out + "".join("\n" + b for b in items)
     if len(full) <= limit:
         return full
@@ -1272,7 +1272,7 @@ def cmd_lib(args):
         into = os.path.realpath(args.into or CARDS)
         if args.into and not any(os.path.commonpath([into, os.path.realpath(b)]) == os.path.realpath(b)
                                  for b in (CARDS, c.state_dir())):
-            raise cli.UsageError("--into must be inside Foreman's cards folder or state folder")
+            raise cli.UsageError("--into must be inside Sampo's cards folder or state folder")
         area, name = os.path.basename(os.path.dirname(path)), os.path.splitext(os.path.basename(path))[0]
         if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", area) or not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", name):
             raise cli.UsageError("a staged card sits in AREA/NAME.md, both kebab-case")

@@ -301,7 +301,7 @@ class Repeat(ForemanTestCase):
         self.assertNotIn("alone", report)
         self.assertIn("canary done: 3 of 4 project(s) failing\n", report)
         titles = [b.title for b in c.load_briefs(self.p)]
-        self.assertTrue(any(t.startswith("Canary after Foreman 9.9.9") and "flappy" in t for t in titles), titles)
+        self.assertTrue(any(t.startswith("Canary after Sampo 9.9.9") and "flappy" in t for t in titles), titles)
         report = self.canary(40, RERUN_S=0)
         self.assertIn("no rerun for flappy, broken", report)
         self.assertIn("canary done: 3 of 4 project(s) failing\n", report)

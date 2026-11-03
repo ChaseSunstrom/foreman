@@ -120,7 +120,7 @@ class ReleaseGate(ReleaseCase):
         stub_corpus_replay(self.repo)
         r = self.push()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("pushed Foreman 9.9.9", r.stdout)
+        self.assertIn("pushed Sampo 9.9.9", r.stdout)
 
     def test_waiver_pushes_and_is_logged(self):
         stub_corpus_replay(self.repo, drifted=1)

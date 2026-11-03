@@ -357,7 +357,7 @@ def frame_check(p):
     report = _doc(d, "report.md")
     if report is not None:
         flat = " ".join(report.split()).casefold()
-        problems += [f"report.md has no line naming {e['id']} and {e['name']!r} (every category Foreman added itself)"
+        problems += [f"report.md has no line naming {e['id']} and {e['name']!r} (every category Rune added itself)"
                      for e in entries if not re.search(rf"\b{re.escape(e['id'].casefold())}\b.*\b"
                                                         rf"{re.escape(_norm_name(e['name']))}\b", flat)]
     return {"entries": len(entries), "problems": problems, "pending": pending}
@@ -800,7 +800,7 @@ def reach(p, n):
 
 
 def _imports(module):
-    """The modules a Foreman module imports anywhere in it, function-level imports too (one level, read with ast)."""
+    """The modules a Rune module imports anywhere in it, function-level imports too (one level, read with ast)."""
     import ast
     if module in _HUBS:
         return set()
@@ -1327,7 +1327,7 @@ def _stats_stale(root):
 
 
 def _stats_ok(p):
-    """T-2326: the stats script is the project's own code, so publish runs it only for Foreman's own repo or a tree
+    """T-2326: the stats script is the project's own code, so publish runs it only for Rune's own repo or a tree
     the user said yes to (fm prove --yes-run)."""
     from sampo import prove
     own = os.path.realpath(os.path.dirname(c.PLUGIN_ROOT)) == os.path.realpath(p.root)
@@ -1841,8 +1841,8 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0, author="self", m
     strict (gen-0's own lines too, which no writer sees); given drops those, so arms compare on what they were handed. A
     draft that fell back or errored is counted in errors and closes nothing. author="child" (T-2215): what the drafts
     read comes from a tool-less child (the README, and G-line's MUST/NEVER lines), kept per scenario so each arm reads
-    the same; the planted defect stays Foreman's, which no draft reads. A scenario whose child fails keeps the template
-    and counts as Foreman's own (answered.child leaves it out); r["child"] counts the rest."""
+    the same; the planted defect stays Rune's, which no draft reads. A scenario whose child fails keeps the template
+    and counts as Rune's own (answered.child leaves it out); r["child"] counts the rest."""
     import subprocess
     import tempfile
     from sampo import budget
@@ -1876,7 +1876,7 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0, author="self", m
                     with open(readme, encoding="utf-8") as f:
                         mine, lines = _author_project(p, run, s, f.read(), model)
                 except (ValueError, OSError, subprocess.SubprocessError) as e:
-                    print(f"{s['id']}: the child author failed ({c.fit(c.plain(str(e)), 120)}); Foreman's own instead",
+                    print(f"{s['id']}: the child author failed ({c.fit(c.plain(str(e)), 120)}); Rune's own instead",
                           file=sys.stderr)
                 else:  # written only once vetted, so a failed one leaves the template whole
                     c.write_atomic(readme, mine)
@@ -1950,7 +1950,7 @@ def scorecard(p, agent="foreman", bar=0.8):
         raise ValueError("no gen-0 with a numbered §2 yet: fm genesis draft, then fm genesis init --file -")
 
     def newest(who):
-        """{scenario id: closed?, or None when Foreman's own template wrote it} (T-2204)."""
+        """{scenario id: closed?, or None when Rune's own template wrote it} (T-2204)."""
         out = {}
         for x in _exam(p, who):  # file order is time order: a later result for a scenario wins
             if smoke(x):  # T-2158: steer 1, Haiku never decides
@@ -2011,7 +2011,7 @@ LONG_KEYS = ("true_done", "false_done", "regressions", "resumes_needed", "unfini
 
 
 def long_row(p):
-    """T-2263: the long-horizon tier, the deciding row (steer 2026-10-30 rule 1): Foreman's newest graded long line
+    """T-2263: the long-horizon tier, the deciding row (steer 2026-10-30 rule 1): Rune's newest graded long line
     against plain's on the goals both answered, never a Haiku line. state: "ahead" | "level" | "behind" on the true-done
     count over those goals (a tie broken on hidden checks passed when both lines have them, T-2326), or why there is none ("no long run", "no foreman line", "no plain line", "smoke", "no common
     goals"). Metrics a run couldn't compute are None, not 0."""
@@ -2104,7 +2104,7 @@ def free_beats(p, agent="foreman", split="holdout"):
         s = newest.get((run, agent))
         if who in free and s and got(x)[1] and same(x, s) and got(x)[0] > got(s)[0]:
             out.append(f"{who} found {got(x)[0]}/{got(x)[1]} {label} defects on {c.plain(run)} where {agent} found "
-                       f"{got(s)[0]}/{got(s)[1]}: the session doesn't use what Foreman built"
+                       f"{got(s)[0]}/{got(s)[1]}: the session doesn't use what Rune built"
                        + (" (from a Haiku smoke run)" if smoke(s) else ""))  # T-2158: a building signal, labelled
     return out
 
@@ -2469,7 +2469,7 @@ def _seed(p, n, agent):
            "selection.", "",
            "## " + MOONSHOT, "",
            f"- Far-domain lens: {lens}. Borrow a mechanism from {lens} that no harness has, and say what it becomes in "
-           "Foreman.",
+           "Rune.",
            f"- Frontier digest: gen-{n}/frontier.md (fm genesis frontier {n}; what's new outside, read, never cloned).",
            "- Each idea in mission-moonshot.md carries three lines: `Prior art:` (what exists, or none found), "
            "`Better by:` (how ours beats it) and `Novelty: 1-5`. fm genesis novelty marks the obvious ones by a cold "
@@ -3078,8 +3078,8 @@ LEAN = "genesis-lean.json"  # T-2359: each generation's lean start (no band: hoo
 
 
 def _lean(root):
-    """T-2359: (metrics, verbs) of the Foreman tree at root: fmdoctor.footprint's always-on chars and the fm verbs
-    fmcli registers (its add("name", …) lines); None outside a Foreman tree."""
+    """T-2359: (metrics, verbs) of the Rune tree at root: fmdoctor.footprint's always-on chars and the fm verbs
+    fmcli registers (its add("name", …) lines); None outside a Rune tree."""
     from sampo import doctor
     plugin = os.path.join(root, "plugin")
     rules, cli = os.path.join(plugin, "rules", "foreman.md"), os.path.join(plugin, "lib", "sampo", "cli.py")
@@ -3334,7 +3334,7 @@ def _lean_row(p, n):
     from sampo import doctor
     now = _lean(p.root)
     if not now:
-        return [], "not Foreman's own tree: no lean ratchet"
+        return [], "not Rune's own tree: no lean ratchet"
     start = _lean_record(p, n) or _lean_at_seed(p, n)
     if not start:
         return [], f"no lean start for gen {n} (no record, no commit before its seed): not judged"
@@ -3772,7 +3772,7 @@ def _blind_row(p, n):
     import subprocess
     text = _doc(home(p), f"gen-{n}/blind-spots.md")
     if text is None:
-        return [f"no gen-{n}/blind-spots.md: hunt blind spots from inputs Foreman didn't author"], ""
+        return [f"no gen-{n}/blind-spots.md: hunt blind spots from inputs Rune didn't author"], ""
     decisions = _doc(p.dir, "decisions.md") or ""
     bad, classes = [], 0
     for head, body in _sections(text):
@@ -4075,7 +4075,7 @@ def cmd_genesis(args):
             return scli.out(args, res, f"Genesis publish: {res['result']}" + (f" ({res['sha'][:8]})" if "sha" in res else ""))
         if action == "export":
             if not args.path:
-                raise scli.UsageError("fm genesis export DIR (site/genesis in the Foreman repo)")
+                raise scli.UsageError("fm genesis export DIR (site/genesis in the Rune repo)")
             res = export(p, os.path.abspath(args.path))
             return scli.out(args, res, f"Exported {res['docs']} docs and {res['generations']} generation(s): {res['path']}")
     except (OSError, ValueError) as e:

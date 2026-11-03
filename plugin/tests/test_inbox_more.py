@@ -298,7 +298,7 @@ class Served(_Inbox):
                 eco.cmd_inbox(cli.build_parser().parse_args(["inbox", "swipe", "--serve"]))
         self.assertEqual(served.call_count, 1)
         served.call_args.args[0].server_close()
-        self.assertIn("Foreman backlog: http://127.0.0.1:", out.getvalue())
+        self.assertIn("Sampo backlog: http://127.0.0.1:", out.getvalue())
 
 
 FAKE = "jira-fake-token-0123456789"  # pragma: allowlist secret — a fake token, never sent anywhere
@@ -448,7 +448,7 @@ class App(_Inbox):
         app = self.app(self.tmp)
         app.key("I")
         self.assertEqual(app.mode, "main")
-        self.assertIn("not a Foreman project", app.message)
+        self.assertIn("not a Sampo project", app.message)
 
     def test_claude_code_has_the_reset(self):
         with open(os.path.join(os.path.dirname(eco.__file__), "..", "..", "commands", "backlog.md")) as f:
@@ -584,7 +584,7 @@ class PostBack(_Inbox):
     def test_a_github_issue_gets_one_comment_naming_the_commit(self):
         tid = self.done(SRC.format("github acme/app#7"))
         said, calls, _ = self.post(tid, out="https://github.com/acme/app/issues/7#issuecomment-9\n")
-        self.assertEqual(calls, [["gh", "issue", "comment", "7", f"--body=Closed in commit 1a2b3c4d (Foreman {tid}).",
+        self.assertEqual(calls, [["gh", "issue", "comment", "7", f"--body=Closed in commit 1a2b3c4d (Sampo {tid}).",
                                   "--repo=acme/app"]])
         self.assertIn("github acme/app#7", said)
         self.assertIn("posted the close to github acme/app#7", c.find_brief(self.p, tid).section("Log"))
@@ -592,7 +592,7 @@ class PostBack(_Inbox):
             self.post(tid)
         self.assertIn("already posted", str(e.exception))
         gh = self.done("CONTEXT: https://github.com/acme/app/issues/9, opened by x")  # fm inbox gh's brief
-        self.assertEqual(self.post(gh)[1][0][3:], ["9", f"--body=Closed in commit 1a2b3c4d (Foreman {gh}).",
+        self.assertEqual(self.post(gh)[1][0][3:], ["9", f"--body=Closed in commit 1a2b3c4d (Sampo {gh}).",
                                                    "--repo=acme/app"])
         other = self.done(SRC.format("github acme/app#8"))
         with self.assertRaises(cli.UsageError) as e:
@@ -606,14 +606,14 @@ class PostBack(_Inbox):
         req = sent[0]
         self.assertEqual((req.full_url, req.get_method()), ("https://acme.atlassian.net/rest/api/2/issue/PROJ-12/comment",
                                                              "POST"))
-        self.assertEqual(json.loads(req.data), {"body": f"Closed in commit 1a2b3c4d (Foreman {tid})."})
+        self.assertEqual(json.loads(req.data), {"body": f"Closed in commit 1a2b3c4d (Sampo {tid})."})
         self.assertTrue(req.get_header("Authorization").startswith("Basic "))
         lin = self.done(SRC.format("linear ENG-4"))
         env = {**NO_TRACKER, "LINEAR_API_KEY": FAKE}
         _, _, sent = self.post(lin, [{"data": {"issue": {"id": "uuid-4"}}},
                                      {"data": {"commentCreate": {"success": True}}}], env=env)
         self.assertEqual([json.loads(r.data)["variables"] for r in sent],
-                         [{"id": "ENG-4"}, {"id": "uuid-4", "body": f"Closed in commit 1a2b3c4d (Foreman {lin})."}])
+                         [{"id": "ENG-4"}, {"id": "uuid-4", "body": f"Closed in commit 1a2b3c4d (Sampo {lin})."}])
         self.assertIn("commentCreate", json.loads(sent[1].data)["query"])
         nope = self.done(SRC.format("linear ENG-5"))
         with self.assertRaises(cli.UsageError):

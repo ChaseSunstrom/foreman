@@ -79,7 +79,7 @@ test('the pane fits every width and height: nothing wider than the pane, nothing
     for (const h of [8, 12, 24, 40, 60]) {
       const ui = await $.ui.mount({
         plugin: 'foreman-ui', surface: 'terminal', component: 'Pane', requestId: 'foreman',
-        props: { title: 'Foreman', isFocused: true, bodyColumns: w, placement: 'dock', scroll: { offset: 0, bodyRows: h }, view: {} },
+        props: { title: 'Sampo', isFocused: true, bodyColumns: w, placement: 'dock', scroll: { offset: 0, bodyRows: h }, view: {} },
       } as never)
       if (h >= 24 && !(await ui.find({ type: 'Text', text: /T-0007/ }))) bad.push(`${w}x${h} drew no task`) // the sweep sees a real pane
       for (const r of await ui.findAll({ type: 'Raster' })) if (Number(r.props.columns) > w) bad.push(`${w}x${h} raster ${r.key} ${r.props.columns}`)

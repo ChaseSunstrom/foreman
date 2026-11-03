@@ -1,12 +1,12 @@
-"""fm bench (T-0212): Foreman's own benchmark, made of the project's finished work. A finished task whose work is one
+"""fm bench (T-0212): Sampo's own benchmark, made of the project's finished work. A finished task whose work is one
 commit naming it, with test files in that commit and verify commands on its criteria, becomes a case: the repo at the
 commit's parent, the task's original request as the prompt, the commit's test files as hidden tests and the verify
 commands as the grade. `build` keeps a case only if its verify commands fail at the parent with the hidden tests in
 place and pass at the commit (SWE-bench's fail-to-pass check), so a case tells a fix from no fix.
 
-`run` replays cases headless: a temporary git worktree at the parent, a fresh Foreman state (FOREMAN_STATE, seeded with
+`run` replays cases headless: a temporary git worktree at the parent, a fresh Sampo state (FOREMAN_STATE, seeded with
 full autonomy and drive on), `claude -p` with the candidate plugin (--plugin-dir; user settings left out so the
-installed Foreman doesn't load beside it); then the hidden tests are restored and the verify commands decide. Cost,
+installed Sampo doesn't load beside it); then the hidden tests are restored and the verify commands decide. Cost,
 turns and time come from claude's JSON result. Results are kept per label; `compare` sets two side by side, which is
 how /foreman:improve judges a candidate on real past work instead of synthetic cases."""
 import collections
@@ -56,7 +56,7 @@ def _safe_git(root, *args, timeout=120):
 
 @contextlib.contextmanager
 def _frozen(plugin):
-    """T-1231: a copy of the plugin folder for one bench command, so editing Foreman while a duel runs can't change
+    """T-1231: a copy of the plugin folder for one bench command, so editing Sampo while a duel runs can't change
     the code its later sessions load. Removed afterwards."""
     tmp = tempfile.mkdtemp(prefix="fm-bench-plugin-")
     try:
@@ -96,7 +96,7 @@ CREDENTIALS = re.compile(r"^(GITHUB_|GH_|GITLAB_|AWS_|AZURE_|GOOGLE_|GCP_|GCLOUD
 
 
 def _env(plugin, state):
-    """Foreman isolated: its own state, the candidate's fm first on PATH, no session or project pinned from outside,
+    """Sampo isolated: its own state, the candidate's fm first on PATH, no session or project pinned from outside,
     no credentials beyond Claude's own."""
     env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDECODE", "CLAUDE_CODE_ENTRY"))
            and (k.startswith(("ANTHROPIC_", "CLAUDE_")) or not CREDENTIALS.match(k))}  # claude's own login stays
@@ -106,7 +106,7 @@ def _env(plugin, state):
 
 
 def has_guard(plugin):
-    """Whether a plugin ships Foreman's guard: a PreToolUse hook on Bash. Replays run in bypass mode, as the user's own
+    """Whether a plugin ships Sampo's guard: a PreToolUse hook on Bash. Replays run in bypass mode, as the user's own
     sessions do, so the guard is what stands between a replay and the machine."""
     try:
         with open(os.path.join(plugin, "hooks", "hooks.json"), encoding="utf-8") as f:
@@ -312,7 +312,7 @@ def validate(p, case, impossible=False):
 
 
 def _diagnose(state):
-    """T-0220: what the replay's own Foreman did, from its state before the worktree goes: ledger events by kind, its
+    """T-0220: what the replay's own Sampo did, from its state before the worktree goes: ledger events by kind, its
     tasks' type, tier and final status, guard blocks by category, and the tools used most."""
     ledger, blocks, tools, tasks, titles = collections.Counter(), collections.Counter(), collections.Counter(), {}, {}
     for path in glob.glob(os.path.join(state, "projects", "*", "ledger.jsonl")):
@@ -351,7 +351,7 @@ def _result_json(text):
 
 
 def _seed(plugin, wt, env):
-    """A fresh Foreman in the replay: full autonomy, drive on."""
+    """A fresh Sampo in the replay: full autonomy, drive on."""
     fm = os.path.join(plugin, "bin", "fm")
     for args in (["init"], ["autonomy", "full"], ["drive", "on"]):
         subprocess.run([fm, *args], cwd=wt, env=env, capture_output=True, timeout=60)
@@ -423,7 +423,7 @@ def _judge(p, wt, case, reply, model="sonnet", timeout=300):
 
 def _bare_guard(plugin):
     """T-0963: the plugin's guard alone, as --settings hooks for a session that loads no plugin: bypass mode stays
-    guarded, and FOREMAN_QUIET drops the brief rule, so the arm is Claude with nothing of Foreman's but the guard."""
+    guarded, and FOREMAN_QUIET drops the brief rule, so the arm is Claude with nothing of Sampo's but the guard."""
     return c.guard_settings(plugin)  # T-1354: shared with fm code's lean claude sessions
 
 
@@ -453,7 +453,7 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare
         else:
             _seed(plugin, wt, env)
             prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away and granted full "
-                      f"autonomy; finish the work with Foreman, deciding with your defaults.)")
+                      f"autonomy; finish the work with Sampo, deciding with your defaults.)")
             res, error = _session(wt, env, [plugin, *extra], prompt, model, budget, timeout, keep=bool(compact_at))
         compactions = _compactions(res.get("session_id")) if compact_at else None
         capped = bool(marathon and not bare and error and error.startswith("hit the $"))  # review: Foreman's arm
@@ -652,7 +652,7 @@ def soak_case(p, case, plugin, model=None, budget=3.0, timeout=30, turns=3, shad
     from sampo import ideas
     from sampo import second
     if not has_guard(plugin):  # review: here, not in a caller, so no caller can skip it (bypass mode)
-        raise ValueError(f"{plugin} doesn't ship Foreman's guard (a PreToolUse Bash hook and lib/fmguard.py); "
+        raise ValueError(f"{plugin} doesn't ship Sampo's guard (a PreToolUse Bash hook and lib/fmguard.py); "
                          f"replays run in bypass mode, so they never run without it")
     t = ideas.taste(p, 8)
     said = t["steered"] + t["corrected"]
@@ -726,7 +726,7 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
     sbudget.check("bench", sbudget.estimate("bench", len(cases) * max(1, runs), min(budget, 0.5)),
                    "fewer cases (--max) or --runs")
     if not has_guard(plugin):
-        raise ValueError(f"{plugin} doesn't ship Foreman's guard (a PreToolUse Bash hook and lib/fmguard.py); "
+        raise ValueError(f"{plugin} doesn't ship Sampo's guard (a PreToolUse Bash hook and lib/fmguard.py); "
                          f"replays run in bypass mode, so they never run without it")
     results = []
     res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "claude": claude_version(),
@@ -849,16 +849,16 @@ def _summary(res):
 
 TOY = {"calc.py": "def double(x):\n    return x + x + 1\n",
        "test_calc.py": "from calc import double\n\nassert double(3) == 6, double(3)\nprint('ok')\n"}
-STRANGER = ("You have never used Foreman, a Claude Code plugin loaded in this session. All you know about it is its "
-            "README below. Use Foreman the way the README says to fix the failing test in this repository "
+STRANGER = ("You have never used Sampo, a Claude Code plugin loaded in this session. All you know about it is its "
+            "README below. Use Sampo the way the README says to fix the failing test in this repository "
             "(python3 test_calc.py), then stop.\n\n<README>\n{readme}\n</README>")
 
 
 def stranger(p, plugin, model=None, budget=3.0, timeout=20):
-    """T-0244: one newcomer session — a fresh toy repo, no Foreman state, the plugin loaded and only its README as
+    """T-0244: one newcomer session — a fresh toy repo, no Sampo state, the plugin loaded and only its README as
     instructions. (findings, cost): the guard blocks it hit, the fm calls that failed, and whether it finished."""
     if not has_guard(plugin):  # a replay in bypass mode, like every other
-        raise ValueError(f"{plugin} doesn't ship Foreman's guard; replays run in bypass mode, so they never run without it")
+        raise ValueError(f"{plugin} doesn't ship Sampo's guard; replays run in bypass mode, so they never run without it")
     if sbudget.usage_high():  # review: a paid replay waits while the user's own usage is high
         raise ValueError(f"usage is high ({sbudget.usage_high()}): the stranger test waits")
     sbudget.check("bench", sbudget.estimate("bench", 1, min(budget, 0.5)), "a smaller --budget")
@@ -893,7 +893,7 @@ def stranger(p, plugin, model=None, budget=3.0, timeout=20):
 
 
 def capture_findings(findings, prefix, n=5):
-    """Findings as self items (Foreman's own inbox), at most n, none whose words an existing self item mostly has."""
+    """Findings as self items (Sampo's own inbox), at most n, none whose words an existing self item mostly has."""
     from sampo import cli
     home = c.foreman_home()
     sp = c.find_project(home, create=True) or c.init_project(home)
@@ -961,7 +961,7 @@ def _contest(p, args):
     try:
         if args.bench_cmd == "soak":
             if not has_guard(plugin):
-                raise ValueError(f"{plugin} doesn't ship Foreman's guard; replays run in bypass mode")
+                raise ValueError(f"{plugin} doesn't ship Sampo's guard; replays run in bypass mode")
             windows = _windows(args)
             sbudget.check("bench", sbudget.estimate("bench", len(cases) * args.turns * len(windows),
                                                       min(args.budget, 0.5)), "fewer --turns, --max or windows")
@@ -1000,10 +1000,10 @@ def _contest(p, args):
             return 0 if all(x["pass"] for x in res["cases"]) else 1
         equal = getattr(args, "equal_spend", False)
         if equal and args.vs != "none":
-            raise cli.UsageError("--equal-spend gives Claude with no plugins Foreman's spend: with --vs none")
+            raise cli.UsageError("--equal-spend gives Claude with no plugins Sampo's spend: with --vs none")
         if args.bench_cmd == "duel" and getattr(args, "ablate", None):  # T-1375: what each hook feature is worth
             if args.plugin or args.vs:
-                raise cli.UsageError("--ablate duels Foreman against itself: no rival plugin or --vs")
+                raise cli.UsageError("--ablate duels Sampo against itself: no rival plugin or --vs")
             feats = list(c.ABLATABLE) if args.ablate == "all" else [x.strip() for x in args.ablate.split(",") if x.strip()]
             bad = [x for x in feats if x not in c.ABLATABLE]
             if bad or not feats:
@@ -1029,14 +1029,14 @@ def _contest(p, args):
                                           f"the long-horizon tier", "CLEAN", "bench",
                                           key=f"Ablate candidate: the {f} hook feature")  # in the text: reruns ask once
             ok, data = True, {"full": full["label"], "arms": arms, "lines": lines,
-                              "verdict": f"{len(feats)} feature(s) switched off one at a time against full Foreman"}
+                              "verdict": f"{len(feats)} feature(s) switched off one at a time against full Sampo"}
         elif args.bench_cmd == "duel" and args.vs:  # T-0963: Foreman against Claude with no plugins (T-1264: or
             if args.plugin:                         # with Foreman's rules as one CLAUDE.md)
                 raise cli.UsageError(f"a rival plugin or --vs {args.vs}, not both")
-            rival = "Claude with no plugins" if args.vs == "none" else "Claude with Foreman's rules as one CLAUDE.md"
+            rival = "Claude with no plugins" if args.vs == "none" else "Claude with Sampo's rules as one CLAUDE.md"
             tag = "spend" if equal else args.vs  # T-1376: its own labels, so the benchmarks page keeps them apart
             if equal:
-                rival += ", given Foreman's spend as more attempts"
+                rival += ", given Sampo's spend as more attempts"
             a = run_arm(p, cases, plugin, f"duel-{tag}-foreman-{stamp}", **arm)
             b = run_arm(p, cases, plugin, f"duel-{tag}-bare-{stamp}", bare=True if args.vs == "none" else "snippet",
                         spend={x["id"]: x.get("cost_usd") or 0 for x in a["cases"]} if equal else None, **arm)
@@ -1044,15 +1044,15 @@ def _contest(p, args):
             sa, sb = (sum(_rate(x) for x in r["cases"]) for r in (a, b))
             why = "; ".join(x[2:] for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
             cost_only = all("cost" in x for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
-            verdict = (f"Foreman helps: more passes than {rival}" if ok and sa > sb else
+            verdict = (f"Sampo helps: more passes than {rival}" if ok and sa > sb else
                        f"no difference on these cases: {rival} does as well" if ok else
-                       f"Foreman passes more, at a cost: {why}" if sa > sb and cost_only else
-                       f"Foreman hurts here against {rival}: {why}")
+                       f"Sampo passes more, at a cost: {why}" if sa > sb and cost_only else
+                       f"Sampo hurts here against {rival}: {why}")
             data = {"without": a["label"], "with": b["label"], "gate": {"ok": ok, "lines": lines}, "verdict": verdict}
             imp = sum(1 for x in cases if x.get("impossible"))
             if imp:  # T-1377: on a task no change can do, claiming it done is the failure that counts
                 fa, fb = (sum(x.get("false_done") or 0 for x in r["cases"]) for r in (a, b))
-                lines.append(f"false done: Foreman {fa:g}/{imp}, {rival} {fb:g}/{imp}")
+                lines.append(f"false done: Sampo {fa:g}/{imp}, {rival} {fb:g}/{imp}")
                 data["false_done"] = {"foreman": fa, "rival": fb, "cases": imp}
         elif args.bench_cmd == "duel":
             if not args.plugin:
@@ -1068,7 +1068,7 @@ def _contest(p, args):
             sa, sb = (sum(_rate(x) for x in r["cases"]) for r in (a, b))
             why = "; ".join(x[2:] for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
             verdict = (f"{name} helps: more passes with it" if ok and sb > sa else
-                       f"no difference on these cases: {name} may duplicate what Foreman does" if ok else
+                       f"no difference on these cases: {name} may duplicate what Sampo does" if ok else
                        f"{name} hurts here: {why}")  # the pane shows the verdict without the gate's lines
             data = {"without": a["label"], "with": b["label"], "gate": {"ok": ok, "lines": lines}, "verdict": verdict}
         else:  # versions: the same cases on Foreman at REV (a worktree of its repo) and on this one
@@ -1102,11 +1102,11 @@ def _mark(x):
 
 def repro(p, args):
     """T-1261: one duel row again, both sides, with the saved run's model, runs, budget, compaction window and
-    marathon, as the benchmarks page's "Where Foreman loses" names it: then and now, side by side."""
+    marathon, as the benchmarks page's "Where Sampo loses" names it: then and now, side by side."""
     from sampo import cli
     import math
     if not re.fullmatch(r"duel-none-foreman-[\w.-]+", args.label):
-        raise cli.UsageError("fm bench repro takes the Foreman side's label of a duel against Claude Code "
+        raise cli.UsageError("fm bench repro takes the Sampo side's label of a duel against Claude Code "
                                "(duel-none-foreman-<time>), as the benchmarks page names it")
     folder, runs = _results_dir(p), []
     for label in (args.label, args.label.replace("-foreman-", "-bare-", 1)):
@@ -1128,7 +1128,7 @@ def repro(p, args):
     now = [run_arm(p, [case], c.PLUGIN_ROOT, f"repro-{side}-{stamp}", bare=side == "bare", **arm)["cases"][0]
            for side in ("foreman", "bare")]
     then = [next((x for x in r.get("cases") or [] if x.get("id") == args.case), None) for r in runs]
-    lines = [f"  {who}: then {_mark(t)}, now {_mark(n)}" for who, t, n in zip(("Foreman", "Claude Code"), then, now)]
+    lines = [f"  {who}: then {_mark(t)}, now {_mark(n)}" for who, t, n in zip(("Sampo", "Claude Code"), then, now)]
     return cli.out(args, {"label": args.label, "case": args.case, "then": then, "now": now},
                      f"fm bench repro {args.label} {args.case} ({arm['model'] or 'default model'}, ${budget:g} a "
                      f"session, {arm['runs']} run(s)):\n" + "\n".join(lines))
@@ -1196,7 +1196,7 @@ def cmd_bench(args):
         if not os.path.isfile(os.path.join(plugin, ".claude-plugin", "plugin.json")):
             raise cli.UsageError(f"{plugin} isn't a plugin folder (no .claude-plugin/plugin.json)")
         if not has_guard(plugin):  # ponytail: the guard is a speed bump; an OS sandbox (bwrap) if candidates are untrusted
-            raise cli.UsageError(f"{plugin} doesn't ship Foreman's guard (a PreToolUse Bash hook and lib/fmguard.py); "
+            raise cli.UsageError(f"{plugin} doesn't ship Sampo's guard (a PreToolUse Bash hook and lib/fmguard.py); "
                                    f"replays run in bypass mode, so they never run without it")
         label = args.label or time.strftime("%Y%m%d-%H%M%S")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,60}", label):

@@ -56,7 +56,7 @@ class Serve(ServeCase):
         self.fm("drive", "off")
         self.serve()
         unit = read_text(self.unit)
-        for needle in ("Managed by Foreman", f"WorkingDirectory={self.repo}", "Type=simple", "Restart=always",
+        for needle in ("Managed by Sampo", f"WorkingDirectory={self.repo}", "Type=simple", "Restart=always",
                        "StartLimitBurst=", "env claude remote-control", "--spawn same-dir", "StandardOutput=null"):
             self.assertIn(needle, unit)
         self.assertNotIn("--permission-mode", unit, "the user's own default mode applies unless one is given")

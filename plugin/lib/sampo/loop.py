@@ -1,9 +1,9 @@
-"""fm loop (T-1057): Foreman improves itself without end. With the loop on, an empty queue starts a round instead of
+"""fm loop (T-1057): Sampo improves itself without end. With the loop on, an empty queue starts a round instead of
 ending the run: fm next names it and the Stop drive continues into it. A round reviews what shipped since the last one,
 brainstorms past the newest earlier ones, grounds and queues what survives, and builds it; fm loop yield N records how
 many grounded ideas it queued, and two dry rounds in a row (fewer than DRY_YIELD each) end the loop with a decision on
 record. Enforced by fm next and the drive, so no session has to remember to do it: a round left without a yield is
-counted by Foreman (the tasks made since it started) when the next one starts."""
+counted by Sampo (the tasks made since it started) when the next one starts."""
 import glob
 import os
 import re
@@ -124,7 +124,7 @@ def _brief(p, n, since):
     except Exception:  # an unreadable budget never changes the round
         pace = None
     fan = [f"2. Optional work is dropped ({pace}): skip fm mission and the ideas fan-out (its lens subagents wait); "
-           "turn your review into ideas here, in the main thread, and sweep all of Foreman, not just what shipped: "
+           "turn your review into ideas here, in the main thread, and sweep all of Sampo, not just what shipped: "
            f"at least one grounded idea per lens ({', '.join(MAIN_LENSES)})."] if pace else [
         f"2. fm mission --request \"forever loop round {n}: improve past everything shipped\", add the review to "
         "the pack, then:", f"   fm ideas --pack <pack> --rounds 2 --deepen 2 {seen_args}".rstrip()]

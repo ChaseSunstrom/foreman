@@ -1,4 +1,4 @@
-"""T-1551: Foreman for other tools, stdlib only and read-only (no network, no state written).
+"""T-1551: Sampo for other tools, stdlib only and read-only (no network, no state written).
 fm timeline: a task's run (its ledger events) as Perfetto / Chrome trace JSON (ui.perfetto.dev, chrome://tracing) or, with
 --otlp, OTLP JSON for an OpenTelemetry collector. fm glance: the status as one JSON line for shells and status bars.
 fm lsp: a Language Server stub over stdio that publishes a brief's proof gaps as diagnostics."""
@@ -15,7 +15,7 @@ from sampo import core as c
 
 
 def _clean(o):
-    """Redacted the way the ledger is (an older Foreman's line may predate it); a non-finite number would be invalid JSON."""
+    """Redacted the way the ledger is (an older Sampo's line may predate it); a non-finite number would be invalid JSON."""
     if isinstance(o, float) and not math.isfinite(o):
         return None
     if isinstance(o, list):
@@ -171,7 +171,7 @@ def cmd_glance(args):
     except cli.UsageError:
         if getattr(args, "project", None):
             raise
-        return print(json.dumps({"v": 1, "project": None, "text": "", "tooltip": "not in a Foreman project",
+        return print(json.dumps({"v": 1, "project": None, "text": "", "tooltip": "not in a Sampo project",
                                  "class": "none"}))
     try:
         line = glance(p)
@@ -232,7 +232,7 @@ def desk_svg(g, size=DESK, when=None):
 def desk_html(svg, every=60):
     """The card as a page an old phone keeps open: it reloads itself every `every` seconds."""
     return ("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,"
-            f"initial-scale=1\"><meta http-equiv=\"refresh\" content=\"{max(10, int(every))}\"><title>Foreman desk"
+            f"initial-scale=1\"><meta http-equiv=\"refresh\" content=\"{max(10, int(every))}\"><title>Sampo desk"
             "</title><style>html,body{margin:0;background:#fff}svg{display:block;width:100vw;height:auto}</style>"
             f"</head><body>{svg}</body></html>\n")
 

@@ -75,7 +75,7 @@ class WhatsNew(HookCase):
         self.assertIsNone(hooks._whats_new_note(os.path.join(self.tmp, "missing.md")))  # no notes here: kept for later
         self.assertIsNone(hooks._whats_new_note(log, headless=True))  # a headless run never uses it up
         msg = hooks._whats_new_note(log)
-        self.assertIn(f"Foreman {rev}", msg)
+        self.assertIn(f"Sampo {rev}", msg)
         self.assertIn("• First thing.", msg)
         self.assertIsNone(hooks._whats_new_note(log))  # once
 

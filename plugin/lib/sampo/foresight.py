@@ -1,4 +1,4 @@
-"""T-1810: Foreman reasons ahead. The Stop hook's detached sweep (fm cost --sweep, at most every SWEEP_EVERY per
+"""T-1810: Sampo reasons ahead. The Stop hook's detached sweep (fm cost --sweep, at most every SWEEP_EVERY per
 project) looks for problems nobody raised (CI red on the default branch, a changed model, window or CC version) and
 caches them; session start reads those caches and the state it already has (blocked pile, tidy), never the network,
 and names each problem with its action."""
@@ -271,7 +271,7 @@ _SLIP = re.compile(r"dropped: .*\b(?:by mistake|by accident|in error)\b", re.I)
 
 
 def _tower_ids(p):
-    """T-2554: the ids every Genesis Mission's Task paragraph names: briefs Foreman wrote and filed through fm intake."""
+    """T-2554: the ids every Genesis Mission's Task paragraph names: briefs Sampo wrote and filed through fm intake."""
     home = os.path.join(p.dir, "research", "genesis")
     if not os.path.isdir(home):
         return set()
@@ -288,7 +288,7 @@ def _tower_ids(p):
 
 def _requests(p, clean=True):
     """The user's own requests, oldest first, as (brief, type, paths): paths are its scope and the files it touched
-    (this project's ledger). Foreman's captures, followups and triggers aren't the user's, so they never count.
+    (this project's ledger). Sampo's captures, followups and triggers aren't the user's, so they never count.
     T-2554: clean also leaves out the tower's Mission briefs (filed as user before fm intake --source) and captures
     dropped as a mistake; clean=False is the old stream, for the replay's comparison."""
     skip = _tower_ids(p) if clean else set()

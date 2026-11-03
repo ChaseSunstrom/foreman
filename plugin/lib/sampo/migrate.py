@@ -206,7 +206,7 @@ def _denied(tmp):
 
 
 def _env(root, home):
-    """The tool's environment: Foreman's minimal one (no credentials), no connection variable, HOME the throwaway folder."""
+    """The tool's environment: Sampo's minimal one (no credentials), no connection variable, HOME the throwaway folder."""
     from sampo import find as sfind
     env = {k: v for k, v in sfind._tool_env(root).items() if not DB_VAR.match(k)}
     env["HOME"] = home

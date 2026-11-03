@@ -102,7 +102,7 @@ def build(p):
 
 
 def _cards_stamp():
-    """How many stack cards there are: a Foreman update that adds cards rebuilds the map's list (a few listdirs)."""
+    """How many stack cards there are: a Sampo update that adds cards rebuilds the map's list (a few listdirs)."""
     root = os.path.join(c.PLUGIN_ROOT, "skills", "library", "cards")
     try:
         return sum(len(os.listdir(os.path.join(root, d))) for d in os.listdir(root))
@@ -462,7 +462,7 @@ def tour(p, b, since=None):
 
 
 def _risk(p, m, f, add, rm, gone, changed, diff):
-    """T-0885: (review | glance | skim, [reasons]) for one changed file, from signals Foreman already keeps."""
+    """T-0885: (review | glance | skim, [reasons]) for one changed file, from signals Sampo already keeps."""
     if c.TESTISH.search(f):
         return ("review", [f"tests removed (−{rm})"], 3) if rm > 20 and add < rm / 2 else ("skim", ["test"], 0)
     if c.DOC.search(f):
@@ -702,7 +702,7 @@ def changed(root, base):
 
 
 def cmd_why(args):
-    """fm why FILE[:LINE] (R2): the commits behind a line (or a file's last five), the Foreman tasks they name, and
+    """fm why FILE[:LINE] (R2): the commits behind a line (or a file's last five), the Sampo tasks they name, and
     each task's title, outcome and lesson — why the code is the way it is, without reading history by hand."""
     from sampo import cli
     p = cli.resolve(args)

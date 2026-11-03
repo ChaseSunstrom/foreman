@@ -2435,18 +2435,18 @@ def trial(root, got, wrong=None, why=None):
     """T-1669: count the trial gates' would-blocks in the project's design-trials.jsonl (one per new failing UI state;
     a rerun on the same code adds none), mark the latest one wrong for --wrong GATE, and set each trial gate's
     trial = {acts, n, overridden}: blocking once TRIAL_MIN are logged with under TRIAL_RATE overridden. Outside a
-    Foreman project nothing is counted and it reads as advisory. Raises ValueError for --wrong with nothing to mark."""
+    Sampo project nothing is counted and it reads as advisory. Raises ValueError for --wrong with nothing to mark."""
     p = core.find_project(root)
     gates = [g for g in got["gates"] if g["mode"] == "trial"]
     if wrong and wrong not in {g["gate"] for g in gates}:
         raise ValueError(f"{wrong} isn't on trial in DESIGN.md's ## Gates ('- {wrong}: trial')")
     if not p:
         if wrong:
-            raise ValueError("no Foreman project here, so there are no would-blocks to mark wrong")
+            raise ValueError("no Sampo project here, so there are no would-blocks to mark wrong")
         for g in gates:
             g["mode"] = "advisory"
         if gates:
-            got["notes"].append("trial: no Foreman project here, so nothing is counted; read as advisory")
+            got["notes"].append("trial: no Sampo project here, so nothing is counted; read as advisory")
         return got
     path = os.path.join(p.dir, "design-trials.jsonl")
     recs = core.tail_jsonl(path, 2000) if os.path.exists(path) else []

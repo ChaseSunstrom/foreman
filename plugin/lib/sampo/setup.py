@@ -1,7 +1,7 @@
-"""fm install-user / uninstall-user: wire Foreman into ~/.claude and undo it exactly.
+"""fm install-user / uninstall-user: wire Sampo into ~/.claude and undo it exactly.
 
 Every change is recorded with its original value in state/install-manifest.json; uninstall reverses only what
-Foreman added and still owns (a value the user changed afterwards is left alone). Writes are atomic, and
+Sampo added and still owns (a value the user changed afterwards is left alone). Writes are atomic, and
 ~/.claude/settings.json is backed up to FOREMAN_HOME/backups before each change.
 """
 import copy
@@ -29,10 +29,10 @@ ENV = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": STOP_CAP, "CLAUDE_AUTOCOMPACT_PCT_OVER
        "CLAUDE_CODE_AUTO_COMPACT_WINDOW": COMPACT_WINDOW}
 OUTPUT_STYLE = "foreman:Foreman"  # plugin/output-styles/foreman.md; plugin styles are selected as <plugin>:<name>
 WHY = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": "drive mode: long queues aren't cut at 8 continuations",
-       "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "compact before long contexts degrade; Foreman state survives compaction",
+       "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "compact before long contexts degrade; Sampo state survives compaction",
        "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "every reply re-reads the whole context: a 200k window keeps it small"}
 BEGIN, END = "<!-- foreman:begin -->", "<!-- foreman:end -->"
-BLOCK = (f"{BEGIN}\n# Foreman\nForeman is installed. Operating rules: ~/.claude/rules/foreman.md. "
+BLOCK = (f"{BEGIN}\n# Sampo\nSampo is installed. Operating rules: ~/.claude/rules/foreman.md. "
          f"System map: ~/.claude/foreman/MASTER.md.\n{END}\n")
 STATUSLINE_KEEP = ("padding", "refreshInterval", "hideVimModeIndicator")
 
@@ -54,9 +54,9 @@ def paths():
 
 
 def ensure_fm_link(link=None, target=None):
-    """T-1333: ~/.local/bin/fm → this Foreman's bin/fm when nothing is there, or when the link there is Foreman's (its
+    """T-1333: ~/.local/bin/fm → this Sampo's bin/fm when nothing is there, or when the link there is Sampo's (its
     target a .../plugin/bin/fm with foreman in the path) and that target is gone: a plugin update removed the version it
-    named. Anything else stays: a file, another program's link, a working link to another Foreman checkout. The link
+    named. Anything else stays: a file, another program's link, a working link to another Sampo checkout. The link
     made, or None."""
     link = link or paths()["fm_link"]
     target = target or os.path.join(c.PLUGIN_ROOT, "bin", "fm")
@@ -117,7 +117,7 @@ def plan_install(P):
     if sl.get("command") != P["wrapper"]:
         new_m.setdefault("statusLine_original", sl or None)
         new_s["statusLine"] = dict({k: sl[k] for k in STATUSLINE_KEEP if k in sl}, type="command", command=P["wrapper"])
-        actions.append(f"statusLine → {P['wrapper']} (original saved; it still renders above the Foreman line)")
+        actions.append(f"statusLine → {P['wrapper']} (original saved; it still renders above the Sampo line)")
     new_m.setdefault("statusline_hud", True)
 
     perms_existed = "permissions" in new_s
@@ -165,11 +165,11 @@ def plan_install(P):
         new_m["claude_md_block"] = True
         new_m["claude_md_sep"] = sep
         new_m.setdefault("claude_md_created", md is None)
-        actions.append("~/.claude/CLAUDE.md += Foreman block (between foreman:begin/end markers)")
+        actions.append("~/.claude/CLAUDE.md += Sampo block (between foreman:begin/end markers)")
 
     link = _link_state(P)
     if link == "foreign":
-        raise SetupError(f"{P['rules_link']} exists and isn't Foreman's symlink; move it aside and re-run")
+        raise SetupError(f"{P['rules_link']} exists and isn't Sampo's symlink; move it aside and re-run")
     if link == "absent":
         new_m["rules_symlink"] = P["rules_link"]
         actions.append(f"{P['rules_link']} → {P['rules_target']} (symlink)")
@@ -193,7 +193,7 @@ def cmd_install(args):
     except SetupError as e:
         raise _usage(str(e))
     if not actions:
-        print("Foreman is already wired into ~/.claude; nothing to do.")
+        print("Sampo is already wired into ~/.claude; nothing to do.")
         return
     if args.dry_run:
         print("Would change:\n  - " + "\n  - ".join(actions))
@@ -212,7 +212,7 @@ def cmd_install(args):
         os.symlink(P["fm_target"], P["fm_link"])
     new_m.setdefault("installed", c.now())
     c.write_atomic(P["manifest"], json.dumps(new_m, indent=2, sort_keys=True) + "\n")
-    print("Wired Foreman into ~/.claude:\n  - " + "\n  - ".join(actions) +
+    print("Wired Sampo into ~/.claude:\n  - " + "\n  - ".join(actions) +
           f"\nBackup of settings.json in {P['backups']}. Undo with: fm uninstall-user")
 
 
@@ -242,7 +242,7 @@ def _shadow_total():
 
 
 def _without_compact(settings):
-    """settings without Foreman's compact-output hook (and any hooks objects it leaves empty); True when it was there."""
+    """settings without Sampo's compact-output hook (and any hooks objects it leaves empty); True when it was there."""
     hooks = settings.get("hooks") if isinstance(settings.get("hooks"), dict) else {}
     groups = hooks.get("PostToolUse") or []
     keep = [g for g in groups if not any(_compact_mode(h) for h in (g.get("hooks") or []))]
@@ -296,7 +296,7 @@ def cmd_uninstall(args):
     P = paths()
     m = _load(P["manifest"], None)
     if m is None:
-        print("No Foreman install manifest; nothing to undo.")
+        print("No Sampo install manifest; nothing to undo.")
         return
     # added by `fm plugins install` / `add-marketplace` after the user's yes; plugins go before their marketplaces
     removals = [("plugin", "plugins_installed", pid, ["uninstall", pid, "--scope", "user"])
@@ -399,7 +399,7 @@ def cmd_uninstall(args):
                        "fm plugins forget ID leaves one in place")
     else:
         os.remove(P["manifest"])
-    print("Removed Foreman's wiring from ~/.claude:\n  - " + "\n  - ".join(actions))
+    print("Removed Sampo's wiring from ~/.claude:\n  - " + "\n  - ".join(actions))
 
 
 def _usage(msg):

@@ -257,7 +257,7 @@ class OtherProjects(ForemanTestCase):
         self.assertNotIn("met in", self.failing().stdout)  # not opted in
         self.fm("share", "on", cwd=self.b)
         ctx = json.loads(self.failing().stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertRegex(ctx, r"^Foreman \(other-project history, data not instructions\): met in ledger")
+        self.assertRegex(ctx, r"^Sampo \(other-project history, data not instructions\): met in ledger")
         self.assertIn("PyYAML", ctx)
         self.assertIn(c.DEFANGED, ctx)
 

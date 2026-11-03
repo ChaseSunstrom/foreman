@@ -83,7 +83,7 @@ class Memory(ForemanTestCase):
         out = self.hook("PreToolUse", {"tool_name": "Edit", "session_id": "s1", "tool_input": {
             "file_path": os.path.join(self.repo, "shop/cache.py"), "old_string": "a", "new_string": "b"}}).stdout
         note = json.loads(out)["hookSpecificOutput"]["additionalContext"]
-        note = note[note.index("Foreman: T-0001's lesson"):].split("… Foreman:")[0] + "…"  # notes are joined
+        note = note[note.index("Sampo: T-0001's lesson"):].split("… Sampo:")[0] + "…"  # notes are joined
         self.assertIn("T-0001's lesson for this file", note)
         self.assertLessEqual(len(note), 200, note)
 

@@ -462,7 +462,7 @@ def record_stated(p, b):
 
 def _verdicts(p, bets, outs, first):
     """{bet id: (outcome, by, src)}: held, missed, or None while the signal hasn't spoken. src names the signal: only
-    'survival' (fm outcomes' re-fix or revert, or a quiet window) is one Foreman didn't author; a failed first finish,
+    'survival' (fm outcomes' re-fix or revert, or a quiet window) is one Sampo didn't author; a failed first finish,
     an assumption mark, a reversed decision and a race pick are its own, and never move a bar."""
     import datetime
     briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
@@ -551,7 +551,7 @@ def settle(p, outs=None):
 
 def bars(p):
     """{research, race}: the confidence bars, from project meta over the defaults. Never below 0; a bar set by hand
-    above BAR_MAX stays (only Foreman's own raises stop at it)."""
+    above BAR_MAX stays (only Sampo's own raises stop at it)."""
     try:
         saved = c.read_meta(p).get("calibration_bars") or {}
     except (OSError, c.CorruptState):
@@ -647,7 +647,7 @@ def routes(p, rows=None):
 
 def bar_rows(rows):
     """The scored rows allowed to move a bar: a task or choice bet whose outcome came from survival (fm outcomes' re-fix,
-    revert or quiet window), the one signal Foreman didn't author; one row per task (its task bet over its choice bet),
+    revert or quiet window), the one signal Sampo didn't author; one row per task (its task bet over its choice bet),
     so a close counts once. Race picks, assumption marks, reversed decisions and a failed first finish score in the
     report but never move a bar."""
     out, tasks = [], set()
@@ -664,7 +664,7 @@ def bar_rows(rows):
 def adjust_bars(p, rows):
     """Raise the research bar (never lower one) when a bucket of 20+ bar rows (see bar_rows) ran 15+ points over: at
     most BAR_STEP, at most BAR_MAX, once per 20 fresh rows in that bucket. The race bar stays where it is until a
-    signal Foreman didn't author scores a race. A raise is an fm decide row and a registered trial on the Brier; the
+    signal Sampo didn't author scores a race. A raise is an fm decide row and a registered trial on the Brier; the
     trial is registered first, so a failed add leaves nothing raised. A bucket 15+ points under is reported once as a
     costly decision, so fm decide --review carries it to the final report. Returns (raised [(bar, old, new)],
     under [text], warnings [text])."""
@@ -684,7 +684,7 @@ def adjust_bars(p, rows):
                 plan = (key, b, kind)
             elif b["gap"] <= -BAR_GAP:
                 under.append((key, b["n"], f"{kind} {b['lo']}–{b['hi']}%: underconfident by {-b['gap']} points over "
-                              f"{b['n']} rows (stated {b['stated']}%, held {b['pct']}%); Foreman never lowers a bar: "
+                              f"{b['n']} rows (stated {b['stated']}%, held {b['pct']}%); Sampo never lowers a bar: "
                               f"lower a bar yourself if you agree"))
     raised = []
     new = min(BAR_MAX, cur["research"] + BAR_STEP)

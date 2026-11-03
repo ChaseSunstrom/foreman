@@ -72,7 +72,7 @@ const reviewing = atom({ plugin: 'foreman-ui', key: 'reviewing' } as const, null
 import { TREE_INDENT, agentOut, agentRow, bars, branch, editChanges, editRow, gapTop, liveTree, mascotTree, meter, miniRail, ownsResult, rail, railBox, sectionHead, shellRow, spark, toolRow, treeOn } from './rows'
 import type { Motion } from './rows'
 
-// Foreman inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
+// Sampo inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
 // every rule and gate stays in fm and its classic hooks (which still run under claude -p and older builds); buttons
 // only run fm commands or submit a prompt the person pressed for. While work is live a frame clock animates the band,
 // the cards and every running tool row; a finished row goes back to the engine, which draws its result as always.
@@ -115,10 +115,10 @@ export function signalLine(v: FmView | null): { level: 'red' | 'amber'; text: st
   return { level: worst.level, text: worst.text + (sig.length > 1 ? ` +${sig.length - 1}` : '') }
 }
 
-/** The guard's refusal text, when a tool call was refused by Foreman. */
+/** The guard's refusal text, when a tool call was refused by Ward. */
 export function guardReason(r: { deny?: string; isError?: true; text?: string }): string | undefined {
   const why = r.deny ?? (r.isError ? r.text : undefined)
-  const m = why?.match(/^(?:\S+ hook error: )?Foreman(?: guard)?:\s*([\s\S]*)/) // a refusal leads with it, output never
+  const m = why?.match(/^(?:\S+ hook error: )?(?:Foreman|Sampo|Ward)(?: guard)?:\s*([\s\S]*)/) // a refusal leads with it, output never
   return m ? m[1]!.slice(0, 120) : undefined
 }
 
@@ -131,7 +131,7 @@ export function summaryText(s: TurnSummary): string {
   return parts.join(' · ')
 }
 
-/** A plain Foreman bookkeeping command (`fm …`, maybe after a `cd`): its row folds to one line once it succeeds.
+/** A plain Sampo bookkeeping command (`fm …`, maybe after a `cd`): its row folds to one line once it succeeds.
  * Anything chained, piped, substituted or on a second line keeps the full row, so the fold never hides what ran. */
 export function fmCommand(command: unknown): string | null {
   if (typeof command !== 'string') return null
@@ -139,7 +139,7 @@ export function fmCommand(command: unknown): string | null {
   return m && m[1]!.length <= 160 ? m[1]!.replace(/\s+/g, ' ') : null
 }
 
-/** A Foreman permission request (`fm ask ID cats --why "…"`), in plain words for a note under its dialog. */
+/** A Sampo permission request (`fm ask ID cats --why "…"`), in plain words for a note under its dialog. */
 export function askNote(command: unknown): string | null {
   if (typeof command !== 'string') return null
   // the reason may hold no quote, $, backtick, backslash or newline: then the whole command is the one ask shown
@@ -148,7 +148,7 @@ export function askNote(command: unknown): string | null {
   )
   const why = m ? (m[3] ?? m[4] ?? '') : ''
   if (!m || why.length > 160) return null // too long to show whole: no summary rather than a cut one
-  return `⚠ Foreman asks: a yes grants ${m[2]!.trim().split(/\s+/).join(' + ')} for ${m[1]} — ${why.replace(/\s+/g, ' ')}`
+  return `⚠ Sampo asks: a yes grants ${m[2]!.trim().split(/\s+/).join(' + ')} for ${m[1]} — ${why.replace(/\s+/g, ' ')}`
 }
 
 /** One line for a finished read: how much it read. */
@@ -377,11 +377,11 @@ async function tick($: EngineInterface) {
   if (isDirty || moved || now - lastFull > 30000) await refresh($)
 }
 
-// The context meter; at CHECKPOINT_AT% Foreman checkpoints the active task once, so a compaction loses nothing.
+// The context meter; at CHECKPOINT_AT% Sampo checkpoints the active task once, so a compaction loses nothing.
 async function gauge($: EngineInterface) {
   const u = await $.session.usage().catch(() => null)
   const eco = economyText(u?.rateLimits ?? [])
-  if (eco && !economyOn) $.ui.toast('Usage is high · Foreman economy mode: leaner work until the window resets', { timeoutMs: 10000 })
+  if (eco && !economyOn) $.ui.toast('Usage is high · Sampo economy mode: leaner work until the window resets', { timeoutMs: 10000 })
   economyOn = !!eco
   const percent = u?.context.percent
   if (typeof percent !== 'number') return
@@ -394,7 +394,7 @@ async function gauge($: EngineInterface) {
     if (r.exitCode !== 0) checkpointed = false // try again on the next poll
     $.ui.toast(
       r.exitCode === 0
-        ? `Context ${Math.round(percent)}% · Foreman checkpointed: /compact resumes at this exact step`
+        ? `Context ${Math.round(percent)}% · Sampo checkpointed: /compact resumes at this exact step`
         : `Context ${Math.round(percent)}% · checkpoint failed: ${lastLine({ stderr: r.stderr })}`,
       { timeoutMs: 10000 },
     )
@@ -411,7 +411,7 @@ function economyText(limits: readonly { kind: string; percentUsed: number }[]): 
   if (!hot.length) return null
   const what = hot.map(l => `${ECONOMY[l.kind][1]} usage is past ${ECONOMY[l.kind][0]}%`).join(' and ')
   return (
-    `# Foreman economy mode\nThis account's ${what}. Work leaner until it resets: no brainstorms or multi-round ` +
+    `# Sampo economy mode\nThis account's ${what}. Work leaner until it resets: no brainstorms or multi-round ` +
     `fm ideas, at most one combined reviewer pass per task (none for S), no other subagents unless the task can't ` +
     `go on without one, targeted reads (grep, fm outline, line ranges), fm check --affected while iterating, short ` +
     `replies. Correctness, evidence and the guard's rules don't change.`
@@ -459,7 +459,7 @@ async function steer($: EngineInterface, text: string) {
 
 async function openPane($: EngineInterface, focus: boolean) {
   // ~76 columns docked: the cards fit, and the transcript and band keep the rest (T-0122: the share left them ~37)
-  return $.ui.open(focus ? { id: PANE, title: 'Foreman', focus: true, columns: 76 } : { id: PANE, title: 'Foreman', columns: 76 })
+  return $.ui.open(focus ? { id: PANE, title: 'Sampo', focus: true, columns: 76 } : { id: PANE, title: 'Sampo', columns: 76 })
 }
 
 // T-0909: the pane's moving rasters (the rail's comet, the live lane's glow) repaint by blit at ~30 fps while work is
@@ -590,8 +590,8 @@ async function resumeAfterReload($: EngineInterface) {
   const r = (await read($, view))?.resume_after_reload
   if (!r || r.at === (await read($, resumed)) || r.session !== (await $.session.id())) return
   await update($, resumed, () => r.at)
-  $.ui.toast('Foreman UI reloaded · the drive continues', { timeoutMs: 6000 })
-  void $.prompt.submit({ text: `Continue the Foreman drive: the Foreman UI reloaded${r.task ? ` (${r.task})` : ''}` })
+  $.ui.toast('Sampo UI reloaded · the drive continues', { timeoutMs: 6000 })
+  void $.prompt.submit({ text: `Continue the Sampo drive: the Sampo UI reloaded${r.task ? ` (${r.task})` : ''}` })
 }
 
 /** The quick-capture box (every surface with text input). */
@@ -624,10 +624,10 @@ export const register: Register = (on, options) => {
     feed.length = 0 // T-1033 review: a new session's tree starts empty
     treeTall = 0 // T-1041: and at its own height
     said.clear() // T-1090: and so do its nodes' words
-    await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
+    await $.command.register({ name: 'fm', description: 'Sampo: open or close the dashboard pane' })
     await $.command.register({
       name: 'fm-trust',
-      description: 'Foreman: let Claude edit the guard and Claude Code settings (on | off); works only when you type it',
+      description: 'Ward: let Claude edit the guard and Claude Code settings (on | off); works only when you type it',
     })
     const good = await $.store.get('goodOptions').catch(() => undefined) // T-1613: the last good options, checked
     goodOptions = good && typeof good === 'object' && !Array.isArray(good) ? usable(good as Record<string, unknown>, {}).out : {}
@@ -646,19 +646,19 @@ export const register: Register = (on, options) => {
     const shown = (await $.ui.panes()).some(p => p.id === PANE && p.isShown)
     if (shown) {
       await $.ui.close({ id: PANE })
-      return { text: 'Foreman pane closed.' }
+      return { text: 'Sampo pane closed.' }
     }
     await refresh($)
     const opened = await openPane($, true)
-    return { text: opened.isPlaced ? 'Foreman pane opened.' : `Foreman pane: ${opened.reason}` }
+    return { text: opened.isPlaced ? 'Sampo pane opened.' : `Sampo pane: ${opened.reason}` }
   })
 
   // T-0120: only the person's own Enter (or their phone, via the bridge) turns trust on; a prompt the agent scheduled, a
-  // skill call or another plugin's run is refused. On writes the record into Foreman state straight from here (no tool
+  // skill call or another plugin's run is refused. On writes the record into Sampo state straight from here (no tool
   // call may write there, and fm has no "on"); fm trust then records it in the ledger, and off is fm's.
   on('command.run', { command: 'fm-trust' }, async ($, e) => {
     const kind = e.origin?.kind
-    if (kind !== 'composer' && kind !== 'bridge') return { text: 'Foreman: /fm-trust works only when you type it.' }
+    if (kind !== 'composer' && kind !== 'bridge') return { text: 'Ward: /fm-trust works only when you type it.' }
     const arg = e.args.trim()
     if (arg === 'on') {
       const home = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${(await $.env.get('HOME')) ?? ''}/.claude`
@@ -703,13 +703,13 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // T-1262: a grant is a person's to give. Foreman's PreToolUse hook asks for each lone fm ask; answered here as this
+  // T-1262: a grant is a person's to give. Sampo's PreToolUse hook asks for each lone fm ask; answered here as this
   // plugin's own ask, Claude Code puts it only to the dialog, a host's callback or a PermissionRequest hook: auto
   // mode's classifier, bypass mode and a saved rule for all of Bash can't settle it, and where nobody can be asked it
   // is refused. On a failure the verdict beneath stands: the classic ask (the grant still needs the dialog's record).
   on('tool.check', { tool: 'Bash' }, async ($, e, next) => {
     const r = await next(e)
-    return r.decision === 'ask' && r.hook === 'PreToolUse' && /^Foreman asks /.test(r.reason ?? '')
+    return r.decision === 'ask' && r.hook === 'PreToolUse' && /^(?:Foreman|Sampo) asks /.test(r.reason ?? '')
       ? { decision: 'ask', reason: r.reason }
       : r
   }).catch(($, e, next) => next(e)) // the verdict beneath: the classic ask, never an allow of its own
@@ -744,7 +744,7 @@ export const register: Register = (on, options) => {
       const r = await next(e)
       item.ok = r.deny === undefined && !r.isError
       const why = guardReason(r)
-      if (why) $.ui.toast(`⛔ Foreman: ${why}`, { timeoutMs: 8000 })
+      if (why) $.ui.toast(`⛔ Ward: ${why}`, { timeoutMs: 8000 })
       else if (face.add !== undefined && r.deny === undefined && !r.isError) {
         const file = (e as { file_path?: unknown }).file_path // the real path; the files card shows it project-relative
         await noteEdit($, typeof file === 'string' ? file : face.target, face.add, face.del ?? 0)
@@ -842,7 +842,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // While a tool runs: an animated row. A Foreman bookkeeping command that succeeded: one quiet line. Else the engine's.
+  // While a tool runs: an animated row. A Sampo bookkeeping command that succeeded: one quiet line. Else the engine's.
   // T-0141: under an edit row that already shows its diff, the engine's own result block ('⎿ Added 2 lines' and the
   // whole hunk again, on red and green backgrounds) is blanked; an error still draws the engine's
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
@@ -917,7 +917,7 @@ export const register: Register = (on, options) => {
       </Box>)
   })
 
-  // A background task's notification: one Foreman line (ctrl+o still shows the engine's full row).
+  // A background task's notification: one Sampo line (ctrl+o still shows the engine's full row).
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     const origin = e.props.origin as { kind?: string; name?: string } | undefined
     const ours = /^The foreman-ui plugin sent a message:\n/ // how the model reads it; the row may carry that text
@@ -965,7 +965,7 @@ export const register: Register = (on, options) => {
     ))
   })
 
-  // T-0143: the working line is Foreman's ('get rid of … the "Seasoning" thing … and have it be a foreman thing'): an
+  // T-0143: the working line is Sampo's ('get rid of … the "Seasoning" thing … and have it be a foreman thing'): an
   // animated mark, the task and step, what the turn is doing, how long it has run. The desktop keeps its own row.
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
@@ -983,7 +983,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="row" gap={1} key="fm-working">
         <Text color={hex(C.accent)}>{spin(f)}</Text>
         <Text weight="bold" color={hex(C.accent)}>
-          {a ? a.id : 'Foreman'}
+          {a ? a.id : 'Sampo'}
         </Text>
         {a && cur && (
           <Text wrap="truncate-end">
@@ -996,7 +996,7 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // T-0143: a reply opens with a Foreman mark (animated on the newest reply while the turn runs) and Foreman's report
+  // T-0143: a reply opens with a Sampo mark (animated on the newest reply while the turn runs) and Sampo's report
   // lines (Changed:, ✓/✗, ⚑ Captured, ◆ Decided, Next:, ⚠ Needs you) are coloured like its rows; the rest stays the
   // engine's markdown ('just your normal text output looks weird with everything else').
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
@@ -1061,7 +1061,7 @@ export const register: Register = (on, options) => {
     const v = await read($, view)
     if (e.props.isDraft || !waiting(v)) return next(e)
     const shown = (await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown) // /fm would close it
-    return next({ ...e, props: { ...e.props, tail: shown ? '⚠ Foreman needs you: see the pane' : '⚠ Foreman needs you: /fm' } }) // the engine puts the separator before it
+    return next({ ...e, props: { ...e.props, tail: shown ? '⚠ Sampo needs you: see the pane' : '⚠ Sampo needs you: /fm' } }) // the engine puts the separator before it
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -1263,7 +1263,7 @@ export const register: Register = (on, options) => {
         )}
         {paused.length > 0 && (
           <Text color={hex(C.warn)} wrap={cut} key="fm-band-paused">
-            ⚠ Foreman's {paused.join(', ')} hook{paused.length === 1 ? ' is' : 's are'} paused: it failed 3 times in a row
+            ⚠ Sampo's {paused.join(', ')} hook{paused.length === 1 ? ' is' : 's are'} paused: it failed 3 times in a row
             and runs again within 10 min (fm doctor)
           </Text>
         )}
@@ -1310,13 +1310,13 @@ export const register: Register = (on, options) => {
     if (!v?.project) {
       return (
         <Box flexDirection="column">
-          <Text color={hex(C.dim)}>Not a Foreman project here.{err ? ` (${err})` : ''}</Text>
+          <Text color={hex(C.dim)}>Not a Sampo project here.{err ? ` (${err})` : ''}</Text>
           <Text color={hex(C.dim)}>Ask Claude to set it up, or run /foreman:intake with a request.</Text>
         </Box>
       )
     }
     if (e.props.bodyColumns < PANE_MIN) // T-1679: below the layout's floor one line says what it needs, never a spill
-      return <Text color={hex(C.dim)} wrap="truncate-end">{`Foreman: ${PANE_MIN}+ columns`}</Text>
+      return <Text color={hex(C.dim)} wrap="truncate-end">{`Sampo: ${PANE_MIN}+ columns`}</Text>
     const live = turns.size > 0 || starts.size > 0
     const clockNow = await $.clock.now()
     const moving = live && cfg.motion !== 'off' // T-0912: motion off draws work still
@@ -1403,7 +1403,7 @@ export const register: Register = (on, options) => {
           <Button key={`start-${it.id}`} label="start" plain dimColor
             onPress={() => void $.prompt.submit({ text: `Plan and start ${it.id} (/foreman:intake).`, asUser: true })} />
           <Button key={`drop-${it.id}`} label="drop" plain dimColor
-            onPress={() => act($, ['task', 'drop', it.id, 'dropped from the Foreman pane'], `${it.id} dropped`)} />
+            onPress={() => act($, ['task', 'drop', it.id, 'dropped from the Sampo pane'], `${it.id} dropped`)} />
         </Box>
       )),
       ...(inboxN > inbox.length ? [<Text key="in-more" color={dim}>{`… ${inboxN - inbox.length} more in the inbox`}</Text>] : []),
@@ -1603,7 +1603,7 @@ export const register: Register = (on, options) => {
         </Box>
       )
       if (err) return row(C.err, `✗ fm: ${err}`)
-      if (paused.length) // Foreman's own checks are off: before anything else (T-0087)
+      if (paused.length) // Sampo's own checks are off: before anything else (T-0087)
         return row(C.warn, `⚠ ${paused.join(', ')} hook${paused.length === 1 ? ' is' : 's are'} paused after failing 3 times in a row (fm doctor)`)
       if (asking) return row(C.warn, `⚠ waiting for your answer, ${elapsed(clockNow - asking[1].at)}`)
       if (asks.length) {
@@ -1678,7 +1678,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column" flexGrow={1} flexShrink={1}>
           <Text key="head-who" wrap="truncate-end">
             <Text weight="bold" color={hex(C.accent)}>
-              {moving ? spin(f ?? 0) : '▍'} Foreman
+              {moving ? spin(f ?? 0) : '▍'} Sampo
             </Text>
             <Text color={muted}>{`  ${v.project}`}</Text>
             {modes.map(([w, c], i) => (

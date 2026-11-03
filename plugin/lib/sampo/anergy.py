@@ -2,7 +2,7 @@
 PermissionRequest appends {id, cls, ro, at} for every prompt; PostToolUse appends {id, at} for a call that was asked
 about; the report pairs them offline and names the command classes approved within REFLEX_S in MIN_N or more prompts,
 with the allow rule that would retire each. Only classes whose every prompt only read (fmguard.read_only, or a reading
-tool) are ever named, so a destructive or outward class never is, and Foreman never applies a rule: the user does."""
+tool) are ever named, so a destructive or outward class never is, and Sampo never applies a rule: the user does."""
 import json
 import os
 import re

@@ -934,7 +934,7 @@ def _parse_lines(text, pattern, root):
 
 
 def _tool_env(root):
-    """Foreman's own minimal environment: no credentials, no FOREMAN_/CLAUDE vars. PATH keeps only absolute entries
+    """Sampo's own minimal environment: no credentials, no FOREMAN_/CLAUDE vars. PATH keeps only absolute entries
     outside the tree (a relative one, or one inside it, would run the tree's own file as the tool)."""
     path = os.pathsep.join(x for x in os.environ.get("PATH", "").split(os.pathsep)
                            if os.path.isabs(x) and os.path.commonpath([os.path.realpath(x), root]) != root)
@@ -1101,12 +1101,12 @@ def cmd_find(args):
     p = c.find_project(os.getcwd()) if ranked or getattr(args, "blindspots", False) else None
     if getattr(args, "blindspots", False):
         if not p:
-            print("fm find: --blindspots: run it inside a Foreman project", file=sys.stderr)
+            print("fm find: --blindspots: run it inside a Sampo project", file=sys.stderr)
             return 2
         return cmd_blindspots(p, args)
     bad = (f"not a directory: {args.path}" if not os.path.isdir(root)
            else "--capture N: N is how many tasks to file, at least 1" if cap is not None and cap < 1
-           else "--capture files tasks: run it inside a Foreman project" if cap and not p else None)
+           else "--capture files tasks: run it inside a Sampo project" if cap and not p else None)
     if not bad and getattr(args, "hotspots", False):  # T-2238: where fixes landed before; not findings, so exit 0
         if ranked:
             print("fm find: --hotspots can't combine with --rank or --capture", file=sys.stderr)
