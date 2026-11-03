@@ -113,13 +113,16 @@ class SelfDocsModules(Base):
     def test_master_names_every_module(self):
         from sampo import doctor
         home = os.path.join(self.tmp, "fh")
-        os.makedirs(os.path.join(home, "plugin", "lib"))
-        for m in ("fmcore", "fmnew"):
-            with open(os.path.join(home, "plugin", "lib", f"{m}.py"), "w") as f:
+        lib = os.path.join(home, "plugin", "lib")
+        os.makedirs(os.path.join(lib, "sampo"))
+        for m in ("sampo/core", "sampo/new", "sampo/__init__", "sampo/viaslash", "sampo/viadot", "fmcore", "fmold", "fmguard"):
+            with open(os.path.join(lib, f"{m}.py"), "w") as f:
                 f.write("")
         with open(os.path.join(home, "MASTER.md"), "w") as f:
-            f.write("fmcore does things.\n")
-        self.assertEqual(doctor.missing_modules(home), ["fmnew"])
+            f.write("fmcore does things; see sampo/viaslash and sampo.viadot.\n")
+        # new.py is unnamed (a bare word "new" is not a mention); the shim fmold and __init__ are skipped; fmguard is checked
+        self.assertEqual(doctor.missing_modules(home), ["fmguard", "new"])
+        self.assertEqual(doctor.missing_modules(home, master="fmguard sampo/new fmcore sampo/core fmviaslash sampo.viadot"), [])
 
 
 class CalibrationLedger(Base):

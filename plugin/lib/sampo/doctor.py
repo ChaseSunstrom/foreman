@@ -1464,11 +1464,16 @@ def check_self_docs(home=None, plugin=PLUGIN):
 
 
 def missing_modules(home, master=None):
-    """T-0491: plugin/lib/fm*.py modules MASTER.md never names, so its module map keeps up with the code."""
+    """T-0491, T-2782: plugin/lib/sampo/*.py modules (and fmguard, the one real fm*.py left; the rest are shims)
+    MASTER.md never names, as fmX, sampo/X or sampo.X, so its module map keeps up with the code."""
     master = master if master is not None else (_read(os.path.join(home, "MASTER.md")) or "")
     lib = os.path.join(home, "plugin", "lib")
-    names = sorted(f[:-3] for f in (os.listdir(lib) if os.path.isdir(lib) else []) if re.fullmatch(r"fm\w+\.py", f))
-    return [n for n in names if not re.search(rf"\b{n}\b", master)]
+    sub = os.path.join(lib, "sampo")
+    names = sorted(f[:-3] for f in (os.listdir(sub) if os.path.isdir(sub) else []) if re.fullmatch(r"[a-z]\w*\.py", f))
+    bad = [n for n in names if not re.search(rf"\bfm{n}\b|\bsampo[/.]{n}\b", master)]
+    if os.path.isfile(os.path.join(lib, "fmguard.py")) and not re.search(r"\bfmguard\b", master):
+        bad.insert(0, "fmguard")
+    return bad
 
 
 def check_state_dir(home, state):
