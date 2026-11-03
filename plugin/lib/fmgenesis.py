@@ -3336,9 +3336,14 @@ def _lean_row(p, n):
     gone, added = sorted(old - new), sorted(new - old)
     hp = start.get("hook_p95")
     same = os.path.realpath(fmdoctor.PLUGIN) == os.path.realpath(os.path.join(p.root, "plugin"))
-    cp = fmdoctor.hook_p95() if isinstance(hp, (int, float)) and same else None
+    got = fmdoctor.hook_p95(spread=True) if isinstance(hp, (int, float)) and same else None
+    cp, noise = got if isinstance(got, tuple) else (got, 0.0)  # T-2727: one tree read 36.2 then 36.5 ms back to back
     if isinstance(cp, (int, float)):
-        (bad if cp > hp else less if cp < hp else []).append(f"hook p95 {hp:.1f} -> {cp:.1f} ms")
+        line = f"hook p95 {hp:.1f} -> {cp:.1f} ms" + (f" (runs spread {noise:.1f})" if noise else "")
+        if cp > hp + noise:
+            bad.append(line)
+        elif cp != hp:  # lighter, or heavier only within the runs' own spread: shown, never failed
+            less.append(line if cp < hp else line + ": within the runs' own spread")
     notes = ([f"removed: {', '.join(gone)}"] if gone else []) + ([f"added: {', '.join(added)}"] if added else [])
     notes += [] if isinstance(cp, (int, float)) else ["hook p95 not judged (" + (
         "the running fm isn't this tree's" if not same else "no start time") + ")"]

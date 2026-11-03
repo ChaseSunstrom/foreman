@@ -2734,7 +2734,12 @@ class GenesisSweep(ForemanTestCase):
         start = fmgenesis._lean_record(self.p, 1)
         self.assertEqual((start["metrics"]["verbs"], start["hook_p95"]), (2, 40.0))  # put recorded the start
         self.assertTrue(self.lean(p95=40.0)["ok"])  # equal passes
-        self.assertFalse(self.lean(p95=40.1)["ok"])  # no band: hook p95 is already the median of three bench runs
+        self.assertFalse(self.lean(p95=40.1)["ok"])  # no band while the three bench runs agree
+        # T-2727: one tree measured 36.2 then 36.5 ms back to back; a rise within the runs' own spread is noise
+        self.assertTrue(self.lean(p95=(40.3, 0.5))["ok"])
+        row = self.lean(p95=(40.6, 0.5))
+        self.assertFalse(row["ok"])
+        self.assertIn("hook p95 40.0 -> 40.6 ms (runs spread 0.5)", row["detail"])
         self.assertIn("not judged (the running fm isn't this tree's)", self.lean(p95=99.0, plugin="/elsewhere")["detail"])
         self.foreman_tree(rules="rule one\nrule two, added\n", verbs=("help", "dev", "extra"))
         row = self.lean(p95=60.0)

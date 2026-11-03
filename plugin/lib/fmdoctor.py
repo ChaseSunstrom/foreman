@@ -139,10 +139,11 @@ def _p95(xs):
     return xs[min(len(xs) - 1, int(len(xs) * 0.95))]  # as bench_hooks takes it
 
 
-def hook_p95(runs=60):
+def hook_p95(runs=60, spread=False):
     """T-2359: the guard's PreToolUse p95 in ms (the worst PreToolUse fixture, scripts aside; CPU time on a loaded
     machine, as bench_hooks' own budget check does), the median of three bench_hooks runs of only those fixtures, to
-    one decimal; None where the bench isn't installed."""
+    one decimal; None where the bench isn't installed. spread (T-2727): (median, the three runs' max minus min), the
+    measurement's own noise, so a ratchet can tell a rise from it."""
     try:
         if os.path.join(PLUGIN, "tests") not in sys.path:
             sys.path.insert(0, os.path.join(PLUGIN, "tests"))
@@ -154,7 +155,8 @@ def hook_p95(runs=60):
     for _ in range(3):
         got = [v["cpu_p95"] if v.get("load", 0) > 1 else v["p95"] for v in bench_hooks.run_bench(runs, only=pre).values()]
         vals += [max(got)] if got else []
-    return round(sorted(vals)[len(vals) // 2], 1) if vals else None
+    med = round(sorted(vals)[len(vals) // 2], 1) if vals else None
+    return (med, round(max(vals) - min(vals), 1)) if spread and vals else med
 
 
 def check_hook_slo():
