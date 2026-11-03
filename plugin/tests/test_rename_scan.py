@@ -7,14 +7,15 @@ import subprocess
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BASELINE = 834  # 876 on 2026-11-03, before the rename; 834 once the site took Sampo (T-2753); the goal is 0
+BASELINE = 720  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760); the goal is 0
 SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", "plugin/skills/**/*.md",
             "plugin/commands/*.md", "plugin/agents/*.md", ".claude-plugin/marketplace.json",
             "plugin/.claude-plugin/plugin.json", "plugin/output-styles/*", "mods/foreman-ui/**", "plugin/rules/*.md")
 # names kept on purpose: old plugin ids, commands, agents, env, trailer and path, each an alias of its Sampo name, and
 # the one line that says what Sampo was called
 KEPT = re.compile(r"foreman(?:-ui)?@foreman|/foreman:|foreman:fm-|FOREMAN_|Foreman-Task|\.claude/foreman|"
-                  r"formerly Foreman|was called Foreman|renamed from Foreman", re.I)
+                  r"formerly Foreman|was called Foreman|renamed from Foreman|"
+                  r"chasesunstrom(?:\.github\.io)?/foreman", re.I)  # the repo's address moves only when it is renamed
 
 
 def leftover():
