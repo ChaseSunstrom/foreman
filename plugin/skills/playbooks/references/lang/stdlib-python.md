@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Python: the standard library first
 
 Use when you are about to add a Python dependency, write a helper, or review code that rebuilds something the

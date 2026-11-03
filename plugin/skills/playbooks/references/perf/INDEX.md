@@ -1,4 +1,4 @@
-<!-- Foreman's own index (written for Foreman, not ported). -->
+<!-- Sampo's own index (written for Sampo, not ported). -->
 # Performance playbooks: measure before and after
 
 Paths are relative to the playbooks skill.

@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Mobile build failures: Xcode, Expo, Flutter
 
 Use when an iOS or Android app build fails: `xcodebuild`, `npx expo` or EAS, `flutter build`, or a fastlane lane that wraps them.

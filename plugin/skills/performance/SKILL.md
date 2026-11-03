@@ -3,7 +3,7 @@ name: performance
 description: Use whenever you optimize or improve performance, or something is slow: profile, change one thing, measure.
 ---
 
-# Foreman: performance
+# Sampo: performance
 
 No tuning without a number. A PERF task's criterion states the metric and the target ("p95 under 200 ms"). No brief yet → `/foreman:intake` first.
 

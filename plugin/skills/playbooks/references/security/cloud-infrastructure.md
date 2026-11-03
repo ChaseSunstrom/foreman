@@ -1,6 +1,6 @@
-<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/security-review/cloud-infrastructure-security.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
+<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/security-review/cloud-infrastructure-security.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Sampo: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
 > **Playbook** (source: ECC `skills/security-review/cloud-infrastructure-security.md`). A cloud and CI/CD security checklist. Use when deploying to a cloud platform or configuring IAM, secrets, networks, logging, CI/CD pipelines, a CDN or backups.
-> Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
+> Sampo note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Sampo equivalents.
 
 | name | description |
 |------|-------------|

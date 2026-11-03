@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Verify a mobile app change
 
 Use when app code changed and you must show it works on the platform, not only that it compiles.

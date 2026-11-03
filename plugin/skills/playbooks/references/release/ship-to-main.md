@@ -1,9 +1,9 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Ship a branch to main
 
 Use when finished work on a working branch goes to main: push to main, fast-forward main, publish a release commit, or a CI job on main fails after a push.
 
-In Foreman's own repo a release ships with `fm release VERSION --push` and the task's `publish` grant (it merges with `--no-ff` from a temporary worktree); this book is for any other branch or repo. `fm ship [COMMIT…] [--remote URL] [--test CMD] [--watch]` runs steps 1, 2, 4, 5 and 8 in one call behind the same grant, step 3 when `--test` names the oldest runtime's suite, and the CI watch with `--watch` (run it in the background).
+In Sampo's own repo a release ships with `fm release VERSION --push` and the task's `publish` grant (it merges with `--no-ff` from a temporary worktree); this book is for any other branch or repo. `fm ship [COMMIT…] [--remote URL] [--test CMD] [--watch]` runs steps 1, 2, 4, 5 and 8 in one call behind the same grant, step 3 when `--test` names the oldest runtime's suite, and the CI watch with `--watch` (run it in the background).
 
 State your chance that CI's blocking jobs pass with `fm ship --chance N`: it books one write-once ship bet on the pushed commit, and `fm ci-watch` settles it from GitHub's run, so the number is scored within hours (`fm outcomes --judgment` shows the ship kind). Once 20+ ship bets have settled, a chance 15+ points from their held share gets one line after the bet, naming the record and which way the number sits, so the next bet starts from it (T-2611).
 

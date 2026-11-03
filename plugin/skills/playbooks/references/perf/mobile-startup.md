@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Phone app cold start and frame drops
 
 Use when an Android, iOS, Expo or Compose app has a slow cold start or dropped frames on a phone.

@@ -1,7 +1,7 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Terminal and mod UI
 
-Use when building or reworking UI inside a terminal app or a Claude Code mod (panes, bands, status lines, tool rows), or a command-line tool's own output. Each rule below can be marked pass or fail by a reviewer. Foreman's own worked examples: `fmcodeterm.py` (the terminal: keys, paste, resize, colour depth, the session) and `fmcodetui.py` (the app drawn on it: `width`, `fit`, `render`).
+Use when building or reworking UI inside a terminal app or a Claude Code mod (panes, bands, status lines, tool rows), or a command-line tool's own output. Each rule below can be marked pass or fail by a reviewer. Sampo's own worked examples: `fmcodeterm.py` (the terminal: keys, paste, resize, colour depth, the session) and `fmcodetui.py` (the app drawn on it: `width`, `fit`, `render`).
 
 ## Hierarchy and colour
 

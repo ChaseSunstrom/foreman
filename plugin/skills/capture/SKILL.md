@@ -1,11 +1,11 @@
 ---
 name: capture
-description: Capture a request into the Foreman inbox without working on it (usage /foreman:capture <text>): an idea queued for later.
+description: Capture a request into the Sampo inbox without working on it (usage /foreman:capture <text>): an idea queued for later.
 argument-hint: "<request text>"
 disable-model-invocation: true
 ---
 
-# Foreman: capture
+# Sampo: capture
 
 Capture `$ARGUMENTS` verbatim: guess its type (FIX/FEATURE/CLEAN/PERFORMANCE/SECURITY/RESEARCH) and tier (S/M/L), then
 `fm capture "$ARGUMENTS" --type <T> --tier <X>`.

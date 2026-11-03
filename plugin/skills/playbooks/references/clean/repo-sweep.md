@@ -1,4 +1,4 @@
-# Whole-repo cleanup sweep (Foreman's own, T-0364)
+# Whole-repo cleanup sweep (Sampo's own, T-0364)
 
 Use when asked to "clean up the repo / docs / code / briefs / dead code / unused or replaced functionality". A dead-code tool that
 finds nothing is one row of evidence, never the verdict: a sweep is done when every area has been checked by a stated
@@ -26,7 +26,7 @@ method, not when a gate stays green.
    go, undocumented ones get a line.
 5. **UI** — unused components, styles, assets and routes (no import, no reference); one style for one thing.
 6. **Stray files** — committed build output, logs, scratch, old scripts, files `.gitignore` should cover.
-7. **Foreman state** — `/foreman:tidy`: archive finished briefs, drop stale captured ones with a reason, merge
+7. **Sampo state** — `/foreman:tidy`: archive finished briefs, drop stale captured ones with a reason, merge
    duplicates.
 8. **Needs improving** — duplication and smells found on the way: fix the small ones here, capture the rest
    (`fm capture --source discovered`) with the evidence.

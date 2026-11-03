@@ -1,6 +1,6 @@
-<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/latency-critical-systems/SKILL.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
+<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/latency-critical-systems/SKILL.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Sampo: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
 > **Playbook** (source: ECC `skills/latency-critical-systems/SKILL.md`). Use for latency-sensitive systems such as realtime dashboards, market data, streaming agents, execution gateways, queues, caches, or HFT-like infrastructure where freshness and p95 latency matter. Use when p95 latency or data freshness matters — realtime dashboards, market data, streaming agents, queues, or caches.
-> Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
+> Sampo note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Sampo equivalents.
 
 # Latency Critical Systems
 

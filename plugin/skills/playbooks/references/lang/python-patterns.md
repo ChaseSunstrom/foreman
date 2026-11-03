@@ -1,6 +1,6 @@
-<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/python-patterns/SKILL.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
+<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/python-patterns/SKILL.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Sampo: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
 > **Playbook** (source: ECC `skills/python-patterns/SKILL.md`). Pythonic idioms, PEP 8 standards, type hints, and best practices for building robust, efficient, and maintainable Python applications. Use when writing or reviewing Python code and idiomatic structure, typing, or PEP 8 is in question.
-> Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
+> Sampo note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Sampo equivalents.
 
 # Python Development Patterns
 

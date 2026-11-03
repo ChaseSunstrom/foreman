@@ -1,6 +1,6 @@
-<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/agent-introspection-debugging/SKILL.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed; ECC integration section removed. See plugin/THIRD_PARTY_LICENSES.md. -->
+<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/agent-introspection-debugging/SKILL.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Sampo: frontmatter and ECC runtime boilerplate removed; ECC integration section removed. See plugin/THIRD_PARTY_LICENSES.md. -->
 > **Playbook** (source: ECC `skills/agent-introspection-debugging/SKILL.md`). Structured self-debugging workflow for AI agent failures using capture, diagnosis, contained recovery, and introspection reports. Use when an agent run fails and you need a reproducible diagnosis instead of a retry.
-> Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
+> Sampo note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Sampo equivalents.
 
 # Agent Introspection Debugging
 

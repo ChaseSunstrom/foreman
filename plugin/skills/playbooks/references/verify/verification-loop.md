@@ -1,6 +1,6 @@
-<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/verification-loop/SKILL.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
+<!-- Ported from ECC (https://github.com/affaan-m/ECC) `skills/verification-loop/SKILL.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Sampo: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
 > **Playbook** (source: ECC `skills/verification-loop/SKILL.md`). A comprehensive verification system for Claude Code sessions. Use when verifying a Claude Code session's work before claiming it is complete.
-> Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
+> Sampo note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Sampo equivalents.
 
 # Verification Loop Skill
 

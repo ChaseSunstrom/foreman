@@ -19,7 +19,7 @@ A single-screen picture house at night: true oxblood walls, a warm cream marquee
 | `--accent` | #E3C94A | 0.835 0.145 98 | 11.1:1 on surface |
 | `--on-accent` | #2A0A12 | 0.203 0.054 8 | 11.1:1 on accent |
 
-Dark first: body text clears Foreman's 7:1 dark rule. Brass is a full yellow-gold at chroma 0.145, clear of the warning amber; the oxblood walls stay in the background and carry no meaning. Accent hue 98, 33° from the nearest status hue.
+Dark first: body text clears Sampo's 7:1 dark rule. Brass is a full yellow-gold at chroma 0.145, clear of the warning amber; the oxblood walls stay in the background and carry no meaning. Accent hue 98, 33° from the nearest status hue.
 
 ## Type
 Didone at 700 for show titles in capitals, tracked +0.04em; humanist sans at 400 for times, prices and body. Showtimes use tabular figures at 1.125rem so a column of times lines up.

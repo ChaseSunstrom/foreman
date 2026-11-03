@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Game project build and import errors
 
 Use when a game project will not load, import or export headless: Godot, Unity, Unreal, or a shader or GPU pipeline that fails to compile.

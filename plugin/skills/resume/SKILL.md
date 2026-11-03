@@ -3,7 +3,7 @@ name: resume
 description: Use whenever you start after /compact, /clear or a crash, or "where were we" is asked: restores task context.
 ---
 
-# Foreman: resume
+# Sampo: resume
 
 1. `fm resume` — active task, current step, the "Resume here" notes and the brief path, the commands already tried on the step, and the last green check re-run so drift shows before you build on it (`--no-check` skips it). (SessionStart already injected a summary; this gives the full picture.)
 2. Read the brief's Execution prompt and the current step. Compare "Resume here" with reality: `git status`, `git log --oneline -5`, the files it names.

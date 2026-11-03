@@ -1,4 +1,4 @@
-<!-- Foreman's own index (written for Foreman, not ported). -->
+<!-- Sampo's own index (written for Sampo, not ported). -->
 # Verify playbooks per stack
 
 Proof that a change works, by stack. Paths are relative to the playbooks skill; the general loops are in SKILL.md.

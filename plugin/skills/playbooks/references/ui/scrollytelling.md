@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Scrollytelling: steps the reader controls
 
 Use when a story or explainer changes a sticky graphic (a chart, a map, a diagram) as the reader scrolls through

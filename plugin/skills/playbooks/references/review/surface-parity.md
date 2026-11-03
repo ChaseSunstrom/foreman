@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Surface parity
 
 Use when one product has several surfaces (CLI, plugin commands and skills, a web app, a pane, an API) and a feature, verb, setting or safety check must reach every one of them.

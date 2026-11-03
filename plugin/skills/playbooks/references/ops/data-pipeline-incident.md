@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Incident: a data pipeline is late, stuck or wrong
 
 Use when a stream or batch pipeline stops, lags, or feeds wrong data to people who depend on it: Kafka consumers behind, a Debezium connector failed, a replica far behind.

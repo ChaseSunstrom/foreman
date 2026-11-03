@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Ship a mobile app to TestFlight or Play
 
 Use when you upload a mobile build for testers or a store: iOS archive and upload, an Android bundle, fastlane lanes, Expo EAS.

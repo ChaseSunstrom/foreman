@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # A data pipeline run fails or writes wrong rows
 
 Use when an Airflow, Dagster, dbt, Kafka or ETL job fails, hangs, duplicates rows or loads the wrong ones.

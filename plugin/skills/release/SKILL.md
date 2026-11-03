@@ -3,9 +3,9 @@ name: release
 description: Use whenever you release or ship: gate the commit, bump the version, changelog, tag, publish.
 ---
 
-# Foreman: release
+# Sampo: release
 
-The procedure is `../playbooks/references/release/release-and-changelog.md`; this is how Foreman runs it. A release is a task like any other (`/foreman:intake` if none is active), and publishing is outward and hard to undo.
+The procedure is `../playbooks/references/release/release-and-changelog.md`; this is how Sampo runs it. A release is a task like any other (`/foreman:intake` if none is active), and publishing is outward and hard to undo.
 
 ## Any project
 
@@ -17,7 +17,7 @@ The procedure is `../playbooks/references/release/release-and-changelog.md`; thi
 4. **Push, tag and publish** only with the task's publish grant (pushing the release commit is outward too): `fm ask ID publish --why "<what goes where>"` asks the user; a standing yes they gave for releases is recorded with `fm task set ID --allow publish`. No grant → stop at the local commit and tag, and say what's left.
 5. **After the push:** `fm ci-watch` follows the CI run (a failure becomes a FIX brief); install the published artifact from scratch and record that as evidence. A demo or release video → `../playbooks/references/release/demo-production.md`.
 
-## Foreman's own repo
+## Sampo's own repo
 
 `fm release VERSION` runs check, bump, changelog, commit, release-check, canary, push and round close as named steps with a checkpoint after each:
 - `fm release VERSION --dry-run` prints the plan first; `fm release VERSION --resume` continues a stopped run; `--abandon` forgets one.

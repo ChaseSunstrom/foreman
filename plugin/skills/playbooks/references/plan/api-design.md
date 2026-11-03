@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # API design
 
 Use when adding or changing a public interface: a CLI, HTTP/RPC endpoint, library function, config format or file format.

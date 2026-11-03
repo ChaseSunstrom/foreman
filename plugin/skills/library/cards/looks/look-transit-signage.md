@@ -19,7 +19,7 @@ Platform wayfinding read at walking pace: dark enamel panels, one line colour, d
 | `--accent` | #26BDAE | 0.72 0.120 185 | 7.5:1 on surface |
 | `--on-accent` | #101418 | 0.19 0.010 250 | 7.9:1 on accent |
 
-Dark first, so body text clears Foreman's 7:1 dark rule. Accent hue 185 (line teal), 35° from success green.
+Dark first, so body text clears Sampo's 7:1 dark rule. Accent hue 185 (line teal), 35° from success green.
 
 ## Type
 One neo-grotesk does everything: 600 for sign bands and destinations, 400 for detail, ratio 1.333, sentence case (capitals slow reading at a distance). Times, platforms and codes take tabular figures. A second family adds nothing here.

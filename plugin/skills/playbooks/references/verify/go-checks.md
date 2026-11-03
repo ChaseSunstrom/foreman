@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Verify a Go change
 
 Use when a Go package changed and you must show it is correct, race-free and tidy before calling it done.

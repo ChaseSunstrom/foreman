@@ -19,7 +19,7 @@ A street-food market after dark: warm brown-black, stalls under strung lights, p
 | `--accent` | #DB6BAF | 0.68 0.160 345 | 5.8:1 on surface |
 | `--on-accent` | #1B1410 | 0.2 0.014 50 | 5.8:1 on accent |
 
-Dark first: body text clears Foreman's 7:1 dark rule. Accent hue 345, 42° from error red; lantern orange stays out of the accent because it sits on warning amber.
+Dark first: body text clears Sampo's 7:1 dark rule. Accent hue 345, 42° from error red; lantern orange stays out of the accent because it sits on warning amber.
 
 ## Type
 Slab at 700 for stall names and prices, like a painted board; humanist sans at 400 for descriptions. They differ on classification and stroke weight. Prices take tabular figures and run larger than the dish's description.

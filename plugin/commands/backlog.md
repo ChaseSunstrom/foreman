@@ -3,7 +3,7 @@ description: Your backlog: small items ready to start, a sweep of the deferred p
 disable-model-invocation: true
 argument-hint: "[first | swipe | serve | pick | why ID | reset | ticket [PATH | KEY | #N | URL]]"
 ---
-Foreman's backlog tools, through `fm inbox` (the fm code app and a terminal use the same verb).
+Sampo's backlog tools, through `fm inbox` (the Smith app and a terminal use the same verb).
 
 Arguments (may be empty): $ARGUMENTS
 

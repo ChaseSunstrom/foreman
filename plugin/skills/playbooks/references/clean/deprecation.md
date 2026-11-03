@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Deprecation: announce, shim, remove
 
 Use when a public function, CLI flag, config key, endpoint, file format or setting is going away or changing

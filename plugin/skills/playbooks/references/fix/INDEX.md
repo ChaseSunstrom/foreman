@@ -1,4 +1,4 @@
-<!-- Foreman's own index (written for Foreman, not ported). -->
+<!-- Sampo's own index (written for Sampo, not ported). -->
 # Fix playbooks
 
 Bugs by kind: the failing thing first, then its stack. Paths are relative to the playbooks skill.

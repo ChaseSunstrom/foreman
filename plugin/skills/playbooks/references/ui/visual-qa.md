@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Visual QA: screenshots, an eyeball pass and a receipt
 
 Use when a task changes what a web screen looks like: a new view, a restyle, a dark mode, a layout fix, a motion change. Green tests say the code does what the tests ask; only a frame says the screen looks right. This playbook proves a UI change by looking at it: `fm smoke` for the defects a crawler can name, the start page's frames and hostile profiles, a small frame script for the other views and fixtures, a checklist for the eye, and a receipt in the task's evidence.
@@ -9,10 +9,10 @@ It checks the decisions the sibling playbooks make; it doesn't repeat them. The 
 
 | Pass | What runs | Widths | Themes, motion | Finds |
 |---|---|---|---|---|
-| `fm smoke` | Foreman's crawler (`smoke_web.cjs`) in a headless Chromium | crawl: 1440×900, 390×844; the start page's frames: 360×800, 768×1024, 1440×900 | crawl: the browser's defaults; frames: light and dark, reduced motion at 360 | load and console errors, failed requests to the app's host, placeholders still showing after 5 s, visible alerts, a page wider than the screen, overlapping fixed controls; from the frames, as notes: overflow, motion under reduce |
+| `fm smoke` | Sampo's crawler (`smoke_web.cjs`) in a headless Chromium | crawl: 1440×900, 390×844; the start page's frames: 360×800, 768×1024, 1440×900 | crawl: the browser's defaults; frames: light and dark, reduced motion at 360 | load and console errors, failed requests to the app's host, placeholders still showing after 5 s, visible alerts, a page wider than the screen, overlapping fixed controls; from the frames, as notes: overflow, motion under reduce |
 | frame script | `qa/frames.mjs` below, in the project | 360×800, 768×1024, 1440×900 | light and dark; reduced motion at 360 | the same frames for every path you name, on a seeded fixture: page overflow, junk text, a screen that still moves under reduced motion; and the frames the eye checks |
 
-Both use the project's own Playwright; Foreman never installs it. Without it, or with it but no browser, `fm smoke` prints `skipped …` and the reason, which is not a pass: `npm i -D playwright`, then `npx playwright install chromium` (or point `FOREMAN_PLAYWRIGHT` at a Playwright package folder).
+Both use the project's own Playwright; Sampo never installs it. Without it, or with it but no browser, `fm smoke` prints `skipped …` and the reason, which is not a pass: `npm i -D playwright`, then `npx playwright install chromium` (or point `FOREMAN_PLAYWRIGHT` at a Playwright package folder).
 
 ## fm smoke
 
@@ -57,7 +57,7 @@ Pass: run the frame script twice on one commit and fixture; every hash it prints
 `fm smoke` already shoots this matrix for the start page on whatever data the running app has; the script covers every other path, on a seeded fixture. Copy it into the project as `qa/frames.mjs` and add `.qa/` to `.gitignore`. It writes the frames to `.qa/frames/<commit>-<fixture>/` (a `-dirty` commit when the tree has changes), prints a short hash per frame, checks what a script can, and exits 1 on any finding. `QA_FIXTURE` only names the folder: the app must already be running on that fixture, so start both with the same value.
 
 ```js
-// qa/frames.mjs: the frame matrix of Foreman's visual QA playbook (ui/visual-qa.md).
+// qa/frames.mjs: the frame matrix of Sampo's visual QA playbook (ui/visual-qa.md).
 // QA_FIXTURE=full node qa/frames.mjs http://localhost:5173 / /settings /projects
 import { chromium } from "playwright";
 import { createHash } from "node:crypto";
@@ -125,7 +125,7 @@ It ignores a `null` that the product shows on purpose (a database tool): drop `n
 
 The eye is the check here; the script only finds what it can name. Look at every frame of every view the task changed: seven per view per fixture. Views the task didn't touch need only `fm smoke`.
 
-- **In a Claude Code session** (Foreman's plugin): run `fm smoke` and the frame script with Bash, then open each PNG the script printed with the Read tool, which shows the image. Look at them one view at a time, the six themed frames and then the reduce frame, and write the receipt from what you saw. A frame you didn't open is a frame you didn't check: list only those you read.
+- **In a Claude Code session** (Sampo's plugin): run `fm smoke` and the frame script with Bash, then open each PNG the script printed with the Read tool, which shows the image. Look at them one view at a time, the six themed frames and then the reduce frame, and write the receipt from what you saw. A frame you didn't open is a frame you didn't check: list only those you read.
 - **In `fm code`:** its model reads text, not images. Name the frame script in the request as a criterion's verify ("done when the frames are clean :: QA_FIXTURE=full node qa/frames.mjs http://localhost:5173 / /settings") so the plan carries it and the harness records its run; `--verify "<that command>"` fits only a fix the script already fails on (an overflow, junk text), since `--verify` must fail before the change. Leave the eyeball line of the receipt as `eyeball: pending`. The look then happens in a Claude Code session or by a person, from the frame folder the evidence names; a finding becomes a fix task (`fm capture`).
 - **By hand:** open the frame folder in an image viewer at 100% zoom, never scaled to fit (a 1 px overlap disappears when shrunk).
 

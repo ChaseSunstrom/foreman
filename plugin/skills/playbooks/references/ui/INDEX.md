@@ -1,8 +1,8 @@
-<!-- Foreman's own index (written for Foreman, not ported). -->
+<!-- Sampo's own index (written for Sampo, not ported). -->
 # UI playbooks
 
 Read the one you need. Web and app screens start with `design-direction.md`; terminals and Claude Code mods with
-`terminal-ui.md`. Paths are relative to the playbooks skill. A new page, 3D scene or fm code panel starts from a
+`terminal-ui.md`. Paths are relative to the playbooks skill. A new page, 3D scene or Smith panel starts from a
 strict-by-default template: `fm new list`, then `fm new web|scene|panel [DIR]`, and `fm new check PATH` keeps it so.
 
 - `references/ui/design-direction.md` — Before any web or app screen: interview, taste words, 12 directions, audacity, a DESIGN.md first.

@@ -3,7 +3,7 @@ name: next
 description: Use whenever a task is finished, blocked or dropped, or the user says next or continue: closes it, starts the next.
 ---
 
-# Foreman: next
+# Sampo: next
 
 1. Close out the current task in one call: `fm task finish ID --audit "<how>" [--lens "<lens>: <result>" …] [--docs …] [--lesson …] [--commit "<message>"]` (or `fm task block` / `fm task drop ID "<why>"`). fm lists anything still missing — fix it or record evidence first. `--commit` commits only this task's files and only after the close succeeds: never chain `finish | tail … && git commit` (a pipe hides the refusal).
 2. Triage the inbox (`fm state`): expand each captured item into a planned brief (`/foreman:intake` §2) or leave it captured with a note if it needs the user.

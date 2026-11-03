@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Swift build errors (SwiftPM, Xcode)
 
 Use when `swift build`, `swift test` or `xcodebuild` fails to compile. The goal is a green build with the smallest

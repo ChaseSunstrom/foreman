@@ -3,7 +3,7 @@ description: Your taste in looks: the twenty looks ranked by what you kept, a 12
 disable-model-invocation: true
 argument-hint: "[calibrate | keep LOOK | revert LOOK | not LOOK [why] | learn PATH… | tournament | opposite LOOK | book | roll | bisect | seance | history [PATH]]"
 ---
-Foreman's taste ledger for looks, through `fm looks` (the fm code app and a terminal use the same verb).
+Sampo's taste ledger for looks, through `fm looks` (the Smith app and a terminal use the same verb).
 
 Arguments (may be empty): $ARGUMENTS
 
@@ -31,7 +31,7 @@ Arguments (may be empty): $ARGUMENTS
 7. `book [LOOK…]`: run `fm looks book --out lookbook.html` (or with the looks named) and say where the page is.
 8. `roll`: run `fm looks roll` (the look of the day, leaning on the ranking). `bisect`: `fm looks bisect` (where the
    taste turned). `seance`: `fm looks seance` (the looks turned away from, their last words). Show what fm printed.
-9. `history [PATH]`: run `fm looks history` (DESIGN.md, Foreman's own record of the look) or, only when the user typed
+9. `history [PATH]`: run `fm looks history` (DESIGN.md, Sampo's own record of the look) or, only when the user typed
    a path, `fm looks history 'PATH'` (quoted as in 4). It reads that file's git history and records each look it named
    as kept (a week or more) or reverted (replaced sooner), once per stint.
 

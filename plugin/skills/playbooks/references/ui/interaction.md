@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Interaction: feedback, keyboard, forms, words and the phone
 
 Use when a web or app screen gets something to do: a form, a button that saves or sends, a menu, a list you act on, a sign-up, a checkout, a settings page. The sibling playbooks decide how a screen looks; this one decides how it behaves in the hand. Most UI that looks finished fails here first: the button that gives no sign it was pressed, the error that says "Invalid", the field hidden behind the phone's keyboard, the menu a keyboard can't leave.
@@ -222,7 +222,7 @@ Copy into the project as `qa/interaction.mjs`, next to the frame script, with th
 - **keyboard** (1440×900): presses Tab until the path ends, wraps, loops or reaches 150 stops, and for each stop prints what took focus and whether it is visible, on screen, uncovered and styled differently from its unfocused self.
 
 ```js
-// qa/interaction.mjs: the scripted half of Foreman's interaction playbook (ui/interaction.md).
+// qa/interaction.mjs: the scripted half of Sampo's interaction playbook (ui/interaction.md).
 // node qa/interaction.mjs http://localhost:5173 / /signup /settings
 import { chromium } from "playwright";
 
@@ -399,7 +399,7 @@ ok 1 view(s), 0 finding(s)
 
 ## Running it
 
-- **In a Claude Code session** (Foreman's plugin): start the app on the seeded fixture, run `node qa/interaction.mjs <base> <paths…>`, each `node qa/double-press.mjs <url> "<button>"`, and the copy grep with Bash. Then compare the printed Tab path with each view's 1440 frame from `visual-qa.md` (open the PNG with the Read tool), and use the 360 frames for the thumb pass. Arrows, Esc and the wrong-input pass are a few lines of Playwright run the same way (`page.keyboard.press("Escape")`, then read `document.activeElement`); write them as project tests when the screen stops changing.
+- **In a Claude Code session** (Sampo's plugin): start the app on the seeded fixture, run `node qa/interaction.mjs <base> <paths…>`, each `node qa/double-press.mjs <url> "<button>"`, and the copy grep with Bash. Then compare the printed Tab path with each view's 1440 frame from `visual-qa.md` (open the PNG with the Read tool), and use the 360 frames for the thumb pass. Arrows, Esc and the wrong-input pass are a few lines of Playwright run the same way (`page.keyboard.press("Escape")`, then read `document.activeElement`); write them as project tests when the screen stops changing.
 - **In `fm code`:** its model reads text, which is what the probes print. Put each probe in the request as a criterion's verify ("done when the sign-up form passes the interaction probe :: node qa/interaction.mjs http://localhost:5173 /signup"); `--verify` fits a fix the probe already fails on (a missing label, a trap), since `--verify` must fail before the change. Put the verb ledger in the request as text, so the plan writes those exact strings. The hand tests stay `pending` in the receipt for a Claude Code session or a person.
 - **By hand:** the same commands in a terminal, the unplugged walk in a real browser, the thumb pass and the keyboard check on a real phone.
 

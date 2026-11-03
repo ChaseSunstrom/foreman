@@ -3,11 +3,11 @@ name: directions
 description: Use whenever a new UI needs a look: six style directions, the pick saved as DESIGN.md.
 ---
 
-# Foreman: style directions
+# Sampo: style directions
 
 One sentence about a product in; six distinct style directions out, each a card that fits on one screen; one is
 picked and saved as `DESIGN.md` with an audacity level. Start it with `/foreman:directions <sentence>` (in Claude
-Code or an `fm code` session), or start it yourself when the user asks for looks or styles to choose from before a
+Code or a Smith (`fm code`) session), or start it yourself when the user asks for looks or styles to choose from before a
 UI exists. It is for web and app screens; a terminal UI or a Claude Code mod takes the playbooks' `terminal-ui.md`
 instead.
 
@@ -95,7 +95,7 @@ keeps or reverts one, run `fm looks keep` or `fm looks revert` yourself (step 5 
    `grep -cE '^## (Point of view|Interview|Direction|Knobs|Signature moves|Banned|Allowed exceptions)$' DESIGN.md`
    prints 7, and `grep -E 'audacity (safe|bold|wild)' DESIGN.md` finds the Direction line.
 7. **Hand on.** Building follows the playbook's step 7: build, then its Checks (the cover test included). Preview
-   pages stay out of the repo. Close the task through the Foreman loop, or carry on when the look is one step of a
+   pages stay out of the repo. Close the task through the Smith loop, or carry on when the look is one step of a
    larger task.
 
 A second run finds the DESIGN.md the first one saved and stops at step 1, unless the user asks for a new look.

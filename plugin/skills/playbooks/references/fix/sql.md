@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # SQL: query review, indexes and plans
 
 Use when a query is slow, a page times out on the database, a new query or index goes into review, or an ORM

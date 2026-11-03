@@ -260,7 +260,7 @@ class Skills(unittest.TestCase):
                     path = os.path.join(dirpath, f)
                     with self.subTest(file=rel(path)):
                         head = read_text(path, limit=400)
-                        self.assertTrue(marker in head or "Foreman's own" in head, "ported files say from where")
+                        self.assertTrue(marker in head or "Foreman's own" in head or "Sampo's own" in head, "ported files say from where")
 
     def test_third_party_licenses(self):
         text = read_text(os.path.join(PLUGIN, "THIRD_PARTY_LICENSES.md"))

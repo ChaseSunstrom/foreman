@@ -19,7 +19,7 @@ A star atlas beside an observing log: deep blue-black, pale cyan reticles, coord
 | `--accent` | #8FD0E1 | 0.82 0.070 215 | 10.9:1 on surface |
 | `--on-accent` | #0C1220 | 0.185 0.030 265 | 10.9:1 on accent |
 
-Dark first: body text clears Foreman's 7:1 dark rule. Accent hue 215, 65° from the nearest status hue, at chroma 0.07 so it reads as starlight, not neon.
+Dark first: body text clears Sampo's 7:1 dark rule. Accent hue 215, 65° from the nearest status hue, at chroma 0.07 so it reads as starlight, not neon.
 
 ## Type
 Geometric sans for headings and body (400 and 600; nothing thinner on dark); mono for coordinates, times and magnitudes. They differ on classification and width. Ratio 1.25.

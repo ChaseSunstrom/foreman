@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Verify game logic without a window
 
 Use when you change game rules, physics, pathfinding, or a simulation step and need proof that does not depend on someone playing it.

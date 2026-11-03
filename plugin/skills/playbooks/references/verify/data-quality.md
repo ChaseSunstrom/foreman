@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Verify a data transform or table change
 
 Use when a dbt model, SQL transform, parquet export or dataframe step changed and you must show the data is still right, not just that the job exits 0.

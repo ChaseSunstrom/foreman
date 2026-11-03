@@ -1,4 +1,4 @@
-<!-- Foreman's own index (written for Foreman, not ported). -->
+<!-- Sampo's own index (written for Sampo, not ported). -->
 # Context playbooks: writing for readers
 
 Paths are relative to the playbooks skill. The stage's other playbooks (context budget, living docs, compaction) are

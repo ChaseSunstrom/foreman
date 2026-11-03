@@ -1,4 +1,4 @@
-<!-- Foreman's own reference (written for Foreman, not ported). -->
+<!-- Sampo's own reference (written for Sampo, not ported). -->
 # Direction cards
 
 What the directions skill drafts, the rules the six obey as a set, the generic defaults none of them may be, the

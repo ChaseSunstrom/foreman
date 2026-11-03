@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Keep a Raspberry Pi, MQTT or home automation setup running
 
 Use when a headless Pi, a Home Assistant install, a ROS 2 robot or an MQTT sensor network goes quiet, reboots, or loses devices.

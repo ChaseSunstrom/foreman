@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # C# build errors (dotnet, MSBuild, NuGet)
 
 Use when `dotnet build`, `dotnet test` or `dotnet restore` fails. The goal is a green build with the smallest diff

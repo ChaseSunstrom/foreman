@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Sound design: off by default, earcons, volume caps
 
 Use when a web or app UI plays sound: notification chimes, confirmations, alerts, timers, ambient beds. Games and

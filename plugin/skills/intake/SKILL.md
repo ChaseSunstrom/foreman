@@ -3,7 +3,7 @@ name: intake
 description: Use whenever a new request arrives (FIX:/FEATURE: lines or plain words): makes tasks.
 ---
 
-# Foreman intake
+# Sampo intake
 
 Run this for every new request, tagged or plain. A typo gets a three-line brief, never zero thought. State changes go through `fm`.
 
@@ -17,7 +17,7 @@ Run this for every new request, tagged or plain. A typo gets a three-line brief,
 Promote each captured item: `fm task new "<imperative title>" --type T --tier X --from T-NNNN --scope <glob>...`.
 Then fill the brief with `fm task set ID --section "<Name>" --text "…"` and `fm task ac` / `fm task step`:
 1. **R1 Expand:** Interpretation, Assumptions (with confidence), testable acceptance criteria (`fm task ac ID add "<criterion>" --verify "<cmd>"`), scope paths, Non-goals. A wish about a Python module's behaviour can start its red test from `fm spec "<wish>" --module <module>`: a tool-less child's example assertions, only safe ones kept, as a unittest that should fail today.
-2. **R2 Ground:** start from what Foreman already knows: `fm map` (gates, layout, entry points, hot files, test links), `fm impact <path>` (likely tests, dependents) and `fm recall "<request>"` (related past briefs, decisions, research, lessons), `fm why FILE:LINE` (the task and lesson behind existing code), `fm outline PATH` for big files, `fm lib` (stack cards for this repo: exact Verify commands for the criteria, the failing-test recipe, pitfalls; `fm lib search WORDS` also finds installed plugins' skills). Then read the real code, run the real commands, correct R1 against reality. For M/L, weigh every approach worth weighing (three or more, one unconventional) in "Approach (options → choice → why)", and for a FEATURE add a capability sweep (`references/planning.md`). Library/API questions: context7. Large unfamiliar areas: `foreman:fm-recon` (`references/delegate.md`).
+2. **R2 Ground:** start from what Sampo already knows: `fm map` (gates, layout, entry points, hot files, test links), `fm impact <path>` (likely tests, dependents) and `fm recall "<request>"` (related past briefs, decisions, research, lessons), `fm why FILE:LINE` (the task and lesson behind existing code), `fm outline PATH` for big files, `fm lib` (stack cards for this repo: exact Verify commands for the criteria, the failing-test recipe, pitfalls; `fm lib search WORDS` also finds installed plugins' skills). Then read the real code, run the real commands, correct R1 against reality. For M/L, weigh every approach worth weighing (three or more, one unconventional) in "Approach (options → choice → why)", and for a FEATURE add a capability sweep (`references/planning.md`). Library/API questions: context7. Large unfamiliar areas: `foreman:fm-recon` (`references/delegate.md`).
 3. **R3 Anticipate:** pre-mortem — "if I ship this, what are the three most likely follow-ups or complaints?" Implied requirements (error handling, edge cases, tests, docs/config, migration notes) go in scope. Adjacent ideas are captured (`fm capture --source followup`), not built.
 4. **R4 Compile:** write the **Execution prompt** section: a block a fresh session with zero history could execute (goal, context, files, steps, acceptance checks, verification commands, constraints). Add steps with `fm task step ID add "…"`.
 Tier depth, the brief layout and the rubric: `references/planning.md`.
@@ -28,7 +28,7 @@ Every criterion has a verification command? Could a fresh session run the Execut
 ## 4. Autonomy gate
 Check the level with `fm autonomy`.
 - **Standard** — L tier, `?` items, and anything destructive or irreversible (data deletion, force-push, migrations on real data, major dependency bumps, public API changes): present a ≤ 15-line plan summary plus batched questions, each with your default, then stop. After approval: `fm task set ID approved=true` (a FEATURE L first gets its "Build vs reuse" section: what it builds on, or why nothing fits).
-- **Full** — ask nothing. After the self-critique, record the plan choice with `fm decide`, `fm task set ID approved=true` with a log line "self-approved (full autonomy)", and continue. What only the user can grant (`core`, destructive guard categories, merging Foreman changes): `fm ask`, then carry on with other work and list it in the final report.
+- **Full** — ask nothing. After the self-critique, record the plan choice with `fm decide`, `fm task set ID approved=true` with a log line "self-approved (full autonomy)", and continue. What only the user can grant (`core`, destructive guard categories, merging Sampo changes): `fm ask`, then carry on with other work and list it in the final report.
 - S/M: proceed after self-review.
 
 ## 5. Baseline (once per queue)

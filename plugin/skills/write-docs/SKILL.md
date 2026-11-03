@@ -3,7 +3,7 @@ name: write-docs
 description: Use whenever you write or rework docs, a README or a how-to guide: task-first, examples that run.
 ---
 
-# Foreman: write documentation
+# Sampo: write documentation
 
 A page a person reads to get something done. No brief yet → `/foreman:intake` first; a docs-only change is a FEATURE or CLEAN task like any other.
 

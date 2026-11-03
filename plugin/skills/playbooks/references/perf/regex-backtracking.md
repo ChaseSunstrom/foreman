@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Regex backtracking
 
 Use when a regular expression is slow or hangs on long or hostile input (catastrophic or quadratic backtracking, ReDoS), or a pattern runs on untrusted text.

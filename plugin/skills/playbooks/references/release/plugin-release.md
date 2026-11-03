@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Tag a Claude Code plugin or marketplace entry
 
 Use when you tag a plugin version or change its marketplace catalog entry.

@@ -1,4 +1,4 @@
-<!-- Ported from superpowers (https://github.com/obra/superpowers) `skills/systematic-debugging/defense-in-depth.md` — MIT License, Copyright (c) 2025 Jesse Vincent. Adapted for Foreman: frontmatter removed, cross-references pointed at Foreman files. See plugin/THIRD_PARTY_LICENSES.md. -->
+<!-- Ported from superpowers (https://github.com/obra/superpowers) `skills/systematic-debugging/defense-in-depth.md` — MIT License, Copyright (c) 2025 Jesse Vincent. Adapted for Sampo: frontmatter removed, cross-references pointed at Sampo files. See plugin/THIRD_PARTY_LICENSES.md. -->
 # Defense-in-Depth Validation
 
 ## Overview

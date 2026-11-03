@@ -1,4 +1,4 @@
-<!-- Foreman's own index (written for Foreman, not ported). -->
+<!-- Sampo's own index (written for Sampo, not ported). -->
 # Ops playbooks
 
 Running software that people depend on: what to do when it breaks, and what to record so you can tell. Paths are

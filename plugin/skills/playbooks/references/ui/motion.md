@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Motion: choreography, timing and reduced motion
 
 Use when adding or reworking animation in a web or app UI: transitions, enter and exit, loading, list changes, page changes. For terminals see `terminal-ui.md`; for library code see the cards at the end.

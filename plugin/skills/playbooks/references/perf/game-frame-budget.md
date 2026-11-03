@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # A game runs below 60 fps: find the CPU or GPU bound
 
 Use when a game runs below 60 fps or hitches as the entity count grows.

@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # JVM build errors (Gradle, Maven, Java, Kotlin)
 
 Use when a Gradle or Maven build of Java or Kotlin code fails: in configuration, dependency resolution or

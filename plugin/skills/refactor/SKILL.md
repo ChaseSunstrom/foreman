@@ -3,7 +3,7 @@ name: refactor
 description: Use whenever you refactor, simplify or delete dead code: pin behaviour first, then change in small steps.
 ---
 
-# Foreman: refactor and clean up
+# Sampo: refactor and clean up
 
 A refactor changes structure, never behaviour. It is a CLEAN task: no brief yet → `/foreman:intake` first (the hooks refuse edits without one).
 

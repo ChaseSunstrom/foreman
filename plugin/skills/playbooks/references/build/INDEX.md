@@ -1,4 +1,4 @@
-<!-- Foreman's own index (written for Foreman, not ported). -->
+<!-- Sampo's own index (written for Sampo, not ported). -->
 # Build playbooks
 
 Build and compile errors, one file per toolchain. Paths are relative to the playbooks skill.

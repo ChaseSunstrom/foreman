@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Observability: signals worth having
 
 Use when adding a service, endpoint, job or queue; when an incident timeline had a gap ("we couldn't tell when it

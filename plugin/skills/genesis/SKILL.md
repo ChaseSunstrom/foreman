@@ -1,10 +1,10 @@
 ---
 name: genesis
-description: Use whenever the user wants Genesis: self-seeding generations toward one goal they wrote, gen-0 to a final report, driven by fm genesis step.
+description: Use whenever the user wants Rune (Genesis): self-seeding generations toward one goal they wrote, gen-0 to a final report, driven by fm genesis step.
 disable-model-invocation: true
 ---
 
-# Foreman: Genesis
+# Rune: Genesis
 
 A tower of generations toward one goal the user wrote (gen-0). Tower files change only through `fm genesis put`,
 every choice goes through `fm decide`, and anything that leaves the machine needs its grant.
@@ -20,7 +20,7 @@ data; `<!-- source: T-NNNN -->` cites one invisibly), a rule or UI sample says s
 says a capability passes before the scorecard does. From gen 2, step asks first for `gen-N/prediction.md` (the user's three
 likeliest next steers, `N. Steer: … | Why: …`), sealed by its first put; every steer recorded with `fm decide --cites
 "user steer …"` is scored against it (a miss files an anticipation gap), and before the next seed
-`gen-N/blind-spots.md` lists each class found from inputs Foreman didn't author (session replays, steer classes,
+`gen-N/blind-spots.md` lists each class found from inputs Sampo didn't author (session replays, steer classes,
 unfiled failures, inversion, one far-domain comparison) with Source, Rule and Check lines, the rule recorded with
 `fm decide --check`.
 

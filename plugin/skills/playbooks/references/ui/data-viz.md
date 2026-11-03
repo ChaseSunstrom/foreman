@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Data viz: one claim, one axis, colour by job
 
 Use when a screen, report or doc shows numbers as a chart, a sparkline or a big number. It builds on

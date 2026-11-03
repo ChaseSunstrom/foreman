@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Dependency admission: before adding one
 
 Use when you are about to add any new package, library, plugin, action, container base image or vendored file to a project,

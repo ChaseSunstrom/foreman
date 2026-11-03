@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Command guard rules
 
 Use when a command guard, policy hook or shell allowlist blocks harmless work (a false block) or lets a dangerous command through (a miss), or a guard rule is added or changed.

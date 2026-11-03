@@ -3,7 +3,7 @@ name: debug-test
 description: Use whenever you debug, a test fails, a run crashes or a bug comes back: reproduce, root cause, fix.
 ---
 
-# Foreman: debug a failure
+# Sampo: debug a failure
 
 Root cause before any fix: the iron law of `../intake/references/debugging.md`. No brief yet? This is a FIX: `/foreman:intake` first (the hooks refuse edits without one).
 

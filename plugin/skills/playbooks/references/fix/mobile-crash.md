@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Phone app crash: iOS, Android, RN, Flutter
 
 Use when an iOS, Android, React, Expo or Flutter app crashes on a phone or tablet, or a push notification or deep link fails there.

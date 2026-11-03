@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Is the difference real?
 
 Use when a benchmark, A/B run, eval or bench gate shows a gain or loss and you must decide whether it is a real change or noise.

@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # A device on a serial, I2C, CAN or BLE link does not answer
 
 Use when hardware does not respond, answers garbled bytes, loses frames of data or only works sometimes.

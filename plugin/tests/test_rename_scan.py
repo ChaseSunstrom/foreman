@@ -7,7 +7,7 @@ import subprocess
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BASELINE = 720  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760); the goal is 0
+BASELINE = 475  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768); the goal is 0
 SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", "plugin/skills/**/*.md",
             "plugin/commands/*.md", "plugin/agents/*.md", ".claude-plugin/marketplace.json",
             "plugin/.claude-plugin/plugin.json", "plugin/output-styles/*", "mods/foreman-ui/**", "plugin/rules/*.md")

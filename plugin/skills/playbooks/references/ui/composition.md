@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Composition, depth and states
 
 Use when a web or app screen gets its layout: where things sit, what is in front of what, how a landing page runs
@@ -194,7 +194,7 @@ text or a control (the probe's `covered` list is empty).
   |---|---|---|
   | large (24 px, or 18.67 px bold) | 3:1 | 0.48 |
   | body | 4.5:1 | 0.61 |
-  | dark-mode body (Foreman's rule) | 7:1 | 0.73 |
+  | dark-mode body (Sampo's rule) | 7:1 | 0.73 |
 
   A gradient scrim holds that opacity across the whole text box, not just at its darkest end.
 - **Frosted glass is earned by movement.** `backdrop-filter: blur()` is for a surface with content moving under it

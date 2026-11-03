@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Design direction before pixels
 
 Use before building or restyling any web or app screen that people will look at: a new page, a new product, a

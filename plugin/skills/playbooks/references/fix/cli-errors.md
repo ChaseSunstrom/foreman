@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # CLI errors and argument shape
 
 Use when a command-line tool crashes with a traceback, rejects a natural argument shape, prints a wall of choices, acts on more than was named, or exits 0 on a failure.

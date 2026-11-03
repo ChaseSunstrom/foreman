@@ -47,5 +47,5 @@ Evidence is a command plus its actual result. "Tests pass" needs the test comman
 - When the code wasn't what you expected, `fm surprise "<expected> → <observed>"`: friction and recall bring it back to the next related task.
 
 ## Forks and precedent
-- Doors (T-2342): `fm focus` classifies each step and verify command with the guard's parser and git (`fmdoors.py`); a guard category stays the guard's stop, an untracked-data step gets an Undo line or parks, every other fork is two-way: decide it, `fm decide … --confidence N`, never ask.
+- Doors (T-2342): `fm focus` classifies each step and verify command with the Ward's parser and git (`fmdoors.py`); a Ward category stays the Ward's stop, an untracked-data step gets an Undo line or parks, every other fork is two-way: decide it, `fm decide … --confidence N`, never ask.
 - When sources disagree, the order is: the user's words > vetoes > decisions > lessons > your defaults (T-0654). Say which one a decision rests on: `fm decide "<it>" --cites "<the user's message, veto or decision>"`; `fm recall` finds the candidates.

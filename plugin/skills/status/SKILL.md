@@ -3,7 +3,7 @@ name: status
 description: Use whenever you report where work stands or what's left: a summary, 25 lines at most.
 ---
 
-# Foreman: status
+# Sampo: status
 
 Run `fm state` and `fm queue`, then report in ≤ 25 lines:
 - Active task: id, type, tier, title, step n/m and the step text; last evidence line.

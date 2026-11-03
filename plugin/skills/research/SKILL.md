@@ -3,7 +3,7 @@ name: research
 description: Use whenever you must find something out before building: what exists, what to reuse, cited answers.
 ---
 
-# Foreman: find out before building
+# Sampo: find out before building
 
 An answer you can cite beats a guess you build on. Ask the cheapest source first and stop once the question is answered; every finding ends in one saved note, so no session asks it twice.
 

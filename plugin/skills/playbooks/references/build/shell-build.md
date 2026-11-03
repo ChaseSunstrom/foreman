@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Shell script errors (bash -n, ShellCheck, bats)
 
 Use when a shell script fails to parse, fails ShellCheck, dies under strict mode, or fails its bats tests. Shell has

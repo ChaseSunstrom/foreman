@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Go build errors
 
 Use when `go build`, `go vet` or `go test` fails to compile. The goal is a green build with the smallest diff that

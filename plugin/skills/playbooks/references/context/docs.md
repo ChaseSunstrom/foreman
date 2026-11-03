@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Docs: task-first pages, examples that run
 
 Use when writing or reworking documentation a person reads to get something done: a README, a guide, a how-to, a
@@ -26,7 +26,7 @@ reference page, CLI help. For keeping a whole repo's doc set owned and fresh ove
 7. **Plain words.** Second person, present tense, short sentences. Define a term at first use and keep one name per
    thing. Pass: `grep -niwE "simply|just|easy|obviously" PAGE.md` returns nothing.
 8. **Links are checked.** Relative links are verified in CI; link text says where it goes (never "click here").
-9. **Docs change with the code.** A change to behaviour updates its page in the same commit (Foreman records it
+9. **Docs change with the code.** A change to behaviour updates its page in the same commit (Sampo records it
    with `fm task finish --docs`).
 
 ## Running the examples

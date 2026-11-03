@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Write CLAUDE.md, rules and skill descriptions that cost little and get followed
 
 Use when you add or trim a CLAUDE.md, a `.claude/rules/*.md` file, or a skill or slash-command description, or when sessions start with too much context.

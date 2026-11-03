@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Schema and data migrations
 
 Use when a change alters a live database: a new, renamed or dropped column or table, a type change, a new

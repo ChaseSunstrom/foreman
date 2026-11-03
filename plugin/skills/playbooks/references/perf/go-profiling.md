@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Profile a slow or memory-hungry Go program
 
 Use when a Go service or CLI is slow, uses too much memory, or has a latency tail.

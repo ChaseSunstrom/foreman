@@ -3,7 +3,7 @@ name: ui-design
 description: "Use whenever you build or restyle a page, component, animation or 3D scene: direction, tokens, motion, QA."
 ---
 
-# Foreman: UI design, motion and 3D
+# Sampo: UI design, motion and 3D
 
 One path for any work on how a screen looks or moves: a web page, an app screen, a component, an animation, a 3D
 scene, or "make it look good". It routes to the UI playbooks (paths below are relative to this skill; the same files

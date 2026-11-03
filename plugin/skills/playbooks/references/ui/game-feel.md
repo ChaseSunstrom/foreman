@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Game feel: juice with intensity caps
 
 Use when a game or a playful interface needs to feel responsive and physical: hits that land, jumps that pop, buttons that squish, rewards that burst. Applies to Phaser, Pygame, Godot, LÖVE, Unity and canvas or DOM games alike; the engine APIs live in the cards at the end.

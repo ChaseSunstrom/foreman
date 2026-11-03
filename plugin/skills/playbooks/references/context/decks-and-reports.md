@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Decks and reports: the answer first
 
 Use when making something people read to decide or to stay informed: a slide deck, a written report, a status

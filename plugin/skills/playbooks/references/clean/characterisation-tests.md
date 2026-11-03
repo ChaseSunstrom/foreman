@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Characterisation tests: pin behaviour before a refactor
 
 Use when you must change code that has thin or no tests and nobody can say exactly what it does: a refactor,

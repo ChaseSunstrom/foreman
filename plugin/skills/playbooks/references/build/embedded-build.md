@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Embedded firmware build failures
 
 Use when firmware will not build or link: PlatformIO, ESP-IDF, Zephyr or STM32 projects, a Cortex-M linker script, or an overflowing flash or RAM region.

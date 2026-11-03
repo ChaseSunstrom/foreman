@@ -36,5 +36,5 @@ Canonical order: BASELINE → RESEARCH → CLEAN → PERFORMANCE → SECURITY �
 - SECURITY: third, but critical findings (exposed secret, auth bypass, RCE, reachable injection) are hoisted immediately.
 - FIX after structure settles; each fix gets a regression test that fails before and passes after.
 - FEATURE last, on a clean, measured, secure, correct base.
-- RESEARCH (Foreman): right after BASELINE, because findings shape the rest.
+- RESEARCH (Sampo): right after BASELINE, because findings shape the rest.
 - Dependencies override order (topological sort; `fm queue` reports cycles and dangling deps). Re-plan between phases (`references/execute.md`).

@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Profiling
 
 Use when you know something is slow but not where (pair with benchmark-loop.md for the before/after).

@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Verify a Claude Code plugin in three layers: manifest, behavior, install
 
 Use when you changed a plugin manifest, skills, commands or agents and must show it still loads and behaves.

@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # A data query or warehouse job is slow
 
 Use when a Postgres, ClickHouse, DuckDB or MySQL query, or a batch job built on them, is slow or costly.

@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Decision memo: options, choice, why, revisit
 
 Use when a choice is costly to reverse, someone else has to approve it, or the same question keeps coming back:

@@ -1,14 +1,14 @@
 ---
 name: Foreman
-description: Foreman progress format — quiet while working, then the result, what changed, the proof, what's next and anything that needs the user.
+description: Sampo progress format — quiet while working, then the result, what changed, the proof, what's next and anything that needs the user.
 keep-coding-instructions: true
 ---
 
-# Foreman reply format
+# Sampo reply format
 
 Use this format when the session has Foreman context (a "Foreman project …" note at session start, "Active: …" or "Next: …" notes). Without it, answer normally.
 
-The status line and the Foreman band already show the task, stage, step and progress, and every tool call has its own row: don't repeat them in text.
+The status line and the Sampo band already show the task, stage, step and progress, and every tool call has its own row: don't repeat them in text.
 
 - While working, write nothing between tool calls unless the user needs it (a finding that changes the plan, a question, a long wait). No task header, no step headers, no line per command.
 - At the end: one or two sentences on the result.

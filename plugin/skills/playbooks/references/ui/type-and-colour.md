@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Type and colour that read as chosen
 
 Use when a web or app screen gets its type and colour: a new product, a restyle, a dark mode, or "the text looks off". `design-direction.md` picks the stance (the family class, the scale ratio, the ink); this playbook turns that stance into a scale, a pairing, a palette and the proof that they hold. For terminals see `terminal-ui.md`.
@@ -124,7 +124,7 @@ The WCAG 2 ratios are the floor. They are pass or fail numbers, so measure them 
 | control edges, icons that carry meaning, chart marks | 3:1 against what touches them |
 | focus ring | 3:1 against the surface beside it |
 | disabled controls, logos, pure decoration | exempt, which is why they must never carry information |
-| Foreman's own rule: body text in dark mode | 7:1 (see Dark mode) |
+| Sampo's own rule: body text in dark mode | 7:1 (see Dark mode) |
 
 **Proof the worst surface, not the default one.** Muted text that passes on the page often fails on a sunken table head or a selected row. Check each text role against every surface it can sit on.
 
@@ -146,7 +146,7 @@ The limits are rounded toward the safe side. Tinted neutrals land within a few h
 fm design contrast tokens/colour.css text/surface-sunken:7 text-muted/surface-sunken border/surface-sunken:3
 ```
 
-It reads the token file's custom properties (values in `oklch()`, hex, `rgb()` or `hsl()`; roles as `var()` or `light-dark()`; dark overrides in a `.dark`, `[data-theme="dark"]` or `prefers-color-scheme: dark` block), checks each pair in both themes on the sRGB hex the browser paints (WCAG 2.x relative luminance), warns on out-of-gamut values and exits 1 on any failure. A pair is `fg/bg`, `fg/bg:3` or `fg/bg:4.5,7` (light, dark); with no pairs it checks the roles above (text, muted text, border and accent on each surface, text on the accent and subtle fills), body text 7:1 in dark. A value it can't read stops it with the token's name rather than passing silently. A CI without Foreman copies `plugin/lib/fmdesign.py` (stdlib only, Python 3.11 or later) and runs `python3 fmdesign.py contrast …` the same way. Text over images and gradients still needs a scrim and a spot check by eye (`fm lib show color-contrast`).
+It reads the token file's custom properties (values in `oklch()`, hex, `rgb()` or `hsl()`; roles as `var()` or `light-dark()`; dark overrides in a `.dark`, `[data-theme="dark"]` or `prefers-color-scheme: dark` block), checks each pair in both themes on the sRGB hex the browser paints (WCAG 2.x relative luminance), warns on out-of-gamut values and exits 1 on any failure. A pair is `fg/bg`, `fg/bg:3` or `fg/bg:4.5,7` (light, dark); with no pairs it checks the roles above (text, muted text, border and accent on each surface, text on the accent and subtle fills), body text 7:1 in dark. A value it can't read stops it with the token's name rather than passing silently. A CI without Sampo copies `plugin/lib/fmdesign.py` (stdlib only, Python 3.11 or later) and runs `python3 fmdesign.py contrast …` the same way. Text over images and gradients still needs a scrim and a spot check by eye (`fm lib show color-contrast`).
 
 **A first palette from one colour.** `fm design palette 'oklch(0.45 0.13 258)'` makes every role above in both themes from one seed (hex, `rgb()`, `hsl()` or `oklch()`): neutrals at the seed's hue with a whisper of its chroma, the accent keeping its hue, and each text role moved in lightness until its pairs pass. It prints CSS `light-dark()` roles (`--format dtcg` for Design Tokens JSON, `tailwind` for a v4 `@theme`) and the proof on stderr, so `> tokens/colour.css` keeps only the tokens. It is a start, not a direction: status colours, hover states and the ramp names are yours to add. `fm design extract <ui root>` then writes the token table, with each pair's contrast, into `DESIGN.md`'s Tokens section.
 

@@ -19,7 +19,7 @@ A timing screen on the pit wall: graphite panels, tight rows of numbers, one sig
 | `--accent` | #4DA3FF | 0.705 0.159 252 | 7.3:1 on surface |
 | `--on-accent` | #0E0F12 | 0.169 0.006 271 | 7.3:1 on accent |
 
-Dark first: body text clears Foreman's 7:1 dark rule. Blue is reserved for the followed car or the selected row; faster and slower use the up and down arrows with text, never a colour pair. Accent hue 252, 102° from the nearest status hue.
+Dark first: body text clears Sampo's 7:1 dark rule. Blue is reserved for the followed car or the selected row; faster and slower use the up and down arrows with text, never a colour pair. Accent hue 252, 102° from the nearest status hue.
 
 ## Type
 Mono at 500 for every number (13 px at least) on tabular figures; grotesk at 700 in capitals for driver and team codes. Gaps are signed (+0.312) and always show the sign.

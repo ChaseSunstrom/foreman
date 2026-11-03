@@ -3,7 +3,7 @@ name: library
 description: Use whenever you code or test in a language, framework, database or tool: stack cards (fm lib).
 ---
 
-# Foreman: stack library
+# Sampo: stack library
 
 Cards are short, checkable notes, one per language, framework, service, tool or practice, in `cards/<area>/<name>.md`. They cost no context until read. `fm lib` finds them:
 
@@ -20,7 +20,7 @@ Cards are short, checkable notes, one per language, framework, service, tool or 
 - Write the failing test the way Test first shows.
 - Keep Avoid in mind while building, and walk Review before closing.
 
-Cards supplement the Foreman loop and never override it. Where they differ, the project's own conventions (its CLAUDE.md, config and existing code) win.
+Cards supplement the Smith loop and never override it. Where they differ, the project's own conventions (its CLAUDE.md, config and existing code) win.
 
 ## Writing a card
 

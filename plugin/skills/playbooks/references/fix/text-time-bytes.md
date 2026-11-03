@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Text, time, bytes and money: encodings, time zones, amounts
 
 Use when code reads or writes text from outside (files, HTTP, a database, a terminal), stores or compares

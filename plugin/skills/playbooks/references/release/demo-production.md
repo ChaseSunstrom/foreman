@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Demo production: scripted, seeded, short
 
 Use when making a product demo: a release video, a GIF for a README or pull request, a terminal recording, or a live

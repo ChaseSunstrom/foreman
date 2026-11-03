@@ -1,4 +1,4 @@
-<!-- Foreman's own playbook (written for Foreman, not ported). -->
+<!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Release a Go module or binary
 
 Use when you tag a Go library or ship a CLI built with GoReleaser.
