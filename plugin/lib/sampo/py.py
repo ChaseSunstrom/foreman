@@ -14,7 +14,8 @@ def ok(v):
 
 
 def saved_path():
-    home = os.environ.get("FOREMAN_HOME") or os.path.join(os.path.expanduser("~"), ".claude", "foreman")
+    home = os.environ.get("SAMPO_HOME") or os.environ.get("FOREMAN_HOME") or os.path.join(  # before core's mirror
+        os.path.expanduser("~"), ".claude", "foreman")
     return os.path.join(home, "state", "python")
 
 

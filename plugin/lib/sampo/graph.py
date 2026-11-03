@@ -65,7 +65,7 @@ def _build(p, con):
         when, body, names = (entry.split("\x00") + ["", ""])[:3]
         when = _utc(when)
         changed = [f for f in names.split("\n") if f.strip() and f in files]
-        for tid in set(re.findall(r"(?m)^Foreman-Task:\s*(T-\d+)", body)):
+        for tid in set(c.task_trailers(body)):
             rows += [(f"task:{tid}", f, "touched", when, 1.0) for f in changed]
         if 2 <= len(changed) <= CO_MAX:
             w = 1.0 / (len(changed) - 1)

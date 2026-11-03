@@ -3982,6 +3982,10 @@ def cmd_genesis(args):
         if action == "grow":
             r = grow(p, args.path, args.name, args.evidence, args.measure)
             return scli.out(args, r, f"Frame: {r['id']} {r['kind']}: {r['name']} ({r['measure']}), gen-{r['gen']}")
+        if action == "underworld":  # T-2766: sampo underworld, the ideas no approach has landed yet
+            path = os.path.join(home(p), "not-yet.md")
+            text = _doc(home(p), "not-yet.md")
+            return scli.out(args, {"path": path, "text": text}, text.rstrip("\n") if text else f"No not-yet.md yet: {path}")
         if action == "moonshot":  # T-2626: the campaign every generation advances
             from sampo import moons
             verb = args.path or "status"

@@ -51,17 +51,12 @@ def fm_mention_problems(text):
     return bad
 
 
-# T-2760 (SAMPO.md): the docs show `sampo VERB`; the renamed verbs keep their old CLI spelling until step 2 lands them,
-# and moons and underworld are new verbs with no old one, so those two are accepted by name
-SAMPO_OLD = {"smith": "code", "rune": "genesis", "louhi": "exam", "ward": "guard"}
-SAMPO_NEW = ("moons", "underworld")
-
-
 def sampo_mention_problems(text):
-    """The `sampo VERB [word]` mentions in backticks that name no command (the renamed verbs read as their old names)."""
-    text = re.sub(rf"`sampo ({'|'.join(SAMPO_NEW)})\b", "", text)
+    """T-2760: the `sampo VERB [word]` mentions in backticks that name no command (a renamed verb reads as what the CLI
+    runs for it, T-2766)."""
+    from sampo import cli
     text = re.sub(r"`sampo -\S*", "", text)  # a flag, not a verb
-    text = re.sub(r"`sampo ([\w-]+)", lambda m: "`fm " + SAMPO_OLD.get(m.group(1), m.group(1)), text)
+    text = re.sub(r"`sampo ([\w-]+)", lambda m: "`fm " + " ".join(cli.RENAMES.get(m.group(1), [m.group(1)])), text)
     return fm_mention_problems(text)
 
 

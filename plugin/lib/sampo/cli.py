@@ -1133,7 +1133,7 @@ def task_revert(p, args):
     own = re.compile(rf"\b{re.escape(b.id)}\b")
     rows = [(r.strip().split("\x1f") + ["", "", ""])[:3] for r in log.split("\x1e") if r.strip()]
     shas = [(h, subj) for h, subj, body in rows
-            if (own.search(subj) or f"Foreman-Task: {b.id}" in body) and not subj.startswith("Revert ")]
+            if (own.search(subj) or b.id in c.task_trailers(body)) and not subj.startswith("Revert ")]
     deps = [x for x in c.load_briefs(p) if x.id != b.id and x.status not in c.CLOSED
             and (b.id in c._deps(x) or own.search(" ".join([x.title, x.section("Raw request")])))]
     lines = [f"{b.id} {b.title}: {len(shas)} commit(s)"] + [f"  {h} {c.fit(s_, 90)}" for h, s_ in shas[:20]]
@@ -2179,7 +2179,8 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
         except ValueError as e:
             raise UsageError(f"{b.id} is done, but the stack wasn't committed: {e}")
         return
-    trailer =[] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
+    trailer = [] if "Sampo-Task:" in message or "Foreman-Task:" in message else [
+        "--trailer", f"{c.TRAILER}: {b.id}"]  # fm why reads it
     try:  # T-2392: a task the unproven rollup holds names its kinds in the commit, where a reader of the history sees it
         kinds = sorted({n["kind"] for n in c.proof_needs(p, c.find_brief(p, b.id) or b, files, live=True)})
     except Exception:  # a rollup read never fails a commit
@@ -5292,7 +5293,7 @@ def cmd_round(args):
     for rec in log.split("\x1e"):
         subj, _, body = rec.strip().partition("\x1f")
         if subj and not subj.startswith("Revert "):
-            named |= set(re.findall(r"\bT-\d{4,}\b", subj)) | set(re.findall(r"Foreman-Task: (T-\d{4,})", body))
+            named |= set(re.findall(r"\bT-\d{4,}\b", subj)) | set(c.task_trailers(body))
     done = [b for b in c.load_briefs(p, include_archive=True) if b.id in named and b.status == "done"]
     if c._git(top, "tag", tag, "HEAD", timeout=10, fail=None) is None:
         raise UsageError(f"git couldn't tag HEAD {tag}")
@@ -5349,14 +5350,13 @@ def cmd_bisect(args):
 def _bisect(p, r, timeout):
     """T-0458: git bisect, in a throwaway worktree, between the commit of the task that proved r's check (good) and
     HEAD (bad); the first bad commit is captured as a FIX naming it and its task. None when it can't run."""
-    good = c._git(p.root, "log", "-1", "--format=%H", f"--grep=Foreman-Task: {r['task']}", timeout=30).strip()
+    good = c._git(p.root, "log", "-1", "--format=%H", *c.trailer_grep(r["task"]), timeout=30).strip()
     head = c._git(p.root, "rev-parse", "HEAD", timeout=10).strip()
     sha = first_bad(p, r["cmd"], good, head, timeout)
     if not sha:
         return None
     subject = c.plain(c._git(p.root, "log", "-1", "--format=%s", sha, timeout=10).strip())[:100]
-    task = (re.findall(r"Foreman-Task: (T-\d+)", c._git(p.root, "log", "-1", "--format=%B", sha, timeout=10))
-            or [None])[0]
+    task = (c.task_trailers(c._git(p.root, "log", "-1", "--format=%B", sha, timeout=10)) or [None])[0]
     title = _title(f"Regression: {r['cmd'][:60]} broke at {sha[:10]} ({subject})")
     if not any(x.title == title for x in c.load_briefs(p) if x.status not in c.CLOSED):
         with c.lock(p.dir):
@@ -6136,7 +6136,7 @@ class _Parser(argparse.ArgumentParser):
             except OSError:
                 pass
         if len(choices) > 12:  # T-1170: every command's name is 2 KB of output for one typo
-            message = message.replace(bad.group(0), f"unknown '{bad.group(1)}' (fm help lists them)")
+            message = message.replace(bad.group(0), f"unknown '{bad.group(1)}' ({_prog()} help lists them)")
         super().error(message + (f" — did you mean {near[0]}?" if near else ""))
 
 
@@ -6295,10 +6295,17 @@ def _parser_for(argv):
     return _PARTS[name] or build_parser()
 
 
+def _prog():
+    """T-2766: the name that was typed, sampo or fm: the parser's usage and messages say it back."""
+    return "sampo" if os.path.basename(sys.argv[0] if sys.argv else "") == "sampo" else "fm"
+
+
 def _build_parser(only=None):
-    ap = _Parser(prog="fm", usage="fm [-p PROJECT] <command> [options]",
+    prog = _prog()
+    ap = _Parser(prog=prog, usage=f"{prog} [-p PROJECT] <command> [options]",
                  description="Foreman state CLI (the only writer of Foreman state).")
-    ap.format_help = lambda: START_HERE  # only the root: subparsers keep argparse's own help
+    # only the root: subparsers keep argparse's own help
+    ap.format_help = lambda: START_HERE.replace("usage: fm", f"usage: {prog}", 1)
     ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
     sp = ap.add_subparsers(dest="cmd", required=True, metavar="<command>")
 
@@ -7692,7 +7699,7 @@ def _build_parser(only=None):
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
                                                  "draft", "spec", "select", "confirm", "seed", "drift", "sweep", "exam", "frontier",
-                                                 "novelty", "grow", "steer", "review", "moonshot"))
+                                                 "novelty", "grow", "steer", "review", "moonshot", "underworld"))
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")
@@ -8362,9 +8369,15 @@ ALIASES = [(("task", "list"), ["queue"]), (("task", "ls"), ["queue"]), (("task",
            (("lane", "ls"), ["lane", "list"]), (("inbox", "list"), ["inbox"]), (("inbox", "ls"), ["inbox"])]
 
 
+RENAMES = {"smith": ["code"], "rune": ["genesis"], "louhi": ["exam"], "ward": ["guard"], "moons": ["genesis", "moonshot"],
+           "underworld": ["genesis", "underworld"]}  # T-2766: Sampo's names for verbs, run silently (no guess to report)
+
+
 def _alias(argv):
     """argv with a guessed command replaced by the real one, and the real one's words (None when nothing matched)."""
     lead = 2 if argv[:1] in (["-p"], ["--project"]) else 0  # fm -p PROJECT task list
+    if argv[lead:lead + 1] and argv[lead] in RENAMES:
+        return argv[:lead] + RENAMES[argv[lead]] + argv[lead + 1:], None
     for guess, real in ALIASES:
         if tuple(argv[lead:lead + len(guess)]) == guess:
             return argv[:lead] + real + argv[lead + len(guess):], " ".join(real)
@@ -8492,11 +8505,33 @@ def _stack_dumps(verb):
     return done
 
 
+def _now_sampo():
+    """T-2766: fm, typed at a terminal, says once a day that it is now sampo; never to a script (stderr not a
+    terminal), never under sampo. The day's stamp lives in the state dir; no state dir, no line."""
+    if _prog() != "fm" or not sys.stderr.isatty() or "complete" in sys.argv[1:4]:  # a TAB press prints nothing
+        return
+    stamp, today = os.path.join(c.state_dir(), "now-sampo"), time.strftime("%Y-%m-%d")
+    try:
+        with open(stamp) as f:
+            if f.read().strip() == today:
+                return
+    except OSError:
+        pass
+    try:
+        with open(stamp, "w") as f:
+            f.write(today + "\n")
+    except OSError:  # unwritable: say nothing rather than every time
+        return
+    print("fm is now sampo: `sampo <command>` runs the same commands (fm stays as its alias)", file=sys.stderr)
+
+
 def main(argv=None):
+    if argv is None:  # a command line, not an in-process call (the hooks)
+        _now_sampo()
     argv = sys.argv[1:] if argv is None else argv
     argv, aliased = _alias(list(argv))
     if aliased:
-        print(f"(ran `fm {aliased}`)", file=sys.stderr)
+        print(f"(ran `{_prog()} {aliased}`)", file=sys.stderr)
     parser = _parser_for(argv)
     argv = _task_shape(parser, argv)
     global _ARGV

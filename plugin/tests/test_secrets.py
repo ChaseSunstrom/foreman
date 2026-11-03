@@ -1,5 +1,5 @@
 """T-0132: fm secrets finds credentials in the working tree, in git history and in Claude Code's config without printing
-them; Foreman's own commits carry a Foreman-Task trailer and refuse lines that look like a secret."""
+them; Foreman's own commits carry a Sampo-Task trailer and refuse lines that look like a secret."""
 import json
 import os
 import subprocess
@@ -81,7 +81,7 @@ class Secrets(ForemanTestCase):
         self.fm("task", "new", "One", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "a", "--focus")
         self.write("a.py", "x = 1\n")
         self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check", "--commit", "Add a")
-        self.assertIn("Foreman-Task: T-0001", self.git("log", "-1", "--format=%B"))
+        self.assertIn("Sampo-Task: T-0001", self.git("log", "-1", "--format=%B"))
         sha = self.git("log", "-1", "--format=%h").strip()
         self.assertIn(f"committed {sha}", self.fm("task", "show", "T-0001").stdout)
 

@@ -39,7 +39,7 @@ def _commits(root, last, head):
     """[(sha, unix time, subject, {Foreman-Task ids}, [files])] for last..head, newest first, merges skipped (their
     lane commits count); None when git failed (timeout, unknown commit), so the caller doesn't skip past them."""
     r = c._git(root, "log", "--no-merges", f"-n{MAX_COMMITS}", "--name-only",
-               "--format=%x00%H%x00%ct%x00%(trailers:key=Foreman-Task,valueonly,separator=%x2C)%x00%s",
+               "--format=%x00%H%x00%ct%x00%(trailers:key=Sampo-Task,key=Foreman-Task,valueonly,separator=%x2C)%x00%s",
                f"{last}..{head}", "--", timeout=10, proc=True)
     if r.returncode:
         return None

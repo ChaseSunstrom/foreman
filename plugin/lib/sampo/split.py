@@ -117,7 +117,7 @@ def task_capsule(p, args):
     decisions, follow-ups and risks."""
     from sampo import cli
     b = cli.need_brief(p, args.id)
-    commits = c._git(p.root, "log", "--format=%h", "--grep", f"Foreman-Task: {b.id}", timeout=30).split()
+    commits = c._git(p.root, "log", "--format=%h", *c.trailer_grep(b.id), timeout=30).split()
     stat = (c._git(p.root, "show", "--numstat", "--format=", *commits, timeout=30) if commits else
             (c.task_diff(p.root, base, "--numstat") or "") if (base := c.task_base(p.root, b)) else "")
     changed = {}

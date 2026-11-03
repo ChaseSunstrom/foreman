@@ -77,7 +77,7 @@ def commit(p, b, files, message, check=None):
             _git(root, "update-index", "--add", "--remove", "--", *paths, env=env)
             tree = _git(root, "write-tree", env=env).stdout.strip()
             msg = f"{subject} ({len(made) + 1}/{len(plan)}): {label}" + (f"\n{body}" if body.strip() else "")
-            new = _git(root, "commit-tree", tree, "-p", parent, "-m", msg, "-m", f"Foreman-Task: {b.id}").stdout.strip()
+            new = _git(root, "commit-tree", tree, "-p", parent, "-m", msg, "-m", f"{c.TRAILER}: {b.id}").stdout.strip()
             if not new:
                 raise ValueError(f"git commit-tree failed for {label}")
             cmds = [check] if check else verify

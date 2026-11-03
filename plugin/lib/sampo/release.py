@@ -26,7 +26,7 @@ STEPS = [("tree", "the working tree is clean"),
          ("check", "fm check passes (the full gates)"),
          ("bump", "plugin.json, both marketplace.json entries, and foreman-ui's version when it changed"),
          ("changelog", "CHANGELOG.md's Unreleased entries are headed VERSION"),
-         ("commit", "commit 'Foreman VERSION' with the Foreman-Task trailer"),
+         ("commit", "commit 'Foreman VERSION' with the Sampo-Task trailer"),
          ("release-check", "fm release-check: doctor and demo in a temporary HOME"),
          ("push", "--push: merge into the remote's main (--no-ff) from a temporary worktree, push; spends the publish grant"),
          ("round", "fm round close: tag HEAD round-N"),
@@ -186,7 +186,7 @@ def _commit(ctx):
         if os.path.isfile(os.path.join(root, "plugin", "defaults.json")):
             _git(root, "add", "--", "plugin/defaults.json")  # the first snapshot is a new file: commit -- needs it known
         # only these files: whatever else was staged between a stop and the resume stays out of the release
-        _git(root, "commit", "-qm", f"Foreman {v}", *(["--trailer", f"Foreman-Task: {b.id}"] if b else []), "--", *files)
+        _git(root, "commit", "-qm", f"Foreman {v}", *(["--trailer", f"{c.TRAILER}: {b.id}"] if b else []), "--", *files)
     ctx["state"]["sha"] = _git(root, "rev-parse", "HEAD").strip()  # what a later --push merges, not a moved HEAD
 
 
@@ -693,7 +693,7 @@ def run_any(p, args, root, state, state_path):
     def commit():
         if _git(root, "log", "-1", "--format=%s").strip() != f"Release {v}":
             b = c.active_brief_fast(p, p.lane)
-            _git(root, "commit", "-qm", f"Release {v}", *(["--trailer", f"Foreman-Task: {b.id}"] if b else []), "--",
+            _git(root, "commit", "-qm", f"Release {v}", *(["--trailer", f"{c.TRAILER}: {b.id}"] if b else []), "--",
                  state["any"], *(["CHANGELOG.md"] if os.path.isfile(os.path.join(root, "CHANGELOG.md")) else []))
         state["sha"] = _git(root, "rev-parse", "HEAD").strip()
 

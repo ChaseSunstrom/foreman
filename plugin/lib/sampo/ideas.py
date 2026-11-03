@@ -633,7 +633,7 @@ def overwrites(p, days=90):
     last, out = {}, []
     for entry in reversed(log.split("\x01")[1:]):
         sha, ts, body, names = (entry.split("\x00") + ["", "", ""])[:4]
-        task = (re.findall(r"(?m)^Foreman-Task:\s*(T-\d+)", body) or [None])[0]
+        task = (c.task_trailers(body) or [None])[0]
         for f in (x for x in names.split("\n") if x.strip()):
             if task:
                 last[f] = (task, int(ts or 0))

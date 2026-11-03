@@ -64,6 +64,16 @@ def claude_path(env):
     return env
 
 
+def mirror_env(env):
+    """T-2766: SAMPO_X is FOREMAN_X's new name and wins when both are set. Its value moves to FOREMAN_X, the name the
+    code reads, and SAMPO_X leaves the environment: a child given its own FOREMAN_X (a test's scratch home, a bench)
+    must get that one, not an inherited SAMPO_X that would win again in the child."""
+    for k in [k for k in env if k.startswith("SAMPO_") and len(k) > 6]:
+        env["FOREMAN_" + k[6:]] = env.pop(k)
+    return env
+
+
+mirror_env(os.environ)
 claude_path(os.environ)
 
 TYPES = ["RESEARCH", "CLEAN", "PERFORMANCE", "SECURITY", "FIX", "FEATURE"]
@@ -4520,6 +4530,21 @@ def glob_match(rel, pattern):
         else:
             rx, i = rx + re.escape(pat[i]), i + 1
     return re.fullmatch(rx, rel) is not None
+
+
+# T-2766: commits carry a Sampo-Task trailer; Foreman-Task (every older commit) is read beside it, forever
+TRAILER = "Sampo-Task"
+_TASK_TRAILER = lazy(r"(?m)^(?:Sampo|Foreman)-Task:[ \t]*(T-\d+)\b")
+
+
+def task_trailers(message):
+    """The task ids a commit message's Sampo-Task or Foreman-Task trailers name, in order."""
+    return _TASK_TRAILER.findall(message or "")
+
+
+def trailer_grep(tid):
+    """git log arguments that find the commits whose trailer names tid (either key; T-1 never matches T-10)."""
+    return ["-E", f"--grep=^(Sampo|Foreman)-Task: {tid}$"]  # ids are T-\d+: nothing to escape
 
 
 # ---------------------------------------------------------------- checkpoint / resume
