@@ -7561,7 +7561,7 @@ def _build_parser(only=None):
             b.add_argument("plugin", nargs="?", help="a plugin folder, or an installed plugin's id")
             b.add_argument("--ablate", metavar="F1,F2", help="Foreman against itself with each named hook feature "
                            "switched off in turn (fix, deps, veto, scope, lessons, steps, ambient, bus, cards, "
-                           "test-first, design, gate-pipe, drive, or all; never the guard), a verdict each (T-1375)")
+                           "test-first, design, drive, or all; never the guard), a verdict each (T-1375)")
             b.add_argument("--equal-spend", action="store_true", help="with --vs none: Claude with no plugins gets "
                            "Foreman's spend on each case as fresh attempts (5 at most, stopping at a pass) (T-1376)")
             b.add_argument("--vs", choices=["none", "snippet"], help="none: Foreman against Claude with no plugins "

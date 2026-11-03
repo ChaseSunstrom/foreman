@@ -3510,9 +3510,10 @@ class Ablate(HookCase):  # T-1375
         self.assertNotIn("scope", self.edit("y.md", {"FOREMAN_ABLATE": "lessons,scope"}), "scope switched off")
         self.assertIn(f"outside {tid} scope", self.edit("z.md"), "and on again without it")
         self.assertEqual(c.ablated(), set())
-        os.environ["FOREMAN_ABLATE"] = "scope, guard ,nope"
+        os.environ["FOREMAN_ABLATE"] = "scope, guard ,nope,gate-pipe"
         try:
-            self.assertEqual(c.ablated(), {"scope"}, "only named features; the guard isn't one")
+            self.assertEqual(c.ablated(), {"scope"}, "only named features; the guard and gate-pipe (a deny) aren't")
+            self.assertNotIn("gate-pipe", c.ABLATABLE)
         finally:
             del os.environ["FOREMAN_ABLATE"]
         r = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "rm -rf ~"}},

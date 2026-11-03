@@ -3233,7 +3233,7 @@ def reconcile_rewind(p, lane=None, timeout=2, briefs=None):
 # T-1375: the hook features fm bench duel --ablate can switch off for one session (FOREMAN_ABLATE=a,b): each note the
 # guard hook adds to a tool call, and the Stop hook's drive. The guard is not one of them, and never is.
 ABLATABLE = ("fix", "deps", "veto", "scope", "lessons", "steps", "ambient", "bus", "cards", "test-first", "design",
-             "gate-pipe", "drive")
+             "drive")
 
 
 def ablated():
