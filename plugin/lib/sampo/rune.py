@@ -91,6 +91,7 @@ def put(p, name, text):
     path = _file(p, name, text, record="put")
     if sealed:
         c.log_event(p, "genesis_seal", data={"gen": int(sealed[1]), "sha": hashlib.sha256(text.encode()).hexdigest()})
+        _close_gaps(p, int(sealed[1]) - 1, name)
     if (m := re.fullmatch(r"gen-(\d+)/seed\.md", name)):
         try:  # T-2359: the generation's lean start; never fails a put
             record_lean(p, int(m[1]))
@@ -852,8 +853,11 @@ def step(p):
                    f"fm genesis put {pre}seed.md --file -", "fatal")
     if n >= 2 and _seal_state(p, n) == "missing":  # T-2505 (user steer 2026-11-01, part 5): sealed before the steers it
         # predicts; from gen 2, the generation running when the rule arrived (gen 1 can't be sealed after the fact)
+        miss = _missed_steers(p, n - 1)  # T-2774: the last generation's gaps feed this prediction
         return act("predict", n, "seal a prediction: the user's three likeliest next steers, one line each as "
-                                 "'N. Steer: … | Why: …'", f"fm genesis put {pre}prediction.md --file -")
+                                 "'N. Steer: … | Why: …'"
+                   + (f"; gen-{n - 1} missed these steers, learn from them: " + " / ".join(miss[:5]) if miss else ""),
+                   f"fm genesis put {pre}prediction.md --file -")
     for num, file, caps, _gaps, _deps in rows:  # in table order, which keeps each row's Depends on satisfied
         name, doc = file[8:], _doc(d, f"{pre}{file}.md")
         where = f"Mission {num} ({name})"
@@ -3683,6 +3687,34 @@ def _seal_state(p, n):
 
 def _steer_words(t):  # T-2505 (fmgenesis already has a _words for coverage cells)
     return set(WORD.findall(str(t).lower())) - STOP
+
+
+def _missed_steers(p, n):
+    """T-2774: the steers gen-n's sealed prediction missed, from its prediction-score.jsonl."""
+    out = []
+    for raw in (_doc(home(p), f"gen-{n}/prediction-score.jsonl") or "").splitlines():
+        try:
+            row = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("hit") is False and row.get("steer"):
+            out.append(str(row["steer"]))
+    return out
+
+
+def _close_gaps(p, n, sealed):
+    """T-2774: gen-n's open anticipation-gap briefs fed the prediction just sealed: close them as done."""
+    if n < 1:
+        return
+    for b in c.load_briefs(p):
+        if b.status in c.CLOSED or f"genesis-anticipation {n}:" not in b.section("Raw request"):
+            continue
+        with c.lock(p.dir):
+            b.meta["status"] = "done"
+            b.append_log(f"done: fed the next generation's prediction, sealed in {sealed}")
+            c.save_brief(p, b)
+            c.log_event(p, "task_done_in", task=b.id, data={"host": sealed, "reason": "anticipation gap consumed"})
+    c.regen_views(p)
 
 
 def score_steer(p, text, cite=None):

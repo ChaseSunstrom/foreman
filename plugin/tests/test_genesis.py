@@ -4238,6 +4238,24 @@ class SealedPrediction(ForemanTestCase):
         gaps = [b for b in c.load_briefs(self.p) if "anticipation" in b.section("Raw request").lower()]
         self.assertEqual(len(gaps), 1)
 
+    def test_gen_2_predict_names_gen_1_misses_and_sealing_closes_their_gaps(self):  # T-2774
+        from sampo import core as c
+        from sampo import rune
+        self.put("gen-1/prediction.md", self.PRED)
+        rune.score_steer(self.p, "Rotate the sunburst palette every release", cite="user steer A")
+        rune.score_steer(self.p, "Index the ledger by hash prefix for speed", cite="user steer B")
+        gaps = lambda: [b for b in c.load_briefs(self.p) if "genesis-anticipation 1:" in b.section("Raw request")]
+        self.assertEqual([b.status for b in gaps()], ["captured", "captured"], "a miss still files one gap")
+        tower_file(self.tower, "gen-2/seed.md", "# Seed\ngen-0\nNo Missions this generation.\n")
+        tower_file(self.tower, "lineage.md", "# Lineage\n\n## gen-1\n- baseline\n- seed base: gen-1\n")
+        s = rune.step(self.p)
+        self.assertEqual(s["stage"], "predict")
+        self.assertIn("sunburst palette", s["action"])
+        self.assertIn("hash prefix", s["action"])
+        self.put("gen-2/prediction.md", self.PRED.replace("gen 1", "gen 2"))
+        self.assertEqual([b.status for b in gaps()], ["done", "done"])
+        self.assertIn("gen-2/prediction.md", gaps()[0].section("Log"))
+
     def test_blind_spot_classes_need_a_rule_and_a_passing_check(self):
         from sampo import rune
         self.fm("decide", "Standing rule: a drive offer is made once per active task", "--why", "blind spot",
