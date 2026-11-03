@@ -7368,6 +7368,11 @@ def _build_parser(only=None):
             "journals whose last line is torn, state files that aren't JSON; exit 1 on any (T-1667, T-1669)")
     s.add_argument("--fix", action="store_true", help="remove only the stale locks; a broken lane or a torn journal "
                    "is left for a person")
+    s = add("migrate", lazy("fmhomemove", "cmd_migrate"), tier=("Project and settings", 874), help="move the Foreman home "
+            "and its siblings (foreman.draft, .evolve, .lanes) to the sampo names once, leaving symlinks at the old "
+            "paths, a backup of the record and a manifest; safe to rerun, resumes a half-done move (T-2746)")
+    s.add_argument("--undo", action="store_true", help="put the old layout back and check it against the manifest's hashes")
+    s.add_argument("--dry-run", action="store_true", help="show the steps; change nothing")
     s = add("drill", lazy("fmdrill", "cmd_drill"), tier=("Project and settings", 873), help="a scripted day in a temp "
             "home with faults planted mid-day (torn ledger and journal, stale lock, broken lane, corrupt state file, "
             "unreadable file); passes only when fm fsck or fm verify-ledger finds each or the day heals it, and "
