@@ -2091,5 +2091,118 @@ class ProbeProvisional(RouteBase):
         self.assertNotEqual(bad.returncode, 0)
 
 
+class LaneReexec(unittest.TestCase):
+    """T-2843: fm run from inside a lane worktree re-runs that lane's own plugin/bin (once), so PLUGIN_ROOT is the lane."""
+    PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    MARK = 'import sys\nprint("LANE", sys.argv[0], sys.argv[1:])\n'
+
+    def setUp(self):
+        import sys
+        import tempfile
+        self.sys = sys
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="fm-lane-reexec-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.main = os.path.join(self.tmp, "main")  # a main checkout: a .git dir, the real bin and py.py, a stub cli
+        os.makedirs(os.path.join(self.main, ".git", "worktrees", "wt"))
+        os.makedirs(os.path.join(self.main, "plugin", "bin"))
+        os.makedirs(os.path.join(self.main, "plugin", "lib", "sampo"))
+        for n in ("fm", "sampo"):
+            shutil.copy(os.path.join(self.PLUGIN, "bin", n), os.path.join(self.main, "plugin", "bin", n))
+        shutil.copy(os.path.join(self.PLUGIN, "lib", "sampo", "py.py"), os.path.join(self.main, "plugin", "lib", "sampo"))
+        for n, body in (("__init__.py", ""), ("cli.py", 'def main():\n    print("MAIN")\n    return 0\n')):
+            with open(os.path.join(self.main, "plugin", "lib", "sampo", n), "w") as f:
+                f.write(body)
+        self.wt = self.worktree("wt", "bin/fm", "bin/sampo")
+
+    def worktree(self, name, *bins, gitdir=None, registry=True):
+        """registry: True = the main .git/worktrees/<name>/gitdir names this lane's .git file (as git writes it);
+        False = no entry (a forged folder); a path = an entry naming that file instead."""
+        wt = os.path.join(self.tmp, name)
+        os.makedirs(os.path.join(wt, "sub"))
+        entry = os.path.join(self.main, ".git", "worktrees", name)
+        with open(os.path.join(wt, ".git"), "w") as f:
+            f.write("gitdir: " + (gitdir or entry) + "\n")
+        if registry:
+            os.makedirs(entry, exist_ok=True)
+            with open(os.path.join(entry, "gitdir"), "w") as f:
+                f.write((registry if isinstance(registry, str) else os.path.join(wt, ".git")) + "\n")
+        for b in bins:
+            p = os.path.join(wt, "plugin", b)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w") as f:
+                f.write(self.MARK)
+        return wt
+
+    def run_fm(self, cwd, name="fm", env=None):
+        e = {k: v for k, v in os.environ.items() if k != "SAMPO_LANE_CHILD"}
+        e.update(env or {})
+        return subprocess.run([self.sys.executable, os.path.join(self.main, "plugin", "bin", name), "x"], cwd=cwd, env=e,
+                              capture_output=True, text=True, timeout=30)
+
+    def test_inside_a_lane_the_lanes_own_fm_runs_once(self):
+        for name in ("fm", "sampo"):
+            for cwd in (self.wt, os.path.join(self.wt, "sub")):
+                r = self.run_fm(cwd, name)
+                self.assertIn("LANE " + os.path.join(self.wt, "plugin", "bin", name) + " ['x']", r.stdout)
+                self.assertEqual(r.stderr.count(self.wt), 1, r.stderr)  # said once, naming the root that runs
+
+    def test_the_marker_stops_a_second_hop(self):
+        self.assertIn("MAIN", self.run_fm(self.wt, env={"SAMPO_LANE_CHILD": "1"}).stdout)
+
+    def test_outside_a_lane_nothing_changes(self):
+        for cwd in (self.main, self.tmp):
+            r = self.run_fm(cwd)
+            self.assertEqual((r.stdout.strip(), r.stderr), ("MAIN", ""))
+
+    def test_a_worktree_without_its_own_fm_or_of_another_repo_is_left_alone(self):
+        bare = self.worktree("bare")
+        other = self.worktree("other", "bin/fm", gitdir=os.path.join(self.tmp, "elsewhere", ".git", "worktrees", "other"))
+        for cwd in (bare, other):
+            self.assertEqual(self.run_fm(cwd).stdout.strip(), "MAIN")
+
+    def test_a_forged_or_misregistered_lane_is_ignored(self):
+        # T-2843 security: the folder's own .git text proves nothing; the main repo's registry must point back at it
+        forged = self.worktree("forged", "bin/fm", registry=False)  # names a real-looking gitdir, no registry entry
+        os.makedirs(os.path.join(self.main, ".git", "worktrees", "forged"))  # an entry dir without a gitdir file
+        wrong = self.worktree("wrong", "bin/fm", registry=os.path.join(self.tmp, "somewhere", ".git"))
+        for cwd in (forged, wrong):
+            r = self.run_fm(cwd)
+            self.assertEqual((r.stdout.strip(), r.stderr), ("MAIN", ""))
+
+    def test_a_lane_others_can_write_is_ignored(self):
+        for what in ("plugin/bin/fm", ".git", ""):
+            wt = self.worktree("w" + str(len(what)), "bin/fm")
+            os.chmod(os.path.join(wt, what) if what else wt, 0o777)
+            self.assertEqual(self.run_fm(wt).stdout.strip(), "MAIN", what)
+            os.chmod(os.path.join(wt, what) if what else wt, 0o755)
+            self.assertIn("LANE", self.run_fm(wt).stdout, what)
+
+    def test_a_lane_git_made_still_re_execs(self):
+        main = os.path.join(self.tmp, "real")
+        shutil.copytree(self.main, main, ignore=shutil.ignore_patterns(".git"))
+        g = lambda *a, cwd=main: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=cwd, check=True,
+                                                capture_output=True)
+        g("init", "-q")
+        g("add", "-A")
+        g("commit", "-q", "-m", "x")
+        lane = os.path.join(self.tmp, "reallane")
+        g("worktree", "add", "-q", "-b", "lane", lane)
+        with open(os.path.join(lane, "plugin", "bin", "fm"), "w") as f:
+            f.write(self.MARK)
+        r = subprocess.run([self.sys.executable, os.path.join(main, "plugin", "bin", "fm"), "x"], cwd=lane,
+                           env={k: v for k, v in os.environ.items() if k != "SAMPO_LANE_CHILD"}, capture_output=True,
+                           text=True, timeout=30)
+        self.assertIn("LANE " + os.path.join(lane, "plugin", "bin", "fm"), r.stdout)
+
+    def test_the_lane_running_itself_does_not_loop(self):
+        # the lane's own bin (a real copy) in its own worktree: its root's .git is a file, so it runs here
+        lane_bin = os.path.join(self.wt, "plugin", "bin", "fm")
+        shutil.copytree(os.path.join(self.main, "plugin", "lib"), os.path.join(self.wt, "plugin", "lib"))
+        shutil.copy(os.path.join(self.main, "plugin", "bin", "fm"), lane_bin)
+        e = {k: v for k, v in os.environ.items() if k != "SAMPO_LANE_CHILD"}
+        r = subprocess.run([self.sys.executable, lane_bin], cwd=self.wt, env=e, capture_output=True, text=True, timeout=30)
+        self.assertEqual((r.stdout.strip(), r.stderr), ("MAIN", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

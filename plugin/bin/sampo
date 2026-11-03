@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
 try:  # T-0368: below Python 3.12.7, re-run under a supported one
     from sampo import py  # noqa: E402
+    py.lane_reexec(__file__)  # T-2843: inside a lane, run the lane's own plugin
     py.reexec()
 except Exception:
     pass

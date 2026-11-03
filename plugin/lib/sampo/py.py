@@ -90,6 +90,53 @@ def target(v):
     return None if os.path.realpath(exe) == os.path.realpath(sys.executable) else exe
 
 
+def lane_reexec(me):
+    """T-2843: run from inside a lane (a git worktree of this checkout), the main install's fm hands over to the lane's own
+    plugin/bin/<same name>, so PLUGIN_ROOT is the lane (fm lib check lints its cards; writes land in it). Once (SAMPO_LANE_CHILD).
+    No git call: the nearest `.git` above the cwd must be a file naming a worktrees/<x> folder of the .git dir beside this bin
+    whose own `gitdir` file names that .git file back, and the lane, that file and the bin must be ours and not group/world-writable."""
+    try:
+        if os.environ.get("SAMPO_LANE_CHILD"):
+            return
+        me = os.path.realpath(me)
+        git = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(me))), ".git")
+        if not os.path.isdir(git):  # not the main checkout (a copy, a lane itself, the plugin cache)
+            return
+        d = os.path.realpath(os.getcwd())
+        while not os.path.exists(os.path.join(d, ".git")):
+            if os.path.dirname(d) == d:
+                return
+            d = os.path.dirname(d)
+        link = os.path.join(d, ".git")
+        if not os.path.isfile(link):
+            return
+        with open(link, encoding="utf-8") as f:
+            line = f.readline(4096)
+        if not line.startswith("gitdir:"):
+            return
+        # The folder's own text proves nothing (a tarball can say anything): the main repo's registry, which git writes
+        # when it makes the worktree, must point back at this very .git file.
+        gd = os.path.realpath(os.path.join(d, line[7:].strip()))
+        if os.path.dirname(gd) != os.path.join(os.path.realpath(git), "worktrees") or not os.path.isdir(gd):
+            return
+        with open(os.path.join(gd, "gitdir"), encoding="utf-8") as f:
+            back = f.readline(4096).strip()
+        cand = os.path.join(d, "plugin", "bin", os.path.basename(me))
+        if not back or os.path.realpath(os.path.join(gd, back)) != os.path.realpath(link) or not os.path.isfile(cand) \
+                or os.path.realpath(cand) == me:
+            return
+        for p in (d, link, cand):  # ours alone: nobody else can swap what we are about to run
+            st = os.stat(p)
+            if st.st_uid != os.getuid() or st.st_mode & 0o022:
+                return
+        os.environ["SAMPO_LANE_CHILD"] = "1"
+        sys.stderr.write("fm: running the lane's own plugin at %s\n" % d)
+        sys.stderr.flush()
+        os.execv(sys.executable, [sys.executable, cand] + sys.argv[1:])
+    except Exception:  # fail closed: any doubt runs the main install as before
+        return
+
+
 def reexec():
     """Call first in an entry point, before stdin is read: re-runs this process under a supported Python if needed."""
     exe = target(sys.version_info)

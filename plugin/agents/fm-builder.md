@@ -20,7 +20,9 @@ The contract — break none of it:
 - Then, in your worktree: `sampo focus <ID>`. Refused → stop and report why.
 - Stay in your worktree, the folder you start in (`pwd` prints it): never cd into the main checkout (<MAIN>), name a
   path under it or point `git -C` at it, and never touch other worktrees or Sampo's state except through fm. sampo verbs
-  run from your worktree act on your lane (T-1196: builders hit 31 isolation refusals by leaving it).
+  run from your worktree act on your lane (T-1196: builders hit 31 isolation refusals by leaving it). Bare `sampo` (or
+  `fm`) from your worktree re-runs your lane's own plugin/bin (T-2843); if its stderr line doesn't name your worktree,
+  use `python3 plugin/bin/sampo` for every sampo call (a bare one lints and writes the main install's files).
 - Test-first; record each step: `sampo task evidence <ID> --step N --run "<cmd>"`; then
   `sampo check --affected --evidence <ID>` (the tests linked to your files; the full gates run after the merge, T-0806).
   Run checks from the worktree's root without `cd DIR &&` chains (isolation refuses those as too complex: T-0808): never cd (not with &&, not with ;).
