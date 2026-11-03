@@ -38,14 +38,22 @@
 
 <main>
   <div class="wrap hero">
-    <h1>Your coding agent, with a <em>smith</em> on the job.</h1>
+    <h1><span class="w">Your</span> <span class="w">coding</span> <span class="w">agent,</span> <span class="w">with</span> <span class="w">a</span> <em class="w">smith</em> <span class="w">on</span> <span class="w">the</span> <span class="w">job.</span></h1>
     <p class="lede">Sampo is the discipline layer for coding agents: Claude Code, Codex, Gemini CLI, opencode, or its own sampo code on any model. It makes the agent plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until the work is done or needs you.</p>
     <div class="install">
       <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/ChaseSunstrom/foreman/main/<wbr>install.sh | bash</code>
       <button class="copy" type="button" data-copy="cmd-install">Copy</button>
     </div>
     <p class="alt">Or from inside Claude Code: <code>/plugin marketplace add ChaseSunstrom/foreman</code>, then <code>/plugin install foreman@foreman</code>.</p>
-    <!-- proof: build.py fills it from data/stats.json (T-1609) -->
+    <div class="forge">
+      <div class="hearth" aria-hidden="true">
+        <picture class="mill">
+          <source media="(prefers-reduced-motion: reduce)" srcset="assets/mark.svg">
+          <img src="assets/mark-animated.svg" alt="" width="144" height="144">
+        </picture>
+      </div>
+      <!-- proof: build.py fills it from data/stats.json (T-1609) -->
+    </div>
 
     <figure class="reel">
       <div class="window">
@@ -209,6 +217,18 @@
           <li><strong>Reviewed before it lands.</strong> Every branch gets an independent review; findings go back to its builder, then Sampo merges and reruns the checks.</li>
           <li><strong>Resumable.</strong> A stopped session picks its lanes back up where they were.</li>
         </ul>
+        <figure class="smithy" aria-hidden="true">
+          <svg viewBox="0 0 320 160">
+            <path class="anvil" d="M48 88 C70 88 84 88 96 88 H236 V100 H220 C206 100 200 108 200 118 V128 H222 V140 H108 V128 H130 V118 C130 108 120 101 104 100 C82 99 62 96 48 88 Z"/>
+            <ellipse class="heat" cx="173" cy="86" rx="44" ry="13"/>
+            <rect class="billet" x="150" y="80" width="46" height="8" rx="2"/>
+            <path class="sparks" d="M154 77 L134 64 M156 72 L146 52 M150 81 L128 79 M194 77 L214 64 M192 72 L202 52 M198 81 L220 79"/>
+            <g class="hammer">
+              <path class="haft" d="M188 66 L292 40"/>
+              <rect class="head" x="158" y="54" width="32" height="24" rx="3"/>
+            </g>
+          </svg>
+        </figure>
       </div>
       <figure class="lanes">
         <svg viewBox="0 0 560 250" role="img" aria-labelledby="lanes-t">
@@ -267,6 +287,15 @@
         <p><strong>{{tasks}}</strong>tasks planned, proved and closed on Sampo's own code.</p>
         <p><strong>{{tests}}</strong>tests in the gate that every release has to pass.</p>
         <p><strong>{{replay}}</strong>real commands replayed against the Ward whenever it changes.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="names">
+    <div class="wrap">
+      <div class="head">
+        <h2>Where the names come from</h2>
+        <p class="prose">The names come from the Kalevala, where the Sampo is a mill that produces by itself. Ilmarinen the smith forged it, so the task loop is the Smith. Väinämöinen sang runes that made things, so the prompt tower is Rune. Louhi set impossible tasks, so the exam is Louhi. The stolen sun and moon were forged anew, so the moonshot campaigns are Moons. Lost words were fetched back from the underworld, so the not-yet ledger is the Underworld. And the guard at the gate is the Ward.</p>
       </div>
     </div>
   </section>

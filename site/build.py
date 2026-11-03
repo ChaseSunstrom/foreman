@@ -10,6 +10,7 @@ page, stylesheet, script or picture that would."""
 import html
 import html.parser
 import json
+import math
 import os
 import re
 import shlex
@@ -27,6 +28,7 @@ def _v(rel):  # T-2060, T-2063: browsers keep a file by its URL, so the URL carr
 
 # T-2753: assets/sampo.svg, favicon.ico and share.png are links into design/sampo/logo, so the Runestone files have one home
 ICON, FAVICON, CSS, JS = _v("assets/sampo.svg"), _v("assets/favicon.ico"), _v("style.css"), _v("site.js")
+MILL, STILL = _v("assets/mark-animated.svg"), _v("assets/mark.svg")  # T-2759: the hero's turning mill and its still
 SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "__pycache__"}
 TOKENS = os.path.join(ROOT, "design", "sampo", "tokens.json")
 TOKENS_START = "/* tokens: python3 site/build.py --tokens writes this block from design/sampo/tokens.json; edit the json */"
@@ -331,10 +333,17 @@ LANDING_SHADERS = ("shader-aurora-bands", "shader-soft-caustics", "shader-grain-
 STATIONS = [("tasks_done", "tasks done"), ("evidence", "evidence runs"), ("proofs", "proofs"), ("commits", "commits")]
 
 
+def reading(n):
+    """T-2759: a dial's needle, 0 to 1, a decade apart from 1 to 100,000, so a count of 7 and one of 7,000 both move."""
+    return round(min(math.log10(max(n, 1)) / 5, 1), 3)
+
+
 def proof(totals, asof=""):
     """T-1609, T-2040: the hero's proof ledger, the four totals from Sampo's own record as plain figures on hairlines
-    (the diamond poster and its WebGL scene read as decoration, not data). Inline, so it is first paint."""
-    items = "".join(f"<div><dt>{esc(label)}</dt><dd>{esc(fmt(totals.get(k) or 0))}</dd></div>" for k, label in STATIONS)
+    (the diamond poster and its WebGL scene read as decoration, not data). Inline, so it is first paint. T-2759: each
+    figure sits under a dial whose needle (--v) reads the same total; style.css draws the gear and the arc."""
+    items = "".join(f'<div style="--v:{reading(totals.get(k) or 0):g}"><dt>{esc(label)}</dt>'
+                    f'<dd>{esc(fmt(totals.get(k) or 0))}</dd></div>' for k, label in STATIONS)
     return f'<div class="proof"><p>From Sampo\'s own record{", to " + esc(asof) if asof else ""}</p><dl>{items}</dl></div>'
 
 
@@ -567,6 +576,8 @@ def build(out):
                      ('rel="icon" href="assets/favicon.ico"', f'rel="icon" href="{FAVICON}"'),
                      ('rel="stylesheet" href="style.css"', f'rel="stylesheet" href="{CSS}"'),
                      ('<img src="assets/sampo.svg"', f'<img src="{ICON}"'),
+                     ('srcset="assets/mark.svg"', f'srcset="{STILL}"'),
+                     ('<img src="assets/mark-animated.svg"', f'<img src="{MILL}"'),
                      ('<script src="site.js">', f'<script src="{JS}">')):
         if old not in page:  # a reworded tag would ship the old, cached file
             raise SystemExit(f"build.py: site/index.html lost {old}")

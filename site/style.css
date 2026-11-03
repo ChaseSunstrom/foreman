@@ -90,20 +90,56 @@ h3 { font-size: var(--step-1); line-height: 1.15; }
    360 px the header GitHub link goes (the footer keeps one); the brand never shrinks, so its text can't spill */
 @media (max-width: 419px) { .top .wrap { gap: 10px; } .nav { gap: 14px; } .brand { font-size: 1.3rem; gap: 8px; } }
 @media (max-width: 359px) { .nav a[href*="//github"] { display: none; } }
-.theme { appearance: none; border: 1px solid var(--rule); background: var(--panel); color: var(--ink); width: 38px; height: 38px; border-radius: 10px; cursor: pointer; display: grid; place-items: center; }
+.theme { appearance: none; border: 1px solid var(--rule); background: var(--panel); color: var(--ink); width: 38px; height: 38px; border-radius: 10px; cursor: pointer; display: grid; place-items: center; transition: background var(--dur-small); }
+.theme:hover { background: color-mix(in srgb, var(--ink) 8%, var(--panel)); }
+.theme:active { background: color-mix(in srgb, var(--ink) 16%, var(--panel)); }
 .theme svg { width: 18px; height: 18px; }
 
 /* hero */
 .hero { padding: clamp(40px, 8vw, 96px) 0 40px; }
 .hero .lede { font-size: clamp(1.12rem, 1.7vw, 1.3rem); color: var(--ink-2); max-width: 58ch; margin: 22px 0 30px; }
-/* T-1609, T-2040: the proof ledger build.py fills from data/stats.json: four totals as plain figures on hairlines */
-.proof { margin-top: clamp(32px, 5vw, 48px); }
+/* T-2759: the forge beside the words. The hearth is a stone plate whose glow is CSS, so it is whole with no script and
+   under reduced motion; where motion is allowed site.js lights a WebGL fire under the mill (the animated mark, which
+   turns once and settles; reduced motion gets the still mark from the <picture>) */
+.forge { display: grid; gap: 22px; margin-top: clamp(32px, 5vw, 48px); }
+.hearth {
+  position: relative; isolation: isolate; display: grid; place-items: center; min-height: 190px; border-radius: 18px; overflow: hidden;
+  background:
+    radial-gradient(ellipse 60% 55% at 50% 108%, color-mix(in srgb, var(--glow) 72%, transparent), transparent 72%),
+    radial-gradient(ellipse 95% 80% at 50% 112%, color-mix(in srgb, var(--ember) 58%, transparent), transparent 82%),
+    var(--stone);
+}
+.hearth canvas { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; }
+.mill img { width: 144px; height: 144px; filter: drop-shadow(0 8px 18px rgb(0 0 0 / .55)); }
+@media (min-width: 720px) and (max-width: 1079px) { .forge { grid-template-columns: minmax(0, 260px) minmax(0, 1fr); align-items: center; } }
+/* T-1609, T-2040: the proof ledger build.py fills from data/stats.json: four totals as plain figures. T-2759: each sits
+   under an iron gauge, the same total read on a log scale (--v, 0 to 1, from build.py): a bronze gear behind, a
+   glowing arc and needle on a stone face. The figure stays ink on paper, so the number is the data and the dial its echo */
+@property --v { syntax: "<number>"; inherits: true; initial-value: 0; }
+.proof { --dial: 52px; margin: 0; }
 .proof p { margin: 0 0 12px; font: 600 .78rem var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
-.proof dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 24px; margin: 0; }
-.proof dl div { display: flex; flex-direction: column-reverse; gap: 2px; padding: 14px 0 16px; border-top: 1px solid var(--rule); }
+.proof dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; margin: 0; }
+.proof dl div { position: relative; display: flex; flex-direction: column-reverse; gap: 2px; padding: calc(var(--dial) + 26px) 0 16px; border-top: 1px solid var(--rule); }
+.proof dl div::before, .proof dl div::after { content: ""; position: absolute; border-radius: 50%; }
+.proof dl div::before { /* the gear: a disc and 24 teeth */
+  top: 10px; left: 0; width: calc(var(--dial) + 10px); aspect-ratio: 1; rotate: calc(var(--v) * -.5turn);
+  background: color-mix(in srgb, var(--bronze) 72%, var(--stone));
+  mask: radial-gradient(closest-side, black 84%, transparent 85%), repeating-conic-gradient(black 0 7deg, transparent 0 15deg);
+}
+.proof dl div::after { /* the face: a stone hub and rim around the arc, eleven ticks across it */
+  top: 15px; left: 5px; width: var(--dial); aspect-ratio: 1;
+  background:
+    radial-gradient(closest-side, var(--stone) 60%, transparent 61% 84%, var(--stone) 85%),
+    repeating-conic-gradient(from 225deg, var(--stone) 0 2deg, transparent 0 27deg),
+    conic-gradient(from 225deg, var(--glow) calc(var(--v) * 270deg), color-mix(in srgb, var(--bronze) 40%, var(--stone)) 0 270deg, var(--stone) 0);
+}
+.proof dd::before { /* the needle, pivoting on the face's centre */
+  content: ""; position: absolute; z-index: 1; left: calc(5px + var(--dial) / 2 - 1px); top: calc(15px + var(--dial) * .14);
+  width: 2px; height: calc(var(--dial) * .36); border-radius: 1px; background: var(--glow);
+  transform-origin: 50% 100%; rotate: calc(var(--v) * 270deg - 135deg);
+}
 .proof dd { margin: 0; font: 600 clamp(2.2rem, 4vw, 3.1rem)/1 var(--display); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .proof dt { color: var(--ink-2); font-size: .95rem; }
-@media (max-width: 719px) { .proof dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* T-2040: a drafting-table backdrop behind the hero (a fine grid fading out, one warm light), the headline balanced,
    and from 1080px the 2x2 proof chain beside the words with the reel full width below */
 .hero { position: relative; isolation: isolate; }
@@ -120,14 +156,19 @@ h3 { font-size: var(--step-1); line-height: 1.15; }
 }
 .hero h1 { max-width: 18ch; text-wrap: balance; }
 .hero h1 em { font-style: normal; background: linear-gradient(transparent 64%, var(--mark) 0) no-repeat 0 0 / 100% 100%; padding: 0 .06em; margin: 0 -.06em; }
+/* T-2759: each word of the headline is carved after its rune: --i orders them (index.html wraps each in .w) */
+.hero h1 .w { position: relative; }
+.hero h1 .w:nth-child(2) { --i: 1; } .hero h1 .w:nth-child(3) { --i: 2; } .hero h1 .w:nth-child(4) { --i: 3; }
+.hero h1 .w:nth-child(5) { --i: 4; } .hero h1 .w:nth-child(6) { --i: 5; } .hero h1 .w:nth-child(7) { --i: 6; }
+.hero h1 .w:nth-child(8) { --i: 7; } .hero h1 .w:nth-child(9) { --i: 8; }
 h2 { text-wrap: balance; }
 .lede, .head p, .prose { text-wrap: pretty; }
 @media (min-width: 1080px) {
   .hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); column-gap: 64px; align-items: center; }
   .hero > * { grid-column: 1; }
   .hero h1 { font-size: clamp(3.6rem, 5.4vw, 5rem); }
-  .hero .proof { grid-column: 2; grid-row: 1 / span 4; margin: 0; }
-  .hero .proof dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero .forge { grid-column: 2; grid-row: 1 / span 4; margin: 0; }
+  .hearth { min-height: 230px; }
   .hero .reel { grid-column: 1 / -1; }
 }
 .install { display: flex; align-items: stretch; max-width: 760px; background: var(--term); color: var(--term-ink); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
@@ -135,6 +176,7 @@ h2 { text-wrap: balance; }
 .install code::before { content: "$ "; color: var(--term-dim); }
 .copy { appearance: none; border: 0; border-left: 1px solid var(--term-rule); background: var(--raised); color: var(--term-ink); font: 600 .9rem var(--sans); padding: 0 18px; cursor: pointer; min-width: 82px; transition: background var(--dur-small); }
 .copy:hover { background: color-mix(in srgb, var(--text) 10%, var(--raised)); }
+.copy:active { background: color-mix(in srgb, var(--text) 18%, var(--raised)); }
 .copy[data-done] { color: var(--ok); }
 .alt { margin-top: 14px; color: var(--ink-2); font-size: .98rem; }
 
@@ -233,6 +275,17 @@ section { padding: clamp(64px, 10vw, 120px) 0 0; }
 .lanes .lane { stroke: var(--accent); }
 .lanes .rev { fill: var(--signal); }
 .lanes .dot { fill: var(--panel); stroke: var(--ink); }
+/* T-2759: the forge beside the Smith, on stone in either theme; still, it's the moment of a blow, sparks flying */
+.smithy { margin: 26px 0 0; max-width: 440px; border-radius: 18px; overflow: hidden;
+  background: radial-gradient(70% 80% at 54% 62%, color-mix(in oklab, var(--ember) 30%, transparent), transparent 70%), var(--stone); }
+.smithy svg { display: block; width: 100%; height: auto; }
+.smithy .anvil { fill: color-mix(in oklab, var(--stone), white 22%); }
+.smithy .heat { fill: var(--ember); opacity: .45; filter: blur(6px); }
+.smithy .billet { fill: var(--glow); }
+.smithy .sparks { fill: none; stroke: var(--glow); stroke-width: 2.5; stroke-linecap: round; }
+.smithy .haft { fill: none; stroke: color-mix(in oklab, var(--bronze), white 30%); stroke-width: 7; stroke-linecap: round; }
+.smithy .head { fill: color-mix(in oklab, var(--stone), white 40%); }
+.smithy .hammer { transform-origin: 292px 40px; }
 
 /* elsewhere + honest bits */
 .agents { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
@@ -277,12 +330,35 @@ footer .brand { font-size: 1.3rem; }
   @keyframes slam { 0% { opacity: 0; scale: 2.4; } 70% { opacity: 1; scale: .94; } 100% { scale: 1; } }
   @keyframes print { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0); } }
   @keyframes fill { from { scale: 0 1; } }
-  .hero > :is(h1, .lede, .install, .alt, .proof, .reel) { animation: rise var(--dur-stage) var(--ease-enter) both; }
+  .hero > :is(h1, .lede, .install, .alt, .forge, .reel) { animation: rise var(--dur-stage) var(--ease-enter) both; }
   .hero > .lede { animation-delay: var(--dur-tap); }
   .hero > .install { animation-delay: calc(var(--dur-tap) * 2); }
   .hero > .alt { animation-delay: calc(var(--dur-tap) * 3); }
-  .hero > :is(.proof, .reel) { animation-delay: calc(var(--dur-tap) * 4); }
-  .hero h1 em { animation: mark var(--dur-stage) var(--dur-stage) var(--ease-move) both; }
+  .hero > :is(.forge, .reel) { animation-delay: calc(var(--dur-tap) * 4); }
+  /* T-2759: the runes write the headline: each word's rune flares in bronze, then the word is carved where it stood,
+     one --dur-rune apart, all done by about 2.7 s */
+  @keyframes rune { 0% { opacity: 0; } 30%, 55% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes carve { from { color: transparent; } }
+  .hero h1 .w { --at: calc(var(--dur-rune) * (var(--i, 0) + 1)); animation: carve var(--dur-stage) var(--ease-enter) var(--at) both; }
+  .hero h1 .w::before {
+    content: ""; position: absolute; inset: .14em 0 .1em; pointer-events: none; background: var(--signal);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 32' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4v24M9 4l-5 5M9 28l5-5M18 7v18L30 7v18L18 7M38 8l-5 6 5 6M42 12l5 6-5 6M54 4v24M48 10l12 12M60 10l-12 12'/%3E%3C/svg%3E") 0 50% / auto 100% repeat-x;
+    animation: rune calc(var(--dur-rune) * 3) var(--ease-move) calc(var(--dur-rune) * var(--i, 0)) both;
+  }
+  .hero h1 em.w { animation: carve var(--dur-stage) var(--ease-enter) var(--at) both, mark var(--dur-stage) calc(var(--at) + var(--dur-stage)) var(--ease-move) both; }
+  /* the mill turns a full turn more under the pointer, and the gears of the dials sweep with their needles */
+  .mill { transition: rotate var(--dur-turn) var(--ease-mill); }
+  .hearth:hover .mill { rotate: 1turn; }
+  @keyframes sweep { from { --v: 0; } }
+  .proof dl div { animation: sweep calc(var(--dur-stage) * 3) var(--ease-mill) calc(var(--dur-tap) * 4) both; }
+  .proof dl div::before { transition: rotate var(--dur-move) var(--ease-move); }
+  .proof dl div:hover::before { rotate: calc(var(--v) * -.5turn + 15deg); }
+  /* the forge beside the Smith: scrolling past it, the hammer rises and strikes three times, sparks at each blow */
+  @keyframes strike { 0%, 20%, 53%, 86% { rotate: 24deg; } 33%, 66%, 100% { rotate: 0deg; } }
+  @keyframes spark { 0%, 32%, 44%, 65%, 77%, 99% { opacity: 0; } 33%, 66%, 100% { opacity: 1; } }
+  /* tactile: a button gives under the press */
+  .theme, .copy { transition: background var(--dur-small), scale var(--dur-tap) var(--ease-move); }
+  .theme:active, .copy:active { scale: .94; }
   @keyframes drift { to { --drift: 1; } }
   .hero::before { animation: drift var(--autoplay-limit) var(--ease-mill) both; } /* it settles: autoplay ends by the limit */
   /* T-2063: site.js sets --mx/--my, so a soft light follows the pointer across a feature card */
@@ -291,6 +367,9 @@ footer .brand { font-size: 1.3rem; }
     .head, .rules > div, .fcard, .points li, .term, .chart, .lanes, .diagram, .facts p, .notfor li, .steps .st { animation: rise var(--ease-enter) both; animation-timeline: view(); animation-range: entry 0% entry 70%; }
     .term .stamp { animation: slam var(--ease-enter) both; animation-timeline: view(); animation-range: entry 70% cover 35%; }
     .term pre { animation: print steps(11, end) both; animation-timeline: view(); animation-range: entry 40% cover 45%; }
+    .smithy { view-timeline: --smithy; }
+    .smithy .hammer { animation: strike linear both; animation-timeline: --smithy; animation-range: entry 40% cover 65%; }
+    .smithy .sparks { animation: spark linear both; animation-timeline: --smithy; animation-range: entry 40% cover 65%; }
     .top::after { content: ""; position: absolute; inset: auto 0 0; height: 2px; background: var(--signal); transform-origin: 0 50%; animation: fill linear both; animation-timeline: scroll(root); }
   }
 }
