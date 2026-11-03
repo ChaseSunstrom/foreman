@@ -130,6 +130,21 @@ class RenameAliases(SampoTestCase):
             bad += [f"{rel}:{line}: {what}" for line, what in old_names(tree, old)]
         self.assertEqual(bad, [])
 
+    def test_completion_and_help_teach_the_sampo_names(self):  # T-2775
+        from sampo import cli
+        words = lambda *w: self.fm("complete", "--", *w).stdout.split()  # noqa: E731
+        self.assertLessEqual(set(cli.RENAMES), set(words("")))
+        self.assertEqual(words("smith", "") , words("code", ""))
+        self.assertEqual(words("rune", ""), words("genesis", ""))
+        self.assertEqual(words("moons", ""), words("genesis", "moonshot", ""))
+        self.assertEqual(words("underworld", ""), words("genesis", "underworld", ""))
+        self.assertNotIn("smith", words("task", ""))  # the names are verbs, not subcommands
+        hook = self.fm("complete", "--shell", "bash").stdout
+        self.assertIn("complete -F _fm fm sampo", hook)
+        text = self.fm("help", "--all").stdout
+        for name, run in cli.RENAMES.items():
+            self.assertRegex(text, rf"{name}\s+fm {' '.join(run)}\b")
+
     def test_the_scan_sees_each_form(self):
         tree = ast.parse("import fmx\nfrom fmx.y import z\nlazy('fmx', 'f')\nimportlib.import_module('fmx')\n"
                          "__import__('fmx')\nmock.patch('fmx.f')\nmock.patch.dict('fmx.__dict__', {})\n"

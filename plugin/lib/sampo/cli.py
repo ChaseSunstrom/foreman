@@ -6188,7 +6188,8 @@ def cmd_help(args):
     for title, names in HELP_TIERS:
         lines += [title] + [f"  {n:<15}{c.fit(helps.get(n, ''), 100)}" for n in names.split()] + [""]
     out(args, {"tiers": [{"title": t, "commands": n.split()} for t, n in HELP_TIERS]},
-        "\n".join(lines) + "fm <command> -h for its options.")
+        "\n".join(lines + ["Sampo names (run the same):"] + [f"  {n:<15}fm {' '.join(r)}" for n, r in RENAMES.items()]
+                  + [""]) + "fm <command> -h for its options.")
 
 
 # T-0845: fm --help is where a newcomer starts: the everyday commands, not argparse's 100-verb blob
@@ -6218,7 +6219,7 @@ _BASH_HOOK = """_fm() {
   local IFS=$'\\n'
   COMPREPLY=($(fm complete -- "${COMP_WORDS[@]:1:COMP_CWORD}" 2>/dev/null))
 }
-complete -F _fm fm
+complete -F _fm fm sampo
 """
 
 
@@ -6228,6 +6229,8 @@ def cmd_complete(args):
     if args.shell:
         return print(("autoload -U +X bashcompinit && bashcompinit\n" if args.shell == "zsh" else "") + _BASH_HOOK, end="")
     words = list(args.words) or [""]
+    if words[0] in RENAMES and len(words) > 1:  # T-2775: Sampo's name walks as the words it runs
+        words[:1] = RENAMES[words[0]]
     cur, node = words[-1], build_parser()
     for w in words[:-1]:  # walk down the subcommands typed so far
         sub = next((a for a in node._actions if isinstance(a, argparse._SubParsersAction)), None)
@@ -6237,7 +6240,7 @@ def cmd_complete(args):
     if cur.startswith("-"):
         found = sorted({o for a in node._actions for o in a.option_strings if o.startswith(cur)})
     elif sub:
-        found = sorted(n for n in sub.choices if n.startswith(cur))
+        found = sorted(n for n in [*sub.choices, *(RENAMES if len(words) == 1 else ())] if n.startswith(cur))
     else:
         p = c.find_project(os.getcwd())
         found = sorted(b.id for b in c.load_briefs(p) if b.status not in c.CLOSED and b.id.startswith(cur)) if p else []
