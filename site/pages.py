@@ -236,13 +236,15 @@ def _louhi(s):
 
 MOON_PHASE = {"idea": .15, "kill": .5, "slice": .75, "full": 1}
 MOON_STAGE = {"idea": "idea", "kill": "kill test", "slice": "slice", "full": "built", "not-yet": "not yet"}
-MOON_TIERS = ("low", "medium", "high", "xhigh", "extreme", "massive")
 
 
 def _moons(s):
     """T-2767: the Moons catalogue (site/stats.py's moons block from moonshot.md): dials, one moon per entry (its size
     the tier, its phase the stage: a sliver for an idea, half once kill-tested, full when built, a ring for not yet)
     and the list."""
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin", "lib"))
+    from sampo.moons import TIERS
     ms = s.get("moons") or []
     out = dials([("moons", len(ms)), ("ideas", sum(m["stage"] == "idea" for m in ms)),
                  ("kill-tested", sum(m["stage"] != "idea" for m in ms)), ("built", sum(m["stage"] == "full" for m in ms))],
@@ -254,7 +256,7 @@ def _moons(s):
     marks = []
     for i, m in enumerate(shown):
         cx, cy = 20 + cw * (i % cols + .5), 10 + ch * (i // cols + .5)
-        r = min(cw, ch) * .42 * (.5 + .1 * (MOON_TIERS.index(m["tier"]) if m["tier"] in MOON_TIERS else 0))
+        r = min(cw, ch) * .42 * (.5 + .1 * (TIERS.index(m["tier"]) if m["tier"] in TIERS else 0))
         p = MOON_PHASE.get(m["stage"])
         if p is None:
             marks.append(f'<g class="mk moon"><circle class="ring" cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}"/></g>')
@@ -271,7 +273,7 @@ def _moons(s):
         f'<li data-stage="{esc(m["stage"])}"><b>{esc(m["id"])}</b> <span>{esc(_say(m["title"]))}</span> '
         f'<small>{esc(m["tier"])} · {esc(MOON_STAGE.get(m["stage"], m["stage"]))}'
         + (f' · needs {esc(", ".join(m["needs"]))}' if m["needs"] else "") + "</small></li>" for m in ms)
-    tiers = [(t, sum(m["tier"] == t for m in ms)) for t in MOON_TIERS]
+    tiers = [(t, sum(m["tier"] == t for m in ms)) for t in TIERS]
     out += hbars("Moons by tier", "The reviewer's estimate of each moon's size, low to massive.", [t for t in tiers if t[1]])
     return out + f'<ol class="moons">{items}</ol>'
 
