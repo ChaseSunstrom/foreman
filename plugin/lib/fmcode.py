@@ -1024,7 +1024,8 @@ class Run:
             self.emit("stalled", f"    {who} stalled: {why}", worker=who, secs=silent, cause=cause, last=last)
             run_friction("stalled", cause)  # T-1339
             pid = getattr(self, "wpid", None)
-            if cause == "limit" and pid and pid > 1:  # T-1476: waiting out the timeout can't lift a limit; work() blocks
+            if cause == "limit" and pid and pid > 1 and _LIMIT_FIRM.search(last or ""):  # T-1476: a stated limit
+                # can't be waited out, so work() blocks; a bare 'quota' or '429' only labels the stall, it never kills
                 self.limit_hit = last
                 try:
                     os.killpg(pid, signal.SIGKILL)
@@ -1225,6 +1226,8 @@ def trim(msgs, keep=KEEP_RESULTS):
 
 _ESCAPES = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b.")
 _LIMITED = re.compile(r"rate.?limit|usage limit|too many requests|\b429\b|quota|limit reached", re.I)
+_LIMIT_FIRM = re.compile(r"rate.?limit(?:ed| reached| exceeded)|usage limit|too many requests|limit reached|"
+                         r"quota (?:exceeded|reached|exhausted)", re.I)  # T-1476: what kills a stalled worker
 _ASKS = re.compile(r"\((?:y|yes)/(?:n|no)\)|\[(?:y|yes)/(?:n|no)\]|press (?:enter|return|any key)", re.I)
 
 
