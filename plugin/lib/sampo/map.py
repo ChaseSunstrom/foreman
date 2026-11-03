@@ -68,8 +68,9 @@ def _gates(root, files, checks):
 def build(p):
     root = p.root
     files = _git(root, "ls-files").splitlines()
+    tracked = set(files)  # T-2838: once, not per churn line
     churn = collections.Counter(f for f in _git(root, "log", "--since=180.days", "--name-only", "--pretty=format:").splitlines()
-                                if f and f in set(files))
+                                if f and f in tracked)
     layout = collections.Counter(f.split("/", 1)[0] + "/" if "/" in f else "." for f in files)
     big = next((d for d, n in layout.items() if d != "." and n > 0.6 * len(files)), None)
     if big:  # one folder holds most of the repo: show what's inside it instead
@@ -90,6 +91,7 @@ def build(p):
         srcs = [s for s in sources if s.endswith(ext) and (_name_stem(s) == stem or (_name_stem(s).endswith(stem) and (
             len(stem) >= 4 or len(_name_stem(s)) - len(stem) <= 2)))]
         srcs += _folders(root, t, tops, prose)
+        srcs += [s for s in _marked(root, t) if s in tracked and s not in srcs]
         if srcs:
             links[t] = srcs
     lib = _lib(root, files)
@@ -249,7 +251,7 @@ def _source(root, rel):
         return ""
 
 
-VERSION = 12  # bump when build() changes, so older maps are rebuilt
+VERSION = 13  # bump when build() changes, so older maps are rebuilt
 
 
 def load(p, rebuild=False):
@@ -264,6 +266,20 @@ def load(p, rebuild=False):
         m = build(p)
         c.write_atomic(path, json.dumps(m))
     return m
+
+
+_MARKED = re.compile(r"^\s*#\s*map-links:\s*(.+)$", re.M)
+
+
+def _marked(root, test):
+    """T-2838: files a test names on a '# map-links: PATH …' line, for a test that guards them without being named after
+    them (it reads their source as text: test_core counts sandbox_env calls in louhi.py and long.py)."""
+    try:
+        with open(os.path.join(root, test), encoding="utf-8", errors="replace") as f:
+            text = f.read(200_000)
+    except OSError:
+        return []
+    return [w for line in _MARKED.findall(text) for w in line.split()]
 
 
 def _folders(root, test, tops, prose=()):

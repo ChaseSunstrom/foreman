@@ -58,6 +58,20 @@ class Map(ForemanTestCase):
         self.assertNotIn("tests/test_walk.py", out, "a test's own folder links nothing")
         self.assertIn("tests/test_walk.py", self.fm("impact", "src/report.py").stdout)
 
+    def test_a_map_links_marker_links_a_test_to_the_files_it_names(self):
+        # T-2838: test_core counts sandbox_env calls in louhi.py and long.py by reading their text; no name links them,
+        # so a close that edited them never ran it. A '# map-links:' line names them by hand
+        files = {"tests/test_count.py": "# map-links: src/report.py src/gone.py\nx = 1\n"}
+        for rel, text in files.items():
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write(text)
+        self.commit("count")
+        from sampo import map as smap
+        m = smap.load(c.find_project(self.repo, create=False), rebuild=True)
+        self.assertEqual(m["tests"].get("tests/test_count.py"), ["src/report.py"])  # src/gone.py is untracked: no link
+        self.assertIn("tests/test_count.py", smap.tests_for(m, ["src/report.py"]))
+        self.assertNotIn("tests/test_count.py", smap.tests_for(m, ["src/cli.py"]))
+
     def test_a_test_naming_a_mostly_non_code_folder_beside_its_own_runs_when_a_file_in_it_changes(self):
         # T-2267: here every folder sits under plugin/, so test_doctor naming "rules" linked nothing and a rules edit
         # ran no budget test at close; a mostly-code sibling (lib) still links by file name only

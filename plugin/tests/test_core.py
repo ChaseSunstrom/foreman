@@ -1704,6 +1704,9 @@ class StartPoint(ForemanTestCase):  # T-2334: a task always gets a start point; 
 
 
 class SandboxEnv(unittest.TestCase):
+    # map-links: plugin/lib/sampo/demo.py plugin/lib/sampo/drill.py plugin/lib/sampo/bench.py plugin/lib/sampo/long.py
+    # map-links: plugin/lib/sampo/louhi.py plugin/lib/sampo/smithbench.py
+    # (T-2838: the count test below reads these as text, so no name links them; fm check --affected runs it for them)
     # T-2822: a sandbox (demo, drill, exam, bench, long, fences) runs its own fm with the load gate off; the user's
     # FOREMAN_HOST stand-in and Sampo/Claude/git variables stay out, unless the builder names them
     def test_drops_the_parents_variables_keeps_the_named_ones_and_turns_the_load_gate_off(self):
