@@ -853,11 +853,11 @@ def step(p):
                    f"fm genesis put {pre}seed.md --file -", "fatal")
     if n >= 2 and _seal_state(p, n) == "missing":  # T-2505 (user steer 2026-11-01, part 5): sealed before the steers it
         # predicts; from gen 2, the generation running when the rule arrived (gen 1 can't be sealed after the fact)
+        want = "seal a prediction: the user's three likeliest next steers, one line each as 'N. Steer: … | Why: …'"
         miss = _missed_steers(p, n - 1)  # T-2774: the last generation's gaps feed this prediction
-        return act("predict", n, "seal a prediction: the user's three likeliest next steers, one line each as "
-                                 "'N. Steer: … | Why: …'"
-                   + (f"; gen-{n - 1} missed these steers, learn from them: " + " / ".join(miss[:5]) if miss else ""),
-                   f"fm genesis put {pre}prediction.md --file -")
+        if miss:
+            want += f"; gen-{n - 1} missed these steers, learn from them: " + c.joinmore(miss, 5, " / ")
+        return act("predict", n, want, f"fm genesis put {pre}prediction.md --file -")
     for num, file, caps, _gaps, _deps in rows:  # in table order, which keeps each row's Depends on satisfied
         name, doc = file[8:], _doc(d, f"{pre}{file}.md")
         where = f"Mission {num} ({name})"
