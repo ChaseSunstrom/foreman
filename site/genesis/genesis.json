@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-03T16:46:21Z",
+ "updated": "2026-11-03T16:53:34Z",
  "rev": "feab53ac",
  "capabilities": [
   {
@@ -25420,9 +25420,9 @@
  },
  "not_yet": 8,
  "not_yet_open": 8,
- "unproven": 727,
+ "unproven": 728,
  "unproven_kinds": {
-  "meaning": 580,
+  "meaning": 581,
   "research-uncited": 30,
   "perf-typed": 49,
   "typed": 26,
