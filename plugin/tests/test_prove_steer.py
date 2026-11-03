@@ -38,7 +38,8 @@ class ProveSteer(ForemanTestCase):
         self.rule("T-9999: unknown task", "test_new")
         r = self.fm("prove", "--steer", check=False)  # runs this tree's tests: never without the run consent
         self.assertEqual(r.returncode, 2, r.stdout)
-        self.assertIn("--yes-run", r.stderr)
+        self.assertIn("needs the user's yes, once per tree: fm prove --steer --yes-run", r.stderr)
+        self.assertNotIn("pass --yes-run", r.stderr)  # T-2732: the flag is the user's; the agent was told to pass it
         self.assertNotIn("vacuous", r.stdout)
         r = self.fm("prove", "--steer", "--yes-run", check=False)
         out = r.stdout

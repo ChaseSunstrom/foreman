@@ -725,8 +725,8 @@ def cmd_steer(args):
         print("fm prove --steer: run it inside a Foreman project", file=sys.stderr)
         return 2
     if not _yes(args, p.root):  # each check runs this tree's code at an older commit: the other modes' consent
-        print("fm prove --steer runs this tree's tests at older commits: pass --yes-run once to allow it here",
-              file=sys.stderr)
+        print("fm prove --steer runs this tree's tests at older commits, so it needs the user's yes, once per tree: "
+              "fm prove --steer --yes-run", file=sys.stderr)  # T-2732: the user's to run, as the guard holds it
         return 2
     rows, briefs, ran, res = c._decision_rows(p), {}, {}, []
     for i, (date, tags, text) in enumerate(rows):
@@ -861,8 +861,8 @@ def _prove(args):
         t0, bugs = time.time(), []
         if args.bugs:  # T-2242: a cheap child's candidates, each still proven by a red test
             if not allowed:
-                print("fm prove: --bugs runs the tree's code: pass --yes-run for a tree you trust (no candidates asked)",
-                      file=sys.stderr)
+                print("fm prove: --bugs runs the tree's code, so it needs the user's yes, once per tree: fm prove --bugs "
+                      "--yes-run (no candidates asked)", file=sys.stderr)  # T-2732
             elif _sensitive(root):
                 print("fm prove: --bugs: sensitive project, no model-written test (no candidates asked)", file=sys.stderr)
             else:
