@@ -1,228 +1,19 @@
 {
- "generated": "2026-11-02",
+ "generated": "2026-11-03",
  "totals": {
-  "tasks_done": 1662,
-  "evidence": 7390,
-  "proofs": 690,
-  "commits": 1349,
-  "gate_runs": 1053,
-  "subagents": 1436,
-  "lanes_merged": 414,
-  "findings": 2162,
-  "guard_blocks": 570,
-  "captures": 1376,
-  "lessons_shown": 2225
+  "tasks_done": 221,
+  "evidence": 1053,
+  "proofs": 116,
+  "commits": 191,
+  "gate_runs": 168,
+  "subagents": 139,
+  "lanes_merged": 58,
+  "findings": 50,
+  "guard_blocks": 67,
+  "captures": 228,
+  "lessons_shown": 419
  },
  "daily": [
-  {
-   "day": "2026-10-02",
-   "FEATURE": 8,
-   "FIX": 2,
-   "CLEAN": 0,
-   "PERFORMANCE": 1,
-   "SECURITY": 0,
-   "RESEARCH": 2,
-   "lanes": 0,
-   "evidence": 57
-  },
-  {
-   "day": "2026-10-03",
-   "FEATURE": 46,
-   "FIX": 28,
-   "CLEAN": 2,
-   "PERFORMANCE": 2,
-   "SECURITY": 16,
-   "RESEARCH": 2,
-   "lanes": 0,
-   "evidence": 287
-  },
-  {
-   "day": "2026-10-04",
-   "FEATURE": 33,
-   "FIX": 12,
-   "CLEAN": 1,
-   "PERFORMANCE": 2,
-   "SECURITY": 4,
-   "RESEARCH": 5,
-   "lanes": 0,
-   "evidence": 254
-  },
-  {
-   "day": "2026-10-06",
-   "FEATURE": 16,
-   "FIX": 12,
-   "CLEAN": 0,
-   "PERFORMANCE": 0,
-   "SECURITY": 6,
-   "RESEARCH": 1,
-   "lanes": 0,
-   "evidence": 197
-  },
-  {
-   "day": "2026-10-08",
-   "FEATURE": 0,
-   "FIX": 3,
-   "CLEAN": 0,
-   "PERFORMANCE": 1,
-   "SECURITY": 0,
-   "RESEARCH": 0,
-   "lanes": 0,
-   "evidence": 18
-  },
-  {
-   "day": "2026-10-09",
-   "FEATURE": 58,
-   "FIX": 58,
-   "CLEAN": 13,
-   "PERFORMANCE": 2,
-   "SECURITY": 22,
-   "RESEARCH": 5,
-   "lanes": 15,
-   "evidence": 605
-  },
-  {
-   "day": "2026-10-14",
-   "FEATURE": 8,
-   "FIX": 23,
-   "CLEAN": 4,
-   "PERFORMANCE": 5,
-   "SECURITY": 2,
-   "RESEARCH": 3,
-   "lanes": 10,
-   "evidence": 196
-  },
-  {
-   "day": "2026-10-15",
-   "FEATURE": 62,
-   "FIX": 35,
-   "CLEAN": 8,
-   "PERFORMANCE": 0,
-   "SECURITY": 5,
-   "RESEARCH": 3,
-   "lanes": 20,
-   "evidence": 321
-  },
-  {
-   "day": "2026-10-16",
-   "FEATURE": 104,
-   "FIX": 66,
-   "CLEAN": 16,
-   "PERFORMANCE": 8,
-   "SECURITY": 13,
-   "RESEARCH": 4,
-   "lanes": 86,
-   "evidence": 744
-  },
-  {
-   "day": "2026-10-17",
-   "FEATURE": 0,
-   "FIX": 0,
-   "CLEAN": 0,
-   "PERFORMANCE": 0,
-   "SECURITY": 0,
-   "RESEARCH": 0,
-   "lanes": 0,
-   "evidence": 1
-  },
-  {
-   "day": "2026-10-20",
-   "FEATURE": 10,
-   "FIX": 12,
-   "CLEAN": 6,
-   "PERFORMANCE": 6,
-   "SECURITY": 2,
-   "RESEARCH": 1,
-   "lanes": 17,
-   "evidence": 164
-  },
-  {
-   "day": "2026-10-21",
-   "FEATURE": 20,
-   "FIX": 23,
-   "CLEAN": 4,
-   "PERFORMANCE": 1,
-   "SECURITY": 14,
-   "RESEARCH": 0,
-   "lanes": 33,
-   "evidence": 307
-  },
-  {
-   "day": "2026-10-22",
-   "FEATURE": 59,
-   "FIX": 31,
-   "CLEAN": 2,
-   "PERFORMANCE": 3,
-   "SECURITY": 18,
-   "RESEARCH": 2,
-   "lanes": 75,
-   "evidence": 814
-  },
-  {
-   "day": "2026-10-23",
-   "FEATURE": 109,
-   "FIX": 32,
-   "CLEAN": 4,
-   "PERFORMANCE": 3,
-   "SECURITY": 7,
-   "RESEARCH": 1,
-   "lanes": 32,
-   "evidence": 741
-  },
-  {
-   "day": "2026-10-27",
-   "FEATURE": 1,
-   "FIX": 1,
-   "CLEAN": 0,
-   "PERFORMANCE": 1,
-   "SECURITY": 0,
-   "RESEARCH": 0,
-   "lanes": 0,
-   "evidence": 10
-  },
-  {
-   "day": "2026-10-28",
-   "FEATURE": 47,
-   "FIX": 16,
-   "CLEAN": 2,
-   "PERFORMANCE": 1,
-   "SECURITY": 1,
-   "RESEARCH": 0,
-   "lanes": 5,
-   "evidence": 265
-  },
-  {
-   "day": "2026-10-29",
-   "FEATURE": 36,
-   "FIX": 64,
-   "CLEAN": 9,
-   "PERFORMANCE": 15,
-   "SECURITY": 3,
-   "RESEARCH": 0,
-   "lanes": 13,
-   "evidence": 452
-  },
-  {
-   "day": "2026-10-30",
-   "FEATURE": 52,
-   "FIX": 38,
-   "CLEAN": 5,
-   "PERFORMANCE": 1,
-   "SECURITY": 2,
-   "RESEARCH": 1,
-   "lanes": 6,
-   "evidence": 499
-  },
-  {
-   "day": "2026-10-31",
-   "FEATURE": 116,
-   "FIX": 45,
-   "CLEAN": 1,
-   "PERFORMANCE": 1,
-   "SECURITY": 6,
-   "RESEARCH": 0,
-   "lanes": 102,
-   "evidence": 1033
-  },
   {
    "day": "2026-11-01",
    "FEATURE": 37,
@@ -236,86 +27,86 @@
   },
   {
    "day": "2026-11-02",
-   "FEATURE": 15,
-   "FIX": 15,
-   "CLEAN": 0,
-   "PERFORMANCE": 0,
+   "FEATURE": 59,
+   "FIX": 50,
+   "CLEAN": 4,
+   "PERFORMANCE": 2,
    "SECURITY": 0,
+   "RESEARCH": 8,
+   "lanes": 21,
+   "evidence": 498
+  },
+  {
+   "day": "2026-11-03",
+   "FEATURE": 13,
+   "FIX": 14,
+   "CLEAN": 5,
+   "PERFORMANCE": 0,
+   "SECURITY": 1,
    "RESEARCH": 0,
-   "lanes": 0,
-   "evidence": 121
+   "lanes": 37,
+   "evidence": 251
   }
  ],
  "tiers": {
-  "S": 799,
-  "M": 786,
-  "L": 77
+  "S": 130,
+  "M": 83,
+  "L": 8
  },
  "types": {
-  "FEATURE": 837,
-  "FIX": 542,
-  "CLEAN": 78,
-  "PERFORMANCE": 53,
-  "SECURITY": 121,
-  "RESEARCH": 31
+  "FEATURE": 109,
+  "FIX": 90,
+  "CLEAN": 10,
+  "PERFORMANCE": 2,
+  "SECURITY": 1,
+  "RESEARCH": 9
  },
  "guard": {
-  "core": 212,
-  "brief": 184,
-  "state-direct": 61,
-  "system": 35,
-  "plugin": 28,
-  "rm-outside": 22,
-  "pipe-shell": 11,
-  "credentials": 8
+  "brief": 29,
+  "core": 14,
+  "system": 8,
+  "state-direct": 6,
+  "credentials": 4,
+  "plugin": 2,
+  "rm-outside": 2,
+  "self-authorize": 1
  },
  "findings": {
   "lenses": {
-   "edge": 573,
-   "adversary": 530,
-   "maintainer": 343,
-   "intent": 301,
-   "self": 231,
-   "operator": 145
+   "design": 17,
+   "edge": 8,
+   "adversary": 8,
+   "maintainer": 5,
+   "self": 5,
+   "intent": 4
   },
   "severity": {
-   "LOW": 1330,
-   "MEDIUM": 702,
-   "HIGH": 92
+   "LOW": 34,
+   "MEDIUM": 10,
+   "HIGH": 6
   }
  },
  "subagents": {
-  "fm-builder": 758,
-  "fm-reviewer": 440,
-  "fm-recon": 112,
-  "general-purpose": 99,
-  "fm-scout": 11,
-  "claude-code-guide": 8
+  "fm-builder": 95,
+  "fm-recon": 19,
+  "general-purpose": 13,
+  "fm-reviewer": 10,
+  "claude-code-guide": 2
  },
  "gate_seconds": {
-  "runs": 1053,
-  "median": 194.2
+  "runs": 168,
+  "median": 321.8
  },
  "tools": {
-  "misses": 3,
+  "misses": 5,
   "resolved": 0,
   "proved": 0,
-  "searches": 13,
+  "searches": 15,
   "queued": 3,
   "refused": 0
  },
  "releases": [
   {
-   "version": "1.2.43",
-   "day": "2026-10-20",
-   "tests": 2369
-  },
-  {
-   "version": "1.2.43",
-   "day": "2026-10-20",
-   "tests": 2369
-  },
-  {
    "version": "1.2.44",
    "day": "2026-10-20",
    "tests": 2394
@@ -384,6 +175,16 @@
    "version": "1.2.50",
    "day": "2026-10-21",
    "tests": 2636
+  },
+  {
+   "version": "1.2.51",
+   "day": "2026-11-02",
+   "tests": 5723
+  },
+  {
+   "version": "1.2.51",
+   "day": "2026-11-02",
+   "tests": 5723
   }
  ],
  "cards": {
@@ -420,12 +221,15 @@
  "code": {
   "model_tests": 65,
   "endpoints": 9,
-  "tests": 5686
+  "tests": 5988
  },
  "calibration": {
-  "scored": 17,
-  "pending": 79,
-  "brier": null,
+  "scored": 25,
+  "pending": 152,
+  "brier": {
+   "stated": 0.05620000000000001,
+   "base": 0.0384
+  },
   "bars": {
    "research": 70,
    "race": 55
@@ -438,22 +242,13 @@
   "kinds": {
    "choice": [
     {
-     "lo": 60,
-     "hi": 79,
+     "lo": 80,
+     "hi": 94,
      "n": 1,
      "held": 0,
      "pct": 0,
-     "stated": 70,
-     "gap": 70
-    },
-    {
-     "lo": 80,
-     "hi": 94,
-     "n": 3,
-     "held": 0,
-     "pct": 0,
-     "stated": 83,
-     "gap": 83
+     "stated": 90,
+     "gap": 90
     }
    ],
    "ship": [
@@ -469,30 +264,38 @@
     {
      "lo": 80,
      "hi": 94,
-     "n": 12,
-     "held": 12,
+     "n": 22,
+     "held": 22,
      "pct": 100,
      "stated": 85,
      "gap": -15
+    },
+    {
+     "lo": 95,
+     "hi": 100,
+     "n": 1,
+     "held": 1,
+     "pct": 100,
+     "stated": 95,
+     "gap": -5
     }
    ]
   },
   "interim": {}
  },
  "proof": {
-  "n": 1049,
+  "n": 726,
   "counts": {
-   "meaning": 577,
-   "research-uncited": 28,
-   "typed": 35,
-   "red": 64,
-   "perf-typed": 50,
-   "docs": 592,
-   "ui-unshot": 52,
-   "tui-unshot": 51,
-   "data": 4,
-   "infra": 7,
-   "perf-noise": 1
+   "meaning": 580,
+   "research-uncited": 30,
+   "perf-typed": 49,
+   "typed": 26,
+   "red": 74,
+   "tui-unshot": 2,
+   "docs": 70,
+   "perf-noise": 1,
+   "infra": 2,
+   "ui-unshot": 6
   },
   "history": [
    {
@@ -502,6 +305,10 @@
    {
     "day": "2026-11-02",
     "n": 1049
+   },
+   {
+    "day": "2026-11-03",
+    "n": 726
    }
   ]
  },
@@ -509,38 +316,62 @@
   "triggers": [
    {
     "trigger": "discovered",
-    "fired": 671,
-    "precision": 0.771,
+    "fired": 693,
+    "precision": 0.767,
     "route": "inbox"
    },
    {
     "trigger": "followup",
-    "fired": 263,
-    "precision": 0.792,
+    "fired": 262,
+    "precision": 0.781,
     "route": "inbox"
    },
    {
     "trigger": "self",
-    "fired": 205,
-    "precision": 0.811,
+    "fired": 200,
+    "precision": 0.762,
+    "route": "inbox"
+   },
+   {
+    "trigger": "genesis-review",
+    "fired": 47,
+    "precision": 0.244,
     "route": "inbox"
    },
    {
     "trigger": "ci",
-    "fired": 33,
-    "precision": 0.312,
+    "fired": 34,
+    "precision": 0.333,
     "route": "inbox"
    },
    {
     "trigger": "baseline",
-    "fired": 22,
-    "precision": 0.727,
+    "fired": 24,
+    "precision": 0.708,
     "route": "inbox"
    },
    {
     "trigger": "scout",
-    "fired": 10,
+    "fired": 13,
     "precision": 0.625,
+    "route": "inbox"
+   },
+   {
+    "trigger": "genesis-anticipation",
+    "fired": 11,
+    "precision": 0.0,
+    "route": "inbox"
+   },
+   {
+    "trigger": "foresight-cochange",
+    "fired": 5,
+    "precision": 0.0,
+    "route": "inbox"
+   },
+   {
+    "trigger": "steer",
+    "fired": 5,
+    "precision": 0.25,
     "route": "inbox"
    },
    {
@@ -550,32 +381,52 @@
     "route": "inbox"
    },
    {
-    "trigger": "foresight-cochange",
-    "fired": 3,
+    "trigger": "ci-red",
+    "fired": 2,
+    "precision": 1.0,
+    "route": "inbox"
+   },
+   {
+    "trigger": "cold",
+    "fired": 1,
     "precision": null,
     "route": "inbox"
    },
    {
-    "trigger": "ci-red",
-    "fired": 2,
-    "precision": 1.0,
+    "trigger": "foresight-date",
+    "fired": 1,
+    "precision": null,
+    "route": "inbox"
+   },
+   {
+    "trigger": "night",
+    "fired": 1,
+    "precision": null,
+    "route": "inbox"
+   },
+   {
+    "trigger": "self-failure",
+    "fired": 1,
+    "precision": null,
     "route": "inbox"
    }
   ],
   "installs": 0,
   "recoveries": 0,
   "trials": {
-   "due": 9
+   "due": 17
   },
   "predictions": [
    {
     "kind": "next-request",
-    "n": 16,
-    "hit": 0.625,
-    "base_hit": 0.562,
+    "n": 42,
+    "hit": 0.452,
+    "base_hit": 0.381,
     "muted": false,
-    "overlap": 0.274,
-    "base_overlap": 0.274
+    "shown_n": 8,
+    "shown_hit": 0.5,
+    "overlap": 0.16,
+    "base_overlap": 0.151
    }
   ],
   "lean": [
@@ -585,11 +436,556 @@
     "descriptions chars": 4236,
     "largest SKILL chars": 9269,
     "verbs": 165
+   },
+   {
+    "gen": 3,
+    "rules chars": 6391,
+    "descriptions chars": 4236,
+    "largest SKILL chars": 9269,
+    "verbs": 165
+   },
+   {
+    "gen": 4,
+    "rules chars": 6391,
+    "descriptions chars": 4236,
+    "largest SKILL chars": 9269,
+    "verbs": 165
    }
   ]
  },
- "models": {},
+ "models": {
+  "run": "s0-014",
+  "replay": {
+   "intake-type": {
+    "n": 36,
+    "path_hits": 34,
+    "model_n": 0,
+    "model_hits": 0,
+    "brier": null,
+    "ms": null
+   },
+   "intake-tier": {
+    "n": 36,
+    "path_hits": 24,
+    "model_n": 0,
+    "model_hits": 0,
+    "brier": null,
+    "ms": null
+   },
+   "dedupe": {
+    "n": 2,
+    "path_hits": 1,
+    "model_n": 0,
+    "model_hits": 0,
+    "brier": null,
+    "ms": null
+   }
+  }
+ },
  "decisions": [
+  {
+   "date": "2026-11-03",
+   "text": "T-2788 direction: the fiery forge of direction 2, remade with far more detail (9-fiery-forge); the forge and its fire are the scene, with the Sampo forged in it; the logo follows (detailed forged quer",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "T-2788 direction: remake direction 2 (Ilmarinen's forge) with the Sampo relic itself as the hero, realistic forged materials and much more motion; read 'the more artifact direction' as the mythical ar",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Sampo's look is direction 1, Kirjokansi, remade better: the brass astrolabe under the turning sky, more animated and fluid, the instrument lit and blended into the sky (never a pasted object on the ba",
+   "later": null,
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "read T-2805: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Sampo's look is one world fused from three directions, not parts of each: Kirjokansi (brass astrolabe, turning sky, engraved type), Ilmarinen's forge (heat as the 'running now' signal, fire, struck me",
+   "later": null,
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "read T-2792: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Sampo's look is Kirjokansi fused with Ilmarinen's forge (astrolabe frame, forge horizon and heat language), checked",
+   "later": {
+    "date": "2026-11-03",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Sampo's look is Kirjokansi fused with Ilmarinen's forge: the Kirjokansi astrolabe is the logo and the frame (indigo sky, brass, the page read from the pole star to the horizon); the forge lives at the",
+   "later": {
+    "date": "2026-11-03",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Standing rule: when a task finishes, keep working the rest of the queue (open tasks, lanes, inbox) without waiting for a prompt; stop only when nothing is left or only the user can unblock it",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "read T-2771: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "read T-2770: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "SAMPO_X moves into FOREMAN_X when sampo.core loads and leaves the environment (SAMPO wins); FOREMAN_X is not copied back to SAMPO_X",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Plugin ids for the rename: the marketplace keeps its name 'foreman' (an id part, kept like any alias); inside it the plugin becomes 'sampo' (and 'sampo-ui', 'sampo-design'), and thin 'foreman' and 'fo",
+   "later": null,
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Sampo's logo is the Runestone direction (a rune ring around a forge-lit millstone with its rynd bar), picked by a cold design review on fable over Orrery and Emberline; shipped after a second cold rev",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "The rename's guard step comes first: Ward refuses under the Sampo names (sampo, sampo.* modules, SAMPO_*, the new verbs) whatever it refuses under the Foreman ones; landed as T-2745 with the user's ye",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Sampo's logo is the Runestone direction (a rune ring around a forge-lit millstone with its rynd bar), picked by a cold design review on fable over Orrery and Emberline; shipped after a second cold rev",
+   "later": {
+    "date": "2026-11-03",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "The rename's guard step comes first: Ward refuses under the Sampo names (sampo, sampo.* modules, SAMPO_*, the new verbs) whatever it refuses under the Foreman ones; landed as T-2745 with the user's ye",
+   "later": {
+    "date": "2026-11-03",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Sampo's logo is the Runestone direction (a rune ring around a forge-lit millstone with its rynd bar), picked by a cold design review on fable (8/7/5/6/7) over Orrery (reads as a settings cog) and Embe",
+   "later": {
+    "date": "2026-11-03",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "The rename's guard step comes first: sampo, the new verbs and SAMPO_* are honoured only once the guard (Ward) recognises them; until the user's yes on that protected-core change, sampo refuses inside ",
+   "later": {
+    "date": "2026-11-03",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-03",
+   "text": "Rename Foreman to Sampo per SAMPO.md: aliases first, then the migration (move with backup, manifest and undo), then internals with shims, then visible surfaces, then the design system, logo and site; ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Lines built never stand in for a grade: select keeps a generation only on more train scenarios closed, a smoke run's verdict stays provisional until the production exam, and a number that moves becaus",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "A kill test states how each class is drawn, in the script, before its first run, and pairs or stratifies the classes so they share an era.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "A rule that asks for a proof checks what the proof says, not only that it is there.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Evidence handed to a judge keeps every row the judged text can cite; a newer row replaces only a row of the same subject.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "A test of a drive or next-action rule also runs with the project's standing state on: an open tower, a mandate, a lane.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "A feature that reads project state is run once on this project's live state before it closes, and its audit says what it printed there.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "genesis select gen-3: revert (seed base gen-2)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Recommendation: don't build the decider market; M-12 waits in not-yet.md at Stage kill. No forecaster beats chance on whether a close survives 14 days (best AUC 0.58 on 44 era-matched closes), so a po",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Recommendation: Mission 7 builds four anticipation gaps where Foreman computes what the user will need but it never reaches them (the booked next-request guess, unshipped work under the push grant, th",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Recommendation: M-02 is viable at the kill stage (3 of 3 spec-suite modules rebuilt blind passed every test) and moves to its slice: regenerate one of Foreman's own small modules from its briefs, CHAN",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Recommendation: the floor's kill test this generation is M-02's (rebuild three deleted spec-suite modules from their specs and tests alone, two attempts each), the cheapest of the four moonshots still",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Recommendation: Mission 6 builds three gaps where Foreman drops part of a request's space silently (a grid lens, a count on every cut list, a canary before 'not found'), and carries the repeat-correct",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "The steer expander gets no worked examples; T-2670's train-example change is reverted",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "T-2640 (steer scope, release conditions, one-shot retirement, conflicts) is deferred, not built",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "The steer expander keeps one Rule section; the Rule/Proposals split (T-2632) is reverted",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Recommendation: Mission 5 builds three measured gaps (burden counts hook_success SessionStart context and splits it by source; a guard latency test on pathological input; fm run --stall-usd), and carr",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "T-2663's credential-name exemption reverted; the bare-name refusal stays fail-closed",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Accepted volt-89d78b's ledger line 24329 as crash damage with fm verify-ledger --accept-damage",
+   "later": null,
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "All 552 ideas grounded into 59 clusters (104 built, 249 partial, 197 new, 2 premise-false); 24 build marks became 23 queued tasks (T-2635..T-2657); 35 skips with reasons; the Foreman Idea Triage page ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "brainstorm-20261102 slate: all 552 ideas grounded into 59 clusters (104 built, 249 partial, 197 new, 2 premise-false); the 24 clusters marked build became 23 queued tasks (T-2635..T-2657, the two muta",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Standing rule (MOONSHOT.md part A in every generation): built in T-2626: fm genesis moonshot rate\\|order, the catalogue moonshot.md held by fm genesis check (mix, lines, duplicates, cold tiers, kill r",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Standing rule (user steer 2026-11-02, 'integrate MOONSHOT into each gen of the tower'): the moonshot campaign is not queued behind DONE-WHEN; every generation advances it through its moonshot Mission.",
+   "later": {
+    "date": "2026-11-02",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "read T-2631: its standing rule was expanded from your words at held-out coverage 19%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Standing rule (MOONSHOT.md part B): the steer-expansion exam is built and live (fm exam steer, T-2625): raw words expanded from the words alone, a judge one rank stronger counting only quoted clauses ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Standing rule (MOONSHOT.md part A): the moonshot campaign is queued and starts automatically once gen-0's DONE-WHEN holds: 100 moonshots on a six-tier scale (5 low, 10 medium, 15 high, 20 xhigh, 25 ex",
+   "later": {
+    "date": "2026-11-02",
+    "how": "reversed"
+   },
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Standing rule (MOONSHOT.md part B, for #3 Anticipation and #13): the steer-expansion exam. From a user's raw words alone Foreman expands a complete standing rule; a cold reviewer on a stronger model s",
+   "later": {
+    "date": "2026-11-02",
+    "how": "revisited"
+   },
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "dropped five session-review captures (T-2619..T-2623): one credential fragment, one deliberately removed flag, three quoted steers already shipped (T-2471, T-2477, T-2480)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "gen-3 Mission 2 (calibrated judgment) is grounded from gen-2's critique and the live ledger instead of a fresh 4-round brainstorm: the area's 40 open cells already hold ideas, weekly usage is 92%, and",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "The note that opens a session fits one 1,500-character budget with everything appended counted.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "A done claim on a goal is checked against each line of its stated Done-when before it reads as finished.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "A rate counts only finished observations and names its count and baseline; an arm with no answers reads not run.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "A scheduled run that skips on purpose exits 0 and says why.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Tests never read the host's own services or config; they point XDG_CONFIG_HOME and HOME at their temp folder.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Every path that lands on main is tested against a main the other paths have fed.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "An option a session repeats takes every value, and each is checked before any applies.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "A command a drive line names may be called again: a repeat within minutes must not advance state.",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Release 1.2.51 finished by hand after fm release refused a fresh run (version already bumped) and its checkpoints were abandoned: pushed the release commit 68206bb2 to main as a fast-forward under T-2",
+   "later": null,
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Release 1.2.51: its push step conflicted because fm ship cherry-picks left foreman/build and main with diverged histories (merge base 2026-10-27, same content). Dropped the local unpushed release comm",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Release 1.2.51 bumps foreman-ui 0.19.0 \u2192 0.20.0: its 23 changes since 1.2.50 add surfaces (the Genesis tower line, proof counts), a minor bump",
+   "later": null,
+   "confidence": null,
+   "kind": "outward"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Forever loop re-enabled: rounds 26-27 closed dry only because fm loop round --next was called 3 times to read its instructions (captured as a FIX); the loop round's brainstorm is served by the gen-3 s",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "forever loop off after round 27: 2 dry rounds in a row (20 rounds, 1117 tasks closed since 2026-10-16)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "gen-2 seed revised after drift: the night-timer install moves to the end-of-run report (gen-0: asks at the end), and the frontier line now says it is built only from the project's own notes per the 20",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "genesis select gen-2: baseline (seed base gen-2)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "T-2564 blocked for the user, not built: actionlint is a download, which Foreman never does itself; a clone is out of proportion; CI and test_ci_matrix cover the one workflow",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Supply-chain change on four official plugins left for the user",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Recommendation: build T-2557 (a goal session's done claim checks each stated Done-when line and requirement against the tree, or names it missing), the largest class Foreman owns (14 of 31); report th",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "Long-tier keys: report, never rewrite",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-02",
+   "text": "foresight-cochange: no heuristic change yet; its precision demotion handles it",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
   {
    "date": "2026-11-02",
    "text": "T-2546: the already-built nudge doesn't ship; the backtest harness stays",
@@ -1600,497 +1996,489 @@
    "later": null,
    "confidence": null,
    "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "T-2105: the breaker stops after three reverted generations in a row, not two",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "T-2105: no rules routing line for /foreman:genesis; the skill is user-only",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "T-2105: Genesis offers itself through fm scout (probe_genesis, once ever, \u226510 done tasks, no tower, nothing queued) as a confirm task, not a new fm genesis propose verb",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Drift freshness stays mtime-based, with drift.md dated at the check's start, not a content hash: the tower is local git-ignored state, so a hash only adds format and fixture churn; a forged drift.md i",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis sweep counts briefs (planned/active/verifying/blocked), not captured inbox items, as the tasks gen-0 \u00a77 means; the active task running the sweep is exempt",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis drift skips the paid cold read when the deterministic check already found drift: one read per clean candidate",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis drift counts a cold-read DRIFT line only when a seed line holds the quote, and writes the seed's line, never the reader's words",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis drift skips MUST/NEVER lines inside a fenced block: a fenced intake block is a brief, whose MUSTs bind one task, not the tower",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis select: gen N's bar is gen N-1's exam line even when gen N-1's text was reverted",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis select: a tie on train scenarios closed reverts to the parent whatever the cost (gen-0 \u00a73.6 verbatim: stays only if it closed more); cost per verified result is reported in lineage, not used a",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis selection (fm genesis select) scores the exam's train split, never the held-out third; held-out only grades a capability done",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Exam baseline: the finders arm (fmdocs.scan + fmsecrets, no session) scores 0/108 on s0-001; recorded as is, not tuned to score",
-   "later": {
-    "date": "2026-10-30",
-    "how": "revisited"
+  }
+ ],
+ "louhi": {
+  "trials": 89,
+  "runs": [
+   {
+    "run": "s0-001",
+    "trials": 11,
+    "scenarios": 505,
+    "keyed": 550,
+    "found": 298
    },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis live: one publish grant opens data-only pushes until fm genesis live off",
-   "later": null,
-   "confidence": null,
-   "kind": "outward"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Turn on fm genesis live for the Foreman repo: tower changes push site/genesis data to origin main automatically",
-   "later": null,
-   "confidence": null,
-   "kind": "outward"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "T-2080: push the Genesis export to main on the user's explicit ask ('can you push what you have in the genesis stuff to main?'); grant spent on this task's ship",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule (user steer): weakness-finding uses signals Foreman didn't author \u2014 outcome survival (fm outcomes: reverts, re-fixes, corrections within 30 days), cold reviews by a different model (fm s",
-   "later": {
-    "date": "2026-10-30",
-    "how": "revisited"
+   {
+    "run": "genesis-s0",
+    "trials": 5,
+    "scenarios": 39,
+    "keyed": 0,
+    "found": 0
    },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis standing rule: coverage by grid \u2014 coverage.md (fm genesis put): rows = the 13 capabilities plus every harness/plugin area (onboarding, UX, docs, ecosystem, multi-user, observability, security,",
-   "later": {
-    "date": "2026-10-30",
-    "how": "revisited"
+   {
+    "run": "s7-004",
+    "trials": 3,
+    "scenarios": 66,
+    "keyed": 72,
+    "found": 44
    },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis standing rule: no idea is killed for ambition \u2014 a failed spike gets \u22652 genuinely different approaches, then goes to not-yet.md (fm genesis put) with its blocker; every Seed re-reads not-yet.md",
-   "later": {
-    "date": "2026-10-30",
-    "how": "revisited"
+   {
+    "run": "s31-006",
+    "trials": 11,
+    "scenarios": 99,
+    "keyed": 198,
+    "found": 143
    },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "T-2079: no spike lane; the unknown (six renderers from one spec) is proven by the red tests themselves in step 1-2",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "T-2079 exam design: one app API rendered in six languages with defect variants, keys outside the repo, hash holdout one in three; finders arm free, claude arm budgeted",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "T-2076's push and any later push of Genesis work wait for a publish grant: they go in the final report",
-   "later": null,
-   "confidence": null,
-   "kind": "outward"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Genesis setup: autonomy full, drive on, loop on, contract off, lane max 6, mandate until 2026-11-13; T-2077 is the umbrella; gen-0 saved byte-identical and read-only via the new fm genesis verb (T-207",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-29",
-   "text": "T-2040 plan self-approved: pure CSS scroll-driven motion plus existing IO, build.py fills counts, no new dependencies",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-29",
-   "text": "T-2052 L plan self-approved under the user's standing 'don't ask my permission on anything' while autonomy is stepped down by the risk budget; docs-only change, revertable",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-29",
-   "text": "T-2036 dropped: keep the once-per-wait-set nudge even when the reply names the job",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-29",
-   "text": "Round 6 runs lean: review ideas only, no fm ideas fan-out",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-29",
-   "text": "Deferred T-0863/0864/0866/0867/0869 a month: each waits on evidence nobody has produced yet",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-29",
-   "text": "Keep the drive offering a new side task each Stop even when one was ignored",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-28",
-   "text": "DESIGN.md is read by default as Foreman's own record of the look; fm looks history reads another path only when it is named",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-28",
-   "text": "T-1626: the foreman-ui pane keeps its own timers",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-28",
-   "text": "T-1838 step 3: the per-turn hint still does not name the top routed book",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-28",
-   "text": "T-1803 step 3: the next-step hint does not name the top routed book",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-28",
-   "text": "Self-approve T-1803 (L) despite the risk-budget step-down",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-28",
-   "text": "T-1822: route map lives in test_plugin_parity, not fmcodetui \u2014 nothing at runtime reads it and the help view shows terminal lines (CLI), not Claude Code routes",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-28",
-   "text": "T-1798 brainstorm: build T-1818 now; capture cache-miss costs, panic stop, plugin parity test, redo-from-drop (T-1820\u2013T-1823)",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-27",
-   "text": "Start T-1800 at the 02:00 weekly reset, not now",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1670: left out the recorded-time clock, the fm page timeline and forked-skill QA",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1615: the desk card is a file, never a listener",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1556: left out swipe-to-approve and margin sketches",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1555: fm marks is the Claude Code surface; no pane card or /foreman: command",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1549: leave out a demo teleprompter pane, a guard near-miss gallery and per-dependency decision cards",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1547: leave out a process cast, a client packet, a receipts GitHub Action and a cold-reader model test",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1546: leave out the isometric layout builder, golden frames against a terminal-emulator oracle, springy draggable panels and a wear-in UI",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1538: leave out nudge keys on a live dev server, a gamut-cube picker, a nightly design residency and a weekly design PR",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1536: leave out the blind multi-runner taste panel",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1530 (L) self-approved after self-critique: offline-first 3D checks in fm scene; browser soak and frame budget split to T-1788",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1525: leave out 'borrow from' analogy cards and live exemplars on the field guide",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1787: the ablation and equal-spend duels are built and tested with the fake claude; their paid runs wait for usage",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1266 deferred to 2026-10-28: Foreman's measured small-task overhead is about 1 cent a task (+4% and +13% on sonnet suites, level on haiku); a lean profile needs a paid duel to show it keeps the pass",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1265: fm ideas caches the pack as the lens children's shared system text, with a warm first child, instead of fork subagents",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1264: the paid three-way duel (plain, the one-file rules, full Foreman) waits for usage; the arm is built and tested with the fake claude",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1259: build the compaction storm and the window sweep, tested with the bench's fakes; the measured sweep (real Haiku sessions) waits until weekly usage is back on pace",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1650: build the trading cards now (fm page looks --cards); the shader sketchbook and the site gallery become their own items",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1623: the five UI contract rules are written down from what the UI playbooks already require: motion (reduced motion as its own path), contrast (proven, never colour alone), keyboard (every action, ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1779 correction: --all-projects is captured as its own item, not covered by fm night",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "T-1779: 'a stop line' read as the s key; --all-projects left out",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "Gates behind volt's 2-hour cargo test lock: stop our own queued fm check runs and land the drafted tasks first, then one gate covers all of them before the push",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "A broken code.toml: fm code config falls back to defaults and names the line; runs keep refusing it",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "fm code runners --ping is its own flag, not part of --check",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "fm code's spend counts toward fm budget's day cap like any other Foreman spend",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "Reverse the backlog pause: keep working the feature inbox in the main thread (no subagents), pausing only near 90% weekly usage",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-23",
-   "text": "Pause the feature backlog (112 FEATURE items: 77 M, 34 S, 1 L) until weekly usage is back on pace; every FIX, SECURITY, PERFORMANCE and CLEAN item is done, gates are green and main is pushed",
-   "later": {
-    "date": "2026-10-23",
-    "how": "reversed"
+   {
+    "run": "s70-010",
+    "trials": 7,
+    "scenarios": 1743,
+    "keyed": 1974,
+    "found": 1546
    },
-   "confidence": null,
-   "kind": "reversible"
+   {
+    "run": "l001",
+    "trials": 14,
+    "scenarios": 84,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "l002",
+    "trials": 16,
+    "scenarios": 96,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "l003",
+    "trials": 2,
+    "scenarios": 12,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "s0-011",
+    "trials": 6,
+    "scenarios": 108,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "s11-012",
+    "trials": 1,
+    "scenarios": 18,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "s21-013",
+    "trials": 6,
+    "scenarios": 1836,
+    "keyed": 1566,
+    "found": 441
+   },
+   {
+    "run": "s0-014",
+    "trials": 3,
+    "scenarios": 9,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "s32-015",
+    "trials": 4,
+    "scenarios": 12,
+    "keyed": 12,
+    "found": 12
+   }
+  ],
+  "agents": [
+   {
+    "agent": "foreman",
+    "trials": 29,
+    "scenarios": 167,
+    "keyed": 104,
+    "found": 75,
+    "false_alarms": 26,
+    "fixable": 104,
+    "fixed": 90,
+    "brier": 0.178
+   },
+   {
+    "agent": "oracle",
+    "trials": 21,
+    "scenarios": 1807,
+    "keyed": 1857,
+    "found": 1857,
+    "false_alarms": 0,
+    "fixable": 2896,
+    "fixed": 2896,
+    "brier": 0.0
+   },
+   {
+    "agent": "plain",
+    "trials": 10,
+    "scenarios": 53,
+    "keyed": 41,
+    "found": 17,
+    "false_alarms": 21,
+    "fixable": 41,
+    "fixed": 26,
+    "brier": null
+   },
+   {
+    "agent": "empty",
+    "trials": 9,
+    "scenarios": 730,
+    "keyed": 675,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 1070,
+    "fixed": 0,
+    "brier": 0.25
+   },
+   {
+    "agent": "finders",
+    "trials": 7,
+    "scenarios": 883,
+    "keyed": 909,
+    "found": 532,
+    "false_alarms": 19,
+    "fixable": 1196,
+    "fixed": 1,
+    "brier": 0.25
+   },
+   {
+    "agent": "foresight",
+    "trials": 5,
+    "scenarios": 333,
+    "keyed": 261,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 441,
+    "fixed": 44,
+    "brier": 0.25
+   },
+   {
+    "agent": "draft-genesis",
+    "trials": 2,
+    "scenarios": 18,
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "brier": null
+   },
+   {
+    "agent": "draft-plain",
+    "trials": 2,
+    "scenarios": 18,
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "brier": null
+   },
+   {
+    "agent": "draft-oracle",
+    "trials": 1,
+    "scenarios": 3,
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "brier": null
+   },
+   {
+    "agent": "genesis",
+    "trials": 1,
+    "scenarios": 3,
+    "keyed": 3,
+    "found": 3,
+    "false_alarms": 13,
+    "fixable": 3,
+    "fixed": 0,
+    "brier": null
+   },
+   {
+    "agent": "lanes",
+    "trials": 1,
+    "scenarios": 306,
+    "keyed": 261,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 414,
+    "fixed": 27,
+    "brier": 0.25
+   },
+   {
+    "agent": "triggers",
+    "trials": 1,
+    "scenarios": 306,
+    "keyed": 261,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 414,
+    "fixed": 9,
+    "brier": 0.25
+   }
+  ],
+  "gens": [
+   {
+    "gen": 1,
+    "trials": 11,
+    "keyed": 90,
+    "found": 61
+   },
+   {
+    "gen": 2,
+    "trials": 5,
+    "keyed": 6,
+    "found": 6
+   },
+   {
+    "gen": 3,
+    "trials": 11,
+    "keyed": 6,
+    "found": 6
+   }
+  ]
+ },
+ "moons": [
+  {
+   "id": "M-01",
+   "title": "Deliver a product from one paragraph at a fixed, warrantied price",
+   "tier": "extreme",
+   "stage": "idea",
+   "needs": [
+    "M-13",
+    "M-16",
+    "M-17",
+    "M-20"
+   ]
   },
   {
-   "date": "2026-10-23",
-   "text": "T-1314 (a half-block canvas for the token and time charts) is superseded, not built",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
+   "id": "M-02",
+   "title": "Keep code as a regenerable cache of intent clauses and proofs",
+   "tier": "extreme",
+   "stage": "kill",
+   "needs": [
+    "M-18"
+   ]
   },
   {
-   "date": "2026-10-23",
-   "text": "Usage pace: subagents paused at 75% weekly usage with 27% of the week gone; work continues in the main thread, security items first (T-1751, T-1749), then small fixes; no new builders or reviewers unt",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
+   "id": "M-03",
+   "title": "Run an owner-less project under a charter until an heir takes over",
+   "tier": "extreme",
+   "stage": "idea",
+   "needs": [
+    "M-15",
+    "M-16"
+   ]
   },
   {
-   "date": "2026-10-23",
-   "text": "fm settings chords, not keys, for the key-press probe",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
+   "id": "M-04",
+   "title": "Own the pager for insured crash classes, from trace to proven fix",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": [
+    "M-15",
+    "M-16",
+    "M-18"
+   ]
   },
   {
-   "date": "2026-10-23",
-   "text": "Cause: hooks handed Claude the exact fm command each turn, so it never loaded the skill describing the step; descriptions used Foreman jargon or user words a long autonomous run never contains; the li",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
+   "id": "M-05",
+   "title": "Merge any agent's pull request on rerun proofs, not prose review",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": [
+    "M-12",
+    "M-17"
+   ]
   },
   {
-   "date": "2026-10-23",
-   "text": "Edit the main checkout while a background fm check runs under heavy builder load",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
+   "id": "M-06",
+   "title": "Predict a policy change's effect from the ledger before running it",
+   "tier": "extreme",
+   "stage": "idea",
+   "needs": [
+    "M-16"
+   ]
   },
   {
-   "date": "2026-10-22",
-   "text": "Skill listing cap 2,000 \u2192 2,200 characters for the four job skills (ui-design, debug-test, release, research)",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
+   "id": "M-07",
+   "title": "Forecast when each gate stops paying, and retire it on evidence",
+   "tier": "high",
+   "stage": "idea",
+   "needs": [
+    "M-19"
+   ]
+  },
+  {
+   "id": "M-08",
+   "title": "Pool self-trials across installs",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": [
+    "M-17",
+    "M-19"
+   ]
+  },
+  {
+   "id": "M-09",
+   "title": "Settle work between strangers by escrow released on replayed proof",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": [
+    "M-15",
+    "M-17"
+   ]
+  },
+  {
+   "id": "M-10",
+   "title": "Detect when a mechanism needs redesign, not another patch",
+   "tier": "high",
+   "stage": "idea",
+   "needs": [
+    "M-19"
+   ]
+  },
+  {
+   "id": "M-11",
+   "title": "Auction the queue by calibrated yield and Kelly-size each stake",
+   "tier": "high",
+   "stage": "idea",
+   "needs": [
+    "M-20"
+   ]
+  },
+  {
+   "id": "M-12",
+   "title": "Weight deciders by a scored market on whether a close survives",
+   "tier": "high",
+   "stage": "kill",
+   "needs": [
+    "M-16"
+   ]
+  },
+  {
+   "id": "M-13",
+   "title": "Price the user's attention and cap unreviewed output to it",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-14",
+   "title": "Breed lane strategies by tournament, with heritable genomes",
+   "tier": "high",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-15",
+   "title": "Spawn every child with expiring capability tokens and no inheritance",
+   "tier": "high",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-16",
+   "title": "Open a warranty window on landed work and count hand edits as claims",
+   "tier": "high",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-17",
+   "title": "Ship every close as a signed evidence bundle anyone can rerun",
+   "tier": "medium",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-18",
+   "title": "Prove a rewrite against the old build on recorded inputs",
+   "tier": "medium",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-19",
+   "title": "Hold every self-promotion to a false-discovery bar",
+   "tier": "medium",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-20",
+   "title": "Put a backtested p90 band on every cost quote",
+   "tier": "low",
+   "stage": "idea",
+   "needs": []
+  }
+ ],
+ "underworld": [
+  {
+   "idea": "selfjev-4b",
+   "blocker": "unevaluated: no exam arm has run it against a path it would replace",
+   "tries": 0,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "jeff",
+   "blocker": "unevaluated: no exam arm has run it against a path it would replace",
+   "tries": 0,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "Jevlike",
+   "blocker": "unevaluated: no task-specific model has been trained from Foreman's own history yet",
+   "tries": 0,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "Von",
+   "blocker": "unevaluated: intent routing has no exam arm yet",
+   "tries": 0,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "Byte-stable goal card in the cached prefix",
+   "blocker": "no measurable win: the goal card is about 120 characters",
+   "tries": 2,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "Proofs expire when the thing proved changes",
+   "blocker": "its kill test found no stale proof",
+   "tries": 2,
+   "rechecks": 0,
+   "added": "gen-3"
+  },
+  {
+   "idea": "Plan-time example confirmation",
+   "blocker": "its kill test needs the user present",
+   "tries": 2,
+   "rechecks": 0,
+   "added": "gen-3"
+  },
+  {
+   "idea": "M-12 \u00b7 Weight deciders by a scored market on whether a close survives",
+   "blocker": "no decider beats chance on whether a close survives 14 days unfixed, so a pool has nothing to weight",
+   "tries": 3,
+   "rechecks": 0,
+   "added": "gen-3"
   }
  ],
  "bench": {
@@ -3652,489 +4040,6 @@
    "compact_at": 40000,
    "marathon": 5,
    "name": "marathon"
-  }
- ],
- "louhi": {
-  "trials": 89,
-  "runs": [
-   {
-    "run": "s0-001",
-    "trials": 11,
-    "scenarios": 505,
-    "keyed": 550,
-    "found": 298
-   },
-   {
-    "run": "genesis-s0",
-    "trials": 5,
-    "scenarios": 39,
-    "keyed": 0,
-    "found": 0
-   },
-   {
-    "run": "s7-004",
-    "trials": 3,
-    "scenarios": 66,
-    "keyed": 72,
-    "found": 44
-   },
-   {
-    "run": "s31-006",
-    "trials": 11,
-    "scenarios": 99,
-    "keyed": 198,
-    "found": 143
-   },
-   {
-    "run": "s70-010",
-    "trials": 7,
-    "scenarios": 1743,
-    "keyed": 1974,
-    "found": 1546
-   },
-   {
-    "run": "l001",
-    "trials": 14,
-    "scenarios": 84,
-    "keyed": 0,
-    "found": 0
-   },
-   {
-    "run": "l002",
-    "trials": 16,
-    "scenarios": 96,
-    "keyed": 0,
-    "found": 0
-   },
-   {
-    "run": "l003",
-    "trials": 2,
-    "scenarios": 12,
-    "keyed": 0,
-    "found": 0
-   },
-   {
-    "run": "s0-011",
-    "trials": 6,
-    "scenarios": 108,
-    "keyed": 0,
-    "found": 0
-   },
-   {
-    "run": "s11-012",
-    "trials": 1,
-    "scenarios": 18,
-    "keyed": 0,
-    "found": 0
-   },
-   {
-    "run": "s21-013",
-    "trials": 6,
-    "scenarios": 1836,
-    "keyed": 1566,
-    "found": 441
-   },
-   {
-    "run": "s0-014",
-    "trials": 3,
-    "scenarios": 9,
-    "keyed": 0,
-    "found": 0
-   },
-   {
-    "run": "s32-015",
-    "trials": 4,
-    "scenarios": 12,
-    "keyed": 12,
-    "found": 12
-   }
-  ],
-  "agents": [
-   {
-    "agent": "foreman",
-    "trials": 29,
-    "scenarios": 167,
-    "keyed": 104,
-    "found": 75,
-    "false_alarms": 26,
-    "fixable": 104,
-    "fixed": 90,
-    "brier": 0.178
-   },
-   {
-    "agent": "oracle",
-    "trials": 21,
-    "scenarios": 1807,
-    "keyed": 1857,
-    "found": 1857,
-    "false_alarms": 0,
-    "fixable": 2896,
-    "fixed": 2896,
-    "brier": 0.0
-   },
-   {
-    "agent": "plain",
-    "trials": 10,
-    "scenarios": 53,
-    "keyed": 41,
-    "found": 17,
-    "false_alarms": 21,
-    "fixable": 41,
-    "fixed": 26,
-    "brier": null
-   },
-   {
-    "agent": "empty",
-    "trials": 9,
-    "scenarios": 730,
-    "keyed": 675,
-    "found": 0,
-    "false_alarms": 0,
-    "fixable": 1070,
-    "fixed": 0,
-    "brier": 0.25
-   },
-   {
-    "agent": "finders",
-    "trials": 7,
-    "scenarios": 883,
-    "keyed": 909,
-    "found": 532,
-    "false_alarms": 19,
-    "fixable": 1196,
-    "fixed": 1,
-    "brier": 0.25
-   },
-   {
-    "agent": "foresight",
-    "trials": 5,
-    "scenarios": 333,
-    "keyed": 261,
-    "found": 0,
-    "false_alarms": 0,
-    "fixable": 441,
-    "fixed": 44,
-    "brier": 0.25
-   },
-   {
-    "agent": "draft-genesis",
-    "trials": 2,
-    "scenarios": 18,
-    "keyed": 0,
-    "found": 0,
-    "false_alarms": 0,
-    "fixable": 0,
-    "fixed": 0,
-    "brier": null
-   },
-   {
-    "agent": "draft-plain",
-    "trials": 2,
-    "scenarios": 18,
-    "keyed": 0,
-    "found": 0,
-    "false_alarms": 0,
-    "fixable": 0,
-    "fixed": 0,
-    "brier": null
-   },
-   {
-    "agent": "draft-oracle",
-    "trials": 1,
-    "scenarios": 3,
-    "keyed": 0,
-    "found": 0,
-    "false_alarms": 0,
-    "fixable": 0,
-    "fixed": 0,
-    "brier": null
-   },
-   {
-    "agent": "genesis",
-    "trials": 1,
-    "scenarios": 3,
-    "keyed": 3,
-    "found": 3,
-    "false_alarms": 13,
-    "fixable": 3,
-    "fixed": 0,
-    "brier": null
-   },
-   {
-    "agent": "lanes",
-    "trials": 1,
-    "scenarios": 306,
-    "keyed": 261,
-    "found": 0,
-    "false_alarms": 0,
-    "fixable": 414,
-    "fixed": 27,
-    "brier": 0.25
-   },
-   {
-    "agent": "triggers",
-    "trials": 1,
-    "scenarios": 306,
-    "keyed": 261,
-    "found": 0,
-    "false_alarms": 0,
-    "fixable": 414,
-    "fixed": 9,
-    "brier": 0.25
-   }
-  ],
-  "gens": [
-   {
-    "gen": 1,
-    "trials": 11,
-    "keyed": 90,
-    "found": 61
-   },
-   {
-    "gen": 2,
-    "trials": 5,
-    "keyed": 6,
-    "found": 6
-   },
-   {
-    "gen": 3,
-    "trials": 11,
-    "keyed": 6,
-    "found": 6
-   }
-  ]
- },
- "moons": [
-  {
-   "id": "M-01",
-   "title": "Deliver a product from one paragraph at a fixed, warrantied price",
-   "tier": "extreme",
-   "stage": "idea",
-   "needs": [
-    "M-13",
-    "M-16",
-    "M-17",
-    "M-20"
-   ]
-  },
-  {
-   "id": "M-02",
-   "title": "Keep code as a regenerable cache of intent clauses and proofs",
-   "tier": "extreme",
-   "stage": "kill",
-   "needs": [
-    "M-18"
-   ]
-  },
-  {
-   "id": "M-03",
-   "title": "Run an owner-less project under a charter until an heir takes over",
-   "tier": "extreme",
-   "stage": "idea",
-   "needs": [
-    "M-15",
-    "M-16"
-   ]
-  },
-  {
-   "id": "M-04",
-   "title": "Own the pager for insured crash classes, from trace to proven fix",
-   "tier": "xhigh",
-   "stage": "idea",
-   "needs": [
-    "M-15",
-    "M-16",
-    "M-18"
-   ]
-  },
-  {
-   "id": "M-05",
-   "title": "Merge any agent's pull request on rerun proofs, not prose review",
-   "tier": "xhigh",
-   "stage": "idea",
-   "needs": [
-    "M-12",
-    "M-17"
-   ]
-  },
-  {
-   "id": "M-06",
-   "title": "Predict a policy change's effect from the ledger before running it",
-   "tier": "extreme",
-   "stage": "idea",
-   "needs": [
-    "M-16"
-   ]
-  },
-  {
-   "id": "M-07",
-   "title": "Forecast when each gate stops paying, and retire it on evidence",
-   "tier": "high",
-   "stage": "idea",
-   "needs": [
-    "M-19"
-   ]
-  },
-  {
-   "id": "M-08",
-   "title": "Pool self-trials across installs",
-   "tier": "xhigh",
-   "stage": "idea",
-   "needs": [
-    "M-17",
-    "M-19"
-   ]
-  },
-  {
-   "id": "M-09",
-   "title": "Settle work between strangers by escrow released on replayed proof",
-   "tier": "xhigh",
-   "stage": "idea",
-   "needs": [
-    "M-15",
-    "M-17"
-   ]
-  },
-  {
-   "id": "M-10",
-   "title": "Detect when a mechanism needs redesign, not another patch",
-   "tier": "high",
-   "stage": "idea",
-   "needs": [
-    "M-19"
-   ]
-  },
-  {
-   "id": "M-11",
-   "title": "Auction the queue by calibrated yield and Kelly-size each stake",
-   "tier": "high",
-   "stage": "idea",
-   "needs": [
-    "M-20"
-   ]
-  },
-  {
-   "id": "M-12",
-   "title": "Weight deciders by a scored market on whether a close survives",
-   "tier": "high",
-   "stage": "kill",
-   "needs": [
-    "M-16"
-   ]
-  },
-  {
-   "id": "M-13",
-   "title": "Price the user's attention and cap unreviewed output to it",
-   "tier": "xhigh",
-   "stage": "idea",
-   "needs": []
-  },
-  {
-   "id": "M-14",
-   "title": "Breed lane strategies by tournament, with heritable genomes",
-   "tier": "high",
-   "stage": "idea",
-   "needs": []
-  },
-  {
-   "id": "M-15",
-   "title": "Spawn every child with expiring capability tokens and no inheritance",
-   "tier": "high",
-   "stage": "idea",
-   "needs": []
-  },
-  {
-   "id": "M-16",
-   "title": "Open a warranty window on landed work and count hand edits as claims",
-   "tier": "high",
-   "stage": "idea",
-   "needs": []
-  },
-  {
-   "id": "M-17",
-   "title": "Ship every close as a signed evidence bundle anyone can rerun",
-   "tier": "medium",
-   "stage": "idea",
-   "needs": []
-  },
-  {
-   "id": "M-18",
-   "title": "Prove a rewrite against the old build on recorded inputs",
-   "tier": "medium",
-   "stage": "idea",
-   "needs": []
-  },
-  {
-   "id": "M-19",
-   "title": "Hold every self-promotion to a false-discovery bar",
-   "tier": "medium",
-   "stage": "idea",
-   "needs": []
-  },
-  {
-   "id": "M-20",
-   "title": "Put a backtested p90 band on every cost quote",
-   "tier": "low",
-   "stage": "idea",
-   "needs": []
-  }
- ],
- "underworld": [
-  {
-   "idea": "selfjev-4b",
-   "blocker": "unevaluated: no exam arm has run it against a path it would replace",
-   "tries": 0,
-   "rechecks": 1,
-   "added": "gen-2"
-  },
-  {
-   "idea": "jeff",
-   "blocker": "unevaluated: no exam arm has run it against a path it would replace",
-   "tries": 0,
-   "rechecks": 1,
-   "added": "gen-2"
-  },
-  {
-   "idea": "Jevlike",
-   "blocker": "unevaluated: no task-specific model has been trained from Foreman's own history yet",
-   "tries": 0,
-   "rechecks": 1,
-   "added": "gen-2"
-  },
-  {
-   "idea": "Von",
-   "blocker": "unevaluated: intent routing has no exam arm yet",
-   "tries": 0,
-   "rechecks": 1,
-   "added": "gen-2"
-  },
-  {
-   "idea": "Byte-stable goal card in the cached prefix",
-   "blocker": "no measurable win: the goal card is about 120 characters",
-   "tries": 2,
-   "rechecks": 1,
-   "added": "gen-2"
-  },
-  {
-   "idea": "Proofs expire when the thing proved changes",
-   "blocker": "its kill test found no stale proof",
-   "tries": 2,
-   "rechecks": 0,
-   "added": "gen-3"
-  },
-  {
-   "idea": "Plan-time example confirmation",
-   "blocker": "its kill test needs the user present",
-   "tries": 2,
-   "rechecks": 0,
-   "added": "gen-3"
-  },
-  {
-   "idea": "M-12 \u00b7 Weight deciders by a scored market on whether a close survives",
-   "blocker": "no decider beats chance on whether a close survives 14 days unfixed, so a pool has nothing to weight",
-   "tries": 3,
-   "rechecks": 0,
-   "added": "gen-3"
   }
  ]
 }
