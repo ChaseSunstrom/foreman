@@ -52,7 +52,7 @@ class Off(Exception):
 def _env(work):
     """Nothing of the user's: no FOREMAN_*/CLAUDE* variables, a fake HOME, and a `claude` on PATH that only notes it
     was called (the demo never calls a model; the note fails the run if it did)."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE", "GIT_"))}
+    env = c.sandbox_env(os.environ)  # T-2822: and the load gate off, so a loaded host can't stall or refuse the demo
     bin_ = os.path.join(work, "bin")
     os.makedirs(bin_)
     with open(os.path.join(bin_, "claude"), "w") as f:
@@ -174,7 +174,7 @@ def _fence_env(d):
     first on PATH, and a claude that only fails (a fence never calls a model)."""
     env = _env(d)
     keep = ("HOME", "FOREMAN_HOME", "XDG_STATE_HOME", "FOREMAN_NO_BACKGROUND", "PYTHONDONTWRITEBYTECODE",
-            "GIT_CONFIG_NOSYSTEM")
+            "GIT_CONFIG_NOSYSTEM", "FOREMAN_LOAD_GATE")
     os.makedirs(os.path.join(d, "tmp"))
     return dict({k: env[k] for k in keep}, PATH=os.path.join(PLUGIN, "bin") + os.pathsep + env["PATH"],
                 FOREMAN_STATE=os.path.join(env["FOREMAN_HOME"], "state"),  # never a fallback outside the folder
@@ -195,8 +195,7 @@ def run_fences(root=None, timeout=FENCE_TIMEOUT):
 def release_env(work):
     """A newcomer's environment: nothing of the user's Sampo, Claude Code or git, except FOREMAN_DOCTOR_BENCH, so
     the suite's run can skip hook timings that a loaded machine makes fail (T-1829)."""
-    env = {k: v for k, v in os.environ.items()
-           if not k.startswith(("FOREMAN_", "CLAUDE", "GIT_")) or k == "FOREMAN_DOCTOR_BENCH"}
+    env = c.sandbox_env(os.environ, keep=("FOREMAN_DOCTOR_BENCH",))  # T-2822: the load gate off too
     env.update(HOME=os.path.join(work, "home"), XDG_STATE_HOME=os.path.join(work, "xdg"),
                FOREMAN_HOME=os.path.dirname(PLUGIN), FOREMAN_STATE=os.path.join(work, "state"),
                FOREMAN_NO_BACKGROUND="1", PYTHONDONTWRITEBYTECODE="1", GIT_CONFIG_NOSYSTEM="1")

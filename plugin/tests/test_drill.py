@@ -197,3 +197,13 @@ class RestoreDrill(ForemanTestCase):
         r = self.fm("drill", "--restore", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("snapshot", r.stderr + r.stdout)
+
+
+class DrillLoadGate(unittest.TestCase):
+    # T-2822: a drill's day runs its fm with the load gate off, so a loaded host neither stalls nor refuses its lane brief
+    def test_a_drill_day_turns_the_load_gate_off_and_drops_the_host_stand_in(self):
+        with mock.patch.dict(os.environ, {"FOREMAN_HOST": "load=99,cpus=1"}):
+            day = drill.Day()
+        self.addCleanup(day.remove)
+        self.assertEqual(day.env["FOREMAN_LOAD_GATE"], "0")
+        self.assertNotIn("FOREMAN_HOST", day.env)

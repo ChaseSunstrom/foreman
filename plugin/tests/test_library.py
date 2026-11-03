@@ -469,7 +469,7 @@ class LibSources(ForemanTestCase):
         self.assertIn(os.path.join(base, "plugins", "pr-review"), self.fm("lib", "show", "mk:pr-review").stdout)
         escaped = self.fm("lib", "show", "mk:escape").stdout
         self.assertIn(os.path.join(base, ".claude-plugin", "marketplace.json"), escaped)  # never ../../etc
-        self.assertNotIn("etc", escaped.replace("marketplace", ""))
+        self.assertNotIn(os.sep + "etc", escaped)  # a path segment, not a random temp-dir name that holds "etc" by chance
         self.assertNotIn("mk:greedy", self.fm("lib", "search", "every", "task", "always").stdout)  # T-1396 quarantine
         index = json.load(open(os.path.join(c.state_dir(), "lib-sources", "mk", "index.json")))
         self.assertIn("over-broad", next(x for x in index if x["name"] == "greedy")["quarantine"])

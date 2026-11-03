@@ -98,8 +98,8 @@ CREDENTIALS = re.compile(r"^(GITHUB_|GH_|GITLAB_|AWS_|AZURE_|GOOGLE_|GCP_|GCLOUD
 def _env(plugin, state):
     """Sampo isolated: its own state, the candidate's fm first on PATH, no session or project pinned from outside,
     no credentials beyond Claude's own."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDECODE", "CLAUDE_CODE_ENTRY"))
-           and (k.startswith(("ANTHROPIC_", "CLAUDE_")) or not CREDENTIALS.match(k))}  # claude's own login stays
+    base = {k: v for k, v in os.environ.items() if k.startswith(("ANTHROPIC_", "CLAUDE_")) or not CREDENTIALS.match(k)}
+    env = c.sandbox_env(base, drop=("FOREMAN_", "CLAUDECODE", "CLAUDE_CODE_ENTRY"))  # claude's own login stays (T-2822)
     env.update(FOREMAN_STATE=state, PATH=os.path.join(plugin, "bin") + os.pathsep + os.environ.get("PATH", ""),
                FOREMAN_BENCH="1")  # T-0820: its claude -p isn't a one-off (T-0775): the replay is Foreman at work
     return env

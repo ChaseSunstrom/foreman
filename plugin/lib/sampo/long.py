@@ -196,7 +196,8 @@ def _passed(tree, ids, pypath, end=None, why=None):
         return set()
     home = tempfile.mkdtemp(prefix="fm-long-")
     try:
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE")) and not bench.CREDENTIALS.match(k)}
+        env = c.sandbox_env({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)},
+                            drop=("FOREMAN_", "CLAUDE"))
         env["HOME"] = home
         out, script = os.path.join(home, "ok.json"), os.path.join(home, "runner.py")
         c.write_atomic(script, RUNNER)

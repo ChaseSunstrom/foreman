@@ -97,8 +97,7 @@ def _run_in(tmp, seed, model, worker, timeout, max_steps, t0):
         os.makedirs(d)
     _write(home, {".gitconfig": GITCONFIG, "keep.txt": "keep\n", ".cache/build/old.bin": "stale\n"})
     _write(repo, seed["files"])
-    env = {k: v for k, v in os.environ.items() if k not in ("FOREMAN_STATE", "CLAUDE_CODE_SESSION_ID",
-                                                            "CLAUDE_PROJECT_DIR")}
+    env = core.sandbox_env(os.environ, drop=("FOREMAN_STATE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PROJECT_DIR"))  # T-2822
     env.update(FOREMAN_HOME=fhome, FOREMAN_INHIBITED="1", GIT_CONFIG_GLOBAL=os.path.join(home, ".gitconfig"),
                FM_BENCH_SEED=tmp)
     if model:  # a worker CLI needs its own sign-in from the real home; a model run gets a throwaway one

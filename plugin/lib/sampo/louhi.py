@@ -2353,7 +2353,7 @@ def _triggers(base, key):
         with open(os.path.join(bindir, name), "w") as f:
             f.write(body)
         os.chmod(os.path.join(bindir, name), 0o755)
-    env = {k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k) and not k.startswith(("FOREMAN_", "CLAUDE"))}
+    env = c.sandbox_env({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)}, drop=("FOREMAN_", "CLAUDE"))
     env.update(FOREMAN_HOME=home, HOME=os.path.join(tmp, "uhome"), XDG_CONFIG_HOME=os.path.join(tmp, "uhome", ".config"),
                PATH=bindir + os.pathsep + os.environ.get("PATH", ""), FOREMAN_INHIBITED="1", FOREMAN_DOCTOR_BENCH="0")
 
@@ -2446,7 +2446,7 @@ def _foresight(base, key):
     atexit.register(shutil.rmtree, tmp, True)
     work, home = os.path.join(tmp, "work"), os.path.join(tmp, "home")
     shutil.copytree(os.path.join(base, "repo"), work, symlinks=True)
-    env = {k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k) and not k.startswith(("FOREMAN_", "CLAUDE"))}
+    env = c.sandbox_env({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)}, drop=("FOREMAN_", "CLAUDE"))
     env.update(FOREMAN_HOME=home, HOME=os.path.join(tmp, "uhome"), XDG_CONFIG_HOME=os.path.join(tmp, "uhome", ".config"),
                FOREMAN_INHIBITED="1", FOREMAN_DOCTOR_BENCH="0", FOREMAN_NO_NET="1")
 
@@ -2516,7 +2516,7 @@ def _lanes_drill(base, key):
     os.chmod(stub, 0o755)
     who = {"GIT_AUTHOR_NAME": "exam", "GIT_AUTHOR_EMAIL": "exam@localhost", "GIT_COMMITTER_NAME": "exam",
            "GIT_COMMITTER_EMAIL": "exam@localhost"}
-    env = {k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k) and not k.startswith(("FOREMAN_", "CLAUDE"))}
+    env = c.sandbox_env({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)}, drop=("FOREMAN_", "CLAUDE"))
     env.update(who, FOREMAN_HOME=home, HOME=os.path.join(tmp, "uhome"), PATH=bindir + os.pathsep + os.environ.get("PATH", ""),
                FOREMAN_INHIBITED="1", FM_STALL_MIN="0.03", FM_STALL_CACHE_S="0")
     fmpath = os.path.join(c.PLUGIN_ROOT, "bin", "fm")
@@ -2893,7 +2893,7 @@ def gate_mutations(runs=2):
         src, home = os.path.join(tmp, "src"), os.path.join(tmp, "home")
         shutil.copytree(c.PLUGIN_ROOT, os.path.join(src, "plugin"), symlinks=True,
                         ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "gen_evasions.py"))
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE"))}
+        env = c.sandbox_env(os.environ, drop=("FOREMAN_", "CLAUDE"))
         env.update(FOREMAN_HOME=home, FOREMAN_INHIBITED="1", FOREMAN_DOCTOR_BENCH="0", HOME=os.path.join(tmp, "uhome"))
         g = ["git", "-c", "user.name=exam", "-c", "user.email=exam@localhost", "-c", "commit.gpgsign=false",
              "-c", "core.hooksPath=/dev/null", "-c", "init.defaultBranch=main"]

@@ -8,7 +8,7 @@ import time
 import unittest
 from unittest import mock
 
-from helpers import ForemanTestCase, stub_claude
+from helpers import ForemanTestCase, read_text, stub_claude
 
 from sampo import core as c
 
@@ -1701,3 +1701,34 @@ class StartPoint(ForemanTestCase):  # T-2334: a task always gets a start point; 
         c.save_brief(p, b)
         self.fm("task", "evidence", tid, "--run", "true", check=False)
         self.assertFalse(c.find_brief(p, tid).meta.get("base"))
+
+
+class SandboxEnv(unittest.TestCase):
+    # T-2822: a sandbox (demo, drill, exam, bench, long, fences) runs its own fm with the load gate off; the user's
+    # FOREMAN_HOST stand-in and Sampo/Claude/git variables stay out, unless the builder names them
+    def test_drops_the_parents_variables_keeps_the_named_ones_and_turns_the_load_gate_off(self):
+        base = {"PATH": "/bin", "HOME": "/h", "FOREMAN_HOST": "load=20,cpus=8", "FOREMAN_HOME": "/f",
+                "FOREMAN_NO_BACKGROUND": "1", "CLAUDECODE": "1", "CLAUDE_CODE_ENTRYPOINT": "cli", "GIT_DIR": "/g"}
+        self.assertEqual(c.sandbox_env(base, keep=("FOREMAN_HOME",), HOME="/s", FOREMAN_NO_BACKGROUND="1"),
+                         {"PATH": "/bin", "HOME": "/s", "FOREMAN_HOME": "/f", "FOREMAN_NO_BACKGROUND": "1",
+                          "FOREMAN_LOAD_GATE": "0"})
+
+    def test_a_builder_can_drop_only_its_own_prefixes(self):
+        env = c.sandbox_env({"GIT_DIR": "/g", "CLAUDE_X": "1", "FOREMAN_HOST": "load=20,cpus=8", "X": "1"},
+                            drop=("FOREMAN_",), FOREMAN_STATE="/s")
+        self.assertEqual(env, {"GIT_DIR": "/g", "CLAUDE_X": "1", "X": "1", "FOREMAN_STATE": "/s",
+                               "FOREMAN_LOAD_GATE": "0"})
+
+    def test_bench_replays_run_with_the_load_gate_off_and_no_stand_in(self):
+        from sampo import bench
+        with mock.patch.dict(os.environ, {"FOREMAN_HOST": "load=20,cpus=8", "GITHUB_TOKEN": "x"}):
+            env = bench._env(c.PLUGIN_ROOT, "/s")
+        self.assertEqual(env["FOREMAN_LOAD_GATE"], "0")
+        self.assertNotIn("FOREMAN_HOST", env)
+        self.assertNotIn("GITHUB_TOKEN", env)
+
+    def test_every_sandbox_builder_routes_through_the_helper(self):
+        # T-2822: a builder that copies its own filter back in loses the load gate off; counted per module
+        for mod, n in (("demo", 2), ("drill", 1), ("bench", 1), ("long", 1), ("louhi", 4), ("smithbench", 1)):
+            src = read_text(os.path.join(os.path.dirname(c.__file__), mod + ".py"))
+            self.assertEqual(src.count("sandbox_env("), n, mod)

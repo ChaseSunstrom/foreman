@@ -56,6 +56,18 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class DemoLoadGate(ForemanTestCase):
+    # T-2822: the demo, its fences and the release check run their fm with the load gate off, even on a loaded host
+    def test_the_demo_fences_and_release_env_turn_the_load_gate_off_and_drop_the_host_stand_in(self):
+        with mock.patch.dict(os.environ, {"FOREMAN_HOST": "load=99,cpus=1"}):
+            demo_env = demo._env(os.path.join(self.tmp, "demo"))
+            fence_env = demo._fence_env(os.path.join(self.tmp, "fence"))
+            release = demo.release_env(os.path.join(self.tmp, "release"))
+        for env in (demo_env, fence_env, release):
+            self.assertEqual(env["FOREMAN_LOAD_GATE"], "0")
+            self.assertNotIn("FOREMAN_HOST", env)
+
+
 class DemoNext(ForemanTestCase):
     # T-0919: run inside a project, the demo ends on that project's own next step, not a generic "fm init"
     def test_inside_a_project_the_demo_ends_with_its_next_step(self):

@@ -61,12 +61,11 @@ class Day:
     def __init__(self):
         self.home = tempfile.mkdtemp(prefix="fm-drill-")
         h = self.home
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("FOREMAN_") and not k.startswith("GIT_")}
-        self.env.update(FOREMAN_HOME=f"{h}/home", XDG_STATE_HOME=f"{h}/xdg", HOME=f"{h}/h",
-                        GIT_CONFIG_GLOBAL=f"{h}/gitconfig", FOREMAN_NO_BACKGROUND="1", FOREMAN_NO_LINK="1",
-                        FOREMAN_INHIBITED="1", FOREMAN_DOCTOR_BENCH="0", GIT_AUTHOR_NAME="drill",
-                        GIT_AUTHOR_EMAIL="drill@localhost", GIT_COMMITTER_NAME="drill",
-                        GIT_COMMITTER_EMAIL="drill@localhost")
+        self.env = c.sandbox_env(os.environ, drop=("FOREMAN_", "GIT_"), FOREMAN_HOME=f"{h}/home",
+                                 XDG_STATE_HOME=f"{h}/xdg", HOME=f"{h}/h", GIT_CONFIG_GLOBAL=f"{h}/gitconfig",
+                                 FOREMAN_NO_BACKGROUND="1", FOREMAN_NO_LINK="1", FOREMAN_INHIBITED="1",
+                                 FOREMAN_DOCTOR_BENCH="0", GIT_AUTHOR_NAME="drill", GIT_AUTHOR_EMAIL="drill@localhost",
+                                 GIT_COMMITTER_NAME="drill", GIT_COMMITTER_EMAIL="drill@localhost")  # T-2822
         for d in ("home", "h", "repo"):
             os.makedirs(os.path.join(h, d))
         self.repo, self.state = f"{h}/repo", f"{h}/home/state"

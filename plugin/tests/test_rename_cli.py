@@ -3,8 +3,10 @@ reach the old ones, and `fm` with every old verb keeps working, saying once a da
 it is now `sampo`."""
 import os
 import pty
+import select
 import subprocess
 import sys
+import time
 
 from helpers import FM, ForemanTestCase
 
@@ -53,17 +55,29 @@ class RenameCli(ForemanTestCase):
         self.fm("guard", "try", "ls")
 
     def tty_stderr(self, prog, *args):
-        """What prog printed to stderr when stderr is a terminal, as for a person typing it."""
+        """What prog printed to stderr when stderr is a terminal, as for a person typing it. Read while it runs: a pty
+        can drop output nobody has read once its slave closes (macOS), so reading only after the child exits loses it."""
         master, slave = pty.openpty()
-        subprocess.run([sys.executable, prog, *args], cwd=self.repo, env=self.env(), stdout=subprocess.DEVNULL,
-                       stderr=slave, timeout=60)
+        proc = subprocess.Popen([sys.executable, prog, *args], cwd=self.repo, env=self.env(), stdout=subprocess.DEVNULL,
+                                stderr=slave)
         os.close(slave)
-        out = b""
-        try:
-            while chunk := os.read(master, 4096):
+        out, end = b"", time.time() + 60
+        while proc.poll() is None and time.time() < end:
+            if select.select([master], [], [], 0.1)[0]:
+                try:
+                    out += os.read(master, 4096)
+                except OSError:  # the terminal's other end closed
+                    break
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+        while select.select([master], [], [], 0.2)[0]:  # what the child printed before it exited
+            try:
+                if not (chunk := os.read(master, 4096)):
+                    break
                 out += chunk
-        except OSError:  # the terminal's other end closed: all read
-            pass
+            except OSError:
+                break
         os.close(master)
         return out.decode(errors="replace")
 

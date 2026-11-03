@@ -780,8 +780,10 @@ def _fm_temp(tmp, *args):
     import subprocess
     import sys
     env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE"))}
+    # T-2822: fm new's born step runs fm check, which waits on the real host load when FOREMAN_HOST is dropped;
+    # this sandbox tests the listing and the overwrite fence, not the load gate, so the gate is off here.
     env.update(HOME=tmp, FOREMAN_HOME=os.path.join(tmp, "fh"), XDG_STATE_HOME=os.path.join(tmp, "xdg"),
-               FOREMAN_NO_BACKGROUND="1")
+               FOREMAN_NO_BACKGROUND="1", FOREMAN_LOAD_GATE="0")
     return subprocess.run([sys.executable, os.path.join(PLUGIN, "bin", "fm"), *args], cwd=tmp, env=env,
                           capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
 

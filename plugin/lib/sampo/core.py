@@ -474,6 +474,22 @@ def host_load():
 
 
 LOAD_BAR = 1.5  # T-2797: load per CPU past which a lane isn't started and a gate waits (and above which it gets longer)
+SANDBOX_DROP = ("FOREMAN_", "CLAUDE", "GIT_")  # T-2822: what a sandbox's env doesn't inherit unless its builder says so
+
+
+def load_gate_off():
+    """T-2822: FOREMAN_LOAD_GATE=0, which sandbox_env sets for a sandbox's own fm: no load wait, no load refusal (the
+    memory hold stays)."""
+    return os.environ.get("FOREMAN_LOAD_GATE") == "0"
+
+
+def sandbox_env(base, keep=(), drop=SANDBOX_DROP, **extra):
+    """T-2822: the environment of a sandbox run (a demo, drill, exam, bench, long run or fence): base without the drop
+    prefixes (the names in keep stay), then extra, and FOREMAN_LOAD_GATE=0 so the sandbox's own fm never waits on or is
+    refused for the host's load: a sandbox is a fixed script, not a gate competing for this machine."""
+    env = {k: v for k, v in base.items() if k in keep or not k.startswith(tuple(drop))}
+    env.update(extra, FOREMAN_LOAD_GATE="0")
+    return env
 
 
 def load_scaled(timeout):
@@ -495,7 +511,7 @@ def wait_for_load(who, limit=None, out=None):
         except ValueError:
             limit = 300.0
     busy = lambda: (hl := host_load()) is not None and hl[1] > 0 and hl[0] / hl[1] > LOAD_BAR
-    if not busy():
+    if load_gate_off() or not busy():  # T-2822: a sandbox's fm never waits on the host's load
         return False
     out = out or sys.stderr
     load, cpus = host_load()
@@ -525,7 +541,7 @@ def host_strain():
                 mem = next(int(x.split()[1]) for x in f if x.startswith("MemAvailable:")) / 1024
     except (OSError, ValueError, StopIteration, KeyError):
         return None
-    if load > LOAD_BAR * cpus:
+    if load > LOAD_BAR * cpus and not load_gate_off():  # T-2822: the memory hold below still applies in a sandbox
         return f"the host is loaded ({load:.1f} with {cpus} CPUs)"
     if mem < 512:
         return f"the host is low on memory ({mem:.0f} MB available)"

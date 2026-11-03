@@ -717,6 +717,21 @@ class LoadGates(ForemanTestCase):
                     env={"FOREMAN_HOST": "load=40,cpus=8,mem_mb=8192", "FOREMAN_LOAD_WAIT": "0"})
         self.assertIn("waiting for the machine's load", r.stderr)
 
+    def test_a_sandbox_child_on_a_loaded_host_neither_waits_nor_is_refused_but_memory_still_refuses(self):
+        # T-2822: a sandbox's env sets FOREMAN_LOAD_GATE=0 (c.sandbox_env): its fm never waits on or is refused for the
+        # host's load; the memory hold stays
+        import io
+        out = io.StringIO()
+        os.environ["FOREMAN_HOST"] = "load=20,cpus=8,mem_mb=8192"
+        self.addCleanup(os.environ.__setitem__, "FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
+        os.environ["FOREMAN_LOAD_GATE"] = "0"
+        self.addCleanup(os.environ.pop, "FOREMAN_LOAD_GATE", None)
+        self.assertFalse(c.wait_for_load("fm task finish T-0001", limit=0, out=out))
+        self.assertEqual(out.getvalue(), "")
+        self.assertIsNone(c.host_strain())
+        os.environ["FOREMAN_HOST"] = "load=20,cpus=8,mem_mb=100"
+        self.assertIn("low on memory", c.host_strain())
+
 
 class BuilderContractOneSource(unittest.TestCase):
     def test_every_contract_rule_is_in_the_builder_agent(self):
