@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-labelledby="t">
+<title id="t">Sampo</title>
+<defs><radialGradient id="eye16" cx="8" cy="8" r="4" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFE3A8"/><stop offset="0.55" stop-color="#FF9E3D"/><stop offset="1" stop-color="#E0601F"/></radialGradient></defs>
+<circle cx="8" cy="8" r="7.25" fill="#16181C" stroke="#B07A3B" stroke-width="1.5"/>
+<circle cx="8" cy="8" r="4" fill="url(#eye16)"/>
+<rect x="5" y="7" width="6" height="1" fill="#16181C"/>
+</svg>

@@ -42,3 +42,8 @@ lit, no sparks.
 - Runes always carry a risk of reading as generic fantasy or of being misread. The staves are vetted, but a
   reviewer who reads runes should check them once more before launch.
 - The serif wordmark doesn't sit easily next to a terminal.
+
+## Shipped
+
+Runestone was picked. The refined mark and every variant live in [design/sampo/logo/](../../logo/README.md) (T-2751);
+this folder keeps the draft the first cold review read.
