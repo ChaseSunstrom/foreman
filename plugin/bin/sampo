@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""sampo: the command for Sampo (formerly Foreman; `fm` stays as an alias). See `sampo --help` and MASTER.md (T-2742)."""
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+os.environ.setdefault("SAMPO_PROG", "sampo")  # the CLI names itself by what was typed
+try:  # T-0368: below Python 3.12.7, re-run under a supported one
+    import fmpy  # noqa: E402
+    fmpy.reexec()
+except Exception:
+    pass
+import fmcli  # noqa: E402
+
+try:
+    code = fmcli.main()
+    sys.stdout.flush()
+except BrokenPipeError:  # T-0825: the reader quit (sampo … | head): end quietly
+    os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+    code = 141  # T-0839: as a shell reports SIGPIPE
+sys.exit(code)
