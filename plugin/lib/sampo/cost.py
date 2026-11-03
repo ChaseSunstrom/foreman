@@ -1429,9 +1429,10 @@ def cmd_usage(args):
         sid = e.get("session_id")
         if e.get("kind") == "next":  # T-0051: was the injected Next's command the next fm command run?
             if pending.get(sid):
-                ignored[pending[sid]] += 1
+                ignored[pending[sid][0]] += 1
             m = re.search(r"\b(?:fm|sampo) ([a-z-]+(?: [a-z][a-z-]*)?)", e.get("action", ""))  # e.g. fm task step, sampo audit prep
-            pending[sid] = m.group(1) if m else None  # the words after the command: either spelling follows either
+            # T-2855: counted under the Next's own spelling; matched on the words after it, so either spelling follows either
+            pending[sid] = (m.group(0), m.group(1)) if m else None
             continue
         if e.get("kind") in ("skill_named", "slash"):
             if e["kind"] == "slash":
@@ -1443,7 +1444,7 @@ def cmd_usage(args):
             continue
         tool, target = e.get("tool"), str(e.get("target") or "")
         if tool == "Bash" and pending.get(sid) and (ran := re.match(r"\s*(?:fm|sampo) (.*)", target, re.S)):
-            (followed if ran.group(1).startswith(pending[sid]) else ignored)[pending[sid]] += 1
+            (followed if ran.group(1).startswith(pending[sid][1]) else ignored)[pending[sid][0]] += 1
             pending[sid] = None
         if tool == "Skill":
             skills[target.split(":")[-1]] += 1

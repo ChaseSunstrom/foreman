@@ -1,5 +1,6 @@
 """T-1068: lanes claim the files and symbols they will change up front; an overlapping claim is refused naming the
 holder and its task."""
+# map-links: plugin/agents/fm-builder.md
 import json
 import os
 
@@ -116,7 +117,7 @@ class Claims(Base):
         tid = self.task(title="Lane work", tier="S", focus=False, scope=["x.py", "lib/*.py"])
         path = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"]
         with open(path) as f:
-            self.assertIn("fm lease take", f.read())
+            self.assertRegex(f.read(), r"(?:fm|sampo) lease take")  # T-2855: the contract teaches sampo since T-2778
         out = self.fm("lease", "list").stdout
         self.assertIn("x.py::*", out)
         self.assertIn(tid, out)

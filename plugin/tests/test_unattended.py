@@ -1,5 +1,6 @@
 """T-0071 round E: unattended work — models by tier in fm run, notifications, eval cases from failures, opt-in shared
 lessons, instruction-like text kept as data, the digest, Next-follow measurement, the state schema stamp."""
+# map-links: plugin/lib/sampo/cost.py
 import json
 import os
 import sys
