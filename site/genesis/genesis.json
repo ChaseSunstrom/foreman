@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-03T02:42:58Z",
+ "updated": "2026-11-03T02:48:02Z",
  "rev": "8aa8ad27",
  "capabilities": [
   {
@@ -25420,18 +25420,18 @@
  },
  "not_yet": 8,
  "not_yet_open": 8,
- "unproven": 988,
+ "unproven": 741,
  "unproven_kinds": {
   "meaning": 597,
   "research-uncited": 35,
+  "perf-typed": 51,
   "typed": 26,
   "red": 74,
-  "perf-typed": 51,
-  "ui-unshot": 42,
-  "docs": 401,
-  "tui-unshot": 42,
-  "infra": 8,
-  "perf-noise": 1
+  "tui-unshot": 2,
+  "docs": 68,
+  "perf-noise": 1,
+  "infra": 1,
+  "ui-unshot": 3
  },
  "next": {
   "stage": "mission",
@@ -25959,7 +25959,7 @@
      "M-08",
      "M-10"
     ],
-    "asked": "T-1000"
+    "asked": "T-2077"
    },
    {
     "id": "M-20",
