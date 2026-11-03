@@ -161,6 +161,39 @@ class Capture(StubCase):
         r = self.shot(self.page, "--profile", "phone", check=False)
         self.assertNotEqual(r.returncode, 0)
 
+    def test_width_and_scheme_shoot_the_matrix_through_one_browser(self):  # T-2758
+        data = json.loads(self.shot(self.page, "--frames", "0", "--width", "1280,320", "--scheme", "both",
+                                    "--reduced-motion", "--json").stdout)
+        self.assertEqual([os.path.basename(p["folder"]) for p in data["pages"]],
+                         ["page-1280-light", "page-1280-dark", "page-320-light", "page-320-dark"])
+        self.assertTrue(all(os.path.exists(p["shots"][0]) for p in data["pages"]))
+        calls = self.calls()
+        self.assertEqual(len([c for c in calls if "argv" in c]), 1, "one browser")
+        sizes = [c["params"]["width"] for c in calls if c.get("method") == "Emulation.setDeviceMetricsOverride"]
+        self.assertEqual(sizes[-4:], [1280, 1280, 320, 320])
+        media = [c["params"]["features"] for c in calls if c.get("method") == "Emulation.setEmulatedMedia"][-4:]
+        reduce = {"name": "prefers-reduced-motion", "value": "reduce"}
+        self.assertEqual(media, [[{"name": "prefers-color-scheme", "value": s}, reduce]
+                                 for s in ("light", "dark", "light", "dark")])
+
+    def test_width_beside_profile_keeps_its_height_and_scale_and_a_single_flag_suffixes_alone(self):
+        self.shot(self.page, "--frames", "0", "--profile", "wrist", "--width", "300")
+        m = [c["params"] for c in self.calls() if c.get("method") == "Emulation.setDeviceMetricsOverride"][-1]
+        self.assertEqual((m["width"], m["height"], m["deviceScaleFactor"]), (300, 484, 2.0))
+        data = json.loads(self.shot(self.page, "--frames", "0", "--scheme", "dark", "--json").stdout)
+        self.assertEqual(os.path.basename(data["pages"][0]["folder"]), "page-dark")
+        data = json.loads(self.shot(self.page, "--frames", "0", "--width", "500", "--json").stdout)
+        self.assertEqual(os.path.basename(data["pages"][0]["folder"]), "page-500")
+        data = json.loads(self.shot(self.page, "--frames", "0", "--json").stdout)
+        self.assertEqual(os.path.basename(data["pages"][0]["folder"]), "page")
+
+    def test_a_bad_width_is_refused_before_a_browser_starts(self):
+        for bad in ("0", "20000", "wide", "1280,", "100,x", ",".join(["300"] * 13)):
+            r = self.shot(self.page, "--width", bad, check=False)
+            self.assertNotEqual(r.returncode, 0, bad)
+            self.assertIn("--width", r.stderr + r.stdout)
+        self.assertFalse(os.path.exists(self.log))
+
     def test_a_still_page_has_no_poster_and_a_rerun_drops_stale_frames(self):
         page = json.loads(self.shot(self.page, "--frames", "5", "--every", "10", "--json", paint="0,1,4").stdout)["pages"][0]
         folder = os.path.dirname(page["shots"][0])

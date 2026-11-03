@@ -7894,6 +7894,10 @@ def _build_parser(only=None):
                    "animations and transitions paused")
     s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="shoot at a surface's width, height and scale")
     s.add_argument("--reduced-motion", action="store_true", help="emulate prefers-reduced-motion: reduce")
+    s.add_argument("--width", metavar="W[,W…]", help="shoot at each width (1 to 10000, up to 12), each view in "
+                   "PAGE-W[-SCHEME]/ through the one browser (T-2758)")
+    s.add_argument("--scheme", choices=["light", "dark", "both"], help="emulate prefers-color-scheme; both shoots "
+                   "each view light then dark, into PAGE[-W]-SCHEME/")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
     s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
                    "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "

@@ -30,6 +30,7 @@ from sampo import img as simg
 
 SIZE = (1280, 800)
 MAX_FRAMES, MIN_EVERY, MAX_EVERY = 60, 10, 10000
+MAX_WIDTH, MAX_VIEWS = 10000, 12  # --width: a viewport's width, and how many of them one run shoots per page
 LOAD_S, CALL_S, SETTLE_S = 30, 30, 0.5
 FONTS_S = 10  # the fonts check: its own 5 s wait plus the walk; a slow page leaves fonts unchecked, not the run hung
 NOISY = 0.05  # a baseline floor over this share of the page's pixels: an animated baseline, a loose pass line
@@ -179,6 +180,14 @@ class Browser:
             if last and isinstance(e, (OSError, RuntimeError, EOFError, ValueError)):
                 raise RuntimeError(f"{e}; its last words: {last}") from e
             raise
+
+    def emulate(self, size, scale, scheme=None, reduced=False):
+        """Another view in the same browser. setEmulatedMedia replaces the whole feature list: send all of it."""
+        self.call("Emulation.setDeviceMetricsOverride", self.sid, width=size[0], height=size[1],
+                  deviceScaleFactor=scale, mobile=False)
+        feats = ([{"name": "prefers-color-scheme", "value": scheme}] if scheme else []) + \
+                ([{"name": "prefers-reduced-motion", "value": "reduce"}] if reduced else [])
+        self.call("Emulation.setEmulatedMedia", self.sid, features=feats)
 
     def last_words(self):
         """The browser's last stderr lines (why it didn't start), capped."""
@@ -403,8 +412,24 @@ def view(args):
     return ((p["width"], p["height"]), p["scale"]) if p else (SIZE, 1)
 
 
+def views(args):
+    """[(width|None, scheme|None)] from --width W[,W…] and --scheme: widths outer, light before dark; [(None, None)]
+    with neither. UsageError for a width that isn't a whole number 1 to MAX_WIDTH or over MAX_VIEWS widths."""
+    from sampo import cli
+    raw = getattr(args, "width", None)
+    widths = [None]
+    if raw is not None:
+        parts = [x.strip() for x in raw.split(",")]
+        if not all(x.isascii() and x.isdigit() and 1 <= int(x) <= MAX_WIDTH for x in parts) or len(parts) > MAX_VIEWS:
+            raise cli.UsageError(f"--width is up to {MAX_VIEWS} whole numbers 1 to {MAX_WIDTH}, comma-separated: "
+                                 f"{_safe(raw)!r}")
+        widths = [int(x) for x in parts]
+    scheme = getattr(args, "scheme", None)
+    return [(w, s) for w in widths for s in ({"both": ["light", "dark"], None: [None]}.get(scheme) or [scheme])]
+
+
 def _run(path, urls, base, args):
-    """Every page through one browser: (pages, failed)."""
+    """Every page through one browser: (pages, failed). A view per --width and --scheme, in PAGE-W-SCHEME/."""
     pages, failed, taken = [], [], set()
     try:
         size, scale = view(args)
@@ -414,17 +439,28 @@ def _run(path, urls, base, args):
     try:
         if args.frozen:
             b.call("Page.addScriptToEvaluateOnNewDocument", b.sid, source=FREEZE)
+        matrix, dead = views(args), False
         for url in urls:
-            try:
-                pages.append(shoot(b, url, _folder(base, _slug(url, taken)), args.frames, args.every, args.frozen))
-                if args.diff is not None:
-                    pages[-1]["diff"] = compare(pages[-1], args.diff)
-            except (OSError, RuntimeError, EOFError, ValueError) as e:
-                failed.append({"url": url, "error": str(e)})
-                if isinstance(e, (EOFError, TimeoutError)):  # the browser is gone or hung: the rest would wait too
-                    failed += [{"url": u, "error": "not tried: the browser stopped answering"}
-                               for u in urls[urls.index(url) + 1:]]
-                    break
+            slug = _slug(url, taken)
+            for width, scheme in matrix:
+                name = "-".join(str(x) for x in (slug, width, scheme) if x)
+                try:
+                    if width or scheme:
+                        b.emulate((width or size[0], size[1]), scale, scheme, getattr(args, "reduced_motion", False))
+                    pages.append(shoot(b, url, _folder(base, name), args.frames, args.every, args.frozen))
+                    if width or scheme:
+                        pages[-1].update(width=width or size[0], scheme=scheme)
+                    if args.diff is not None:
+                        pages[-1]["diff"] = compare(pages[-1], args.diff)
+                except (OSError, RuntimeError, EOFError, ValueError) as e:
+                    failed.append({"url": url, "error": str(e)})
+                    if isinstance(e, (EOFError, TimeoutError)):  # the browser is gone or hung: the rest would wait too
+                        failed += [{"url": u, "error": "not tried: the browser stopped answering"}
+                                   for u in urls[urls.index(url) + 1:]]
+                        dead = True
+                        break
+            if dead:
+                break
     except (OSError, RuntimeError, EOFError, ValueError) as e:
         failed.append({"url": ", ".join(urls), "error": f"the browser ({path}) failed: {e}"})
     finally:
@@ -438,6 +474,7 @@ def cmd_shot(args):
         raise cli.UsageError(f"--frames is 0 to {MAX_FRAMES}")
     if not MIN_EVERY <= args.every <= MAX_EVERY:
         raise cli.UsageError(f"--every is {MIN_EVERY} to {MAX_EVERY} ms")
+    views(args)  # a bad --width is refused before anything starts
     urls = [_url(t) for t in args.targets]
     if args.out:
         base = os.path.abspath(args.out)
