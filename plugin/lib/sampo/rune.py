@@ -3685,29 +3685,43 @@ def _steer_words(t):  # T-2505 (fmgenesis already has a _words for coverage cell
     return set(WORD.findall(str(t).lower())) - STOP
 
 
-def score_steer(p, text):
+def score_steer(p, text, cite=None):
     """T-2505 (user steer 2026-11-01, part 5): a recorded user steer against the newest sealed prediction: overlap =
     shared words over the smaller side's words, a hit at 0.3+; one row in gen-N/prediction-score.jsonl, and a miss
-    files one anticipation (#3) gap. None when no prediction is sealed."""
+    files one anticipation (#3) gap. None when no prediction is sealed, or (T-2756) when this gen already scored
+    that cite: one steer is scored once, however many decisions cite it."""
     from sampo import eco
     gens = sorted({(e.get("data") or {}).get("gen") for e in c.ledger_events(p, ("genesis_seal",))} - {None})
     if not gens:
         return None
     n = gens[-1]
+    cite = c.fit(c.plain(cite), 300) if cite else None
+    if cite and cite in _score_cites(p, n):
+        return None
     preds = PRED_ROW.findall(_doc(home(p), f"gen-{n}/prediction.md") or "")
     w = _steer_words(text)
     best = max(((len(w & _steer_words(s)) / max(1, min(len(w), len(_steer_words(s)))), s) for s, _ in preds),
                default=(0.0, ""))
     row = {"at": c.now(), "steer": c.fit(c.plain(text), 300), "nearest": c.fit(c.plain(best[1]), 200),
-           "overlap": round(best[0], 2), "hit": best[0] >= 0.3, "seal": _seal_state(p, n)}
+           "overlap": round(best[0], 2), "hit": best[0] >= 0.3, "seal": _seal_state(p, n), "cite": cite}
     with c.lock(p.dir):
         c.append_line(os.path.join(home(p), f"gen-{n}", "prediction-score.jsonl"), json.dumps(row))
     if not row["hit"]:
-        key = f"genesis-anticipation {n}:{hashlib.sha1(text.encode()).hexdigest()[:10]}"
+        key = f"genesis-anticipation {n}:{hashlib.sha1((cite or text).encode()).hexdigest()[:10]}"
         eco.capture_once(p, f"FEATURE: anticipation gap (#3): the user's steer wasn't among gen-{n}'s sealed predictions: "
                               f"{row['steer']} (nearest: {row['nearest'] or 'none'}, overlap {row['overlap']})\n{key}",
                            "FEATURE", "genesis-anticipation", key=key)
     return row
+
+
+def _score_cites(p, n):
+    out = []
+    for raw in (_doc(home(p), f"gen-{n}/prediction-score.jsonl") or "").splitlines():
+        try:
+            out.append(json.loads(raw).get("cite"))
+        except (ValueError, AttributeError):
+            continue
+    return out
 
 
 def _hit_rate(p, n):

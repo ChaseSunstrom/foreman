@@ -3725,7 +3725,7 @@ def steer_checks(p, run=True, pending=True, timeout=900, fails=None):
             continue
         name, m = fit(plain(decision), 80), CHECK_TAG.search(tags)
         if not m:
-            out.append(f"{date} {name}: no check (fm decide … --check CMD --revisited WORDS)")
+            out.append(f"{date} {name}: no check (fm decide … --cites \"user steer …\" --check CMD --revisited WORDS)")
             continue
         cmd, wait = m.group(1), CHECK_PENDING.fullmatch(m.group(1))
         if wait:

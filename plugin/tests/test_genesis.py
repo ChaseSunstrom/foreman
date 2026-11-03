@@ -4222,6 +4222,22 @@ class SealedPrediction(ForemanTestCase):
         self.assertEqual(len(gaps), 1)
         self.assertEqual(rune._hit_rate(self.p, 1), (1, 2))
 
+    def test_restating_a_steer_files_no_gap_and_the_hint_names_cites(self):  # T-2756
+        from sampo import core as c
+        self.put("gen-1/prediction.md", self.PRED)
+        cite = "user steer 2026-11-01: dark mode charts"
+        self.fm("decide", "Standing rule: every chart gets a dark mode", "--why", "steer", "--cites", cite)
+        self.assertIn("--cites", " ".join(c.steer_checks(self.p, run=False)), "the hint names what settles a steer")
+        self.fm("decide", "Standing rule: every chart gets a dark mode, checked", "--why", "steer", "--cites", cite,
+                "--check", "fm genesis check", "--revisited", "every chart")
+        self.assertEqual(c.steer_checks(self.p, run=False), [], "following the hint settles the rule")
+        self.fm("decide", "Sparklines follow the chart's dark mode too", "--why", "derived", "--cites", cite,
+                "--check", "fm genesis check")
+        rows = open(os.path.join(self.tower, "gen-1", "prediction-score.jsonl")).read().splitlines()
+        self.assertEqual(len(rows), 1, "one steer, scored once, however many decisions cite it")
+        gaps = [b for b in c.load_briefs(self.p) if "anticipation" in b.section("Raw request").lower()]
+        self.assertEqual(len(gaps), 1)
+
     def test_blind_spot_classes_need_a_rule_and_a_passing_check(self):
         from sampo import rune
         self.fm("decide", "Standing rule: a drive offer is made once per active task", "--why", "blind spot",

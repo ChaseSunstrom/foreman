@@ -4323,7 +4323,7 @@ def cmd_decide(args):
     if cites and c.STEER.search("cites: " + cites):  # T-2505: each recorded steer is scored against the sealed prediction
         try:
             from sampo import rune
-            sc = rune.score_steer(p, f"{args.decision} {cites}")
+            sc = rune.score_steer(p, f"{args.decision} {cites}", cite=cites)
             if sc:
                 note += (f" Predicted (overlap {sc['overlap']} with: {sc['nearest']})." if sc["hit"] else
                          f" Not predicted (nearest overlap {sc['overlap']}): filed as an anticipation gap.")
