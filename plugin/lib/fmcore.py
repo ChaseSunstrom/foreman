@@ -944,8 +944,9 @@ def regen_registry():
 
 def append_line(path, text):
     """T-1669: append whole lines in one write; a tail cut short (a crash, a hand edit) gets its newline first, so the
-    cut line stays its own and the new record isn't glued to it."""
-    data = text.encode("utf-8")
+    cut line stays its own and the new record isn't glued to it. T-2731: a non-empty text ends with a newline here, so a
+    caller that forgets it can't leave the file torn."""
+    data = (text if not text or text.endswith("\n") else text + "\n").encode("utf-8")
     with open(path, "a+b") as f:
         size = f.seek(0, os.SEEK_END)
         if size:

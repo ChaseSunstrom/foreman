@@ -2439,15 +2439,35 @@ def _pid_ns_doubt():
                                          f"container), where a live lock's holder can look dead")
 
 
+def _only_newline_lost(path):
+    """T-2731: a journal, never the hash-chained ledger, whose last line is a whole JSON record missing only its newline
+    (a writer that forgot it, as fmgenesis's prediction score did): adding the newline changes no record."""
+    if os.path.basename(path) == "ledger.jsonl":
+        return False
+    data, _ = _tail(path, FSCK_TAIL)
+    if not data or data.endswith(b"\n"):
+        return False
+    try:
+        json.loads(data.rsplit(b"\n", 1)[-1])
+    except (ValueError, RecursionError):
+        return False
+    return True
+
+
 def fsck_fix(found):
     """Remove the stale locks among found, each re-checked just before; (removed paths, the findings left for a person).
-    A broken lane or a torn journal is never repaired here: the ledger is hash-chained, and a lane holds work. Refused
+    A broken lane or a torn journal is never repaired here: the ledger is hash-chained, and a lane holds work. The one
+    exception (T-2731): a journal other than the ledger whose last record is whole and lacks only its newline gets it. Refused
     (PolicyError) where os.kill can't see every process."""
     doubt = _pid_ns_doubt()
     if doubt:
         raise c.PolicyError(f"{doubt}: fm fsck --fix removes no lock here; run it from a shell outside the sandbox")
     fixed, left = [], []
     for f in found:
+        if f["kind"] == "torn journal" and _only_newline_lost(f["path"]):  # T-2731: no record changes
+            c.append_line(f["path"], "")
+            fixed.append(f["path"])
+            continue
         if f["kind"] != "stale lock":
             left.append(f)
             continue
@@ -2542,7 +2562,9 @@ def cmd_fsck(args):
         print(json.dumps({"ok": not left, "findings": left, "fixed": fixed}, indent=2, ensure_ascii=False))
         return 1 if left else 0
     for path in fixed:
-        print(f"{'removed':<13} {c.plain(path)}: a stale lock")
+        mended = path.endswith(".jsonl")  # T-2731: the one journal repair adds a lost newline; locks are .pid
+        print(f"{'mended' if mended else 'removed':<13} {c.plain(path)}: "
+              + ("its whole last record got its newline" if mended else "a stale lock"))
     for f in left:  # a hand-edited brief's lane path could hold escape sequences
         print(f"{f['kind']:<13} [{c.plain(f['project'] or 'state')}] {c.plain(f['path'])}: {c.plain(f['detail'])}")
     hints = (["fm fsck --fix removes the stale locks"] if any(f["kind"] == "stale lock" for f in left) else []) + (

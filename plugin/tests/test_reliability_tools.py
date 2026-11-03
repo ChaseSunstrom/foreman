@@ -103,6 +103,20 @@ class Fsck(ForemanTestCase):
         self.assertEqual(again["fixed"], [])
         self.assertEqual(len(again["findings"]), 2)
 
+    def test_fix_ends_a_whole_record_that_lost_only_its_newline(self):  # T-2731: gen-3/prediction-score.jsonl
+        whole = write(os.path.join(self.p.dir, "research", "score.jsonl"), '{"a": 1}\n{"b": 2}')
+        cut = write(os.path.join(self.p.dir, "cut.jsonl"), '{"a": 1}\n{"b": ')
+        rc, res = self.fix()
+        self.assertIn(whole, res["fixed"])
+        self.assertEqual(read_text(whole), '{"a": 1}\n{"b": 2}\n', "only the newline is added")
+        self.assertEqual(read_text(cut), '{"a": 1}\n{"b": ', "a record cut mid-way is left for a person")
+        self.assertEqual(read_text(self.ledger), self.ledger_bytes, "the hash-chained ledger is never rewritten")
+        self.assertIn(("torn journal", "cut.jsonl"), self.kinds(res))
+        write(whole, '{"c": 3}')
+        text = self.fm("fsck", "--fix", check=False).stdout
+        self.assertIn("its whole last record got its newline", text)
+        self.assertNotIn("score.jsonl: a stale lock", text)
+
     def test_fix_keeps_a_lock_younger_than_an_hour(self):
         # review: a holder in another PID namespace (a sandbox) looks dead to os.kill; an hour is the sentinel's own limit
         os.utime(self.stale, (time.time() - 1800, time.time() - 1800))

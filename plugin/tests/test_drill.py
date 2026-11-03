@@ -145,6 +145,11 @@ class StateErrors(ForemanTestCase):
         c.append_line(path, '{"a": 1}\n')
         c.append_line(path, '{"b": 2}\n')
         self.assertEqual(read_text(path), '{"a": 1}\n{"b": 2}\n', "a whole tail gets no blank line")
+        # T-2731: a caller that forgets the newline (fmgenesis's prediction score) still leaves whole lines
+        c.append_line(path, '{"c": 3}')
+        self.assertEqual(read_text(path), '{"a": 1}\n{"b": 2}\n{"c": 3}\n')
+        c.append_line(path, "")  # fmdrill's own use: whole lines before a cut, nothing added to a whole tail
+        self.assertEqual(read_text(path), '{"a": 1}\n{"b": 2}\n{"c": 3}\n')
 
 
 if __name__ == "__main__":
