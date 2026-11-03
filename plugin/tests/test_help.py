@@ -15,7 +15,8 @@ class Help(ForemanTestCase):
         from sampo import cli
         sub = next(a for a in cli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
         out = self.fm("help").stdout
-        lines = [ln.split()[0] for ln in out.splitlines() if ln.startswith("  ")]
+        tiers = out.split("\nSampo names")[0]  # T-2775: the Sampo-names block lists aliases, not commands
+        lines = [ln.split()[0] for ln in tiers.splitlines() if ln.startswith("  ")]
         self.assertEqual(sorted(lines), sorted(sub.choices), "every command, each once (a new one needs a tier)")
         self.assertTrue(out.startswith("Every task"), out[:80])
         self.assertLess(out.index("  next "), out.index("  sentinel "))
