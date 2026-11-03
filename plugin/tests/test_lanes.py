@@ -92,6 +92,57 @@ class Lanes(ForemanTestCase):
         meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
         self.assertEqual(self.git("diff", "--name-only", meta.get("base_tree") or meta["base"]).split(), ["lane.py"])
 
+    def _write(self, root, name, text="x = 1\n"):
+        os.makedirs(os.path.dirname(os.path.join(root, name)), exist_ok=True)
+        with open(os.path.join(root, name), "w") as f:
+            f.write(text)
+
+    def test_another_lanes_merge_is_not_this_tasks_scope_or_stale_audit(self):
+        # T-2784: a merge of another task's lane landed while this one was focused: its files and tree are not ours
+        mine = self._audited_task_then_two_merges("elsewhere/b.py", "elsewhere/c.py")
+        self._write(self.repo, "stray.cfg")  # this task's own out-of-scope edit stays refused
+        p = self.fm("task", "done", mine, "--lesson", "none: test", check=False)
+        self.assertIn("stray.cfg", p.stderr)
+        self.assertNotIn("elsewhere/b.py", p.stderr)
+        os.remove(os.path.join(self.repo, "stray.cfg"))
+        p = self.fm("task", "done", mine, "--lesson", "none: test", check=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_finish_after_two_other_merges_has_no_audit_gap(self):
+        # T-2784: fm task finish's pre-check judged the audit against the merged tree
+        mine = self._audited_task_then_two_merges("elsewhere/b.py", "elsewhere/c.py")
+        p = self.fm("task", "finish", mine, "--audit", "reviewed", "--lesson", "none: test", "--docs", "none: test", check=False)
+        self.assertNotIn("audit missing", p.stderr)
+        self.assertNotIn("elsewhere", p.stderr)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_a_merged_file_this_task_also_touched_still_stales_the_audit(self):
+        mine = self._audited_task_then_two_merges("src/shared.py", "elsewhere/c.py")
+        self._write(self.repo, "src/shared.py", "x = 2\n")  # ours too, after the merge
+        c.log_event(c.find_project(self.repo), "touched", task=mine,
+                    data={"file": os.path.join(self.repo, "src/shared.py"), "tool": "Edit"})
+        p = self.fm("task", "finish", mine, "--audit", "reviewed", "--lesson", "none: test", "--docs", "none: test", check=False)
+        self.assertIn("audit missing", p.stderr)
+
+    def _audited_task_then_two_merges(self, f1, f2):
+        mine = first(self.fm("task", "new", "Mine", "--type", "FEATURE", "--tier", "M", "--interpretation", valid_m_plan()[0], "--approach", valid_m_plan()[1], "--ac", "ok :: true",
+                             "--step", "s", "--scope", "src/**", "--json", "--focus").stdout)["id"]
+        self._write(self.repo, "src/a.py")
+        self.fm("task", "evidence", mine, "--ac", "1", "pytest", "ok")
+        self.fm("task", "ac", mine, "check", "1")
+        self.fm("task", "step", mine, "done", "1", "--evidence", "pytest", "ok")
+        [self.fm("task", "audit", mine, lens, "checked", "ok") for lens in ("intent", "edge")]
+        self.fm("task", "set", mine, "--section", "Docs impact", "--text", "none: test")
+        second = os.path.join(self.tmp, "lane2")
+        subprocess.run(["git", "-C", self.repo, "worktree", "add", "-q", "-b", "foreman/lane2", second], check=True)
+        for lane, name in ((self.lane, f1), (second, f2)):
+            other = self.new("Theirs " + name, lane)
+            self._write(lane, name)
+            self.git("add", name, cwd=lane)
+            self.git("commit", "-qm", name, cwd=lane)
+            self.fm("lane", "merge", other)
+        return mine
+
     def test_tidy_sweeps_stale_lanes(self):
         # T-0186: a closed task's lane and its branch stayed until someone ran fm lane rm
         home = {"HOME": self.tmp}  # tidy's global checks stay off the real ~/.claude

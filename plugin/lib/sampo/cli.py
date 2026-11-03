@@ -872,6 +872,7 @@ def cmd_task(args):
         from sampo import docs as sdocs
         since, tree = c.last_change(p, args.id), c.worktree_id(p.root)
         pre = need_brief(p, args.id)
+        tree = c.audit_tree_past_merges(p, pre, tree)  # T-2784: other lanes' merges alone don't stale audits
         if pre.status == "dropped":  # T-0679 chaos test: a dropped task isn't finished by closing it again
             raise c.PolicyError(f"{pre.id} is dropped: reopen it first (fm task set {pre.id} status=planned)")
         drift, notes = sdocs.task_docs(p.root, pre.section("Docs impact")) if pre.tier in ("M", "L") else ([], [])
@@ -1336,7 +1337,7 @@ def task_finish(p, args):
     missing = [named(kind, n) for kind, n, cmd in todo if cmd is None and not (kind == "step" and n in red)]
     gaps = [f"{named('step', n)}: its last run failed; record a passing run (fm task evidence {b.id} --step {n} --run CMD, or finish with --run CMD)"
             for n in red] + ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
-                              f"evidence of its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
+                              f"evidence of its own"] if missing else []) + _finish_gaps(b, args, lenses, p) + _self_docs_gaps(p, b) \
         + _file_map_gaps(p, b) + [g for g in [b.proof_gap(then=[cmd for _, _, cmd in todo] + [args.run])] if g] \
         + _proved_gaps(p, b, then=[cmd for _, _, cmd in todo] + [args.run]) \
         + _adversary_gaps(p, b, lenses)  # T-1906, T-1907: asked before anything runs
@@ -1760,7 +1761,7 @@ def _others(p, b):
     events = c.ledger_tail(p, c.TASK_WINDOW)
     first = next((i for i, e in enumerate(events) if e.get("event") == "focus" and e.get("task") == b.id), None)
     since = str(b.meta.get("created") or "")  # ledger order when its focus is in the window: seconds tie
-    out = {}
+    out = {f: {t} for f, t in c.merged_in(p.root, b).items()}  # T-2784: other lanes' merges since this task started
     for i, e in enumerate(events):
         if e.get("event") == "touched" and e.get("task") not in (None, b.id) \
                 and (i > first if first is not None else str(e.get("ts", "")) >= since) \
@@ -1874,20 +1875,27 @@ def _adversary_ask(risky):
     return f" (security-sensitive: {', '.join(risky)}); record it in this close: --lens \"adversary: <what you tried and what held>\""
 
 
+def _merge_aware_tree(p, b):
+    """T-2784: the tree finish's pre-checks judge audits against: the working files, past other lanes' merges. None
+    (the evidence's own tree, as before) outside git or without a project."""
+    tree = c.worktree_id(p.root) if p else None
+    return c.audit_tree_past_merges(p, b, tree) if tree else None
+
+
 def _adversary_gaps(p, b, lenses):
     """T-1907: a close over security-sensitive files is asked for its adversary lens before any check runs."""
     if any(lens == "adversary" for lens, _ in lenses):
         return []
     risky = _task_files(p, b)[1]
-    return [r + _adversary_ask(risky) for r in (b.audit_blockers(need=("adversary",)) if risky else [])
+    return [r + _adversary_ask(risky) for r in (b.audit_blockers(tree=_merge_aware_tree(p, b), need=("adversary",)) if risky else [])
             if r.startswith("audit missing: adversary")]
 
 
-def _finish_gaps(b, args, lenses):
+def _finish_gaps(b, args, lenses, p=None):
     """T-0704: what fm task done would refuse that this call doesn't supply, checked before anything runs: the audit
     lenses its tier needs, docs impact and the lesson (M/L)."""
     given = {lens for lens, _ in lenses} | ({"self"} if b.tier == "S" else set())
-    recorded = b.audit_blockers()
+    recorded = b.audit_blockers(tree=_merge_aware_tree(p, b))
     gaps = [f"audit missing: --lens '{sorted(g)[0]}: <result>'" + (f" (or {', '.join(sorted(g)[1:])})" if len(g) > 1
                                                                   else "")
             for g in c.REQUIRED_AUDITS.get(b.tier, c.REQUIRED_AUDITS["S"])

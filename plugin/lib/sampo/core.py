@@ -522,6 +522,33 @@ def task_base(root, b):
     return None
 
 
+def merged_in(root, b):
+    """T-2784: {file: the task} for files that `fm lane merge` commits ("Merge T-XXXX: …") of other tasks brought in
+    since this task's start commit: theirs to answer for, not this task's edits."""
+    base = b.meta.get("base")
+    if not base or _git(root, "cat-file", "-t", base, timeout=10).strip() != "commit":
+        return {}
+    out = {}
+    for line in _git(root, "log", "--merges", "--format=%H %s", f"{base}..HEAD", timeout=30).splitlines():
+        sha, _, subj = line.partition(" ")
+        m = re.match(r"Merge (T-\d+)\b", subj)
+        if m and m.group(1) != b.id:
+            for f in _git(root, "diff", "--name-only", "--no-renames", f"{sha}^1", sha, timeout=30).splitlines():
+                out.setdefault(f, m.group(1))
+    return out
+
+
+def audit_tree_past_merges(p, b, tree):
+    """T-2784: the tree of an audit that differs from the working files only by other tasks' merged-in files (and
+    those this task didn't touch): that audit still covers this task's own changes. `tree` itself otherwise."""
+    merged = set(merged_in(p.root, b)) - set(task_touches(p, b.id))
+    for _, _, t in sorted(b.audits(), key=lambda a: a[1], reverse=True) if merged and tree else ():
+        if t and t != tree and (names := task_diff(p.root, t, "--name-only", "--no-renames")) is not None \
+                and set(names.splitlines()) <= merged:
+            return t
+    return tree
+
+
 def task_diff(root, base, *opts):
     """git diff from base to the working files now, untracked included; None when git can't produce it (an unreadable
     file, a timeout), so callers can fail closed instead of reading an empty diff."""
