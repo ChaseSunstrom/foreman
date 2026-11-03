@@ -7,7 +7,7 @@ import subprocess
 from helpers import ForemanTestCase
 from test_hooks import HookCase
 
-import fmcore as c
+from sampo import core as c
 
 OK = {"stdout": "3 passed", "stderr": "", "interrupted": False}
 
@@ -164,7 +164,7 @@ class Reproduce(ForemanTestCase):
 
 class UnprovenTrailer(HookCase):  # T-2392: a closed task in the unproven rollup says so in its commit and its PR
     def test_unproven_trailer_names_the_kinds_and_fm_pr_lists_them(self):
-        import fmcore as c
+        from sampo import core as c
         self.fm("init")
         self.fm("task", "new", "Claimed", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
         path = os.path.join(self.repo, "a.py")

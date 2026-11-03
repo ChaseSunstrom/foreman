@@ -9,8 +9,8 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmplaybooks as pb
+from sampo import core as c
+from sampo import playbooks as pb
 
 CARDS = {"real-card", "three-js", "web/three-js"}  # as fmplaybooks._cards() lists them: name and dir/name
 
@@ -87,10 +87,10 @@ class Index(Fixture):
         self.assertFlags("references/ui/INDEX.md:4: references/ui/gone.md doesn't exist")
 
     def test_skill_md_over_its_budget(self):
-        import fmdoctor
+        from sampo import doctor
         with open(os.path.join(self.root, "SKILL.md"), "a", encoding="utf-8") as f:
-            f.write("x" * fmdoctor.SKILL_MAX)
-        self.assertFlags(f"over its {fmdoctor.SKILL_MAX:,}-character budget")
+            f.write("x" * doctor.SKILL_MAX)
+        self.assertFlags(f"over its {doctor.SKILL_MAX:,}-character budget")
 
 
 class UiContract(Fixture):  # T-1623

@@ -10,7 +10,7 @@ from unittest import mock
 
 from helpers import FM, ForemanTestCase
 
-import fmhomemove as hm
+from sampo import homemove as hm
 
 REAL_SNAPSHOTS = os.path.expanduser("~/.claude/foreman/state/snapshots")  # read only, captured before any HOME patch
 SIBLINGS = ("draft", "evolve", "lanes")
@@ -38,14 +38,14 @@ class Migrate(ForemanTestCase):
 
     def _lay_record(self):
         """The newest real upgrade snapshot when this machine has one, else a project made through fm."""
-        import fmrollback
-        snaps = sorted(s for s in os.listdir(REAL_SNAPSHOTS) if s.endswith(".tar.gz") and not s.startswith(fmrollback.PRE)) \
+        from sampo import rollback
+        snaps = sorted(s for s in os.listdir(REAL_SNAPSHOTS) if s.endswith(".tar.gz") and not s.startswith(rollback.PRE)) \
             if os.path.isdir(REAL_SNAPSHOTS) else []
         if snaps:
             import shutil
             stage = os.path.join(self.tmp, "stage")
             try:
-                slugs = fmrollback._stage(os.path.join(REAL_SNAPSHOTS, snaps[-1]), stage, True)
+                slugs = rollback._stage(os.path.join(REAL_SNAPSHOTS, snaps[-1]), stage, True)
                 for s in slugs:
                     shutil.copytree(os.path.join(stage, s), os.path.join(self.old, "state", "projects", s))
                 if slugs:
@@ -58,10 +58,10 @@ class Migrate(ForemanTestCase):
 
     def _checks(self):
         """fmdrill.RESTORE_CHECKS through the new path."""
-        import fmdrill
+        from sampo import drill
         e = dict(os.environ, HOME=self.h, FOREMAN_HOME=self.new, FOREMAN_INHIBITED="1", FOREMAN_NO_BACKGROUND="1",
                  FOREMAN_NO_LINK="1")
-        for label, verb in fmdrill.RESTORE_CHECKS:
+        for label, verb in drill.RESTORE_CHECKS:
             r = subprocess.run([sys.executable, FM, verb, "-p", self.slug], cwd=self.repo, env=e,
                                capture_output=True, text=True, timeout=120)
             self.assertEqual(r.returncode, 0, f"{verb}: {r.stdout}{r.stderr}")

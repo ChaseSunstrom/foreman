@@ -6,7 +6,7 @@ import os
 
 from test_edit_cards import _CardCase, card
 
-import fmcore as c
+from sampo import core as c
 
 # bytes each hook event may inject over the whole replay: measured, then about a quarter of headroom
 # (2026-10-20: SessionStart 814, UserPromptSubmit 397 under its own 400 cap, PreToolUse 1538, PostToolUse 0;

@@ -4,7 +4,7 @@ import os
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 STUB = r'''#!/usr/bin/env python3
 import sys

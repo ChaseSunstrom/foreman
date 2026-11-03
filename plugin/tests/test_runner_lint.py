@@ -8,8 +8,8 @@ import sys
 import unittest
 
 from helpers import ForemanTestCase
-import fmcode
-import fmmodels
+from sampo import smith
+from sampo import models
 
 FM = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "fm")
 
@@ -39,42 +39,42 @@ class RunnerLint(ForemanTestCase):
             with self.subTest(tpl=tpl):
                 body = json.dumps(tpl)[1:-1]  # as a TOML basic string
                 self.conf(f'[runners.mine]\nwork = "{body}"\n')
-                with self.assertRaises(fmcode.CodeError) as e:
-                    fmcode.all_runners()
+                with self.assertRaises(smith.CodeError) as e:
+                    smith.all_runners()
                 self.assertIn(f'mine = "{sha(tpl)}"', str(e.exception), "it prints the exact line to add")
                 self.assertIn("[ack]", str(e.exception))
                 self.conf(f'[runners.mine]\nwork = "{body}"\n[ack]\nmine = "{sha(tpl)}"\n')
-                self.assertEqual(fmcode.all_runners()["mine"]["work"], tpl)
+                self.assertEqual(smith.all_runners()["mine"]["work"], tpl)
 
     def test_gemini_y_is_only_a_flag_for_gemini_and_safe_lookalikes_pass(self):
         for tpl in ("mycli -y {prompt}", "codex exec -a on-request {prompt}", "gemini --approval-mode auto_edit -p {prompt}",
                     "mycli --yolo-not {prompt}", "codex exec --sandbox workspace-write {prompt}"):
             with self.subTest(tpl=tpl):
                 self.conf(f'[runners.mine]\nwork = "{tpl}"\n')
-                self.assertIn("mine", fmcode.all_runners())
+                self.assertIn("mine", smith.all_runners())
 
     def test_a_changed_template_voids_the_acknowledgement(self):
         old = "gemini --yolo -p {prompt}"
         self.conf(f'[runners.mine]\nwork = "gemini --yolo --debug -p {{prompt}}"\n[ack]\nmine = "{sha(old)}"\n')
-        with self.assertRaises(fmcode.CodeError):
-            fmcode.all_runners()
+        with self.assertRaises(smith.CodeError):
+            smith.all_runners()
         self.conf(f'[runners.other]\nwork = "{old}"\n[ack]\nmine = "{sha(old)}"\n')
-        with self.assertRaises(fmcode.CodeError, msg="an ack is for one runner's name"):
-            fmcode.all_runners()
+        with self.assertRaises(smith.CodeError, msg="an ack is for one runner's name"):
+            smith.all_runners()
 
     def test_a_dangerous_plan_needs_its_own_hash_too(self):
         work, plan = "gemini --yolo -p {prompt}", "gemini --yolo --approval-mode plan -p {prompt}"
         self.conf(f'[runners.mine]\nwork = "{work}"\nplan = "{plan}"\n[ack]\nmine = "{sha(work)}"\n')
-        with self.assertRaises(fmcode.CodeError):
-            fmcode.all_runners()
+        with self.assertRaises(smith.CodeError):
+            smith.all_runners()
         self.conf(f'[runners.mine]\nwork = "{work}"\nplan = "{plan}"\n[ack]\nmine = ["{sha(work)}", "{sha(plan)}"]\n')
-        self.assertEqual(fmcode.all_runners()["mine"]["plan"], plan)
+        self.assertEqual(smith.all_runners()["mine"]["plan"], plan)
 
     def test_a_safe_template_and_the_builtins_need_no_ack(self):
         self.conf('[runners.mine]\nwork = "mycli --yolo-not {prompt}"\n')
-        self.assertIn("mine", fmcode.all_runners())
+        self.assertIn("mine", smith.all_runners())
         self.conf('[runners.mine]\nwork = "mycli --auto {prompt}"\n')
-        self.assertIn("claude", fmcode.all_runners())
+        self.assertIn("claude", smith.all_runners())
 
     def grades(self, *args):
         env = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1")
@@ -100,19 +100,19 @@ class RunnerLint(ForemanTestCase):
                 self.assertEqual(self.grades("--json")["claude"], "not confined")
 
     def test_bare_drops_the_grade(self):
-        r = dict(fmcode.RUNNERS["claude"], work=fmcode.RUNNERS["claude"]["work"] + " --bare")
-        self.assertEqual(fmcode._guard_grade("claude", r), "not confined")
-        self.assertEqual(fmcode._guard_grade("claude", fmcode.RUNNERS["claude"]), "confined")
+        r = dict(smith.RUNNERS["claude"], work=smith.RUNNERS["claude"]["work"] + " --bare")
+        self.assertEqual(smith._guard_grade("claude", r), "not confined")
+        self.assertEqual(smith._guard_grade("claude", smith.RUNNERS["claude"]), "confined")
 
     def test_the_tui_picker_says_what_is_wrong_in_code_toml(self):
-        import fmcodetui
+        from sampo import smithtui
         self.conf('[runners.mine]\nwork = "gemini --yolo -p {prompt}"\n')
-        real, fmmodels.profiles = fmmodels.profiles, lambda: [{"name": "local"}]
+        real, models.profiles = models.profiles, lambda: [{"name": "local"}]
         try:
-            app = fmcodetui.App(fmcodetui.DEFAULTS, spawn=lambda *a, **k: None)
+            app = smithtui.App(smithtui.DEFAULTS, spawn=lambda *a, **k: None)
             app.show_picker()
         finally:
-            fmmodels.profiles = real
+            models.profiles = real
         self.assertEqual(app.items, [("model", "local")], "the models still list")
         self.assertIn("[ack]", app.message)
         self.assertNotIn("no models", app.message)
@@ -125,8 +125,8 @@ class LinkLocal(unittest.TestCase):
                     "http://１６９.２５４.１６９.２５４/", "http://169。254。169。254/", "http://169．254．169．254/",
                     "http://[fd00:ec2::254]/", "http://[FD00:EC2::254]/latest"):
             with self.subTest(url=url):
-                with self.assertRaises(fmmodels.ModelError) as e:
-                    fmmodels.complete({"name": "x", "kind": "openai", "base_url": url, "model": "m"},
+                with self.assertRaises(models.ModelError) as e:
+                    models.complete({"name": "x", "kind": "openai", "base_url": url, "model": "m"},
                                       [{"role": "user", "content": "hi"}], timeout=1)
                 self.assertIn("link-local", str(e.exception))
 
@@ -134,7 +134,7 @@ class LinkLocal(unittest.TestCase):
         from unittest import mock  # T-1432: a hostname is now looked up; no real DNS in a test
         with mock.patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.215.14", 443))]):
             for url in ("http://127.0.0.1:1/v1", "https://api.example.com/v1", "http://10.0.0.5/v1"):
-                fmmodels._check_url({"name": "x"}, url, None)
+                models._check_url({"name": "x"}, url, None)
 
 
 if __name__ == "__main__":

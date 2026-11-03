@@ -77,7 +77,7 @@ class Proof(_Task):
         self.fm("task", "evidence", self.tid, "--step", "1", "--run", "test -f flag")
         self.fm("task", "evidence", self.tid, "--step", "2", "--run", "true")
         self.fm("task", "finish", self.tid, "--audit", "self checklist", "--result", "no findings: cache keyed by user")
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo)
         os.makedirs(os.path.join(p.dir, "bench", "results"))
         with open(os.path.join(p.dir, "bench", "results", "night.json"), "w") as f:
@@ -109,7 +109,7 @@ class Export(ForemanTestCase):
         self.fm("export", "agents")  # its own file: rewritten
 
     def test_corrections_go_in_unless_the_project_is_sensitive(self):
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo)
         with c.lock(p.dir):
             c.log_event(p, "correction", data={"text": "never push without asking"})

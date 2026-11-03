@@ -6,8 +6,8 @@ import time
 
 from helpers import read_text, stub_corpus_replay
 
-import fmcore as c
-import fmreplay
+from sampo import core as c
+from sampo import replay
 from test_code import CodeCase, call, plan
 from test_release import ReleaseCase, sh
 
@@ -32,15 +32,15 @@ class SafetyGate(CodeCase):
 
     def test_the_rule(self):
         p = c.find_project(self.repo, create=True)
-        self.assertIn("no result on record", fmreplay.safety_gate(p))
+        self.assertIn("no result on record", replay.safety_gate(p))
         stub_corpus_replay(self.repo, days=8)
-        self.assertRegex(fmreplay.safety_gate(p), rf"passed on {day(8)}, 8 days ago.*older than 7")
+        self.assertRegex(replay.safety_gate(p), rf"passed on {day(8)}, 8 days ago.*older than 7")
         stub_corpus_replay(self.repo, drifted=2)
-        self.assertRegex(fmreplay.safety_gate(p), rf"failed on {day(0)}: 2 drifted")
+        self.assertRegex(replay.safety_gate(p), rf"failed on {day(0)}: 2 drifted")
         stub_corpus_replay(self.repo, cases=0)
-        self.assertIn("0 cases", fmreplay.safety_gate(p), "an empty corpus proves nothing")
+        self.assertIn("0 cases", replay.safety_gate(p), "an empty corpus proves nothing")
         stub_corpus_replay(self.repo)
-        self.assertIsNone(fmreplay.safety_gate(p))
+        self.assertIsNone(replay.safety_gate(p))
 
     def test_red_replay_refuses_an_unattended_run(self):
         stub_corpus_replay(self.repo, drifted=1)
@@ -83,14 +83,14 @@ class SafetyGate(CodeCase):
         self.fm("replay", "--cases", env={"FOREMAN_GUARD_CASES": cases})
         [e] = c.ledger_events(p, kinds=["guard_corpus"])
         self.assertEqual(e["data"], {"cases": 1, "drifted": 0, "broken": 0, "substitute": True})
-        self.assertIn("no result on record", fmreplay.safety_gate(p),
+        self.assertIn("no result on record", replay.safety_gate(p),
                       "review: a replay of a one-line case file of your own is no pass")
         stub_corpus_replay(self.repo)
-        self.assertIsNone(fmreplay.safety_gate(p), "the committed corpus's green replay passes")
+        self.assertIsNone(replay.safety_gate(p), "the committed corpus's green replay passes")
 
     def test_a_future_dated_record_is_not_fresh(self):
         p = stub_corpus_replay(self.repo, days=-3)
-        self.assertIn("guard corpus replay", fmreplay.safety_gate(p))
+        self.assertIn("guard corpus replay", replay.safety_gate(p))
 
 
 class ReleaseGate(ReleaseCase):

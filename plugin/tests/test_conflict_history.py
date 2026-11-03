@@ -7,7 +7,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class ConflictHistory(ForemanTestCase):

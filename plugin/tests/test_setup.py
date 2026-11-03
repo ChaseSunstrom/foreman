@@ -8,7 +8,7 @@ import unittest
 
 from helpers import FM, ForemanTestCase, read_text, read_json
 
-import fmsetup
+from sampo import setup
 
 ORIGINAL = {
     "permissions": {"defaultMode": "bypassPermissions", "deny": ["Bash(sudo *)"]},
@@ -32,23 +32,23 @@ class FmLink(unittest.TestCase):  # T-1333
                 f.write("#!/bin/sh\n")
             return path
         target, other = plugin("foreman"), plugin("foreman-dev")
-        self.assertEqual(fmsetup.ensure_fm_link(link, target), link, "absent: made, its folder too")
+        self.assertEqual(setup.ensure_fm_link(link, target), link, "absent: made, its folder too")
         self.assertEqual(os.readlink(link), target)
-        self.assertIsNone(fmsetup.ensure_fm_link(link, target), "already right")
+        self.assertIsNone(setup.ensure_fm_link(link, target), "already right")
         os.remove(link)
         os.symlink(other, link)
-        self.assertIsNone(fmsetup.ensure_fm_link(link, target), "a working Foreman link to another checkout stays")
+        self.assertIsNone(setup.ensure_fm_link(link, target), "a working Foreman link to another checkout stays")
         os.remove(link)
         os.symlink(os.path.join(d, "cache", "foreman", "0.9.1", "plugin", "bin", "fm"), link)
-        self.assertEqual(fmsetup.ensure_fm_link(link, target), link, "a Foreman link whose version is gone: re-pointed")
+        self.assertEqual(setup.ensure_fm_link(link, target), link, "a Foreman link whose version is gone: re-pointed")
         self.assertEqual(os.readlink(link), target)
         os.remove(link)
         os.symlink("/nonexistent/other-tool/bin/fm", link)
-        self.assertIsNone(fmsetup.ensure_fm_link(link, target), "someone else's broken link stays")
+        self.assertIsNone(setup.ensure_fm_link(link, target), "someone else's broken link stays")
         os.remove(link)
         with open(link, "w") as f:
             f.write("#!/bin/sh\n")
-        self.assertIsNone(fmsetup.ensure_fm_link(link, target), "a file stays")
+        self.assertIsNone(setup.ensure_fm_link(link, target), "a file stays")
 
 
 class SessionLink(ForemanTestCase):  # T-1333
@@ -98,11 +98,11 @@ class Install(SetupCase):
         s = self.load()
         self.assertEqual(s["statusLine"]["command"], os.path.join(self.fhome, "plugin", "hooks", "statusline"))
         self.assertEqual(s["statusLine"]["padding"], 1)
-        for rule in fmsetup.DENY_RULES:
+        for rule in setup.DENY_RULES:
             self.assertIn(rule, s["permissions"]["deny"])
         self.assertIn("Bash(sudo *)", s["permissions"]["deny"])
         self.assertEqual(s["env"]["KEEP"], "1")
-        self.assertEqual(s["env"]["CLAUDE_CODE_STOP_HOOK_BLOCK_CAP"], fmsetup.STOP_CAP)
+        self.assertEqual(s["env"]["CLAUDE_CODE_STOP_HOOK_BLOCK_CAP"], setup.STOP_CAP)
         self.assertEqual(s["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "70", "compact earlier: Foreman state makes it cheap")
         self.assertEqual(s["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "200k", "T-1796: a 1M window re-read every reply")
         self.assertEqual((s["theme"], s["permissions"]["defaultMode"]), ("dark", "bypassPermissions"))
@@ -124,7 +124,7 @@ class Install(SetupCase):
         self.assertNotIn("outputStyle_set", read_json(self.manifest_path()))
         # an older install set it and recorded that
         s = self.load()
-        s["outputStyle"] = fmsetup.OUTPUT_STYLE
+        s["outputStyle"] = setup.OUTPUT_STYLE
         with open(self.settings, "w") as f:
             json.dump(s, f)
         m = read_json(self.manifest_path())
@@ -136,7 +136,7 @@ class Install(SetupCase):
         self.assertIn("rules", out)
         self.assertNotIn("outputStyle_set", read_json(self.manifest_path()))
         # a style the user chose is never touched, even Foreman's when Foreman did not set it
-        for style in ("Concise", fmsetup.OUTPUT_STYLE):
+        for style in ("Concise", setup.OUTPUT_STYLE):
             with open(self.settings, "w") as f:
                 json.dump(dict(ORIGINAL, outputStyle=style), f)
             self.run_fm("install-user")
@@ -614,8 +614,8 @@ class NoClaude(ForemanTestCase):
     def test_fm_code_with_no_model_and_no_cli_says_how_to_add_one(self):
         import socket
         import urllib.parse
-        import fmmodels
-        for _, url in fmmodels.LOCAL:  # a model server running on this machine is a model: fm code would use it
+        from sampo import models
+        for _, url in models.LOCAL:  # a model server running on this machine is a model: fm code would use it
             u = urllib.parse.urlparse(url)
             with socket.socket() as sock:
                 sock.settimeout(0.3)
@@ -623,6 +623,6 @@ class NoClaude(ForemanTestCase):
                     self.skipTest(f"a local model server answers at {url}")
         self.fm("init", env=self.env)
         r = self.fm("code", "make it greet", "--stale-ok", "fresh test home", check=False,
-                    env=dict(self.env, FOREMAN_MODEL="", **{cl[4]: "" for cl in fmmodels.CLOUD}))
+                    env=dict(self.env, FOREMAN_MODEL="", **{cl[4]: "" for cl in models.CLOUD}))
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("no model", (r.stdout + r.stderr).lower())

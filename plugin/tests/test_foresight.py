@@ -10,8 +10,8 @@ import unittest
 from unittest import mock
 
 from helpers import ForemanTestCase, git_repo
-import fmcore as c
-import fmforesight as fs
+from sampo import core as c
+from sampo import foresight as fs
 
 
 class Foresight(ForemanTestCase):
@@ -29,15 +29,15 @@ class Foresight(ForemanTestCase):
             json.dump({"model": model, "context_size": size, "version": version}, f)
 
     def test_a_blind_tick_is_named_at_session_start_only_while_a_timer_runs_it(self):  # T-2607
-        import fmforesight
-        import fmnight
-        import fmserve
-        with open(os.path.join(self.p.dir, fmnight.BLIND), "w") as f:
+        from sampo import foresight
+        from sampo import night
+        from sampo import serve
+        with open(os.path.join(self.p.dir, night.BLIND), "w") as f:
             json.dump({"blind": [["CI", "no watch yes"]], "changed": time.time()}, f)
-        self.assertFalse([x for x in fmforesight.lines(self.p) if "Tick can't watch" in x], "no timer, no line")
-        os.makedirs(fmserve.unit_dir(), exist_ok=True)
-        open(os.path.join(fmserve.unit_dir(), "foreman-tick-x.timer"), "w").close()
-        self.assertTrue([x for x in fmforesight.lines(self.p) if "Tick can't watch CI" in x])
+        self.assertFalse([x for x in foresight.lines(self.p) if "Tick can't watch" in x], "no timer, no line")
+        os.makedirs(serve.unit_dir(), exist_ok=True)
+        open(os.path.join(serve.unit_dir(), "foreman-tick-x.timer"), "w").close()
+        self.assertTrue([x for x in foresight.lines(self.p) if "Tick can't watch CI" in x])
 
     def test_a_changed_model_window_or_cc_is_named_and_the_cost_math_reruns(self):
         self._snap("Opus 5", 200_000, "2.1.305")
@@ -81,7 +81,7 @@ class Foresight(ForemanTestCase):
 
     def test_a_failed_fetch_keeps_what_was_known_and_a_failed_capture_retries_without_a_call(self):
         with mock.patch.object(fs, "github_repo", return_value="o/r"), \
-                mock.patch("fmeco.capture_once", side_effect=RuntimeError("locked")), \
+                mock.patch("sampo.eco.capture_once", side_effect=RuntimeError("locked")), \
                 mock.patch.object(fs, "ci_main", return_value=(SHA, ["test"])) as fetch:
             with self.assertRaises(RuntimeError):
                 fs.refresh(self.p)
@@ -109,37 +109,37 @@ class Foresight(ForemanTestCase):
         self.assertEqual(fs.lines(self.p), [])
 
     def test_session_start_names_the_cached_problems_and_a_bad_cache_costs_only_its_line(self):
-        import fmhooks
+        from sampo import hooks
         with mock.patch.object(fs, "github_repo", return_value="o/r"), \
                 mock.patch.object(fs, "ci_main", return_value=(SHA, ["test"])):
             fs.refresh(self.p)
         sd = c.state_dict(self.p, c.load_briefs(self.p))
-        self.assertIn("CI on main is red at aaaaaaa", fmhooks.session_context(self.p, sd))
+        self.assertIn("CI on main is red at aaaaaaa", hooks.session_context(self.p, sd))
         sd["tidy_overdue_days"], sd["last_tidy"] = 12, None
         with mock.patch.object(fs, "lines", side_effect=KeyError("sha")):
-            self.assertIn("Watch: tidy overdue 12 days → fm tidy.", fmhooks.session_context(self.p, sd))
+            self.assertIn("Watch: tidy overdue 12 days → fm tidy.", hooks.session_context(self.p, sd))
 
     def test_every_projects_stop_hook_spawns_the_sweep_at_most_every_sweep_every(self):
         stamp = os.path.join(self.p.dir, "sweep.spawned")
         self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."})
         self.assertTrue(os.path.exists(stamp))  # no cost cap or contract needed
-        import fmcost
+        from sampo import cost
         with mock.patch("subprocess.Popen") as spawn, mock.patch.dict(os.environ, {"FOREMAN_NO_BACKGROUND": ""}):
-            fmcost.sweep_detached(self.p)
+            cost.sweep_detached(self.p)
             spawn.assert_not_called()  # stamped just now
             os.utime(stamp, (0, 0))
-            fmcost.sweep_detached(self.p)
+            cost.sweep_detached(self.p)
             self.assertEqual(spawn.call_args[0][0][-2:], ["cost", "--sweep"])
 
     def test_a_setup_change_reruns_the_burn_scan_at_once(self):
-        import fmcost
-        fmcost.write_burn([])
-        with mock.patch.object(fs, "refresh", return_value=True), mock.patch.object(fmcost, "burn_findings",
+        from sampo import cost
+        cost.write_burn([])
+        with mock.patch.object(fs, "refresh", return_value=True), mock.patch.object(cost, "burn_findings",
                                                                                     return_value=[]) as scan:
-            fmcost.sweep(self.p)
+            cost.sweep(self.p)
             scan.assert_called_once()
-        with mock.patch.object(fs, "refresh", return_value=False), mock.patch.object(fmcost, "burn_findings") as scan:
-            fmcost.sweep(self.p)
+        with mock.patch.object(fs, "refresh", return_value=False), mock.patch.object(cost, "burn_findings") as scan:
+            cost.sweep(self.p)
             scan.assert_not_called()  # burn.json is fresh: the account-wide scan waits its 10 min
 
     def test_github_repo_reads_origin(self):
@@ -258,13 +258,13 @@ class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ah
                                     "base_type_hit": not beats, "overlap": None, "base_overlap": None}) + "\n")
 
     def ahead(self):
-        import fmdraft
-        return fmdraft.ahead(c.find_project(self.repo))
+        from sampo import draft as sdraft
+        return sdraft.ahead(c.find_project(self.repo))
 
     def draft(self):
-        import fmdraft
+        from sampo import draft as sdraft
         try:
-            with open(os.path.join(self.p.dir, fmdraft.AHEAD), encoding="utf-8") as f:
+            with open(os.path.join(self.p.dir, sdraft.AHEAD), encoding="utf-8") as f:
                 return json.load(f)
         except OSError:
             return None
@@ -295,8 +295,8 @@ class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ah
                                  text=True).stdout.split()
         self.assertEqual(changed, ["DRAFTED-AHEAD.md"])  # a plan, no code
         self.assertEqual(self.ahead(), None)  # one draft per prediction
-        import fmdraft
-        fmdraft._drop_ahead(self.p)
+        from sampo import draft as sdraft
+        sdraft._drop_ahead(self.p)
         self.book(20, beats=False)  # now it trails: muted, so nothing is drafted
         self.assertIsNone(self.ahead())
 
@@ -304,8 +304,8 @@ class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ah
         self.setup_requests()
         self.book(6)
         d = self.ahead()
-        import fmdraft
-        path = os.path.join(self.p.dir, fmdraft.AHEAD)
+        from sampo import draft as sdraft
+        path = os.path.join(self.p.dir, sdraft.AHEAD)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(dict(d, at=c.iso(time.time() - 4 * 86400)), f)
         self.ahead()
@@ -533,9 +533,9 @@ class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicte
                                     "pred": {"type": "FIX", "paths": []}, "base": {"type": "FEATURE", "paths": []}}) + "\n")
                 f.write(json.dumps({"kind": "score", "id": f"P{i}", "for": f"T-{i + 2:04d}", "at": c.now(),
                                     "type_hit": False, "base_type_hit": True, "overlap": None, "base_overlap": None}) + "\n")
-        import fmoutcomes
+        from sampo import outcomes
         for m, pm in ((30, 30), (40, 30), (200, 30)):
-            fmoutcomes.record_close(self.p, {"type": "FIX", "tier": "S", "minutes": m, "predict_minutes": pm})
+            outcomes.record_close(self.p, {"type": "FIX", "tier": "S", "minutes": m, "predict_minutes": pm})
         got = self.fm_json("outcomes", "--predictions")
         kinds = {k["kind"]: k for k in got["kinds"]}
         self.assertEqual((kinds["next-request"]["n"], kinds["next-request"]["hit"], kinds["next-request"]["base_hit"]),
@@ -576,19 +576,19 @@ class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicte
 
 class TimerWatch(ForemanTestCase):  # T-2542: the sweep caches a dead or failing timer; session start names it
     def test_the_sweep_caches_it_and_lines_names_it(self):
-        import fmforesight as fs
-        import fmnight
+        from sampo import foresight as fs
+        from sampo import night
         p = c.find_project(self.repo, create=True)
         rows = [("foreman-tick-proj-abc123", "hasn't fired in 7 h")]
-        with mock.patch.object(fmnight, "liveness", return_value=rows), \
-                mock.patch.object(fmnight, "tick", return_value=None), \
+        with mock.patch.object(night, "liveness", return_value=rows), \
+                mock.patch.object(night, "tick", return_value=None), \
                 mock.patch.object(fs, "_ci", return_value=None):
             fs.refresh(p)
         text = "\n".join(fs.lines(p))
         self.assertIn("foreman-tick-proj-abc123", text)
         self.assertIn("journalctl --user -u foreman-tick-proj-abc123.service", text)
-        with mock.patch.object(fmnight, "liveness", return_value=[]), \
-                mock.patch.object(fmnight, "tick", return_value=None), \
+        with mock.patch.object(night, "liveness", return_value=[]), \
+                mock.patch.object(night, "tick", return_value=None), \
                 mock.patch.object(fs, "_ci", return_value=None):
             fs.refresh(p)
         self.assertNotIn("foreman-tick", "\n".join(fs.lines(p)), "a timer that recovered drops off")
@@ -605,9 +605,9 @@ class OwnAsks(ForemanTestCase):  # T-2554: the user model learns from the user's
                                   "--step", "s", "--json").stdout)["id"]
 
     def test_mission_briefs_and_mistaken_captures_are_left_out(self):
-        import fmgenesis
+        from sampo import rune
         mine, tower, slip = self.ask("fix the parser"), self.ask("a Mission brief"), self.ask("a sample line")
-        home = fmgenesis.home(self.p)
+        home = rune.home(self.p)
         os.makedirs(os.path.join(home, "gen-2"), exist_ok=True)
         with open(os.path.join(home, "gen-2", "mission-x.md"), "w", encoding="utf-8") as f:
             f.write(f"# Mission\n\nTask: {tower} (brief 1).\n")

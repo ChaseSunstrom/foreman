@@ -71,7 +71,7 @@ class Env:
         return out
 
     def _project(self):
-        import fmcore as c
+        from sampo import core as c
         os.environ["FOREMAN_HOME"] = self.fhome
         return c, c.find_project(self.repo)
 

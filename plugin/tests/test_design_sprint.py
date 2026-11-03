@@ -7,7 +7,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmdesign
+from sampo import design as sdesign
 
 POV = "## Point of view\n\nA ledger for a bakery's three shop managers, read at 6am before the ovens are lit.\n\n"
 DIRECTION = "## Direction\n\nlook-lido, audacity bold.\n\n"
@@ -53,8 +53,8 @@ class Vague(ForemanTestCase):
         got = json.loads(self.fm("design", "vague", "make", "it", "pop,", "modern", "and", "Modern", "--json").stdout)
         self.assertEqual([w["word"] for w in got["vague"]], ["modern", "pop"])
         self.assertTrue(all(w["ask"] for w in got["vague"]))
-        self.assertEqual(fmdesign.vague("a ledger read at 6am, three columns, ink on cream"), [])
-        self.assertEqual(fmdesign.vague("pop-up menus and a populated list"), [], "only whole words count")
+        self.assertEqual(sdesign.vague("a ledger read at 6am, three columns, ink on cream"), [])
+        self.assertEqual(sdesign.vague("pop-up menus and a populated list"), [], "only whole words count")
 
 
 class Receipt(ForemanTestCase):

@@ -7,7 +7,7 @@ import unittest
 
 from test_hooks import HookCase
 
-from fmcore import redefinitions
+from sampo.core import redefinitions
 
 LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
 
@@ -21,7 +21,7 @@ class Redefinitions(unittest.TestCase):
 
     def test_no_plugin_lib_module_redefines_a_top_level_name(self):
         bad = []
-        for path in sorted(glob.glob(os.path.join(LIB, "*.py"))):
+        for path in sorted(glob.glob(os.path.join(LIB, "*.py")) + glob.glob(os.path.join(LIB, "sampo", "*.py"))):
             with open(path, encoding="utf-8") as f:
                 bad += [f"{os.path.basename(path)}:{line} {name} (first at {first})"
                         for line, name, first in redefinitions(f.read())]

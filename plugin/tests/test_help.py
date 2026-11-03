@@ -12,8 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 
 class Help(ForemanTestCase):
     def test_every_command_once_in_tiers_everyday_first(self):
-        import fmcli
-        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        from sampo import cli
+        sub = next(a for a in cli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
         out = self.fm("help").stdout
         lines = [ln.split()[0] for ln in out.splitlines() if ln.startswith("  ")]
         self.assertEqual(sorted(lines), sorted(sub.choices), "every command, each once (a new one needs a tier)")
@@ -25,8 +25,8 @@ class Help(ForemanTestCase):
 
     def test_help_text_carries_no_ticket_ids(self):
         # T-0873 (round 4): "(T-0594)" in help reads as noise to anyone who isn't Foreman's maintainer
-        import fmcli
-        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        from sampo import cli
+        sub = next(a for a in cli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
         texts = {"fm help --all": self.fm("help", "--all").stdout, "fm --help": self.fm("--help").stdout}
         texts.update({f"fm {name} -h": p.format_help() for name, p in sub.choices.items()})
         leaks = {where: re.findall(r"\bT-\d{3,4}\b", t) for where, t in texts.items() if re.search(r"\bT-\d{3,4}\b", t)}

@@ -6,7 +6,7 @@ import sys
 
 from helpers import ForemanTestCase, read_text, stub_corpus_replay
 
-import fmcore as c
+from sampo import core as c
 from test_release import stub_env
 
 RELEASE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "release.py")

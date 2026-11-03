@@ -13,8 +13,8 @@ from unittest import mock
 from helpers import FM, ForemanTestCase, read_text
 from test_hooks import HookCase
 
-import fmcli
-import fmcore as c
+from sampo import cli
+from sampo import core as c
 
 
 def _wait(cond, secs=20):
@@ -122,14 +122,14 @@ class IndexLock(HookCase):
     @unittest.skipUnless(os.path.isdir("/proc/self"), "the live-git scan reads /proc")
     def test_a_stale_lock_with_no_live_git_is_removed(self):
         self.make_lock(20 * 60)
-        removed, why = fmcli._stale_index_lock(self.repo)
+        removed, why = cli._stale_index_lock(self.repo)
         self.assertTrue(removed, why)
         self.assertFalse(os.path.exists(self.lock))
         self.assertIn("removed", why)
 
     def test_a_fresh_lock_is_kept_and_named(self):
         self.make_lock(30)
-        removed, why = fmcli._stale_index_lock(self.repo)
+        removed, why = cli._stale_index_lock(self.repo)
         self.assertFalse(removed)
         self.assertTrue(os.path.exists(self.lock))
         self.assertIn(self.lock, why)
@@ -138,7 +138,7 @@ class IndexLock(HookCase):
     def test_a_stale_lock_with_a_live_git_in_the_repo_is_kept(self):
         pr = self.live_git()
         self.make_lock(20 * 60)
-        removed, why = fmcli._stale_index_lock(self.repo)
+        removed, why = cli._stale_index_lock(self.repo)
         self.assertFalse(removed)
         self.assertTrue(os.path.exists(self.lock))
         self.assertIn(self.lock, why)
@@ -163,7 +163,7 @@ class IndexLock(HookCase):
                 s[4] = uid
                 s = os.stat_result(s)
             return s
-        return mock.patch.multiple(fmcli.os, listdir=guard(real_listdir), readlink=guard(real_readlink), stat=stat)
+        return mock.patch.multiple(cli.os, listdir=guard(real_listdir), readlink=guard(real_readlink), stat=stat)
 
     @unittest.skipUnless(os.path.isdir("/proc/self"), "the holder scan reads /proc")
     def test_a_process_with_the_lock_open_keeps_it(self):
@@ -173,7 +173,7 @@ class IndexLock(HookCase):
         self.procs.append(pr)
         self.assertEqual(pr.stdout.readline().strip(), "open")
         pr.stdout.close()
-        removed, why = fmcli._stale_index_lock(self.repo)
+        removed, why = cli._stale_index_lock(self.repo)
         self.assertFalse(removed)
         self.assertTrue(os.path.exists(self.lock))
         self.assertIn(str(pr.pid), why)
@@ -183,7 +183,7 @@ class IndexLock(HookCase):
         os.makedirs(os.path.join(self.repo, "sub"))
         pr = self.live_git(cwd=os.path.join(self.repo, "sub"))
         self.make_lock(20 * 60)
-        removed, why = fmcli._stale_index_lock(self.repo)
+        removed, why = cli._stale_index_lock(self.repo)
         self.assertFalse(removed)
         self.assertIn(str(pr.pid), why)
 
@@ -192,7 +192,7 @@ class IndexLock(HookCase):
         pr = self.live_git(cwd=self.tmp)
         self.make_lock(20 * 60)
         with self.denied(pr.pid):
-            removed, why = fmcli._stale_index_lock(self.repo)
+            removed, why = cli._stale_index_lock(self.repo)
         self.assertFalse(removed)
         self.assertTrue(os.path.exists(self.lock))
         self.assertIn(f"couldn't inspect pid {pr.pid}", why)
@@ -205,7 +205,7 @@ class IndexLock(HookCase):
         self.procs.append(sleeper)
         self.make_lock(20 * 60)
         with self.denied(other.pid, uid=os.getuid() + 1), self.denied(sleeper.pid):
-            removed, why = fmcli._stale_index_lock(self.repo)
+            removed, why = cli._stale_index_lock(self.repo)
         self.assertTrue(removed, why)
 
     @unittest.skipUnless(os.path.isdir("/proc/self"), "the holder scan reads /proc")
@@ -216,16 +216,16 @@ class IndexLock(HookCase):
             os.remove(self.lock)
             self.make_lock(20 * 60 + 5)  # a new file (new inode, other mtime), old enough to pass the age check
             return []
-        with mock.patch.object(fmcli, "_lock_holders", side_effect=swap):
-            removed, why = fmcli._stale_index_lock(self.repo)
+        with mock.patch.object(cli, "_lock_holders", side_effect=swap):
+            removed, why = cli._stale_index_lock(self.repo)
         self.assertFalse(removed)
         self.assertTrue(os.path.exists(self.lock))
         self.assertIn("changed", why)
 
     def test_without_proc_it_is_never_removed(self):
         self.make_lock(20 * 60)
-        with mock.patch.object(fmcli.os.path, "isdir", lambda d: False if d == "/proc" else os.path.lexists(d)):
-            removed, why = fmcli._stale_index_lock(self.repo)
+        with mock.patch.object(cli.os.path, "isdir", lambda d: False if d == "/proc" else os.path.lexists(d)):
+            removed, why = cli._stale_index_lock(self.repo)
         self.assertFalse(removed)
         self.assertTrue(os.path.exists(self.lock))
 
@@ -249,22 +249,22 @@ class IndexLock(HookCase):
 
 class LockProbe(ForemanTestCase):
     def test_flock_that_excludes_passes(self):
-        import fmdoctor
-        r = fmdoctor.check_lock_probe(c.state_dir())
+        from sampo import doctor
+        r = doctor.check_lock_probe(c.state_dir())
         self.assertEqual(r.status, "PASS", r.detail)
         self.assertEqual(glob.glob(os.path.join(c.state_dir(), "*probe*")), [])  # the probe file is gone
 
     def test_flock_that_does_not_exclude_fails_naming_the_filesystem(self):
-        import fmdoctor
+        from sampo import doctor
         with mock.patch("fcntl.flock"):  # the parent's LOCK_NB "succeeds", as on a filesystem that ignores flock
-            r = fmdoctor.check_lock_probe(c.state_dir())
+            r = doctor.check_lock_probe(c.state_dir())
         self.assertEqual(r.status, "FAIL")
-        self.assertIn(fmdoctor._fs_type(c.state_dir()), r.detail)
+        self.assertIn(doctor._fs_type(c.state_dir()), r.detail)
 
     def test_a_probe_child_that_cannot_start_is_named_apart(self):
-        import fmdoctor
-        with mock.patch.object(fmdoctor.sys, "executable", "/bin/false"):
-            r = fmdoctor.check_lock_probe(c.state_dir())
+        from sampo import doctor
+        with mock.patch.object(doctor.sys, "executable", "/bin/false"):
+            r = doctor.check_lock_probe(c.state_dir())
         self.assertEqual(r.status, "WARN")
         self.assertIn("couldn't start the probe child", r.detail)
 

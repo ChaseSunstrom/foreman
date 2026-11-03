@@ -7,7 +7,7 @@ import time
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 REFS = os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references")
 STUB = r'''#!/usr/bin/env python3
@@ -47,10 +47,10 @@ class Replan(Base):
         self.assertIn("plan revision needed", c.find_brief(self.p, tid).section("Log"))
 
     def test_an_unanswered_replan_warns_at_close(self):
-        import fmcli
+        from sampo import cli
         tid = self.mid()
         self.fm("surprise", "expected a → got b")
-        warns = fmcli._close_warnings(self.p, c.find_brief(self.p, tid), [])
+        warns = cli._close_warnings(self.p, c.find_brief(self.p, tid), [])
         self.assertTrue(any("replan never answered" in w for w in warns), warns)
 
     def test_an_s_task_gets_no_replan(self):
@@ -114,9 +114,9 @@ class Obligations(Base):
         text = read_text(os.path.join(REFS, "planning.md")).lower()
         for word in ("contain", "cure", "inoculate", "cleanup"):
             self.assertIn(word, text)
-        import fmcli
+        from sampo import cli
         tid = self.mid("Big", tier="L", focus=False)
-        warns = fmcli._close_warnings(self.p, c.find_brief(self.p, tid), [])
+        warns = cli._close_warnings(self.p, c.find_brief(self.p, tid), [])
         self.assertTrue(any("Risks and rollback" in w for w in warns), warns)
 
 

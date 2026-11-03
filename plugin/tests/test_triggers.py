@@ -4,8 +4,8 @@ import os
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmeco
+from sampo import core as c
+from sampo import eco
 
 
 class Triggers(ForemanTestCase):
@@ -17,7 +17,7 @@ class Triggers(ForemanTestCase):
 
     def fire(self, trigger, status=None, **kw):
         self.n += 1
-        b, new = fmeco.capture_once(self.p, f"FIX: {trigger} finding {self.n}", "FIX", "discovered", trigger=trigger, **kw)
+        b, new = eco.capture_once(self.p, f"FIX: {trigger} finding {self.n}", "FIX", "discovered", trigger=trigger, **kw)
         self.assertTrue(new)
         if status:
             b.meta["status"] = status
@@ -38,8 +38,8 @@ class Triggers(ForemanTestCase):
         self.assertEqual(r["spec"]["precision"], 1.0)
 
     def test_trigger_defaults_to_the_source_and_a_user_capture_is_not_a_trigger(self):
-        b, _ = fmeco.capture_once(self.p, "FIX: from a sweep", "FIX", "cross-project")
-        fmeco.capture_once(self.p, "FIX: typed by hand", "FIX", "user")
+        b, _ = eco.capture_once(self.p, "FIX: from a sweep", "FIX", "cross-project")
+        eco.capture_once(self.p, "FIX: typed by hand", "FIX", "user")
         r = self.rows()
         self.assertEqual(r["cross-project"]["fired"], 1)
         self.assertNotIn("user", r)
@@ -69,30 +69,30 @@ class Triggers(ForemanTestCase):
     def test_state_names_the_noisiest_trigger_and_a_second_state_reloads_no_briefs(self):
         import unittest.mock as mock
 
-        import fmtriggers
+        from sampo import triggers
         for _ in range(5):
             self.fire("noisy", "dropped")
-        self.assertEqual(fmtriggers.noisiest(self.p)["trigger"], "noisy")
+        self.assertEqual(triggers.noisiest(self.p)["trigger"], "noisy")
         real = c.load_briefs
         with mock.patch.object(c, "load_briefs", side_effect=lambda *a, **k: real(*a, **k)) as m:
-            self.assertEqual(fmtriggers.noisiest(self.p)["trigger"], "noisy")
+            self.assertEqual(triggers.noisiest(self.p)["trigger"], "noisy")
             self.assertEqual(m.call_count, 0)
         self.assertIn("Noisiest trigger: noisy", self.fm("state").stdout)
 
     def test_noisiest_uses_the_rule_that_demotes_the_last_20_closed(self):
-        import fmtriggers
+        from sampo import triggers
         for _ in range(40):
             self.fire("healed", "dropped")
         for _ in range(10):
             self.fire("healed", "done")
         for _ in range(10):
             self.fire("healed", "dropped")  # last 20: 0.5, though over all 60 it is 0.17
-        self.assertIsNone(fmtriggers.noisiest(self.p))
+        self.assertIsNone(triggers.noisiest(self.p))
         self.assertEqual(self.fire("healed").priority, "normal")
 
     def test_a_failing_precision_read_never_loses_the_capture(self):
         import unittest.mock as mock
-        with mock.patch("fmtriggers.noisy", side_effect=RuntimeError("boom")):
+        with mock.patch("sampo.triggers.noisy", side_effect=RuntimeError("boom")):
             b = self.fire("any")
         self.assertEqual(b.priority, "normal")
 
@@ -124,19 +124,19 @@ class TriggerHeldFixes(ForemanTestCase):
         import datetime
         import json
         from unittest import mock
-        import fmoutcomes
-        import fmtrials
+        from sampo import outcomes
+        from sampo import trials
         self.fm("init")
         p = c.find_project(self.repo)
-        b = fmeco.capture_once(p, "FIX: CI red\nCONTEXT: u, ", "FIX", "ci", key="CONTEXT: u, ")[0]
+        b = eco.capture_once(p, "FIX: CI red\nCONTEXT: u, ", "FIX", "ci", key="CONTEXT: u, ")[0]
         old = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=40)).strftime("%Y-%m-%dT%H:%M:%SZ")
         with open(os.path.join(p.dir, "trials.json"), "w") as f:
             json.dump([{"what": f"Self-fix {b.id}", "kind": "self-fix", "task": b.id, "trigger": "ci",
                         "key": b.meta["trigger_key"], "at": old, "by": 14, "focus": old, "verdict": "held"}], f)
-        with mock.patch.object(fmoutcomes, "outcomes", lambda p: {b.id: {"fate": "held", "survival": "settling"}}):
-            self.assertEqual(fmtrials.held_fixes(p), {})
-        with mock.patch.object(fmoutcomes, "outcomes", lambda p: {b.id: {"fate": "held", "survival": "survived"}}):
-            self.assertEqual(fmtrials.held_fixes(p), {"ci": 1})
+        with mock.patch.object(outcomes, "outcomes", lambda p: {b.id: {"fate": "held", "survival": "settling"}}):
+            self.assertEqual(trials.held_fixes(p), {})
+        with mock.patch.object(outcomes, "outcomes", lambda p: {b.id: {"fate": "held", "survival": "survived"}}):
+            self.assertEqual(trials.held_fixes(p), {"ci": 1})
         n = len(c.ledger_events(p))
         self.fm("triggers")
         self.assertEqual(len(c.ledger_events(p)), n)  # fm triggers stays read-only
@@ -153,12 +153,12 @@ class TriggerTable(ForemanTestCase):
 
     def fire(self, trigger, tier_text="", source="discovered"):
         self.n += 1
-        return fmeco.capture_once(self.p, f"FIX: {trigger} finding {self.n}{tier_text}", "FIX", source, trigger=trigger)
+        return eco.capture_once(self.p, f"FIX: {trigger} finding {self.n}{tier_text}", "FIX", source, trigger=trigger)
 
     def test_every_trigger_has_a_row_and_the_defaults_change_nothing(self):
-        import fmtriggers
+        from sampo import triggers
         self.fire("scout")
-        row = fmtriggers.table(self.p)["scout"]
+        row = triggers.table(self.p)["scout"]
         self.assertEqual({k: row[k] for k in ("route", "tier_cap", "budget", "burst")},
                          {"route": "inbox", "tier_cap": "M", "budget": None, "burst": 0})
         rows = {r["trigger"]: r for r in self.fm_json("triggers")["triggers"]}
@@ -178,14 +178,14 @@ class TriggerTable(ForemanTestCase):
         self.assertFalse(self.fire("lint")[1])  # within 600 s of the last filing
 
     def test_urgent_triggers_have_no_budget_and_are_never_muted(self):
-        import fmtriggers
+        from sampo import triggers
         self.fm("triggers", "set", "ci-red", "--budget", "1")
         self.assertTrue(all(self.fire("ci-red")[1] for _ in range(3)))
-        self.assertNotEqual(fmtriggers.decide_route(self.p, "ci-red", closed=["dropped"] * 12, held=0)[0], "muted")
+        self.assertNotEqual(triggers.decide_route(self.p, "ci-red", closed=["dropped"] * 12, held=0)[0], "muted")
 
     def test_the_route_rules_mute_demote_promote_in_order(self):
-        import fmtriggers
-        r = fmtriggers.decide_route
+        from sampo import triggers
+        r = triggers.decide_route
         self.assertEqual(r(self.p, "x", closed=["dropped"] * 10 + ["done"] * 0, held=0)[0], "muted")  # under 0.1 over 10+
         self.assertEqual(r(self.p, "x", closed=["dropped"] * 4 + ["done"], held=0)[0], "inbox-low")  # under 0.3 over 5+
         self.assertEqual(r(self.p, "x", closed=["done"] * 10, held=7)[0], "queue")  # 0.7 of 10+ closed S/M held
@@ -193,17 +193,17 @@ class TriggerTable(ForemanTestCase):
         self.assertEqual(r(self.p, "x", closed=["done"] * 9, held=9)[0], "inbox")  # under 10 closed
 
     def test_a_route_move_is_a_decide_row_once_and_a_queued_capture_is_lane_only(self):
-        import fmtriggers
+        from sampo import triggers
         from unittest import mock
         caps = [self.fire("scout")[0] for _ in range(10)]
         for b in caps:
             b.meta["status"] = "done"
             c.save_brief(self.p, b, touch=False)
         outs = {b.id: {"fate": "held", "survival": "survived"} for b in caps}
-        with mock.patch("fmoutcomes.outcomes", lambda p: outs):
-            moved = fmtriggers.settle_routes(self.p)
+        with mock.patch("sampo.outcomes.outcomes", lambda p: outs):
+            moved = triggers.settle_routes(self.p)
             self.assertEqual(moved, {"scout": "queue"})
-            self.assertEqual(fmtriggers.settle_routes(self.p), {})  # nothing new: no second row
+            self.assertEqual(triggers.settle_routes(self.p), {})  # nothing new: no second row
         rows = [t for _, _, t in c._decision_rows(self.p) if "scout" in t]
         self.assertEqual(len(rows), 1, rows)
         b, new = self.fire("scout")
@@ -211,8 +211,8 @@ class TriggerTable(ForemanTestCase):
         self.assertTrue(b.meta.get("lane_only"))
         big, _ = self.fire("scout", " (L: a cross-cutting rewrite)")
         big.meta["tier"] = "L"
-        self.assertTrue(fmtriggers.lane_only(self.p, "scout", "L", "FIX") is False)  # an L stays in the inbox
-        self.assertFalse(fmtriggers.lane_only(self.p, "scout", "S", "SECURITY"))  # so does SECURITY
+        self.assertTrue(triggers.lane_only(self.p, "scout", "L", "FIX") is False)  # an L stays in the inbox
+        self.assertFalse(triggers.lane_only(self.p, "scout", "S", "SECURITY"))  # so does SECURITY
         r = self.fm("focus", b.id, check=False)  # on main: refused, it starts in a lane
         self.assertNotEqual(r.returncode, 0)
         self.assertIn(f"fm lane brief {b.id}", r.stderr)
@@ -244,12 +244,12 @@ class MutedTriggerDoctor(ForemanTestCase):
     def test_fm_doctor_names_each_muted_trigger_with_its_unmute_command(self):  # T-2355
         import json
         import os
-        import fmdoctor
+        from sampo import doctor
         self.fm("init")
         p = c.find_project(self.repo)
-        self.assertEqual(fmdoctor.check_muted_triggers(p).status, "PASS")
+        self.assertEqual(doctor.check_muted_triggers(p).status, "PASS")
         with open(os.path.join(p.dir, "trigger-routes.json"), "w") as f:
             json.dump({"noise": "muted"}, f)
-        r = fmdoctor.check_muted_triggers(p)
+        r = doctor.check_muted_triggers(p)
         self.assertEqual(r.status, "WARN")
         self.assertIn("fm triggers set noise --route inbox", r.detail)

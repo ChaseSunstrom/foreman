@@ -10,8 +10,8 @@ from unittest import mock
 from helpers import ForemanTestCase
 from test_playbook_machinery import put
 
-import fmcore as c
-import fmplaybooks as pb
+from sampo import core as c
+from sampo import playbooks as pb
 
 BODY = ("Use when the widget parser stalls on large inputs.\n\n## The procedure\n\n1. Profile the parser warmup.\n"
         "2. Check the cache invalidation keys.\n3. Measure the parser again after the change.\n")

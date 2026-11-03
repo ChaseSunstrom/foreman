@@ -8,8 +8,8 @@ import time
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmtoolproof
+from sampo import core as c
+from sampo import toolproof
 
 SID = "0a1b2c3d-0000-4000-8000-0123456789ab"
 TOOL = ("#!/usr/bin/env python3\n# fm new tool\nimport sys\n\n\ndef run(text):\n    return text.upper()\n\n\n"
@@ -247,24 +247,24 @@ class ToolProof(ForemanTestCase):
         self.assertIn("tool other", out)
 
     def test_a_broken_ledger_read_still_fails_open(self):
-        import fmcore
-        real = fmcore.ledger_events
-        self.addCleanup(setattr, fmcore, "ledger_events", real)
+        from sampo import core
+        real = core.ledger_events
+        self.addCleanup(setattr, core, "ledger_events", real)
 
         def boom(*a, **k):
             raise OSError("ledger gone")
-        fmcore.ledger_events = boom
-        self.assertEqual(fmtoolproof.safe_gaps(self.p, c.find_brief(self.p, self.tid)), [])
+        core.ledger_events = boom
+        self.assertEqual(toolproof.safe_gaps(self.p, c.find_brief(self.p, self.tid)), [])
 
     def test_the_scaffolds_tests_fail_on_a_stub_and_pass_on_the_real_tool(self):
         self.build()
         self.write(self.tool, TOOL)
         self.write(self.test, TEST)
-        self.assertIsNone(fmtoolproof.stub_problem(self.tool, self.test))
+        self.assertIsNone(toolproof.stub_problem(self.tool, self.test))
         self.write(self.test, WEAK)
-        self.assertIn("stub", fmtoolproof.stub_problem(self.tool, self.test))
+        self.assertIn("stub", toolproof.stub_problem(self.tool, self.test))
         self.write(self.test, "import sys\nsys.exit(3)\n")  # fails on the real one too: nothing to tell
-        why = fmtoolproof.stub_problem(self.tool, self.test)
+        why = toolproof.stub_problem(self.tool, self.test)
         self.assertIn("real", why)
         self.assertIn("environment", why)  # an environment cause is named, not just the exit code
 
@@ -277,8 +277,8 @@ class ToolProof(ForemanTestCase):
         old = {k: os.environ.get(k) for k in ("FM_TP_PROBE", "FM_TP_API_TOKEN", "GITHUB_TOKEN")}
         os.environ.update(FM_TP_PROBE="1", FM_TP_API_TOKEN="x", GITHUB_TOKEN="y")
         try:
-            self.assertIsNone(fmtoolproof._run(self.tool, self.test, TOOL, 20))
-            self.assertIsNone(fmtoolproof._run(self.tool, self.test, "# stub\n", 20))  # the stub run is the same
+            self.assertIsNone(toolproof._run(self.tool, self.test, TOOL, 20))
+            self.assertIsNone(toolproof._run(self.tool, self.test, "# stub\n", 20))  # the stub run is the same
         finally:
             for k, v in old.items():
                 os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
@@ -289,14 +289,14 @@ class ToolProof(ForemanTestCase):
         (e,) = c.ledger_events(self.p, ["tool_built"])
         self.assertEqual((e["task"], e["data"]["name"], e["data"]["path"], e["data"]["test"]),
                          (self.tid, "gizmo", os.path.join(d, "server.py"), os.path.join(d, "test_server.py")))
-        self.assertIsNone(fmtoolproof.stub_problem(e["data"]["path"], e["data"]["test"]))
+        self.assertIsNone(toolproof.stub_problem(e["data"]["path"], e["data"]["test"]))
 
     def test_a_stub_run_that_hangs_is_bounded(self):
         self.build()
         self.write(self.tool, TOOL)
         self.write(self.test, "import time\ntime.sleep(60)\n" + TEST)  # the real run hangs too: killed, no verdict
         t0 = time.monotonic()
-        why = fmtoolproof.stub_problem(self.tool, self.test, seconds=1)
+        why = toolproof.stub_problem(self.tool, self.test, seconds=1)
         self.assertLess(time.monotonic() - t0, 20)
         self.assertIn("timed out", why)
 
@@ -312,7 +312,7 @@ class Runs(ForemanTestCase):
         for cmd in ("python3 tools/x.py a", "./tools/x.py a", "/r/tools/x.py", "python3 /r/tools/x.py", "FOO=1 python3 tools/x.py",
                     "env FOO=1 python3 tools/x.py", "echo hi | python3 tools/x.py", "make && python3 tools/x.py a 2>&1",
                     "python3 -u tools/x.py", "bash tools/x.py"):
-            self.assertTrue(fmtoolproof.runs(cmd, self.TOOL, self.ROOT), cmd)
+            self.assertTrue(toolproof.runs(cmd, self.TOOL, self.ROOT), cmd)
 
     def test_mentions_are_not_runs(self):
         for cmd in ("cat tools/x.py", "git add tools/x.py", "python3 -m py_compile tools/x.py", "echo tools/x.py",
@@ -320,14 +320,14 @@ class Runs(ForemanTestCase):
                     "python3 tools/x.py; true", "python3 tools/x.py &", "python3 tools/x.py\ntrue", "grep x tools/x.py",
                     "python3 tools/xy.py", "python3 tools/x.pyc", "python3 -c 'tools/x.py'", "ls tools/x.py && true",
                     "python3 \"unterminated tools/x.py", ""):
-            self.assertFalse(fmtoolproof.runs(cmd, self.TOOL, self.ROOT), cmd)
+            self.assertFalse(toolproof.runs(cmd, self.TOOL, self.ROOT), cmd)
 
     def test_the_test_is_run_by_path_after_an_interpreter_unittest_or_pytest(self):
         t = "/r/tests/test_x.py"
         for cmd in ("python3 tests/test_x.py", "./tests/test_x.py", "python3 -m unittest tests/test_x.py",
                     "pytest tests/test_x.py", "python3 -m pytest -q tests/test_x.py::T::test_it",
                     "cd /r && python3 tests/test_x.py"):
-            self.assertTrue(fmtoolproof.runs_test(cmd, t, self.ROOT), cmd)
+            self.assertTrue(toolproof.runs_test(cmd, t, self.ROOT), cmd)
         for cmd in ("test -f /tmp/f # tests/test_x.py", "true # test_x.py", "cat tests/test_x.py", "echo tests/test_x.py",
                     "python3 tests/test_x.py || true", "python3 tests/test_xy.py", "python3 -m unittest other"):
-            self.assertFalse(fmtoolproof.runs_test(cmd, t, self.ROOT), cmd)
+            self.assertFalse(toolproof.runs_test(cmd, t, self.ROOT), cmd)

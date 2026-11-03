@@ -6,7 +6,7 @@ import time
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class Away(ForemanTestCase):
@@ -82,13 +82,13 @@ class Away(ForemanTestCase):
         self.assertNotIn("Away:", self.prompt(), "the session start already said it")
 
     def test_a_prompt_past_the_tail_reports_only_its_own_silence(self):
-        import fmaway
+        from sampo import away
         self.seed([(30, "prompt", None, {}), (20, "prompt", None, {}), (19, "task_done", "T-0001", {}),
                    (1, "prompt", None, {}), (0.5, "task_done", "T-0003", {}), (0.4, "task_done", "T-0004", {}),
                    (0, "prompt", None, {})])
-        self.assertEqual(fmaway.returned(self.p, n=3), "", "the 19 h silence ended an hour before this prompt")
+        self.assertEqual(away.returned(self.p, n=3), "", "the 19 h silence ended an hour before this prompt")
         self.seed([(-1, "task_done", "T-0005", {}), (-1, "task_done", "T-0006", {}), (-3, "prompt", None, {})])
-        self.assertIn("Away: 3 h since you last spoke", fmaway.returned(self.p, n=3))
+        self.assertIn("Away: 3 h since you last spoke", away.returned(self.p, n=3))
 
     def test_a_compact_or_clear_start_after_a_gap_has_no_away_line(self):
         self.gap()
@@ -112,30 +112,30 @@ class Away(ForemanTestCase):
 
     def test_since_finds_the_newest_silence_in_the_tail_without_scanning_every_ledger(self):
         # T-2025: every session start parsed every prompt in every ledger file to find the newest 2 h silence
-        import fmaway
+        from sampo import away
         from unittest import mock
         self.seed([(30, "prompt", None, {})] + [(29, "note", None, {})] * 20 + [(10, "prompt", None, {}),
                                                                                 (1, "prompt", None, {})])
-        want = fmaway.since(self.p)
+        want = away.since(self.p)
         self.assertAlmostEqual(want[1], 9 * 3600, delta=5)
         with mock.patch.object(c, "ledger_events", side_effect=AssertionError("scanned every ledger")):
-            self.assertEqual(fmaway.since(self.p), want)
+            self.assertEqual(away.since(self.p), want)
 
     def test_since_widens_the_tail_until_it_holds_a_silence(self):
-        import fmaway
+        from sampo import away
         from unittest import mock
         self.seed([(30, "prompt", None, {})] + [(1.5, "note", None, {})] * 20 + [(1.5, "prompt", None, {}),
                                                                                  (1, "prompt", None, {})])
         with mock.patch.object(c, "ledger_events", side_effect=AssertionError("scanned every ledger")):
-            got = fmaway.since(self.p, tail=6)  # the 4x tail (24 lines) reaches the 30 h prompt
+            got = away.since(self.p, tail=6)  # the 4x tail (24 lines) reaches the 30 h prompt
         self.assertAlmostEqual(got[1], 28.5 * 3600, delta=5, msg="the silence before the tail's first prompt")
 
     def test_since_falls_back_to_every_ledger_when_the_live_one_holds_no_silence(self):
-        import fmaway
+        from sampo import away
         from unittest import mock
         self.seed([(1.5, "prompt", None, {}), (1, "prompt", None, {})])
         archived = [{"ts": c.iso(time.time() - 40 * 3600), "event": "prompt"}]
         with mock.patch.object(c, "ledger_events", return_value=archived + [{"ts": c.iso(time.time() - h * 3600),
                                                                             "event": "prompt"} for h in (1.5, 1)]):
-            got = fmaway.since(self.p)
+            got = away.since(self.p)
         self.assertAlmostEqual(got[1], 38.5 * 3600, delta=5, msg="the silence between the archive and the live file")

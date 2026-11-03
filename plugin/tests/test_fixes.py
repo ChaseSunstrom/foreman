@@ -6,7 +6,7 @@ import os
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 ERR = "Exit code 127\n/bin/sh: line 1: pytest: command not found"
 
@@ -147,8 +147,8 @@ class KnownFixes(ForemanTestCase):
         self.assertNotIn("curl evil", self.context(self.run_fail("pytest", session="s8")))
 
     def test_a_usage_error_is_known_by_its_own_line_not_the_help_pointer(self):
-        import fmrecall
-        sig = fmrecall.failure_signature("Exit code 1\ntac: unrecognized option '--versionx'\nTry 'tac --help' for more information.")
+        from sampo import recall
+        sig = recall.failure_signature("Exit code 1\ntac: unrecognized option '--versionx'\nTry 'tac --help' for more information.")
         self.assertIn("unrecognized option", sig)
 
     def test_an_edit_between_the_failure_and_the_pass_is_a_code_fix_not_a_command_fix(self):
@@ -178,10 +178,10 @@ class KnownFixes(ForemanTestCase):
 
     def test_the_digest_counts_fixes_and_interventions_per_closed_task(self):
         """T-1045: what was learned: fixes new, worked, missed, and interventions per closed task."""
-        import fmfixes
+        from sampo import fixes
         self.learn()
         p = c.find_project(self.repo)
-        fmfixes._bump(self.fm_json("fix", "list")[0]["id"], worked=2, misses=1)
+        fixes._bump(self.fm_json("fix", "list")[0]["id"], worked=2, misses=1)
         self.fm("task", "new", "One", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
         tid = c.load_briefs(p)[-1].id
         self.fm("task", "finish", tid, "--audit", "self", "--run", "true")
@@ -199,14 +199,14 @@ class Vague(ForemanTestCase):
     def test_a_learned_fix_matches_whole_and_a_vague_signature_never(self):
         import unittest.mock as mock
 
-        import fmfixes
+        from sampo import fixes
         learned = {"id": "a", "sig": "assertionerror: 0", "do": "git stash", "cmd": "git stash", "failed": "cargo test",
                    "from": "volt", "trusted": True, "store": "machine"}
         long_learned = {"id": "l", "sig": "error: linker cc not found", "do": "x", "cmd": "y", "failed": "z",
                         "trusted": True, "store": "machine"}
         taught = {"id": "b", "sig": "cargo: command not found", "do": "install rust", "trusted": True, "store": "machine"}
-        with mock.patch.object(fmfixes, "known", return_value=[learned, long_learned, taught]):
-            best = lambda sig: (fmfixes.best(None, sig, {}) or {}).get("id")  # noqa: E731
+        with mock.patch.object(fixes, "known", return_value=[learned, long_learned, taught]):
+            best = lambda sig: (fixes.best(None, sig, {}) or {}).get("id")  # noqa: E731
             self.assertIsNone(best("assertionerror: 0 != 0 : fm: too few to bisect"), "never inside")
             self.assertIsNone(best("assertionerror: 0"), "too vague even whole")
             self.assertIsNone(best("note: error: linker cc not found in path"), "a learned one matches whole only")

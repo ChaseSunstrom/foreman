@@ -72,7 +72,7 @@ class Follow(ForemanTestCase):
 
     def test_a_change_while_the_view_is_built_is_not_missed(self):  # T-1882: the snapshot comes before the build
         import contextlib
-        import fmwatch
+        from sampo import watch
         path = os.path.join(self.home, "src")
         with open(path, "w") as f:
             f.write("0")
@@ -97,7 +97,7 @@ class Follow(ForemanTestCase):
 
         out, t = Out(), time.time()
         with contextlib.redirect_stdout(out):
-            fmwatch._follow(build, lambda v: [path], 0.01, refresh=3)
+            watch._follow(build, lambda v: [path], 0.01, refresh=3)
         self.assertLess(time.time() - t, 1.5, out)  # the change came through, not held until the refresh; wall clock: a polling deadline (the follower sleeps)
 
     def test_projects_follow_sees_a_new_project(self):

@@ -7,7 +7,7 @@ import sys
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 FAKE = """#!{py}
 import json, sys

@@ -108,14 +108,14 @@ class Worker(CodeCase):
         # T-1320 review: the journal names the planner ("claude (plan, read-only)"), which isn't a model profile
         import types
         import unittest.mock
-        import fmcode
-        import fmmodels
+        from sampo import smith
+        from sampo import models
         run = types.SimpleNamespace(worker="claude", model_name="claude (plan, read-only)", root=self.repo,
                                     worker_timeout=5, live_tools=lambda who, lean=False: None, live_beat=lambda who: None)
-        with unittest.mock.patch.object(fmmodels, "resolve", side_effect=fmmodels.ModelError("no model profile")):
-            self.assertEqual(fmcode.choose_profile(run, None)["kind"], "cli")
-            with self.assertRaises(fmmodels.ModelError):
-                fmcode.choose_profile(run, "my-model")  # a model asked for by name is never swapped for the CLI
+        with unittest.mock.patch.object(models, "resolve", side_effect=models.ModelError("no model profile")):
+            self.assertEqual(smith.choose_profile(run, None)["kind"], "cli")
+            with self.assertRaises(models.ModelError):
+                smith.choose_profile(run, "my-model")  # a model asked for by name is never swapped for the CLI
 
     def stopped_cli_is_gone(self, args, pidfile):
         """Start fm code as the TUI does (its own session), wait for the CLI it starts, stop fm code as the TUI does
@@ -408,7 +408,7 @@ class Worker(CodeCase):
         self.assertIn("no result", r.stderr)
 
     def test_the_reader_keeps_draining_when_a_callback_fails(self):
-        import fmcore
+        from sampo import core
         r, w = os.pipe()
         data = b"x" * 300000 + b"\nlast\n"
         got = bytearray()
@@ -421,16 +421,16 @@ class Worker(CodeCase):
         writer.stdin.write(data)
         writer.stdin.close()
         with os.fdopen(r, "rb") as f:
-            fmcore.pump(f, got.extend, boom, 0.05, lambda: 1 / 0)
+            core.pump(f, got.extend, boom, 0.05, lambda: 1 / 0)
         writer.wait(10)
         self.assertEqual(bytes(got), data, "every byte drained though both callbacks raised")
 
     def test_stream_targets_carry_no_control_characters(self):
-        import fmmodels
+        from sampo import models
         line = json.dumps({"type": "assistant", "message": {"content": [
             {"type": "tool_use", "name": "Bash", "input": {"command": "echo \x1b]52;c;aGk=\x07 \x9b2J"}},
             {"type": "tool_use", "name": "Odd\x1bTool", "input": {}}]}})
-        for action, target in fmmodels.stream_tools(line):
+        for action, target in models.stream_tools(line):
             self.assertTrue((action + target).isprintable(), (action, target))
 
     def test_a_result_line_with_no_reply_text_is_an_error(self):
@@ -494,11 +494,11 @@ class Worker(CodeCase):
         self.assertTrue(e["last"].isprintable(), e["last"])
 
     def test_a_stalls_cause_reads_where_the_cursor_rests(self):
-        import fmcode
-        self.assertEqual(fmcode.stall_cause(b"Password: "), ("prompt", "Password:"), "a colon still waiting")
-        self.assertEqual(fmcode.stall_cause(b"Running tests:\n")[0], "silent", "a finished line asks nothing")
-        self.assertEqual(fmcode.stall_cause(b" \n\n"), ("silent", ""))
-        self.assertEqual(fmcode.stall_cause(b"\x1b]0;title\x07done\n"), ("silent", "done"), "escapes never show")
+        from sampo import smith
+        self.assertEqual(smith.stall_cause(b"Password: "), ("prompt", "Password:"), "a colon still waiting")
+        self.assertEqual(smith.stall_cause(b"Running tests:\n")[0], "silent", "a finished line asks nothing")
+        self.assertEqual(smith.stall_cause(b" \n\n"), ("silent", ""))
+        self.assertEqual(smith.stall_cause(b"\x1b]0;title\x07done\n"), ("silent", "done"), "escapes never show")
 
     def test_a_turn_at_a_rate_limit_names_the_limit(self):
         e = self.stalled("echo 'Error: 429 rate limit reached, retrying in 60 s'\necho", status="blocked")  # T-1476: the run stops there
@@ -629,11 +629,11 @@ class Worker(CodeCase):
     def test_no_preset_auto_approves_a_workers_shell_commands(self):
         # security review: gemini --yolo and aider --yes-always ran any shell command the CLI chose, which Foreman's
         # guard never sees (it judges the files afterwards, not the commands)
-        import fmcode
-        self.assertNotIn("--yolo", fmcode.WORKERS["gemini"])
-        self.assertIn("--approval-mode auto_edit", fmcode.WORKERS["gemini"])
-        self.assertIn("--no-suggest-shell-commands", fmcode.WORKERS["aider"])
-        self.assertNotIn("opencode", fmcode.WORKERS, "its run mode doesn't confine shell commands")
+        from sampo import smith
+        self.assertNotIn("--yolo", smith.WORKERS["gemini"])
+        self.assertIn("--approval-mode auto_edit", smith.WORKERS["gemini"])
+        self.assertIn("--no-suggest-shell-commands", smith.WORKERS["aider"])
+        self.assertNotIn("opencode", smith.WORKERS, "its run mode doesn't confine shell commands")
 
 
     def test_the_runs_leases_are_dropped_when_it_ends(self):
@@ -787,11 +787,11 @@ class Worker(CodeCase):
         self.assertEqual(self.git("symbolic-ref", "-q", "HEAD"), "")  # detached again
 
     def test_worker_argv(self):
-        import fmcode
-        self.assertEqual(fmcode.worker_argv("codex", "do it", which=False), ["codex", "exec", "--full-auto", "do it"])
-        self.assertEqual(fmcode.worker_argv("my-cli --msg={prompt} -q", "a b", which=False),
+        from sampo import smith
+        self.assertEqual(smith.worker_argv("codex", "do it", which=False), ["codex", "exec", "--full-auto", "do it"])
+        self.assertEqual(smith.worker_argv("my-cli --msg={prompt} -q", "a b", which=False),
                          ["my-cli", "--msg=a b", "-q"])
-        self.assertEqual(fmcode.worker_argv("plain", "x y", which=False), ["plain", "x y"])
+        self.assertEqual(smith.worker_argv("plain", "x y", which=False), ["plain", "x y"])
 
 
 class Ping(CodeCase):  # T-1335
@@ -803,8 +803,8 @@ class Ping(CodeCase):  # T-1335
         os.makedirs(self.bin)
 
     def test_a_ping_answer_is_sorted(self):
-        import fmcode
-        s = fmcode.ping_state
+        from sampo import smith
+        s = smith.ping_state
         self.assertEqual(s(0, "ok"), "ok")
         self.assertEqual(s(0, ""), "no answer")
         self.assertEqual(s(None, ""), "no answer")
@@ -957,8 +957,8 @@ class Failover(CodeCase):  # T-1356 (not a Worker subclass: its tests would run 
             f.write(text)
 
     def test_a_failure_is_sorted_by_its_exit_and_reply(self):
-        import fmcode
-        k = fmcode.failure_kind
+        from sampo import smith
+        k = smith.failure_kind
         self.assertEqual(k(0, "Claude AI usage limit reached|1792745600"), (None, None), "exit 0 is no failure")
         self.assertEqual(k(None, ""), ("timeout", None))
         self.assertEqual(k(1, "Claude AI usage limit reached|1792745600"), ("limit", 1792745600))
@@ -970,12 +970,12 @@ class Failover(CodeCase):  # T-1356 (not a Worker subclass: its tests would run 
         self.assertEqual(k(1, "5-hour limit reached"), ("limit", None), "no reset said")
 
     def test_the_next_reset_keeps_its_clock_time_across_a_dst_change(self):  # T-2378: found failing on 2026-10-31
-        import fmcode
+        from sampo import smith
         old = os.environ.get("TZ")
         os.environ["TZ"] = "America/Chicago"
         time.tzset()
         try:  # 15:15 CDT on 2026-10-31; clocks fall back at 02:00 on 11-01, so "+ 86400 s" lands on 14:00
-            at = fmcode._reset_at("You've hit your limit · resets 3pm", 1793477700)
+            at = smith._reset_at("You've hit your limit · resets 3pm", 1793477700)
             self.assertEqual(time.localtime(at)[1:5], (11, 1, 15, 0))
         finally:
             if old is None:

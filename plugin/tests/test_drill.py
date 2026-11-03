@@ -11,8 +11,8 @@ from unittest import mock
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
-import fmdrill
+from sampo import core as c
+from sampo import drill
 
 
 def tree(root):
@@ -23,32 +23,32 @@ class Drill(ForemanTestCase):
     def test_a_dropped_ledger_class_passes_a_reader_that_names_it_and_fails_one_that_prints_a_zero(self):
         """T-2648: every task_done line gone; fm outcomes and fm digest must say the class is missing."""
         plans = [{"kind": "dropped class", "at": 3}, {"kind": "stale lock", "at": 1}, {"kind": "torn journal", "at": 2}]
-        with mock.patch.object(fmdrill, "plan", return_value=[dict(f) for f in plans]):
-            r = fmdrill.drill(1, 3)
+        with mock.patch.object(drill, "plan", return_value=[dict(f) for f in plans]):
+            r = drill.drill(1, 3)
         got = {f["kind"]: f for f in r["faults"]}
         self.assertEqual(got["dropped class"]["verdict"], "found", got)
         self.assertEqual(r["crashes"], [])
         self.assertTrue(r["ok"], r)
-        self.assertIn("dropped class", fmdrill.KINDS)
+        self.assertIn("dropped class", drill.KINDS)
         zero = subprocess.CompletedProcess([], 0, "0 finished task(s): 0 held\nLast 7 day(s): 0 task(s) done", "")
-        real = fmdrill.Day.fm
+        real = drill.Day.fm
         fake = lambda self, *a: zero if a[0] in ("outcomes", "digest") else real(self, *a)  # noqa: E731
-        with mock.patch.object(fmdrill, "plan", return_value=[dict(f) for f in plans]), \
-                mock.patch.object(fmdrill.Day, "fm", fake):
-            bad = fmdrill.drill(1, 3)
+        with mock.patch.object(drill, "plan", return_value=[dict(f) for f in plans]), \
+                mock.patch.object(drill.Day, "fm", fake):
+            bad = drill.drill(1, 3)
         self.assertEqual({f["kind"]: f["verdict"] for f in bad["faults"]}["dropped class"], "missed")
         self.assertFalse(bad["ok"])
         shutil.rmtree(bad["home"], ignore_errors=True)
 
     def test_a_seed_replays_the_same_plan(self):
-        self.assertEqual(fmdrill.plan(7, 3), fmdrill.plan(7, 3))
-        plans = {json.dumps(fmdrill.plan(s, 3)) for s in range(8)}
+        self.assertEqual(drill.plan(7, 3), drill.plan(7, 3))
+        plans = {json.dumps(drill.plan(s, 3)) for s in range(8)}
         self.assertGreater(len(plans), 1, "seeds differ")
-        kinds = [f["kind"] for f in fmdrill.plan(7, 3)]
+        kinds = [f["kind"] for f in drill.plan(7, 3)]
         self.assertEqual(len(set(kinds)), 3)
-        self.assertTrue(set(kinds) <= set(fmdrill.KINDS))
+        self.assertTrue(set(kinds) <= set(drill.KINDS))
         with self.assertRaises(ValueError):
-            fmdrill.plan(1, 2)
+            drill.plan(1, 2)
 
     def test_a_drill_passes_names_its_faults_and_leaves_the_home_alone(self):
         before = tree(self.home)
@@ -67,22 +67,22 @@ class Drill(ForemanTestCase):
     def test_every_kind_at_once_still_passes(self):
         p = self.fm("drill", "--seed", "11", "--faults", "7", check=False)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        for kind in fmdrill.KINDS:
+        for kind in drill.KINDS:
             self.assertIn(kind, p.stdout)
         self.assertIn("fm drill --seed 11 --faults 7", p.stdout, "the replay command")
 
     def test_a_missed_fault_fails_and_keeps_the_home(self):
-        with mock.patch.object(fmdrill, "_verdict", return_value=("missed", "planted, not found")):
-            r = fmdrill.drill(5, 3)
+        with mock.patch.object(drill, "_verdict", return_value=("missed", "planted, not found")):
+            r = drill.drill(5, 3)
         self.addCleanup(shutil.rmtree, r["home"], True)
         self.assertFalse(r["ok"])
         self.assertTrue(os.path.isdir(r["home"]), "a failed drill keeps its home to look at")
-        self.assertIn("✗", fmdrill.render(r))
-        self.assertIn("FAILED", fmdrill.render(r))
+        self.assertIn("✗", drill.render(r))
+        self.assertIn("FAILED", drill.render(r))
 
     def test_a_traceback_is_a_crash(self):
-        self.assertIsNone(fmdrill.crash("fm status", 4, "", "fm: state looks corrupt: x"))
-        self.assertIn("fm status", fmdrill.crash("fm status", 1, "", "Traceback (most recent call last):\n  x\n"))
+        self.assertIsNone(drill.crash("fm status", 4, "", "fm: state looks corrupt: x"))
+        self.assertIn("fm status", drill.crash("fm status", 1, "", "Traceback (most recent call last):\n  x\n"))
 
 
 class StateErrors(ForemanTestCase):
@@ -94,9 +94,9 @@ class StateErrors(ForemanTestCase):
         self.log = os.path.join(self.home, "state", "logs", "hooks.log")
 
     def test_only_a_state_file_permission_error_is_a_state_error(self):
-        import fmhooks
-        self.assertIsNone(fmhooks._state_error(PermissionError(13, "denied", "/etc/shadow")), "not state: the breaker")
-        self.assertIn("permission denied", fmhooks._state_error(
+        from sampo import hooks
+        self.assertIsNone(hooks._state_error(PermissionError(13, "denied", "/etc/shadow")), "not state: the breaker")
+        self.assertIn("permission denied", hooks._state_error(
             PermissionError(13, "denied", os.path.join(c.state_dir(), "events.jsonl"))))
 
     def test_a_corrupt_meta_json_is_named_never_a_traceback(self):

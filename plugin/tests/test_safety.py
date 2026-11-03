@@ -7,10 +7,10 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmdoctor
+from sampo import core as c
+from sampo import doctor
 import fmguard as g
-import fmhooks
+from sampo import hooks
 
 
 class Base(ForemanTestCase):
@@ -80,7 +80,7 @@ class UndoPoint(Base):
             f.write("uncommitted\n")
         self.git("add", "wip.txt")
         status = self.git("status", "--porcelain")
-        point = fmhooks.undo_point(self.repo, "T-0001")
+        point = hooks.undo_point(self.repo, "T-0001")
         self.assertEqual(point["head"], self.git("rev-parse", "HEAD").strip())
         self.assertTrue(point.get("stash"), "staged work is captured in a stash commit")
         self.assertEqual(self.git("stash", "list").strip(), "", "stash create never touches the stash list")
@@ -88,9 +88,9 @@ class UndoPoint(Base):
         self.assertEqual(self.git("rev-parse", point["ref"]).strip(), point["stash"], "pinned so gc keeps it")
 
     def test_the_ask_text_says_what_can_be_undone(self):
-        self.assertIn("irreversible", fmhooks.restorable("rm-outside"))
-        self.assertIn("partly restorable", fmhooks.restorable("git-destructive"))
-        self.assertIn("force push", fmhooks.restorable("git-destructive"), "it says what it can't bring back")
+        self.assertIn("irreversible", hooks.restorable("rm-outside"))
+        self.assertIn("partly restorable", hooks.restorable("git-destructive"))
+        self.assertIn("force push", hooks.restorable("git-destructive"), "it says what it can't bring back")
 
 
 class SupplyChainHash(Base):
@@ -105,28 +105,28 @@ class SupplyChainHash(Base):
             json.dump({"plugins": {"p@m": [{"installPath": self.plugin, "version": "1.0"}]}}, f)
 
     def test_first_run_is_a_baseline_and_a_change_warns_until_accepted(self):
-        first = fmdoctor.check_supply(self.claude)
+        first = doctor.check_supply(self.claude)
         self.assertEqual(first.status, "PASS", first.detail)
         with open(os.path.join(self.plugin, "hooks", "hooks.json"), "w") as f:
             f.write('{"hooks": {"PreToolUse": []}}')
-        changed = fmdoctor.check_supply(self.claude)
+        changed = doctor.check_supply(self.claude)
         self.assertEqual(changed.status, "FAIL", "T-1392: a new hook event is held, not only noted")
         self.assertIn("p@m adds hook PreToolUse", changed.detail)
-        fmdoctor.check_supply(self.claude, accept=True)
-        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        doctor.check_supply(self.claude, accept=True)
+        self.assertEqual(doctor.check_supply(self.claude).status, "PASS")
         with open(os.path.join(self.plugin, "hooks", "run.sh"), "w") as f:  # code, not just the manifest
             f.write("curl x\n")
-        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN")
+        self.assertEqual(doctor.check_supply(self.claude).status, "WARN")
 
     def test_a_garbled_baseline_or_registry_warns_and_never_rebaselines(self):
-        fmdoctor.check_supply(self.claude)
+        doctor.check_supply(self.claude)
         with open(os.path.join(c.state_dir(), "supply.json"), "w") as f:
             f.write("{not json")
-        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN")
-        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "still: it didn't re-baseline")
+        self.assertEqual(doctor.check_supply(self.claude).status, "WARN")
+        self.assertEqual(doctor.check_supply(self.claude).status, "WARN", "still: it didn't re-baseline")
         with open(os.path.join(self.claude, "plugins", "installed_plugins.json"), "w") as f:
             f.write("[1, 2]")
-        self.assertIn(fmdoctor.check_supply(self.claude, accept=True).status, ("PASS", "WARN"))
+        self.assertIn(doctor.check_supply(self.claude, accept=True).status, ("PASS", "WARN"))
 
 
 class RenderSanitizer(Base):
@@ -142,9 +142,9 @@ class RenderSanitizer(Base):
         words = ["yes", "no", "ok", "not", "don't", "go", "ahead", "approved", "never", "lgtm", "wait", "please"]
         for _ in range(500):
             text = " ".join(rnd.choice(words) for _ in range(rnd.randint(1, 6)))
-            fmhooks._YES.search(text)  # must never raise
-        self.assertTrue(fmhooks._YES.search("yes, go ahead"))
-        self.assertFalse(fmhooks._YES.search("no, not yet"))
+            hooks._YES.search(text)  # must never raise
+        self.assertTrue(hooks._YES.search("yes, go ahead"))
+        self.assertFalse(hooks._YES.search("no, not yet"))
 
 
 class RuleIds(Base):

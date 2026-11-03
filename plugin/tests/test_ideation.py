@@ -6,8 +6,8 @@ import os
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
-import fmideas
+from sampo import core as c
+from sampo import ideas as sideas
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -89,8 +89,8 @@ class KeepRates(Base):
 class Lenses(Base):
     def test_reframing_and_wild_lenses_exist_with_their_notes(self):
         for lens in ("reframe", "flip assumptions", "oblique provocation", "devil's idea", "worst-bugs persona"):
-            self.assertIn(lens, fmideas.LENSES)
-            self.assertIn(fmideas.LENS_NOTES[lens], fmideas.lens_prompt(lens))
+            self.assertIn(lens, sideas.LENSES)
+            self.assertIn(sideas.LENS_NOTES[lens], sideas.lens_prompt(lens))
         self.assertIn("flip", read_text(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references",
                                                      "planning.md")).lower())
 
@@ -106,7 +106,7 @@ class ChildFolder(ForemanTestCase):
     def test_children_share_one_private_folder(self):
         # T-0856: a fresh temp dir per child gave Claude Code a new ~/.claude/projects shell each time (564 of them)
         import stat
-        a, b = fmideas._child_dir(), fmideas._child_dir()
+        a, b = sideas._child_dir(), sideas._child_dir()
         self.assertEqual(a, b)
         st = os.lstat(a)
         self.assertTrue(stat.S_ISDIR(st.st_mode))

@@ -14,7 +14,7 @@ from unittest import mock
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class VerifyStrength(ForemanTestCase):
@@ -252,10 +252,10 @@ class Repeat(ForemanTestCase):
         self.assertIn("timed out after 1s", line, "the user's --timeout, not what was left of it")
 
     def test_timed_out_runs_stay_out_of_the_numbers(self):
-        import fmcli
-        self.assertEqual(fmcli._repeat_runs(self.repo, "true", 3, 0)[:2], (124, "timed out before the first run"))
+        from sampo import cli
+        self.assertEqual(cli._repeat_runs(self.repo, "true", 3, 0)[:2], (124, "timed out before the first run"))
         self.write("slow.sh", "if [ -f once ]; then sleep 5; fi; : > once\n")
-        code, output, timing = fmcli._repeat_runs(self.repo, "sh slow.sh", 3, 3)
+        code, output, timing = cli._repeat_runs(self.repo, "sh slow.sh", 3, 3)
         self.assertEqual(code, 124, output)
         self.assertIn("timed out after 3s", output, "the user's --timeout, not what was left of it")
         self.assertIn("×2 of 3 runs (--timeout reached), 1 failed: median ", timing)
@@ -264,7 +264,7 @@ class Repeat(ForemanTestCase):
     def canary(self, load, **patches):
         """The canary's report over four projects: flappy (this repo) fails once, broken always, gone can't run, fine
         passes; the host's load stands at `load` on 8 CPUs."""
-        import fmrelease
+        from sampo import release
         stub = os.path.join(self.tmp, "fmstub.py")
         with open(stub, "w") as f:
             f.write(CANARY_STUB)
@@ -275,10 +275,10 @@ class Repeat(ForemanTestCase):
                "FOREMAN_HOST": f"load={load},cpus=8"}
         out = io.StringIO()
         with contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch.multiple(fmrelease, FM=[sys.executable, stub], **patches))
+            stack.enter_context(mock.patch.multiple(release, FM=[sys.executable, stub], **patches))
             stack.enter_context(mock.patch.dict(os.environ, env))
             stack.enter_context(contextlib.redirect_stdout(out))
-            fmrelease._canary_worker("9.9.9", self.repo)
+            release._canary_worker("9.9.9", self.repo)
         return out.getvalue()
 
     def test_the_canary_calls_a_failure_under_load_that_passes_alone_a_load_flap(self):

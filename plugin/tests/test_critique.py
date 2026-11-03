@@ -9,8 +9,8 @@ import unittest
 
 from helpers import ForemanTestCase, headless_chrome
 
-import fmcritique
-import fmshot
+from sampo import critique
+from sampo import shot as sshot
 
 DESIGN = """# DESIGN.md
 
@@ -164,37 +164,37 @@ class Census(Case):
         self.assertIn("7 more value(s)", " ".join(data["notes"]))
 
     def test_near_duplicates_use_a_relative_bound_and_keep_the_true_count(self):
-        res = fmcritique.critique(fmcritique.load({"values": {"spacing": {"1px": 9, "2px": 9, "100px": 5,
+        res = critique.critique(critique.load({"values": {"spacing": {"1px": 9, "2px": 9, "100px": 5,
                                                                             "106px": 5, "120px": 1}}}))
         self.assertEqual({(n["a"], n["b"]) for n in res["near"]}, {("100px", "106px")})
         many = {"values": {"colour": {f"rgb(100, 100, {100 + i})": 1 for i in range(40)}}}
-        res = fmcritique.critique(fmcritique.load(many))
-        self.assertEqual(len(res["near"]), fmcritique.MAX_NEAR)
-        self.assertGreater(res["near_total"], fmcritique.MAX_NEAR)
+        res = critique.critique(critique.load(many))
+        self.assertEqual(len(res["near"]), critique.MAX_NEAR)
+        self.assertGreater(res["near_total"], critique.MAX_NEAR)
 
 
 class Pseudo(unittest.TestCase):
     def test_longer_bracketed_and_placeholders_kept(self):
         for s in ("Save changes", "Hello {name}, you have %d items", "Delete %(n)s files <b>now</b> ${x}", "{0} of {1}",
                   "Terms &amp; conditions&nbsp;&#169; &#x2014;"):  # entities stay entities
-            p = fmcritique.pseudo(s)
+            p = critique.pseudo(s)
             self.assertGreaterEqual(len(p), len(s) * 1.3, s)
             self.assertTrue(p.startswith("[") and p.endswith("]"), p)
-            for ph in fmcritique.PLACEHOLDER.findall(s):
+            for ph in critique.PLACEHOLDER.findall(s):
                 self.assertIn(ph, p)
-        self.assertNotIn("Save", fmcritique.pseudo("Save changes"))
-        p = fmcritique.pseudo("Terms &amp; conditions&nbsp;&#169; &#x2014;")
+        self.assertNotIn("Save", critique.pseudo("Save changes"))
+        p = critique.pseudo("Terms &amp; conditions&nbsp;&#169; &#x2014;")
         for ent in ("&amp;", "&nbsp;", "&#169;", "&#x2014;"):
             self.assertIn(ent, p)
 
     def test_empty_and_huge(self):
-        self.assertEqual(fmcritique.pseudo(""), "")
-        self.assertLessEqual(len(fmcritique.pseudo("a" * 10**6)), fmcritique.MAX_STRESS * 2 + 20)
+        self.assertEqual(critique.pseudo(""), "")
+        self.assertLessEqual(len(critique.pseudo("a" * 10**6)), critique.MAX_STRESS * 2 + 20)
 
     def test_profiles(self):
-        for name, p in fmcritique.PROFILES.items():
+        for name, p in critique.PROFILES.items():
             self.assertTrue(p["width"] > 0 and p["height"] > 0 and p["scale"] > 0, name)
-        self.assertEqual(set(fmcritique.PROFILES), {"tv", "eink", "car", "wrist"})
+        self.assertEqual(set(critique.PROFILES), {"tv", "eink", "car", "wrist"})
 
 
 class Url(unittest.TestCase):  # T-1652: a page path with a folder in it was opened under that folder twice
@@ -204,7 +204,7 @@ class Url(unittest.TestCase):  # T-1652: a page path with a folder in it was ope
             page = os.path.join(d, "sub", "page.html")
             os.makedirs(os.path.dirname(page))
             open(page, "w").close()
-            url, root = fmcritique._url(os.path.relpath(page) + "?a=1/../2#x", False)
+            url, root = critique._url(os.path.relpath(page) + "?a=1/../2#x", False)
             self.assertEqual(url, pathlib.Path(os.path.realpath(page)).as_uri() + "?a=1/../2#x")
             self.assertEqual(os.path.realpath(root), os.path.realpath(os.path.dirname(page)))
 
@@ -212,9 +212,9 @@ class Url(unittest.TestCase):  # T-1652: a page path with a folder in it was ope
 class Clean(unittest.TestCase):
     def test_format_and_private_characters_are_stripped(self):
         for ch in ("\U000E0041", "⁠", "⁤", "﻿", "­", "؜", "", "‮", "\x1b", "\x85"):
-            self.assertNotIn(ch, fmcritique.clean(f"a{ch}b"), repr(ch))
-            self.assertNotIn(ch, fmshot.safe(f"a{ch}b"), repr(ch))
-        self.assertEqual(fmcritique.clean("Inter Ünïcode"), "Inter Ünïcode")
+            self.assertNotIn(ch, critique.clean(f"a{ch}b"), repr(ch))
+            self.assertNotIn(ch, sshot.safe(f"a{ch}b"), repr(ch))
+        self.assertEqual(critique.clean("Inter Ünïcode"), "Inter Ünïcode")
 
 
 class Cascade(unittest.TestCase):
@@ -240,7 +240,7 @@ class Cascade(unittest.TestCase):
              "matchingSelectors": [0]}]}]}
 
     def test_the_winning_declaration_per_property(self):
-        win = {w["property"]: w for w in fmcritique.cascade(self.MATCHED)["winners"]}
+        win = {w["property"]: w for w in critique.cascade(self.MATCHED)["winners"]}
         self.assertEqual(win["margin-top"]["value"], "0")  # !important beats the later 4px
         self.assertEqual(win["margin-top"]["selector"], ".card p")
         self.assertEqual(win["padding-top"]["selector"], "style attribute")  # inline beats a rule
@@ -248,27 +248,27 @@ class Cascade(unittest.TestCase):
         self.assertEqual(win["color"]["value"], "var(--ink)")  # unparsed red skipped; inherited from body
         self.assertTrue(win["color"]["inherited"])
         self.assertNotIn("margin-left", win)  # margins don't inherit
-        rules = fmcritique.cascade(self.MATCHED)["rules"]
+        rules = critique.cascade(self.MATCHED)["rules"]
         self.assertEqual([r["selector"] for r in rules], ["style attribute", "p", ".card p", "p"])  # winner first
         self.assertEqual(rules[2]["line"], 12)
 
     def test_stylesheet_sources_and_layers(self):
         sheets = {"s1": {"sourceURL": "https://x.test/css/site.css?v=2", "isInline": False, "startLine": 0}}
-        res = fmcritique.cascade(self.MATCHED, sheets=sheets)
+        res = critique.cascade(self.MATCHED, sheets=sheets)
         self.assertEqual(res["rules"][2]["source"], "site.css:12")
         self.assertEqual(res["notes"], [])
         layered = json.loads(json.dumps(self.MATCHED))
         layered["matchedCSSRules"][1]["rule"]["layers"] = [{"text": "base"}]
-        self.assertIn("@layer", " ".join(fmcritique.cascade(layered)["notes"]))
+        self.assertIn("@layer", " ".join(critique.cascade(layered)["notes"]))
 
     def test_the_report_is_capped(self):
         rules = [{"selector": f".r{i}", "origin": "regular", "line": i, "source": None, "inherited": False}
                  for i in range(50)]
         winners = [dict(rules[0], property=f"--p{i}", value="1", important=False, computed=None) for i in range(100)]
-        text = fmcritique.why_report({"rules": rules, "winners": winners, "notes": []}, "file:///p", "p", [])
-        self.assertIn(f"… {50 - fmcritique.WHY_RULES} more (--json)", text)
-        self.assertIn(f"… {100 - fmcritique.WHY_WINNERS} more (--json)", text)
-        self.assertLess(len(text.splitlines()), fmcritique.WHY_RULES + fmcritique.WHY_WINNERS + 10)
+        text = critique.why_report({"rules": rules, "winners": winners, "notes": []}, "file:///p", "p", [])
+        self.assertIn(f"… {50 - critique.WHY_RULES} more (--json)", text)
+        self.assertIn(f"… {100 - critique.WHY_WINNERS} more (--json)", text)
+        self.assertLess(len(text.splitlines()), critique.WHY_RULES + critique.WHY_WINNERS + 10)
 
 
 SLOP = {"url": "slop.html", "elements": 200, "values": {
@@ -290,7 +290,7 @@ VARIED = {"url": "varied.html", "elements": 90, "values": {
 
 class Bingo(Case):
     def test_a_templated_census_scores_a_line_and_a_varied_one_none(self):
-        res = fmcritique.bingo(fmcritique.load(SLOP))
+        res = critique.bingo(critique.load(SLOP))
         self.assertEqual({t for t, why in res["tells"].items() if why},
                          {"generic-font", "violet-accent", "stock-greys", "one-radius", "same-shadow", "one-gap",
                           "flat-scale"})
@@ -308,19 +308,19 @@ class Bingo(Case):
         many = dict(SLOP, values=dict(SLOP["values"], size={f"{10 + 3 * i}px": 5 for i in range(10)},
                                       colour={"rgb(10, 10, 10)": 9, "rgb(11, 10, 10)": 3, "rgb(10, 11, 10)": 2,
                                               "rgb(10, 10, 11)": 2}))
-        t = fmcritique.bingo(fmcritique.load(many))["tells"]
+        t = critique.bingo(critique.load(many))["tells"]
         self.assertEqual((bool(t["size-sprawl"]), bool(t["flat-scale"]), bool(t["near-drift"])), (True, False, True))
 
 
 def png(path, w, h, paint):
     """A w×h PNG, white but where paint(x, y) gives an (r, g, b)."""
-    import fmimg
+    from sampo import img
     px = bytearray()
     for y in range(h):
         for x in range(w):
             px += bytes(paint(x, y) or (255, 255, 255)) + b"\xff"
-    fmimg.save(path, w, h, bytes(px))
-    return fmimg.load(path)
+    img.save(path, w, h, bytes(px))
+    return img.load(path)
 
 
 def ring(x0, y0, x1, y1, rgb=(200, 30, 30)):
@@ -340,7 +340,7 @@ class Marks(Case):
         fresh = png(os.path.join(self.tmp, "f.png"), 128, 96, page_red)
         marked = png(os.path.join(self.tmp, "m.png"), 128, 96, lambda x, y: loop(x, y) or dot(x, y) or page_red(x, y)
                      or ((210, 0, 0) if (x, y) == (5, 5) else None))
-        boxes = fmcritique.find_marks(marked, fresh)
+        boxes = critique.find_marks(marked, fresh)
         # the page's own red block and a 1-pixel speck are not marks; the ring is one mark
         self.assertEqual([(b["x"], b["y"], b["w"], b["h"]) for b in boxes], [(40, 20, 52, 31), (10, 70, 3, 3)])
 
@@ -365,13 +365,13 @@ class Marks(Case):
 
 class Brief(Case):
     def test_quoted_phrases_from_the_brief_less_its_verify_commands(self):
-        import fmcore as c
+        from sampo import core as c
         self.fm("task", "new", "Add the export menu", "--type", "FEATURE", "--tier", "S",
                 "--ac", "the menu says \"Export as CSV\" and “Copy link” :: fm critique p.html --brief \"x y\"",
                 "--step", "build", "--focus")
         b = c.find_brief(c.find_project(self.repo), "T-0001")
-        self.assertEqual(fmcritique.phrases(b), ["Export as CSV", "Copy link"])
-        self.assertEqual(fmcritique.built("Menu\n  export   AS csv", ["Export as CSV", "Copy link"]),
+        self.assertEqual(critique.phrases(b), ["Export as CSV", "Copy link"])
+        self.assertEqual(critique.built("Menu\n  export   AS csv", ["Export as CSV", "Copy link"]),
                          [{"phrase": "Export as CSV", "found": True}, {"phrase": "Copy link", "found": False}])
         self.fm("task", "new", "Tidy the code", "--type", "CLEAN", "--tier", "S", "--ac", "clean :: true",
                 "--step", "x")
@@ -384,18 +384,18 @@ class Brief(Case):
 @unittest.skipUnless(headless_chrome(), "no headless Chromium here")
 class InABrowser(Case):
     def test_marks_brief_and_bingo_on_a_real_page(self):
-        import fmcore as c
-        import fmimg
+        from sampo import core as c
+        from sampo import img
         page = os.path.join(self.repo, "m.html")
         with open(page, "w") as f:
             f.write("<style>body{margin:0;font:16px Inter,sans-serif;background:#fff} button{position:absolute;"
                     "left:100px;top:100px;width:120px;height:40px}</style><input placeholder='Search rows'>"
                     "<button id=go aria-label='Export as CSV'>Export</button>")
-        path, _ = fmshot.find_browser("test")
-        b = fmshot.Browser(path, (320, 200))
+        path, _ = sshot.find_browser("test")
+        b = sshot.Browser(path, (320, 200))
         try:
-            fmcritique._open(b, pathlib.Path(page).as_uri(), self.repo, False)
-            shot = fmimg.decode(b.png())
+            critique._open(b, pathlib.Path(page).as_uri(), self.repo, False)
+            shot = img.decode(b.png())
         finally:
             b.close()
         loop, px = ring(95, 95, 225, 145), bytearray(shot.rgba)
@@ -404,7 +404,7 @@ class InABrowser(Case):
                 if loop(x, y):
                     px[(y * shot.width + x) * 4:(y * shot.width + x) * 4 + 3] = bytes((200, 30, 30))
         marked = os.path.join(self.tmp, "marked.png")
-        fmimg.save(marked, shot.width, shot.height, bytes(px))
+        img.save(marked, shot.width, shot.height, bytes(px))
         self.fm("task", "new", "Build the toolbar", "--type", "FEATURE", "--tier", "S", "--ac",
                 "it has \"Search rows\" and \"Undo\" :: true", "--step", "x", "--focus")
         data = json.loads(self.fm("critique", page, "--marks", marked, "--note", "Make it bigger", "--json").stdout)

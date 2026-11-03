@@ -7,8 +7,8 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmrecall
+from sampo import core as c
+from sampo import recall
 
 
 class RoundF(ForemanTestCase):
@@ -119,16 +119,16 @@ class RoundF(ForemanTestCase):
         self.assertIn(c.DEFANGED, c.find_brief(self.p, "T-0001").section("Verification evidence"))
 
     def test_the_repeated_failure_note_fires_once_even_after_the_third(self):
-        notes = [fmrecall.note_failure(self.p, "T-0009", "E: KeyError: 'user'") for _ in range(5)]
+        notes = [recall.note_failure(self.p, "T-0009", "E: KeyError: 'user'") for _ in range(5)]
         self.assertEqual(sum(bool(n) and "come up" in n for n in notes), 1)
         self.assertIn("3 times", notes[2])
 
     def test_lib_hint_when_a_bin_module_path_is_missing(self):
         # T-0984 (written by the recorded demo session, T-0979): Foreman's modules live in plugin/lib/
-        n = fmrecall.note_failure(self.p, "T-0009", "python3: can't open file 'plugin/bin/fmcore.py': [Errno 2] No such "
+        n = recall.note_failure(self.p, "T-0009", "python3: can't open file 'plugin/bin/fmcore.py': [Errno 2] No such "
                                                     "file or directory")
         self.assertIn("plugin/lib/", n)
-        self.assertNotIn("plugin/lib/", fmrecall.note_failure(self.p, "T-0009", "cat: other.txt: No such file or directory")
+        self.assertNotIn("plugin/lib/", recall.note_failure(self.p, "T-0009", "cat: other.txt: No such file or directory")
                          or "")
 
     def test_the_weekly_check_runs_once_a_week_even_with_nothing_to_show(self):

@@ -18,8 +18,8 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
 try:  # T-0368: below Python 3.12.7, re-run under a supported one (stdin is still unread)
-    import fmpy
-    fmpy.reexec()
+    from sampo import py
+    py.reexec()
 except Exception:
     pass
 
@@ -134,9 +134,9 @@ def snapshot(c, data, p):
             "rate_limits": data.get("rate_limits"), "cache_hit_ratio": (data.get("prompt_cache") or {}).get("hit_ratio"),
             "tmux_pane": os.environ.get("TMUX_PANE")}  # T-0708: fm bus send --wake types into it
     try:  # T-1003: live() drops the snapshot once this process is gone, whatever happened to the by-pid records
-        import fmbus
-        pid = fmbus.claude_pid()
-        info = fmbus._proc(pid) if pid else None
+        from sampo import bus
+        pid = bus.claude_pid()
+        info = bus._proc(pid) if pid else None
         if info:
             snap["claude_pid"], snap["claude_start"] = pid, info[1]
     except Exception:  # never fail the line
@@ -326,7 +326,7 @@ def main():
     try:
         manifest = quick_manifest()
         if (manifest or {}).get("statusline_layout") != "stack":
-            import fmcore as c
+            from sampo import core as c
             if manifest is None:
                 manifest = load_manifest(c.state_dir()) or {}
             if manifest.get("statusline_layout") != "stack":
@@ -339,7 +339,7 @@ def main():
                 return 0
         # the old stack: the wrapped lines (node for claude-hud) start before Foreman's own import (~20 ms)
         procs = start_children(raw, manifest)
-        import fmcore as c
+        from sampo import core as c
         if procs is None:  # state lives in a fallback dir: ask fmcore where
             procs = start_children(raw, load_manifest(c.state_dir()) or {})
         tail, p = foreman_line(c, data)

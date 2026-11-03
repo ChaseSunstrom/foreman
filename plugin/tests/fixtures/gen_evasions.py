@@ -35,7 +35,7 @@ for p in (os.path.join(REPO, "plugin", "lib"), os.path.join(REPO, "site")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import fmreplay  # noqa: E402
+from sampo import replay  # noqa: E402
 from bench_safety import DANGEROUS, EVERYDAY, SNAPSHOT  # noqa: E402
 
 CWD = ""  # the home folder (the guard's default): outside Foreman's protected checkout and the same on every machine
@@ -173,15 +173,15 @@ def home_in_a_repo():
 def build():
     """(guard_evasions.jsonl text, guard_gaps.jsonl text). Runs every variant past the current guard."""
     rows = _rows()
-    cwd_abs = fmreplay.resolve_cwd(CWD)
+    cwd_abs = replay.resolve_cwd(CWD)
     if home_in_a_repo():
         raise SystemExit(f"{cwd_abs} is inside a git tree, so the guard judges the corpus as a project: "
                          "regenerate on a machine whose home folder isn't")
-    verdicts = fmreplay.verdicts([(v, cwd_abs) for _, _, v, _ in rows])
+    verdicts = replay.verdicts([(v, cwd_abs) for _, _, v, _ in rows])
     corpus, gaps = [], []
     for tname, orig, v, label in rows:
-        got = "allow" if verdicts[fmreplay._key(v, cwd_abs)] == "allow" else "block"
-        case = {"id": fmreplay._key(v, CWD), "cmd": v, "cwd": CWD, "should": label,
+        got = "allow" if verdicts[replay._key(v, cwd_abs)] == "allow" else "block"
+        case = {"id": replay._key(v, CWD), "cmd": v, "cwd": CWD, "should": label,
                 "why": _why(tname, orig, label, got)}
         if got == label:
             corpus.append(case)

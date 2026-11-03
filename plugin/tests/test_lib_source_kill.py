@@ -8,20 +8,20 @@ from unittest import mock
 
 from helpers import LIB, ForemanTestCase
 
-import fmcore as c
-import fmlib
+from sampo import core as c
+from sampo import lib
 
 CHILD = r"""
 import os, signal, sys
 sys.path.insert(0, sys.argv[1])
-import fmlib
+from sampo import lib
 point, repo = sys.argv[2], sys.argv[3]
 die = lambda: os.kill(os.getpid(), signal.SIGKILL)
-git, index, replace, calls = fmlib._git_src, fmlib._index_source, os.replace, []
+git, index, replace, calls = lib._git_src, lib._index_source, os.replace, []
 if point == "clone":
-    fmlib._git_src = lambda r, *a, **k: die() if a[0] == "clone" else git(r, *a, **k)
+    lib._git_src = lambda r, *a, **k: die() if a[0] == "clone" else git(r, *a, **k)
 if point == "index":
-    fmlib._index_source = lambda *a, **k: die()
+    lib._index_source = lambda *a, **k: die()
 def rep(a, b):
     calls.append(a)
     if point == "aside-before":
@@ -30,7 +30,7 @@ def rep(a, b):
     if (point, len(calls)) in (("aside", 1), ("in", 2)):
         die()
 os.replace = rep
-fmlib.source_add(repo, "kit", replace=True)
+lib.source_add(repo, "kit", replace=True)
 """
 
 
@@ -52,12 +52,12 @@ class SourceKill(ForemanTestCase):
         os.makedirs(self.kit)
         self._git("init", "-q")
         self._skill("reverse-engineer", "Reverse engineer a binary with Ghidra")
-        fmlib.source_add(self.kit, "kit")
+        lib.source_add(self.kit, "kit")
         self._skill("decompile", "Decompile machine code")  # the update would add this
         self.base = os.path.join(c.state_dir(), "lib-sources")
 
     def _check_previous_kept(self):
-        self.assertEqual([m["name"] for m, _ in fmlib.sources()], ["kit"])
+        self.assertEqual([m["name"] for m, _ in lib.sources()], ["kit"])
         self.assertIn("kit:reverse-engineer", self.fm("lib", "search", "reverse", "engineer", "binary").stdout)
         listed = self.fm("lib", "source", "list").stdout
         self.assertNotIn(".tmp-", listed)
@@ -86,13 +86,13 @@ class SourceKill(ForemanTestCase):
             if len(calls) == 2:
                 raise OSError("disk gone")
             replace(a, b)
-        with mock.patch.object(fmlib.os, "replace", rep), self.assertRaises(OSError):
-            fmlib.source_add(self.kit, "kit", replace=True)
+        with mock.patch.object(lib.os, "replace", rep), self.assertRaises(OSError):
+            lib.source_add(self.kit, "kit", replace=True)
         self._check_previous_kept()
         self.assertNotIn("kit:decompile", self.fm("lib", "search", "decompile", "machine").stdout)
 
     def test_a_live_adds_folders_are_left_alone(self):
         os.makedirs(os.path.join(self.base, f".tmp-kit-{os.getpid()}"))
         os.rename(os.path.join(self.base, "kit"), os.path.join(self.base, f"kit.old-{os.getpid()}"))
-        self.assertEqual(fmlib.sources(), [])  # mid-swap in a live process: neither folder is a source
+        self.assertEqual(lib.sources(), [])  # mid-swap in a live process: neither folder is a source
         self.assertEqual(sorted(os.listdir(self.base)), [f".tmp-kit-{os.getpid()}", f"kit.old-{os.getpid()}"])

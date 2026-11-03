@@ -6,7 +6,7 @@ import subprocess
 
 from helpers import ForemanTestCase, read_text, valid_m_plan
 
-import fmcore as c
+from sampo import core as c
 
 REFS = os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references")
 STUB = r'''#!/usr/bin/env python3
@@ -40,8 +40,8 @@ class DoorBase(Base):  # T-2342: doors come from the guard's parser and git; a v
         return path
 
     def doors(self, tid):
-        import fmdoors
-        return {d["where"]: d for d in fmdoors.classify(self.p, c.find_brief(self.p, tid))}
+        from sampo import doors as sdoors
+        return {d["where"]: d for d in sdoors.classify(self.p, c.find_brief(self.p, tid))}
 
 
 class DoorGate(DoorBase):
@@ -145,14 +145,14 @@ class DoorGate(DoorBase):
                 self.assertEqual(c.door_park(b) is None, ok)
 
     def test_a_request_names_a_path_only_by_whole_token_with_a_destroy_verb_and_no_negation(self):
-        import fmdoors
+        from sampo import doors as sdoors
         for raw, tok, want in (("update the data model", "src/data", False), ("Don't delete data/old.csv", "data/old.csv", False),
                                ("Delete data/old.csv, it is stale", "data/old.csv", True),
                                ("delete data/old.csv.bak", "data/old.csv", False), ("keep data/old.csv", "data/old.csv", False),
                                ("Tidy up. Then delete ./data/old.csv", "data/old.csv", True),
                                ("delete data/*.csv now", "data/*.csv", True)):
             with self.subTest(raw=raw, tok=tok):
-                self.assertEqual(fmdoors._named(raw, tok), want)
+                self.assertEqual(sdoors._named(raw, tok), want)
 
     def test_a_local_one_way_step_needs_an_undo_line(self):
         tid = self.brief("delete data/old.csv")
@@ -174,9 +174,9 @@ class DoorGate(DoorBase):
         self.assertTrue(c.rival_gap(b), "a one-way door the request didn't name asks for a cold rival")
 
     def test_a_reply_about_a_guard_command_is_one_way_and_a_plain_fork_two_way(self):
-        import fmdoors
-        self.assertEqual(fmdoors.reply_door("Should I run `git push --force origin main`?", self.p), "one-way")
-        self.assertEqual(fmdoors.reply_door("Which parser should I keep, the old or the new one?", self.p), "two-way")
+        from sampo import doors as sdoors
+        self.assertEqual(sdoors.reply_door("Should I run `git push --force origin main`?", self.p), "one-way")
+        self.assertEqual(sdoors.reply_door("Which parser should I keep, the old or the new one?", self.p), "two-way")
 
 
 class DoorPark(DoorBase):
@@ -199,7 +199,7 @@ class DoorPark(DoorBase):
 
     def test_the_finish_receipt_tallies_each_one_way_step_and_how_it_was_undone_or_parked(self):
         # T-2346 (Mission 5 inbox): one receipt line, only when the plan had a local one-way step
-        import fmdoors
+        from sampo import doors as sdoors
         self.data(text="keep,me\n")
         tid = self.brief("delete data/old.csv", "write the summary")
         self.fm("focus", tid)
@@ -210,7 +210,7 @@ class DoorPark(DoorBase):
         self.assertNotIn("Doors:", self.fm("task", "finish", plain, "--audit", "self", "--run", "true").stdout)
         b = c.find_brief(self.p, plain)
         b.meta["doors"] = ["1"]  # a marked step with no way back: parked
-        self.assertEqual(fmdoors.tally(b), "Doors: 1 one-way step: step 1 parked")
+        self.assertEqual(sdoors.tally(b), "Doors: 1 one-way step: step 1 parked")
 
     def test_the_final_report_prices_each_parked_door_by_days_and_what_waits_behind_it(self):
         # T-2347 (Mission 5 inbox): fm decide --review names each parked task, how long it waited, what it blocks
@@ -220,22 +220,22 @@ class DoorPark(DoorBase):
 
         def park(b):
             b.meta["doors"] = ["1"]  # a marked one-way step with no Undo line: parked
-        import fmcli
-        fmcli.mutate(self.p, tid, park, "door_gate")
+        from sampo import cli
+        cli.mutate(self.p, tid, park, "door_gate")
         c.log_event(self.p, "door_park", task=tid, data={"door": "one-way", "step": "write the summary"})
         out = self.fm("decide", "--review").stdout
         self.assertRegex(out, rf"Parked at a one-way door: {tid} \(step 1: write the summary\), 0 days, blocks {later}")
         self.assertEqual([d["id"] for d in self.fm_json("decide", "--review")["doors_parked"]], [tid])
-        fmcli.mutate(self.p, tid, lambda b: b.meta.update(doors=[]), "door_gate")
+        cli.mutate(self.p, tid, lambda b: b.meta.update(doors=[]), "door_gate")
         self.assertNotIn("Parked at a one-way door", self.fm("decide", "--review").stdout)
 
     def test_a_snapshot_that_does_not_verify_is_not_an_undo(self):
         from unittest import mock
-        import fmdoors
+        from sampo import doors as sdoors
         self.data()
         tid = self.brief("delete data/old.csv")
-        with mock.patch.object(fmdoors, "_same", return_value=False):
-            parked = fmdoors.gate(self.p, tid)
+        with mock.patch.object(sdoors, "_same", return_value=False):
+            parked = sdoors.gate(self.p, tid)
         self.assertEqual(parked, "one-way and ambiguous: step 1: delete data/old.csv")
         self.assertNotIn("Undo:", c.find_brief(self.p, tid).steps()[0].text)
 
@@ -336,11 +336,11 @@ class DoorPark(DoorBase):
 
     def test_an_error_in_the_gate_is_a_policy_error_naming_the_cause(self):
         from unittest import mock
-        import fmdoors
+        from sampo import doors as sdoors
         tid = self.brief("delete data/old.csv")
-        with mock.patch.object(fmdoors, "gate", side_effect=RuntimeError("git exploded")):
+        with mock.patch.object(sdoors, "gate", side_effect=RuntimeError("git exploded")):
             with self.assertRaisesRegex(c.PolicyError, "RuntimeError: git exploded"):
-                fmdoors.check(self.p, tid)
+                sdoors.check(self.p, tid)
 
     def test_step_done_warns_when_the_data_differs_from_its_snapshot(self):
         path = self.data(text="keep,me\n")
@@ -396,11 +396,11 @@ class DecisionFileClosed(Base):  # T-2426: writing a decision closes the decisio
     def test_two_decisions_leave_no_unclosed_file(self):
         import gc
         import warnings
-        import fmcli
+        from sampo import cli
         with warnings.catch_warnings(record=True) as got:
             warnings.simplefilter("always", ResourceWarning)
             for n in (1, 2):
-                fmcli._write_decision(self.p, f"Decision {n}", why="test")
+                cli._write_decision(self.p, f"Decision {n}", why="test")
             gc.collect()
         self.assertEqual([str(w.message) for w in got if issubclass(w.category, ResourceWarning)], [])
         with open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8") as f:
@@ -491,7 +491,7 @@ class SteerChecks(ForemanTestCase):
     def setUp(self):
         super().setUp()
         self.fm("init")
-        import fmcore as c
+        from sampo import core as c
         self.c, self.p = c, c.find_project(self.repo)
         os.makedirs(os.path.join(self.repo, "plugin", "tests"))
         with open(os.path.join(self.repo, "plugin", "tests", "run.py"), "w") as f:
@@ -539,17 +539,17 @@ class SteerChecks(ForemanTestCase):
         self.assertFalse(os.path.exists(os.path.join(self.repo, "pwned")))
 
     def test_doctor_names_a_missing_check_only_in_a_genesis_tower(self):
-        import fmdoctor
-        import fmgenesis
+        from sampo import doctor
+        from sampo import rune
         self.fm("decide", "rule one: no check", "--cites", "user steer 2026-10-30")
-        self.assertEqual(fmdoctor.check_steers(self.p).status, "PASS")  # no tower: not a Genesis project
-        fmgenesis.init(self.p, b"go\n\nMUST: be good.\n")
-        r = fmdoctor.check_steers(self.p)
+        self.assertEqual(doctor.check_steers(self.p).status, "PASS")  # no tower: not a Genesis project
+        rune.init(self.p, b"go\n\nMUST: be good.\n")
+        r = doctor.check_steers(self.p)
         self.assertEqual(r.status, "FAIL")  # fm check runs the doctor: a commit can't leave a steer rule unchecked
         self.assertIn("rule one: no check", r.detail)
         self.fm("decide", "rule one, enforcement still building", "--cites", "user steer", "--revisited", "rule one",
                 "--check", "pending T-0001")
-        self.assertEqual(fmdoctor.check_steers(self.p).status, "PASS")  # pending passes the doctor
+        self.assertEqual(doctor.check_steers(self.p).status, "PASS")  # pending passes the doctor
         self.assertEqual(self.c.steer_checks(self.p), ["%s rule one, enforcement still building: check pending T-0001"
                                                        % self.c.now()[:10]])  # and keeps the sweep red
 
@@ -575,7 +575,7 @@ class SteerChecks(ForemanTestCase):
 
 class ShipBets(Base):  # T-2496: a ship bet is scored in hours by CI's blocking jobs, apart from the bars
     def test_a_ship_bet_is_written_once_per_commit_and_settled_by_ci_s_verdict(self):
-        import fmoutcomes as o
+        from sampo import outcomes as o
         tid = json.loads(self.fm("task", "new", "Ship it", "--type", "FIX", "--tier", "S", "--json").stdout)["id"]
         green, red = "a" * 40, "b" * 40
         row = o.ship_bet(self.p, 90, tid, green)
@@ -600,7 +600,7 @@ class ShipBets(Base):  # T-2496: a ship bet is scored in hours by CI's blocking 
 
 class BaseRateHeld(Base):  # T-2423: the base rate counts held as the bet scorer does
     def test_a_correction_or_a_smoke_failure_is_no_miss_in_the_base_rate(self):
-        import fmoutcomes as o
+        from sampo import outcomes as o
         outs = {f"T-{i}": {"type": "FIX", "tier": "S", "fate": f}
                 for i, f in enumerate(("held", "smoke failed after", "corrected", "fixed later"))}
         self.assertEqual(o.base_rate(outs, {}, "FIX", "S"), 75)
@@ -616,19 +616,19 @@ class BaseRateNote(Base):  # T-2497 (Mission 2, #8): a plan's percent against it
                             f"Choice 1 ({pct}%): it holds").stdout
 
     def test_a_choice_far_from_its_base_rate_is_named_with_both_numbers(self):
-        import fmoutcomes
+        from sampo import outcomes
         from unittest import mock
         tid, _ = self.plan(75)
         b = c.find_brief(self.p, tid)
-        with mock.patch.object(fmoutcomes, "base_rate", return_value=96):
-            note = fmoutcomes.base_note(self.p, b)
+        with mock.patch.object(outcomes, "base_rate", return_value=96):
+            note = outcomes.base_note(self.p, b)
         self.assertIn("75%", note)
         self.assertIn("96%", note)
         self.assertIn("21 points under", note)
-        with mock.patch.object(fmoutcomes, "base_rate", return_value=85):
-            self.assertEqual(fmoutcomes.base_note(self.p, b), "")  # within 20 points
-        with mock.patch.object(fmoutcomes, "base_rate", return_value=None):
-            self.assertEqual(fmoutcomes.base_note(self.p, b), "")  # no history
+        with mock.patch.object(outcomes, "base_rate", return_value=85):
+            self.assertEqual(outcomes.base_note(self.p, b), "")  # within 20 points
+        with mock.patch.object(outcomes, "base_rate", return_value=None):
+            self.assertEqual(outcomes.base_note(self.p, b), "")  # no history
 
     def test_the_note_is_kept_at_focus_and_shown_by_fm_next(self):
         tid, _ = self.plan(75)
@@ -642,7 +642,7 @@ class BaseRateNote(Base):  # T-2497 (Mission 2, #8): a plan's percent against it
 class ShipNote(Base):  # T-2611 (Mission 2, #8): the ship record meets the stated chance where it is typed
     def settled(self, n, held):
         """n ship bets settled by CI's verdict, `held` of them green."""
-        import fmoutcomes as o
+        from sampo import outcomes as o
         tid = json.loads(self.fm("task", "new", "Ship them", "--type", "FIX", "--tier", "S", "--json").stdout)["id"]
         for i in range(n):
             sha = f"{i:012x}" + "0" * 28  # a bet is keyed by the commit's first 12 characters
@@ -651,18 +651,18 @@ class ShipNote(Base):  # T-2611 (Mission 2, #8): the ship record meets the state
         return tid
 
     def test_a_chance_far_from_twenty_settled_ship_bets_names_the_record(self):
-        import fmoutcomes as o
+        from sampo import outcomes as o
         self.settled(21, 21)
         self.assertEqual(o.ship_note(self.p, 85), "Ship record: 21 of 21 ship bets held (100%); 85% sits 15 points "
                                                   "under it. State what you believe; fm ci-watch scores it.")
         self.assertEqual(o.ship_note(self.p, 90), "", "within 15 points: nothing to say")
 
     def test_under_twenty_settled_says_nothing(self):
-        import fmoutcomes as o
+        from sampo import outcomes as o
         self.settled(19, 19)
         self.assertEqual(o.ship_note(self.p, 50), "")
 
     def test_an_overconfident_chance_reads_over(self):
-        import fmoutcomes as o
+        from sampo import outcomes as o
         self.settled(20, 10)
         self.assertIn("95% sits 45 points over it", o.ship_note(self.p, 95))

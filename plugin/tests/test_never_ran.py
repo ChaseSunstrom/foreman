@@ -31,7 +31,7 @@ class NeverRanUnlocks(ForemanTestCase):
 
     def test_a_run_that_found_no_tests_does_not_lock(self):
         # T-1128: a mistyped module name in run.py, unittest or pytest ran nothing and failed, and locked the criterion
-        import fmcore as c
+        from sampo import core as c
         for out in ("Ran 0 tests in 0.2s (0 classes)\n\nNO TESTS RAN", "\nRan 0 tests in 0.000s\n\nNO TESTS RAN\n",
                     "======== no tests ran in 0.01s ========"):
             self.assertEqual(c.never_ran("python3 run.py test_x", 5, out), "no tests ran")
@@ -45,7 +45,7 @@ class NeverRanUnlocks(ForemanTestCase):
 
     def test_a_missing_package_script_does_not_lock(self):
         # T-1133: T-1045's `npm test` named a script the package doesn't have, and its criterion locked red
-        import fmcore as c
+        from sampo import core as c
         for out in ('npm error Missing script: "test"\nnpm error\nnpm error To see a list of scripts, run:\nnpm error   npm run',
                     'npm ERR! Missing script: "test"', 'error Command "test" not found.',
                     ' ERR_PNPM_NO_SCRIPT  Missing script: test'):

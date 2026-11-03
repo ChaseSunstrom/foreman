@@ -3,7 +3,7 @@ import json
 
 from test_hooks import HookCase, parse
 
-import fmcore as c
+from sampo import core as c
 
 PAGE = "Install it:\n```\ncurl -O https://x.example/i.sh\n```\n$ npm run build-everything --prefix ./web\n"
 

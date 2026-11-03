@@ -8,8 +8,8 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmbus
-import fmcore as c
+from sampo import bus
+from sampo import core as c
 
 
 class LaneStall(ForemanTestCase):
@@ -22,8 +22,8 @@ class LaneStall(ForemanTestCase):
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
         b.meta["builder"] = c.now()
-        b.meta["builder_proc"] = (f"{fmbus.host_id()}|{os.getpid()}|{fmbus._proc(os.getpid())[1]}" if live
-                                  else f"{fmbus.host_id()}|999999999|1")
+        b.meta["builder_proc"] = (f"{bus.host_id()}|{os.getpid()}|{bus._proc(os.getpid())[1]}" if live
+                                  else f"{bus.host_id()}|999999999|1")
         c.save_brief(p, b)
         self.wip = os.path.join(self.path, "wip.py")
         with open(self.wip, "w") as f:
@@ -66,18 +66,18 @@ class LaneStall(ForemanTestCase):
         self.assertIsNone(self.lane_row()["stalled_min"])
 
     def test_the_result_is_cached_and_a_bad_threshold_means_the_default(self):
-        import fmlanes
+        from sampo import lanes
         self.builder()
         p = c.find_project(self.repo)
         os.environ["FM_STALL_MIN"] = "0"
         self.addCleanup(os.environ.pop, "FM_STALL_MIN", None)
-        self.assertEqual(fmlanes.stalled(p), {})  # 0 is the default 15 min, not "always"
+        self.assertEqual(lanes.stalled(p), {})  # 0 is the default 15 min, not "always"
         os.environ["FM_STALL_MIN"] = "0.0001"
         time.sleep(1)
-        self.assertEqual(fmlanes.stalled(p), {}, "cached: the 60 s old answer stands")
+        self.assertEqual(lanes.stalled(p), {}, "cached: the 60 s old answer stands")
         os.environ["FM_STALL_CACHE_S"] = "0"
         self.addCleanup(os.environ.pop, "FM_STALL_CACHE_S", None)
-        self.assertEqual(len(fmlanes.stalled(p)), 1)
+        self.assertEqual(len(lanes.stalled(p)), 1)
 
     def test_a_stopped_lane_keeps_its_own_label(self):
         tid = self.builder(live=False)

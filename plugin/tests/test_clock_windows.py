@@ -11,10 +11,10 @@ from unittest import mock
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 T0 = datetime.datetime(2026, 9, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
-LIB = os.path.dirname(c.__file__)
+LIB = os.path.dirname(os.path.dirname(c.__file__))
 
 
 def at(days, seconds=0):
@@ -50,15 +50,15 @@ class ClockWindows(ForemanTestCase):
     def test_clock_reads_and_ignores_a_bad_value(self):
         def run(v):
             e = dict(os.environ, PYTHONPATH=LIB, FOREMAN_NOW=v)
-            return subprocess.run([sys.executable, "-c", "import fmcore as c;print(c.clock().isoformat(), c.now())"],
+            return subprocess.run([sys.executable, "-c", "from sampo import core as c;print(c.clock().isoformat(), c.now())"],
                                   env=e, capture_output=True, text=True, cwd=self.tmp).stdout
         self.assertEqual(run("2026-09-01T12:00:00Z"), "2026-09-01T12:00:00+00:00 2026-09-01T12:00:00Z\n")
         self.assertEqual(run("2026-09-01T14:00:00+02:00"), "2026-09-01T12:00:00+00:00 2026-09-01T12:00:00Z\n")
         self.assertRegex(run("junk"), r"^20\d\d-")  # malformed: the real clock, no crash
 
     def test_no_raw_datetime_now_in_the_windowed_readers(self):
-        for mod in ("fmoutcomes.py", "fmcost.py"):
-            with open(os.path.join(LIB, mod), encoding="utf-8") as f:
+        for mod in ("outcomes.py", "cost.py"):
+            with open(os.path.join(LIB, "sampo", mod), encoding="utf-8") as f:
                 self.assertNotRegex(f.read(), r"datetime\.now\(")
 
 
@@ -66,9 +66,9 @@ class PinnedClockDoctor(unittest.TestCase):
     """T-2645 review: FOREMAN_NOW left set outside a test pins every timestamp; fm doctor says so."""
 
     def test_doctor_warns_while_the_clock_is_pinned(self):
-        import fmdoctor
+        from sampo import doctor
         with mock.patch.dict(os.environ, {"FOREMAN_NOW": "2026-01-01T00:00:00Z"}):
-            self.assertEqual(fmdoctor.check_pinned_clock().status, "WARN")
+            self.assertEqual(doctor.check_pinned_clock().status, "WARN")
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("FOREMAN_NOW", None)
-            self.assertEqual(fmdoctor.check_pinned_clock().status, "PASS")
+            self.assertEqual(doctor.check_pinned_clock().status, "PASS")

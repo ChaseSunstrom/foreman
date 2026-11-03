@@ -11,8 +11,8 @@ import unittest
 
 from helpers import ForemanTestCase, read_text, read_json
 
-import fmcore as c
-import fmcli
+from sampo import core as c
+from sampo import cli
 
 
 class HelpRegistrations(unittest.TestCase):
@@ -20,22 +20,22 @@ class HelpRegistrations(unittest.TestCase):
     tests by name and drops fmcli.py's co-change pairs, so T-1608 never ran test_help and shipped a shared position)."""
     def test_tiers_come_from_registrations(self):
         # T-1144: each command declares its tier where it is registered; no shared table to conflict on
-        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
-        listed = [w for _, names in fmcli.HELP_TIERS for w in names.split()]
+        sub = next(a for a in cli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        listed = [w for _, names in cli.HELP_TIERS for w in names.split()]
         self.assertEqual(sorted(listed), sorted(sub.choices))
-        self.assertEqual([t for t, _ in fmcli.HELP_TIERS][0], "Every task")
-        src = open(os.path.join(os.path.dirname(__file__), "..", "lib", "fmcli.py")).read()
+        self.assertEqual([t for t, _ in cli.HELP_TIERS][0], "Every task")
+        src = open(os.path.join(os.path.dirname(__file__), "..", "lib", "sampo", "cli.py")).read()
         self.assertNotIn('("Every task", "next', src, "no hand-kept name list")
 
     def test_each_command_has_its_own_help_position(self):
         # T-1686: img, shot and critique all took 93; a tie silently falls back to registration order. One position per
         # registration site: the instruments loop (fminstr.TOOLS) is one site, its tools in the registry's order
-        import fminstr
-        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
-        with open(os.path.join(os.path.dirname(__file__), "..", "lib", "fmcli.py"), encoding="utf-8") as f:
+        from sampo import instr
+        sub = next(a for a in cli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        with open(os.path.join(os.path.dirname(__file__), "..", "lib", "sampo", "cli.py"), encoding="utf-8") as f:
             sites = re.findall(r'\btier=\("[^"]+", (\d+)\)', f.read())
         commands = len({id(p) for p in sub.choices.values()})  # an alias (status) is its command's parser
-        self.assertEqual(len(sites), commands - len(fminstr.TOOLS) + 1, "every registration site read")
+        self.assertEqual(len(sites), commands - len(instr.TOOLS) + 1, "every registration site read")
         self.assertEqual(sorted({p for p in sites if sites.count(p) > 1}, key=int), [], "positions shared")
 
 
@@ -45,7 +45,7 @@ class OutJson(unittest.TestCase):
         import argparse, contextlib, datetime, io
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            fmcli.out(argparse.Namespace(json=True),
+            cli.out(argparse.Namespace(json=True),
                       {"when": datetime.datetime(2026, 10, 22, 12, 0), "name": "a\x7fb\x9bc"}, None)
         text = buf.getvalue()
         self.assertIn("2026-10-22 12:00:00", text)
@@ -105,8 +105,8 @@ class ShadowRows(ForemanTestCase):  # T-2488: each model use logs the path's own
 
 class FlagsAmongPaths(unittest.TestCase):  # T-1671
     def test_a_flag_among_path_words_moves_in_front_and_free_text_is_left_as_typed(self):
-        p = fmcli.build_parser()
-        first = lambda argv: fmcli._options_first(p, argv)  # noqa: E731
+        p = cli.build_parser()
+        first = lambda argv: cli._options_first(p, argv)  # noqa: E731
         a = p.parse_args(first(["new", "check", "--run", "x.py"]))
         self.assertEqual((a.words, a.run), (["check", "x.py"], True))
         a = p.parse_args(first(["-p", "proj", "img", "diff", "a.png", "--tol", "3", "b.png"]))
@@ -125,11 +125,11 @@ class ParserOnce(unittest.TestCase):
         # T-1378: the hook queues a prompt's requests with in-process fm calls; each rebuilt the parser twice (its own
         # and fmrecall's similar-command search), ~0.15 s a request, so at load only 2-3 of 16 fit the hook's time
         from unittest import mock
-        with mock.patch.object(fmcli, "_PARSER", None), \
-                mock.patch.object(fmcli, "_build_parser", wraps=fmcli._build_parser) as built:
-            a, b = fmcli.build_parser(), fmcli.build_parser()
-            import fmrecall
-            fmrecall.covered("list every task in the queue with its status")
+        with mock.patch.object(cli, "_PARSER", None), \
+                mock.patch.object(cli, "_build_parser", wraps=cli._build_parser) as built:
+            a, b = cli.build_parser(), cli.build_parser()
+            from sampo import recall
+            recall.covered("list every task in the queue with its status")
         self.assertIs(a, b)
         self.assertEqual(built.call_count, 1)
         self.assertEqual(a.parse_args(["state"]).cmd, "state")
@@ -148,17 +148,17 @@ class ParserOnce(unittest.TestCase):
                       else None, a.default, a.required) for a in ap._actions]
                     + [(k, shape(v)) for k, v in (s.choices.items() if s else ())])
 
-        full = subs(fmcli.build_parser()).choices
-        tiers = list(fmcli.HELP_TIERS)
+        full = subs(cli.build_parser()).choices
+        tiers = list(cli.HELP_TIERS)
         for name in full:
-            part = subs(fmcli._build_parser(only=name)).choices
+            part = subs(cli._build_parser(only=name)).choices
             self.assertEqual(set(part), {name, *(k for k, v in full.items() if v is full[name])}, name)
             self.assertEqual(shape(part[name]), shape(full[name]), name)
-        self.assertEqual(fmcli.HELP_TIERS, tiers, "fm help's tiers stay whole")
+        self.assertEqual(cli.HELP_TIERS, tiers, "fm help's tiers stay whole")
         from unittest import mock
-        with mock.patch.object(fmcli, "_PARSER", None), mock.patch.dict(fmcli._PARTS, clear=True):
-            self.assertEqual(len(subs(fmcli._parser_for(["-p", "x", "next"])).choices), 1)
-            self.assertEqual(len(subs(fmcli._parser_for(["nxet"])).choices), len(full), "a typo gets the whole parser")
+        with mock.patch.object(cli, "_PARSER", None), mock.patch.dict(cli._PARTS, clear=True):
+            self.assertEqual(len(subs(cli._parser_for(["-p", "x", "next"])).choices), 1)
+            self.assertEqual(len(subs(cli._parser_for(["nxet"])).choices), len(full), "a typo gets the whole parser")
 
 
 class CaptureAndIntake(ForemanTestCase):
@@ -321,11 +321,11 @@ class CaptureAndIntake(ForemanTestCase):
 
     def test_a_mid_sentence_scope_keeps_its_text_and_an_end_one_is_dropped(self):
         # T-1991: "an intake line made only of @path tokens …" became "made only of  tokens"
-        import fmcli
-        self.assertEqual(fmcli._title("a line of @path tokens is dropped @plugin/lib/fmcore.py"),
+        from sampo import cli
+        self.assertEqual(cli._title("a line of @path tokens is dropped @plugin/lib/fmcore.py"),
                          "A line of path tokens is dropped")
-        self.assertEqual(fmcli._title("@src/app.py the totals row is wrong"), "The totals row is wrong")
-        self.assertEqual(fmcli._title("mail a@b.com bounces @src/mail.py"), "Mail a@b.com bounces")
+        self.assertEqual(cli._title("@src/app.py the totals row is wrong"), "The totals row is wrong")
+        self.assertEqual(cli._title("mail a@b.com bounces @src/mail.py"), "Mail a@b.com bounces")
 
     def test_titles_cannot_carry_terminal_control_sequences(self):
         # round 4 (brainstorm, security): titles are printed by the dashboard, statusline and terminal title
@@ -806,7 +806,7 @@ class LogNamespace(ForemanTestCase):  # T-2244: fm log can't write a Foreman eve
         e = c.ledger_tail(p)[-1]
         self.assertEqual((e["event"], e["data"]["event"]), ("log", "check_run"))
         self.assertFalse(any(x["event"] == "check_run" for x in c.ledger_tail(p, 3000)))
-        note = fmcli._preflight(p, argparse.Namespace(meta={}))
+        note = cli._preflight(p, argparse.Namespace(meta={}))
         self.assertIn("no fm check on this tree yet", note)
 
 
@@ -893,13 +893,13 @@ class Checks(ForemanTestCase):
         self.assertEqual(p.returncode, 0, p.stdout)
         self.assertIn("passed on a rerun of just them", p.stdout)
         self.assertEqual(c.load_briefs(c.find_project(self.repo)), [], "no baseline task for a load-spike failure")
-        import fmcli
-        self.assertIsNone(fmcli._narrow_rerun("python3 run.py two", "FAIL: t (m.C.t)\nFAILED (failures=2)\n"),
+        from sampo import cli
+        self.assertIsNone(cli._narrow_rerun("python3 run.py two", "FAIL: t (m.C.t)\nFAILED (failures=2)\n"),
                           "a failure the names don't cover: the whole gate stands")
-        self.assertIsNone(fmcli._narrow_rerun("go test ./...", "--- FAIL: TestX\n"))
-        self.assertEqual(fmcli._narrow_rerun("pytest -q", "FAILED a.py::t - x\n=== 1 failed, 3 passed ===\n"),
+        self.assertIsNone(cli._narrow_rerun("go test ./...", "--- FAIL: TestX\n"))
+        self.assertEqual(cli._narrow_rerun("pytest -q", "FAILED a.py::t - x\n=== 1 failed, 3 passed ===\n"),
                          "pytest -q a.py::t")
-        self.assertIsNone(fmcli._narrow_rerun("pytest -q", "FAILED a.py::t - x\n=== 1 failed, 1 error ===\n"))
+        self.assertIsNone(cli._narrow_rerun("pytest -q", "FAILED a.py::t - x\n=== 1 failed, 1 error ===\n"))
 
     def test_a_gate_flaky_again_and_again_fails(self):
         # final review: a racy bug that passes half the time mustn't keep passing as "flaky"
@@ -968,16 +968,16 @@ class Checks(ForemanTestCase):
 
     def test_each_test_extension_gets_its_own_runner(self):
         # T-1135: a Python default plus `--for .tsx`: a changed .py and .tsx test run both commands, once each
-        import fmcli
+        from sampo import cli
         self.fm("init")
         self.fm("check", "affected", "echo py {names}")
-        before = fmcli.affected(c.find_project(self.repo, create=False))
+        before = cli.affected(c.find_project(self.repo, create=False))
         self.fm("check", "affected", "--for", ".tsx", "echo tsx")
         os.makedirs(os.path.join(self.repo, "web"), exist_ok=True)
         for n in ("test_a.py", "pane.test.tsx"):
             with open(os.path.join(self.repo, "web", n), "w") as f:
                 f.write("x\n")
-        cmd, tests, _ = fmcli.affected(c.find_project(self.repo, create=False))
+        cmd, tests, _ = cli.affected(c.find_project(self.repo, create=False))
         self.assertEqual(cmd, "echo py test_a && echo tsx")
         self.assertEqual(sorted(tests), ["web/pane.test.tsx", "web/test_a.py"])
         out = self.fm("check", "--affected", check=False).stdout
@@ -1151,9 +1151,9 @@ class AuditPrep(ForemanTestCase):
         out = self.fm("audit", "prep", "T-0001").stdout
         self.assertIn("ReportFindings", out)
         for field in ("file", "line", "short_summary", "failure_scenario", "category"):
-            self.assertIn(field, fmcli._REVIEW_OUT)
-        self.assertIn("HIGH/MEDIUM/LOW", fmcli._REVIEW_OUT)
-        self.assertTrue(fmcli._FINDING.search("- HIGH a.py:3 boom"))
+            self.assertIn(field, cli._REVIEW_OUT)
+        self.assertIn("HIGH/MEDIUM/LOW", cli._REVIEW_OUT)
+        self.assertTrue(cli._FINDING.search("- HIGH a.py:3 boom"))
 
     def test_prep_freezes_the_diff_and_prints_lens_briefs(self):
         self.fm("init")
@@ -1245,9 +1245,9 @@ class AuditPrep(ForemanTestCase):
 
     def test_every_lens_has_a_template_in_the_audit_reference(self):
         # fm audit prep builds briefs from references/audit.md: rewording it must not silently drop a lens
-        import fmcli
+        from sampo import cli
         with open(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references", "audit.md")) as f:
-            found = {m.group(1) for m in fmcli._LENS_TPL.finditer(f.read())}
+            found = {m.group(1) for m in cli._LENS_TPL.finditer(f.read())}
         self.assertEqual(found, set(c.AUDIT_LENSES) - {"self"})
 
 
@@ -1503,7 +1503,7 @@ class Redo(ForemanTestCase):
     def test_a_recreated_task_keeps_the_dropped_tasks_diff(self):
         # T-0767: T-0761 was dropped (a locked criterion named a check that couldn't run) and recreated as T-0766;
         # the new task's snapshot was taken after the edits, so finish --commit said "nothing to commit"
-        import fmmap
+        from sampo import map as smap
         self.fm("init")
         new = lambda *a: json.JSONDecoder().raw_decode(self.fm(
             "task", "new", *a, "--type", "FIX", "--tier", "S", "--json", "--ac", "works :: fm state",
@@ -1519,7 +1519,7 @@ class Redo(ForemanTestCase):
         again = new("Second try", "--redo", old, "--focus")
         p = c.find_project(self.repo)
         b = c.find_brief(p, again)
-        self.assertIn("fix.py", fmmap.changed(p.root, c.task_base(p.root, b)))
+        self.assertIn("fix.py", smap.changed(p.root, c.task_base(p.root, b)))
         self.assertIn(old, read_text(b.path))
 
 
@@ -1604,7 +1604,7 @@ class AffectedPairs(ForemanTestCase):
     runs the wiring tests even though no test is named after it."""
 
     def test_a_co_changed_test_is_affected(self):
-        import fmcli
+        from sampo import cli
         self.fm("init")
         self.fm("check", "affected", "python3 -m pytest -q {tests}")
         os.makedirs(os.path.join(self.repo, "hooks"))
@@ -1619,7 +1619,7 @@ class AffectedPairs(ForemanTestCase):
                 "--focus")
         with open(os.path.join(self.repo, "hooks", "hooks.json"), "w") as f:
             f.write('{"n": 9}\n')
-        _, tests, _ = fmcli.affected(c.find_project(self.repo, create=False))
+        _, tests, _ = cli.affected(c.find_project(self.repo, create=False))
         self.assertIn("tests/test_wiring.py", tests)
 
     def red_lane(self, edits):

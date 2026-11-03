@@ -2,7 +2,7 @@
 import unittest
 
 import helpers  # noqa: F401  (puts plugin/lib on the path)
-import fmcontract as con
+from sampo import contract as con
 
 
 class ReceiptYield(unittest.TestCase):

@@ -6,8 +6,8 @@ from unittest import mock
 
 from helpers import ForemanTestCase
 
-import fmcli
-import fmcore as c
+from sampo import cli
+from sampo import core as c
 
 
 class Bulk(ForemanTestCase):
@@ -65,9 +65,9 @@ class Bulk(ForemanTestCase):
         self.assertEqual(self.status("T-0002", "T-0004"), ["deferred"] * 2)
 
     def test_task_ids_dedupes_keeps_order_and_caps(self):
-        self.assertEqual(fmcli.task_ids(self.p, "T-0003,T-2..3,T-0099"), ["T-0003", "T-0002", "T-0099"])
-        with mock.patch.object(fmcli, "BULK_MAX", 2), self.assertRaises(fmcli.UsageError):
-            fmcli.task_ids(self.p, "T-1..T-7")  # a typo'd range can't sweep the backlog
+        self.assertEqual(cli.task_ids(self.p, "T-0003,T-2..3,T-0099"), ["T-0003", "T-0002", "T-0099"])
+        with mock.patch.object(cli, "BULK_MAX", 2), self.assertRaises(cli.UsageError):
+            cli.task_ids(self.p, "T-1..T-7")  # a typo'd range can't sweep the backlog
 
 
 if __name__ == "__main__":

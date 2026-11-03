@@ -274,8 +274,8 @@ def duel(state, model=None, kind=""):
         if x.get("requests") or not case.get("requests"):
             return x.get("requests")
         sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
-        import fmbench
-        return fmbench.per_request(case, x.get("failed") or [])
+        from sampo import bench as sbench
+        return sbench.per_request(case, x.get("failed") or [])
     pick = lambda x: {"pass": bool(x.get("pass")), "cost": round(x.get("cost_usd") or 0, 3), "score": x.get("score"),
                       "runs": x.get("runs") or 1, "passed": round((x.get("pass_rate") or 0) * (x.get("runs") or 1)),
                       "seconds": x.get("seconds") or 0, "turns": x.get("turns") or 0, "error": bool(x.get("error")),
@@ -328,8 +328,8 @@ def code_counts():
     with open(os.path.join(ROOT, "plugin", "tests", "test_models.py"), encoding="utf-8") as f:
         tests = len(re.findall(r"(?m)^    def test_", f.read()))
     sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
-    import fmmodels
-    return {"model_tests": tests, "endpoints": len(fmmodels.LOCAL) + len(fmmodels.CLOUD), "tests": test_count("HEAD")}
+    from sampo import models as smodels
+    return {"model_tests": tests, "endpoints": len(smodels.LOCAL) + len(smodels.CLOUD), "tests": test_count("HEAD")}
 
 
 def main():

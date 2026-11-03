@@ -7,7 +7,7 @@ from helpers import ForemanTestCase
 
 class Tombstones(ForemanTestCase):
     def events(self):
-        import fmcore as c
+        from sampo import core as c
         try:
             with open(os.path.join(c.state_dir(), "events.jsonl")) as f:
                 return [json.loads(x) for x in f if x.strip()]

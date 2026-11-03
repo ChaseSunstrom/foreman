@@ -7,8 +7,8 @@ import sys
 from helpers import FM, ForemanTestCase, read_text
 from test_serve import ServeCase
 
-import fmcore as c
-import fmrecall
+from sampo import core as c
+from sampo import recall
 
 
 class RunModels(ServeCase):
@@ -48,8 +48,8 @@ class RunModels(ServeCase):
     def test_notify_message_is_an_argument_not_shell_text(self):
         note = os.path.join(self.tmp, "n")
         self.fm("notify", f'printf %s "$1" > {note}')
-        import fmserve
-        fmserve._notify(c.find_project(self.repo), "$(touch pwned) `id`")
+        from sampo import serve
+        serve._notify(c.find_project(self.repo), "$(touch pwned) `id`")
         self.assertEqual(read_text(note), "$(touch pwned) `id`")
         self.assertFalse(os.path.exists(os.path.join(self.repo, "pwned")))
 
@@ -82,9 +82,9 @@ class Unattended(ForemanTestCase):
         po = c.find_project(other)
         self.fm("share", "on", cwd=other)
         b = c.Brief.parse("---\nid: T-0007\ntype: FIX\ntier: S\nstatus: done\n---\n# fix billing-service retry\n")
-        fmrecall.share_lesson(po, b, "retry idempotent calls only; see /srv/billing-service/app.py and T-0003, "
+        recall.share_lesson(po, b, "retry idempotent calls only; see /srv/billing-service/app.py and T-0003, "
                                      "mail ops@example.com")
-        rec = json.loads(read_text(fmrecall.shared_path()).splitlines()[0])
+        rec = json.loads(read_text(recall.shared_path()).splitlines()[0])
         for leak in ("/srv", "app.py", "T-0003", "example.com", "billing-service"):
             self.assertNotIn(leak, json.dumps(rec))
         self.assertIn("retry idempotent calls", rec["lesson"])
@@ -136,8 +136,8 @@ class Unattended(ForemanTestCase):
         self.assertEqual(c.read_meta(self.p)["schema"], c.STATE_SCHEMA)
         meta = c.read_meta(self.p)
         c.write_atomic(os.path.join(self.p.dir, "meta.json"), json.dumps(dict(meta, schema=99)))
-        import fmdoctor
-        self.assertEqual(fmdoctor.check_briefs(self.p).status, "FAIL")
+        from sampo import doctor
+        self.assertEqual(doctor.check_briefs(self.p).status, "FAIL")
 
 
 class RunRepeatSkip(ServeCase):

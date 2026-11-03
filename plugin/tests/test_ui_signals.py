@@ -5,7 +5,7 @@ import time
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class Base(ForemanTestCase):
@@ -41,9 +41,9 @@ class Signals(Base):
         self.assertTrue(any("1 blocked" in x["text"] for x in sig))
 
     def test_a_finder_your_drops_muted_shows_amber(self):  # T-2127
-        import fmcli
+        from sampo import cli
         for i in range(7):  # (0 + 5) / (7 + 10) is under fmfind.FLOOR
-            b = fmcli._create(self.p, f"lead {i}", "FIX", "S", "captured", raw="x", source="discovered")
+            b = cli._create(self.p, f"lead {i}", "FIX", "S", "captured", raw="x", source="discovered")
             b.meta.update(finder="docs", status="dropped")
             c.save_brief(self.p, b, touch=False)
         sig = self.ui()["signals"]
@@ -88,12 +88,12 @@ class GoalSignal(Base):
 
 class GrantSignal(Base):  # T-2378: the band shows queued install grants while any wait on the user
     def test_a_queued_grant_shows_one_band_line_naming_the_task(self):
-        import fmgrants
+        from sampo import grants
         self.assertEqual([x for x in self.ui()["signals"] if "grant request" in x["text"]], [])
         r = self.fm_json("task", "new", "Tables", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         import os
         os.unlink(os.path.join(self.p.dir, "grants-line.json"))  # the empty answer was kept a while: start fresh
-        fmgrants.queue(self.p, r["id"], ["plugin"], "needs a table printer", what="tabulate")
+        grants.queue(self.p, r["id"], ["plugin"], "needs a table printer", what="tabulate")
         sig = [x for x in self.ui()["signals"] if "grant request" in x["text"]]
         self.assertEqual(len(sig), 1, sig)
         self.assertIn(f"{r['id']} tabulate", sig[0]["text"])
@@ -118,10 +118,10 @@ class JudgmentSignal(Base):  # T-2344: one band line only when judgment needs th
         self.assertEqual(self.judged(), [])
 
     def test_judgment_a_stated_brier_worse_than_the_base_rate_is_named(self):
-        import fmoutcomes
+        from sampo import outcomes
         from unittest import mock
         snap = {"brier": {"stated": 0.31, "base": 0.22}, "doors_parked": []}
-        with mock.patch.object(fmoutcomes, "snapshot", lambda p: snap):
-            self.assertIn("Brier 0.31, worse than the base rate's 0.22", fmoutcomes.band_line(self.p))
+        with mock.patch.object(outcomes, "snapshot", lambda p: snap):
+            self.assertIn("Brier 0.31, worse than the base rate's 0.22", outcomes.band_line(self.p))
             snap["brier"] = {"stated": 0.18, "base": 0.22}
-            self.assertEqual(fmoutcomes.band_line(self.p), "")
+            self.assertEqual(outcomes.band_line(self.p), "")

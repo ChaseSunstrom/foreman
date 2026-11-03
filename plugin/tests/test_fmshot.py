@@ -16,8 +16,8 @@ from unittest import mock
 
 from helpers import ForemanTestCase, headless_chrome
 
-import fmimg
-import fmshot
+from sampo import img
+from sampo import shot as sshot
 
 LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
 # A stand-in for Chromium's --remote-debugging-pipe: NUL-separated JSON on fds 3 (in) and 4 (out). Each screenshot is
@@ -27,7 +27,7 @@ LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 STUB = f"""#!{sys.executable}
 import base64, json, os, sys, time
 sys.path.insert(0, {LIB!r})
-import fmimg
+from sampo import img
 mode = os.environ.get("STUB_MODE", "")
 if mode == "nostart":
     sys.stderr.write("chrome: error while loading shared libraries: libnss3.so: cannot open shared object file\\n")
@@ -63,7 +63,7 @@ while True:
             px = bytearray(b"\\xff" * 256)
             for i in range(n):
                 px[i * 4:i * 4 + 3] = b"\\0\\0\\0"
-            res = {{"data": base64.b64encode(fmimg.encode(8, 8, bytes(px))).decode()}}
+            res = {{"data": base64.b64encode(img.encode(8, 8, bytes(px))).decode()}}
         elif msg["method"] == "Runtime.evaluate" and "document.fonts" in msg["params"].get("expression", ""):
             res = {{"result": {{"type": "object", "value": json.loads(os.environ.get("STUB_FONTS", "[]"))}}}}
         send({{"id": msg["id"], "result": res}})
@@ -120,12 +120,12 @@ class Capture(StubCase):
         os.makedirs(empty)
         with mock.patch.dict(os.environ, {"FOREMAN_CHROME": "", "PATH": empty, "HOME": empty,
                                           "PLAYWRIGHT_BROWSERS_PATH": os.path.join(self.tmp, "pw")}):
-            self.assertEqual(fmshot.chrome(), os.path.join(build, "chrome-headless-shell"))
+            self.assertEqual(sshot.chrome(), os.path.join(build, "chrome-headless-shell"))
 
     def test_foreman_chrome_none_turns_the_browser_off(self):  # T-1806: CI's chromium crashes under load
         import helpers
         with mock.patch.dict(os.environ, {"FOREMAN_CHROME": "none", "PATH": os.path.dirname(self.stub)}):
-            self.assertIsNone(fmshot.chrome())
+            self.assertIsNone(sshot.chrome())
             self.assertIsNone(helpers.headless_chrome())
 
     def test_a_stub_browser_lists_the_viewport_frames_and_poster(self):
@@ -173,13 +173,13 @@ class Capture(StubCase):
         self.shot(self.page, "--frames", "2", "--every", "10", "--frozen")
         [src] = [c["params"]["source"] for c in self.calls()
                  if c.get("method") == "Page.addScriptToEvaluateOnNewDocument"]
-        self.assertIn(fmshot.FREEZE_CSS, src)
-        self.assertIn(str(fmshot.FROZEN_MS), src)
-        self.assertIn(fmshot.HOLD, [c["params"].get("expression") for c in self.calls()
+        self.assertIn(sshot.FREEZE_CSS, src)
+        self.assertIn(str(sshot.FROZEN_MS), src)
+        self.assertIn(sshot.HOLD, [c["params"].get("expression") for c in self.calls()
                                     if c.get("method") == "Runtime.evaluate"])  # held after load, before the shots
         with open(os.path.join(LIB, "smoke_web.cjs")) as f:
             cjs = f.read()
-        self.assertIn(fmshot.FREEZE_CSS.split(";")[0], cjs, "the same freeze as fm smoke's frozen profile")
+        self.assertIn(sshot.FREEZE_CSS.split(";")[0], cjs, "the same freeze as fm smoke's frozen profile")
         self.assertIn('new Date("2026-01-15T10:00:00Z")', cjs)
 
     def test_out_takes_a_folder_and_refuses_a_link(self):
@@ -234,8 +234,8 @@ class Capture(StubCase):
             self.assertNotEqual(self.shot(self.page, *bad, check=False).returncode, 0, bad)
 
     def test_painted_counts_pixels_off_the_background(self):
-        self.assertEqual(fmshot.painted(fmimg.decode(base64.b64decode(_png(3)))), 3)
-        self.assertEqual(fmshot.painted(fmimg.decode(base64.b64decode(_png(0)))), 0)
+        self.assertEqual(sshot.painted(img.decode(base64.b64decode(_png(3)))), 3)
+        self.assertEqual(sshot.painted(img.decode(base64.b64decode(_png(0)))), 0)
 
 
 class Unruly(StubCase):
@@ -246,10 +246,10 @@ class Unruly(StubCase):
                                   out=os.path.join(self.tmp, "o"), project=None, diff=None)
         env = {"FOREMAN_CHROME": self.stub, "STUB_LOG": self.log, "STUB_MODE": mode}
         out, code, start = io.StringIO(), 0, time.monotonic()
-        with mock.patch.dict(os.environ, env), mock.patch.object(fmshot, "CALL_S", 1), \
-                mock.patch.object(fmshot, "LOAD_S", 1), contextlib.redirect_stdout(out):
+        with mock.patch.dict(os.environ, env), mock.patch.object(sshot, "CALL_S", 1), \
+                mock.patch.object(sshot, "LOAD_S", 1), contextlib.redirect_stdout(out):
             try:
-                fmshot.cmd_shot(args)
+                sshot.cmd_shot(args)
             except SystemExit as e:
                 code = e.code
         return code, json.loads(out.getvalue()), time.monotonic() - start
@@ -370,7 +370,7 @@ class Diff(StubCase):
 
     def test_a_baseline_of_another_size_fails(self):
         base = self.baseline("0")
-        fmimg.save(os.path.join(base, "page", "viewport.png"), 4, 4, b"\xff" * 64)
+        img.save(os.path.join(base, "page", "viewport.png"), 4, 4, b"\xff" * 64)
         for f in os.listdir(os.path.join(base, "page")):
             if f.startswith("frame-"):
                 os.unlink(os.path.join(base, "page", f))
@@ -443,7 +443,7 @@ def _png(n):
     px = bytearray(b"\xff" * 64 * 4)
     for i in range(n):
         px[i * 4:i * 4 + 3] = b"\0\0\0"
-    return base64.b64encode(fmimg.encode(8, 8, bytes(px)))
+    return base64.b64encode(img.encode(8, 8, bytes(px)))
 
 
 @unittest.skipUnless(headless_chrome(), "no headless Chromium here")
@@ -467,7 +467,7 @@ class InABrowser(ForemanTestCase):
             f.write("<style>@keyframes fadein{from{opacity:0}to{opacity:1}}"
                     "div{height:300px;background:#c00;animation:fadein .6s forwards}</style><div></div>")
         shot = json.loads(self.fm("shot", page, "--frames", "0", "--frozen", "--json").stdout)["pages"][0]
-        self.assertGreater(fmshot.painted(fmimg.load(shot["shots"][0])), 100_000, "the hero, faded in")
+        self.assertGreater(sshot.painted(img.load(shot["shots"][0])), 100_000, "the hero, faded in")
 
 
 if __name__ == "__main__":

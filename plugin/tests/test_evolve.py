@@ -7,7 +7,7 @@ import sys
 from helpers import ForemanTestCase, read_text
 from test_bench import git
 
-import fmcore as c
+from sampo import core as c
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -169,16 +169,16 @@ class BetterOutsideNoise(__import__("unittest").TestCase):
                           for i, r in enumerate(rates)]}
 
     def test_a_win_inside_the_noise_band_is_not_better(self):
-        import fmevolve
+        from sampo import evolve as sevolve
         base = self.result([2 / 3] * 6, 1.00, 0.30)
-        self.assertFalse(fmevolve._better(base, self.result([2 / 3] * 5 + [1.0], 1.00, 0.30)), "one pass inside the band")
-        self.assertFalse(fmevolve._better(base, self.result([2 / 3] * 6, 0.85, 0.30)), "cheaper, inside the cost band")
-        self.assertTrue(fmevolve._better(base, self.result([1.0] * 6, 1.00, 0.30)), "six passes ahead: outside")
-        self.assertTrue(fmevolve._better(base, self.result([2 / 3] * 6, 0.40, 0.01)), "much cheaper, tight spread")
+        self.assertFalse(sevolve._better(base, self.result([2 / 3] * 5 + [1.0], 1.00, 0.30)), "one pass inside the band")
+        self.assertFalse(sevolve._better(base, self.result([2 / 3] * 6, 0.85, 0.30)), "cheaper, inside the cost band")
+        self.assertTrue(sevolve._better(base, self.result([1.0] * 6, 1.00, 0.30)), "six passes ahead: outside")
+        self.assertTrue(sevolve._better(base, self.result([2 / 3] * 6, 0.40, 0.01)), "much cheaper, tight spread")
 
     def test_a_pass_rate_out_of_range_is_read_within_0_and_1(self):
-        import fmbench
-        self.assertEqual(fmbench._rate({"pass_rate": 5}), 1.0)
-        self.assertEqual(fmbench._rate({"pass_rate": -1}), 0.0)
-        self.assertEqual(fmbench._rate({"pass_rate": "x"}), 0.0)
-        self.assertEqual(fmbench._rate({"pass": True}), 1.0)
+        from sampo import bench
+        self.assertEqual(bench._rate({"pass_rate": 5}), 1.0)
+        self.assertEqual(bench._rate({"pass_rate": -1}), 0.0)
+        self.assertEqual(bench._rate({"pass_rate": "x"}), 0.0)
+        self.assertEqual(bench._rate({"pass": True}), 1.0)

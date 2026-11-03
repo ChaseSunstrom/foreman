@@ -7,8 +7,8 @@ from unittest import mock
 from types import SimpleNamespace
 
 from helpers import ForemanTestCase  # noqa: F401  (puts plugin/lib on sys.path)
-import fmcli
-import fmcore as c
+from sampo import cli
+from sampo import core as c
 
 RED = "python3 plugin/tests/run.py test_exam"
 
@@ -27,10 +27,10 @@ def gaps(changed, b, listed="# scores\nplugin/lib/fmexam.py\nsite/*.py\n", then=
         if listed is not None:
             with open(os.path.join(root, ".fmproved"), "w") as f:
                 f.write(listed)
-        with mock.patch.object(fmcli.c, "git_root", return_value=root), \
-                mock.patch.object(fmcli.c, "task_base", return_value="abc"), \
-                mock.patch("fmmap.changed", return_value=changed):
-            return fmcli._proved_gaps(SimpleNamespace(root=root), b, then=list(then))
+        with mock.patch.object(cli.c, "git_root", return_value=root), \
+                mock.patch.object(cli.c, "task_base", return_value="abc"), \
+                mock.patch("sampo.map.changed", return_value=changed):
+            return cli._proved_gaps(SimpleNamespace(root=root), b, then=list(then))
 
 
 class ProvedPaths(unittest.TestCase):

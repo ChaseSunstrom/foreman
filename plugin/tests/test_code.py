@@ -237,7 +237,7 @@ class Repairs(CodeCase):
         self.assertEqual(self.status(), "")
 
     def test_a_model_that_cant_write_json_gives_its_plan_field_by_field(self):  # T-1765
-        import fmcode
+        from sampo import smith
         f = self.serve("openai", *[{"text": "nope"}] * 3, {"text": "Type: FIX."}, {"text": "S"},
                        {"text": "Make calc.add add"}, {"text": "- calc.add adds :: `python3 test_calc.py`\nno sep"},
                        {"text": "```\n1. fix calc.add\n```"})
@@ -247,8 +247,8 @@ class Repairs(CodeCase):
         self.assertEqual(len(f.seen), 8)
         self.assertIn("one word of FIX", f.said(3))
         self.assertNotIn("corrected JSON", json.dumps(f.seen[3]["messages"][-1]))
-        self.assertEqual(fmcode._criteria("1. a :: `x`\nno sep"), [{"text": "a", "verify": "x"}])
-        self.assertEqual(fmcode._line(fmcode._unlabel("Why not caught: none: new", "why_not_caught")), "none: new")
+        self.assertEqual(smith._criteria("1. a :: `x`\nno sep"), [{"text": "a", "verify": "x"}])
+        self.assertEqual(smith._line(smith._unlabel("Why not caught: none: new", "why_not_caught")), "none: new")
 
     def test_failing_verify_goes_back_and_a_second_fix_passes(self):
         # a model without native tools: every action is a JSON object in its text
@@ -320,8 +320,8 @@ class Repairs(CodeCase):
         self.serve("anthropic", plan(PLAN),
                    call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"), CLOSE)
         self.code("fix add", "--model", "fake")
-        import fmcore
-        b = fmcore.find_brief(fmcore.find_project(self.repo), self.task()["id"])
+        from sampo import core
+        b = core.find_brief(core.find_project(self.repo), self.task()["id"])
         self.assertEqual(b.meta.get("harness_plan"), "code")
         self.assertNotIn("use what exists", b.section("Approach (options → choice → why)"))
 
@@ -332,33 +332,33 @@ class PlanReadings(CodeCase):
     task fm code files passes fm focus's gate unchanged (no harness exemption for M)."""
 
     def test_check_plan_asks_an_m_plan_for_readings_options_and_a_choice_confidence(self):
-        import fmcode
-        self.assertIsNone(fmcode.check_plan(M_PLAN))
-        self.assertIsNone(fmcode.check_plan(PLAN))  # S is unchanged
+        from sampo import smith
+        self.assertIsNone(smith.check_plan(M_PLAN))
+        self.assertIsNone(smith.check_plan(PLAN))  # S is unchanged
         for k in ("readings", "options", "confidence"):
             with self.subTest(drop=k):
-                self.assertIn(k, fmcode.check_plan({x: v for x, v in M_PLAN.items() if x != k}) or "")
+                self.assertIn(k, smith.check_plan({x: v for x, v in M_PLAN.items() if x != k}) or "")
         bare = dict(M_PLAN, options=[dict(o, fails_if="") for o in M_PLAN["options"]])
-        self.assertIn("fails_if", fmcode.check_plan(bare) or "")
+        self.assertIn("fails_if", smith.check_plan(bare) or "")
         no_less = dict(M_PLAN, options=[dict(o, kind="build") if o["kind"] == "less" else o for o in M_PLAN["options"]])
-        self.assertIn("do less", fmcode.check_plan(no_less) or "")
+        self.assertIn("do less", smith.check_plan(no_less) or "")
         one = dict(M_PLAN, readings=M_PLAN["readings"][:1])
-        self.assertIn("ruled_out", fmcode.check_plan(one) or "")
-        self.assertIsNone(fmcode.check_plan(dict(one, ruled_out="renaming it: the request says the sum is wrong")))
+        self.assertIn("ruled_out", smith.check_plan(one) or "")
+        self.assertIsNone(smith.check_plan(dict(one, ruled_out="renaming it: the request says the sum is wrong")))
         same = dict(M_PLAN, options=[dict(o, text="change the operator in calc.add to a plus sign",
                                           fails_if="a caller relies on the old result") for o in M_PLAN["options"]])
-        self.assertIn("options", fmcode.check_plan(same) or "")  # the gate's own distinctness check, quoted back
+        self.assertIn("options", smith.check_plan(same) or "")  # the gate's own distinctness check, quoted back
         for word in ("readings", "fails_if", "Choice", "confidence"):
-            self.assertIn(word, fmcode.PLAN_PROMPT)
+            self.assertIn(word, smith.PLAN_PROMPT)
 
     def test_the_m_task_fm_code_files_passes_the_plan_gate_unchanged(self):
         self.serve("anthropic", plan(M_PLAN), call("edit", file="calc.py", old="a - b", new="a + b"),
                    call("done", summary="x"), CLOSE)
         self.code("fix add", "--model", "fake")
-        import fmcore
-        b = fmcore.find_brief(fmcore.find_project(self.repo), self.task()["id"])
+        from sampo import core
+        b = core.find_brief(core.find_project(self.repo), self.task()["id"])
         self.assertIsNone(b.meta.get("harness_plan"))
-        self.assertEqual(fmcore._content_gaps(b), [])
+        self.assertEqual(core._content_gaps(b), [])
         self.assertIn("Reading 2:", b.section("Interpretation"))
         ap = b.section("Approach (options → choice → why)")
         self.assertIn("Choice 1 (85%)", ap)
@@ -369,8 +369,8 @@ class PlanReadings(CodeCase):
         self.serve("anthropic", plan(dict(M_PLAN, confidence=60)), call("edit", file="calc.py", old="a - b", new="a + b"),
                    call("done", summary="x"), CLOSE)
         r = self.code("fix add", "--model", "fake")
-        import fmcore
-        b = fmcore.find_brief(fmcore.find_project(self.repo), self.task()["id"])
+        from sampo import core
+        b = core.find_brief(core.find_project(self.repo), self.task()["id"])
         self.assertTrue(b.meta.get("rival_at") or b.section("Rival plan").strip(), r.stdout)
         self.assertEqual(self.task()["status"], "done", r.stdout)
 
@@ -385,9 +385,9 @@ class MissNote(CodeCase):
         r = self.code("fix add", "--model", "fake", check=False)
         self.assertIn("`nosuchtool-q7` is missing", f.said(2))
         self.assertIn('Find it: fm which', f.said(2))
-        import fmcore
-        p = fmcore.find_project(self.repo)
-        misses = [e for e in fmcore.ledger_events(p, ("capability_miss",))
+        from sampo import core
+        p = core.find_project(self.repo)
+        misses = [e for e in core.ledger_events(p, ("capability_miss",))
                   if (e.get("data") or {}).get("name") == "nosuchtool-q7"]
         self.assertEqual([e["task"] for e in misses], [self.task()["id"]])
         self.assertNotEqual(self.task()["status"], "done", r.stdout)  # fm task finish refuses past an open miss
@@ -513,8 +513,8 @@ class ClaudeFlags(CodeCase):
     id, --output-format json is --json. fm's -p PROJECT still works before the verb (and --project after it)."""
 
     def test_print_is_plain_and_a_project_before_the_verb_stays_the_project(self):
-        import fmcli
-        parse = fmcli.build_parser().parse_args
+        from sampo import cli
+        parse = cli.build_parser().parse_args
         for flag in ("-p", "--print"):
             a = parse(["code", flag, "x", "--dry-plan"])
             self.assertEqual((a.plain, a.request, a.project, a.dry_plan), (True, ["x"], None, True), flag)
@@ -611,12 +611,12 @@ class Review(CodeCase):
         self.assertEqual(len(f.seen), 3)
 
     def test_trim_keeps_the_last_six_results_whole(self):
-        import fmcode
+        from sampo import smith
         msgs = [{"role": "system", "content": "s"}, {"role": "user", "content": "plan"}]
         for i in range(9):
             msgs += [{"role": "assistant", "content": "", "tool_calls": [{"id": f"c{i}", "name": "read", "args": {}}]},
                      {"role": "tool", "tool_call_id": f"c{i}", "content": f"result {i}\n" + "x" * 500}]
-        view = fmcode.trim(msgs)
+        view = smith.trim(msgs)
         self.assertEqual(len(view), len(msgs))
         self.assertEqual(view[:2], msgs[:2])
         tools = [m["content"] for m in view if m["role"] == "tool"]
@@ -657,24 +657,24 @@ class TaskRun(CodeCase):
         self.assertEqual([e.get("task") for e in ev if e["event"] == "start"], [tid])
 
     def test_a_task_waiting_for_the_users_yes_runs_nothing_until_it_is_given(self):  # T-1369
-        import fmcore
+        from sampo import core
         marker = os.path.join(self.tmp, "ran")
         tid = self.brief(verify=f"touch {marker}; python3 test_calc.py")
-        p = fmcore.find_project(self.repo)
-        with fmcore.lock(p.dir):
-            b = fmcore.find_brief(p, tid)
+        p = core.find_project(self.repo)
+        with core.lock(p.dir):
+            b = core.find_brief(p, tid)
             b.meta.update(confirm=True, confirm_why="it arrived from the repo's .foreman/ (fm sync)")
-            fmcore.save_brief(p, b)
+            core.save_brief(p, b)
         self.serve("openai", *FIX)  # a model that would work it: only the refusal stops it
         r = self.code("--task", tid, "--model", "fake", check=False)
         self.assertEqual(r.returncode, 1)
         self.assertIn("waits for your own yes", r.stderr)
         self.assertEqual(r.stderr.strip().splitlines()[-1], f"Next: fm ask {tid} confirm")
         self.assertFalse(os.path.exists(marker), "its verify never ran")
-        with fmcore.lock(p.dir):
-            b = fmcore.find_brief(p, tid)
+        with core.lock(p.dir):
+            b = core.find_brief(p, tid)
             b.meta["allow"] = ["confirm"]  # what the user's yes (fm ask ID confirm) records
-            fmcore.save_brief(p, b)
+            core.save_brief(p, b)
         self.serve("openai", *FIX)
         self.code("--task", tid, "--model", "fake")
         self.assertEqual(self.task(tid)["status"], "done")
@@ -741,9 +741,9 @@ class TaskRun(CodeCase):
 
 def run_friction_lines(case):
     """T-1339: the 'run friction:' log lines on Foreman's own Improve fm code task (None when there's no task)."""
-    import fmcore
-    sp = fmcore.find_project(case.home)
-    b = sp and next((b for b in fmcore.load_briefs(sp) if b.title.startswith("Improve fm code")), None)
+    from sampo import core
+    sp = core.find_project(case.home)
+    b = sp and next((b for b in core.load_briefs(sp) if b.title.startswith("Improve fm code")), None)
     return b and [x.split("run friction: ", 1)[1] for x in b.section("Log").splitlines() if "run friction: " in x]
 
 
@@ -862,14 +862,14 @@ class SkillOffer(CodeCase):  # T-1397
 
 class Toolchain(CodeCase):  # T-1407
     def test_pins_are_read_as_data(self):
-        import fmcode
+        from sampo import smith
         with open(os.path.join(self.repo, ".tool-versions"), "w") as f:
             f.write("# pinned\npython 3.12.1 3.11.0\nnodejs ref:main\nruby system\n\ngolang 1.22.0 # go\n")
         with open(os.path.join(self.repo, ".nvmrc"), "w") as f:
             f.write("lts/*\n")
         with open(os.path.join(self.repo, ".python-version"), "w") as f:
             f.write("3.9.0\n")
-        self.assertEqual(fmcode.pins(self.repo), [("python", "3.12.1"), ("golang", "1.22.0")])
+        self.assertEqual(smith.pins(self.repo), [("python", "3.12.1"), ("golang", "1.22.0")])
 
     def test_checks_run_on_the_pinned_interpreter_and_an_envrc_never_runs(self):
         bin_, pin = os.path.join(self.tmp, "fakebin"), os.path.join(self.tmp, "pin", "bin")
@@ -899,12 +899,12 @@ class Toolchain(CodeCase):  # T-1407
 
 class SlotIntegrity(CodeCase):  # T-1398
     def test_elided_code_is_found_only_when_the_old_text_lacks_it(self):
-        import fmcode
-        self.assertEqual(fmcode.elided("def f():\n    # ... rest unchanged\n    return 1\n"), "# ...")
-        self.assertIsNotNone(fmcode.elided("x = 1\n// ... existing code ...\n"))
-        self.assertIsNotNone(fmcode.elided("the rest of the file is unchanged"))
-        self.assertIsNone(fmcode.elided("class P(Protocol):\n    def f(self): ...\n    ...\n"), "an Ellipsis is code")
-        self.assertIsNone(fmcode.elided("# ... rest unchanged\n", have="x\n# ... rest unchanged\n"), "already there")
+        from sampo import smith
+        self.assertEqual(smith.elided("def f():\n    # ... rest unchanged\n    return 1\n"), "# ...")
+        self.assertIsNotNone(smith.elided("x = 1\n// ... existing code ...\n"))
+        self.assertIsNotNone(smith.elided("the rest of the file is unchanged"))
+        self.assertIsNone(smith.elided("class P(Protocol):\n    def f(self): ...\n    ...\n"), "an Ellipsis is code")
+        self.assertIsNone(smith.elided("# ... rest unchanged\n", have="x\n# ... rest unchanged\n"), "already there")
 
     def test_an_edit_or_write_that_elides_code_is_refused_and_re_asked(self):
         f = self.serve("openai", plan(),
@@ -919,12 +919,12 @@ class SlotIntegrity(CodeCase):  # T-1398
         self.assertEqual(self.task()["status"], "done")
 
     def test_a_near_miss_anchor_is_applied_once_and_an_ambiguous_one_refused(self):
-        import fmcode
+        from sampo import smith
         text = "def a():\n    x = 1\n\ndef b():\n  x  =  1\n"
-        self.assertEqual(fmcode.near_anchor("def add(a, b):\n    return a - b\n", "def add(a, b):\n  return a - b"),
+        self.assertEqual(smith.near_anchor("def add(a, b):\n    return a - b\n", "def add(a, b):\n  return a - b"),
                          (0, 31))
-        self.assertEqual(fmcode.near_anchor(text, "x = 1"), "ambiguous")
-        self.assertIsNone(fmcode.near_anchor(text, "y = 2"))
+        self.assertEqual(smith.near_anchor(text, "x = 1"), "ambiguous")
+        self.assertIsNone(smith.near_anchor(text, "y = 2"))
         f = self.serve("openai", plan(), call("edit", file="calc.py", old="def add(a, b):\n  return a - b",
                                               new="def add(a, b):\n    return a + b"), call("done", summary="x"))
         self.code("fix add", "--model", "fake")
@@ -932,11 +932,11 @@ class SlotIntegrity(CodeCase):  # T-1398
         self.assertIn("return a + b", self.calc())
 
     def test_a_fix_round_names_where_the_check_fails(self):
-        import fmcode
+        from sampo import smith
         out = ('Traceback (most recent call last):\n  File "/usr/lib/python3/x.py", line 9, in f\n'
                f'  File "{os.path.join(self.repo, "test_calc.py")}", line 2, in <module>\n'
                'calc.py:2:5: E999 x\ncalc.py(2): error\n')
-        self.assertEqual(fmcode.places(out, os.path.realpath(self.repo)), ["test_calc.py:2", "calc.py:2"])
+        self.assertEqual(smith.places(out, os.path.realpath(self.repo)), ["test_calc.py:2", "calc.py:2"])
         f = self.serve("openai", plan(), call("done", summary="nothing yet"), *FIX)
         self.code("fix add", "--model", "fake")
         self.assertIn("Where it fails: test_calc.py:2", json.dumps(f.seen[2]))
@@ -1022,7 +1022,7 @@ class RunFriction(CodeCase):  # T-1339
         self.code("fix it", "--model", "nope", check=False)  # fails before any task
         lines = run_friction_lines(self)
         self.assertEqual([x.split(":")[0] for x in lines], ["blocked", "preflight"], lines)
-        here = [b.title for b in __import__("fmcore").load_briefs(__import__("fmcore").find_project(self.repo))]
+        here = [b.title for b in __import__("sampo.core").core.load_briefs(__import__("sampo.core").core.find_project(self.repo))]
         self.assertFalse(any(t.startswith("Improve fm code") for t in here), "never in the user's own project")
 
     def test_a_run_a_kill_left_unfinished_is_friction_at_the_next_start(self):
@@ -1114,17 +1114,17 @@ class RunHooks(CodeCase):  # T-1351
 
     def test_the_state_line_tells_a_live_run_from_one_a_kill_stopped(self):
         import fcntl
-        import fmcore
+        from sampo import core
         self.fm("init")
-        p = fmcore.find_project(self.repo)
+        p = core.find_project(self.repo)
         d = os.path.join(p.dir, "code")
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "T-0009.events.jsonl"), "w") as f:
             f.write(json.dumps({"event": "start", "request": "x"}) + "\n")
-        self.assertEqual(fmcore.code_line(p), "code T-0009 stopped")
+        self.assertEqual(core.code_line(p), "code T-0009 stopped")
         with open(os.path.join(d, "T-0009.lock"), "w") as lk:
             fcntl.flock(lk, fcntl.LOCK_EX)
-            self.assertEqual(fmcore.code_line(p), "code T-0009 running")
+            self.assertEqual(core.code_line(p), "code T-0009 running")
 
 
 class Cost(CodeCase):  # T-1357
@@ -1203,18 +1203,18 @@ class Failures(CodeCase):  # T-1754 (T-1334, T-1355)
 
     def test_two_installs_or_a_doubled_hook_are_said_once_at_start(self):  # T-1757
         import unittest.mock
-        import fmcode
-        import fmdoctor
-        warn = fmdoctor.Result("installs", "WARN", "two Foreman installs: 1.2.0 from x and 1.2.50 in y")
-        ok = fmdoctor.Result("hook state writers", "PASS", "fine")
-        with unittest.mock.patch.object(fmdoctor, "check_dual_install", return_value=warn), \
-                unittest.mock.patch.object(fmdoctor, "check_hook_writers", return_value=ok):
-            first, again = fmcode.install_warning(), fmcode.install_warning()
+        from sampo import smith
+        from sampo import doctor
+        warn = doctor.Result("installs", "WARN", "two Foreman installs: 1.2.0 from x and 1.2.50 in y")
+        ok = doctor.Result("hook state writers", "PASS", "fine")
+        with unittest.mock.patch.object(doctor, "check_dual_install", return_value=warn), \
+                unittest.mock.patch.object(doctor, "check_hook_writers", return_value=ok):
+            first, again = smith.install_warning(), smith.install_warning()
         self.assertEqual(first, "fm doctor: two Foreman installs: 1.2.0 from x and 1.2.50 in y")
         self.assertIsNone(again, "said once")
-        with unittest.mock.patch.object(fmdoctor, "check_dual_install", return_value=ok), \
-                unittest.mock.patch.object(fmdoctor, "check_hook_writers", return_value=ok):
-            self.assertIsNone(fmcode.install_warning())
+        with unittest.mock.patch.object(doctor, "check_dual_install", return_value=ok), \
+                unittest.mock.patch.object(doctor, "check_hook_writers", return_value=ok):
+            self.assertIsNone(smith.install_warning())
 
     def test_the_start_event_names_the_runs_containment(self):  # T-1760 (T-1402)
         self.serve("openai", plan(), *FIX)
@@ -1224,20 +1224,20 @@ class Failures(CodeCase):  # T-1754 (T-1334, T-1355)
 
 
 def cmdline(pid):  # T-1902: ps where there's no /proc (macOS CI never saw the runner)
-    import fmideas
+    from sampo import ideas
     try:
-        return b"\0".join(fmideas._cmdline(pid))
+        return b"\0".join(ideas._cmdline(pid))
     except OSError:
         return b""
 
 
 def alive(pid):  # running, not a zombie: /proc's state, else ps's
-    import fmideas
+    from sampo import ideas
     try:
         if os.path.isdir("/proc"):
             with open(f"/proc/{pid}/stat") as f:
                 return f.read().rsplit(")", 1)[1].split()[0] not in "ZX"
-        return not fmideas._ps(pid, "stat").startswith("Z")
+        return not ideas._ps(pid, "stat").startswith("Z")
     except OSError:
         return False
 
@@ -1271,23 +1271,23 @@ class Survivors(CodeCase):  # T-1754 (T-1337)
         self.assertEqual(os.listdir(reg), [])
 
     def test_a_live_runs_runner_and_a_reused_pid_are_left_alone(self):
-        import fmcode
-        import fmideas
+        from sampo import smith
+        from sampo import ideas
         live = subprocess.Popen(["sleep", "60"], start_new_session=True)
         other = subprocess.Popen(["sleep", "60"], start_new_session=True)
         try:
             me = os.getpid()
-            fmcode._register(live.pid)  # its owner (this test) is alive
+            smith._register(live.pid)  # its owner (this test) is alive
             os.makedirs(os.path.join(self.home, "state", "code-procs"), exist_ok=True)
             with open(os.path.join(self.home, "state", "code-procs", str(other.pid)), "w") as f:
                 f.write(f"1 {me} 1")  # an owner and runner that aren't the processes these pids now are
             for garbled in ("0", "1"):  # killpg(0) would be this test's own group
                 with open(os.path.join(self.home, "state", "code-procs", garbled), "w") as f:
                     f.write("0 999999999 0")
-            self.assertEqual(fmcode.stop_survivors(), [])
+            self.assertEqual(smith.stop_survivors(), [])
             self.assertTrue(alive(live.pid) and alive(other.pid))
             self.assertEqual(os.listdir(os.path.join(self.home, "state", "code-procs")), [str(live.pid)])
-            self.assertEqual(fmideas._starttime(me), open(os.path.join(  # noqa: SIM115
+            self.assertEqual(ideas._starttime(me), open(os.path.join(  # noqa: SIM115
                 self.home, "state", "code-procs", str(live.pid))).read().split()[2])
         finally:
             for x in (live, other):

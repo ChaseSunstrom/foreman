@@ -90,7 +90,7 @@ class Snapshots(ForemanTestCase):
         self.assertIn(f"stash apply {sha[:12]}", listed)
 
     def test_the_restore_line_works_from_a_subdirectory_and_a_failure_is_said(self):
-        import fmcore as c
+        from sampo import core as c
         os.makedirs(os.path.join(self.repo, "docs"))
         with open(os.path.join(self.repo, "README.md"), "a") as f:
             f.write("top-level words\n")

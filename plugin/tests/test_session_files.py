@@ -7,7 +7,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class SideFiles(ForemanTestCase):
@@ -28,8 +28,8 @@ class SideFiles(ForemanTestCase):
         self.assertTrue(v.get("project"))
 
     def test_the_fleet_skips_a_side_file(self):
-        import fmbus
-        self.assertTrue(all(isinstance(s, dict) for s in fmbus.live()))
+        from sampo import bus
+        self.assertTrue(all(isinstance(s, dict) for s in bus.live()))
 
 
 if __name__ == "__main__":

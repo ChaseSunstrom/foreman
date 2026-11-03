@@ -64,11 +64,11 @@ class Revisit(ForemanTestCase):
     def test_a_long_paste_is_not_covered(self):
         text = ("migrate the billing hygiene module to the new invoice schema with a dry rollout by default, keep "
                 "customers' payment methods, add currency rounding, notify accounting, archive legacy exports")
-        self.assertNotIn("tidy", [name for name, _ in __import__("fmrecall").covered(text)])  # hygiene, dry, default
+        self.assertNotIn("tidy", [name for name, _ in __import__("sampo.recall").recall.covered(text)])  # hygiene, dry, default
 
     def test_a_request_restating_a_subcommand_is_covered(self):
         # T-1912: covered() read only the top-level commands, so `fm task prove` never warned
-        got = __import__("fmrecall").covered("a red to green proof: the tests fail on the start tree and pass now")
+        got = __import__("sampo.recall").recall.covered("a red to green proof: the tests fail on the start tree and pass now")
         self.assertIn("task prove", [name for name, _ in got])
 
     def test_a_bad_trigger_is_refused(self):
@@ -82,7 +82,7 @@ class QuietHints(ForemanTestCase):
         self.fm("init")
         for t in ("tidy the readme", "tidy the changelog", "tidy the license"):
             self.fm("capture", t, "--type", "CLEAN", "--tier", "S")
-        import fmcore as c
+        from sampo import core as c
         self.c, self.p = c, c.find_project(self.repo)
 
     def _turn(self):
@@ -124,20 +124,20 @@ class OneLoad(ForemanTestCase):
     def test_next_loads_briefs_once(self):
         # T-2016: fm next loaded every brief up to five times a call, ~18 ms each at 1,200 briefs
         from unittest import mock
-        import fmcli
-        import fmcore as c
+        from sampo import cli
+        from sampo import core as c
         self.fm("init")
         self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "x", "--focus")
         p, here = c.find_project(self.repo), os.getcwd()
         os.chdir(self.repo)
         try:
             with mock.patch("sys.stdout"):
-                fmcli.main(["next"])  # warms the builders' stall cache, which loads on its own when cold
+                cli.main(["next"])  # warms the builders' stall cache, which loads on its own when cold
                 with mock.patch.object(c, "load_briefs", wraps=c.load_briefs) as load:
                     c.next_for(p)
                     self.assertEqual(load.call_count, 1, "next_for")
                     load.reset_mock()
-                    fmcli.main(["next"])
+                    cli.main(["next"])
                     self.assertEqual(load.call_count, 1, "fm next")
         finally:
             os.chdir(here)
@@ -146,8 +146,8 @@ class OneLoad(ForemanTestCase):
         # T-2024: the prompt hook loaded every brief for the state, then again for the Next line
         import json
         from unittest import mock
-        import fmcore as c
-        import fmhooks
+        from sampo import core as c
+        from sampo import hooks
         self.fm("init")
         self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "x", "--focus")
         payload = json.dumps({"prompt": "continue", "session_id": "s1", "cwd": self.repo,
@@ -157,7 +157,7 @@ class OneLoad(ForemanTestCase):
         try:
             with mock.patch("sys.stdout") as out, mock.patch.object(c, "load_briefs", wraps=c.load_briefs) as load:
                 try:
-                    fmhooks.run("UserPromptSubmit", payload)
+                    hooks.run("UserPromptSubmit", payload)
                 except SystemExit:
                     pass
         finally:

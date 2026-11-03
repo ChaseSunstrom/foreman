@@ -13,7 +13,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
-import fmideas  # noqa: E402
+from sampo import ideas  # noqa: E402
 
 OUT = sys.argv[1]
 MODULES = ("semver", "table", "ranges")
@@ -43,7 +43,7 @@ def main():
                   + f"Write {path}.")
         tries = []
         for attempt in (1, 2):
-            text = fmideas.run_child("moonshot-kill", SYSTEM, prompt, "sonnet", 600, project="foreman-4a056f",
+            text = ideas.run_child("moonshot-kill", SYSTEM, prompt, "sonnet", 600, project="foreman-4a056f",
                                      detail=f"M-02 {m} attempt {attempt}") or ""
             code = re.search(r"```python\n(.*?)```", text, re.S)
             with open(os.path.join(repo, path), "w", encoding="utf-8") as f:

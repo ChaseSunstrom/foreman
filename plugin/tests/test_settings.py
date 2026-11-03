@@ -6,14 +6,14 @@ import unittest
 
 from helpers import ForemanTestCase, read_json, read_text
 
-import fmsettings
+from sampo import settings
 
 MOD = os.path.join(os.path.dirname(__file__), "..", "..", "mods", "foreman-ui", ".claude-plugin", "plugin.json")
 
 
 class Schema(unittest.TestCase):
     def test_one_schema_covers_both_surfaces(self):
-        rows = fmsettings.schema()
+        rows = settings.schema()
         self.assertEqual({e["surface"] for e in rows}, {"app", "plugin"})
         plugin = {e["key"] for e in rows if e["surface"] == "plugin"}
         self.assertEqual(plugin, set(read_json(MOD)["userConfig"]))
@@ -22,8 +22,8 @@ class Schema(unittest.TestCase):
 
     def test_motion_and_palette_share_one_name_and_value_set(self):
         cfg = read_json(MOD)["userConfig"]
-        for name, shared in fmsettings.SHARED.items():
-            entries = [e for e in fmsettings.schema() if e["key"] == name]
+        for name, shared in settings.SHARED.items():
+            entries = [e for e in settings.schema() if e["key"] == name]
             self.assertEqual({e["surface"] for e in entries}, {"app", "plugin"}, name)
             for e in entries:
                 self.assertEqual(tuple(e["choices"]), shared["choices"], (name, e["surface"]))
@@ -34,28 +34,28 @@ class Schema(unittest.TestCase):
 
     def test_old_values_are_still_accepted(self):
         import tempfile
-        import fmcodetui
-        self.assertEqual(fmsettings.canon("motion", "calm"), "reduced", "the mod's old word")
+        from sampo import smithtui
+        self.assertEqual(settings.canon("motion", "calm"), "reduced", "the mod's old word")
         path = os.path.join(tempfile.mkdtemp(), "tui.toml")
         for text, want in (('motion = "calm"\n', ("motion", "reduced")), ('theme = "signal"\n', ("preset", "signal")),
                            ('palette = "cb"\n', ("palette", "cb"))):
             with open(path, "w") as f:
                 f.write(text)
-            cfg, errors = fmcodetui.load_config(path)
+            cfg, errors = smithtui.load_config(path)
             self.assertEqual((errors, cfg[want[0]]), ([], want[1]), text)
         with open(path, "w") as f:
             f.write('palette = "cb"\n')
-        self.assertEqual(fmcodetui.load_config(path)[0]["theme"]["ok"], fmcodetui._theme(fmcodetui.PALETTES["signal"])["ok"],
+        self.assertEqual(smithtui.load_config(path)[0]["theme"]["ok"], smithtui._theme(smithtui.PALETTES["signal"])["ok"],
                          "cb on night is the signal colours")
         with open(path, "w") as f:
             f.write('theme = "paper"\npalette = "cb"\n')
-        cfg, errors = fmcodetui.load_config(path)
-        ok, bad = (fmcodetui._rgb(cfg["theme"][n]["fg"]) for n in ("ok", "bad"))
+        cfg, errors = smithtui.load_config(path)
+        ok, bad = (smithtui._rgb(cfg["theme"][n]["fg"]) for n in ("ok", "bad"))
         self.assertEqual(errors, [])
         self.assertGreater(ok[2], ok[0], "pass is blue on paper too")
         self.assertGreater(bad[0], bad[2], "fail is orange")
         for n in ("ok", "bad", "warn", "accent"):
-            self.assertGreaterEqual(fmcodetui.contrast(cfg["theme"][n]["fg"], cfg["theme"]["screen"]["bg"]), 3, n)
+            self.assertGreaterEqual(smithtui.contrast(cfg["theme"][n]["fg"], cfg["theme"]["screen"]["bg"]), 3, n)
 
 
 class Guard(unittest.TestCase):
@@ -63,16 +63,16 @@ class Guard(unittest.TestCase):
         import tempfile
         import types
         import unittest.mock as mock
-        import fmcore
+        from sampo import core
         lane, out = tempfile.mkdtemp(), os.path.join(tempfile.mkdtemp(), "settings.json")
         p, b = types.SimpleNamespace(lane=lane), types.SimpleNamespace(id="T-1", meta={"builder": True})
-        with mock.patch.object(fmcore, "load_briefs", return_value=[]), \
-                mock.patch.object(fmcore, "active_brief", return_value=b), \
-                mock.patch.object(fmcore, "read_meta", return_value={}), \
-                mock.patch.object(fmcore, "main_worktree", return_value="/nonexistent-main"):
-            self.assertIsNotNone(fmsettings._guard_block(out, p))
-            self.assertIsNone(fmsettings._guard_block(os.path.join(lane, "settings.json"), p))
-        self.assertIsNone(fmsettings._guard_block(out, None), "outside a lane the same write is ordinary")
+        with mock.patch.object(core, "load_briefs", return_value=[]), \
+                mock.patch.object(core, "active_brief", return_value=b), \
+                mock.patch.object(core, "read_meta", return_value={}), \
+                mock.patch.object(core, "main_worktree", return_value="/nonexistent-main"):
+            self.assertIsNotNone(settings._guard_block(out, p))
+            self.assertIsNone(settings._guard_block(os.path.join(lane, "settings.json"), p))
+        self.assertIsNone(settings._guard_block(out, None), "outside a lane the same write is ordinary")
 
 
 class Command(ForemanTestCase):
@@ -249,7 +249,7 @@ class History(ForemanTestCase):
         self.env = {"HOME": self.uhome, "CLAUDECODE": "", "CLAUDE_CODE_ENTRYPOINT": ""}
         self.toml = os.path.join(self.home, "tui.toml")
         self.patches = [mock.patch.dict(os.environ, {"HOME": self.uhome}),
-                        mock.patch.object(fmsettings, "in_claude_code", return_value=False)]
+                        mock.patch.object(settings, "in_claude_code", return_value=False)]
         for x in self.patches:
             x.start()
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
@@ -272,7 +272,7 @@ class History(ForemanTestCase):
         import base64
         self.write('theme = "paper"\nmotion = "full"\nfoo = 1\n[colors]\nbogus = 3\nok = "#4DA3FF"\n[keys]\nz = "stop"\n',
                    {"motion": "calm", "old": 1, "freshAt": 40})
-        got = {(r["surface"], r["key"]): r for r in fmsettings.diff()}
+        got = {(r["surface"], r["key"]): r for r in settings.diff()}
         self.assertEqual({k: (r["value"], r.get("dead", False)) for k, r in got.items()},
                          {("app", "theme"): ("paper", False), ("app", "keys.z"): ("stop", False),
                           ("plugin", "motion"): ("reduced", False), ("app", "foo"): (1, True),
@@ -281,7 +281,7 @@ class History(ForemanTestCase):
                          "motion = full and freshAt = 40 are the defaults; the theme's colours aren't keys of the file")
         self.assertEqual(got["app", "theme"]["default"], "night")
         self.assertTrue(got["app", "colors.ok"].get("skipped"), "too faint on paper: the app skips it")
-        code = fmsettings.share_code()
+        code = settings.share_code()
         shared = json.loads(base64.urlsafe_b64decode(code + "=" * (-len(code) % 4)))
         self.assertEqual(shared, {"app": {"theme": "paper", "keys.z": "stop"}, "plugin": {"motion": "reduced"}},
                          "neither dead nor skipped keys are shared")
@@ -289,20 +289,20 @@ class History(ForemanTestCase):
     def test_export_and_import_round_trip_through_a_share_code(self):
         self.write('border = "heavy"\nnope = 1\n[colors]\nok = "#47C98C"\n[layout]\nwidths = [60, 40]\n',
                    {"mascot": "orange", "palette": "cb"})
-        code = fmsettings.share_code()
+        code = settings.share_code()
         self.assertRegex(code, r"^[A-Za-z0-9_-]+$", "one pasteable word")
-        want = [r for r in fmsettings.diff() if not r.get("dead")]
+        want = [r for r in settings.diff() if not r.get("dead")]
         self.write("# theirs\n", {})
-        done, refused, same = fmsettings.import_code(code, only="plugin")
+        done, refused, same = settings.import_code(code, only="plugin")
         self.assertEqual(([k for _, k, _, _ in done], refused, read_text(self.toml)), (["mascot", "palette"], [], "# theirs\n"))
-        done, refused, same = fmsettings.import_code(code)
+        done, refused, same = settings.import_code(code)
         self.assertEqual((refused, len(same)), ([], 2), "the plugin's two are already so")
         self.assertEqual(len(done), 3)
-        self.assertEqual(fmsettings.diff(), want, "the changed keys, and only those")
+        self.assertEqual(settings.diff(), want, "the changed keys, and only those")
         text = read_text(self.toml)
         self.assertTrue(text.startswith("# theirs\n") and "nope" not in text, text)
         self.assertEqual(read_json(self.settings)["model"], "x", "the rest of settings.json kept")
-        done, refused, same = fmsettings.import_code(code)
+        done, refused, same = settings.import_code(code)
         self.assertEqual((done, len(same)), ([], 5), "a second import writes nothing")
         self.assertEqual(read_text(self.toml), text)
 
@@ -323,78 +323,78 @@ class History(ForemanTestCase):
                            ("W" * 30 + "[" * 4000, "share code"),
                            (base64.urlsafe_b64encode(b"[" * 20000).decode(), "share code"),
                            (base64.urlsafe_b64encode(b'{"plugin": {"freshAt": NaN}}').decode(), "share code")):
-            with self.subTest(code=code[:40]), self.assertRaises(fmsettings.SettingError) as e:
-                fmsettings.import_code(code)
+            with self.subTest(code=code[:40]), self.assertRaises(settings.SettingError) as e:
+                settings.import_code(code)
             self.assertIn(says, str(e.exception))
             self.assertNotIn("\x1b", str(e.exception), "a code's text never reaches the terminal raw")
         self.assertEqual(read_text(self.toml), '# mine\nborder = "heavy"\n', "the good key in a bad code isn't written")
         self.assertEqual(self.options(), {"motion": "calm"})
-        with self.assertRaises(fmsettings.SettingError):
-            fmsettings.undo()  # nothing was recorded
+        with self.assertRaises(settings.SettingError):
+            settings.undo()  # nothing was recorded
 
     def test_each_key_is_checked_as_it_would_land(self):
         import base64
         self.write("", {})
         enc = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).decode()
-        with self.assertRaises(fmsettings.SettingError) as e:  # a dark grey on night: too faint, at its turn
-            fmsettings.import_code(enc({"app": {"colors.ok": "#2B3442", "theme": "paper"}}))
+        with self.assertRaises(settings.SettingError) as e:  # a dark grey on night: too faint, at its turn
+            settings.import_code(enc({"app": {"colors.ok": "#2B3442", "theme": "paper"}}))
         self.assertIn("colors.ok", str(e.exception))
         self.assertEqual(read_text(self.toml), "")
-        done, refused, _ = fmsettings.import_code(enc({"app": {"theme": "paper", "colors.ok": "#2B3442"}}))
+        done, refused, _ = settings.import_code(enc({"app": {"theme": "paper", "colors.ok": "#2B3442"}}))
         self.assertEqual((len(done), refused), (2, []))
 
     def test_undo_restores_the_previous_value(self):
         mine = '# mine\nborder = "heavy"\n'
         self.write(mine, {"motion": "calm"})
-        fmsettings.set_key("border", "double")
-        fmsettings.set_key("theme", "paper")
-        fmsettings.set_key("mascot", "orange", "plugin")
-        fmsettings.set_key("motion", "off")  # both surfaces: one change, one undo
+        settings.set_key("border", "double")
+        settings.set_key("theme", "paper")
+        settings.set_key("mascot", "orange", "plugin")
+        settings.set_key("motion", "off")  # both surfaces: one change, one undo
         self.assertEqual(self.options(), {"motion": "off", "mascot": "orange"})
-        fmsettings.undo()
+        settings.undo()
         self.assertEqual(self.options(), {"motion": "reduced", "mascot": "orange"})
         self.assertNotIn("motion", read_text(self.toml), "it wasn't set: undone, it is gone again")
-        fmsettings.undo()
+        settings.undo()
         self.assertEqual(self.options(), {"motion": "reduced"})
-        fmsettings.undo()
+        settings.undo()
         self.assertEqual(read_text(self.toml), '# mine\nborder = "double"\n')
-        fmsettings.undo()
+        settings.undo()
         self.assertEqual(read_text(self.toml), mine)
-        with self.assertRaises(fmsettings.SettingError):
-            fmsettings.undo()
-        code = fmsettings.share_code()
+        with self.assertRaises(settings.SettingError):
+            settings.undo()
+        code = settings.share_code()
         self.write("", {})
-        fmsettings.import_code(code)
-        fmsettings.undo()  # an import is one change
+        settings.import_code(code)
+        settings.undo()  # an import is one change
         self.assertEqual((read_text(self.toml), self.options()), ("", {}))
 
     def test_undo_leaves_a_hand_edit_and_a_guarded_file_alone(self):
         import unittest.mock as mock
         self.write('border = "heavy"\n', {})
-        fmsettings.set_key("border", "double")
+        settings.set_key("border", "double")
         self.write('border = "ascii"\n', {})  # by hand, after
-        done, refused = fmsettings.undo()
+        done, refused = settings.undo()
         self.assertEqual(done, [])
         self.assertIn("changed since", refused[0])
         self.assertEqual(read_text(self.toml), 'border = "ascii"\n')
-        with self.assertRaises(fmsettings.SettingError):
-            fmsettings.undo()  # dropped: nothing left to undo
-        fmsettings.set_key("mascot", "orange", "plugin")
-        with mock.patch.object(fmsettings, "in_claude_code", return_value=True), \
-                mock.patch.object(fmsettings, "_guard_block", return_value="a protected file"):
-            done, refused = fmsettings.undo()
+        with self.assertRaises(settings.SettingError):
+            settings.undo()  # dropped: nothing left to undo
+        settings.set_key("mascot", "orange", "plugin")
+        with mock.patch.object(settings, "in_claude_code", return_value=True), \
+                mock.patch.object(settings, "_guard_block", return_value="a protected file"):
+            done, refused = settings.undo()
             self.assertIn("guard", refused[0])
         self.assertEqual(self.options(), {"mascot": "orange"}, "refused: kept for the next undo")
-        self.assertEqual(len(fmsettings.undo()[0]), 1)
+        self.assertEqual(len(settings.undo()[0]), 1)
         self.assertEqual(self.options(), {})
 
     def test_no_message_prints_raw_escapes(self):
         import base64
         self.write("", {})
         code = base64.urlsafe_b64encode(json.dumps({"app": {"colors.ok": {"\x1b]0;x\x07": True}}}).encode()).decode()
-        with self.assertRaises(fmsettings.SettingError) as e:
-            fmsettings.import_code(code)
-        done, refused = fmsettings.set_key("colors.ok", '{ "\\u001b[2J" = true }')
+        with self.assertRaises(settings.SettingError) as e:
+            settings.import_code(code)
+        done, refused = settings.set_key("colors.ok", '{ "\\u001b[2J" = true }')
         p = self.fm("settings", "import", code, env=self.env, check=False)
         self.assertNotEqual(p.returncode, 0)
         for said in (str(e.exception), refused[0], p.stdout + p.stderr):
@@ -403,8 +403,8 @@ class History(ForemanTestCase):
 
     def test_a_file_the_app_chokes_on_never_blocks_the_set_that_repairs_it(self):
         import unittest.mock as mock
-        import fmcodetui
-        real = fmcodetui.load_config
+        from sampo import smithtui
+        real = smithtui.load_config
 
         def load(path=None):
             try:
@@ -416,21 +416,21 @@ class History(ForemanTestCase):
                 raise TypeError("a layout it chokes on")
             return real(path)
         self.write('[layout]\nheights = "BROKEN"\n', {})
-        with mock.patch.object(fmcodetui, "load_config", side_effect=load):
+        with mock.patch.object(smithtui, "load_config", side_effect=load):
             problems = []
-            fmsettings.diff(problems)
+            settings.diff(problems)
             self.assertIn("a layout it chokes on", str(problems))
-            fmsettings.share_code()
-            done, refused = fmsettings.set_key("layout.heights", '[[1], ["auto", "auto", "auto", 1]]')
+            settings.share_code()
+            done, refused = settings.set_key("layout.heights", '[[1], ["auto", "auto", "auto", 1]]')
             self.assertEqual((len(done), refused), (1, []))
-            done, refused = fmsettings.undo()
+            done, refused = settings.undo()
             self.assertEqual((len(done), refused), (1, []))
         self.assertNotIn("heights", read_text(self.toml), "unread by the app: undone, it goes rather than comes back")
 
     def test_undo_says_a_skipped_value_is_removed(self):
         self.write('theme = ["x"]  # mine\n', {})
-        fmsettings.set_key("theme", "paper")
-        done, refused = fmsettings.undo()
+        settings.set_key("theme", "paper")
+        done, refused = settings.undo()
         self.assertEqual(refused, [])
         self.assertIn("skipped", done[0][4])
         self.assertNotIn("theme", read_text(self.toml))
@@ -441,21 +441,21 @@ class History(ForemanTestCase):
         import unittest.mock as mock
         self.write('border = "heavy"\n', {})
         err = io.StringIO()
-        with mock.patch.object(fmsettings, "_keep", side_effect=OSError("disk full")), contextlib.redirect_stderr(err):
-            done, refused = fmsettings.set_key("border", "double")
+        with mock.patch.object(settings, "_keep", side_effect=OSError("disk full")), contextlib.redirect_stderr(err):
+            done, refused = settings.set_key("border", "double")
         self.assertEqual((len(done), refused, read_text(self.toml)), (1, [], 'border = "double"\n'))
         self.assertIn("disk full", err.getvalue())
-        fmsettings.set_key("border", "ascii")
-        path = fmsettings._history_path()
+        settings.set_key("border", "ascii")
+        path = settings._history_path()
         kept = read_text(path)
         os.chmod(path, 0)
         try:
             if os.access(path, os.R_OK):
                 self.skipTest("root reads any file")
             with contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(len(fmsettings.set_key("border", "rounded")[0]), 1)
-            with self.assertRaises(fmsettings.SettingError):
-                fmsettings.undo()
+                self.assertEqual(len(settings.set_key("border", "rounded")[0]), 1)
+            with self.assertRaises(settings.SettingError):
+                settings.undo()
         finally:
             os.chmod(path, 0o600)
         self.assertEqual(read_text(path), kept, "an unreadable history is never taken for an empty one")
@@ -464,9 +464,9 @@ class History(ForemanTestCase):
         import base64
         self.write("", {})
         code = base64.urlsafe_b64encode(json.dumps({"app": {"keys.enter": "quit", "keys.ENTER": "help"}}).encode())
-        done, refused, _ = fmsettings.import_code(code.decode())
+        done, refused, _ = settings.import_code(code.decode())
         self.assertEqual(([v for _, _, v, _ in done], refused), (["help"], []))
-        done, refused = fmsettings.undo()
+        done, refused = settings.undo()
         self.assertEqual((len(done), refused), (1, []))
         self.assertNotIn("enter", read_text(self.toml))
 
@@ -477,8 +477,8 @@ class History(ForemanTestCase):
         import unittest.mock as mock
         self.write('border = "heavy"\n', {"motion": "calm"})
         out = io.StringIO()
-        with mock.patch.object(fmsettings, "mod_manifest", return_value={}), contextlib.redirect_stdout(out):
-            fmsettings.cmd_settings(argparse.Namespace(action="diff", json=True, surface=None, key=None, value=None))
+        with mock.patch.object(settings, "mod_manifest", return_value={}), contextlib.redirect_stdout(out):
+            settings.cmd_settings(argparse.Namespace(action="diff", json=True, surface=None, key=None, value=None))
         got = json.loads(out.getvalue())
         self.assertEqual([r["key"] for r in got["changed"]], ["border"])
         self.assertIn("plugin.json", json.dumps(got["problems"]))
@@ -507,17 +507,17 @@ class PreviewApp(unittest.TestCase):
         with open(path, "w", encoding="utf-8") as f:
             f.write(mine)
         bad = (("theme", "nope"), ("colors.ok", '"\udcff"'), ("colors.ok", {"fg": "\udcff"}), ("nope", "x"))
-        with mock.patch.object(fmsettings, "in_claude_code", return_value=False):
+        with mock.patch.object(settings, "in_claude_code", return_value=False):
             for key, value in bad:
-                for fn in (fmsettings.set_app, fmsettings.preview_app):
-                    with self.subTest(fn=fn.__name__, key=key, value=value), self.assertRaises(fmsettings.SettingError):
+                for fn in (settings.set_app, settings.preview_app):
+                    with self.subTest(fn=fn.__name__, key=key, value=value), self.assertRaises(settings.SettingError):
                         fn(key, value, path)
-            value, cfg = fmsettings.preview_app("motion", "calm", path)
+            value, cfg = settings.preview_app("motion", "calm", path)
             self.assertEqual((value, cfg["motion"], cfg["preset"]), ("reduced", "reduced", "night"))
-        with mock.patch.object(fmsettings, "in_claude_code", return_value=True), \
-                mock.patch.object(fmsettings, "_guard_block", return_value="a protected file"):
-            for fn in (fmsettings.set_app, fmsettings.preview_app):
-                with self.subTest(fn=fn.__name__), self.assertRaises(fmsettings.SettingError) as e:
+        with mock.patch.object(settings, "in_claude_code", return_value=True), \
+                mock.patch.object(settings, "_guard_block", return_value="a protected file"):
+            for fn in (settings.set_app, settings.preview_app):
+                with self.subTest(fn=fn.__name__), self.assertRaises(settings.SettingError) as e:
                     fn("theme", "paper", path)
                 self.assertIn("guard", str(e.exception))
         self.assertEqual(read_text(path), mine, "nothing written")
@@ -526,10 +526,10 @@ class PreviewApp(unittest.TestCase):
 class Unknown(unittest.TestCase):
     """T-1723: set_key refuses a key no surface has, so fm code's :set line and fm settings serve say so."""
     def test_an_unknown_key_is_refused_by_name(self):
-        done, refused = fmsettings.set_key("no.such.setting", "1")
+        done, refused = settings.set_key("no.such.setting", "1")
         self.assertEqual(done, [])
         self.assertTrue(refused and "no.such.setting" in refused[0] and "no such setting" in refused[0], refused)
-        done, refused = fmsettings.set_key("motion", "calm", surface="nowhere")
+        done, refused = settings.set_key("motion", "calm", surface="nowhere")
         self.assertEqual(done, [])
         self.assertIn("nowhere", refused[0])
 

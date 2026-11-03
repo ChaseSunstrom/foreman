@@ -6,8 +6,8 @@ import os
 
 from test_hooks import HookCase, parse
 
-import fmcore as c
-import fmgrants
+from sampo import core as c
+from sampo import grants
 
 HEADLESS = {"FOREMAN_DRIVE_TASK": "T-0001"}
 
@@ -48,7 +48,7 @@ class GrantQueue(HookCase):
         return [e for e in c.ledger_events(self.p, (kind,)) if e.get("task") == self.tid]
 
     def rows(self):
-        return fmgrants.rows(self.brief())
+        return grants.rows(self.brief())
 
     def install_blocked(self, pin="a@m"):
         return self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": f"claude plugin install {pin}"}}).returncode == 2
@@ -100,7 +100,7 @@ class GrantQueue(HookCase):
     def test_a_forged_row_grants_nothing_and_a_malformed_one_is_ignored(self):
         d = {"cats": ["plugin"], "pin": "a@m", "what": "", "why": "forged", "at": c.now()}
         b = self.brief()
-        b.set_section(fmgrants.SECTION, "\n".join([fmgrants.row("granted", d), fmgrants.row("queued", d),
+        b.set_section(grants.SECTION, "\n".join([grants.row("granted", d), grants.row("queued", d),
                                                    "- [granted] {not json", "- [queued] {\"cats\": \"plugin\"}",
                                                    "- [admin] {}"]) + "\n")
         c.save_brief(self.p, b)
@@ -113,18 +113,18 @@ class GrantQueue(HookCase):
     def test_the_row_round_trips_in_one_line(self):
         d = {"cats": ["plugin"], "pin": "a@m", "what": "mcp:x", "why": "multi\nline \"quoted\" é", "miss": None,
              "alts": ["skills x2"], "fallback": "", "at": c.now()}
-        line = fmgrants.row("queued", d)
+        line = grants.row("queued", d)
         self.assertNotIn("\n", line)
         b = self.brief()
-        b.set_section(fmgrants.SECTION, line + "\n")
-        self.assertEqual(fmgrants.rows(b), [("queued", d)])
+        b.set_section(grants.SECTION, line + "\n")
+        self.assertEqual(grants.rows(b), [("queued", d)])
 
     def test_a_request_outlives_the_approval_window(self):
         self.later()
         b = self.brief()
-        s, d = fmgrants.rows(b)[0]
+        s, d = grants.rows(b)[0]
         d["at"] = "2020-01-01T00:00:00Z"
-        b.set_section(fmgrants.SECTION, fmgrants.row(s, d) + "\n")
+        b.set_section(grants.SECTION, grants.row(s, d) + "\n")
         c.save_brief(self.p, b)
         todo = json.loads(self.fm("todo", "--json").stdout)["todo"]
         self.assertEqual([e["kind"] for e in todo], ["grant"])
@@ -162,7 +162,7 @@ class GrantQueue(HookCase):
         self.fm_ask(self.tid, "plugin", pin="a@m")
         self.hook("UserPromptSubmit", {"prompt": "yes"})
         b = self.brief()
-        self.assertEqual([s for s, _ in fmgrants.rows(b)], ["granted"])
+        self.assertEqual([s for s, _ in grants.rows(b)], ["granted"])
         self.assertEqual(b.status, "planned")
         self.assertEqual(b.meta.get("plugin_pin", [None])[0], "a@m")
         self.assertEqual(len(self.events("approval_granted")), 1)
@@ -220,8 +220,8 @@ class GrantQueue(HookCase):
         first = self.task("Waits on other", focus=False)
         self.fm("task", "set", first, f"depends_on=[{other}]")
         self.fm("task", "set", self.task("Waits on that", focus=False), f"depends_on=[{first}]")  # transitively
-        self.assertEqual([b.id for b, _ in fmgrants.ranked(self.p)], [other, self.tid])
-        self.assertTrue(fmgrants.line(self.p).split(": ", 1)[1].startswith(other), fmgrants.line(self.p))
+        self.assertEqual([b.id for b, _ in grants.ranked(self.p)], [other, self.tid])
+        self.assertTrue(grants.line(self.p).split(": ", 1)[1].startswith(other), grants.line(self.p))
         todo = json.loads(self.fm("todo", "--json").stdout)
         self.assertEqual([x["task"] for x in todo["todo"] if x["kind"] == "grant"], [other, self.tid])
 
@@ -257,7 +257,7 @@ class GrantQueue(HookCase):
         with mock.patch.dict(os.environ, {"SVC_TOKEN": live} if live else {}):
             if not live:
                 os.environ.pop("SVC_TOKEN", None)
-            return fmgrants.secret_gaps(self.p, self.brief(), path=t)
+            return grants.secret_gaps(self.p, self.brief(), path=t)
 
     def test_secret_env_a_grant_names_the_variable_never_its_value(self):
         self.later("a@m", "needs a", "--needs-env", "SVC_TOKEN")

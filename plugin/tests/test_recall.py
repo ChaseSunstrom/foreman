@@ -5,7 +5,7 @@ import time
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class Recall(ForemanTestCase):
@@ -109,23 +109,23 @@ class Recall(ForemanTestCase):
 
 class Tally(ForemanTestCase):  # T-1769
     def test_a_test_runners_tally_is_never_a_failures_signature(self):
-        import fmrecall
+        from sampo import recall
         out = ("==== test_x.C\nFAIL: test_a (test_x.C.test_a)\nAssertionError: 1 != 2\nRan 3 tests in 0.1s\n\n"
                "FAILED (1 classes)\n✗ exit 1 (0.3 s; last 9 of 9 lines)")
-        self.assertEqual(fmrecall.failure_signature(out), "assertionerror: 0 != 0")
+        self.assertEqual(recall.failure_signature(out), "assertionerror: 0 != 0")
         for tally in ("Ran 2 tests in 0.1s\n\nFAILED (failures=2)", "FAILED (errors=1, skipped=2)",
                       "=================== 2 failed, 3 passed in 0.40s ===================",
                       "✗ exit 1 (7.6 s; last 26 of 26 lines)"):
-            self.assertEqual(fmrecall.failure_signature(tally), "", tally)
-        self.assertIn("modulenotfounderror", fmrecall.failure_signature(
+            self.assertEqual(recall.failure_signature(tally), "", tally)
+        self.assertIn("modulenotfounderror", recall.failure_signature(
             "ModuleNotFoundError: No module named 'yaml'\nFAILED (errors=1)"))
 
     def test_doctors_tally_is_never_its_signature(self):  # T-2567
-        import fmrecall
+        from sampo import recall
         out = ("FAIL  hook wiring          PostToolUse not registered\n"
                "WARN  state size           2471 MB > 200 MB\n\nfm doctor: FAILED (55 pass, 7 warn, 1 fail)")
-        self.assertEqual(fmrecall.failure_signature(out), "fail hook wiring posttooluse not registered")
-        self.assertEqual(fmrecall.failure_signature("\nfm doctor: FAILED (0 pass, 0 warn, 3 fail)"), "")
+        self.assertEqual(recall.failure_signature(out), "fail hook wiring posttooluse not registered")
+        self.assertEqual(recall.failure_signature("\nfm doctor: FAILED (0 pass, 0 warn, 3 fail)"), "")
 
 
 class RedGreen(ForemanTestCase):
@@ -183,7 +183,7 @@ class FailureMemory(ForemanTestCase):
         return tid
 
     def test_a_failure_fixed_in_an_earlier_task_is_pointed_out(self):
-        import fmrecall
+        from sampo import recall
         self.fm("init")
         first = self.task("Tidy the YAML loader")
         sighting = json.loads(self.failing().stdout or "null") or {}
@@ -200,12 +200,12 @@ class FailureMemory(ForemanTestCase):
         ctx = json.loads(self.failing(n=40, f="config").stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertIn(first, ctx)
         self.assertIn("PyYAML", ctx)
-        self.assertEqual(fmrecall.failure_signature(self.ERR.format(n=1, f="a")),
-                         fmrecall.failure_signature(self.ERR.format(n=99, f="b")))
+        self.assertEqual(recall.failure_signature(self.ERR.format(n=1, f="a")),
+                         recall.failure_signature(self.ERR.format(n=99, f="b")))
         # T-1109: worktree and agent ids are hex; one failure in two builders' worktrees is one signature
-        self.assertEqual(fmrecall.failure_signature("FAIL in agent-a0bd0ad0edc0/x.py: KeyError 'col' at worktree-agent-a0bd0"),
-                         fmrecall.failure_signature("FAIL in agent-f81c2e9b44aa/x.py: KeyError 'col' at worktree-agent-f81c2"))
-        self.assertIn("decade", fmrecall.failure_signature("Error: decade value missing"))  # no digit: a word, kept
+        self.assertEqual(recall.failure_signature("FAIL in agent-a0bd0ad0edc0/x.py: KeyError 'col' at worktree-agent-a0bd0"),
+                         recall.failure_signature("FAIL in agent-f81c2e9b44aa/x.py: KeyError 'col' at worktree-agent-f81c2"))
+        self.assertIn("decade", recall.failure_signature("Error: decade value missing"))  # no digit: a word, kept
         other = self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "make"},
                                                  "error": "Exit code 2\nmake: *** No rule to make target 'all'"})
         self.assertEqual(other.stdout.strip(), "")
@@ -218,7 +218,7 @@ class OtherProjects(ForemanTestCase):
     def setUp(self):
         super().setUp()
         import os
-        import fmrecall
+        from sampo import recall
         from helpers import git_repo
         self.fm("init")
         self.b = git_repo(self.tmp, "ledger")
@@ -237,7 +237,7 @@ class OtherProjects(ForemanTestCase):
                 **kw)
         pb = c.find_project(self.b)
         with open(os.path.join(pb.dir, "failures.jsonl"), "a") as f:
-            f.write(json.dumps({"sig": fmrecall.failure_signature(self.ERR.format(n=1, f="a")), "task": tid,
+            f.write(json.dumps({"sig": recall.failure_signature(self.ERR.format(n=1, f="a")), "task": tid,
                                 "at": c.now()}) + "\n")
 
     def others(self):
@@ -324,13 +324,13 @@ class Recurring(ForemanTestCase):  # T-2272: one obstacle in many tasks is fixed
         return [b for b in c.load_briefs(self.p, include_archive=True) if b.title.startswith("Recurring failure")]
 
     def test_one_obstacle_in_three_tasks_is_captured_once_to_fix_its_cause(self):
-        import fmrecall
+        from sampo import recall
         err = "sed: -e expression #1, char 3: unknown command: ','"
-        fmrecall.note_failure(self.p, "T-0901", err)
-        fmrecall.note_failure(self.p, "T-0902", err)
-        fmrecall.note_failure(self.p, "T-0902", err)
+        recall.note_failure(self.p, "T-0901", err)
+        recall.note_failure(self.p, "T-0902", err)
+        recall.note_failure(self.p, "T-0902", err)
         self.assertEqual(self.caps(), [], "two tasks are a coincidence")
-        hint = fmrecall.note_failure(self.p, "T-0903", err)
+        hint = recall.note_failure(self.p, "T-0903", err)
         caps = self.caps()
         self.assertEqual(len(caps), 1)
         self.assertEqual(caps[0].meta["type"], "FIX")
@@ -339,7 +339,7 @@ class Recurring(ForemanTestCase):  # T-2272: one obstacle in many tasks is fixed
         rows = [json.loads(x) for x in open(os.path.join(self.p.dir, "failures.jsonl"))]
         self.assertIn(caps[0].id, [r.get("captured") for r in rows], "a later failure skips the brief scan")
         self.fm("task", "drop", caps[0].id, "fixed")
-        fmrecall.note_failure(self.p, "T-0904", err)
+        recall.note_failure(self.p, "T-0904", err)
         self.assertEqual(len(self.caps()), 1, "once per signature, even after the first is closed")
 
     def close(self, tid):
@@ -354,58 +354,58 @@ class Recurring(ForemanTestCase):  # T-2272: one obstacle in many tasks is fixed
         return [b for b in c.load_briefs(self.p, include_archive=True) if b.title.startswith("Fix did not hold")]
 
     def test_a_fix_that_did_not_hold_is_captured_once_per_closed_fix(self):  # T-2349
-        import fmrecall
+        from sampo import recall
         err = "sed: -e expression #1, char 3: unknown command: ','"
         for t in ("T-0901", "T-0902", "T-0903"):
-            fmrecall.note_failure(self.p, t, err)
+            recall.note_failure(self.p, t, err)
         fix = self.caps()[0].id
-        fmrecall.note_failure(self.p, "T-0904", err)
+        recall.note_failure(self.p, "T-0904", err)
         self.assertEqual(self.held(), [], "the fix is still open: the work is not done, so nothing did not hold")
         self.close(fix)
-        fmrecall.note_failure(self.p, "T-0905", err)
-        fmrecall.note_failure(self.p, "T-0905", err)
+        recall.note_failure(self.p, "T-0905", err)
+        recall.note_failure(self.p, "T-0905", err)
         made = self.held()
         self.assertEqual([b.title for b in made], [f"Fix did not hold: {fix}"])
         self.assertEqual(made[0].meta["type"], "FIX")
         self.assertIn("T-0905", made[0].section("Raw request"))
         self.assertEqual([e["data"].get("from") for e in self.events() if e["task"] == made[0].id], [fix])
-        fmrecall.note_failure(self.p, "T-0906", err)
+        recall.note_failure(self.p, "T-0906", err)
         self.assertEqual(len(self.held()), 1, "a second hit while that one is open adds nothing")
         self.close(made[0].id)
-        fmrecall.note_failure(self.p, "T-0907", err)
+        recall.note_failure(self.p, "T-0907", err)
         self.assertEqual(len(self.held()), 2, "the newer fix closed and it came back again: a new one, bound to it")
-        fmrecall.note_failure(self.p, "T-0908", err)
+        recall.note_failure(self.p, "T-0908", err)
         self.assertEqual(len(self.held()), 2)
         self.assertEqual(len(self.caps()), 1, "never a second Recurring capture")
 
     def test_a_dropped_fix_is_not_one_that_did_not_hold(self):  # T-2349: dropped means decided against, not fixed
-        import fmrecall
+        from sampo import recall
         err = "sed: -e expression #1, char 3: unknown command: ','"
         for t in ("T-0901", "T-0902", "T-0903"):
-            fmrecall.note_failure(self.p, t, err)
+            recall.note_failure(self.p, t, err)
         self.fm("task", "drop", self.caps()[0].id, "not worth it")
-        fmrecall.note_failure(self.p, "T-0904", err)
+        recall.note_failure(self.p, "T-0904", err)
         self.assertEqual(self.held(), [])
 
     def test_foremans_own_failures_across_three_sessions_capture_one_fix(self):  # T-2349
-        import fmrecall
+        from sampo import recall
         line = "fm doctor FAIL hook latency: PreToolUse p95 41ms > 25ms"
         for who in ("s1", "s2", "s2"):
-            self.assertIsNone(fmrecall.note_own(self.p, line, who))
+            self.assertIsNone(recall.note_own(self.p, line, who))
         self.assertEqual(self.caps(), [], "two sessions are a coincidence, and one session twice is one")
-        made = fmrecall.note_own(self.p, line.replace("41", "58"), "s3")
+        made = recall.note_own(self.p, line.replace("41", "58"), "s3")
         b = c.find_brief(self.p, made)
         self.assertEqual(b.meta["type"], "FIX")
         self.assertEqual([e["data"]["trigger"] for e in self.events() if e["task"] == made], ["self-failure"])
-        self.assertIsNone(fmrecall.note_own(self.p, line, "s4"))
+        self.assertIsNone(recall.note_own(self.p, line, "s4"))
         self.assertEqual(len([x for x in c.load_briefs(self.p) if "hook latency" in x.title]), 1)
 
     def test_a_refusal_or_a_tally_is_never_one_of_foremans_own_failures(self):  # T-2349
-        import fmrecall
+        from sampo import recall
         for line in ("fm: refused: T-0001 criterion 1 already has evidence", "FAILED (2 classes)",
                      "==== 2 failed, 1 passed in 0.1s ===="):
             for who in ("s1", "s2", "s3"):
-                self.assertIsNone(fmrecall.note_own(self.p, line, who))
+                self.assertIsNone(recall.note_own(self.p, line, who))
         self.assertEqual(c.load_briefs(self.p), [])
 
     def rows(self, sig, tasks):
@@ -416,77 +416,77 @@ class Recurring(ForemanTestCase):  # T-2272: one obstacle in many tasks is fixed
         return os.path.exists(os.path.join(self.p.dir, "failures.replayed"))
 
     def test_a_replay_files_failures_that_crossed_three_tasks_before_and_only_once(self):  # T-2349
-        import fmrecall
+        from sampo import recall
         self.rows("sed: char 0: unknown command: ','", ("T-0801", "T-0802", "T-0803", "T-0803"))
         self.rows("awk: line 0: cannot open file for reading", ("T-0801", "T-0802"))
-        fmrecall.note_failure(self.p, "T-0950", "ZeroDivisionError: division by zero in stats")
+        recall.note_failure(self.p, "T-0950", "ZeroDivisionError: division by zero in stats")
         self.assertEqual(self.caps(), [], "a failure noted in a hook never replays: that runs under the project lock")
-        fmrecall.replay(self.p)
+        recall.replay(self.p)
         self.assertEqual([b.title for b in self.caps()],
                          ["Recurring failure across 3 tasks: sed: char 0: unknown command: ','"])
         self.rows("git: pathspec 'x' did not match: not found", ("T-0811", "T-0812", "T-0813"))
-        fmrecall.replay(self.p)
+        recall.replay(self.p)
         self.assertEqual(len(self.caps()), 1, "the second run replays nothing")
 
     def test_a_replay_files_five_at_a_time_most_tasks_first_and_marks_itself_done_when_none_remain(self):  # T-2349 review
-        import fmrecall
+        from sampo import recall
         for i in range(7):  # signature i hit 3 + i tasks; the filtered one is never a capture and must not hold the marker
             self.rows(f"tool{'x' * i}: cannot open the file: no such device", [f"T-{i}{j:02d}" for j in range(3 + i)])
         self.rows("assertionerror: 0 != 0", ("T-0701", "T-0702", "T-0703", "T-0704"))
-        self.assertEqual(len(fmrecall.replay(self.p)), 5)
+        self.assertEqual(len(recall.replay(self.p)), 5)
         self.assertEqual(sorted(int(b.title.split()[3]) for b in self.caps()), [5, 6, 7, 8, 9], "most tasks first")
         self.assertFalse(self.marker(), "two are left")
-        self.assertEqual(len(fmrecall.replay(self.p)), 2)
+        self.assertEqual(len(recall.replay(self.p)), 2)
         self.assertEqual(len(self.caps()), 7)
         self.assertTrue(self.marker())
-        self.assertEqual(fmrecall.replay(self.p), [])
+        self.assertEqual(recall.replay(self.p), [])
 
     def test_a_replay_that_raises_partway_leaves_no_marker_and_still_files_the_rest(self):  # T-2349 review
-        import fmrecall
+        from sampo import recall
         from unittest import mock
         for i in range(2):
             self.rows(f"tool{'x' * i}: cannot open the file: no such device", [f"T-{i}{j:02d}" for j in range(3 + i)])
-        real = fmrecall._recurring
+        real = recall._recurring
 
         def boom(p, sig, *a, **k):
             if sig.startswith("toolx:"):
                 raise RuntimeError("disk full")
             return real(p, sig, *a, **k)
-        with mock.patch.object(fmrecall, "_recurring", boom):
-            fmrecall.replay(self.p)
+        with mock.patch.object(recall, "_recurring", boom):
+            recall.replay(self.p)
         self.assertEqual(len(self.caps()), 1, "the other signature was still filed")
         self.assertFalse(self.marker(), "the one that raised replays next time")
-        fmrecall.replay(self.p)
+        recall.replay(self.p)
         self.assertEqual(len(self.caps()), 2)
         self.assertTrue(self.marker())
 
     def test_a_hook_run_before_the_fix_closed_is_not_one_that_did_not_hold(self):  # T-2349 review
-        import fmrecall
+        from sampo import recall
         line = "hook Stop traceback: keyerror: 'drive'"
         for who in ("hook-hour 1", "hook-hour 2", "hook-hour 3"):
-            made = fmrecall.note_own(self.p, line, who, at="2020-01-01T00:00:00Z")
+            made = recall.note_own(self.p, line, who, at="2020-01-01T00:00:00Z")
         self.close(made)
-        fmrecall.note_own(self.p, line, "hook-hour 4", at="2020-01-01T00:00:00Z")
+        recall.note_own(self.p, line, "hook-hour 4", at="2020-01-01T00:00:00Z")
         self.assertEqual(self.held(), [], "that traceback was logged long before the fix closed")
-        fmrecall.note_own(self.p, line, "hook-hour 5", at=c.iso(time.time() + 60))
+        recall.note_own(self.p, line, "hook-hour 5", at=c.iso(time.time() + 60))
         self.assertEqual(len(self.held()), 1)
 
     def test_test_assertions_tallies_and_wordless_signatures_never_capture(self):
-        import fmrecall
+        from sampo import recall
         for text in ("AssertionError: 1 != 2", "guard-publish", "FAILED (3 classes)",
                      # T-2272 review: real recurring signatures with no single cause
                      "json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)",
                      "IndexError: list index out of range", "fm doctor: FAILED (2 pass, 1 warn, 1 fail)",
                      "fm: refused: T-0001 criterion 1 already has evidence, so its check stays as it is"):
             for t in ("T-0901", "T-0902", "T-0903"):
-                fmrecall.note_failure(self.p, t, text)
+                recall.note_failure(self.p, t, text)
         self.assertEqual(self.caps(), [])
 
 
 class NoBuiltMatcher(ForemanTestCase):  # T-2587: the MASTER-clause matcher failed its backtest and was removed
     def test_the_matcher_and_its_flag_are_gone(self):
-        import fmrecall
+        from sampo import recall
         for name in ("master_clauses", "covered_master", "backtest_built"):
-            self.assertFalse(hasattr(fmrecall, name), name)
+            self.assertFalse(hasattr(recall, name), name)
         r = self.fm("recall", "--backtest-built", "a", "b", check=False)
         self.assertNotEqual(r.returncode, 0)

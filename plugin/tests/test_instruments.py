@@ -47,8 +47,8 @@ class Registry(Case):
             self.assertRegex(text, rf"(?m)^  {name} .*≤{cap} lines")
 
     def test_each_schema_is_its_commands_arguments(self):
-        import fmcli
-        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        from sampo import cli
+        sub = next(a for a in cli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
         for t in self.fm_json("which", "--instruments")["instruments"]:
             dests = {a.dest for a in sub.choices[t["name"]]._actions} - {"help", "json", "project"}
             self.assertEqual(dests, set(t["input_schema"]["properties"]), t["name"])

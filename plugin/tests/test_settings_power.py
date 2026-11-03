@@ -15,8 +15,8 @@ import unittest.mock as mock
 
 from helpers import ForemanTestCase, read_text
 
-import fmcodetui as T
-import fmsettings
+from sampo import smithtui as T
+from sampo import settings
 
 PROFILES = '''motion = "full"
 border = "heavy"
@@ -49,7 +49,7 @@ class _Tui(ForemanTestCase):
         os.makedirs(os.path.join(uhome, ".claude"))
         self.env = dict(BARE, HOME=uhome, CLAUDECODE="", CLAUDE_CODE_ENTRYPOINT="")
         self.patches = [mock.patch.dict(os.environ, self.env),
-                        mock.patch.object(fmsettings, "in_claude_code", return_value=False)]
+                        mock.patch.object(settings, "in_claude_code", return_value=False)]
         for x in self.patches:
             x.start()
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
@@ -70,7 +70,7 @@ class _Tui(ForemanTestCase):
         """fm settings set KEY VALUE --surface app in this process (a subprocess has no terminal: the guard decides)."""
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            fmsettings.cmd_settings(types.SimpleNamespace(action="set", key=key, value=value, surface="app",
+            settings.cmd_settings(types.SimpleNamespace(action="set", key=key, value=value, surface="app",
                                                           json=False, project=None))
         return out.getvalue()
 
@@ -114,9 +114,9 @@ class Profile(_Tui):
     def test_a_bad_profile_value_never_refuses_the_files_own_setting(self):
         self.write('[profile.c]\nwhen = { tmux = true }\nmotion = "fast"\n')
         with mock.patch.dict(os.environ, {"TMUX": "/tmp/t"}):
-            self.assertEqual(fmsettings.set_app("motion", "off")[0], "off")
-            self.assertNotIn(("app", "profile"), fmsettings.written(), "not a dead setting")
-            self.assertEqual(fmsettings.diff(), [{"surface": "app", "key": "motion", "value": "off",
+            self.assertEqual(settings.set_app("motion", "off")[0], "off")
+            self.assertNotIn(("app", "profile"), settings.written(), "not a dead setting")
+            self.assertEqual(settings.diff(), [{"surface": "app", "key": "motion", "value": "off",
                                                   "default": T.DEFAULTS["motion"]}])
 
     def test_a_profile_the_app_cant_draw_with_starts_the_last_good_settings(self):
@@ -127,22 +127,22 @@ class Profile(_Tui):
                 raise ZeroDivisionError("a layout it can't draw")
             return real(st, w, h, cfg, *a, **k)
         self.write('border = "heavy"\n')
-        fmsettings.boot()
+        settings.boot()
         self.write('border = "heavy"\n[profile.t]\nwhen = { tmux = true }\n[profile.t.layout]\nnarrow_below = 7\n')
         with mock.patch.object(T, "render", side_effect=picky), mock.patch.dict(os.environ, {"TMUX": "/tmp/t"}):
-            cfg, _, note, _ = fmsettings.boot()
+            cfg, _, note, _ = settings.boot()
         self.assertIn("last good", note)
         self.assertEqual((cfg["layout"]["narrow_below"], cfg["border"], cfg.get("profile")),
                          (T.DEFAULTS["layout"]["narrow_below"], "heavy", None), "the good copy has no profile")
 
     def test_profiles_are_read_through_the_bounded_reader(self):
         os.mkfifo(self.toml)  # a FIFO would block a plain open
-        got = fmsettings.profiles(env=BARE)
+        got = settings.profiles(env=BARE)
         self.assertEqual(got["profiles"], [])
         self.assertIn("not a regular file", got["problems"][0])
         os.unlink(self.toml)
-        self.write("#" * (fmsettings.APP_MAX + 10))
-        self.assertIn("over 1 MB", fmsettings.profiles(env=BARE)["problems"][0])
+        self.write("#" * (settings.APP_MAX + 10))
+        self.assertIn("over 1 MB", settings.profiles(env=BARE)["problems"][0])
 
     def test_fm_settings_profile_lists_them_and_names_the_one_that_applies(self):
         self.write(PROFILES)
@@ -164,7 +164,7 @@ class Profile(_Tui):
     def test_the_settings_screen_names_the_profile(self):
         self.write(PROFILES)
         with mock.patch.dict(os.environ, {"TMUX": "/tmp/t"}):
-            cfg, _, _, _ = fmsettings.boot()
+            cfg, _, _, _ = settings.boot()
             app = T.App(cfg, spawn=lambda *a, **k: None)
             app.show_settings()
             self.assertIn("profile tmux", T._settings_note(app))
@@ -348,10 +348,10 @@ class Rules(_Tui):
                 raise ZeroDivisionError("a layout it can't draw")
             return real(st, w, h, cfg, *a, **k)
         self.write('border = "heavy"\n')
-        fmsettings.boot()
+        settings.boot()
         self.write('border = "heavy"\n[[rule]]\nwhen = { verify = true }\nlayout = { narrow_below = 7 }\n')
         with mock.patch.object(T, "render", side_effect=picky):
-            cfg, _, note, _ = fmsettings.boot()
+            cfg, _, note, _ = settings.boot()
         self.assertIn("last good", note)
         self.assertIsNone(cfg.get("rules"))
 
@@ -375,25 +375,25 @@ class Rules(_Tui):
                      "ext.ghost: no extension"):
             self.assertIn(word, said)
         self.write("")
-        self.assertEqual(fmsettings.set_app("ext.demo.refresh", "10")[0], 10)
-        self.assertEqual(fmsettings.set_app("ext.demo.loud", "true")[0], True)
+        self.assertEqual(settings.set_app("ext.demo.refresh", "10")[0], 10)
+        self.assertEqual(settings.set_app("ext.demo.loud", "true")[0], True)
         self.assertIn("[ext.demo]", read_text(self.toml))
         self.assertEqual(self.load()[0]["ext"]["demo"], {"refresh": 10, "mode": "fast", "loud": True})
         for key, value in (("ext.demo.refresh", "0"), ("ext.demo.loud", "maybe"), ("ext.demo.mode", "slower"),
                            ("ext.demo.nope", "1")):
-            with self.assertRaises(fmsettings.SettingError, msg=key):
-                fmsettings.set_app(key, value)
-        self.assertEqual(fmsettings.diff(), [
+            with self.assertRaises(settings.SettingError, msg=key):
+                settings.set_app(key, value)
+        self.assertEqual(settings.diff(), [
             {"surface": "app", "key": "ext.demo.refresh", "value": 10, "default": 5},
             {"surface": "app", "key": "ext.demo.loud", "value": True, "default": False}])
         self.write('[ext.demo]\nrefresh = 10\n')
-        fmsettings.set_app("ext.demo.refresh", None)
+        settings.set_app("ext.demo.refresh", None)
         self.assertNotIn("refresh", read_text(self.toml), "an undo removes it")
 
     def test_the_settings_screen_lists_an_extensions_keys_under_its_own_group(self):
         self.demo()
         self.write('[ext.demo]\nmode = "slow"\n')
-        cfg, _, _, _ = fmsettings.boot()
+        cfg, _, _, _ = settings.boot()
         app = T.App(cfg, spawn=lambda *a, **k: None)
         app.show_settings()
         row = next(r for r in app.set_rows if r["key"] == "ext.demo.mode")
@@ -479,11 +479,11 @@ class Rules(_Tui):
     def test_an_int_setting_takes_whole_numbers_only(self):
         self.demo()
         for v in (2.5, True):
-            with self.assertRaises(fmsettings.SettingError, msg=v):
-                fmsettings.ext_value(T.EXT_SETTINGS["demo"]["refresh"], v)
+            with self.assertRaises(settings.SettingError, msg=v):
+                settings.ext_value(T.EXT_SETTINGS["demo"]["refresh"], v)
         self.write('[ext.demo]\nrefresh = 2.5\n')
         self.assertIn("ext.demo.refresh = 2.5", self.load()[1][0])
-        self.assertEqual(fmsettings.ext_value(T.EXT_SETTINGS["demo"]["refresh"], "7"), 7)
+        self.assertEqual(settings.ext_value(T.EXT_SETTINGS["demo"]["refresh"], "7"), 7)
         for default in (2.5, True):
             with self.assertRaises(ValueError):
                 T.API("demo").setting("n", "int", default, "h")
@@ -491,7 +491,7 @@ class Rules(_Tui):
     def test_the_small_things(self):
         with self.assertRaises(ValueError):
             T.API("demo").setting("c", "choice", "a", "h", choices=("a", "b\x1b[2J"))
-        self.assertIn("\\u202e", str(fmsettings.SettingError("x ‮ y")))
+        self.assertIn("\\u202e", str(settings.SettingError("x ‮ y")))
         api = T.API("demo")
         api.setting("n", "int", 1, "first")
         api.setting("n", "int", 2, "second")
@@ -502,9 +502,9 @@ class Rules(_Tui):
         with mock.patch.dict(os.environ, {"TMUX": "/tmp/t"}):
             cfg, errors = T.load_config(self.toml)
             self.assertEqual((cfg["ext"]["demo"]["n"], cfg["profile"]["sets"], errors), (4, ["ext.demo.n"], []))
-            row = next(r for r in fmsettings.rows() if r["key"] == "ext.demo.n")
+            row = next(r for r in settings.rows() if r["key"] == "ext.demo.n")
             self.assertEqual(row.get("profile"), "t")
-        self.assertEqual(fmsettings.skip_note(f"{self.toml}: rules: not a setting"), " (skipped: the default shows)")
+        self.assertEqual(settings.skip_note(f"{self.toml}: rules: not a setting"), " (skipped: the default shows)")
 
     def test_the_status_line_says_which_rule_switched_the_layout(self):
         self.write('[[rule]]\nwhen = { closed = true }\npanels = { log = "verify" }\n' + RULES)

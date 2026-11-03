@@ -4,9 +4,9 @@ import os
 
 from test_hooks import HookCase
 
-import fmcore as c
-import fmdoctor as d
-import fmlib
+from sampo import core as c
+from sampo import doctor as d
+from sampo import lib
 
 
 class CardsAtPrompt(HookCase):
@@ -31,15 +31,15 @@ class CardsAtPrompt(HookCase):
             self.assertNotIn("stack cards", self.ask(text).lower(), text)
 
     def test_matching_reads_a_cached_index(self):
-        self.assertEqual(fmlib.cards_named("tune the kafka consumer and the redis cache"), ["kafka", "redis"])
-        self.assertTrue(os.path.isfile(fmlib._names_path()))
-        real = fmlib.cards
-        fmlib.cards = lambda *a, **k: (_ for _ in ()).throw(AssertionError("parsed the cards again"))
+        self.assertEqual(lib.cards_named("tune the kafka consumer and the redis cache"), ["kafka", "redis"])
+        self.assertTrue(os.path.isfile(lib._names_path()))
+        real = lib.cards
+        lib.cards = lambda *a, **k: (_ for _ in ()).throw(AssertionError("parsed the cards again"))
         try:
-            self.assertEqual(fmlib.cards_named("the redis cache"), ["redis"])
+            self.assertEqual(lib.cards_named("the redis cache"), ["redis"])
         finally:
-            fmlib.cards = real
-        self.assertEqual(fmlib.cards_named("set up react-hook-form validation"), ["react-hook-form"])  # longest first
+            lib.cards = real
+        self.assertEqual(lib.cards_named("set up react-hook-form validation"), ["react-hook-form"])  # longest first
 
     def test_doctor_counts_cards_read_and_named(self):
         self.ask("fix the react render loop")
@@ -54,9 +54,9 @@ class CardsAtPrompt(HookCase):
         import re
         from unittest import mock
         real, seen = re.compile, []
-        with mock.patch.object(fmlib.re, "compile", side_effect=lambda *a: seen.append(a[0]) or real(*a)):
-            self.assertEqual(fmlib.cards_named("the redis cache"), ["redis"])
-            self.assertEqual(fmlib.cards_named("predisposed to kafkaesque prose"), [])
+        with mock.patch.object(lib.re, "compile", side_effect=lambda *a: seen.append(a[0]) or real(*a)):
+            self.assertEqual(lib.cards_named("the redis cache"), ["redis"])
+            self.assertEqual(lib.cards_named("predisposed to kafkaesque prose"), [])
         pats = [s for s in seen if "redis" in s]
         self.assertTrue(pats)
         self.assertFalse(any("postgres" in s for s in pats), pats)

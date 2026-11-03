@@ -4,8 +4,8 @@ import json
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmcost
+from sampo import core as c
+from sampo import cost
 
 
 class UnprovenClose(ForemanTestCase):
@@ -28,11 +28,11 @@ class UnprovenClose(ForemanTestCase):
         self.assertIn("unproven: perf-typed", out)
         done = [e for e in c.ledger_events(self.p, ("task_done",)) if e.get("task") == tid]
         self.assertEqual((done[-1].get("data") or {}).get("unproven"), ["perf-typed"])
-        self.assertIn("0 strongly verified", fmcost.weekly_line(self.p))
-        self.assertIn("1 closed unproven", fmcost.weekly_line(self.p))
+        self.assertIn("0 strongly verified", cost.weekly_line(self.p))
+        self.assertIn("1 closed unproven", cost.weekly_line(self.p))
 
     def test_a_close_with_nothing_unproven_stores_nothing(self):
         tid, out = self.close("FEATURE")
         self.assertNotIn("unproven", c.find_brief(self.p, tid).meta)
         self.assertNotIn("unproven:", out)
-        self.assertNotIn("unproven", fmcost.weekly_line(self.p))
+        self.assertNotIn("unproven", cost.weekly_line(self.p))

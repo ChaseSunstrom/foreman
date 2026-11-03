@@ -14,12 +14,12 @@ for p in (HERE, os.path.join(HERE, "..", "lib"), os.path.join(HERE, "fixtures"))
         sys.path.insert(0, p)
 
 import fmguard  # noqa: E402
-import fmoracle  # noqa: E402
-import fmreplay  # noqa: E402
+from sampo import oracle as soracle  # noqa: E402
+from sampo import replay  # noqa: E402
 import gen_evasions  # noqa: E402
 
 FIX = os.path.join(HERE, "fixtures")
-SANDBOX = fmoracle.sandbox() is not None
+SANDBOX = soracle.sandbox() is not None
 
 
 @unittest.skipUnless(SANDBOX, "no bwrap: the oracle only runs commands inside a sandbox")
@@ -28,87 +28,87 @@ class Oracle(unittest.TestCase):
     recorded with its real argv instead of run; each recorded command, judged alone, must pass where the line did."""
 
     def test_the_shell_runs_what_the_line_says(self):
-        ran = fmoracle.ran("A=hi; echo $A | tr a-z A-Z; X=$(printf ls); $X -la")
+        ran = soracle.ran("A=hi; echo $A | tr a-z A-Z; X=$(printf ls); $X -la")
         self.assertIn(["tr", "a-z", "A-Z"], ran)
         self.assertIn(["ls", "-la"], ran, "a computed command name is recorded as the shell expanded it")
 
     def test_nothing_real_runs(self):
         import tempfile
         with tempfile.TemporaryDirectory() as d:
-            ran = fmoracle.ran("rm -rf ~; echo done > out.txt", d)
+            ran = soracle.ran("rm -rf ~; echo done > out.txt", d)
             self.assertEqual(ran[0], ["rm", "-rf", os.path.expanduser("~")], "recorded with the real ~, not run")
             self.assertFalse(os.path.exists(os.path.join(d, "out.txt")), "the line's folder is read-only")
             home_probe = os.path.join(os.path.expanduser("~"), "fm-oracle-probe-T1553")
-            fmoracle.ran(f"/usr/bin/touch {d}/abs.txt {home_probe} /etc/fm-oracle-probe-T1553", d)
+            soracle.ran(f"/usr/bin/touch {d}/abs.txt {home_probe} /etc/fm-oracle-probe-T1553", d)
             for p in (os.path.join(d, "abs.txt"), home_probe, "/etc/fm-oracle-probe-T1553"):
                 self.assertFalse(os.path.exists(p), f"a program run by its absolute path wrote {p}")
 
     def test_a_sandbox_that_fails_to_start_is_unable_not_agreement(self):
-        with mock.patch.object(fmoracle, "sandbox", return_value="/bin/false"):
-            self.assertIsNone(fmoracle.ran("ls"))
-            bad = fmoracle.disagreements([("ls", "")])
+        with mock.patch.object(soracle, "sandbox", return_value="/bin/false"):
+            self.assertIsNone(soracle.ran("ls"))
+            bad = soracle.disagreements([("ls", "")])
         self.assertEqual([d["verdict"].split(":")[0] for d in bad], ["unable"])
 
     def test_both_branches_of_a_status_test_are_seen(self):
-        self.assertIn(["rm", "-rf", "build"], fmoracle.ran("grep -q x f || rm -rf build"))
-        self.assertIn(["touch", "y"], fmoracle.ran("if grep -q x f; then echo hi; else touch y; fi"))
+        self.assertIn(["rm", "-rf", "build"], soracle.ran("grep -q x f || rm -rf build"))
+        self.assertIn(["touch", "y"], soracle.ran("if grep -q x f; then echo hi; else touch y; fi"))
 
     def test_the_line_cannot_switch_the_recorder_off(self):
         for off in ("command_not_found_handle() { :; }", "unset -f command_not_found_handle"):
-            self.assertIn(["rm", "-rf", "build"], fmoracle.ran(f"{off}; rm -rf build"), off)
+            self.assertIn(["rm", "-rf", "build"], soracle.ran(f"{off}; rm -rf build"), off)
 
     def test_a_folder_above_home_or_tmp_does_not_uncover_them(self):
         import tempfile
         fd, marker = tempfile.mkstemp(dir="/tmp", prefix="fm-oracle-probe-")
         os.close(fd)
         try:
-            self.assertEqual(fmoracle.ran("[ -e /proc/self ] && seen", "/"), [["seen"]], "the probe itself works")
+            self.assertEqual(soracle.ran("[ -e /proc/self ] && seen", "/"), [["seen"]], "the probe itself works")
             for where in ("/", "/tmp"):
-                self.assertEqual(fmoracle.ran(f"[ -e {marker} ] && seen", where), [], where)
+                self.assertEqual(soracle.ran(f"[ -e {marker} ] && seen", where), [], where)
         finally:
             os.unlink(marker)
 
     def test_limits_and_tampered_records(self):
-        ran = fmoracle.ran('probe "$(ulimit -v)" "$(ulimit -f)"; mkdir -p "$ORACLE_LOG/zz"; : > "$ORACLE_LOG/junk"; ls')
+        ran = soracle.ran('probe "$(ulimit -v)" "$(ulimit -f)"; mkdir -p "$ORACLE_LOG/zz"; : > "$ORACLE_LOG/junk"; ls')
         self.assertEqual(ran[0][0], "probe")
         self.assertNotIn("unlimited", ran[0][1:], "memory and file size are capped")
         self.assertIn(["ls"], ran, "a stray file in the record folder is skipped, not a crash")
 
     def test_each_command_is_judged_in_the_folder_the_line_moved_to(self):
         home = os.path.expanduser("~")
-        got = fmoracle.ran_in('cd ~/projects/x && git status; cd sub; ls; (cd /srv && make); cd ""; cd ../..; id', home)
+        got = soracle.ran_in('cd ~/projects/x && git status; cd sub; ls; (cd /srv && make); cd ""; cd ../..; id', home)
         self.assertEqual(got, [(f"{home}/projects/x", ["git", "status"]), (f"{home}/projects/x/sub", ["ls"]),
                                ("/srv", ["make"]), (f"{home}/projects", ["id"])])
-        tmp = fmoracle.ran_in('d=$(mktemp -d) && cd "$d" && git init -q', home)
+        tmp = soracle.ran_in('d=$(mktemp -d) && cd "$d" && git init -q', home)
         self.assertTrue(tmp[-1][0].startswith("/tmp/"), "mktemp ran (in the sandbox), so cd reached its folder")
         self.assertEqual(tmp[0][1][0], "mktemp", "and it was recorded")
         seen = []
         import types
         spy = types.SimpleNamespace(check=lambda tool, ti, ctx: seen.append((ti["command"], ctx.cwd)))
-        with mock.patch.object(fmoracle, "_guard", return_value=spy):
-            fmoracle.disagreements([("cd /srv && make", "")])
+        with mock.patch.object(soracle, "_guard", return_value=spy):
+            soracle.disagreements([("cd /srv && make", "")])
         self.assertIn(("make", "/srv"), seen)
 
     def test_a_guard_that_raises_is_unable(self):
         boom = mock.Mock()
         boom.check = mock.Mock(side_effect=RuntimeError("parser broke"))
-        bad = fmoracle.disagreements([("ls", "")], guard=boom)
+        bad = soracle.disagreements([("ls", "")], guard=boom)
         self.assertEqual([d["verdict"].split(":")[0] for d in bad], ["unable"])
 
     def test_a_guard_that_misreads_a_line_is_caught(self):
         naive = mock.Mock()  # a guard that reads only the first word: the oracle sees what really runs
         naive.check = lambda tool, ti, ctx: None if ti["command"].startswith("true") else fmguard.check(tool, ti, ctx)
-        bad = fmoracle.disagreements([("true; rm -rf ~", "")], guard=naive)
+        bad = soracle.disagreements([("true; rm -rf ~", "")], guard=naive)
         self.assertEqual(len(bad), 1)
         self.assertEqual(bad[0]["ran"][:2], ["rm", "-rf"])
 
     def test_the_allow_corpus_agrees(self):
         with mock.patch.dict(os.environ):
             os.environ.pop("FOREMAN_GUARD_CASES", None)
-            cases, _ = fmreplay.load_cases()
+            cases, _ = replay.load_cases()
         labelled = [(k["cmd"], k.get("cwd") or "") for k in cases]  # the refused ones run nothing: skipped inside
         self.assertGreater(len(labelled), 100)
-        self.assertEqual(fmoracle.disagreements(labelled), [], "nothing misread and nothing unable")
+        self.assertEqual(soracle.disagreements(labelled), [], "nothing misread and nothing unable")
 
     def test_fm_replay_oracle_reports_a_misread_line(self):
         import contextlib
@@ -119,10 +119,10 @@ class Oracle(unittest.TestCase):
         planted = [{"id": "x", "cmd": "true; rm -rf ~", "cwd": "", "should": "allow"}]
         naive = lambda tool, ti, ctx: None if ti["command"].startswith("true") else fmguard.check(tool, ti, ctx)
         buf = io.StringIO()
-        with mock.patch.object(fmreplay, "load_cases", return_value=(planted, 0)), \
-                mock.patch.object(fmoracle, "_guard", return_value=types.SimpleNamespace(check=naive)), \
+        with mock.patch.object(replay, "load_cases", return_value=(planted, 0)), \
+                mock.patch.object(soracle, "_guard", return_value=types.SimpleNamespace(check=naive)), \
                 contextlib.redirect_stdout(buf), self.assertRaises(SystemExit) as e:
-            fmreplay.cmd_replay(args)
+            replay.cmd_replay(args)
         self.assertEqual(e.exception.code, 1)
         res = json.loads(buf.getvalue())
         self.assertEqual((res["cases"], len(res["disagreements"])), (1, 1))
@@ -137,9 +137,9 @@ class Oracle(unittest.TestCase):
         args = types.SimpleNamespace(oracle=True, cases=False, candidate=None, cwd=None, cmd="true; rm -rf ~", json=True)
         naive = lambda tool, ti, ctx: None if ti["command"].startswith("true") else fmguard.check(tool, ti, ctx)
         buf = io.StringIO()
-        with mock.patch.object(fmoracle, "_guard", return_value=types.SimpleNamespace(check=naive)), \
+        with mock.patch.object(soracle, "_guard", return_value=types.SimpleNamespace(check=naive)), \
                 contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
-            fmreplay.cmd_replay(args)
+            replay.cmd_replay(args)
         res = json.loads(buf.getvalue())
         self.assertEqual((res["cases"], res["disagreements"][0]["ran"][:2]), (1, ["rm", "-rf"]))
 
@@ -152,8 +152,8 @@ class NoSandbox(unittest.TestCase):
         args = types.SimpleNamespace(oracle=True, cases=False, candidate=None, cwd=None, cmd=None, json=False)
         buf = io.StringIO()
         with mock.patch.object(shutil, "which", return_value=None), contextlib.redirect_stdout(buf):
-            self.assertIsNone(fmoracle.ran("rm -rf ~"))
-            fmreplay.cmd_replay(args)
+            self.assertIsNone(soracle.ran("rm -rf ~"))
+            replay.cmd_replay(args)
         self.assertIn("bwrap", buf.getvalue())
 
 
@@ -170,9 +170,9 @@ class Mutation(unittest.TestCase):
     def setUpClass(cls):
         with mock.patch.dict(os.environ):
             os.environ.pop("FOREMAN_GUARD_CASES", None)
-            cases, _ = fmreplay.load_cases()
-        cls.cases = cases + fmreplay.load_cases(os.path.join(FIX, "guard_evasions.jsonl"))[0]
-        cls.green = fmreplay.drift(cls.cases)
+            cases, _ = replay.load_cases()
+        cls.cases = cases + replay.load_cases(os.path.join(FIX, "guard_evasions.jsonl"))[0]
+        cls.green = replay.drift(cls.cases)
         real = fmguard.check
         cls.caught = []
         for cat in fmguard.CATEGORIES:
@@ -180,7 +180,7 @@ class Mutation(unittest.TestCase):
                 found = fmguard.findings(tool, ti, ctx) if found is None else found
                 return real(tool, ti, ctx, found=[f for f in found if f[0] != cat])
             with mock.patch.object(fmguard, "check", mutant):
-                if any(d["should"] == "block" for d in fmreplay.drift(cls.cases)):
+                if any(d["should"] == "block" for d in replay.drift(cls.cases)):
                     cls.caught.append(cat)
 
     def test_the_corpus_is_green_before_any_mutant(self):
@@ -206,7 +206,7 @@ class Mutation(unittest.TestCase):
                              "a guard rule joined the untested list: give it a labelled case instead")
 
     def test_no_evasion_reaches_a_dangerous_command(self):
-        gaps, _ = fmreplay.load_cases(os.path.join(FIX, "guard_gaps.jsonl"))
+        gaps, _ = replay.load_cases(os.path.join(FIX, "guard_gaps.jsonl"))
         self.assertEqual([g["cmd"] for g in gaps if g["should"] == "block"], [],
                          "an obfuscated dangerous command passes the guard: tighten fmguard.py, never list it")
 
@@ -228,7 +228,7 @@ class Mutation(unittest.TestCase):
         # that is itself refused only as opaque, eval "$(curl …)", has nothing more to keep)
         import re
         opaque = re.compile(r"computed text|downloaded script")
-        ctx = fmreplay._ctx(fmreplay.resolve_cwd(""))
+        ctx = replay._ctx(replay.resolve_cwd(""))
         payload = lambda cmd: {k for k, d in fmguard.findings("Bash", {"command": cmd}, ctx) if not opaque.search(d)}
         off = [(t, o) for t, o, v, _ in gen_evasions._rows()
                if "+" in t and not set(t.split("+")) & _TO_SH and payload(o) and not payload(o) & payload(v)]
@@ -242,14 +242,14 @@ class Mutation(unittest.TestCase):
         for tname, orig, v, _ in gen_evasions._rows():
             if "+" not in tname:
                 continue
-            want = {tuple(a) for a in fmoracle.ran(orig) or []}
+            want = {tuple(a) for a in soracle.ran(orig) or []}
             if not want:
                 continue
             inner, outer = tname.split("+")
             if inner in _TO_SH:
                 continue  # the original runs inside sh, which is itself a recorded program
             watched = fns[inner](orig) if outer in _TO_SH else v
-            got = {tuple(a) for a in fmoracle.ran(watched) or []}
+            got = {tuple(a) for a in soracle.ran(watched) or []}
             self.assertTrue(want <= got, f"{tname} of {orig!r} doesn't run it: {watched!r}")
 
 
@@ -358,9 +358,9 @@ class Trust(ForemanTestCase):
             self.fm_ask(tid, "publish", session="sess-b")
         self.assertIn("publish asked 3 times this session", self.fm_ask(tid, "publish", session="sess-a").stdout)
 
-import fmlandlock  # noqa: E402
+from sampo import landlock  # noqa: E402
 
-LANDLOCK = fmlandlock.available()[0]
+LANDLOCK = landlock.available()[0]
 
 
 @unittest.skipUnless(LANDLOCK, "this kernel has no Landlock: confinement is optional and the run says so")
@@ -368,10 +368,10 @@ class Landlock(unittest.TestCase):
     """T-1607: an fm code worker's process tree can't write outside its tree, scratch and Claude's own folders."""
 
     def test_a_confined_child_cannot_write_outside_its_set(self):
-        import fmcode
+        from sampo import smith
         import tempfile
         with tempfile.TemporaryDirectory() as inside, tempfile.TemporaryDirectory(dir=os.path.expanduser("~")) as out:
-            code, text = fmcode.run_bounded(f"echo a > in.txt; echo b > {out}/out.txt; cat /etc/hostname", inside, 30,
+            code, text = smith.run_bounded(f"echo a > in.txt; echo b > {out}/out.txt; cat /etc/hostname", inside, 30,
                                             confine=[inside])
             self.assertTrue(os.path.exists(os.path.join(inside, "in.txt")), text)
             self.assertFalse(os.path.exists(os.path.join(out, "out.txt")), "outside the set: refused")
@@ -384,7 +384,7 @@ class Landlock(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             repo = os.path.join(d, "repo")
             subprocess.run(["git", "init", "-q", repo], check=True)
-            paths = fmlandlock.writable_for(repo)
+            paths = landlock.writable_for(repo)
             real = [os.path.realpath(p) for p in paths]
             for want in (repo, os.path.join(repo, ".git"), "/tmp", os.path.join(home, ".claude", "projects"),
                          os.path.join(home, ".claude.json"), os.path.join(home, ".cache")):
@@ -403,7 +403,7 @@ class LandlockBounds(unittest.TestCase):
         import tempfile
         home = os.path.expanduser("~")
         with tempfile.TemporaryDirectory() as d:
-            real = [os.path.realpath(p) for p in fmlandlock.writable_for(d)]
+            real = [os.path.realpath(p) for p in landlock.writable_for(d)]
         for never in (os.path.join(home, ".claude"), os.path.join(home, ".claude", "settings.json"),
                       os.path.join(home, ".claude", "foreman"), os.path.join(home, ".claude", "foreman", "plugin"),
                       os.path.join(home, ".claude", "hooks"), os.path.join(home, ".claude", "plugins"), "/dev"):
@@ -422,7 +422,7 @@ class LandlockBounds(unittest.TestCase):
                 subprocess.run(argv, check=True, capture_output=True,
                                env=dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
                                         GIT_COMMITTER_EMAIL="t@t"))
-            real = [os.path.realpath(p) for p in fmlandlock.writable_for(wt)]
+            real = [os.path.realpath(p) for p in landlock.writable_for(wt)]
             common = os.path.realpath(os.path.join(main, ".git"))
             for want in ("objects", "refs", "logs"):
                 self.assertIn(os.path.join(common, want), real)
@@ -430,12 +430,12 @@ class LandlockBounds(unittest.TestCase):
             self.assertTrue(any(p.startswith(os.path.join(common, "worktrees")) for p in real))
 
     def test_renames_truncation_and_file_rules_behave(self):
-        import fmcode
+        from sampo import smith
         import tempfile
         with tempfile.TemporaryDirectory() as inside, tempfile.TemporaryDirectory(dir=os.path.expanduser("~")) as other:
             one = os.path.join(other, "one.json")
             open(one, "w").close()
-            code, text = fmcode.run_bounded(
+            code, text = smith.run_bounded(
                 f"mkdir a b && echo x > a/f && mv a/f b/f && : > b/f && echo ok-tree; echo y >> {one} && echo ok-file; "
                 f"echo z > {other}/sibling.json || echo refused-sibling", inside, 30, confine=[inside, one])
             self.assertIn("ok-tree", text)
@@ -444,29 +444,29 @@ class LandlockBounds(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(other, "sibling.json")))
 
     def test_a_confinement_that_cannot_be_made_stops_the_command(self):
-        import fmcode
+        from sampo import smith
         import tempfile
         with tempfile.TemporaryDirectory() as d, \
-                mock.patch.object(fmlandlock, "prepare", side_effect=OSError("no ruleset")):
-            with self.assertRaises(fmcode.ConfineError):
-                fmcode.run_bounded("touch ran", d, 30, confine=[d])
+                mock.patch.object(landlock, "prepare", side_effect=OSError("no ruleset")):
+            with self.assertRaises(smith.ConfineError):
+                smith.run_bounded("touch ran", d, 30, confine=[d])
             self.assertFalse(os.path.exists(os.path.join(d, "ran")), "never run unconfined instead")
 
     def test_verify_and_run_commands_are_confined_too(self):
         import inspect
-        import fmcode
+        from sampo import smith
         # the worker's turn, its run commands, the plan check and the criteria's verify (through fm task evidence)
-        for fn in (fmcode.Run.work, fmcode.Run.run_cmd, fmcode._plan_problem):
+        for fn in (smith.Run.work, smith.Run.run_cmd, smith._plan_problem):
             calls = re.findall(r"run_bounded\((?:[^()]|\([^()]*\))*\)", inspect.getsource(fn))
             self.assertTrue(calls, fn.__name__)
             self.assertEqual([c for c in calls if "confine=" not in c or "confine=None" in c], [], fn.__name__)
-        verify = inspect.getsource(fmcode.Run.verify)
+        verify = inspect.getsource(smith.Run.verify)
         self.assertRegex(verify, r'self\.fm\("task", "evidence"(?:[^()]|\([^()]*\))*confine=', "verify runs confined")
 
 
 class LandlockOptional(unittest.TestCase):
     def test_the_guard_refuses_turning_confinement_off(self):
-        ctx = fmreplay._ctx(os.path.expanduser("~"))
+        ctx = replay._ctx(os.path.expanduser("~"))
         for cmd in ("FOREMAN_CONFINE=0 fm code run T-1", "export FOREMAN_CONFINE=0; fm code run T-1",
                     "env FOREMAN_CONFINE=0 fm code run T-1"):
             b = fmguard.check("Bash", {"command": cmd}, ctx)
@@ -474,26 +474,26 @@ class LandlockOptional(unittest.TestCase):
         self.assertIsNone(fmguard.check("Bash", {"command": "echo FOREMAN_CONFINE is documented"}, ctx))
 
     def test_without_landlock_workers_run_unconfined_and_say_why(self):
-        import fmcode
-        with mock.patch.object(fmlandlock, "abi", return_value=0):
-            ok, why = fmlandlock.available()
-            paths, note = fmcode.worker_confinement("/tmp")
+        from sampo import smith
+        with mock.patch.object(landlock, "abi", return_value=0):
+            ok, why = landlock.available()
+            paths, note = smith.worker_confinement("/tmp")
         self.assertFalse(ok)
         self.assertIsNone(paths)
         self.assertIn("unconfined", note)
         self.assertIn(why, note)
 
     def test_fm_doctor_says_whether_workers_are_confined(self):
-        import fmdoctor
-        with mock.patch.object(fmlandlock, "abi", return_value=0):
-            r = fmdoctor.check_landlock()
+        from sampo import doctor
+        with mock.patch.object(landlock, "abi", return_value=0):
+            r = doctor.check_landlock()
         self.assertEqual(r.status, "PASS", "optional: never a failure")
         self.assertIn("unconfined", r.detail if hasattr(r, "detail") else str(r))
 
     def test_it_can_be_turned_off(self):
-        import fmcode
+        from sampo import smith
         with mock.patch.dict(os.environ, {"FOREMAN_CONFINE": "0"}):
-            paths, note = fmcode.worker_confinement("/tmp")
+            paths, note = smith.worker_confinement("/tmp")
         self.assertIsNone(paths)
         self.assertIn("FOREMAN_CONFINE=0", note)
 

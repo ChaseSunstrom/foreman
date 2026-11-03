@@ -8,7 +8,7 @@ from unittest import mock
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 KEY = "sk-ant-" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"  # pragma: allowlist secret
 PW = "hunter2-" + "correct-horse"  # pragma: allowlist secret
@@ -192,23 +192,23 @@ class Home(ForemanTestCase):
 
     def test_a_failed_move_leaves_nothing_half_imported(self):
         self.export()
-        import fmhome
+        from sampo import home
         os.environ["FOREMAN_HOME"] = self.empty
-        real, calls = fmhome._move, []
+        real, calls = home._move, []
 
         def flaky(src, dst):
             calls.append(dst)
             if len(calls) == 2:
                 raise OSError(28, "No space left on device")
             return real(src, dst)
-        with mock.patch.object(fmhome, "_move", flaky):
-            with self.assertRaises(fmhome.Refused):
-                fmhome.import_(self.tar)
+        with mock.patch.object(home, "_move", flaky):
+            with self.assertRaises(home.Refused):
+                home.import_(self.tar)
         self.assertEqual(len(calls), 2, calls)
         self.assertFalse(os.path.exists(os.path.join(self.empty, "tui.toml")), "the first move is rolled back")
         self.assertFalse(os.listdir(os.path.join(self.empty, "state", "projects"))
                          if os.path.isdir(os.path.join(self.empty, "state", "projects")) else [])
-        self.assertEqual(fmhome.import_(self.tar)[0] > 0, True, "a retry goes through")
+        self.assertEqual(home.import_(self.tar)[0] > 0, True, "a retry goes through")
 
     # ---------------------------------------------------------------- second review
 
@@ -280,15 +280,15 @@ class Home(ForemanTestCase):
 
     def test_a_failure_after_the_rename_rolls_it_back(self):
         self.export()
-        import fmhome
+        from sampo import home
         os.environ["FOREMAN_HOME"] = self.empty
         with mock.patch.object(c, "regen_registry", side_effect=TypeError("'<' not supported")):
-            with self.assertRaises(fmhome.Refused):
-                fmhome.import_(self.tar)
+            with self.assertRaises(home.Refused):
+                home.import_(self.tar)
         projects = os.path.join(self.empty, "state", "projects")
         self.assertFalse(os.path.isdir(projects) and os.listdir(projects), "the rename is rolled back")
         self.assertFalse(os.path.exists(os.path.join(self.empty, "tui.toml")))
-        self.assertGreater(fmhome.import_(self.tar)[0], 0, "a retry goes through")
+        self.assertGreater(home.import_(self.tar)[0], 0, "a retry goes through")
 
     def test_forged_runs_and_credential_values_never_come_in(self):
         self.export()
@@ -307,13 +307,13 @@ class Home(ForemanTestCase):
         files = self.exported()
         cont = f"state/projects/{self.p.slug}/tasks/cont.md"
         self.assert_refused(self.pack(dict(files, **{cont: b"x"}), types={cont: tarfile.CONTTYPE}))
-        import fmhome
+        from sampo import home
         os.environ["FOREMAN_HOME"] = self.empty
         saved = tarfile.TarInfo._proc_member
         del tarfile.TarInfo._proc_member
         try:
-            with self.assertRaises(fmhome.Refused) as e:
-                fmhome.import_(self.tar)
+            with self.assertRaises(home.Refused) as e:
+                home.import_(self.tar)
             self.assertIn("header", str(e.exception))
         finally:
             tarfile.TarInfo._proc_member = saved

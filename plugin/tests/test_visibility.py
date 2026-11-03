@@ -7,7 +7,7 @@ import unittest
 
 from helpers import PLUGIN, ForemanTestCase, read_json
 
-import fmcore as c
+from sampo import core as c
 
 STATUSLINE = os.path.join(PLUGIN, "hooks", "statusline")
 SUBAGENT_LINE = os.path.join(PLUGIN, "hooks", "subagent-statusline")

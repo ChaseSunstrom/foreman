@@ -5,15 +5,15 @@ import sys
 from helpers import ForemanTestCase
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
-import fmcore  # noqa: E402
+from sampo import core  # noqa: E402
 
 
 class RecordedVetoes(ForemanTestCase):
     def setUp(self):
         super().setUp()
         self.fm("init")
-        self.c = fmcore
-        self.p = fmcore.find_project(self.repo)
+        self.c = core
+        self.p = core.find_project(self.repo)
 
     def test_permission_phrasings_record_no_veto(self):
         for said in ("stop asking me if you can release, I give full permission", "don't ask before pushing",

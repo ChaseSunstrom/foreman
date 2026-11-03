@@ -60,18 +60,18 @@ class Veto(ForemanTestCase):
 
 class Routing(ForemanTestCase):
     def test_the_readers_take_the_tables_from_routing_json(self):
-        import fmcli
-        import fmcore as c
-        import fmplugins
+        from sampo import cli
+        from sampo import core as c
+        from sampo import plugins
         with open(os.path.join(c.PLUGIN_ROOT, "skills", "routing.json")) as f:
             r = json.load(f)
-        self.assertEqual({k: tuple(v) for k, v in r["stage_words"].items()}, fmplugins.STAGE_WORDS)
-        self.assertEqual(tuple(r["ui_words"]), fmplugins.UI_WORDS)
-        self.assertEqual({k: tuple(v) for k, v in r["builtin_skills"].items()}, fmplugins.BUILTIN)
-        self.assertEqual(tuple(tuple(g) for g in r["review_groups"]), fmcli.SPLIT_GROUPS)
+        self.assertEqual({k: tuple(v) for k, v in r["stage_words"].items()}, plugins.STAGE_WORDS)
+        self.assertEqual(tuple(r["ui_words"]), plugins.UI_WORDS)
+        self.assertEqual({k: tuple(v) for k, v in r["builtin_skills"].items()}, plugins.BUILTIN)
+        self.assertEqual(tuple(tuple(g) for g in r["review_groups"]), cli.SPLIT_GROUPS)
 
     def test_a_wrong_shaped_table_is_refused(self):
-        import fmcore as c
+        from sampo import core as c
         good = {"stage_words": {"FIX": ["debug"]}, "ui_words": ["ui"], "builtin_skills": {"CLEAN": ["simplify"]},
                 "review_groups": [["edge"]]}
         self.assertIsNone(c.routing_problem(good))
@@ -80,14 +80,14 @@ class Routing(ForemanTestCase):
             self.assertIsNotNone(c.routing_problem(bad), bad)
 
     def test_evolve_takes_it_as_a_target_and_refuses_a_broken_revision(self):
-        import fmevolve
-        self.assertTrue(fmevolve.TEXT.match("skills/routing.json"))
+        from sampo import evolve
+        self.assertTrue(evolve.TEXT.match("skills/routing.json"))
         old = json.dumps({"stage_words": {}, "review_groups": []})
-        fmevolve.check_revision("plugin/skills/routing.json", old, json.dumps({"stage_words": {"FIX": ["x"]},
+        evolve.check_revision("plugin/skills/routing.json", old, json.dumps({"stage_words": {"FIX": ["x"]},
                                                                               "review_groups": [["edge"]]}))
         for bad in ("{not json", json.dumps({"stage_words": {}}), json.dumps([1, 2]),
                     json.dumps({"stage_words": {}, "review_groups": 5})):
             with self.assertRaises(ValueError):
-                fmevolve.check_revision("plugin/skills/routing.json", old, bad)
+                evolve.check_revision("plugin/skills/routing.json", old, bad)
         with self.assertRaises(ValueError):  # the old frontmatter rule still holds for instruction files
-            fmevolve.check_revision("plugin/skills/x/SKILL.md", "---\nname: x\n---\nbody", "body only")
+            evolve.check_revision("plugin/skills/x/SKILL.md", "---\nname: x\n---\nbody", "body only")

@@ -11,9 +11,9 @@ from helpers import read_text
 from test_hooks import HookCase, parse
 import test_ideas
 
-import fmcore as c
-import fmdoctor
-import fmeco
+from sampo import core as c
+from sampo import doctor
+from sampo import eco
 
 
 def usage(**windows):
@@ -76,15 +76,15 @@ class HookSlo(HookCase):
         self.hook("PreToolUse", {"tool_name": "Read", "tool_input": {"file_path": os.path.join(self.repo, "README.md")}})
         ms = [e for e in self.events() if e.get("kind") == "hook_ms"]
         self.assertTrue(ms)
-        self.assertEqual(ms[-1].get("rev"), fmeco.version())
+        self.assertEqual(ms[-1].get("rev"), eco.version())
 
     def test_doctor_warns_past_the_slo_and_names_the_revision_where_it_rose(self):
-        self.assertEqual(fmdoctor.check_hook_slo().status, "PASS", "no runs recorded: nothing to judge")
+        self.assertEqual(doctor.check_hook_slo().status, "PASS", "no runs recorded: nothing to judge")
         self.write_events([("1.2.15", 40)] * 150 + [("1.2.16", 60)] * 100)
-        r = fmdoctor.check_hook_slo()
+        r = doctor.check_hook_slo()
         self.assertEqual(r.status, "PASS", r.detail)
         self.write_events([("1.2.15", 40)] * 150 + [("1.2.16", 60)] * 100 + [("1.2.17", 400)] * 100)
-        r = fmdoctor.check_hook_slo()
+        r = doctor.check_hook_slo()
         self.assertEqual(r.status, "WARN", r.detail)
         self.assertIn("1.2.17", r.detail)
         self.assertIn("1.2.16", r.detail, "the revision before it, for the range")
@@ -273,18 +273,18 @@ class UnexplainedSpend(HookCase):
 class TaskAt(unittest.TestCase):
     def test_a_turn_goes_to_the_newest_event_at_or_before_it(self):
         # T-1116: a bisect replaced the per-turn linear scan (4 s of fm cost's 6.8 s on a real ledger)
-        import fmcost
+        from sampo import cost
         line = [("2026-10-01T00:00:00", "T-1"), ("2026-10-01T00:00:00", "T-2"), ("2026-10-02T00:00:00", "T-3")]
-        self.assertIsNone(fmcost._task_at(line, "2026-09-30T23:59:59"))
-        self.assertEqual(fmcost._task_at(line, "2026-10-01T00:00:00"), "T-2")  # same second: the later event
-        self.assertEqual(fmcost._task_at(line, "2026-10-01T12:00:00"), "T-2")
-        self.assertEqual(fmcost._task_at(line, "2026-10-03T00:00:00"), "T-3")
-        self.assertIsNone(fmcost._task_at([], "2026-10-03T00:00:00"))
+        self.assertIsNone(cost._task_at(line, "2026-09-30T23:59:59"))
+        self.assertEqual(cost._task_at(line, "2026-10-01T00:00:00"), "T-2")  # same second: the later event
+        self.assertEqual(cost._task_at(line, "2026-10-01T12:00:00"), "T-2")
+        self.assertEqual(cost._task_at(line, "2026-10-03T00:00:00"), "T-3")
+        self.assertIsNone(cost._task_at([], "2026-10-03T00:00:00"))
         big = [(f"2026-10-{d:02d}T{h:02d}:{m:02d}:{s:02d}", "T-1") for d in range(1, 3) for h in range(24)
                for m in range(60) for s in range(0, 60, 2)]  # 172,800 events
         start = time.process_time()
         for _ in range(2000):  # a linear scan: ~340M steps; a bisect: ~36k
-            fmcost._task_at(big, "2026-10-02T23:59:59")
+            cost._task_at(big, "2026-10-02T23:59:59")
         self.assertLess(time.process_time() - start, 1.0)  # CPU: in-process bisect bar
 
 
@@ -292,7 +292,7 @@ class TranscriptPrefilter(unittest.TestCase):
     def test_old_files_and_lines_are_skipped_but_a_nested_old_stamp_hides_nothing(self):
         # T-1116: fm cost parsed 559 MB of transcripts twice; files and lines wholly before the cutoff are skipped now
         import tempfile
-        import fmcost
+        from sampo import cost
         with tempfile.TemporaryDirectory() as d:
             new = {"type": "assistant", "timestamp": "2026-10-10T00:00:00.000Z", "sessionId": "s",
                    "message": {"id": "m2", "usage": {"input_tokens": 5}, "content": [
@@ -303,5 +303,5 @@ class TranscriptPrefilter(unittest.TestCase):
             with open(os.path.join(d, "stale.jsonl"), "w") as f:
                 f.write(json.dumps(dict(new, message={"id": "m3", "usage": {"input_tokens": 9}})) + "\n")
             os.utime(os.path.join(d, "stale.jsonl"), (0, 0))  # not written since the cutoff: never opened
-            msgs, _ = fmcost.scan(d, "2026-10-01T00:00:00")
+            msgs, _ = cost.scan(d, "2026-10-01T00:00:00")
             self.assertEqual([u["input_tokens"] for _, _, u in msgs], [5])

@@ -7,7 +7,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class GoalBase(ForemanTestCase):
@@ -87,8 +87,8 @@ class Goal(GoalBase):
         self.assertIn("no budget", out)
 
     def test_an_ended_goal_is_the_users_to_renew(self):
-        import fmmandate
-        fmmandate.put(self.p, "An old sweep", time.time() - 60)
+        from sampo import mandate as smandate
+        smandate.put(self.p, "An old sweep", time.time() - 60)
         r = self.fm("goal", "set", "A new sweep", "--replace", "--no-end", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("user", r.stdout + r.stderr)
@@ -315,8 +315,8 @@ class GoalAcrossDays(GoalBase):
     """T-2139: one line, from fmmandate.goal_line, that SessionStart, the PreCompact checkpoint and fm resume print."""
 
     def line(self):
-        import fmmandate
-        return fmmandate.goal_line(self.p)
+        from sampo import mandate as smandate
+        return smandate.goal_line(self.p)
 
     def test_none_without_a_goal_without_items_or_once_ended(self):
         self.assertIsNone(self.line())
@@ -375,7 +375,7 @@ class GoalAcrossDays(GoalBase):
     def test_relay_race_a_fresh_session_at_every_kill_point_redoes_and_loses_nothing(self):
         # T-2332, Mission 4's spike: the session dies after each event; the next one has only the disk (fm resume in a new
         # process, fm run's pick). Redone: it would start a task already done. Lost: it counts fewer items done than are.
-        import fmserve
+        from sampo import serve
         self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
         names = ("verbs", "show", "docs", "site", "pane")
         for n in names:
@@ -389,7 +389,7 @@ class GoalAcrossDays(GoalBase):
             self.assertIn("Goal: ", out)  # the line is the only memory: it must be there at every point
             have = 5 if "all items done" in out else int(re.search(r"(\d+)/5 items done", out)[1])
             lost += max(0, len(done) - have)
-            pick = fmserve._next_runnable(self.p, set(), set())
+            pick = serve._next_runnable(self.p, set(), set())
             redone += bool(pick and pick.id in done)
             points += 1
 
@@ -407,7 +407,7 @@ class GoalAcrossDays(GoalBase):
         close(t[2], "dropped")  # dropped: its item stays open for a new task
         t2b = self.new("docs again", "--goal", "3")
         kill()
-        self.assertEqual(fmserve._next_runnable(self.p, set(), set()).id, t2b)
+        self.assertEqual(serve._next_runnable(self.p, set(), set()).id, t2b)
         close(t2b)
         close(t[3])
         self.fm("focus", t[4])
@@ -417,18 +417,18 @@ class GoalAcrossDays(GoalBase):
         self.assertEqual((redone, lost), (0, 0))
 
     def test_fm_run_prefers_the_next_items_planned_task_and_never_takes_a_captured_one(self):
-        import fmserve
+        from sampo import serve
         self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
         self.fm("goal", "item", "one", "--done-when", "true")
-        self.assertIsNone(fmserve._next_runnable(self.p, set(), set()))
+        self.assertIsNone(serve._next_runnable(self.p, set(), set()))
         cap = re.search(r"T-\d+", self.fm("capture", "build one").stdout)[0]
         self.fm("goal", "link", "1", cap)
-        self.assertIsNone(fmserve._next_runnable(self.p, set(), set()))  # unplanned: not work fm run starts
+        self.assertIsNone(serve._next_runnable(self.p, set(), set()))  # unplanned: not work fm run starts
         act = self.new("active one")  # the first task is the active one, and an active task always goes first
         other = self.new("earlier work")
         t = self.new("one", "--goal", "1")  # moves the item's link off the capture
-        self.assertEqual(fmserve._next_runnable(self.p, {act}, set()).id, t)
-        self.assertEqual(fmserve._next_runnable(self.p, {act, t}, set()).id, other)
+        self.assertEqual(serve._next_runnable(self.p, {act}, set()).id, t)
+        self.assertEqual(serve._next_runnable(self.p, {act, t}, set()).id, other)
 
 
 STUB = """#!/usr/bin/env python3
@@ -494,12 +494,12 @@ class GoalPlan(GoalBase):  # T-2136
 
     def test_the_checklist_names_a_task_a_later_fix_touched(self):  # T-2417
         from unittest import mock
-        import fmmandate
-        import fmoutcomes
+        from sampo import mandate as smandate
+        from sampo import outcomes
         outs = {"T-0005": {"fate": "fixed later", "by": ["T-0009"]}, "T-0006": {"fate": "held", "by": []},
                 "T-0007": {"fate": "reverted", "by": ["abc1234"]}}
-        with mock.patch.object(fmoutcomes, "outcomes", return_value=outs):
-            got = fmmandate._misses(self.p)
+        with mock.patch.object(outcomes, "outcomes", return_value=outs):
+            got = smandate._misses(self.p)
         self.assertIn("T-0005 was fixed later by T-0009: check what it missed", got)
         self.assertIn("T-0007 was reverted by abc1234: check what it missed", got)
         self.assertFalse(any("T-0006" in x for x in got))
@@ -617,7 +617,7 @@ class GoalDistance(GoalBase):
         return c.state_dict(self.p)
 
     def test_distance_on_state_line_title_and_badge(self):
-        import fmhooks
+        from sampo import hooks
         self.fm("focus", self.new("work"))
         self.assertNotIn("goal", c.state_line(self.sd()))  # no goal: as today
         self.fm("goal", "set", "Ship it", "--until", "2099-01-01")
@@ -626,7 +626,7 @@ class GoalDistance(GoalBase):
         self.fm("goal", "item", "two", "--done-when", "true")
         sd = self.sd()
         self.assertTrue(c.state_line(sd).endswith(" · goal 0/2"), c.state_line(sd))
-        self.assertIn("goal 0/2", fmhooks._title_seq(sd))
+        self.assertIn("goal 0/2", hooks._title_seq(sd))
         self.assertTrue(c.badge_text(sd).endswith(" · goal 0/2"))
         c.regen_views(self.p)
         with open(f"{self.p.dir}/state.line") as f:

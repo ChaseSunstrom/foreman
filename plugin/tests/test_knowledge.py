@@ -8,7 +8,7 @@ import subprocess
 from helpers import ForemanTestCase, git_repo
 from test_research import STUB
 
-import fmcore as c
+from sampo import core as c
 
 
 class Base(ForemanTestCase):
@@ -104,12 +104,12 @@ class Chesterton(Base):
         self.fm("task", "new", "Drop the shim", "--type", "CLEAN", "--tier", "S", "--ac", "ok :: true", "--step", "s",
                 "--focus")
         os.remove(os.path.join(self.repo, "legacy", "shim.py"))
-        import fmcli
+        from sampo import cli
         b = c.find_brief(self.p, "T-0001")
-        self.assertTrue(any("legacy/shim.py" in w and "Origins" in w for w in fmcli._close_warnings(self.p, b, [])))
+        self.assertTrue(any("legacy/shim.py" in w and "Origins" in w for w in cli._close_warnings(self.p, b, [])))
         self.fm("task", "set", "T-0001", "--section", "Origins", "--text", "- legacy/shim.py: py2 compat, gone since 2024")
         b = c.find_brief(self.p, "T-0001")
-        self.assertFalse(any("Origins" in w for w in fmcli._close_warnings(self.p, b, [])))
+        self.assertFalse(any("Origins" in w for w in cli._close_warnings(self.p, b, [])))
 
 
 class PriorArt(Base):
@@ -150,5 +150,5 @@ class Cold(Base):
         self.fm("map", "--cold", "--capture")
         cold = [b for b in c.load_briefs(self.p) if b.meta.get("source") == "cold"]
         self.assertEqual(len(cold), 1)
-        import fmnight
-        self.assertIn("cold files", [n for n, _, _ in fmnight.jobs(self.p)])
+        from sampo import night
+        self.assertIn("cold files", [n for n, _, _ in night.jobs(self.p)])

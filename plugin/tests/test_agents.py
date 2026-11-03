@@ -53,8 +53,8 @@ class Hook(ForemanTestCase):
 
     def test_enforcement_matrix_lists_every_agent(self):
         # T-0442: what each harness enforces and what is only advice, from the adapter's own tables
-        import fmagents
-        m = fmagents.matrix()
+        from sampo import agents as sagents
+        m = sagents.matrix()
         self.assertEqual(set(m), {"claude", "codex", "gemini", "opencode"})
         for agent, row in m.items():
             self.assertEqual(row["PreToolUse"], "blocks (guard)", agent)
@@ -141,7 +141,7 @@ class Hook(ForemanTestCase):
             self.assertEqual(p.returncode, 2, name)
 
     def test_a_missing_tool_in_an_agents_after_tool_event_is_a_capability_miss(self):  # T-2378: #5 on other agents
-        import fmcore as c
+        from sampo import core as c
         tid = self.focus()
         shapes = {"codex": ("PostToolUse", {"tool_name": "shell", "tool_input": {"command": ["bash", "-lc", "q8tool x"]},
                                             "tool_response": {"stdout": "", "stderr": "bash: q8tool: command not found"}}),
@@ -312,7 +312,7 @@ class Install(ForemanTestCase):
 
 class Block(ForemanTestCase):
     def test_removing_the_block_never_joins_the_users_lines(self):
-        import fmagents as a
+        from sampo import agents as a
         put = a._block("a\n", "S", "E", "x")
         self.assertEqual(a._block(put, "S", "E", None), "a\n")
         self.assertEqual(a._block(put + "b\n", "S", "E", None), "a\n\nb\n")
@@ -321,7 +321,7 @@ class Block(ForemanTestCase):
 
 class Judgment(ForemanTestCase):
     def test_judgment_the_plan_line_names_the_plan_shape_and_calibration_with_no_growth(self):  # T-2344
-        import fmagents as a
+        from sampo import agents as a
         text = a.rules_text()
         line = next(x for x in text.splitlines() if "fm task new" in x)
         for word in ("readings", "fails-if", "Choice N (NN%)", "fm outcomes --judgment", "--focus", "refused"):
@@ -334,7 +334,7 @@ class Judgment(ForemanTestCase):
 
 class SelfRunningAgentsLine(ForemanTestCase):  # T-2364
     def test_the_agents_block_names_the_tick_and_the_trigger_table(self):
-        import fmagents as a
+        from sampo import agents as a
         text = a.rules_text()
         self.assertIn("fm night --tick", text)
         self.assertIn("fm triggers", text)
@@ -343,7 +343,7 @@ class SelfRunningAgentsLine(ForemanTestCase):  # T-2364
 
 class ProofLine(ForemanTestCase):  # T-2395
     def test_proof_line_tells_other_agents_to_run_fm_proof_before_calling_work_verified(self):
-        import fmagents as a
+        from sampo import agents as a
         text = a.rules_text()
         self.assertIn("fm prove --rollup", text)
         self.assertEqual(len(text.splitlines()), 7)  # in an existing line, no new one
@@ -351,7 +351,7 @@ class ProofLine(ForemanTestCase):  # T-2395
 
 class ModelLine(ForemanTestCase):  # T-2489: the model layer's rule reaches other agents in an existing line
     def test_the_agents_block_says_a_model_advises_and_a_run_decides(self):
-        import fmagents as a
+        from sampo import agents as a
         text = a.rules_text()
         line = next(x for x in text.splitlines() if "fresh evidence" in x)
         self.assertIn("a model's answer advises", line)

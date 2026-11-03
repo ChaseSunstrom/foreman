@@ -6,7 +6,7 @@ import subprocess
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 
 class Base(ForemanTestCase):
@@ -88,8 +88,8 @@ class Scaffold(Base):
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "x"], check=True)
         self.task()
         self.write("x.py", "def f():\n    breakpoint()\n    print('ok')\n    msg = 'left a breakpoint() in'\n    print('DEBUG rows', 3)\n    return 1\n")
-        import fmcli
-        warns = fmcli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["x.py"])
+        from sampo import cli
+        warns = cli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["x.py"])
         hit = [w for w in warns if "debug scaffolding" in w]
         self.assertTrue(hit and "x.py:2" in hit[0], warns)
         self.assertNotIn("x.py:3", hit[0])
@@ -102,8 +102,8 @@ class Scaffold(Base):
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "notes"], check=True)
         self.task()
         self.write("NOTES.md", "# notes\n- warns about `breakpoint()` and `console.log` left in code\n")
-        import fmcli
-        warns = fmcli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["NOTES.md"])
+        from sampo import cli
+        warns = cli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["NOTES.md"])
         self.assertFalse([w for w in warns if "debug scaffolding" in w], warns)
 
 
@@ -123,8 +123,8 @@ class BoardClose(Base):
         self.task()
         self.write("x.py", "<" * 7 + " HEAD\nA = 1\n" + "=" * 7 + "\nA = 2\n" + ">" * 7 + " theirs\n")
         self.write("app.js", "let a = 1;\ndebugger;\nconsole.log(a);\n  debugger\n")
-        import fmcli
-        warns = fmcli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["x.py", "app.js"])
+        from sampo import cli
+        warns = cli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["x.py", "app.js"])
         conflict = [w for w in warns if "conflict marker" in w]
         self.assertTrue(conflict and all(f"x.py:{n}" in conflict[0] for n in (1, 3, 5)), warns)
         debug = [w for w in warns if "debug scaffolding" in w]
@@ -142,10 +142,10 @@ class BoardClose(Base):
         self.assertIn("conflict marker", err[verdict[0]])
 
     def test_a_fetched_ticket_s_close_names_the_post_back_command(self):  # T-1870: outward only when asked
-        import fmcli
+        from sampo import cli
         self.committed("x.py", "A = 1\n")
         self.task()
-        fmcli.mutate(self.p, "T-0001", lambda x: x.set_section("Raw request", "> Parser\n> CONTEXT: ticket jira "
+        cli.mutate(self.p, "T-0001", lambda x: x.set_section("Raw request", "> Parser\n> CONTEXT: ticket jira "
                                                                "PROJ-12 0123456789ab, fetched by fm inbox ticket"), "t")
         self.write("x.py", "A = 2\n")
         out = self.finish("--commit", "Parser").stdout.strip().splitlines()
@@ -169,8 +169,8 @@ class BoardClose(Base):
         subprocess.run(["git", "init", "-q", "--bare", remote], check=True)
         subprocess.run(["git", "-C", self.repo, "push", "-q", remote, "HEAD:refs/heads/main"], check=True)
         subprocess.run(["git", "-C", self.repo, "fetch", "-q", remote, "main:refs/remotes/origin/main"], check=True)
-        import fmcli
-        self.assertEqual(fmcli._landed(self.p, c.find_brief(self.p, "T-0002")), f"Landed: committed {sha} · pushed")
+        from sampo import cli
+        self.assertEqual(cli._landed(self.p, c.find_brief(self.p, "T-0002")), f"Landed: committed {sha} · pushed")
 
     def test_landed_counts_only_this_tasks_files_and_shows_on_a_commit_retry(self):
         self.committed("x.py", "A = 1\n")
@@ -207,8 +207,8 @@ class BoardClose(Base):
         git("commit", "-qam", "side")
         git("checkout", "-q", "-")
         git("merge", "-q", "--no-ff", "-m", "merge side", "side")
-        import fmcli
-        last = fmcli._landed(self.p, c.find_brief(self.p, "T-0001"))
+        from sampo import cli
+        last = cli._landed(self.p, c.find_brief(self.p, "T-0001"))
         sha = subprocess.run(["git", "-C", self.repo, "log", "-1", "--format=%h", "--", "x.py"], capture_output=True,
                              text=True).stdout.strip()  # the commit git says last changed it (the side's)
         self.assertEqual(last, f"Landed: files already in {sha} (not this task's commit)")
@@ -222,8 +222,8 @@ class BoardClose(Base):
         git("commit", "-qam", "the work (T-0001)")
         git("checkout", "-q", "-")
         git("merge", "-q", "--no-ff", "-m", "Merge T-0001: the work", "side")
-        import fmcli
-        self.assertRegex(fmcli._landed(self.p, c.find_brief(self.p, "T-0001")), r"^Landed: committed [0-9a-f]+ · ")
+        from sampo import cli
+        self.assertRegex(cli._landed(self.p, c.find_brief(self.p, "T-0001")), r"^Landed: committed [0-9a-f]+ · ")
 
     def test_a_doc_the_finish_names_is_committed_though_another_task_touched_it(self):  # T-2251
         self.committed("CHANGELOG.md", "# Log\n")
@@ -239,7 +239,7 @@ class BoardClose(Base):
                                         capture_output=True, text=True).stdout, "")
 
     def named(self, docs, other_open=False, rel="CHANGELOG.md"):  # T-2251: what _claimed takes from a Docs impact
-        import fmcli
+        from sampo import cli
         self.committed(rel, "a\n")
         self.task()
         self.write(rel, "b\n")
@@ -247,9 +247,9 @@ class BoardClose(Base):
             self.fm("task", "new", "Other", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         c.log_event(self.p, "touched", task="T-0002" if other_open else "T-0009",
                     data={"file": os.path.join(self.repo, rel)})
-        fmcli.mutate(self.p, "T-0001", lambda x: x.set_section("Docs impact", docs), "test")
+        cli.mutate(self.p, "T-0001", lambda x: x.set_section("Docs impact", docs), "test")
         b = c.find_brief(self.p, "T-0001")
-        return fmcli._claimed(self.p, b, fmcli._others(self.p, b))
+        return cli._claimed(self.p, b, cli._others(self.p, b))
 
     def test_a_doc_another_open_task_is_editing_is_not_claimed(self):
         self.assertNotIn("CHANGELOG.md", self.named("CHANGELOG.md", other_open=True))
@@ -264,7 +264,7 @@ class BoardClose(Base):
         self.assertEqual(self.named("../CHANGELOG.md /etc/passwd .foreman/x"), set())
 
     def test_tier_drift_has_a_short_kind_in_the_verdict(self):
-        import fmcli
-        self.assertEqual(fmcli._warning_kind("T-0956 was planned S, but its diff is M-sized (3 files, 90 lines): x"),
+        from sampo import cli
+        self.assertEqual(cli._warning_kind("T-0956 was planned S, but its diff is M-sized (3 files, 90 lines): x"),
                          "tier drift")
-        self.assertEqual(fmcli._warning_kind("debug scaffolding in added lines: a.py:3"), "debug scaffolding")
+        self.assertEqual(cli._warning_kind("debug scaffolding in added lines: a.py:3"), "debug scaffolding")

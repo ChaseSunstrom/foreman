@@ -16,8 +16,8 @@ from unittest import mock
 
 from helpers import ForemanTestCase, headless_chrome
 
-import fmflow
-import fmshot
+from sampo import flow as sflow
+from sampo import shot
 
 LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
 # A stand-in for Chromium's --remote-debugging-pipe. Its page: STUB_DOM, a JSON {selector: text}; STUB_CLICK, a JSON
@@ -28,12 +28,12 @@ LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 STUB = f"""#!{sys.executable}
 import json, os, sys
 sys.path.insert(0, {LIB!r})
-import fmflow
+from sampo import flow
 log = open(os.environ["STUB_LOG"], "a")
 dom = json.loads(os.environ.get("STUB_DOM", "{{}}"))
 clicks = json.loads(os.environ.get("STUB_CLICK", "{{}}"))
 reqs = json.loads(os.environ.get("STUB_REQUESTS", "{{}}"))
-head, focused, buf, rid = "(" + fmflow.ACT + ")(...", None, b"", 0
+head, focused, buf, rid = "(" + flow.ACT + ")(...", None, b"", 0
 def send(msg):
     os.write(4, json.dumps(msg).encode() + b"\\0")
 def held(url, kind):  # like Chrome, the request waits for its answer (the next message: fm flow is mid-call)
@@ -194,10 +194,10 @@ class Journey(StubCase):
         args = argparse.Namespace(file=self.write("goto page.html\n" + "wait 400\n" * 5), timeout=1.0,
                                   any_url=False, json=True)
         out, code, start = io.StringIO(), 0, time.monotonic()
-        with mock.patch.dict(os.environ, self.env()), mock.patch.object(fmflow, "TOTAL_S", 1), \
+        with mock.patch.dict(os.environ, self.env()), mock.patch.object(sflow, "TOTAL_S", 1), \
                 contextlib.redirect_stdout(out):
             try:
-                fmflow.cmd_flow(args)
+                sflow.cmd_flow(args)
             except SystemExit as e:
                 code = e.code
         data = json.loads(out.getvalue())
@@ -243,7 +243,7 @@ class Untrusted(StubCase):
         r = self.flow(f"goto page.html\nexpect '{evil}' '{evil}'\n", dom={evil: evil})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)  # the stub decodes the args only from ACT(...JSON)
         exprs = [c["expression"] for c in self.calls("Runtime.evaluate")]
-        self.assertTrue(all(e.startswith("(" + fmflow.ACT + ")(...") for e in exprs), exprs)
+        self.assertTrue(all(e.startswith("(" + sflow.ACT + ")(...") for e in exprs), exprs)
 
     def test_a_bad_selector_is_named(self):
         r = self.flow("goto page.html\nexpect 'a['\n")
@@ -266,21 +266,21 @@ class Untrusted(StubCase):
             self.assertIn("line 1", r.stderr, url)
             self.assertFalse(os.path.exists(self.log), url)  # refused before any browser starts
         for url in ("http://localhost:8000/x", "http://127.0.0.1/", "http://[::1]:3000/"):
-            self.assertEqual(fmflow.target(url, self.repo, False), url)
-        self.assertEqual(fmflow.target("HTTP://LocalHost:8000/a?q=1#f", self.repo, False),
+            self.assertEqual(sflow.target(url, self.repo, False), url)
+        self.assertEqual(sflow.target("HTTP://LocalHost:8000/a?q=1#f", self.repo, False),
                          "http://localhost:8000/a?q=1#f")  # rebuilt from its parts
-        self.assertEqual(fmflow.target("file://" + self.page, self.repo, False), "file://" + self.page)
-        self.assertEqual(fmflow.target("page.html?state=hover#x", self.repo, False),
+        self.assertEqual(sflow.target("file://" + self.page, self.repo, False), "file://" + self.page)
+        self.assertEqual(sflow.target("page.html?state=hover#x", self.repo, False),
                          "file://" + self.page + "?state=hover#x")  # T-1640: a state by query string
         for url in ("../secret.txt?x", "nothere.html?x", "?x", "#x", "..%2Fsecret.txt", "%2e%2e/page.html?x"):
-            self.assertRaises(ValueError, fmflow.target, url, self.repo, False)
+            self.assertRaises(ValueError, sflow.target, url, self.repo, False)
         os.makedirs(os.path.join(self.repo, "%2e%2e"))  # a folder really named so: its % reaches Chrome escaped
         with open(os.path.join(self.repo, "%2e%2e", "page.html"), "w") as f:
             f.write("x")
-        self.assertTrue(fmflow.target("%2e%2e/page.html?x", self.repo, False).endswith("/%252e%252e/page.html?x"))
-        self.assertEqual(fmflow.target("https://example.com/", self.repo, True), "https://example.com/")
+        self.assertTrue(sflow.target("%2e%2e/page.html?x", self.repo, False).endswith("/%252e%252e/page.html?x"))
+        self.assertEqual(sflow.target("https://example.com/", self.repo, True), "https://example.com/")
         for url in ("javascript:alert(1)", "http://evil.com\\@localhost/", "/etc/passwd"):
-            self.assertRaises(ValueError, fmflow.target, url, self.repo, True)
+            self.assertRaises(ValueError, sflow.target, url, self.repo, True)
 
     def test_a_page_that_leaves_the_rule_fails_its_step_and_its_request_is_failed(self):
         r = self.flow('goto page.html\nclick "#out"\nexpect "#out"\n', dom={"#out": "x"},
@@ -305,14 +305,14 @@ class Untrusted(StubCase):
 
     def test_the_vocabulary_arity_and_caps(self):
         bad = ["eval 'alert(1)'", "click", "click a b", "type a", "expect", "expect a b c", "wait", "wait -1",
-               "wait 99999", "wait soon", "wait ²", 'type a "unclosed', "click " + "x" * (fmflow.MAX_ARG + 1),
-               "goto page.html\n" * (fmflow.MAX_STEPS + 1), "", "# only a comment\n"]
+               "wait 99999", "wait soon", "wait ²", 'type a "unclosed', "click " + "x" * (sflow.MAX_ARG + 1),
+               "goto page.html\n" * (sflow.MAX_STEPS + 1), "", "# only a comment\n"]
         for text in bad:
             r = self.flow(text)
             self.assertEqual(r.returncode, 1, text[:40])
             self.assertIn("fm flow", r.stderr, text[:40])
         self.assertFalse(os.path.exists(self.log))
-        r = self.flow("x" * (fmflow.MAX_BYTES + 1))
+        r = self.flow("x" * (sflow.MAX_BYTES + 1))
         self.assertIn("over", r.stderr)
         for t in ("0", "61", "x", "nan"):
             self.assertNotEqual(self.flow("goto page.html\n", "--timeout", t).returncode, 0, t)
@@ -334,11 +334,11 @@ class Untrusted(StubCase):
 class BrowserClose(StubCase):
     def test_close_doesnt_wait_forever_on_a_browser_it_cant_kill(self):
         with mock.patch.dict(os.environ, self.env()):
-            b = fmshot.Browser(self.stub, fmshot.SIZE)
+            b = shot.Browser(self.stub, shot.SIZE)
         pid = b.pid
         try:
             with mock.patch("os.killpg", side_effect=PermissionError), \
-                    mock.patch("os.kill", side_effect=PermissionError), mock.patch.object(fmshot, "CLOSE_S", 0.3):
+                    mock.patch("os.kill", side_effect=PermissionError), mock.patch.object(shot, "CLOSE_S", 0.3):
                 start = time.monotonic()
                 b.close()
                 self.assertLess(time.monotonic() - start, 3)  # wall clock: the CLOSE_S=0.3 deadline

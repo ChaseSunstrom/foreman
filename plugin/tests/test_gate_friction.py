@@ -33,7 +33,7 @@ class Flakes(ForemanTestCase):
         out = self.fm("check").stdout
         self.assertIn("flaky: pkg.T.test_x", out)
         import json  # T-1789: the record keeps how it failed, so a race can be found after the rerun passed
-        import fmcore as c
+        from sampo import core as c
         with open(os.path.join(c.find_project(self.repo).dir, "flakes.json")) as f:
             flaky = json.load(f)["flaky"]
         self.assertIn("FAIL: test_x (pkg.T.test_x)", flaky["pkg.T.test_x"]["why"])
@@ -48,12 +48,12 @@ class Flakes(ForemanTestCase):
         self.assertIn("  pkg.T.test_x: AssertionError: 1 != 2\n", self.fm("check").stdout)
 
     def test_a_failure_excerpt_ends_at_the_assertion_not_the_closing_rule(self):
-        import fmcore
+        from sampo import core
         out = "FAIL: test_x (pkg.T.test_x)\n----------\nTraceback:\nAssertionError: 1 != 2\n\n----------\nRan 1 test\n"
-        self.assertTrue(fmcore.failure_excerpt(out, "test_x").endswith("AssertionError: 1 != 2"))
+        self.assertTrue(core.failure_excerpt(out, "test_x").endswith("AssertionError: 1 != 2"))
 
     def test_log_lines_are_not_test_names(self):
-        import fmcore as c
+        from sampo import core as c
         self.assertEqual(c.failing_tests("ERROR: timeout (30)\nERROR: failed (retrying)\n"), [])
         self.assertEqual(c.failing_tests("FAIL: test_a (m.C.test_a) (i=1)\n--- FAIL: TestX (0.01s)\n"),
                          ["TestX", "m.C.test_a"])
@@ -70,9 +70,9 @@ class Typos(ForemanTestCase):
     def test_a_parse_outside_main_still_gives_a_usage_error(self):  # found by fm task prove --hunks
         import contextlib
         import io
-        import fmcli
+        from sampo import cli
         with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
-            fmcli.build_parser().parse_args(["tsk"])
+            cli.build_parser().parse_args(["tsk"])
         self.assertIn("did you mean task", err.getvalue())
 
     def test_nearest_subcommand_and_flag(self):

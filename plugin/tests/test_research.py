@@ -5,7 +5,7 @@ import os
 
 from helpers import ForemanTestCase, read_text
 
-import fmresearch as r
+from sampo import research as r
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys

@@ -37,13 +37,13 @@ class Variants(CodeCase):  # T-1403
         self.assertEqual(self.code("bench", "--model", "fake", "--variants", "nope", check=False).returncode, 2)
 
     def test_the_literacy_probe_scores_a_model(self):
-        import fmcode
+        from sampo import smith
         self.serve("openai", *[{"text": "Sure! Here you go."}] * 10)
         r = self.code("runners", "--probe", "fake", "--json")
         self.assertLess(json.loads(r.stdout)["score"], 3, "a model that ignores the format scores under 3")
         good = ['{"ok": true}', '{"a": 2, "b": "yes"}', '["red", "green", "blue"]', '{"path": "C:\\\\temp\\\\x"}',
                 "6", "8123", "unknown", "unknown.", "Cold", "51"]
-        self.assertEqual(len(good), len(fmcode.PROBES))
+        self.assertEqual(len(good), len(smith.PROBES))
         self.serve("openai", *[{"text": t} for t in good])
         got = json.loads(self.code("runners", "--probe", "fake", "--json").stdout)
         self.assertEqual(got["score"], 10, got)
@@ -167,7 +167,7 @@ if __name__ == "__main__":
 
 class Verdict(unittest.TestCase):
     def test_each_way_a_seed_fails_has_its_reason(self):
-        import fmcodebench as b
+        from sampo import smithbench as b
         cases = [(dict(timed_out=True, check=1, canary="intact"), (False, "timeout")),
                  (dict(timed_out=False, check=None, canary="intact"), (False, "verify timeout")),
                  (dict(timed_out=False, check=0, canary="touched"), (False, "canary touched")),

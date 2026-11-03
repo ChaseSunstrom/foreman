@@ -11,7 +11,7 @@ The rules (fmcodetui.API has the three calls; the check runs each panel at sever
 - it reads only the state it is given: no files, network or processes. It runs every frame, and a panel over
   50 ms three frames running is switched off for the session (a handler over 50 ms once);
 - the state may have seen no event yet, an event may lack any field, and app is None in the check."""
-import fmcodetui as tui  # fm code's own: fit and width count terminal columns (a wide glyph fills two)
+from sampo import smithtui as tui  # fm code's own: fit and width count terminal columns (a wide glyph fills two)
 
 NAME, TITLE = "tally", "Events"  # NAME is what the layout lists: rename both together
 

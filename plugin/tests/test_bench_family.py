@@ -7,7 +7,7 @@ import subprocess
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -293,9 +293,9 @@ class Soak(_Bench):
         os.makedirs(os.path.join(bare, ".claude-plugin"))
         with open(os.path.join(bare, ".claude-plugin", "plugin.json"), "w") as f:
             f.write('{"name": "bare"}')
-        import fmbench
+        from sampo import bench
         with self.assertRaises(ValueError):  # refused inside soak_case, whoever calls it
-            fmbench.soak_case(c.find_project(self.repo), {"id": "x", "base": "HEAD", "prompt": "x"}, bare)
+            bench.soak_case(c.find_project(self.repo), {"id": "x", "base": "HEAD", "prompt": "x"}, bare)
         self.assertFalse(os.path.exists(self.log))
         for bad in (["--budget", "nan"], ["--max", "0"], ["--turns", "0"]):
             p = self.fm("bench", "soak", *bad, env=self.env, check=False)

@@ -5,7 +5,7 @@ import subprocess
 
 from test_hooks import HookCase, parse
 
-import fmcore as c
+from sampo import core as c
 
 SYNC = {"FOREMAN_AMBIENT_SYNC": "1"}
 GOOD = "def add(a, b):\n    return a + b\n"
@@ -146,9 +146,9 @@ class Ambient(HookCase):
         back = self.note()
         self.assertIn("pass again", back)
         self.assertLessEqual(len(back), 200, back)
-        import fmambient  # pytest's summary lines name the failures too
+        from sampo import ambient  # pytest's summary lines name the failures too
         out = "FAILED tests/test_a.py::test_one - AssertionError: x\nFAILED tests/test_b.py::test_two\n"
-        self.assertEqual([m.group(1) or m.group(2) for m in fmambient.FAILED.finditer(out)],
+        self.assertEqual([m.group(1) or m.group(2) for m in ambient.FAILED.finditer(out)],
                          ["tests/test_a.py::test_one", "tests/test_b.py::test_two"])
 
     def test_a_test_the_runner_cant_run_is_left_out(self):

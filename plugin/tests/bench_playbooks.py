@@ -87,7 +87,7 @@ def route_cpu_limit(load):
 
 
 def run(books, runs=30):
-    import fmplaybooks as pb
+    from sampo import playbooks as pb
     with tempfile.TemporaryDirectory() as tmp:
         root, state = os.path.join(tmp, "pb"), os.path.join(tmp, "state")
         os.makedirs(state)

@@ -12,8 +12,8 @@ import unittest
 
 from helpers import PLUGIN, SPY, ForemanTestCase, anim_time, at_rest, devtools, headless_chrome, polls, read_text
 
-import fmcore as c
-import fmpage
+from sampo import core as c
+from sampo import page as spage
 
 FILES = [  # fixture: what fmpage.city_files reads from a repo (path, lines, commits in 180 days)
     {"path": "plugin/lib/fmcore.py", "lines": 9000, "churn": 120},
@@ -97,11 +97,11 @@ class OneFile:
             self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_design_lint_is_clean(self):
-        import fmdesign
+        from sampo import design
         path = os.path.join(self.tmp, f"{self.FIG}.html")
         with open(path, "w", encoding="utf-8") as f:
             f.write(self.page)
-        self.assertEqual(fmdesign.lint([path]), [])
+        self.assertEqual(design.lint([path]), [])
 
 
 class City(OneFile, ForemanTestCase):
@@ -109,12 +109,12 @@ class City(OneFile, ForemanTestCase):
 
     def setUp(self):
         super().setUp()
-        self.page = fmpage.city_html(FILES, "Foreman")
+        self.page = spage.city_html(FILES, "Foreman")
 
     def test_a_hostile_folder_and_file_name_is_escaped_everywhere_it_shows(self):
         # review: the hostile name sits where it reaches the output: the second-biggest district, the hottest file
         folder, name = 'evil"><b>dir', 'a"><img src=x onerror=1>.py'
-        page = fmpage.city_html(FILES + [{"path": f"{folder}/{name}", "lines": 5000, "churn": 999},
+        page = spage.city_html(FILES + [{"path": f"{folder}/{name}", "lines": 5000, "churn": 999},
                                          {"path": f"{folder}/</script><b>.py", "lines": 4000, "churn": 1}], "Foreman")
         for raw in ("<img src=x", "<b>dir", "</script><b>"):
             self.assertNotIn(raw, page)
@@ -131,17 +131,17 @@ class City(OneFile, ForemanTestCase):
         self.assertIn("evil\\\">\\u003cb>dir", page)
 
     def test_a_leak_names_the_path(self):
-        with self.assertRaisesRegex(fmpage.Leak, r"/home/someone/x\.py"):
-            fmpage.city_html(FILES + [{"path": "/home/someone/x.py", "lines": 3, "churn": 0}], "x")
+        with self.assertRaisesRegex(spage.Leak, r"/home/someone/x\.py"):
+            spage.city_html(FILES + [{"path": "/home/someone/x.py", "lines": 3, "churn": 0}], "x")
 
     def test_history_unavailable_is_not_every_window_dark(self):
-        page = fmpage.city_html([dict(f, churn=0) for f in FILES], "Foreman", history=False)
+        page = spage.city_html([dict(f, churn=0) for f in FILES], "Foreman", history=False)
         label = html.unescape(re.search(r'<canvas[^>]*aria-label="([^"]*)"', page).group(1))
         self.assertIn("history unavailable", label)
         self.assertNotIn("every window is dark", label)
 
     def test_estimated_lines_past_the_read_budget_are_said_on_the_page(self):
-        page = fmpage.city_html(FILES, "Foreman", estimated=7)
+        page = spage.city_html(FILES, "Foreman", estimated=7)
         twin = html.unescape(re.search(r"<figcaption[^>]*>(.*?)</figcaption>", page, re.S).group(1))
         self.assertRegex(twin, r"7 files.*estimated from their size.*256 MB")
 
@@ -181,8 +181,8 @@ class City(OneFile, ForemanTestCase):
         self.assertEqual(len(re.findall(r'<path class="b', self.page)), 2 * len(FILES), "the poster draws each one")
 
     def test_an_absolute_path_is_refused(self):
-        with self.assertRaises(fmpage.Leak):
-            fmpage.city_html(FILES + [{"path": "/home/someone/x.py", "lines": 3, "churn": 0}], "x")
+        with self.assertRaises(spage.Leak):
+            spage.city_html(FILES + [{"path": "/home/someone/x.py", "lines": 3, "churn": 0}], "x")
 
     def test_fm_page_city_reads_the_repo_and_never_overwrites_a_foreign_file(self):
         self.fm("init")
@@ -228,19 +228,19 @@ class City(OneFile, ForemanTestCase):
         self._commit("sub/app.py", "x\n", "one")
         self._commit("sub/app.py", "y\n", "two")
         self._commit("other.py", "z\n", "three")
-        files, info = fmpage.city_files(os.path.join(self.repo, "sub"))
+        files, info = spage.city_files(os.path.join(self.repo, "sub"))
         self.assertEqual([(f["path"], f["lines"], f["churn"]) for f in files], [("app.py", 2, 2)])
         self.assertTrue(info["history"])
 
     def test_a_failed_git_log_is_history_unavailable(self):
         from unittest import mock
-        import fmmap
+        from sampo import map as smap
         self._commit("app.py", "x\n", "one")
-        real = fmmap._git
+        real = smap._git
         broken = lambda root, *a, **kw: (subprocess.CompletedProcess(a, 124, "", "timed out") if "log" in a
                                          else real(root, *a, **kw))
-        with mock.patch.object(fmmap, "_git", broken):
-            files, info = fmpage.city_files(self.repo)
+        with mock.patch.object(smap, "_git", broken):
+            files, info = spage.city_files(self.repo)
         self.assertFalse(info["history"])
         self.assertEqual([f["path"] for f in files if f["path"] == "app.py"], ["app.py"])
 
@@ -248,8 +248,8 @@ class City(OneFile, ForemanTestCase):
         from unittest import mock
         for i in range(3):  # 10, 20 and 30 KB: past the 8 KB head every file gets
             self._commit(f"f{i}.txt", ("x" * 99 + "\n") * (100 * (i + 1)), f"c{i}")
-        with mock.patch.object(fmpage, "READ_BUDGET", 16000):
-            files, info = fmpage.city_files(self.repo)
+        with mock.patch.object(spage, "READ_BUDGET", 16000):
+            files, info = spage.city_files(self.repo)
         lines = {f["path"]: f["lines"] for f in files}
         self.assertEqual(lines["f2.txt"], 300, "read in full: inside the budget")
         self.assertGreater(info["estimated"], 0)
@@ -339,7 +339,7 @@ class CityBrowser(OneFileBrowser, unittest.TestCase):
 
     @staticmethod
     def page():
-        return fmpage.city_html(FILES, "Foreman")
+        return spage.city_html(FILES, "Foreman")
 
 
 TASKS = [  # fixture: what fmpage.graph_tasks reads from fm state (id, title, status, type, tier, deps)
@@ -364,17 +364,17 @@ class Graph(OneFile, ForemanTestCase):
 
     def setUp(self):
         super().setUp()
-        self.page = fmpage.graph_html(TASKS, "Foreman", when="2026-10-22")
+        self.page = spage.graph_html(TASKS, "Foreman", when="2026-10-22")
 
     def nodes(self, page=None):
         d = data_of(page or self.page, "graph")
         return d, {t["id"]: n for t, n in zip(d["t"], d["n"])}
 
     def test_poster_labels_in_a_dense_cluster_never_overlap(self):  # T-1735: T-0352 and T-0337 overlapped
-        blocked = fmpage.GRAPH_STATUSES.index("blocked")
+        blocked = spage.GRAPH_STATUSES.index("blocked")
         plan = {"layers": [{"x": 0, "w": 8, "d": 8}], "e": [],
                 "n": [[0, 0, 1, blocked], [0.3, 0, 1, blocked], [0, 0.3, 1, blocked], [3, -3, 1, blocked]]}
-        svg = fmpage._graph_poster(plan, {0: "T-0352", 1: "T-0337", 2: "T-0400", 3: "T-0500"})
+        svg = spage._graph_poster(plan, {0: "T-0352", 1: "T-0337", 2: "T-0400", 3: "T-0500"})
         tags = [(float(x), float(y), t) for x, y, t in re.findall(r'<text class="tag" x="([\d.]+)" y="([\d.]+)">([^<]*)<', svg)]
         self.assertEqual([t for *_, t in tags], ["T-0352", "T-0500"], "the first of a cluster is named, the far one too")
         for (ax, ay, a), (bx, by, b) in itertools.combinations(tags, 2):
@@ -401,7 +401,7 @@ class Graph(OneFile, ForemanTestCase):
         self.assertEqual(len(first), 32)
         self.assertLessEqual(len({n[1] for n in first}), 12, "a big layer wraps: at most 12 deep")
         self.assertGreaterEqual(len({n[0] for n in first}), 3, "into columns")
-        self.assertEqual(fmpage.graph_html(TASKS, "Foreman", when="2026-10-22"), self.page, "deterministic")
+        self.assertEqual(spage.graph_html(TASKS, "Foreman", when="2026-10-22"), self.page, "deterministic")
 
     def test_status_is_the_colour_and_tier_the_height(self):
         d, at = self.nodes()
@@ -417,13 +417,13 @@ class Graph(OneFile, ForemanTestCase):
 
     def test_status_colours_read_apart_and_against_the_ground(self):
         # review: graphics need 3:1 on what they stand on; red/green and blue/violet pairs differ in lightness too
-        import fmdesign
-        tok = lambda k: fmdesign.parse_colour(re.search(rf"--graph-{k}: (#[0-9a-f]{{6}});", self.page).group(1))
-        for s in fmpage.GRAPH_STATUSES:
+        from sampo import design
+        tok = lambda k: design.parse_colour(re.search(rf"--graph-{k}: (#[0-9a-f]{{6}});", self.page).group(1))
+        for s in spage.GRAPH_STATUSES:
             for under in ("floor", "bg"):
-                self.assertGreaterEqual(fmdesign.contrast(tok(s), tok(under)), 3, (s, under))
+                self.assertGreaterEqual(design.contrast(tok(s), tok(under)), 3, (s, under))
         for a, b in (("blocked", "done"), ("planned", "captured")):
-            self.assertGreaterEqual(fmdesign.contrast(tok(a), tok(b)), 1.8, f"{a} and {b} differ in lightness")
+            self.assertGreaterEqual(design.contrast(tok(a), tok(b)), 1.8, f"{a} and {b} differ in lightness")
 
     def test_blocked_and_done_carry_a_mark_besides_colour(self):
         d, _ = self.nodes()
@@ -442,9 +442,9 @@ class Graph(OneFile, ForemanTestCase):
         self.assertEqual(sorted(names), ["T-0003", "T-0005"], "the city's poster names its districts; this its work")
         many = TASKS + [{"id": f"T-{300 + i:04d}", "title": "x", "status": "blocked", "tier": "S", "deps": []}
                         for i in range(40)]
-        poster = re.search(r'<svg class="poster".*?</svg>', fmpage.graph_html(many, "x"), re.S).group(0)
+        poster = re.search(r'<svg class="poster".*?</svg>', spage.graph_html(many, "x"), re.S).group(0)
         n = len(re.findall(r'<text class="tag"', poster))  # T-1735: colliding labels in the 40 are dropped too
-        self.assertTrue(0 < n <= fmpage.GRAPH_NAMED, f"capped: {n}")
+        self.assertTrue(0 < n <= spage.GRAPH_NAMED, f"capped: {n}")
         self.assertIn(">T-0003</text>", poster, "active work named first")
 
     def test_a_phone_keeps_a_compact_legend(self):
@@ -475,7 +475,7 @@ class Graph(OneFile, ForemanTestCase):
         loop = [{"id": "T-0001", "title": "a", "status": "planned", "type": "FIX", "tier": "S", "deps": ["T-0002"]},
                 {"id": "T-0002", "title": "b", "status": "planned", "type": "FIX", "tier": "S", "deps": ["T-0001"]},
                 {"id": "T-0003", "title": "c", "status": "planned", "type": "FIX", "tier": "S", "deps": ["T-0002"]}]
-        page = fmpage.graph_html(loop, "x")
+        page = spage.graph_html(loop, "x")
         d, at = self.nodes(page)
         self.assertEqual(len(d["n"]), 3)
         self.assertEqual(len(d["e"]), 3)
@@ -487,7 +487,7 @@ class Graph(OneFile, ForemanTestCase):
         loop = [{"id": "T-0001", "title": "a", "status": "planned", "tier": "S", "deps": ["T-0002"]},
                 {"id": "T-0002", "title": "b", "status": "planned", "tier": "S", "deps": ["T-0003"]},
                 {"id": "T-0003", "title": "c", "status": "planned", "tier": "S", "deps": ["T-0002"]}]
-        page = fmpage.graph_html(loop, "x")
+        page = spage.graph_html(loop, "x")
         _, at = self.nodes(page)
         self.assertEqual(at["T-0002"][4], 0, "the cycle broken at its lowest id")
         self.assertGreater(at["T-0003"][4], at["T-0002"][4])
@@ -500,20 +500,20 @@ class Graph(OneFile, ForemanTestCase):
                 {"id": "T-0901", "status": "done", "deps": ["T-0902"]},
                 {"id": "T-0902", "status": "done", "deps": []},
                 {"id": "T-0903", "status": "planned", "deps": ["T-0100"]}]
-        kept = fmpage.graph_keep(rows)
+        kept = spage.graph_keep(rows)
         self.assertEqual([t["id"] for t in kept], ["T-0901", "T-0902", "T-0903"])
         self.assertEqual(kept[-1]["deps"], [], "a dep on a task not loaded is dropped")
 
     def test_a_long_chain_lays_out_without_recursion(self):
         chain = [{"id": f"T-{i:04d}", "title": "x", "status": "planned", "type": "FIX", "tier": "S",
                   "deps": [f"T-{i - 1:04d}"] if i else []} for i in range(1500)]
-        d, at = self.nodes(fmpage.graph_html(chain, "x"))
+        d, at = self.nodes(spage.graph_html(chain, "x"))
         self.assertEqual(at["T-1499"][4], 1499)
 
     def test_past_the_cap_the_newest_are_kept_and_the_page_says_so(self):
         from unittest import mock
-        with mock.patch.object(fmpage, "GRAPH_MAX", 10):
-            page = fmpage.graph_html(TASKS, "Foreman")
+        with mock.patch.object(spage, "GRAPH_MAX", 10):
+            page = spage.graph_html(TASKS, "Foreman")
         d, _ = self.nodes(page)
         self.assertEqual(len(d["n"]), 10)
         self.assertIn("T-0129", [t["id"] for t in d["t"]], "the newest kept")
@@ -521,8 +521,8 @@ class Graph(OneFile, ForemanTestCase):
 
     def test_past_the_edge_cap_the_first_are_drawn_and_the_page_says_so(self):
         from unittest import mock
-        with mock.patch.object(fmpage, "GRAPH_EDGES", 4):
-            page = fmpage.graph_html(TASKS, "Foreman")
+        with mock.patch.object(spage, "GRAPH_EDGES", 4):
+            page = spage.graph_html(TASKS, "Foreman")
         d, _ = self.nodes(page)
         ids = [t["id"] for t in d["t"]]
         self.assertEqual([(ids[a], ids[b]) for a, b in d["e"]], [("T-0001", "T-0002"), ("T-0002", "T-0003"),
@@ -535,7 +535,7 @@ class Graph(OneFile, ForemanTestCase):
 
     def test_a_hostile_title_is_escaped_everywhere_it_shows(self):
         bad = 'x"><img src=x onerror=1></script><b>'
-        page = fmpage.graph_html(TASKS + [{"id": "T-0200", "title": bad, "status": "active", "type": "FIX",
+        page = spage.graph_html(TASKS + [{"id": "T-0200", "title": bad, "status": "active", "type": "FIX",
                                            "tier": "<img src=x>", "deps": ["T-0003"]},
                                           {"id": "T-0201", "title": "odd status", "status": "<b>x", "type": "FIX",
                                            "tier": "S", "deps": []}], "Foreman")
@@ -550,41 +550,41 @@ class Graph(OneFile, ForemanTestCase):
         self.assertIn(html.escape(f"T-0200 {bad}") + " (active)", twin, "an unknown tier is dropped, not shown")
 
     def test_a_leak_names_the_task(self):
-        with self.assertRaisesRegex(fmpage.Leak, r"T-0300"):
-            fmpage.graph_html(TASKS + [{"id": "T-0300", "title": "see /home/someone/x.py", "status": "planned",
+        with self.assertRaisesRegex(spage.Leak, r"T-0300"):
+            spage.graph_html(TASKS + [{"id": "T-0300", "title": "see /home/someone/x.py", "status": "planned",
                                         "type": "FIX", "tier": "S", "deps": []}], "x")
 
     def test_graph_scene_is_a_box_per_task_in_the_pages_colours(self):  # T-1655
-        plan = fmpage.graph_layout(TASKS)
-        scene = fmpage.graph_scene(plan)
+        plan = spage.graph_layout(TASKS)
+        scene = spage.graph_scene(plan)
         boxes = [m for m in scene["meshes"] if m["material"] != "floor"]
         self.assertEqual(len(boxes), len(TASKS))
         self.assertEqual(len(scene["meshes"]) - len(boxes), len(plan["layers"]))
-        tpl = read_text(fmpage.GRAPH_TEMPLATE)
+        tpl = read_text(spage.GRAPH_TEMPLATE)
         for name, mat in scene["materials"].items():
             self.assertIn(f"--graph-{name}: {mat['color']};", tpl, "every status reads the page's token")
         self.assertIn(f"--graph-bg: {scene['background']};", tpl)
         tall = {m["geometry"]["size"][1] for m in boxes}
-        self.assertEqual(tall, set(fmpage.TIER_HEIGHT.values()), "height by tier")
-        lines = fmpage.graph_cells(TASKS, cols=48)
+        self.assertEqual(tall, set(spage.TIER_HEIGHT.values()), "height by tier")
+        lines = spage.graph_cells(TASKS, cols=48)
         self.assertTrue(all(ln.count("▀") == 48 for ln in lines[:-1]))
         self.assertGreater(len(set(re.findall(r"\d+;\d+;\d+", "".join(lines[:-1])))), 4, "the boxes are drawn")
         key = re.sub(r"\x1b\[[0-9;]*m", "", lines[-1])
         for words in ("2 done", "1 active", "1 blocked", "31 planned", "1 dropped"):
             self.assertIn(words, key, "status is named, not colour alone")
-        self.assertEqual(lines, fmpage.graph_cells(TASKS, cols=48))
+        self.assertEqual(lines, spage.graph_cells(TASKS, cols=48))
         with self.assertRaises(ValueError):
-            fmpage.graph_cells(TASKS, cols=1)
+            spage.graph_cells(TASKS, cols=1)
         chain = [{"id": f"T-{i + 1:04d}", "title": "", "status": "planned", "tier": "M",
                   "deps": [f"T-{i:04d}"] if i else []} for i in range(12)]  # 40 layers in 64 columns: sub-pixel boxes
         bg = "13;16;19"
         cols = [{j for j, c in enumerate(re.findall(r"38;2;(\d+;\d+;\d+)m", ln)) if c != bg}
-                for ln in fmpage.graph_cells(chain, cols=64)[:-1]]
+                for ln in spage.graph_cells(chain, cols=64)[:-1]]
         drawn = set().union(*cols)
         self.assertTrue(drawn and 0 not in drawn and 63 not in drawn, "a 12-layer chain is framed, not cropped")
         self.assertGreater(max(drawn) - min(drawn), 32, "and fills the width")
         many = [dict(t, id=f"T-{i:05d}", deps=[]) for i, t in enumerate(TASKS * 45)]
-        self.assertIn(f"({len(many) - fmpage.GRAPH_MAX:,} older not drawn)", fmpage.graph_cells(many, cols=8)[-1])
+        self.assertIn(f"({len(many) - spage.GRAPH_MAX:,} older not drawn)", spage.graph_cells(many, cols=8)[-1])
 
     def test_fm_page_graph_cells_prints_and_writes_nothing(self):  # T-1655
         self.fm("init")
@@ -629,7 +629,7 @@ class GraphBrowser(OneFileBrowser, unittest.TestCase):
 
     @staticmethod
     def page():
-        return fmpage.graph_html(TASKS, "Foreman")
+        return spage.graph_html(TASKS, "Foreman")
 
 
 if __name__ == "__main__":

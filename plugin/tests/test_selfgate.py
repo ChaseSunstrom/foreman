@@ -7,7 +7,7 @@ import helpers  # noqa: F401  (puts plugin/lib on the path)
 
 class LoadedWallCheck(unittest.TestCase):
     def test_a_waiting_hook_is_caught_when_load_inflates_the_base_p95(self):  # T-2605: the LeanKind flake
-        import fmselfgate as g
+        from sampo import selfgate as g
         base = {"Stop": {"p95": 400.0, "p50": 50.0, "cpu_p95": 30.0, "load": 3.0, "budget": 150}}
         rows = g._slower(base, {"Stop": {"p95": 600.0, "p50": 300.0, "cpu_p95": 31.0, "load": 3.0, "budget": 150}})
         self.assertIn("Stop", rows)

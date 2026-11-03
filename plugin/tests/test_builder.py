@@ -155,7 +155,7 @@ class Flow(_Tasks):
         self.assertNotIn("other.py", diff)
 
     def meta(self, tid):
-        import fmcore as c
+        from sampo import core as c
         return c.find_brief(c.find_project(self.repo), tid).meta
 
 
@@ -375,7 +375,7 @@ class LaneMergeGate(_Tasks):
         self.assertIn("plan verify commands first", p.stderr + p.stdout)
 
     def test_unverified_guardrails(self):
-        import fmcore as c
+        from sampo import core as c
         tid, wt = self.gated("Waived", "it passes :: false")
         for reason in ("", "   "):
             p = self.fm("lane", "merge", tid, "--unverified", reason, check=False)

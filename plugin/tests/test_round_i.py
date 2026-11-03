@@ -2,7 +2,7 @@
 planning."""
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class RoundI(ForemanTestCase):
@@ -145,7 +145,7 @@ class RoundI(ForemanTestCase):
         # T-0360: T-0359's only edit was in another checkout, and the commit said just "nothing to commit"
         import os
         import subprocess
-        import fmcore as c
+        from sampo import core as c
         self.fm("init")
         other = os.path.join(self.tmp, "desktop")
         subprocess.run(["git", "init", "-q", other], check=True)

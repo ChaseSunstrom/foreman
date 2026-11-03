@@ -107,16 +107,16 @@ class SkillUsage(HookCase):
         self.assertEqual(self.fm_json("usage")["named_not_loaded"].get("debug-test"), 2)
 
     def test_only_real_skills_count_and_a_long_name_is_not_logged(self):
-        import fmhooks
+        from sampo import hooks
         self.fm("init")
-        fmhooks._log_inject("Stop", "auditing: run: the /foreman:review workflow", {"session_id": "s9", "cwd": self.repo})
+        hooks._log_inject("Stop", "auditing: run: the /foreman:review workflow", {"session_id": "s9", "cwd": self.repo})
         self.hook("UserPromptSubmit", {"prompt": "/foreman:zzz please", "session_id": "s8"})
         self.hook("UserPromptSubmit", {"prompt": "/foreman:" + "a" * 100000, "session_id": "s7"})
         got = self.fm_json("usage")
         self.assertNotIn("review", got["named_not_loaded"], "a workflow, not a skill")
         self.assertNotIn("zzz", got["skills"])
-        import fmcore
-        with open(os.path.join(fmcore.state_dir(), "events.jsonl")) as f:
+        from sampo import core
+        with open(os.path.join(core.state_dir(), "events.jsonl")) as f:
             self.assertLess(max(map(len, f)), 2000)
 
 

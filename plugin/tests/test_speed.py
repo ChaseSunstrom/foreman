@@ -7,8 +7,8 @@ import sys
 
 from helpers import FM, ForemanTestCase
 
-import fmcore as c
-import fmrecall
+from sampo import core as c
+from sampo import recall
 
 
 class Speed(ForemanTestCase):
@@ -87,7 +87,7 @@ class Speed(ForemanTestCase):
         self.assertNotIn("Foreman", notes[4])
 
     def test_the_same_failure_three_times_says_stop_and_diagnose(self):
-        notes = [fmrecall.note_failure(self.p, "T-0009", "E: KeyError: 'user'") for _ in range(4)]
+        notes = [recall.note_failure(self.p, "T-0009", "E: KeyError: 'user'") for _ in range(4)]
         self.assertIsNone(notes[1])
         self.assertIn("come up 3 times in T-0009", notes[2])
         self.assertIsNone(notes[3])

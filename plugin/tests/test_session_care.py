@@ -7,10 +7,10 @@ import unittest
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
-import fmideas
-import fmrelease
-import fmsettings
+from sampo import core as c
+from sampo import ideas
+from sampo import release
+from sampo import settings
 
 
 def run(hour, failed):
@@ -28,22 +28,22 @@ class Pack(ForemanTestCase):
             tid = json.loads(self.fm("task", "new", "Make the export faster", "--type", "PERF", "--tier", "S", "--ac",
                                      "x :: true", "--step", "x", "--json").stdout)["id"]
             self.fm("task", "set", tid, "source=user", "--section", "Raw request", "--text", "> make the export faster")
-        voice = fmideas.user_voice(c.find_project(self.repo))
+        voice = ideas.user_voice(c.find_project(self.repo))
         self.assertEqual(voice.count("make the export faster"), 1, voice)
 
 
 class Release(unittest.TestCase):
     def test_a_bad_hour_is_one_that_failed_twice_as_often(self):
         events = [run(3, k < 4) for k in range(6)] + [run(14, k < 2) for k in range(20)]
-        f, n, overall = fmrelease.bad_hour(events, 3)
+        f, n, overall = release.bad_hour(events, 3)
         self.assertEqual((f, n), (4, 6))
         self.assertAlmostEqual(overall, 6 / 26)
-        self.assertIsNone(fmrelease.bad_hour(events, 14), "an ordinary hour")
-        self.assertIsNone(fmrelease.bad_hour(events[:6], 3), "too little history to say")
-        self.assertIsNone(fmrelease.bad_hour(events, 5), "no runs at that hour")
+        self.assertIsNone(release.bad_hour(events, 14), "an ordinary hour")
+        self.assertIsNone(release.bad_hour(events[:6], 3), "too little history to say")
+        self.assertIsNone(release.bad_hour(events, 5), "no runs at that hour")
 
     def test_the_notes_name_a_changed_default_and_the_snapshot_moves_on(self):
-        now = fmsettings.defaults()
+        now = settings.defaults()
         key = next(k for k, v in sorted(now.items()) if isinstance(v, str))
         with tempfile.TemporaryDirectory() as root:
             os.makedirs(os.path.join(root, "plugin"))
@@ -51,7 +51,7 @@ class Release(unittest.TestCase):
                 json.dump(dict(now, **{key: "an older value"}), f)
             with open(os.path.join(root, "CHANGELOG.md"), "w") as f:
                 f.write("# Changes\n\n## Unreleased\n- a thing\n\n## 0.0.1 — 2026-01-01\n- first\n")
-            fmrelease._changelog({"root": root, "version": "0.0.2"})
+            release._changelog({"root": root, "version": "0.0.2"})
             text = read_text(os.path.join(root, "CHANGELOG.md"))
             self.assertIn(f"## 0.0.2 — ", text)
             self.assertIn(f'- Default changed: {key} "an older value" → {json.dumps(now[key])} (if you never set it, '
@@ -62,15 +62,15 @@ class Release(unittest.TestCase):
 
 class Settings(ForemanTestCase):
     def test_changed_says_whether_a_moved_default_reaches_you(self):
-        old = dict(fmsettings.defaults(), **{"app.motion": "reduced"})
+        old = dict(settings.defaults(), **{"app.motion": "reduced"})
         path = os.path.join(self.tmp, "old.json")
         with open(path, "w") as f:
             json.dump(old, f)
         got = json.loads(self.fm("settings", "changed", path, "--json").stdout)
         self.assertEqual([(m["key"], m["old"], m["yours"]) for m in got], [("app.motion", "reduced", False)])
         self.assertIn("you never set it", self.fm("settings", "changed", path).stdout)
-        os.makedirs(os.path.dirname(fmsettings.app_path()), exist_ok=True)  # as the user's own tui.toml sets it
-        with open(fmsettings.app_path(), "w") as f:
+        os.makedirs(os.path.dirname(settings.app_path()), exist_ok=True)  # as the user's own tui.toml sets it
+        with open(settings.app_path(), "w") as f:
             f.write('motion = "off"\n')
         got = json.loads(self.fm("settings", "changed", path, "--json").stdout)
         self.assertTrue(got[0]["yours"])
@@ -78,13 +78,13 @@ class Settings(ForemanTestCase):
     def test_the_snapshot_is_last_releases_settings(self):
         """T-1790: the snapshot is the last release's defaults, so a default added since is allowed and no change;
         a snapshot that isn't settings at all still fails."""
-        with open(fmsettings.SNAPSHOT) as f:
+        with open(settings.SNAPSHOT) as f:
             snap = json.load(f)
-        now = fmsettings.defaults()
+        now = settings.defaults()
         self.assertGreater(len(set(snap) & set(now)), len(now) // 2, "the snapshot is settings")
         added = {"a.default.added.since": 1}
-        self.assertEqual(fmsettings.changed_defaults(snap, dict(now, **added), mine=()),
-                         fmsettings.changed_defaults(snap, now, mine=()))
+        self.assertEqual(settings.changed_defaults(snap, dict(now, **added), mine=()),
+                         settings.changed_defaults(snap, now, mine=()))
 
 
 class Say(ForemanTestCase):

@@ -12,7 +12,7 @@ class UiSkills(ForemanTestCase):
     def setUp(self):
         super().setUp()
         self.fm("init")
-        import fmcore as c
+        from sampo import core as c
         self.c, self.p = c, c.find_project(self.repo)
 
     def skills(self):
@@ -88,7 +88,7 @@ class UiView(ForemanTestCase):
         self.fm("capture", "Merge the date helpers")
 
     def test_unproven_count_and_top_kind_ride_in_the_view_model(self):  # T-2395: the pane's band line reads it
-        import fmcore as c
+        from sampo import core as c
         self.assertEqual(self.fm_json("ui")["unproven"]["n"], 0)
         p = c.find_project(self.repo)
         self.fm("task", "evidence", "T-0002", "--step", "1", "pytest", "9 passed")  # typed: the rollup holds it once done
@@ -130,10 +130,10 @@ class UiView(ForemanTestCase):
         self.assertIn("title", [x for x in v["inbox"] if x["id"] == "T-0004"][0]["title"])  # the text is kept
 
     def test_every_string_of_the_view_is_shown_plain_but_paths(self):
-        import fmwatch
+        from sampo import watch
         raw = {"recent": ["a \x1b[31mred\x1b[0m b\x07", "x‮y"], "signals": [{"text": "\x1b]0;pwn\x07ok\nnext"}],
                "watch": ["/tmp/a\x1bb"], "trust_file": "/t\x07", "n": 3, "none": None}
-        got = fmwatch._shown(raw)
+        got = watch._shown(raw)
         self.assertEqual(got["recent"], ["a red b", "xy"])
         self.assertEqual(got["signals"], [{"text": "ok\nnext"}])
         self.assertEqual((got["watch"], got["trust_file"], got["n"], got["none"]), (["/tmp/a\x1bb"], "/t\x07", 3, None))
@@ -171,10 +171,10 @@ class UiView(ForemanTestCase):
 
     def test_the_view_carries_budget_bench_research_and_the_tasks_ledger(self):
         # T-0228: what the last sessions added, for the pane
-        import fmbudget
-        import fmcore as c
-        fmbudget.record("bench", 0.4, runs=2)
-        fmbudget.record("subagent:foreman:fm-reviewer", tokens=12000)
+        from sampo import budget
+        from sampo import core as c
+        budget.record("bench", 0.4, runs=2)
+        budget.record("subagent:foreman:fm-reviewer", tokens=12000)
         self.fm("task", "hypo", "T-0001", "add", "the timeout is per request", "--probe", "grep -n timeout x.py")
         self.fm("task", "assume", "T-0001", "add", "the timeout lives in x.py")
         self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true", "--inconclusive")
@@ -224,10 +224,10 @@ class UiView(ForemanTestCase):
         self.assertRegex(last["time"], r"^\d\d:\d\d$")
         self.assertTrue(any(x["text"] == "step 1 passed" for x in h), h)
         self.assertTrue(any(x["text"] == "captured" and x["title"] == "Merge the date helpers" for x in h), h)
-        import fmwatch  # the newest 60 only, and a malformed time never takes the view down (review)
+        from sampo import watch  # the newest 60 only, and a malformed time never takes the view down (review)
         many = [{"event": "task_done", "task": "T-0001", "ts": f"2026-01-01T10:{i % 60:02d}:00Z"} for i in range(70)]
-        self.assertEqual(len(fmwatch._history(many + [{"event": "task_done", "ts": 5}], {})), 60)
-        self.assertIsNone(fmwatch._recent({"event": "note", "ts": 5}))
+        self.assertEqual(len(watch._history(many + [{"event": "task_done", "ts": 5}], {})), 60)
+        self.assertIsNone(watch._recent({"event": "note", "ts": 5}))
 
     def test_the_view_lists_worktrees_with_their_agent_task_and_unmerged_commits(self):
         # T-1023: the pane's Agents graph joins a builder's worktree to its subagent (Claude Code names the branch
@@ -239,7 +239,7 @@ class UiView(ForemanTestCase):
         tree = os.path.join(self.tmp, "wt-agent")
         git("worktree", "add", "-q", "-b", "worktree-agent-a1b2c3d4", tree)
         git("commit", "--allow-empty", "-qm", "work", cwd=tree)
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo)
         b = c.find_brief(p, "T-0001")
         b.meta["lane"] = tree  # what fm lane new records
@@ -250,8 +250,8 @@ class UiView(ForemanTestCase):
         self.assertIsInstance(w[0]["age_s"], int)
         self.assertFalse(w[0]["stopped"])
         self.assertTrue(w[0]["open"], "T-1152: its task is still open, so 0 ahead would mean 'working', not 'merged'")
-        import fmbus  # T-1119: a lane whose builder's process ended is flagged for the pane
-        b.meta["builder_proc"] = f"{fmbus.host_id()}|999999999|1"
+        from sampo import bus  # T-1119: a lane whose builder's process ended is flagged for the pane
+        b.meta["builder_proc"] = f"{bus.host_id()}|999999999|1"
         c.save_brief(p, b)
         self.assertTrue(json.loads(self.fm("ui", "--json").stdout)["worktrees"][0]["stopped"])
         # review (T-1023): a detached worktree's merge state is unknown, not 'nothing to merge'; the newest come first
@@ -303,7 +303,7 @@ class UiView(ForemanTestCase):
     def test_done_days_counts_closes_per_day_for_two_weeks(self):
         # T-0909: the pane's day bars; oldest first, today last, a day counts a task once
         import datetime
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo)
         day = lambda n: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=n)).strftime("%Y-%m-%dT12:00:00Z")  # noqa
         for t in ("T-0001", "T-0002"):  # done briefs; T-0003 and T-0004 aren't (gone or reopened): they don't count
@@ -324,7 +324,7 @@ class UiView(ForemanTestCase):
         self.assertEqual(v["today_done"], days[-1])
 
     def test_today_done_ignores_tasks_closed_earlier_and_edited_today(self):
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo)
         with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:  # T-0002 was closed long ago…
             f.write(json.dumps({"ts": "2000-01-01T00:00:00Z", "event": "task_done", "task": "T-0002", "data": {}}) + "\n")
@@ -337,7 +337,7 @@ class UiView(ForemanTestCase):
 
     def test_typical_minutes_per_type_and_size_and_time_on_task(self):
         # T-0116: "medium" means more beside "usually ~30 min", from this project's own history
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo)
         rows = []
         for i, took in enumerate([10, 30, 50, 20]):  # three closed FIX/S tasks (median 30) and one FEATURE/M
@@ -355,7 +355,7 @@ class UiView(ForemanTestCase):
 
     def test_the_newest_brainstorm_shows_while_it_runs_and_after(self):
         # T-0124: brainstorms ran unseen inside one long Bash call until it ended
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo)
         d = os.path.join(p.dir, "research", "brainstorm-20261003-010203")
         os.makedirs(d)

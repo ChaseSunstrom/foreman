@@ -7,7 +7,7 @@ from unittest import mock
 
 from helpers import ForemanTestCase
 
-import fmanergy as a
+from sampo import anergy as a
 
 
 def ask(tid, cmd=None, tool="Bash"):
@@ -82,25 +82,25 @@ class Anergy(ForemanTestCase):
         self.assertLessEqual(sum(1 for _ in open(path)), a.CAP // 2)
 
     def test_hooks_record_the_pair(self):
-        import fmhooks
+        from sampo import hooks
         pl = {"tool_use_id": "h1", "tool_name": "Bash", "tool_input": {"command": "git status"}, "session_id": "s",
               "cwd": self.tmp if hasattr(self, "tmp") else os.getcwd()}
-        fmhooks.permission_request(pl)
-        fmhooks.post_tool_use(dict(pl, duration_ms=5))
+        hooks.permission_request(pl)
+        hooks.post_tool_use(dict(pl, duration_ms=5))
         evs = [json.loads(x)["ev"] for x in open(os.path.join(a.c.state_dir(), a.STORE))]
         self.assertEqual(evs, ["ask", "done"])
 
     def test_doctor_row(self):
-        import fmdoctor
-        r = fmdoctor.check_anergy()
+        from sampo import doctor
+        r = doctor.check_anergy()
         self.assertEqual(r.status, "PASS")
         self.assertIn("no permission prompts recorded yet", r.detail)  # T-2588: why it's empty, not a verdict
         self.assertIn("bypass", r.detail)
         a.record("ask", ask("x1", "git log"))
-        self.assertIn("none qualified", fmdoctor.check_anergy().detail)
+        self.assertIn("none qualified", doctor.check_anergy().detail)
         for i in range(5):
             self.prompt(f"q{i}", "git status", 0.4)
-        r = fmdoctor.check_anergy()
+        r = doctor.check_anergy()
         self.assertEqual(r.status, "PASS", "advisory: Foreman never applies the rule")
         self.assertIn("Bash(git status *)", r.detail)
 

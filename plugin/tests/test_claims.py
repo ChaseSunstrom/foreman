@@ -5,7 +5,7 @@ import os
 
 from test_bus import Base
 
-import fmcore as c
+from sampo import core as c
 
 A = {"CLAUDE_CODE_SESSION_ID": "sess-a"}
 B = {"CLAUDE_CODE_SESSION_ID": "sess-b"}
@@ -67,8 +67,8 @@ class Claims(Base):
         self.assertEqual(len([v for v in rows if v["file"] == "a.py"]), 2, "both tasks' claims stay")
         self.assertEqual(self.fm("lease", "take", "b.py", env=A).returncode, 0)
         self.assertEqual(self.fm("lease", "take", "b.py", env=A).returncode, 0, "a task retakes its own lease")
-        import fmbus
-        fmbus.release(self.project(), one)  # the lane is removed: its task's leases go with it
+        from sampo import bus
+        bus.release(self.project(), one)  # the lane is removed: its task's leases go with it
         self.assertEqual(len([v for v in self.fm_json("lease", "list")["leases"] if v["file"] == "a.py"]), 1)
 
     def test_dropping_a_file_releases_its_symbol_leases(self):
@@ -154,23 +154,23 @@ class ClaimsReview(Base):
         self.assertNotEqual(out.get("permissionDecision"), "deny", "A's claim survived B's --warn")
 
     def test_release_frees_a_lane_claim_and_the_full_id_is_printed(self):
-        import fmbus
+        from sampo import bus
         p = self.project()
-        fmbus.preclaim(p, "T-1068", ["x.py"])
+        bus.preclaim(p, "T-1068", ["x.py"])
         r = self.fm("lease", "take", "x.py", env=B, check=False)
         self.assertIn("lane-T-1068", r.stderr + r.stdout)
-        fmbus.release(p, "T-1068")
+        bus.release(p, "T-1068")
         self.assertEqual(self.fm("lease", "take", "x.py", env=B).returncode, 0)
 
     def test_no_lease_means_no_brief_load(self):
-        import fmbus
+        from sampo import bus
         p = self.project()
 
         def boom(*a, **k):
             raise AssertionError("loaded briefs")
         real, c.load_briefs = c.load_briefs, boom
         try:
-            self.assertIsNone(fmbus.conflict({"session_id": "s", "tool_name": "Edit", "tool_input": {}}, p,
+            self.assertIsNone(bus.conflict({"session_id": "s", "tool_name": "Edit", "tool_input": {}}, p,
                                              os.path.join(p.root, "free.py")))
         finally:
             c.load_briefs = real
@@ -187,29 +187,29 @@ class ClaimsReview(Base):
         self.assertNotEqual(r.returncode, 0, "an absolute path is the same file")
 
     def test_an_edits_lease_leaves_another_sessions_lease_intact(self):
-        import fmbus
+        from sampo import bus
         p = self.project()
         path = os.path.join(self.repo, "a.py")
         with open(path, "w") as f:
             f.write("def f():\n    return 2\n")
         self.fm("lease", "take", "a.py::f", env=B)
-        fmbus.after_edit({"session_id": "sess-a", "tool_name": "Write", "tool_input": {}}, p, path)
-        held = {(v["session"], v["symbol"]) for v in fmbus._leases().values() if v["file"] == "a.py"}
+        bus.after_edit({"session_id": "sess-a", "tool_name": "Write", "tool_input": {}}, p, path)
+        held = {(v["session"], v["symbol"]) for v in bus._leases().values() if v["file"] == "a.py"}
         self.assertEqual(held, {("sess-b", "f"), ("sess-a", "*")})
 
     def test_a_lane_preclaim_never_denies_another_worktrees_edit(self):
         # T-1138: lane-T-1135's file-wide pre-claim of fmcli.py stalled T-1137's builder in its own worktree; lanes
         # edit separate checkouts and the merge settles overlaps, so a pre-claim is advisory (fm lease list shows it)
-        import fmbus
+        from sampo import bus
         p = self.project()
         act = c.active_brief(c.load_briefs(p), p.lane)
         path = os.path.join(self.repo, "x.py")
         with open(path, "w") as f:
             f.write("x = 1\n")
         pl = {"session_id": "s", "tool_name": "Edit", "tool_input": {"old_string": "x = 1", "new_string": "x = 2"}}
-        fmbus.preclaim(p, "T-9999", ["x.py"])
-        self.assertIsNone(fmbus.conflict(pl, p, path), "another lane's pre-claim is advisory")
+        bus.preclaim(p, "T-9999", ["x.py"])
+        self.assertIsNone(bus.conflict(pl, p, path), "another lane's pre-claim is advisory")
         self.assertIn("lane-T-9999", self.fm("lease", "list").stdout, "and still listed")
-        fmbus.release(p, "T-9999")
-        fmbus.preclaim(p, act.id, ["x.py"])
-        self.assertIsNone(fmbus.conflict(pl, p, path), "the lane's own task edits its claim")
+        bus.release(p, "T-9999")
+        bus.preclaim(p, act.id, ["x.py"])
+        self.assertIsNone(bus.conflict(pl, p, path), "the lane's own task edits its claim")

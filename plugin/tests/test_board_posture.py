@@ -9,8 +9,8 @@ import sys
 from helpers import ForemanTestCase, read_json, read_text
 import test_bench_family as tbf
 
-import fmcore as c
-import fmhooks
+from sampo import core as c
+from sampo import hooks as shooks
 
 
 class BoardPosture(ForemanTestCase):
@@ -45,8 +45,8 @@ class BoardPosture(ForemanTestCase):
         self.assertNotIn("self-authorize", cats("fm posture full"))
         self.assertNotIn("self-authorize", cats("fm posture"))
         # review: an fm ask still grants in a lite project (the dialog's PermissionRequest and the grant's PostToolUse)
-        self.assertIn("PermissionRequest", fmhooks.LITE_KEEPS)
-        self.assertIn("PostToolUse", fmhooks.LITE_KEEPS)
+        self.assertIn("PermissionRequest", shooks.LITE_KEEPS)
+        self.assertIn("PostToolUse", shooks.LITE_KEEPS)
 
     def test_lint_flags_foreman_state_not_a_repos_own_state_folder(self):
         self.assertTrue(c.lint_verify("cat ~/.claude/foreman/state/projects/x/tasks/T-1.md", self.repo))

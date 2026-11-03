@@ -6,8 +6,8 @@ import time
 
 from helpers import ForemanTestCase, read_text
 
-import fmbudget as bud
-import fmcore as c
+from sampo import budget as bud
+from sampo import core as c
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -110,7 +110,7 @@ class Budget(ForemanTestCase):
         self.assertIn("weekly usage 78%", out.stderr)
 
     def test_fm_drive_pace_off_drops_no_work_for_usage_pace(self):
-        import fmbudget as bud  # T-2327 (user steer 2026-10-31, 3): never skip work for budget or pace
+        from sampo import budget as bud  # T-2327 (user steer 2026-10-31, 3): never skip work for budget or pace
         self.usage(five_hour=(95, 3600))
         p = c.find_project(self.repo)
         self.assertIn("5-hour usage 95%", bud.degrade(p) or "")

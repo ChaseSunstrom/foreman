@@ -8,7 +8,7 @@ import unittest
 
 from helpers import FM, ForemanTestCase
 
-import fmdesign
+from sampo import design
 
 DESIGN = """# DESIGN.md: Kilnroom
 
@@ -46,7 +46,7 @@ class Brief(ForemanTestCase):
                               cwd=root)
 
     def test_the_brief_gate_reports_each_must_have_with_a_reason(self):
-        got = fmdesign.check_gates(self.project())
+        got = design.check_gates(self.project())
         brief = got["gates"][0]
         self.assertEqual((brief["gate"], brief["mode"]), ("brief", "advisory"))
         by = {m["must"]: m for m in brief["musts"]}
@@ -186,7 +186,7 @@ class Audit(ForemanTestCase):
         return root
 
     def gate(self, root, name):
-        got = fmdesign.check_gates(root)
+        got = design.check_gates(root)
         return next(g for g in got["gates"] if g["gate"] == name), got
 
     def musts(self, root, name):

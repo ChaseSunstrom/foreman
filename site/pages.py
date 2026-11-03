@@ -14,15 +14,15 @@ def _sketchbook(s):
     """T-1784: every shader look card running live with its Sketch preset (fmscene draws the same page)."""
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin", "lib"))
-    import fmscene
-    return fmscene.sketchbook_html(fmscene.sketch_cards(), page=False)
+    from sampo import scene
+    return scene.sketchbook_html(scene.sketch_cards(), page=False)
 
 
 def _tui():
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin", "lib"))
-    import fmcodetui
-    return fmcodetui
+    from sampo import smithtui
+    return smithtui
 
 
 def _keys(s):

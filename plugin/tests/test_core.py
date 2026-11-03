@@ -10,7 +10,7 @@ from unittest import mock
 
 from helpers import ForemanTestCase, stub_claude
 
-import fmcore as c
+from sampo import core as c
 
 
 class PathsAndProjects(ForemanTestCase):
@@ -1105,8 +1105,8 @@ class RoundFirst(ForemanTestCase):  # T-2327 (user steer 2026-10-31, 2): no new 
 
     def test_the_friction_pass_waits_for_the_round_too(self):
         # T-2460: with pace drops off, fm next offered the self-improvement pass during round 1, which the steer bars
-        import fmfriction
-        with mock.patch.object(fmfriction, "due", return_value=True), mock.patch("fmbudget.degrade", return_value=None):
+        from sampo import friction
+        with mock.patch.object(friction, "due", return_value=True), mock.patch("sampo.budget.degrade", return_value=None):
             self.assertEqual(c._next_for(c.find_project(self.repo))[1], "reflect")
             self.fm("drive", "on", "--round-first", "on")
             _, kind, text = c._next_for(c.find_project(self.repo))
@@ -1115,14 +1115,14 @@ class RoundFirst(ForemanTestCase):  # T-2327 (user steer 2026-10-31, 2): no new 
 
     def test_the_drives_side_work_offer_holds_them_too(self):
         # T-2459: while background jobs ran, the Stop hook's side-work offer named a Foreman capture the round held
-        import fmhooks
+        from sampo import hooks
         mine = self.capture("FIX: a discovered nit in the parser", "--source", "discovered")
         self.fm("task", "new", "Active work", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s",
                 "--focus")
         p = c.find_project(self.repo)
         briefs = c.load_briefs(p)
         work = c.active_brief(briefs)
-        offer = lambda: fmhooks._side_work(c.state_dict(p, briefs), briefs, {"id": work.id}, True, [], p)  # noqa: E731
+        offer = lambda: hooks._side_work(c.state_dict(p, briefs), briefs, {"id": work.id}, True, [], p)  # noqa: E731
         self.assertEqual((offer() or {}).get("id"), mine)  # the switch is off: offered as before
         self.fm("drive", "on", "--round-first", "on")
         self.assertIsNone(offer())
@@ -1154,7 +1154,7 @@ class HookImportCost(unittest.TestCase):
     def test_hook_modules_do_not_import_the_slow_ones(self):
         import subprocess
         import sys
-        code = ("import sys; sys.path.insert(0, %r); import fmhooks, fmguard; "
+        code = ("import sys; sys.path.insert(0, %r); from sampo import hooks; import fmguard; "
                 "print(sorted(m for m in ('traceback', 'dataclasses', 'inspect') if m in sys.modules))") % os.path.join(c.PLUGIN_ROOT, "lib")
         out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.strip()
         self.assertEqual(out, "[]")
@@ -1296,11 +1296,12 @@ class LazyPatterns(unittest.TestCase):
                 "    f = sys._getframe(1)\n"
                 "    while f and f.f_code.co_name != '<module>':\n"
                 "        f = f.f_back\n"
-                "    name = f.f_code.co_filename.rsplit('/', 1)[-1] if f else ''\n"
-                "    if name.startswith('fm'):\n"
+                "    path = f.f_code.co_filename if f else ''\n"
+                "    name = path.rsplit('/', 1)[-1]\n"
+                "    if name.startswith('fm') or '/sampo/' in path:\n"
                 "        hits.append(f'{name}:{f.f_lineno}')\n"
                 "    return orig(*a, **k)\n"
-                "re.compile = counting\nimport fmcore, fmguard, fmhooks\nprint(hits)\n")
+                "re.compile = counting\nfrom sampo import core\nimport fmguard\nfrom sampo import hooks\nprint(hits)\n")
         out = subprocess.run([sys.executable, "-c", code, LIB], capture_output=True, text=True, timeout=60)
         self.assertEqual(out.stdout.strip(), "[]", out.stderr)
 
@@ -1312,7 +1313,7 @@ class LazyPatterns(unittest.TestCase):
 
     def test_lazy_every_deferred_pattern_still_compiles(self):
         import fmguard
-        import fmhooks
+        from sampo import hooks
         found = []
 
         def walk(v):
@@ -1324,7 +1325,7 @@ class LazyPatterns(unittest.TestCase):
             elif isinstance(v, dict):
                 for x in v.values():
                     walk(x)
-        for mod in (c, fmguard, fmhooks):
+        for mod in (c, fmguard, hooks):
             for v in list(vars(mod).values()):
                 walk(v)
         for rx in found:

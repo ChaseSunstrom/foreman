@@ -229,7 +229,7 @@ class JudgeHome(CodeCase):
         """A package upgrade of /usr/lib/systemd/user/x.service mid-turn mustn't block the run: only a link's realpath
         the user owns (one the worker could write) is held."""
         import unittest.mock
-        import fmcode
+        from sampo import smith
         target = "/etc/passwd"
         if os.getuid() == 0 or os.stat(target).st_uid == os.getuid():
             self.skipTest("needs a file the user doesn't own")
@@ -241,7 +241,7 @@ class JudgeHome(CodeCase):
         os.symlink(mine, os.path.join(self.fake_home, ".zshrc"))
         with unittest.mock.patch.dict(os.environ, {"HOME": self.fake_home,
                                                    "XDG_CONFIG_HOME": os.path.join(self.fake_home, ".config")}):
-            held = fmcode._snapshot(self.repo)["home"]
+            held = smith._snapshot(self.repo)["home"]
         self.assertNotIn(target, held)
         self.assertIn(mine, held, "a dotfiles link the user owns is still held")
 

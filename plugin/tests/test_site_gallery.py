@@ -41,7 +41,7 @@ class Gallery(unittest.TestCase):
             pages._books = real
 
     def test_every_ui_playbook_names_an_example_that_keeps_the_rules(self):
-        import fmnew
+        from sampo import new
         build, pages = site("build"), site("pages")
         found = {name: src for name, _, _, src in pages.gallery()}
         for name in playbooks():
@@ -51,7 +51,7 @@ class Gallery(unittest.TestCase):
                 path = os.path.join(BOOKS, line.group(1))
                 self.assertTrue(os.path.isfile(path), f"{line.group(1)} doesn't exist")
                 self.assertEqual(found.get(name), path, "the gallery reads the same line")
-                self.assertEqual(fmnew.check(path), [], "it keeps fm new check's rules")
+                self.assertEqual(new.check(path), [], "it keeps fm new check's rules")
                 html = read_text(path)
                 self.assertEqual(build.outside_loads(html, ".html"), [], "it loads nothing from another host")
                 for need in ("<!doctype html>", '<html lang="', 'name="viewport"', "<title>"):

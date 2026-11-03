@@ -5,7 +5,7 @@ import subprocess
 
 from test_hooks import HookCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class LaneHeld(HookCase):
@@ -20,8 +20,8 @@ class LaneHeld(HookCase):
         self.fm("init")
         self.fm("autonomy", "full")
         tid = self.task("Lane work", focus=False)
-        import fmcli
-        fmcli.mutate(self.project(), tid, lambda x: x.meta.__setitem__("builder", c.now()), "lane_builder", {})
+        from sampo import cli
+        cli.mutate(self.project(), tid, lambda x: x.meta.__setitem__("builder", c.now()), "lane_builder", {})
         first = self.stop()
         self.assertNotIn(f"fm focus {tid}", first)
         self.assertIn(tid, first)
@@ -32,8 +32,8 @@ class LaneHeld(HookCase):
         self.fm("init")
         held = self.task("Lane work", focus=False)
         free = self.task("Free work", focus=False)
-        import fmcli
-        fmcli.mutate(self.project(), held, lambda x: x.meta.__setitem__("builder", c.now()), "lane_builder", {})
+        from sampo import cli
+        cli.mutate(self.project(), held, lambda x: x.meta.__setitem__("builder", c.now()), "lane_builder", {})
         out = self.fm("next").stdout
         self.assertNotIn(f"fm focus {held}", out)
         self.assertIn(free, out)
@@ -47,8 +47,8 @@ class LaneHeld(HookCase):
         waits = self.task("Waits on it", focus=False)
         free = self.task("Free work", focus=False)
         self.fm("task", "set", waits, f"depends_on=[{dep}]")
-        import fmcli
-        fmcli.mutate(self.project(), dep, lambda x: x.meta.__setitem__("builder", c.now()), "lane_builder", {})
+        from sampo import cli
+        cli.mutate(self.project(), dep, lambda x: x.meta.__setitem__("builder", c.now()), "lane_builder", {})
         out = self.stop()
         self.assertNotIn(f"fm focus {waits}", out)
         self.assertIn(free, out)

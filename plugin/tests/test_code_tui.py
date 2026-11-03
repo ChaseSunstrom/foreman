@@ -12,7 +12,7 @@ import unittest.mock
 from helpers import PLUGIN, ForemanTestCase
 from test_code import CodeCase, call, plan
 
-import fmcore as c
+from sampo import core as c
 
 
 class Events(CodeCase):
@@ -74,8 +74,8 @@ RUN = [  # what one fm code --json run streams, shortened
 
 
 def tui():
-    import fmcodetui
-    return fmcodetui
+    from sampo import smithtui
+    return smithtui
 
 
 class Core(unittest.TestCase):
@@ -667,9 +667,9 @@ class Terminal(unittest.TestCase):
         os.close(slave)
 
     def test_wrap_is_off_so_the_last_cell_cant_scroll_the_screen(self):
-        import fmcodeterm
-        self.assertIn("\x1b[?7l", fmcodeterm.ENTER)
-        self.assertIn("\x1b[?7h", fmcodeterm.LEAVE)
+        from sampo import smithterm
+        self.assertIn("\x1b[?7l", smithterm.ENTER)
+        self.assertIn("\x1b[?7h", smithterm.LEAVE)
 
 
 class Paste(unittest.TestCase):
@@ -727,7 +727,7 @@ class Paste(unittest.TestCase):
         self.assertEqual(tui().parse_keys(held + "\x1b[201~"), [("paste", "b" * cap)])
 
     def test_modes_on_and_off(self):
-        import fmcodeterm
+        from sampo import smithterm
         import pty
         from helpers import pty_reader
         for crash in (False, True):
@@ -743,7 +743,7 @@ class Paste(unittest.TestCase):
                 if crash:
                     raise RuntimeError("boom")
             try:
-                fmcodeterm.session(run, slave, slave)
+                smithterm.session(run, slave, slave)
             except RuntimeError:
                 self.assertTrue(crash)
             os.close(slave)
@@ -755,7 +755,7 @@ class Paste(unittest.TestCase):
             self.assertGreater(text.rindex("\x1b[?2004l"), text.index("\x1b[?2004h"), crash)
 
     def test_a_paste_whose_end_never_comes_is_taken_once_input_stalls(self):
-        import fmcodeterm
+        from sampo import smithterm
         import pty
         from helpers import pty_reader
         master, slave = pty.openpty()
@@ -766,8 +766,8 @@ class Paste(unittest.TestCase):
             os.write(master, b"\x1b[200~abc")
             got.append(io.keys(0.2))
             got.append(io.keys(0.01))
-        with unittest.mock.patch.object(fmcodeterm, "PASTE_STALL", 0.0):
-            fmcodeterm.session(run, slave, slave)
+        with unittest.mock.patch.object(smithterm, "PASTE_STALL", 0.0):
+            smithterm.session(run, slave, slave)
         os.close(slave)
         reader.join(10)
         os.close(master)
@@ -778,8 +778,8 @@ RUNNING = RUN[:10]  # step 2 just started, the checks not yet run
 
 
 def lum(spec):
-    import fmcodetui
-    r, g, b = fmcodetui._rgb(spec)
+    from sampo import smithtui
+    r, g, b = smithtui._rgb(spec)
     return r + g + b
 
 
@@ -1118,12 +1118,12 @@ class Config(unittest.TestCase):
     def test_contrast_is_fmdesigns_one_wcag_formula(self):
         # T-1675: the TUI turns its colours (#rrggbb or a 256-colour index) into sRGB and asks fmdesign; no copy here
         import inspect
-        import fmdesign
+        from sampo import design
         T = tui()
         self.assertFalse("0.03928" in inspect.getsource(T), "one WCAG implementation: fmdesign.contrast")
         self.assertAlmostEqual(T.contrast("#000000", "#FFFFFF"), 21.0)
         self.assertAlmostEqual(T.contrast(16, 231), 21.0, msg="256-colour cube black and white")
-        self.assertAlmostEqual(T.contrast("#777777", 0), fmdesign.contrast((0x77 / 255,) * 3, (0, 0, 0)))
+        self.assertAlmostEqual(T.contrast("#777777", 0), design.contrast((0x77 / 255,) * 3, (0, 0, 0)))
 
     def test_a_users_file_sets_theme_colours_layout_and_keys(self):
         cfg, errors = tui().load_config(self.write(
@@ -1165,10 +1165,10 @@ class Config(unittest.TestCase):
         self.assertEqual(cfg, tui().DEFAULTS)
 
     def test_signal_is_a_colour_blind_safe_theme(self):
-        import fmcodetui
+        from sampo import smithtui
         cfg, errors = tui().load_config(self.write('theme = "signal"\n'))
         self.assertEqual(errors, [])
-        ok, bad = (fmcodetui._rgb(cfg["theme"][n]["fg"]) for n in ("ok", "bad"))
+        ok, bad = (smithtui._rgb(cfg["theme"][n]["fg"]) for n in ("ok", "bad"))
         self.assertGreater(ok[2], ok[0], "pass is blue, not green")
         self.assertGreater(bad[0], bad[2], "fail is orange-red")
         self.assertGreater(abs(ok[2] - bad[2]) + abs(ok[0] - bad[0]), 250, "far apart for red-green blindness")
@@ -1215,8 +1215,8 @@ class Settings(unittest.TestCase):
             return f.read()
 
     def test_every_default_has_a_schema_entry(self):
-        import fmsettings
-        keys = {e["key"] for e in fmsettings.app_schema()}
+        from sampo import settings as ssettings
+        keys = {e["key"] for e in ssettings.app_schema()}
         T = tui()
         names = {"preset": "theme", "motion": "motion", "border": "border"}
         for k in T.DEFAULTS:
@@ -1228,112 +1228,112 @@ class Settings(unittest.TestCase):
         self.assertTrue({f"ext.{n}.{k}" for n, mine in T.DEFAULTS["ext"].items() for k in mine} <= keys)  # T-1657
         self.assertEqual(set(T.DEFAULTS) - {"preset", "theme", "layout", "keys", "ext"} - set(names), {"palette"})
         self.assertIn("palette", keys)
-        for e in fmsettings.app_schema():
+        for e in ssettings.app_schema():
             self.assertTrue(e["help"] and e["group"] and e["effect"] in ("now", "next run"), e)
             self.assertNotIn("\n", e["help"])
 
     def test_a_set_changes_one_line_and_keeps_the_rest_byte_identical(self):
-        import fmsettings
+        from sampo import settings as ssettings
         path = self.path(self.TEXT)
-        self.assertEqual(fmsettings.set_app("theme", "signal", path), ("signal", []))
+        self.assertEqual(ssettings.set_app("theme", "signal", path), ("signal", []))
         self.assertEqual(self.read(path), self.TEXT.replace('theme = "night"  # dark', 'theme = "signal"  # dark'))
-        fmsettings.set_app("keys.ctrl+r", "stop", path)
+        ssettings.set_app("keys.ctrl+r", "stop", path)
         self.assertIn('"ctrl+r" = "stop"  # mine\n', self.read(path))
-        fmsettings.set_app("colors.ok", "#4DA3FF", path)
+        ssettings.set_app("colors.ok", "#4DA3FF", path)
         self.assertIn('ok = "#4DA3FF"\n# keep this\n', self.read(path))
         cfg, errors = tui().load_config(path)
         self.assertEqual((errors, cfg["preset"], cfg["keys"]["^R"]), ([], "signal", "stop"))
-        _, skipped = fmsettings.set_app("theme", "paper", path)  # the user's ok colour is too faint on paper
+        _, skipped = ssettings.set_app("theme", "paper", path)  # the user's ok colour is too faint on paper
         self.assertEqual(len(skipped), 1)
         self.assertIn("colors.ok", skipped[0])
 
     def test_a_multiline_value_is_replaced_whole(self):
-        import fmsettings
+        from sampo import settings as ssettings
         path = self.path(self.TEXT)
-        _, skipped = fmsettings.set_app("layout.columns", '[["log", "files"]]', path)
+        _, skipped = ssettings.set_app("layout.columns", '[["log", "files"]]', path)
         self.assertTrue(skipped and "layout.widths" in skipped[0], "two widths for one column: said, not refused")
-        fmsettings.set_app("layout.widths", "[100]", path)
+        ssettings.set_app("layout.widths", "[100]", path)
         text = self.read(path)
         self.assertIn('[layout]\ncolumns = [["log", "files"]]\nwidths = [100]\n[keys]', text)
         self.assertEqual(tui().load_config(path)[1], [])
 
     def test_a_missing_key_goes_into_its_table_and_a_missing_table_is_added(self):
-        import fmsettings
+        from sampo import settings as ssettings
         path = self.path('# top\ntheme = "night"\n\n[keys]\nx = "stop"\n')
-        fmsettings.set_app("border", "heavy", path)
-        fmsettings.set_app("keys.y", "quit", path)
-        fmsettings.set_app("layout.narrow_below", "90", path)
+        ssettings.set_app("border", "heavy", path)
+        ssettings.set_app("keys.y", "quit", path)
+        ssettings.set_app("layout.narrow_below", "90", path)
         self.assertEqual(self.read(path), '# top\ntheme = "night"\nborder = "heavy"\n\n[keys]\nx = "stop"\ny = "quit"\n'
                                           '\n[layout]\nnarrow_below = 90\n')
         new = self.path()
-        fmsettings.set_app("motion", "reduced", new)
+        ssettings.set_app("motion", "reduced", new)
         self.assertEqual(self.read(new), 'motion = "reduced"\n')
 
     def test_odd_but_valid_files_are_edited_in_place(self):
-        import fmsettings
+        from sampo import settings as ssettings
         text = '"a".b = 1\r\n[keys]\r\nx = "stop" # c#d\r\n'
-        self.assertEqual(fmsettings.edit_toml(text, "keys", "x", "quit"), text.replace('"stop"', '"quit"'))
+        self.assertEqual(ssettings.edit_toml(text, "keys", "x", "quit"), text.replace('"stop"', '"quit"'))
         real = self.path('motion = "full"\n')
         link = os.path.join(os.path.dirname(self.path()), "tui.toml")
         os.symlink(real, link)
-        fmsettings.set_app("motion", "calm", link)  # the old word, written as the one it means
+        ssettings.set_app("motion", "calm", link)  # the old word, written as the one it means
         self.assertTrue(os.path.islink(link), "a linked tui.toml stays linked")
         self.assertEqual(self.read(real), 'motion = "reduced"\n')
 
     def test_each_line_keeps_its_own_ending(self):
-        import fmsettings
+        from sampo import settings as ssettings
         text = 'a = 1\r\nmotion = "full"\nb = 2\r\n[keys]\r\nx = "stop"\n'
-        self.assertEqual(fmsettings.edit_toml(text, None, "motion", "off"), text.replace('"full"', '"off"'))
-        self.assertEqual(fmsettings.edit_toml(text, "keys", "y", "quit"), text + 'y = "quit"\n')
-        self.assertEqual(fmsettings.edit_toml(text, None, "c", 3), text.replace('b = 2\r\n', 'b = 2\r\nc = 3\r\n'))
+        self.assertEqual(ssettings.edit_toml(text, None, "motion", "off"), text.replace('"full"', '"off"'))
+        self.assertEqual(ssettings.edit_toml(text, "keys", "y", "quit"), text + 'y = "quit"\n')
+        self.assertEqual(ssettings.edit_toml(text, None, "c", 3), text.replace('b = 2\r\n', 'b = 2\r\nc = 3\r\n'))
 
     def test_a_word_where_the_app_wants_one_never_raises(self):
-        import fmsettings
+        from sampo import settings as ssettings
         path = self.path('theme = ["x"]\nborder = {}\nmotion = [1]\npalette = {}\n')
         cfg, errors = tui().load_config(path)
         self.assertEqual(len(errors), 4, errors)
-        fmsettings.set_app("theme", "paper", path)  # a file the app chokes on can be repaired
+        ssettings.set_app("theme", "paper", path)  # a file the app chokes on can be repaired
         self.assertTrue(self.read(path).startswith('theme = "paper"\n'))
 
     def test_a_value_utf8_cant_hold_is_refused(self):
-        import fmsettings
+        from sampo import settings as ssettings
         path = self.path(self.TEXT)
-        with self.assertRaises(fmsettings.SettingError):
-            fmsettings.set_app("colors.ok", '"\udcff"', path)
-        with self.assertRaises(fmsettings.SettingError):
-            fmsettings.set_app("colors.ok", {"fg": "\udcff"}, path)
+        with self.assertRaises(ssettings.SettingError):
+            ssettings.set_app("colors.ok", '"\udcff"', path)
+        with self.assertRaises(ssettings.SettingError):
+            ssettings.set_app("colors.ok", {"fg": "\udcff"}, path)
         self.assertEqual(self.read(path), self.TEXT)
 
     def test_the_write_holds_the_folders_lock(self):
         import contextlib
-        import fmcore
-        import fmsettings
+        from sampo import core
+        from sampo import settings as ssettings
         path, held = self.path(self.TEXT), []
 
         @contextlib.contextmanager
         def lock(d, timeout=5.0):
             held.append(d)
             yield
-        with unittest.mock.patch.object(fmcore, "lock", lock):
-            fmsettings.set_app("border", "heavy", path)
+        with unittest.mock.patch.object(core, "lock", lock):
+            ssettings.set_app("border", "heavy", path)
         self.assertEqual(held, [os.path.dirname(os.path.realpath(path))])
 
     def test_a_bad_value_leaves_the_file(self):
-        import fmsettings
+        from sampo import settings as ssettings
         path = self.path(self.TEXT)
         for key, value in (("motion", "wobbly"), ("colors.dim", "#18202C"), ("nosuch", "1"), ("layout.widths", "[0]"),
                            ("keys.x", "explode"), ("layout.narrow_below", "lots")):
-            with self.subTest(key=key), self.assertRaises(fmsettings.SettingError):
-                fmsettings.set_app(key, value, path)
+            with self.subTest(key=key), self.assertRaises(ssettings.SettingError):
+                ssettings.set_app(key, value, path)
             self.assertEqual(self.read(path), self.TEXT)
-        with unittest.mock.patch("fmcodetui.render", side_effect=RuntimeError("boom")), \
-                self.assertRaises(fmsettings.SettingError) as e:
-            fmsettings.set_app("border", "heavy", path)
+        with unittest.mock.patch("sampo.smithtui.render", side_effect=RuntimeError("boom")), \
+                self.assertRaises(ssettings.SettingError) as e:
+            ssettings.set_app("border", "heavy", path)
         self.assertIn("boom", str(e.exception))
         self.assertEqual(self.read(path), self.TEXT)
         broken = self.path("theme = \n")
-        with self.assertRaises(fmsettings.SettingError):
-            fmsettings.set_app("border", "heavy", broken)
+        with self.assertRaises(ssettings.SettingError):
+            ssettings.set_app("border", "heavy", broken)
         self.assertEqual(self.read(broken), "theme = \n")
 
 
@@ -1432,7 +1432,7 @@ class Review(unittest.TestCase):
         self.assertIn("panel broken failed", text)
 
     def test_line_counts_name_a_non_ascii_file_once_and_stop_reading_a_big_one(self):
-        import fmcode
+        from sampo import smith
         root, git = git_repo()
         with open(os.path.join(root, "café.py"), "w") as f:
             f.write("a = 1\n")
@@ -1442,8 +1442,8 @@ class Review(unittest.TestCase):
             f.write("a = 2\nb = 3\n")
         with open(os.path.join(root, "big.txt"), "w") as f:
             f.write("x\n" * 100)
-        with unittest.mock.patch.object(fmcode, "NUMSTAT_CAP", 10):
-            stat = fmcode._numstat(root, ["café.py", "big.txt"])
+        with unittest.mock.patch.object(smith, "NUMSTAT_CAP", 10):
+            stat = smith._numstat(root, ["café.py", "big.txt"])
         self.assertEqual(stat, {"café.py": [2, 1], "big.txt": [5, 0]})
 
     def test_s_stops_the_run_and_r_resumes_its_task(self):
@@ -1656,12 +1656,12 @@ class Export(unittest.TestCase):
     def test_snapshot_scrubs_secrets(self):
         # T-1302: a token a worker printed must not land in the exported file
         import tempfile
-        import fmcodetui
+        from sampo import smithtui
         secret = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2"
         events = [{"event": "start", "text": "", "request": f"deploy with {secret}", "ts": 1.0},
                   {"event": "say", "text": f"found {secret} in output", "ts": 2.0}]
         with tempfile.TemporaryDirectory() as d:
-            path = fmcodetui.snapshot(events, os.path.join(d, "s.svg"), (100, 20))
+            path = smithtui.snapshot(events, os.path.join(d, "s.svg"), (100, 20))
             with open(path, encoding="utf-8") as f:
                 body = f.read()
         self.assertTrue(body.startswith("<svg"))
@@ -1673,16 +1673,16 @@ class Export(unittest.TestCase):
         # T-1302: the video frames and the plain replay lines are built from scrubbed text too
         import io
         import tempfile
-        import fmcodetui
+        from sampo import smithtui
         secret = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2"
         events = [{"event": "start", "text": "", "request": f"deploy with {secret}", "ts": 1.0},
                   {"event": "say", "text": f"found {secret} in output", "ts": 2.0}]
         drawn = []
-        real = fmcodetui.to_svg
-        with unittest.mock.patch.object(fmcodetui.shutil, "which", return_value="/bin/x"), \
-                unittest.mock.patch.object(fmcodetui.subprocess, "run"), \
-                unittest.mock.patch.object(fmcodetui, "to_svg", lambda *a, **k: drawn.append(real(*a, **k)) or drawn[-1]):
-            fmcodetui.record(events, "out.gif", (100, 20), fps=2, seconds=1, hold=0)
+        real = smithtui.to_svg
+        with unittest.mock.patch.object(smithtui.shutil, "which", return_value="/bin/x"), \
+                unittest.mock.patch.object(smithtui.subprocess, "run"), \
+                unittest.mock.patch.object(smithtui, "to_svg", lambda *a, **k: drawn.append(real(*a, **k)) or drawn[-1]):
+            smithtui.record(events, "out.gif", (100, 20), fps=2, seconds=1, hold=0)
         self.assertTrue(drawn)
         self.assertNotIn(secret[:12], "".join(drawn))
         self.assertIn("[REDACTED]", "".join(drawn))
@@ -1691,7 +1691,7 @@ class Export(unittest.TestCase):
             with open(src, "w", encoding="utf-8") as f:
                 f.write("".join(json.dumps(e) + "\n" for e in events))
             out = io.StringIO()
-            fmcodetui.replay_file(src, fmcodetui.DEFAULTS, True, out)
+            smithtui.replay_file(src, smithtui.DEFAULTS, True, out)
         self.assertNotIn(secret[:12], out.getvalue())
         self.assertIn("[REDACTED]", out.getvalue())
 
@@ -1835,7 +1835,7 @@ class HostileWidth(unittest.TestCase):
                  "looks": dict(look_answers=[], look_pairs=[(s, s)], items=[(s, s)]),
                  "backlog": dict(items=[{"id": s, "title": s, "why": s}, {"id": s, "title": s, "why": ""}]),  # T-1856
                  "help": {},
-                 "breakout": dict(game=__import__("fmextras").Breakout(), game_t=0.0),  # T-1556
+                 "breakout": dict(game=__import__("sampo.extras").extras.Breakout(), game_t=0.0),  # T-1556
                  "settings": dict(set_rows=[1, 2], set_query=s, set_note=(s, "warn"), items=[
                      {"head": s, "count": 1, "surface": "app"},
                      {"key": s, "value": s, "default": s, "group": "colors", "surface": "app", "help": s, "choices": [s]}]),
@@ -2134,18 +2134,18 @@ class Home(unittest.TestCase):
 
 class Delight(unittest.TestCase):  # T-1349
     def test_a_projects_first_close_is_noted_once_and_a_picked_runner_says_hello(self):
-        import fmcode
+        from sampo import smith
         T = tui()
         app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None, choices=lambda: [("worker", "claude")])
         app.feed({"event": "start", "request": "fix add", "schema": 1})
         app.feed({"event": "closed", "text": "T-0001 closed", "task": "T-0001", "first_in": "calc"})
         self.assertEqual(T.entry_text(app.state.log[-1]), "✦ first proved change in calc")
         self.assertTrue(app.state.first)
-        with unittest.mock.patch.object(fmcode, "last_run_of", return_value=("T-0007", "closed", time.time() - 120)):
+        with unittest.mock.patch.object(smith, "last_run_of", return_value=("T-0007", "closed", time.time() - 120)):
             app.show_picker()
             app.key("\n")
         self.assertIn("next run: worker claude · last: closed T-0007, 2m", app.message)
-        with unittest.mock.patch.object(fmcode, "last_run_of", return_value=None):
+        with unittest.mock.patch.object(smith, "last_run_of", return_value=None):
             app.show_picker()
             app.key("\n")
         self.assertIn("no run with it yet", app.message)
@@ -2416,9 +2416,9 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
             self.assertIsNone(T.live_cli("claude"))
 
     def test_the_app_sweeps_runners_a_kill_left_when_it_opens(self):
-        import fmcode
+        from sampo import smith
         T, app = self.app()
-        with unittest.mock.patch.object(fmcode, "stop_survivors", return_value=[4242]):
+        with unittest.mock.patch.object(smith, "stop_survivors", return_value=[4242]):
             self.assertEqual(app.sweep(), [4242])
         self.assertIn("pid 4242", app.message)
 
@@ -2426,8 +2426,8 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
         """An app whose fm code (a sleep) registered a runner (another sleep): (app, runner)."""
         import subprocess
         import tempfile
-        import fmcode
-        import fmideas
+        from sampo import smith
+        from sampo import ideas
         home = tempfile.mkdtemp()
         patch = unittest.mock.patch.dict(os.environ, {"FOREMAN_HOME": home})
         patch.start()
@@ -2437,18 +2437,18 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
         runner = subprocess.Popen(["sleep", "61"], start_new_session=True)
         self.addCleanup(lambda: [x.kill() or x.wait() for x in (child, runner)])
         for _ in range(200):  # until the fork has become sleep (its name is what the app shows)
-            if fmideas._cmdline(runner.pid)[0].startswith(b"sleep"):
+            if ideas._cmdline(runner.pid)[0].startswith(b"sleep"):
                 break
             time.sleep(0.01)
-        os.makedirs(os.path.dirname(fmcode._registry(runner.pid)), exist_ok=True)
-        with open(fmcode._registry(runner.pid), "w") as f:
-            f.write(f"{fmideas._starttime(runner.pid)} {child.pid} {fmideas._starttime(child.pid)}")
+        os.makedirs(os.path.dirname(smith._registry(runner.pid)), exist_ok=True)
+        with open(smith._registry(runner.pid), "w") as f:
+            f.write(f"{ideas._starttime(runner.pid)} {child.pid} {ideas._starttime(child.pid)}")
         app.child = child
         return app, runner
 
     def test_a_runner_is_named_without_proc_too(self):  # T-1828: macOS has no /proc; ps names it
         import builtins
-        import fmideas
+        from sampo import ideas
         app, runner = self.running()
         real = builtins.open
 
@@ -2456,7 +2456,7 @@ class Cards(unittest.TestCase):  # T-1762 (T-1755, T-1756, T-1761)
             if str(path).startswith("/proc/"):
                 raise FileNotFoundError(path)
             return real(path, *a, **k)
-        with unittest.mock.patch.object(fmideas, "PROC", "/nonexistent-proc"), \
+        with unittest.mock.patch.object(ideas, "PROC", "/nonexistent-proc"), \
                 unittest.mock.patch.object(builtins, "open", no_proc):
             self.assertEqual(app._runners_of_child(), [("sleep", runner.pid)])
 
@@ -2929,7 +2929,7 @@ class SettingsScreen(unittest.TestCase):
         patch = unittest.mock.patch.dict(os.environ, env)
         patch.start()
         self.addCleanup(patch.stop)
-        tty = unittest.mock.patch("fmsettings._interactive", return_value=True)  # the app runs in a terminal
+        tty = unittest.mock.patch("sampo.settings._interactive", return_value=True)  # the app runs in a terminal
         tty.start()
         self.addCleanup(tty.stop)
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
@@ -2955,11 +2955,11 @@ class SettingsScreen(unittest.TestCase):
         return [(r["surface"], r["key"]) for r in app.items if "head" not in r]
 
     def test_every_setting_is_listed_by_group_with_value_default_and_badge(self):
-        import fmsettings
+        from sampo import settings as ssettings
         app = self.app()
-        self.assertEqual(sorted(self.keys(app)), sorted((e["surface"], e["key"]) for e in fmsettings.schema()))
+        self.assertEqual(sorted(self.keys(app)), sorted((e["surface"], e["key"]) for e in ssettings.schema()))
         heads = [r["head"] for r in app.items if "head" in r]
-        self.assertEqual(heads, list(dict.fromkeys(e["group"] for e in fmsettings.schema())), "one header a group")
+        self.assertEqual(heads, list(dict.fromkeys(e["group"] for e in ssettings.schema())), "one header a group")
         self.assertNotIn("head", app.items[app.item_index], "the selection starts on a setting")
         text = self.text(app)
         self.assertIn("Settings", text)
@@ -3060,15 +3060,15 @@ class SettingsScreen(unittest.TestCase):
         self.assertEqual((app.mode, app.set_typing, app.set_query), ("settings", "search", "border"))
 
     def test_a_value_nested_past_the_parsers_depth_is_refused_not_a_crash(self):
-        import fmsettings
+        from sampo import settings as ssettings
         for k in ":set layout.widths " + "[" * 600 + "\n":
             app = getattr(self, "_app", None) or self.app()
             self._app = app
             app.key(k)
         self.assertEqual(app.set_note[1], "bad")
         self.assertFalse(os.path.exists(self.toml))
-        with self.assertRaises(fmsettings.SettingError):
-            fmsettings.set_app("layout.widths", "[" * 600)
+        with self.assertRaises(ssettings.SettingError):
+            ssettings.set_app("layout.widths", "[" * 600)
 
     def test_a_value_the_file_already_gets_wrong_is_still_refused(self):
         self.write("[layout]\nwidths = [50]\n")
@@ -3089,15 +3089,15 @@ class SettingsScreen(unittest.TestCase):
         self.assertFalse(os.path.exists(self.toml), "nothing written")
 
     def test_blank_claude_variables_without_a_terminal_still_ask_the_guard(self):
-        import fmsettings
+        from sampo import settings as ssettings
         settings = os.path.join(self.uhome, ".claude", "settings.json")
-        with unittest.mock.patch("fmsettings._interactive", return_value=False):
-            self.assertTrue(fmsettings.in_claude_code(), "no terminal: an agent's shell, whatever its variables say")
-            with self.assertRaises(fmsettings.SettingError) as e:
-                fmsettings.set_plugin("motion", "off")
+        with unittest.mock.patch("sampo.settings._interactive", return_value=False):
+            self.assertTrue(ssettings.in_claude_code(), "no terminal: an agent's shell, whatever its variables say")
+            with self.assertRaises(ssettings.SettingError) as e:
+                ssettings.set_plugin("motion", "off")
         self.assertIn("guard", str(e.exception))
         self.assertFalse(os.path.exists(settings))
-        self.assertFalse(fmsettings.in_claude_code(), "the user's own terminal writes directly")
+        self.assertFalse(ssettings.in_claude_code(), "the user's own terminal writes directly")
 
     def test_a_genesis_tower_heads_the_project_view(self):  # T-2118
         app = self.app()
@@ -3267,7 +3267,7 @@ class RunnerPing(unittest.TestCase):  # T-1335
     setUp, text = SettingsScreen.setUp, SettingsScreen.text
 
     def test_the_runners_screen_shows_each_last_ping_and_p_pings_the_selected(self):
-        import fmcode
+        from sampo import smith
         os.makedirs(os.path.join(self.home, "state"), exist_ok=True)
         with open(os.path.join(self.home, "state", "code-runners-ping.json"), "w") as f:
             json.dump({"claude": {"state": "not logged in", "ms": 900, "version": "2.1.0"}}, f)
@@ -3276,7 +3276,7 @@ class RunnerPing(unittest.TestCase):  # T-1335
         self.assertIn("not logged in", self.text(app))
         app.item_index = next(i for i, r in enumerate(app.items) if r["name"] == "claude")
         answer = {"name": "claude", "state": "ok", "ms": 1200, "version": "2.1.0", "said": "ok"}
-        with unittest.mock.patch.object(fmcode, "ping_runner", return_value=answer) as ping:
+        with unittest.mock.patch.object(smith, "ping_runner", return_value=answer) as ping:
             app.key("p")
             app.runner_test.join(10)
         ping.assert_called_once()
@@ -3303,7 +3303,7 @@ class Editors(unittest.TestCase):
             return f.read()
 
     def test_a_captured_key_binds_to_the_rows_command_and_persists(self):
-        import fmsettings
+        from sampo import settings as ssettings
         self.write("# mine\n")
         app = self.app()
         self.pick(app, "keys.d")
@@ -3315,7 +3315,7 @@ class Editors(unittest.TestCase):
         self.assertEqual(tui().load_config()[0]["keys"]["x"], "diff", "persists: the next run reads it")
         self.assertEqual((app.mode, app.set_typing, app.set_note[1]), ("settings", "", "ok"))
         self.assertEqual(app.items[app.item_index]["key"], "keys.x", "the selection on the new binding")
-        fmsettings.undo()
+        ssettings.undo()
         self.assertNotIn("x =", self.file(), "fm settings undo puts it back")
 
     def test_capture_refuses_a_reserved_key_and_shows_the_conflict(self):
@@ -3341,7 +3341,7 @@ class Editors(unittest.TestCase):
         self.assertIn("history", app.set_note[0])
 
     def test_a_panel_moved_by_keys_changes_the_layout_and_one_undo_puts_a_move_back(self):
-        import fmsettings
+        from sampo import settings as ssettings
         app = self.app()
         app.key("l")
         self.assertEqual(app.mode, "layout")
@@ -3360,7 +3360,7 @@ class Editors(unittest.TestCase):
         self.assertEqual(app.order[:3], ["log", "files", "checks"], "drawn in its new place")
         app.key("K")
         self.assertEqual(tui().load_config()[0]["layout"]["columns"][0], ["files", "log"])
-        fmsettings.undo()
+        ssettings.undo()
         self.assertEqual(tui().load_config()[0]["layout"]["columns"], cols, "one undo: one move")
         self.assertEqual(tui().load_config()[0]["layout"]["heights"], [[1, "auto"], ["auto", "auto", 1]])
         app.key("\x1b")
@@ -3399,10 +3399,10 @@ class Editors(unittest.TestCase):
         self.assertEqual(app.mode, "settings")
 
     def test_a_runner_that_hangs_is_cut_off_at_the_timeout(self):
-        import fmcode
+        from sampo import smith
         self.runner("sleep 30")
         t0 = time.monotonic()
-        got = fmcode.test_runner("fake", timeout=0.5)
+        got = smith.test_runner("fake", timeout=0.5)
         self.assertLess(time.monotonic() - t0, 10)  # wall clock: test_runner's timeout=0.5 kill deadline
         self.assertFalse(got["ok"])
         self.assertIn("0.5 s", got["said"])
@@ -3472,11 +3472,11 @@ class Editors(unittest.TestCase):
         self.assertNotIn("diff", self.file())
 
     def test_quitting_mid_runner_test_stops_its_cli(self):
-        import fmcode
+        from sampo import smith
         pidfile = os.path.join(self.home, "pid")
         self.runner(f"echo $$ > {pidfile}; exec sleep 90")
-        real = fmcode.test_runner  # T-1941: a 60 s timeout, so a slow runner's 30 s join still tells the bug from a fix
-        self.enterContext(unittest.mock.patch.object(fmcode, "test_runner", lambda name, **kw: real(name, timeout=60, **kw)))
+        real = smith.test_runner  # T-1941: a 60 s timeout, so a slow runner's 30 s join still tells the bug from a fix
+        self.enterContext(unittest.mock.patch.object(smith, "test_runner", lambda name, **kw: real(name, timeout=60, **kw)))
         app = self.app()
         app.key("r")
         app.item_index = [r["name"] for r in app.items].index("fake")
@@ -3502,10 +3502,10 @@ class Editors(unittest.TestCase):
 
     def test_quitting_before_the_app_has_seen_the_runner_cli_still_ends_it(self):
         # T-2030: a loaded macOS runner quit after the CLI started but before on_spawn told the app: nothing was killed
-        import fmcode
+        from sampo import smith
         pidfile = os.path.join(self.home, "pid")
         self.runner(f"echo $$ > {pidfile}; exec sleep 90")
-        real = fmcode.test_runner
+        real = smith.test_runner
 
         def late(name, on_spawn=None, **kw):
             def spawned(p):
@@ -3515,7 +3515,7 @@ class Editors(unittest.TestCase):
                     time.sleep(0.01)
                 on_spawn(p)
             return real(name, timeout=60, on_spawn=spawned, **kw)
-        self.enterContext(unittest.mock.patch.object(fmcode, "test_runner", late))
+        self.enterContext(unittest.mock.patch.object(smith, "test_runner", late))
         app = self.app()
         app.key("r")
         app.item_index = [r["name"] for r in app.items].index("fake")
@@ -3529,8 +3529,8 @@ class Editors(unittest.TestCase):
         self.assertFalse(app.runner_test.is_alive(), "the CLI ends with the app, not at its 60 s timeout")
 
     def test_a_failure_between_the_two_layout_keys_writes_nothing_and_the_screen_shows_the_file(self):
-        import fmsettings
-        real = fmsettings._plan_app
+        from sampo import settings as ssettings
+        real = ssettings._plan_app
 
         def plan(key, *a, **k):
             if key == "layout.heights":
@@ -3540,14 +3540,14 @@ class Editors(unittest.TestCase):
         app.key("l")
         for k in ("KEY_RIGHT", "j"):
             app.key(k)
-        with unittest.mock.patch("fmsettings._plan_app", side_effect=plan):
+        with unittest.mock.patch("sampo.settings._plan_app", side_effect=plan):
             app.key("H")
         self.assertFalse(os.path.exists(self.toml), "never new columns with old heights")
         self.assertEqual(app.set_note[1], "bad")
         self.assertIn("disk on fire", app.set_note[0])
         self.assertEqual(app.cfg["layout"], tui().load_config()[0]["layout"], "the screen as the file is")
-        with self.assertRaises(fmsettings.SettingError):
-            fmsettings.undo()  # nothing in the history
+        with self.assertRaises(ssettings.SettingError):
+            ssettings.undo()  # nothing in the history
         os.environ["CLAUDECODE"] = "1"  # the guard refuses the first key: the second isn't written either
         app.key("H")
         self.assertIn("guard", app.set_note[0])
@@ -3564,11 +3564,11 @@ class Editors(unittest.TestCase):
         self.assertEqual((app.mode, app.set_note), ("settings", None))
 
     def test_only_a_runner_of_the_registry_or_code_toml_is_tested(self):
-        import fmcode
+        from sampo import smith
         mark = os.path.join(self.home, "ran")
         for name in (f"touch {mark}", "nope", "opencode"):  # opencode: known, but no command to run
-            with self.subTest(name=name), self.assertRaises(fmcode.CodeError):
-                fmcode.test_runner(name)
+            with self.subTest(name=name), self.assertRaises(smith.CodeError):
+                smith.test_runner(name)
         self.assertFalse(os.path.exists(mark), "never taken as a command")
         self.assertFalse(os.path.exists(os.path.join(self.home, "code.toml")))
 
@@ -3593,8 +3593,8 @@ class MotionVisuals(unittest.TestCase):
             return json.load(f)["pluginConfigs"]["foreman-ui@foreman"]["options"]
 
     def test_the_hush_key_cycles_motion_on_the_screen_in_tui_toml_and_for_the_pane(self):
-        import fmsettings
-        pane = fmsettings.mod_manifest()["userConfig"]["motion"]["options"]
+        from sampo import settings as ssettings
+        pane = ssettings.mod_manifest()["userConfig"]["motion"]["options"]
         app = self.app(projects=lambda: [])
         for want in ("reduced", "off", "full"):
             app.key("z")
@@ -3664,9 +3664,9 @@ class MotionVisuals(unittest.TestCase):
 
     def test_the_riso_palette_is_the_panes_too_in_the_same_inks(self):
         import re
-        import fmsettings
-        self.assertIn("riso", fmsettings.mod_manifest()["userConfig"]["palette"]["options"])
-        self.assertEqual(fmsettings.set_plugin("palette", "riso"), "riso")
+        from sampo import settings as ssettings
+        self.assertIn("riso", ssettings.mod_manifest()["userConfig"]["palette"]["options"])
+        self.assertEqual(ssettings.set_plugin("palette", "riso"), "riso")
         self.assertEqual(self.options(), {"palette": "riso"})
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         with open(os.path.join(root, "mods", "foreman-ui", "hooks", "kit.ts"), encoding="utf-8") as f:
@@ -3679,13 +3679,13 @@ class MotionVisuals(unittest.TestCase):
         self.assertGreater(apart, 150, "running and reading rows told apart (blue and sunflower, not two blues)")
         with open(os.path.join(root, ".claude-plugin", "marketplace.json"), encoding="utf-8") as f:
             listed = next(p["version"] for p in json.load(f)["plugins"] if p["name"] == "foreman-ui")
-        self.assertEqual(listed, fmsettings.mod_manifest()["version"], "a new option ships with a new version, both")
+        self.assertEqual(listed, ssettings.mod_manifest()["version"], "a new option ships with a new version, both")
 
     def test_the_glyph_probe_writes_nothing_into_a_pipe(self):
-        import fmcodeterm
+        from sampo import smithterm
         r, w = os.pipe()
         try:
-            self.assertEqual(fmcodeterm.probe(r, w, "▀"), ({}, ""))
+            self.assertEqual(smithterm.probe(r, w, "▀"), ({}, ""))
             os.set_blocking(r, False)
             with self.assertRaises(BlockingIOError):
                 os.read(r, 100)
@@ -3696,15 +3696,15 @@ class MotionVisuals(unittest.TestCase):
     def test_the_glyph_probe_measures_where_the_cursor_lands_and_keeps_keys_typed_meanwhile(self):
         import pty
         import tty
-        import fmcodeterm
+        from sampo import smithterm
         master, slave = pty.openpty()
         try:
             tty.setcbreak(slave)
             os.write(master, b"\x1b[1;2Rq\x1b[1;3R")  # the terminal's answers, and a key typed between them
-            self.assertEqual(fmcodeterm.probe(slave, slave, "▀◉", timeout=1), ({"▀": 1, "◉": 2}, "q"))
+            self.assertEqual(smithterm.probe(slave, slave, "▀◉", timeout=1), ({"▀": 1, "◉": 2}, "q"))
             self.assertIn("\x1b[6n", os.read(master, 4096).decode())
             t0 = time.monotonic()
-            self.assertEqual(fmcodeterm.probe(slave, slave, "▀◉", timeout=0.2), ({}, ""), "no answer: no width")
+            self.assertEqual(smithterm.probe(slave, slave, "▀◉", timeout=0.2), ({}, ""), "no answer: no width")
             self.assertLess(time.monotonic() - t0, 1, "a terminal that never answers costs the timeout, once")  # wall clock: probe's timeout=0.2 deadline
         finally:
             os.close(master)

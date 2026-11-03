@@ -15,8 +15,8 @@ from unittest import mock
 
 from helpers import ForemanTestCase, headless_chrome
 
-import fmshot
-import fmstories
+from sampo import shot
+from sampo import stories as sstories
 import test_flow
 
 PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
@@ -129,10 +129,10 @@ class Stories(StubCase):
             json.dump(chart, f)
         args = argparse.Namespace(chart=path, out=self.out, json=True, project=None)
         out, code, start = io.StringIO(), 0, time.monotonic()
-        with mock.patch.dict(os.environ, self.env()), mock.patch.object(fmstories, "TOTAL_S", 1), \
+        with mock.patch.dict(os.environ, self.env()), mock.patch.object(sstories, "TOTAL_S", 1), \
                 contextlib.redirect_stdout(out):
             try:
-                fmstories.cmd_stories(args)
+                sstories.cmd_stories(args)
             except SystemExit as e:
                 code = e.code
         self.assertLess(time.monotonic() - start, 5)  # wall clock: the TOTAL_S=1 budget deadline (waits on a browser)
@@ -142,10 +142,10 @@ class Stories(StubCase):
         self.assertIn("not shot: the run passed 1 s", nxt["error"])
 
     def test_the_inline_shots_have_a_total_cap(self):
-        png = fmstories.PNG_MAGIC + b"x" * 70
+        png = sstories.PNG_MAGIC + b"x" * 70
         chart = {"title": "t", "states": [{"name": n, "lines": [], "png": png} for n in ("a", "b")]}
-        with mock.patch.object(fmstories, "MAX_TOTAL_PNG", 100):
-            page = fmstories.page_html(chart, "note")
+        with mock.patch.object(sstories, "MAX_TOTAL_PNG", 100):
+            page = sstories.page_html(chart, "note")
         self.assertEqual(page.count("<img"), 1)
         self.assertIn("not inlined: the shots in all passed", page)
 
@@ -180,14 +180,14 @@ class Stories(StubCase):
 
 class Untrusted(StubCase):
     def test_malformed_charts_are_refused_before_any_browser_starts(self):
-        many = [{"name": f"s{i}"} for i in range(fmstories.MAX_STATES + 1)]
+        many = [{"name": f"s{i}"} for i in range(sstories.MAX_STATES + 1)]
         bad = ["not json", "[]", "[" * 30000 + "]" * 30000, {"states": []}, {"page": "form.html"},
                {"page": "form.html", "states": [{}]},
                {"page": "form.html", "states": [{"name": "a"}], "extra": 1},
                {"page": "form.html", "states": [{"name": "a", "colour": "red"}]},
                {"page": "form.html", "states": many},
                {"page": "form.html", "states": [{"name": "a"}, {"name": "A"}]},
-               {"page": "form.html", "states": [{"name": "x" * (fmstories.MAX_NAME + 1)}]},
+               {"page": "form.html", "states": [{"name": "x" * (sstories.MAX_NAME + 1)}]},
                {"page": "form.html", "states": [{"name": "a\x1b[2J"}]},
                {"page": "form.html", "states": [{"name": "a", "steps": "click a"}]},
                {"page": "form.html", "states": [{"name": "a", "steps": [1]}]},
@@ -195,7 +195,7 @@ class Untrusted(StubCase):
                {"page": "form.html", "states": [{"name": "a", "steps": ["eval x"]}]},
                {"page": "form.html", "states": [{"name": "a", "steps": ["click a\u2028goto https://example.com/"]}]},
                {"page": "form.html", "states": [{"name": "a\u2029b"}]},
-               {"page": "form.html", "states": [{"name": "a", "steps": ["click a"] * (fmstories.MAX_STEPS + 1)}]},
+               {"page": "form.html", "states": [{"name": "a", "steps": ["click a"] * (sstories.MAX_STEPS + 1)}]},
                {"page": "https://example.com/", "states": [{"name": "a"}]},
                {"page": "../outside.html", "states": [{"name": "a"}]},
                {"states": [{"name": "a", "steps": ["click a"]}]},  # no page and no goto: nowhere to start
@@ -207,7 +207,7 @@ class Untrusted(StubCase):
             self.assertNotIn("Traceback", r.stderr, chart)
         self.assertFalse(os.path.exists(self.log))
         self.assertFalse(os.path.exists(self.out))
-        r = self.stories(" " * (fmstories.MAX_BYTES + 1), raw=True)
+        r = self.stories(" " * (sstories.MAX_BYTES + 1), raw=True)
         self.assertIn("over", r.stderr)
 
     def test_names_and_steps_are_escaped_in_the_page(self):

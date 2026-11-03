@@ -62,7 +62,7 @@ class DirtyAtFocus(ForemanTestCase):
         self.assertEqual(sorted(self.committed()), ["clean.py", "mine.py"])
 
     def test_old_brief_without_a_snapshot_commits_both(self):
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo, create=False)
         os.remove(os.path.join(p.dir, "audits", "T-0001.dirty.json"))
         self.finish()

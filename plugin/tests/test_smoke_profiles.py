@@ -17,7 +17,7 @@ import unittest
 
 from helpers import ForemanTestCase, PLUGIN
 
-import fmsmoke
+from sampo import smoke as ssmoke
 
 BIN = os.path.join(PLUGIN, "bin")
 SCRIPT = os.path.join(PLUGIN, "lib", "smoke_web.cjs")
@@ -96,8 +96,8 @@ class ProfilesInThePageScript(unittest.TestCase):
         return [c[1:] for c in res["calls"] if c[0] == name]
 
     def test_the_page_script_and_fm_know_the_same_profiles(self):
-        self.assertEqual(self.drive("keys")["keys"], list(fmsmoke.PROFILES))
-        self.assertGreaterEqual(set(fmsmoke.PROFILES), {"torture", "empty", "offline", "slow3g", "deuteranopia",
+        self.assertEqual(self.drive("keys")["keys"], list(ssmoke.PROFILES))
+        self.assertGreaterEqual(set(ssmoke.PROFILES), {"torture", "empty", "offline", "slow3g", "deuteranopia",
                                                         "protanopia", "tritanopia", "achromatopsia", "frozen",
                                                         "motion"})
 
@@ -240,18 +240,18 @@ class ProfilesFromFm(ForemanTestCase):
 
     def test_each_profile_flag_reaches_the_page_script(self):
         env = self.runner()
-        for name in fmsmoke.PROFILES:
+        for name in ssmoke.PROFILES:
             r = self.fm("smoke", "run", "--profile", name, env=env, check=False)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn(f"--profile {name}", r.stdout)
-        self.assertEqual([a[-1] for a in self.argvs()], list(fmsmoke.PROFILES))
+        self.assertEqual([a[-1] for a in self.argvs()], list(ssmoke.PROFILES))
 
     def test_all_runs_every_profile_and_sums_them_up(self):
         env = self.runner([{"where": "phone start", "what": "page wider than the screen (900 px > 390 px)"}])
         r = self.fm("smoke", "--profile", "all", env=env, check=False)
         self.assertEqual(r.returncode, 0, "a hostile profile's findings fail nothing unless strict\n" + r.stdout)
-        self.assertEqual([a[-1] for a in self.argvs()], list(fmsmoke.PROFILES))
-        self.assertIn("Profiles: " + " · ".join(f"{n} ✗ 1" for n in fmsmoke.PROFILES), r.stdout)
+        self.assertEqual([a[-1] for a in self.argvs()], list(ssmoke.PROFILES))
+        self.assertIn("Profiles: " + " · ".join(f"{n} ✗ 1" for n in ssmoke.PROFILES), r.stdout)
         self.assertEqual(self.fm("smoke", "--profile", "empty", "--strict", env=env, check=False).returncode, 1)
         ledger = os.path.join(self.fm_json("smoke", "--profile", "offline", env=env, check=False)["profiles"][0]
                               ["shots"].split(os.sep + "smoke" + os.sep)[0], "ledger.jsonl")
@@ -328,7 +328,7 @@ class ProfilesFromFm(ForemanTestCase):
         os.environ["FOREMAN_SMOKE_RUNNER"] = f"{sys.executable} {stub}"
         try:
             t0 = time.time()
-            res = fmsmoke.crawl(None, "http://127.0.0.1:9/", os.path.join(self.tmp, "out"), timeout=2)
+            res = ssmoke.crawl(None, "http://127.0.0.1:9/", os.path.join(self.tmp, "out"), timeout=2)
         finally:
             os.environ.pop("FOREMAN_SMOKE_RUNNER")
         self.assertLess(time.time() - t0, 15)  # wall clock: the crawl timeout=2 deadline
@@ -383,12 +383,12 @@ class ProfilesFromFm(ForemanTestCase):
 
     def test_old_commits_runs_are_pruned(self):
         smoke = os.path.dirname(os.path.dirname(self.fm_json("smoke", env=self.runner())["shots"]))
-        for i in range(fmsmoke.KEEP + 2):
+        for i in range(ssmoke.KEEP + 2):
             os.makedirs(os.path.join(smoke, f"old{i}"))
             os.utime(os.path.join(smoke, f"old{i}"), (time.time() - 1000 + i, time.time() - 1000 + i))
         self.fm("smoke", env=self.runner())
         kept = sorted(os.listdir(smoke))
-        self.assertEqual(len(kept), fmsmoke.KEEP, kept)
+        self.assertEqual(len(kept), ssmoke.KEEP, kept)
         self.assertIn(self.head(), kept)
         self.assertNotIn("old0", kept)
 
@@ -399,7 +399,7 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
 
 
 def _browser_pw():
-    return fmsmoke.playwright(os.environ.get("FOREMAN_SMOKE_ROOT") or os.getcwd())
+    return ssmoke.playwright(os.environ.get("FOREMAN_SMOKE_ROOT") or os.getcwd())
 
 
 PAGE = """<!doctype html><html><head><style>
@@ -443,7 +443,7 @@ class ProfilesInABrowser(unittest.TestCase):
 
     def crawl(self, profile="", page=""):
         out = os.path.join(self.dir, "shots", profile or "default" + page)
-        res = fmsmoke.crawl(_browser_pw(), self.base + page, out, timeout=120, profile=profile)
+        res = ssmoke.crawl(_browser_pw(), self.base + page, out, timeout=120, profile=profile)
         if res.get("skipped"):
             self.skipTest(res["skipped"])
         res["out"] = out
@@ -470,7 +470,7 @@ class ProfilesInABrowser(unittest.TestCase):
 
     def test_each_profile_in_a_real_browser(self):
         want = {"torture": "text runs out of its box", "empty": "no items", "offline": "offline: ", "motion": "moves"}
-        for name in fmsmoke.PROFILES:
+        for name in ssmoke.PROFILES:
             with self.subTest(profile=name):
                 res = self.crawl(name)
                 self.assertIn("desktop start", res["views"], self.found(res))

@@ -19,8 +19,8 @@ and the playbook `../playbooks/references/ui/type-and-colour.md`, which say when
   border and accent on each surface; text on the accent and subtle fills) their WCAG contrast.
 - `fm design contrast TOKENS.css [fg/bg[:need[,dark need]] ...]` proves pairs in light and dark on the hex the
   browser paints, warns on values outside sRGB and exits 1 on any failure. Without pairs it checks the known role
-  pairs, body text 7:1 in dark. A CI without Foreman copies `plugin/lib/fmdesign.py` (stdlib only, Python 3.11 or
-  later) and runs `python3 fmdesign.py contrast …` the same way.
+  pairs, body text 7:1 in dark. A CI without Foreman copies `plugin/lib/sampo/design.py` (stdlib only, Python 3.11 or
+  later) and runs `python3 design.py contrast …` the same way.
 - `fm design palette SEED [--format css|dtcg|tailwind]` makes those roles in both themes from one colour (hex, `rgb()`,
   `hsl()`, `oklch()`): neutrals tinted with its hue, the accent keeping its hue, each text role moved in lightness until
   its pairs pass. The export goes to stdout and the proof to stderr, so `> tokens/colour.css` keeps only the tokens.

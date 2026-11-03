@@ -6,7 +6,7 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 CLUSTERS = {"a": ["alpha_core.py", "alpha_view.py", "alpha_store.py"],
             "b": ["beta_core.py", "beta_view.py", "beta_store.py"]}

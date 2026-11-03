@@ -5,8 +5,8 @@ from unittest import mock
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmserve
+from sampo import core as c
+from sampo import serve
 
 
 class Outbound(ForemanTestCase):
@@ -71,9 +71,9 @@ class Sandbox(ForemanTestCase):
     def cmd(self, avail=True, **kw):
         args = types.SimpleNamespace(**{"permission_mode": None, "sandbox": False, "no_sandbox": False, **kw})
         p = c.find_project(self.repo)
-        with mock.patch.object(fmserve, "_sandbox_available", lambda: avail), \
-                mock.patch.object(fmserve, "_prompt", lambda *a: "x"):
-            return fmserve._claude_cmd(p, types.SimpleNamespace(tier="S"), args, {})
+        with mock.patch.object(serve, "_sandbox_available", lambda: avail), \
+                mock.patch.object(serve, "_prompt", lambda *a: "x"):
+            return serve._claude_cmd(p, types.SimpleNamespace(tier="S"), args, {})
 
     def test_opt_in_only(self):
         self.assertNotIn("--settings", self.cmd())

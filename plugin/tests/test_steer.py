@@ -67,7 +67,7 @@ class _Steer(ForemanTestCase):
 
 class Cases(_Steer):
     def test_part_c_and_logged_user_steers_become_cases_a_third_held_out(self):
-        import fmexam
+        from sampo import louhi
         tid = json.loads(self.fm("task", "new", "Make the pane nicer", "--type", "FEATURE", "--tier", "S",
                                  "--json").stdout)["id"]
         self.fm("task", "log", tid, "steer: user wants every screen shot before and after; no tiny inline bars")
@@ -84,7 +84,7 @@ class Cases(_Steer):
         self.assertEqual(h["source"], "history")
         self.assertEqual(h["clauses"], ["user wants every screen shot before and after;", "no tiny inline bars"])
         for x in got["cases"]:
-            self.assertEqual(x["split"], "holdout" if fmexam.holdout(x["id"]) else "train")
+            self.assertEqual(x["split"], "holdout" if louhi.holdout(x["id"]) else "train")
         self.assertEqual(len(self.cases()["cases"]), 3)  # a second import adds nothing
 
 
@@ -113,12 +113,12 @@ class Run(_Steer):
         status = self.fm("exam", "steer", env=self.env).stdout
         self.assertIn("held out", status)
         # review: a run with no held-out case never stands for the rate; the strongest model has no stronger judge
-        import fmcore as c
-        import fmsteer
+        from sampo import core as c
+        from sampo import steer
         p = c.find_project(self.repo)
         self.fm("exam", "steer", "run", "--split", "train", env=self.env)
-        self.assertEqual(fmsteer.latest(p, held=True)["run"], line["run"])
-        self.assertNotEqual(fmsteer.latest(p)["run"], line["run"])
+        self.assertEqual(steer.latest(p, held=True)["run"], line["run"])
+        self.assertNotEqual(steer.latest(p)["run"], line["run"])
         bad = self.fm("exam", "steer", "run", "--model", "fable", env=self.env, check=False)
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn("no model ranks above", bad.stdout + bad.stderr)
@@ -187,14 +187,14 @@ class Live(_Steer):
 
 class Page(_Steer):
     def test_the_genesis_export_and_page_carry_the_held_out_rate(self):
-        import fmcore as c
-        import fmgenesis
+        from sampo import core as c
+        from sampo import rune
         from test_genesis import GEN0_CAPS
         self.fm("genesis", "init", "--file", "-", input=GEN0_CAPS)
         self.cases()
         self.fm("exam", "steer", "run", env=self.env)
         p, out = c.find_project(self.repo), os.path.join(self.tmp, "site")
-        fmgenesis.export(p, out)
+        rune.export(p, out)
         got = json.loads(read_text(os.path.join(out, "genesis.json")))["steer"]
         self.assertEqual(got["model"], "sonnet")
         self.assertEqual(got["judge"], "fable")

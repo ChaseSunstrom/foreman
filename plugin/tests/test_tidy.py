@@ -7,7 +7,7 @@ import time
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 
 def age(p, tid, days, status=None):
@@ -447,13 +447,13 @@ class TidyStateBackup(TidyCase):
 class TidyHygiene(TidyCase):
     # T-1072: fixes unused for 60 days (or losing) are listed and retired on --apply; unused cards are only listed
     def seed_fixes(self):
-        import fmfixes
+        from sampo import fixes
         self.fm("fix", "add", "stale-sig: boom", "--do", "run the old thing")
         self.fm("fix", "add", "fresh-sig: bang", "--do", "run the new thing")
         self.fm("fix", "add", "losing-sig: nope", "--do", "run the wrong thing")
-        ids = {f["sig"]: f["id"] for f in fmfixes.known(self.p)}
+        ids = {f["sig"]: f["id"] for f in fixes.known(self.p)}
         stamp = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
-        with open(fmfixes._stats_path(), "w") as f:
+        with open(fixes._stats_path(), "w") as f:
             json.dump({"fixes": {ids["stale-sig: boom"]: {"worked": 1, "last": stamp(time.time() - 90 * 86400)},
                                  ids["fresh-sig: bang"]: {"worked": 1, "last": stamp(time.time())},
                                  ids["losing-sig: nope"]: {"misses": 3, "last": stamp(time.time())}}}, f)
@@ -496,12 +496,12 @@ class TidyHygiene(TidyCase):
         self.assertEqual(len(self.fm_json("rule", "list")), 2, "only the user removes a rule")
 
     def test_a_fix_synced_from_the_repo_is_not_touched(self):
-        import fmfixes
+        from sampo import fixes
         rec = {"sig": "synced-sig: x", "do": "do it"}
         with open(os.path.join(self.p.dir, "fixes.md"), "w") as f:
-            f.write(fmfixes._line(rec))
-        fid = fmfixes._fid(rec)
-        with open(fmfixes._stats_path(), "w") as f:
+            f.write(fixes._line(rec))
+        fid = fixes._fid(rec)
+        with open(fixes._stats_path(), "w") as f:
             json.dump({"fixes": {fid: {"misses": 5}}}, f)
         found = [x for x in self.tidy("--apply")["findings"] if "synced-sig" in x["detail"]]
         self.assertTrue(found and "shared" in found[0]["detail"])
@@ -625,7 +625,7 @@ class UnblockedByGit(TidyCase):
         # "changed since it was blocked"
         import subprocess
         import time
-        import fmtidy
+        from sampo import tidy as stidy
         with open(os.path.join(self.repo, "a.py"), "w") as f:
             f.write("x = 1\n")
         subprocess.run(["git", "-C", self.repo, "add", "a.py"], check=True)
@@ -636,18 +636,18 @@ class UnblockedByGit(TidyCase):
         later = time.time() + 30
         os.utime(os.path.join(self.repo, "a.py"), (later, later))  # what a clone does
         b = c.find_brief(self.p, tid)
-        self.assertIsNone(fmtidy.unblocked(self.p, b, {}))
+        self.assertIsNone(stidy.unblocked(self.p, b, {}))
         with open(os.path.join(self.repo, "a.py"), "w") as f:
             f.write("x = 2\n")
         subprocess.run(["git", "-C", self.repo, "commit", "-qam", "a changed"], check=True)
-        self.assertIn("a.py changed", fmtidy.unblocked(self.p, c.find_brief(self.p, tid), {}) or "")
+        self.assertIn("a.py changed", stidy.unblocked(self.p, c.find_brief(self.p, tid), {}) or "")
 
 
 class ExamWork(TidyCase):
     """T-2568: fm tidy prunes a graded exam run's work copies once its newest grade is 14 days old and a newer run of
     the same tier was graded for that agent; answers, grades and ungraded runs stay."""
     def seed(self, rel, run, agent, at, tier=None):
-        import fmgenesis
+        from sampo import rune
         base = os.path.join(self.p.dir, "exam", *rel, run)
         os.makedirs(os.path.join(base, "work", agent, "sc1"), exist_ok=True)
         os.makedirs(os.path.join(base, "answers", agent), exist_ok=True)
@@ -655,7 +655,7 @@ class ExamWork(TidyCase):
             f.write("x" * 2_000_000)
         with open(os.path.join(base, "answers", agent, "sc1.json"), "w") as f:
             f.write("{}")
-        home = fmgenesis.home(self.p)
+        home = rune.home(self.p)
         os.makedirs(home, exist_ok=True)
         with open(os.path.join(home, "exam.jsonl"), "a") as f:
             f.write(json.dumps({"run": run, "agent": agent, "at": at, **({"tier": tier} if tier else {})}) + "\n")
@@ -683,8 +683,8 @@ class ExamWork(TidyCase):
 
     def test_a_line_naming_a_path_is_ignored(self):
         self.seed((), "s2-002", "foreman", "2026-01-20T00:00:00Z")
-        import fmgenesis
-        with open(os.path.join(fmgenesis.home(self.p), "exam.jsonl"), "a") as f:
+        from sampo import rune
+        with open(os.path.join(rune.home(self.p), "exam.jsonl"), "a") as f:
             f.write(json.dumps({"run": "../../x", "agent": "foreman", "at": "2026-01-01T00:00:00Z"}) + "\n")
         self.assertNotIn("exam_work", self.kinds(self.tidy()))
 

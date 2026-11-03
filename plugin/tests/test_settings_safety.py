@@ -11,8 +11,8 @@ import unittest.mock as mock
 
 from helpers import ForemanTestCase, read_text
 
-import fmcodetui as T
-import fmsettings
+from sampo import smithtui as T
+from sampo import settings
 
 REAL = T.render
 
@@ -31,7 +31,7 @@ class Case(ForemanTestCase):
         uhome = os.path.join(self.tmp, "uhome")  # a shared key (motion) writes the pane's option there, not the user's
         os.makedirs(os.path.join(uhome, ".claude"))
         self.patches = [mock.patch.object(T, "render", side_effect=picky),
-                        mock.patch.object(fmsettings, "in_claude_code", return_value=False),
+                        mock.patch.object(settings, "in_claude_code", return_value=False),
                         mock.patch.dict(os.environ, {"HOME": uhome})]
         for x in self.patches:
             x.start()
@@ -50,44 +50,44 @@ class Case(ForemanTestCase):
 class LastKnownGood(Case):
     def test_a_config_that_fails_to_render_boots_the_last_good_one_and_says_so(self):
         self.write('border = "heavy"\n')
-        cfg, errors, note, _ = fmsettings.boot()
+        cfg, errors, note, _ = settings.boot()
         self.assertEqual((cfg["border"], errors, note), ("heavy", [], None))
-        self.assertEqual(read_text(fmsettings.good_path()), 'border = "heavy"\n', "a good start keeps its file")
+        self.assertEqual(read_text(settings.good_path()), 'border = "heavy"\n', "a good start keeps its file")
         bad = 'border = "double"\n[layout]\nnarrow_below = 7\n'
         self.write(bad)
-        cfg, errors, note, _ = fmsettings.boot()
+        cfg, errors, note, _ = settings.boot()
         self.assertEqual(cfg["border"], "heavy", "the last good one")
         for word in ("can't draw", "ZeroDivisionError", "last good", "fm settings bisect"):
             self.assertIn(word, note)
         self.assertEqual(read_text(self.toml), bad, "tui.toml as the user left it")
-        self.assertEqual(read_text(fmsettings.good_path()), 'border = "heavy"\n', "a bad start keeps the good copy")
+        self.assertEqual(read_text(settings.good_path()), 'border = "heavy"\n', "a bad start keeps the good copy")
 
     def test_the_good_copy_never_brings_back_a_value_the_app_refuses(self):
         self.write('border = "nope"\n')
-        cfg, errors, note, _ = fmsettings.boot()
+        cfg, errors, note, _ = settings.boot()
         self.assertEqual((cfg["border"], note), (T.DEFAULTS["border"], None))
         self.assertIn("border", errors[0])
         self.write('[layout]\nnarrow_below = 7\n')
-        cfg, errors, note, _ = fmsettings.boot()
+        cfg, errors, note, _ = settings.boot()
         self.assertIn("last good", note)
         self.assertEqual(cfg["border"], T.DEFAULTS["border"], "the copy is loaded as tui.toml is: skipped there too")
         self.assertIn("border", errors[0])
 
     def test_with_no_good_copy_it_boots_the_defaults(self):
         self.write('[layout]\nnarrow_below = 7\n')
-        cfg, _, note, _ = fmsettings.boot()
+        cfg, _, note, _ = settings.boot()
         self.assertEqual(cfg["layout"]["narrow_below"], T.DEFAULTS["layout"]["narrow_below"])
         self.assertIn("defaults", note)
 
     def test_the_app_says_so_on_its_screen(self):
-        import fmcli
+        from sampo import cli
         self.write('border = "heavy"\n')
-        fmsettings.boot()
+        settings.boot()
         self.write('[layout]\nnarrow_below = 7\n')
         got = {}
         with mock.patch.object(T, "run_screen", side_effect=lambda app, *a: got.setdefault("app", app)), \
                 mock.patch.object(T, "fm_projects", return_value=[]), \
-                mock.patch.object(fmcli, "resolve", side_effect=fmcli.UsageError("not in a project")):
+                mock.patch.object(cli, "resolve", side_effect=cli.UsageError("not in a project")):
             T.main(types.SimpleNamespace(), [], home=True)
         app = got["app"]
         self.assertEqual(app.cfg["border"], "heavy")
@@ -97,7 +97,7 @@ class LastKnownGood(Case):
 class ExternalEdit(Case):
     def app(self, text='border = "heavy"\n'):
         self.write(text)
-        cfg, _, _, seen = fmsettings.boot()
+        cfg, _, _, seen = settings.boot()
         app = T.App(cfg, spawn=lambda *a, **k: None)
         app.tui, self.t = seen, [100.0]
         app.clock = lambda: self.t[0]
@@ -184,7 +184,7 @@ class ExternalEdit(Case):
     def test_a_file_left_invalid_outside_says_so_not_unset(self):
         base = 'border = "heavy"\n'
         self.write('border = "double"\n[layout\n')
-        done, refused = fmsettings.set_key("border", "rounded", base=base)
+        done, refused = settings.set_key("border", "rounded", base=base)
         self.assertEqual(done, [])
         self.assertIn("isn't valid TOML", refused[0])
         self.assertNotIn("unset", refused[0])
@@ -201,11 +201,11 @@ class ExternalEdit(Case):
         base = 'border = "heavy"\n'
         self.write(base)
         self.write('border = "double"\n')  # another program, after the app read it
-        done, refused = fmsettings.set_key("border", "rounded", base=base)
+        done, refused = settings.set_key("border", "rounded", base=base)
         self.assertEqual(done, [])
         self.assertIn("changed", refused[0])
         self.assertEqual(read_text(self.toml), 'border = "double"\n')
-        done, refused = fmsettings.set_key("layout.narrow_below", 60, base=base)
+        done, refused = settings.set_key("layout.narrow_below", 60, base=base)
         self.assertEqual(refused, [])
         self.assertEqual(read_text(self.toml), 'border = "double"\n\n[layout]\nnarrow_below = 60\n', "merged")
 
@@ -228,14 +228,14 @@ class Bisect(Case):
 
     def test_it_names_the_key_that_breaks_rendering_and_writes_nothing(self):
         self.write('border = "heavy"\n')
-        fmsettings.boot()
+        settings.boot()
         self.write(self.BAD)
-        got = fmsettings.bisect()
+        got = settings.bisect()
         self.assertEqual((got["key"], got["alone"], got["base"]), ("layout.narrow_below", True, "the last good copy"))
         self.assertEqual(got["changed"], 14)
         self.assertLessEqual(got["tries"], 9, "halves (4 tries), and the ends and the key alone checked")
         self.assertEqual(read_text(self.toml), self.BAD)
-        self.assertEqual(read_text(fmsettings.good_path()), 'border = "heavy"\n')
+        self.assertEqual(read_text(settings.good_path()), 'border = "heavy"\n')
 
     def test_a_key_that_breaks_it_only_with_another_says_so(self):
         def pair(st, w, h, cfg, *a, **k):
@@ -244,14 +244,14 @@ class Bisect(Case):
             return REAL(st, w, h, cfg, *a, **k)
         self.write(self.BAD)
         with mock.patch.object(T, "render", side_effect=pair):
-            got = fmsettings.bisect()
+            got = settings.bisect()
         self.assertEqual((got["key"], got["alone"], got["base"]), ("layout.narrow_below", False, "the defaults"))
 
     def test_the_command_from_fm_and_claude_code(self):
         self.write(self.BAD)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            fmsettings.cmd_settings(types.SimpleNamespace(action="bisect", key=None, value=None, surface=None,
+            settings.cmd_settings(types.SimpleNamespace(action="bisect", key=None, value=None, surface=None,
                                                           json=False))
         self.assertIn("layout.narrow_below = 7", out.getvalue())
         self.assertEqual(read_text(self.toml), self.BAD)
@@ -264,34 +264,34 @@ class Bisect(Case):
 class Monkey(Case):
     def test_random_keys_on_the_settings_screen_never_break_it_or_the_file(self):
         self.write('border = "heavy"\n')
-        app = T.App(fmsettings.boot()[0], spawn=lambda *a, **k: None)
+        app = T.App(settings.boot()[0], spawn=lambda *a, **k: None)
         app.show_settings()
         rnd = random.Random(1543)
         # never r: the runners list's Enter starts a real coding CLI
         keys = list("/:mbql jkJKHL\n\x1b\x7f") + ["KEY_UP", "KEY_DOWN", "KEY_NPAGE", "\t", "1", "a", '"', "["]
-        real, sets = fmsettings.set_key, []
-        with mock.patch.object(fmsettings, "set_key", side_effect=lambda *a, **k: sets.append(a) or real(*a, **k)):
+        real, sets = settings.set_key, []
+        with mock.patch.object(settings, "set_key", side_effect=lambda *a, **k: sets.append(a) or real(*a, **k)):
             for k in [":", *"set border double", "\n"] + [rnd.choice(keys) for _ in range(400)]:
                 app.key(k)
                 if app.mode not in ("settings", "layout", "runners", "settings_loading"):
                     app.show_settings()
                 REAL(app.state, 100, 30, app.cfg, app)
         self.assertIn(("border", "double", None), sets, "the :set line was reached")
-        self.assertIsNotNone(fmsettings._parses(read_text(self.toml)), "tui.toml still parses")
-        self.assertIsNone(fmsettings.render_error(T.load_config()[0]), "and the app can draw with it")
+        self.assertIsNotNone(settings._parses(read_text(self.toml)), "tui.toml still parses")
+        self.assertIsNone(settings.render_error(T.load_config()[0]), "and the app can draw with it")
 
 
 class HeadlessCheck(ForemanTestCase):  # T-1612
     def test_every_way_draws_the_defaults_and_a_snapshot_only_failure_is_named(self):
-        import fmsettings
-        self.assertEqual(fmsettings.check_render(T.DEFAULTS), [])
+        from sampo import settings
+        self.assertEqual(settings.check_render(T.DEFAULTS), [])
         p = self.fm("settings", "check")
         self.assertIn("✓ tui.toml draws the same", p.stdout)
         with mock.patch.object(T, "to_svg", side_effect=ValueError("bad colour 'chartreuse'")):
-            self.assertEqual(fmsettings.check_render(T.DEFAULTS),
+            self.assertEqual(settings.check_render(T.DEFAULTS),
                              [("a headless snapshot", "ValueError: bad colour 'chartreuse'")])
         with mock.patch.object(T, "entry_text", side_effect=KeyError("kind")):
-            self.assertEqual([w for w, _ in fmsettings.check_render(T.DEFAULTS)], ["--plain"])
-        with mock.patch.object(fmsettings, "render_error", return_value=None), \
+            self.assertEqual([w for w, _ in settings.check_render(T.DEFAULTS)], ["--plain"])
+        with mock.patch.object(settings, "render_error", return_value=None), \
                 mock.patch.object(T, "App", side_effect=TypeError("bad width")):
-            self.assertEqual(fmsettings.check_render(T.DEFAULTS), [("the sample run", "TypeError: bad width")])
+            self.assertEqual(settings.check_render(T.DEFAULTS), [("the sample run", "TypeError: bad width")])

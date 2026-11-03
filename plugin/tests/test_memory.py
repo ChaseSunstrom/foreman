@@ -7,23 +7,23 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmrecall
+from sampo import core as c
+from sampo import recall
 
 
 class NearestDone(ForemanTestCase):  # T-1303
     def test_a_near_mark_needs_the_title_or_most_distinctive_words(self):
-        import fmcli
-        import fmrecall
+        from sampo import cli
+        from sampo import recall
         self.fm("init")
         p = c.find_project(self.repo)
         with c.lock(p.dir):
-            fmcli._create(p, "Tracing panel in the app", "FEATURE", "S", "done",
+            cli._create(p, "Tracing panel in the app", "FEATURE", "S", "done",
                           raw="Add a panel that shows each span, the frame timing and the scheduler's queue, so a slow "
                               "turn can be traced from the app without opening the logs")
             for t in ("Add an export button", "Add retries to uploads", "Add a dark theme", "Add a CSV reader"):
-                fmcli._create(p, t, "FEATURE", "S", "done", raw=t)
-        got = fmrecall.nearest_done(p, ["Add a unified frame scheduler", "Tracing panel shows spans"])
+                cli._create(p, t, "FEATURE", "S", "done", raw=t)
+        got = recall.nearest_done(p, ["Add a unified frame scheduler", "Tracing panel shows spans"])
         self.assertNotIn("Add a unified frame scheduler", got, "two words from a long request aren't a match")
         self.assertEqual(got["Tracing panel shows spans"][1], "Tracing panel in the app")
 
@@ -55,7 +55,7 @@ class Memory(ForemanTestCase):
         out = self.fm("recall", "translate", "the", "checkout", "page", "into", "french").stdout
         self.assertIn("start here (files T-0001 touched): web/checkout.py, web/i18n.py", out)
         self.assertIn("the similar finished task took 1 steps", out)
-        self.assertGreater(fmrecall._age("2000-01-01T00:00:00Z"), 9000)
+        self.assertGreater(recall._age("2000-01-01T00:00:00Z"), 9000)
 
     def test_recall_can_point_at_a_playbook(self):
         out = self.fm("recall", "benchmark", "optimization", "loop", "latency", "throughput", "variants").stdout
@@ -123,7 +123,7 @@ class Memory(ForemanTestCase):
         self.fm("task", "new", "fix flaky upload", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a",
                 "--focus")
         self.fm("task", "log", "T-0001", "ruled out: raising the timeout — the stall is a deadlock")
-        fmrecall.note_failure(self.p, "T-0001", "Traceback\nTimeoutError: upload stalled after 30s")
+        recall.note_failure(self.p, "T-0001", "Traceback\nTimeoutError: upload stalled after 30s")
         self.fm("checkpoint")
         resume = c.find_brief(self.p, "T-0001").section("Resume here")
         self.assertIn("ruled out: raising the timeout", resume)

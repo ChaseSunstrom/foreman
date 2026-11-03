@@ -6,7 +6,7 @@ import time
 import unittest
 
 from helpers import ForemanTestCase
-import fmcost
+from sampo import cost
 
 
 def _msg(i, sid, model, ctx, ts):
@@ -30,7 +30,7 @@ class UsageBurn(ForemanTestCase):
             self._write(f"-p/{sid}.jsonl", [_msg(i, sid, "claude-sonnet-5-5", 300_000, ts) for i in range(10)])
         self._write("-p/a/subagents/agent-1.jsonl", [_msg(i, "a", "claude-opus-5-5", 900_000, ts) for i in range(10)])
         now = time.time()
-        found = fmcost.burn_findings(os.path.join(self.tmp, "projects"),
+        found = cost.burn_findings(os.path.join(self.tmp, "projects"),
                                      forecast={"seven_day": {"full_at": now + 3600, "resets_at": now + 4 * 3600}})
         text = "\n".join(f"{a} → {b}" for a, b in found)
         for words in ("context per reply averages 300k", "3 sessions", "Opus subagents", "run out 3 h before"):
@@ -43,26 +43,26 @@ class UsageBurn(ForemanTestCase):
         self._write("-p/a.jsonl", [_msg(i, "a", "claude-sonnet-5-5", 300_000, ts) for i in range(30)])
         folder = os.path.join(self.tmp, "projects")
         with mock.patch.dict(os.environ, {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"}):
-            text = "\n".join(f"{a} → {b}" for a, b in fmcost.burn_findings(folder, forecast={}))
+            text = "\n".join(f"{a} → {b}" for a, b in cost.burn_findings(folder, forecast={}))
         self.assertIn("1.0M", text, "the user's own window, named")
         self.assertNotIn("fm install-user", text, "install-user leaves a set window alone: a no-op fix")
         self.assertIn("/compact", text)
         with mock.patch.dict(os.environ, {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200k"}):
-            text = "\n".join(f"{a} → {b}" for a, b in fmcost.burn_findings(folder, forecast={}))
+            text = "\n".join(f"{a} → {b}" for a, b in cost.burn_findings(folder, forecast={}))
         self.assertNotIn("fm install-user", text, "Foreman's window is already set: the advice is /compact")
 
     def test_a_lean_week_says_nothing(self):
         self._write("-p/a.jsonl", [_msg(i, "a", "claude-sonnet-5-5", 60_000, self._now()) for i in range(30)])
-        self.assertEqual(fmcost.burn_findings(os.path.join(self.tmp, "projects"), forecast={}), [])
+        self.assertEqual(cost.burn_findings(os.path.join(self.tmp, "projects"), forecast={}), [])
 
     def test_doctor_warns_and_session_start_reads_the_cached_scan(self):
         self.fm("init")
-        fmcost.write_burn([("context per reply averages 300k", "sessions compact late")])
-        import fmdoctor
-        self.assertEqual(fmdoctor.check_usage_burn([("x", "y")]).status, "WARN")
-        self.assertIn("/usage", fmdoctor.check_usage_burn([("x", "y")]).detail)  # T-1797: CC 2.1.311 f applies fixes
-        self.assertEqual(fmdoctor.check_usage_burn([]).status, "PASS")
-        self.assertIn("averages 300k", fmcost.burn_line())
+        cost.write_burn([("context per reply averages 300k", "sessions compact late")])
+        from sampo import doctor
+        self.assertEqual(doctor.check_usage_burn([("x", "y")]).status, "WARN")
+        self.assertIn("/usage", doctor.check_usage_burn([("x", "y")]).detail)  # T-1797: CC 2.1.311 f applies fixes
+        self.assertEqual(doctor.check_usage_burn([]).status, "PASS")
+        self.assertIn("averages 300k", cost.burn_line())
 
 
 if __name__ == "__main__":

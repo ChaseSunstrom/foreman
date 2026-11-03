@@ -4,7 +4,7 @@ import json
 
 from test_hooks import HookCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class ToolOutputInjection(HookCase):

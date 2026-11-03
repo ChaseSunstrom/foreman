@@ -7,7 +7,7 @@ import sys
 
 from helpers import FM, ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class BoardVerbs(ForemanTestCase):
@@ -109,11 +109,11 @@ class BoardVerbs(ForemanTestCase):
         self.assertEqual(sorted(os.listdir(self.home)), before, "the user's Foreman home is never touched")
 
     def test_release_check_child_env_keeps_only_the_bench_switch(self):
-        import fmdemo
+        from sampo import demo
         old = dict(os.environ)
         try:
             os.environ.update(FOREMAN_DOCTOR_BENCH="0", FOREMAN_INHIBITED="1", CLAUDE_X="1", GIT_DIR="/x")
-            env = fmdemo.release_env(self.tmp)
+            env = demo.release_env(self.tmp)
         finally:
             os.environ.clear()
             os.environ.update(old)

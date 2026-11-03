@@ -165,7 +165,7 @@ class Landing(unittest.TestCase):
 
     def test_the_code_page_is_drawn_from_todays_tui(self):  # T-2061: a committed recording goes stale
         sys.path.insert(0, os.path.join(PLUGIN, "lib"))
-        import fmcodetui
+        from sampo import smithtui
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "o")
             p = subprocess.run([sys.executable, os.path.join(ROOT, "site", "build.py"), out], capture_output=True,
@@ -176,8 +176,8 @@ class Landing(unittest.TestCase):
         self.assertNotIn(".mp4", page, "a video recorded once shows an old fm code")
         self.assertIn('src="../assets/code-tui-tour.svg"', page)
         self.assertIn('media="(prefers-reduced-motion: reduce)" srcset="../assets/code-tui.svg"', page)
-        labels = dict(fmcodetui.COMMAND_LABELS)
-        for cmd in set(fmcodetui.DEFAULTS["keys"].values()):
+        labels = dict(smithtui.COMMAND_LABELS)
+        for cmd in set(smithtui.DEFAULTS["keys"].values()):
             self.assertIn(build_esc(labels.get(cmd, cmd)), page, f"the key for {cmd} isn't on the page")
 
     def test_the_landing_runs_shader_cards_live(self):  # T-2062: the shaders only ran on their own page

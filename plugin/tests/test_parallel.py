@@ -78,8 +78,8 @@ class Parallel(ForemanTestCase):
         self.assertEqual(self.git("worktree", "list").count("\n"), 3, "both lanes kept with their commits")
 
     def test_a_dependency_or_an_l_task_never_shares_a_batch(self):
-        import fmcore as c
-        import fmserve
+        from sampo import core as c
+        from sampo import serve
         self.task("base", "a.txt")                                                        # T-0001
         self.task("needs base", "b.txt")                                                  # T-0002
         self.fm("task", "set", "T-0002", "depends_on=T-0001")
@@ -87,12 +87,12 @@ class Parallel(ForemanTestCase):
                 "--step", "a", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "y")              # T-0003
         self.task("free", "d.txt")                                                        # T-0004
         p = c.find_project(self.repo)
-        self.assertEqual([b.id for b in fmserve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0004"])
+        self.assertEqual([b.id for b in serve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0004"])
 
     def test_same_group_never_batches(self):
         # T-0445: fm relate groups related tasks; two of one group in parallel lanes step on each other's work
-        import fmcore as c
-        import fmserve
+        from sampo import core as c
+        from sampo import serve
         for t, f in (("one", "a.txt"), ("two", "b.txt"), ("three", "c.txt")):
             self.task(t, f)
         p = c.find_project(self.repo)
@@ -100,25 +100,25 @@ class Parallel(ForemanTestCase):
             b = c.find_brief(p, t)
             b.meta["group"] = "g1"
             c.save_brief(p, b)
-        self.assertEqual([b.id for b in fmserve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0003"])
+        self.assertEqual([b.id for b in serve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0003"])
 
     def test_cochange_footprint_blocks_batch(self):
         # T-0445: files that nearly always change together (fm map's pairs): a task on one will touch the other
         from unittest import mock
-        import fmcore as c
-        import fmserve
+        from sampo import core as c
+        from sampo import serve
         for t, f in (("api", "src/api.py"), ("client", "src/client.py"), ("docs", "README.md")):
             self.task(t, f)
         p = c.find_project(self.repo)
-        with mock.patch.object(fmserve, "_pairs", return_value={"src/api.py": ["src/client.py"]}, create=True):
-            ids = [b.id for b in fmserve._batch(p, c.find_brief(p, "T-0001"), set(), 3)]
+        with mock.patch.object(serve, "_pairs", return_value={"src/api.py": ["src/client.py"]}, create=True):
+            ids = [b.id for b in serve._batch(p, c.find_brief(p, "T-0001"), set(), 3)]
         self.assertEqual(ids, ["T-0001", "T-0003"])
 
     def test_scopes_are_compared_as_paths(self):
-        import fmserve
+        from sampo import serve
         for a, b in (("./a.txt", "a.txt"), ("src//x.py", "src/x.py"), ("src/{a,b}.py", "src/a.py"), ("plugin/", "plugin/x")):
-            self.assertTrue(fmserve._overlap(a, b), (a, b))  # review: the same file in another spelling
-        self.assertFalse(fmserve._overlap("src/a.py", "lib/a.py"))
+            self.assertTrue(serve._overlap(a, b), (a, b))  # review: the same file in another spelling
+        self.assertFalse(serve._overlap("src/a.py", "lib/a.py"))
 
     def test_a_lane_that_cant_be_made_is_skipped_not_retried_forever(self):
         self.task("one", "work-T-0001.txt")
@@ -143,8 +143,8 @@ class Parallel(ForemanTestCase):
     def test_a_failure_mid_batch_stops_every_session_and_frees_its_tasks(self):
         # session audit: sessions run in their own process group, so an error or Ctrl-C while waiting left them
         # running unwatched, and the lanes kept holding their tasks
-        import fmcore as c
-        import fmserve
+        from sampo import core as c
+        from sampo import serve
         from types import SimpleNamespace
         from unittest import mock
         self.task("one", "work-T-0001.txt")
@@ -157,21 +157,21 @@ class Parallel(ForemanTestCase):
         batch = [c.find_brief(p, "T-0001"), c.find_brief(p, "T-0002")]
         lanes_freed = lambda: (self.assertEqual(self.git("worktree", "list").count("\n"), 1),
                                self.assertFalse([t for t in ("T-0001", "T-0002") if c.find_brief(p, t).meta.get("lane")]))
-        with mock.patch.object(fmserve, "_claude_cmd", lambda *a, it=iter(["quick", "slow"]): [os.path.join(self.bin, next(it))]):
+        with mock.patch.object(serve, "_claude_cmd", lambda *a, it=iter(["quick", "slow"]): [os.path.join(self.bin, next(it))]):
             with self.assertRaises(IsADirectoryError):  # the run log can't be written once the first session ends
-                fmserve._run_lanes(p, batch, SimpleNamespace(timeout=1), {}, self.tmp)
+                serve._run_lanes(p, batch, SimpleNamespace(timeout=1), {}, self.tmp)
         pid = int(open(pids).read().split()[0])
         self.assertRaises(ProcessLookupError, os.kill, pid, 0)
         lanes_freed()
-        with mock.patch.object(fmserve, "_claude_cmd", lambda *a, it=iter(["slow", "missing"]): [os.path.join(self.bin, next(it))]):
+        with mock.patch.object(serve, "_claude_cmd", lambda *a, it=iter(["slow", "missing"]): [os.path.join(self.bin, next(it))]):
             with self.assertRaises(FileNotFoundError):  # claude can't be started for the second
-                fmserve._run_lanes(p, batch, SimpleNamespace(timeout=1), {}, os.path.join(self.tmp, "run.log"))
+                serve._run_lanes(p, batch, SimpleNamespace(timeout=1), {}, os.path.join(self.tmp, "run.log"))
         lanes_freed()
 
     def test_a_lane_with_no_progress_is_blocked(self):
         # T-0968: a lane session that changes nothing is quarantined like a single session (T-0955), not retried
         # by every later run
-        import fmcore as c
+        from sampo import core as c
         self.task("one", "work-T-0001.txt")
         self.task("two", "work-T-0002.txt")
         self.stub("claude", f'echo "start $FOREMAN_DRIVE_TASK $PWD" >> {self.log}\nsleep 1\n')  # does nothing
@@ -196,8 +196,8 @@ class Parallel(ForemanTestCase):
 
     def test_main_moving_during_the_gates_keeps_the_lane(self):
         # session audit: main was checked once, before a gate run of up to an hour; a branch switch meanwhile got the merge
-        import fmcore as c
-        import fmserve
+        from sampo import core as c
+        from sampo import serve
         self.task("one", "work-T-0001.txt")
         path = json.loads(self.fm("lane", "new", "T-0001", "--json").stdout)["path"]
         with open(os.path.join(path, "work-T-0001.txt"), "w") as f:
@@ -205,7 +205,7 @@ class Parallel(ForemanTestCase):
         subprocess.run(["git", "-C", path, "add", "work-T-0001.txt"], check=True)
         subprocess.run(["git", "-C", path, "commit", "-qm", "work T-0001"], check=True)
         self.fm("check", "add", f"git -C {self.repo} checkout -q -b other")
-        how = fmserve._integrate_lane(c.find_project(self.repo), "T-0001", path)
+        how = serve._integrate_lane(c.find_project(self.repo), "T-0001", path)
         self.assertIn("kept", how)
         self.assertNotIn("work T-0001", self.git("log", "other", "--format=%s"))
 

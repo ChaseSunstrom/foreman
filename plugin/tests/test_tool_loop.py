@@ -8,7 +8,7 @@ from unittest import mock
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class MissLoop(ForemanTestCase):
@@ -135,15 +135,15 @@ class MissLoop(ForemanTestCase):
         self.closes()
 
     def test_a_resolving_pass_is_a_ledger_event_and_readers_never_scan_events(self):
-        import fmmiss
+        from sampo import miss as smiss
         self.miss()
         self.passed("true gizmo")
         (e,) = c.ledger_events(self.p, ["miss_resolved"])
         self.assertEqual((e["task"], e["data"]["name"]), (self.tid, "gizmo"))
         with mock.patch.object(c, "global_events", side_effect=AssertionError("no events scan")):
-            self.assertEqual(fmmiss.open_misses(self.p, c.find_brief(self.p, self.tid)), [])
+            self.assertEqual(smiss.open_misses(self.p, c.find_brief(self.p, self.tid)), [])
             self.miss("false gizmo")
-            self.assertEqual([m["name"] for m in fmmiss.open_misses(self.p, c.find_brief(self.p, self.tid))], ["gizmo"])
+            self.assertEqual([m["name"] for m in smiss.open_misses(self.p, c.find_brief(self.p, self.tid))], ["gizmo"])
 
     def test_the_refusal_prints_the_whole_command_and_the_way_to_run_it_green(self):
         self.miss("true gizmo --flag " + "y" * 200)

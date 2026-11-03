@@ -9,7 +9,7 @@ import time
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class Base(ForemanTestCase):
@@ -206,10 +206,10 @@ class TrackRecord(Base):
     def test_a_close_still_in_its_window_is_neither_held_nor_in_the_loss_rate(self):  # T-2584
         old, fresh = self.done("Old"), self.done("Fresh")
         self.age(old, 31)
-        outs = fmoutcomes.outcomes(self.p)
-        self.assertEqual(fmoutcomes._row(fmoutcomes.track(self.p, outs)[("FEATURE", "S")]).split(", ", 1)[1],
+        outs = outcomes.outcomes(self.p)
+        self.assertEqual(outcomes._row(outcomes.track(self.p, outs)[("FEATURE", "S")]).split(", ", 1)[1],
                          "1 of 1 held, 1 still in the 30-day window")
-        line = fmoutcomes.survival_lines(self.p, outs)[0]
+        line = outcomes.survival_lines(self.p, outs)[0]
         self.assertIn("of 2 closes, 1 finished the window: 0 lost (0%), 1 survived; 1 still in it (0 lost so far)", line)
 
     def test_track_record_and_would_do_differently_in_digest_and_focus(self):
@@ -230,9 +230,9 @@ class Predictions(Base):
     """T-2290: focus predicts minutes and attempts from the closes of the same tier and type; the close scores them."""
 
     def seed(self, n, minutes=10, attempts=1, typ="FEATURE", tier="S"):
-        import fmoutcomes
+        from sampo import outcomes
         for i in range(n):
-            fmoutcomes.record_close(self.p, dict(type=typ, tier=tier, minutes=minutes + i, attempts=attempts))
+            outcomes.record_close(self.p, dict(type=typ, tier=tier, minutes=minutes + i, attempts=attempts))
 
     def new(self, title="Work", **kw):
         tid = self.fm_json("task", "new", title, "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")["id"]
@@ -264,13 +264,13 @@ class Predictions(Base):
         self.fm("task", "finish", t, "--audit", "self", "--run", "true")
         d = next(e["data"] for e in c.ledger_events(self.p, ("task_done",)) if e["task"] == t)
         self.assertEqual((d["predict_minutes"], d["minutes"], d["attempts"]), (12, 0, 1))
-        import fmoutcomes
-        self.assertEqual(len(fmoutcomes.history(self.p, "FEATURE", "S")), 6, "the close joins the history")
+        from sampo import outcomes
+        self.assertEqual(len(outcomes.history(self.p, "FEATURE", "S")), 6, "the close joins the history")
 
     def test_calibration_prints_the_median_ratio_per_tier(self):
-        import fmoutcomes
+        from sampo import outcomes
         for actual in (10, 20, 40):
-            fmoutcomes.record_close(self.p, dict(type="FEATURE", tier="S", minutes=actual, predict_minutes=10))
+            outcomes.record_close(self.p, dict(type="FEATURE", tier="S", minutes=actual, predict_minutes=10))
         out = self.fm("outcomes", "--calibration").stdout
         self.assertRegex(out, r"S: median actual/predicted 2\.0x over 3")
 
@@ -291,7 +291,7 @@ class Predictions(Base):
         self.assertNotIn("3x its prediction", self.fm("next").stdout, "said once")
 
     def test_first_use_backfills_the_history_from_task_done_events(self):
-        import fmoutcomes
+        from sampo import outcomes
         ids = [self.new(f"Old {i}") for i in range(5)]
         for i, tid in enumerate(ids):  # closes logged before closes.jsonl existed: no type or tier in the event
             c.log_event(self.p, "task_done", task=tid, data={"minutes": 10 + i, "attempts": 2})
@@ -302,7 +302,7 @@ class Predictions(Base):
         self.fm("focus", t)
         m = c.find_brief(self.p, t).meta
         self.assertEqual((int(m["predict_minutes"]), int(m["predict_attempts"])), (12, 2))
-        self.assertEqual(len(fmoutcomes.history(self.p, "FEATURE", "S")), 5)
+        self.assertEqual(len(outcomes.history(self.p, "FEATURE", "S")), 5)
         self.assertTrue(os.path.exists(path), "written once")
 
 
@@ -378,8 +378,8 @@ class ModelRouter(Base):
                 self.fm("capture", f"{t} broke the export", "--type", "FIX", "--tier", "S")
 
     def route(self):
-        import fmlanes
-        return fmlanes.model_route(c.find_project(self.repo), "S")
+        from sampo import lanes
+        return lanes.model_route(c.find_project(self.repo), "S")
 
     def test_a_cheaper_model_that_keeps_needing_rework_escalates_to_opus(self):
         self.seed("sonnet", 6, 4)
@@ -400,8 +400,8 @@ class ModelRouter(Base):
 # --- T-2337 (Mission 5, #8): the calibration ledger -------------------------------------------------------------
 import datetime
 
-import fmoutcomes
-import fmtrials
+from sampo import outcomes
+from sampo import trials as strials
 
 
 class CalBase(Base):
@@ -509,12 +509,12 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
     def test_outcomes_score_each_row_pending_until_the_window_closes(self):
         held, broke, fresh = self.done("Held"), self.done("Broke"), self.done("Fresh")
         for tid in (held, broke, fresh):
-            fmoutcomes.bet(self.p, "task", 90, task=tid, key="confidence", tier="S", typ="FEATURE")
+            outcomes.bet(self.p, "task", 90, task=tid, key="confidence", tier="S", typ="FEATURE")
         self.age(held, 31)
         self.age(broke, 10)
         self.fm("capture", f"Crash in what {broke} added", "--type", "FIX", "--tier", "S")
         data = self.cal()
-        by = {r["task"]: r for r in fmoutcomes.scored(self.p)}
+        by = {r["task"]: r for r in outcomes.scored(self.p)}
         self.assertEqual({t: by[t]["outcome"] for t in (held, broke, fresh)},
                          {held: "held", broke: None, fresh: None}, "settling is pending, never held")
         self.assertEqual(by[broke]["early"], "missed", "T-2610: a loss inside the window waits for it too")
@@ -530,8 +530,8 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
                 "--focus")
         tid = c.load_briefs(self.p)[-1].id
         c.log_event(self.p, "finish", task=tid, data={"failed": ["x"]})
-        fmoutcomes.bet(self.p, "task", 95, task=tid, key="confidence", tier="S", typ="FEATURE")
-        self.assertEqual([r["outcome"] for r in fmoutcomes.scored(self.p)], ["missed"])
+        outcomes.bet(self.p, "task", 95, task=tid, key="confidence", tier="S", typ="FEATURE")
+        self.assertEqual([r["outcome"] for r in outcomes.scored(self.p)], ["missed"])
 
     def test_assumption_marks_and_reversed_decisions_score(self):
         tid = self.planned(assume=["it is fast (80%)", "it is small (75%)"], choice="Choice 1 (80%): a")
@@ -542,7 +542,7 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         self.fm("decide", "Use Redis for rate limits", "--confidence", "90")
         self.fm("decide", "Use Postgres for sessions instead", "--reverses", "Use Redis for sessions")
         data = self.cal()
-        got = {(r["kind"], r["key"]): r["outcome"] for r in fmoutcomes.scored(self.p)}
+        got = {(r["kind"], r["key"]): r["outcome"] for r in outcomes.scored(self.p)}
         self.assertEqual(got[("assumption", "A1")], "held")
         self.assertEqual(got[("assumption", "A2")], "missed")
         self.assertEqual(got[("decision", "use redis for sessions")], "missed")
@@ -552,9 +552,9 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
     def test_a_race_result_scores_the_race_side(self):
         tid = self.plain()
         other = self.race(tid)
-        self.assertEqual([r["outcome"] for r in fmoutcomes.scored(self.p)], [None])
+        self.assertEqual([r["outcome"] for r in outcomes.scored(self.p)], [None])
         c.log_event(self.p, "race_pick", task=other, data={"winner": other, "loser": tid})
-        self.assertEqual([r["outcome"] for r in fmoutcomes.scored(self.p)], ["missed"])
+        self.assertEqual([r["outcome"] for r in outcomes.scored(self.p)], ["missed"])
 
     def test_the_base_rate_is_the_pairs_held_share_or_all_closes_under_twenty(self):
         outs, first = {}, {}
@@ -563,13 +563,13 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         for i in range(5):  # 5 FIX M closes, all held
             outs[f"F-{i}"] = {"type": "FIX", "tier": "M", "fate": "held"}
         first["T-0"], first["T-1"] = False, False  # two of the held FEATURE S closes failed their first finish
-        self.assertEqual(fmoutcomes.base_rate(outs, first, "FEATURE", "S"), 40, "8 of 20: the pair has 20")
-        self.assertEqual(fmoutcomes.base_rate(outs, first, "FIX", "M"), 52, "5 closes: all 25 count, 13 held first")
-        self.assertIsNone(fmoutcomes.base_rate({}, {}, "FIX", "M"), "no history is no forecast")
+        self.assertEqual(outcomes.base_rate(outs, first, "FEATURE", "S"), 40, "8 of 20: the pair has 20")
+        self.assertEqual(outcomes.base_rate(outs, first, "FIX", "M"), 52, "5 closes: all 25 count, 13 held first")
+        self.assertIsNone(outcomes.base_rate({}, {}, "FIX", "M"), "no history is no forecast")
 
     def test_the_old_fmoutcomes_calibration_is_gone(self):
-        self.assertFalse(hasattr(fmoutcomes, "calibration"))
-        self.assertFalse(hasattr(fmoutcomes, "calibration_lines"))
+        self.assertFalse(hasattr(outcomes, "calibration"))
+        self.assertFalse(hasattr(outcomes, "calibration_lines"))
 
     def test_a_bet_stated_after_the_task_closed_is_never_recorded(self):
         tid = self.done("Closed already")
@@ -588,7 +588,7 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
 
     def test_a_decision_is_not_scored_against_its_own_reversal_event(self):
         self.fm("decide", "Use Redis for sessions v2", "--reverses", "use redis for sessions", "--confidence", "80")
-        got = {r["key"]: r["outcome"] for r in fmoutcomes.scored(self.p)}
+        got = {r["key"]: r["outcome"] for r in outcomes.scored(self.p)}
         self.assertIsNone(got["use redis for sessions v2"], "its own --reverses words are not a later reversal")
 
     def test_a_restated_decision_says_its_bet_was_ignored(self):
@@ -603,20 +603,20 @@ class CalibrationLedgerBets(CalBase):  # not CalibrationLedger: test_planning ha
         self.fm("task", "new", "Silent", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
                 "--focus")
         b = c.load_briefs(self.p)[-1]
-        with mock.patch.object(fmoutcomes, "outcomes", side_effect=AssertionError("outcomes() ran")), \
-                mock.patch.object(fmoutcomes, "_first_finish", side_effect=AssertionError("ran")), \
-                mock.patch.object(fmoutcomes, "_tree", side_effect=AssertionError("ran")):
-            fmoutcomes.record_stated(self.p, b)  # swallows errors, so look at the mocks' own calls
+        with mock.patch.object(outcomes, "outcomes", side_effect=AssertionError("outcomes() ran")), \
+                mock.patch.object(outcomes, "_first_finish", side_effect=AssertionError("ran")), \
+                mock.patch.object(outcomes, "_tree", side_effect=AssertionError("ran")):
+            outcomes.record_stated(self.p, b)  # swallows errors, so look at the mocks' own calls
             for name in ("outcomes", "_first_finish", "_tree"):
-                self.assertFalse(getattr(fmoutcomes, name).called, name)
+                self.assertFalse(getattr(outcomes, name).called, name)
 
     def test_record_stated_skips_the_work_when_every_key_is_already_a_bet(self):
         from unittest import mock
         tid = self.planned(conf=90)
         self.fm("focus", tid)
         b = c.find_brief(self.p, tid)
-        with mock.patch.object(fmoutcomes, "outcomes") as outs:
-            fmoutcomes.record_stated(self.p, b)
+        with mock.patch.object(outcomes, "outcomes") as outs:
+            outcomes.record_stated(self.p, b)
         outs.assert_not_called()
         self.assertEqual(len(self.bets("task")), 1)
 
@@ -648,11 +648,11 @@ class CalibrationTrails(CalBase):  # T-2499: the digest names the kind whose Bri
         self.seed("choice", 90, 6, 12, base=60)  # stated 90, held half: Brier 0.41 against the base rate's 0.26
         self.seed("task", 70, 8, 12, base=70, prefix="t")  # stated equals the base rate: no trail
         self.assertIn("trails its base rate most: choice (Brier stated 0.41 vs base 0.26, n 12)",
-                      fmoutcomes.ledger_lines(self.p)[0])
+                      outcomes.ledger_lines(self.p)[0])
 
     def test_under_twenty_scored_says_too_few(self):
         self.seed("choice", 90, 6, 10, base=60)
-        self.assertIn("too few", fmoutcomes.ledger_lines(self.p)[0])
+        self.assertIn("too few", outcomes.ledger_lines(self.p)[0])
 
 
 class CalibrationInterim(CalBase):  # T-2498: a week-old close reads "held so far", labeled, never scored
@@ -666,9 +666,9 @@ class CalibrationInterim(CalBase):  # T-2498: a week-old close reads "held so fa
                 "T-2": {"survival": "settling", "days_left": 20, "fate": "corrected"},
                 "T-3": {"survival": "settling", "days_left": 27, "fate": "held"},
                 "T-4": {"survival": "survived", "fate": "held"}}
-        got = fmoutcomes.interim(rows, outs)
+        got = outcomes.interim(rows, outs)
         self.assertEqual(got, {"choice": [{"lo": 60, "hi": 79, "n": 2, "held": 1, "pct": 50}]})
-        self.assertEqual(fmoutcomes._interim_line({"interim": got}),
+        self.assertEqual(outcomes._interim_line({"interim": got}),
                          "Interim (closed 7+ days ago, not scored): choice 60–79%: 1 of 2 held so far")
 
     def test_the_judgment_json_carries_interim(self):
@@ -700,11 +700,11 @@ class CalibrationBars(CalBase):
         self.assertEqual(self.meta_bars()["research"], 80)
         decisions = open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read()
         self.assertRegex(decisions, r"research bar 70 → 80")
-        trials = fmtrials.load(self.p)
+        trials = strials.load(self.p)
         self.assertEqual([t["moves"] for t in trials], ["brier"])
         self.assertIn("research bar", trials[0]["what"])
         self.fm("outcomes", "--judgment")  # the same rows raise nothing twice
-        self.assertEqual((self.meta_bars()["research"], len(fmtrials.load(self.p))), (80, 1))
+        self.assertEqual((self.meta_bars()["research"], len(strials.load(self.p))), (80, 1))
         self.seed("choice", 90, 10, 20, prefix="more")  # twenty fresh rows, still over: one more step
         self.assertEqual(self.cal()["bars"]["research"], 90)
 
@@ -715,7 +715,7 @@ class CalibrationBars(CalBase):
         self.assertEqual(self.meta_bars().get("research"), 80)
         self.assertRegex(open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read(),
                          r"research bar 70 → 80")
-        self.assertEqual(len(fmtrials.load(self.p)), 1)
+        self.assertEqual(len(strials.load(self.p)), 1)
 
     def test_only_survival_signals_move_a_bar_foremans_own_marks_only_score(self):
         self.seed("race", 90, 10, 20)  # 40 points over, scored by Foreman's own race pick
@@ -725,7 +725,7 @@ class CalibrationBars(CalBase):
         data = self.cal()
         self.assertEqual(data["bars"], {"research": 70, "race": 55}, "none of these raise a bar")
         self.assertEqual(self.meta_bars(), {})
-        self.assertEqual(fmtrials.load(self.p), [])
+        self.assertEqual(strials.load(self.p), [])
         self.assertEqual(data["scored"], 80, "they still score in the report")
         self.assertRegex(self.fm("outcomes", "--judgment").stdout, r"race 80–94%: n 20")
         self.seed("task", 90, 10, 20, src="survival", prefix="surv")
@@ -737,7 +737,7 @@ class CalibrationBars(CalBase):
         self.seed("task", 90, 10, 20, tasks=True, prefix="b")  # twenty more rows of the same twenty closes
         self.assertEqual(self.cal()["bars"]["research"], 80)
         self.assertEqual(self.cal()["bars"]["research"], 80, "ten closes can't raise it twice")
-        self.assertEqual(len(fmtrials.load(self.p)), 1)
+        self.assertEqual(len(strials.load(self.p)), 1)
 
     def test_a_bar_stops_at_ninety_and_a_small_gap_raises_nothing(self):
         c.update_meta(self.p, calibration_bars={"research": 85})
@@ -745,7 +745,7 @@ class CalibrationBars(CalBase):
         self.assertEqual(self.cal()["bars"]["research"], 90, "at most 10 points, at most 90")
         self.seed("task", 70, 12, 20)  # stated 70, held 60%: 10 points, under the 15
         self.assertEqual(self.cal()["bars"]["research"], 90)
-        self.assertEqual(len(fmtrials.load(self.p)), 1)
+        self.assertEqual(len(strials.load(self.p)), 1)
 
     def test_a_hand_set_bar_above_ninety_is_kept(self):
         c.update_meta(self.p, calibration_bars={"research": 95})
@@ -756,13 +756,13 @@ class CalibrationBars(CalBase):
     def test_a_failed_trial_add_leaves_no_raise_behind(self):
         from unittest import mock
         self.seed("choice", 90, 10, 20)
-        with mock.patch.object(fmtrials, "add", side_effect=OSError("disk full")):
-            fmoutcomes.adjust_bars(self.p, fmoutcomes.bar_rows(fmoutcomes.scored(self.p)))
+        with mock.patch.object(strials, "add", side_effect=OSError("disk full")):
+            outcomes.adjust_bars(self.p, outcomes.bar_rows(outcomes.scored(self.p)))
         self.assertEqual(self.meta_bars(), {})
         self.assertFalse(os.path.exists(os.path.join(self.p.dir, "decisions.md"))
                          and "research bar" in open(os.path.join(self.p.dir, "decisions.md"), encoding="utf-8").read())
         self.assertEqual(self.cal()["bars"]["research"], 80, "the next look raises it, with its trial")
-        self.assertEqual(len(fmtrials.load(self.p)), 1)
+        self.assertEqual(len(strials.load(self.p)), 1)
 
     def test_an_underconfident_bucket_is_reported_once_for_the_final_report_and_the_bar_stays(self):
         self.seed("choice", 70, 20, 20)  # stated 70, held 100%
@@ -779,30 +779,30 @@ class CalibrationBars(CalBase):
         self.seed("task", 70, 14, 20, base=50, tier="M", prefix="m")  # stated .21, base .25: stated stays
         self.assertEqual(self.cal()["routes"], {"FEATURE S": 70})
         self.assertIn("FEATURE S: the base rate's 70% replaces the stated numbers", self.fm("outcomes", "--judgment").stdout)
-        self.assertFalse(hasattr(fmoutcomes, "routed"), "routes() in the report is the only reader; no dead twin")
+        self.assertFalse(hasattr(outcomes, "routed"), "routes() in the report is the only reader; no dead twin")
 
     def test_digest_reads_the_ledger_and_cost_still_runs(self):
         self.seed("task", 90, 14, 20, base=70)
         self.assertRegex(self.fm("digest").stdout, r"(?s)Calibration.*task 80–94%: n 20, held 14")
-        with open(os.path.join(os.path.dirname(fmoutcomes.__file__), "fmcost.py"), encoding="utf-8") as f:
+        with open(os.path.join(os.path.dirname(outcomes.__file__), "cost.py"), encoding="utf-8") as f:
             self.assertNotIn("calibration_lines", f.read(), "fm cost reads the ledger, not the removed function")
 
     def test_a_trial_for_a_bar_grades_on_brier_and_reverts_when_nothing_improved(self):
         self.seed("choice", 90, 10, 20)
         self.cal()
-        t = fmtrials.load(self.p)[0]
-        later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=t["by"] + 1 + fmoutcomes.SURVIVE_DAYS)
-        verdict, detail = fmtrials.grade(self.p, t, now=later)  # T-2610: past the windows, whichever side the seeds fell
+        t = strials.load(self.p)[0]
+        later = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=t["by"] + 1 + outcomes.SURVIVE_DAYS)
+        verdict, detail = strials.grade(self.p, t, now=later)  # T-2610: past the windows, whichever side the seeds fell
         self.assertEqual(verdict, "revert")
         self.assertIn("Brier", detail)
 
     def test_a_brier_trial_waits_while_the_bets_since_the_move_are_inside_their_windows(self):  # T-2610
         t = {"what": "research bar 70 → 75", "moves": "brier", "by": 30, "at": c.now()}
         due = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=31)
-        verdict, detail = fmtrials.grade(self.p, t, now=due)
+        verdict, detail = strials.grade(self.p, t, now=due)
         self.assertEqual(verdict, "pending", detail)
         self.assertIn("30-day windows", detail)
-        verdict, detail = fmtrials.grade(self.p, t, now=due + datetime.timedelta(days=fmoutcomes.SURVIVE_DAYS))
+        verdict, detail = strials.grade(self.p, t, now=due + datetime.timedelta(days=outcomes.SURVIVE_DAYS))
         self.assertEqual(verdict, "revert", "the wait is capped: no bet scored by then is no movement")
 
 
@@ -820,17 +820,17 @@ class CensoredReads(CalBase):  # T-2610: a miss lands mid-window, a hold only af
         self.age(old, 31)
         fresh = self.done("Fresh")
         self.fm("capture", f"Crash after {fresh}", "--type", "FIX", "--tier", "S")
-        outs = fmoutcomes.outcomes(self.p)
+        outs = outcomes.outcomes(self.p)
         self.assertEqual(outs[fresh]["survival"], "lost")
-        self.assertEqual(fmoutcomes._row(fmoutcomes.track(self.p, outs)[("FEATURE", "S")]).split(", ", 1)[1],
+        self.assertEqual(outcomes._row(outcomes.track(self.p, outs)[("FEATURE", "S")]).split(", ", 1)[1],
                          "1 of 1 held, 1 still in the 30-day window", "the fresh loss waits with the fresh holds")
 
     def test_a_bet_missed_inside_an_open_window_is_pending_and_named_apart(self):
         tid = self.lost_now(conf=90)
-        rows = [r for r in fmoutcomes.scored(self.p) if r["task"] == tid]
+        rows = [r for r in outcomes.scored(self.p) if r["task"] == tid]
         self.assertEqual({r["kind"] for r in rows}, {"task", "choice"})
         self.assertTrue(all(r["outcome"] is None and r["early"] == "missed" for r in rows), rows)
-        self.assertEqual(fmoutcomes.bar_rows(fmoutcomes.scored(self.p)), [], "the bar check waits for the window")
+        self.assertEqual(outcomes.bar_rows(outcomes.scored(self.p)), [], "the bar check waits for the window")
         d = self.cal()
         self.assertEqual((d["scored"], d["kinds"], d["open_missed"]), (0, {}, 2))
         self.assertIn("2 task or choice bet(s) missed inside a 30-day window still open: scored when it ends",
@@ -845,17 +845,17 @@ class CensoredReads(CalBase):  # T-2610: a miss lands mid-window, a hold only af
         outs = {"A": {"type": "FEATURE", "tier": "S", "fate": "reverted", "window_done": False},
                 "B": {"type": "FEATURE", "tier": "S", "fate": "held", "window_done": True},
                 "C": {"type": "FEATURE", "tier": "S", "fate": "held"}}
-        self.assertEqual(fmoutcomes.base_rate(outs, {}, "FEATURE", "S"), 100, "A's window is still open")
-        self.assertIsNone(fmoutcomes.base_rate({"A": outs["A"]}, {}, "FEATURE", "S"), "only open windows: no forecast")
+        self.assertEqual(outcomes.base_rate(outs, {}, "FEATURE", "S"), 100, "A's window is still open")
+        self.assertIsNone(outcomes.base_rate({"A": outs["A"]}, {}, "FEATURE", "S"), "only open windows: no forecast")
 
     def test_the_interim_read_counts_an_early_loss_as_not_held_so_far(self):
         rows = [{"kind": "choice", "stated": 75, "outcome": None, "early": "missed", "task": "T-1"},
                 {"kind": "choice", "stated": 75, "outcome": None, "task": "T-2"}]
         outs = {"T-1": {"survival": "lost", "days_left": 22, "fate": "fixed later", "window_done": False},
                 "T-2": {"survival": "settling", "days_left": 22, "fate": "held", "window_done": False}}
-        self.assertEqual(fmoutcomes.interim(rows, outs), {"choice": [{"lo": 60, "hi": 79, "n": 2, "held": 1, "pct": 50}]})
+        self.assertEqual(outcomes.interim(rows, outs), {"choice": [{"lo": 60, "hi": 79, "n": 2, "held": 1, "pct": 50}]})
 
     def test_a_loss_inside_an_open_window_carries_its_days_left(self):
         fresh = self.done("Fresh")
         self.fm("capture", f"Crash after {fresh}", "--type", "FIX", "--tier", "S")
-        self.assertGreater(fmoutcomes.outcomes(self.p)[fresh]["days_left"], 25)
+        self.assertGreater(outcomes.outcomes(self.p)[fresh]["days_left"], 25)

@@ -14,12 +14,12 @@ from unittest import mock
 
 from helpers import ForemanTestCase
 
-import fmcli
-import fmcodetui as T
-import fmmodels
-import fmcore as c
-import fmeco
-import fmsettingsserve
+from sampo import cli
+from sampo import smithtui as T
+from sampo import models
+from sampo import core as c
+from sampo import eco
+from sampo import settingsserve
 
 
 class _Inbox(ForemanTestCase):
@@ -52,7 +52,7 @@ class Swipe(_Inbox):
             except StopIteration:
                 raise EOFError from None
         with mock.patch("builtins.input", ask), contextlib.redirect_stdout(out):
-            return fmeco.swipe_loop(self.p), out.getvalue()
+            return eco.swipe_loop(self.p), out.getvalue()
 
     def test_the_terminal_loop_applies_each_verdict_as_it_is_said(self):
         self.deferred("Port the CLI to Windows", "Add a plugin marketplace page", "Support YAML config files",
@@ -73,9 +73,9 @@ class Swipe(_Inbox):
 
     def test_an_item_changed_elsewhere_is_said_and_the_sweep_goes_on(self):
         self.deferred("Port the CLI to Windows", "Add a plugin marketplace page")
-        items = fmeco.swipe_list(self.p)
-        fmeco.swipe_apply(self.p, "T-0001:revive")  # another session, after the list was read
-        with mock.patch.object(fmeco, "swipe_list", return_value=items):
+        items = eco.swipe_list(self.p)
+        eco.swipe_apply(self.p, "T-0001:revive")  # another session, after the list was read
+        with mock.patch.object(eco, "swipe_list", return_value=items):
             said, out = self.loop("k", "d")
         self.assertEqual(said, ["T-0002 dropped"])
         self.assertIn("T-0001 is not deferred", out)
@@ -99,13 +99,13 @@ class Swipe(_Inbox):
     def test_an_undo_leaves_an_item_changed_elsewhere_or_a_dropped_batch_alone(self):
         self.deferred("Port the CLI to Windows", "Add a plugin marketplace page")
         undo = []
-        fmeco.swipe_apply(self.p, "T-0001:revive", undo)
+        eco.swipe_apply(self.p, "T-0001:revive", undo)
         self.fm("task", "drop", "T-0001", "not wanted")  # another session, since
-        self.assertFalse(fmeco.swipe_undo(self.p, undo, set())[0])
+        self.assertFalse(eco.swipe_undo(self.p, undo, set())[0])
         self.assertEqual((self.status()["T-0001"], undo), ("dropped", []))
-        fmcli.mutate(self.p, "T-0002", lambda b: b.meta.update(batch=["T-0009"]), "test")
-        fmeco.swipe_apply(self.p, "T-0002:drop", undo)
-        ok, said = fmeco.swipe_undo(self.p, undo, set())
+        cli.mutate(self.p, "T-0002", lambda b: b.meta.update(batch=["T-0009"]), "test")
+        eco.swipe_apply(self.p, "T-0002:drop", undo)
+        ok, said = eco.swipe_undo(self.p, undo, set())
         self.assertEqual((ok, self.status()["T-0002"]), (False, "dropped"))
         self.assertIn("batch", said)
 
@@ -113,24 +113,24 @@ class Swipe(_Inbox):
         self.deferred("Port the CLI to Windows")
         seen, undo = set(), []
         for _ in range(2):
-            self.assertEqual(fmeco.swipe_post(self.p, seen, {"id": "T-0001", "verdict": "skip"}, undo),
+            self.assertEqual(eco.swipe_post(self.p, seen, {"id": "T-0001", "verdict": "skip"}, undo),
                              (True, "T-0001 skipped"))
         self.assertEqual(undo, [("T-0001", "skip", None)])
 
     def test_an_empty_deck_ends_with_one_line(self):
-        with mock.patch.object(fmeco, "_tty", return_value=True), mock.patch.object(fmcli, "resolve", return_value=self.p), \
+        with mock.patch.object(eco, "_tty", return_value=True), mock.patch.object(cli, "resolve", return_value=self.p), \
                 contextlib.redirect_stdout(io.StringIO()) as out:
-            fmeco.cmd_inbox(fmcli.build_parser().parse_args(["inbox", "swipe"]))
+            eco.cmd_inbox(cli.build_parser().parse_args(["inbox", "swipe"]))
         self.assertEqual(out.getvalue(), "Nothing is deferred.\n")
 
     def test_a_terminal_gets_the_loop_and_a_pipe_or_json_the_list(self):
         self.deferred("Port the CLI to Windows")
-        import fmcli
-        parse = fmcli.build_parser().parse_args
-        with mock.patch.object(fmeco, "_tty", return_value=True), mock.patch.object(fmcli, "resolve", return_value=self.p), \
-                mock.patch.object(fmeco, "swipe_loop", return_value=[]) as loop, contextlib.redirect_stdout(io.StringIO()):
-            fmeco.cmd_inbox(parse(["inbox", "swipe"]))
-            fmeco.cmd_inbox(parse(["inbox", "swipe", "--json"]))
+        from sampo import cli
+        parse = cli.build_parser().parse_args
+        with mock.patch.object(eco, "_tty", return_value=True), mock.patch.object(cli, "resolve", return_value=self.p), \
+                mock.patch.object(eco, "swipe_loop", return_value=[]) as loop, contextlib.redirect_stdout(io.StringIO()):
+            eco.cmd_inbox(parse(["inbox", "swipe"]))
+            eco.cmd_inbox(parse(["inbox", "swipe", "--json"]))
         self.assertEqual(loop.call_count, 1)
         self.assertIn("T-0001", self.fm("inbox", "swipe").stdout, "piped: the list, as before")
 
@@ -149,9 +149,9 @@ class Pick(_Inbox):
             random = staticmethod(lambda: 0.0)
             choice = staticmethod(lambda xs: xs[-1])
         ids = lambda got: [[x["a"]["id"], x["b"]["id"]] for x in got]  # noqa: E731
-        self.assertEqual(ids(fmeco.inbox_pick(self.p, epsilon=1.0, rng=Far)),
+        self.assertEqual(ids(eco.inbox_pick(self.p, epsilon=1.0, rng=Far)),
                          [["T-0001", "T-0006"], ["T-0002", "T-0005"], ["T-0003", "T-0004"]])
-        self.assertEqual(ids(fmeco.inbox_pick(self.p, epsilon=0.0, rng=Far)),
+        self.assertEqual(ids(eco.inbox_pick(self.p, epsilon=0.0, rng=Far)),
                          [["T-0001", "T-0002"], ["T-0003", "T-0004"], ["T-0005", "T-0006"]])
         for bad in ("1.5", "-0.1", "x", "nan"):
             self.assertEqual(self.fm("inbox", "pick", "--epsilon", bad, check=False).returncode, 1, bad)
@@ -194,14 +194,14 @@ class Triage(_Inbox):
     def test_triage_opens_the_surface_that_fits(self):  # T-1872
         self.deferred("Port the CLI to Windows")
         self.fm("capture", "Fix the typo in the README", "--tier", "S", "--type", "FIX", "--anyway")
-        parse = fmcli.build_parser().parse_args
-        with mock.patch.object(fmeco, "_tty", return_value=True), mock.patch.object(fmcli, "resolve", return_value=self.p), \
-                mock.patch.object(fmeco, "swipe_loop", return_value=[]) as loop, \
-                mock.patch.object(fmeco, "swipe_server", return_value=(None, None)), \
-                mock.patch.object(fmsettingsserve, "run", return_value=0) as serve, contextlib.redirect_stdout(io.StringIO()):
-            fmeco.cmd_triage(parse(["triage"]))
-            fmeco.cmd_triage(parse(["triage", "--serve"]))
-            fmeco.cmd_triage(parse(["triage", "--json"]))  # JSON on a terminal is the list, never the loop
+        parse = cli.build_parser().parse_args
+        with mock.patch.object(eco, "_tty", return_value=True), mock.patch.object(cli, "resolve", return_value=self.p), \
+                mock.patch.object(eco, "swipe_loop", return_value=[]) as loop, \
+                mock.patch.object(eco, "swipe_server", return_value=(None, None)), \
+                mock.patch.object(settingsserve, "run", return_value=0) as serve, contextlib.redirect_stdout(io.StringIO()):
+            eco.cmd_triage(parse(["triage"]))
+            eco.cmd_triage(parse(["triage", "--serve"]))
+            eco.cmd_triage(parse(["triage", "--json"]))  # JSON on a terminal is the list, never the loop
         self.assertEqual((loop.call_count, serve.call_count), (1, 1))
         self.assertIn("Fix the typo in the README", self.fm("triage").stdout, "piped: the small items ready to start")
         self.assertEqual(json.loads(self.fm("triage", "--json").stdout)["first"][0]["title"], "Fix the typo in the README")
@@ -212,9 +212,9 @@ class Served(_Inbox):
     def setUp(self):
         super().setUp()
         self.deferred("Port the CLI to Windows", "Add a plugin marketplace page", "Support <i>YAML</i> config files")
-        self.server, token = fmeco.swipe_server(self.p)
+        self.server, token = eco.swipe_server(self.p)
         self.port, self.cookie, self.stop = self.server.server_address[1], None, threading.Event()
-        self.thread = threading.Thread(target=fmsettingsserve.serve, args=(self.server, 30, self.stop), daemon=True)
+        self.thread = threading.Thread(target=settingsserve.serve, args=(self.server, 30, self.stop), daemon=True)
         self.thread.start()
         status, _, h = self.req(f"/?t={token}")
         self.assertEqual(status, 303)
@@ -291,11 +291,11 @@ class Served(_Inbox):
         self.assertEqual(self.fm("inbox", "first", "--serve", check=False).returncode, 1)
         self.assertEqual(self.fm("inbox", "swipe", "--serve", "--apply", "T-0001:drop", check=False).returncode, 1)
         self.assertEqual(self.fm("inbox", "swipe", "--serve", "--json", check=False).returncode, 1)
-        with mock.patch.object(fmsettingsserve, "serve") as served, \
-                mock.patch.object(fmsettingsserve.signal, "signal"), contextlib.redirect_stdout(io.StringIO()) as out:
-            import fmcli
-            with mock.patch.object(fmcli, "resolve", return_value=self.p):
-                fmeco.cmd_inbox(fmcli.build_parser().parse_args(["inbox", "swipe", "--serve"]))
+        with mock.patch.object(settingsserve, "serve") as served, \
+                mock.patch.object(settingsserve.signal, "signal"), contextlib.redirect_stdout(io.StringIO()) as out:
+            from sampo import cli
+            with mock.patch.object(cli, "resolve", return_value=self.p):
+                eco.cmd_inbox(cli.build_parser().parse_args(["inbox", "swipe", "--serve"]))
         self.assertEqual(served.call_count, 1)
         served.call_args.args[0].server_close()
         self.assertIn("Foreman backlog: http://127.0.0.1:", out.getvalue())
@@ -316,8 +316,8 @@ class Ticket(_Inbox):
             if isinstance(answer, Exception):
                 raise answer
             return io.BytesIO(json.dumps(answer).encode())
-        with mock.patch.dict(os.environ, env), mock.patch.object(fmmodels._OPENER, "open", urlopen):
-            return fmeco.inbox_ticket(self.p, ref), sent
+        with mock.patch.dict(os.environ, env), mock.patch.object(models._OPENER, "open", urlopen):
+            return eco.inbox_ticket(self.p, ref), sent
 
     def test_a_jira_key_or_its_url_is_fetched_once_and_made_one_brief(self):
         issue = {"fields": {"summary": "Export crashes on empty reports", "labels": ["backend"],
@@ -332,7 +332,7 @@ class Ticket(_Inbox):
         self.assertEqual(base64.b64decode(req.get_header("Authorization").split()[1]).decode(), f"dev@acme.test:{FAKE}")
         self.assertEqual((b.type, b.title, len(b.acceptance())), ("FIX", "PROJ-12 Export crashes on empty reports", 1))
         self.assertIn("ticket jira PROJ-12", b.render())
-        self.assertEqual(fmeco.ticket_source(b), ("jira", "PROJ-12"))
+        self.assertEqual(eco.ticket_source(b), ("jira", "PROJ-12"))
         self.assertIn(c.DEFANGED, b.section("Raw request"))
         (b2, new), _ = self.fetch("https://acme.atlassian.net/browse/PROJ-12", JIRA, issue)
         self.assertEqual((b2.id, new), (b.id, False), "the same issue again: the brief it already made")
@@ -340,13 +340,13 @@ class Ticket(_Inbox):
         (b4, how), _ = self.fetch("PROJ-12", JIRA, edited)  # T-1869: its unstarted brief, rewritten
         self.assertEqual((b4.id, how, b4.title), (b.id, "refreshed", "PROJ-12 Export crashes on empty and huge reports"))
         sent = []
-        with self.assertRaises(fmcli.UsageError) as e, mock.patch.object(fmmodels._OPENER, "open", sent.append):
+        with self.assertRaises(cli.UsageError) as e, mock.patch.object(models._OPENER, "open", sent.append):
             with mock.patch.dict(os.environ, {**JIRA, "JIRA_URL": "https://u:pw@acme.atlassian.net/"}):  # pragma: allowlist secret
-                fmeco.inbox_ticket(self.p, "https://evil.test/browse/PROJ-12")
+                eco.inbox_ticket(self.p, "https://evil.test/browse/PROJ-12")
         self.assertIn("JIRA_URL's host", str(e.exception))
         self.assertNotIn("pw", str(e.exception), "hosts only: JIRA_URL's credentials are never printed")
         self.assertEqual(sent, [], "nothing is sent to another host")
-        self.assertIsNone(fmeco.ticket_ref("http://[x"))
+        self.assertIsNone(eco.ticket_ref("http://[x"))
         (b3, _), sent = self.fetch("PROJ-13", {**JIRA, "JIRA_EMAIL": ""}, {"fields": {"summary": "Bare token"}})
         self.assertEqual(sent[0].get_header("Authorization"), f"Bearer {FAKE}", "Jira Server/DC: a personal token")
         self.assertEqual(b3.type, "FEATURE")
@@ -360,7 +360,7 @@ class Ticket(_Inbox):
         self.assertEqual((req.full_url, req.get_header("Authorization")), ("https://api.linear.app/graphql", FAKE))
         self.assertEqual(json.loads(req.data)["variables"], {"id": "ENG-7"})
         self.assertEqual((b.type, b.title, len(b.acceptance())), ("FEATURE", "ENG-7 Add CSV export for invoices", 1))
-        with self.assertRaises(fmcli.UsageError) as e:
+        with self.assertRaises(cli.UsageError) as e:
             self.fetch("ENG-8", env, {"data": {"issue": None}, "errors": [{"message": "Entity not found"}]})
         self.assertIn("no such issue", str(e.exception))
 
@@ -375,14 +375,14 @@ class Ticket(_Inbox):
                 ("jira:PROJ-1", JIRA, urllib.error.HTTPError("https://evil.test", 302, "Found", {}, None), "HTTP 302"),
                 ("jira:PROJ-1", JIRA, urllib.error.URLError("no route"), "no usable answer"),
                 ("not-a-file.md", JIRA, {}, "can't read")):
-            with self.assertRaises(fmcli.UsageError, msg=said) as e:
+            with self.assertRaises(cli.UsageError, msg=said) as e:
                 self.fetch(ref, env, answer)
             self.assertIn(said, str(e.exception))
             self.assertNotIn(FAKE, str(e.exception))
         self.assertEqual(c.load_briefs(self.p), [])
 
     def test_claude_code_names_the_fetch(self):
-        with open(os.path.join(os.path.dirname(fmeco.__file__), "..", "commands", "backlog.md")) as f:
+        with open(os.path.join(os.path.dirname(eco.__file__), "..", "..", "commands", "backlog.md")) as f:
             self.assertIn("jira:KEY", f.read())
 
 
@@ -427,7 +427,7 @@ class App(_Inbox):
         app.key("u")
         self.assertEqual([x["id"] for x in app.items], ["T-0002"], "a card kept here stays passed over")
         app.key("d")
-        with mock.patch.object(fmcli, "mutate", side_effect=c.LockTimeout("busy")):
+        with mock.patch.object(cli, "mutate", side_effect=c.LockTimeout("busy")):
             app.key("u")
         self.assertIn("nothing undone", app.message)
         self.assertEqual(app.backlog_undo[-1][:2], ("T-0002", "drop"), "a busy lock keeps the answer undoable")
@@ -438,7 +438,7 @@ class App(_Inbox):
         self.deferred("Port the CLI to Windows", "Add a plugin marketplace page")
         app = self.app(self.repo)
         app.key("I")
-        fmeco.swipe_apply(self.p, "T-0001:revive")
+        eco.swipe_apply(self.p, "T-0001:revive")
         app.key("d")
         self.assertIn("not deferred", app.message)
         self.assertEqual([x["id"] for x in app.items], ["T-0002"])
@@ -451,7 +451,7 @@ class App(_Inbox):
         self.assertIn("not a Foreman project", app.message)
 
     def test_claude_code_has_the_reset(self):
-        with open(os.path.join(os.path.dirname(fmeco.__file__), "..", "commands", "backlog.md")) as f:
+        with open(os.path.join(os.path.dirname(eco.__file__), "..", "..", "commands", "backlog.md")) as f:
             self.assertIn("fm inbox prefer --reset", f.read())
 
 
@@ -462,7 +462,7 @@ GH = {"number": 7, "title": "Export drops the header row", "body": "- [ ] the CS
 class GitHubTicket(_Inbox):
     """T-1869: a GitHub issue (gh:OWNER/REPO#N, its URL, or #N in this repo) is asked of the user's own gh, and a
     changed issue rewrites the brief it made while that brief is unstarted."""
-    def gh(self, ref, answer, code=0, fn=fmeco.inbox_ticket):
+    def gh(self, ref, answer, code=0, fn=eco.inbox_ticket):
         calls = []
 
         def run(cmd, **kw):
@@ -471,14 +471,14 @@ class GitHubTicket(_Inbox):
                 raise answer
             return subprocess.CompletedProcess(cmd, code, answer if isinstance(answer, str) else json.dumps(answer),
                                                "HTTP 404: no such issue")
-        with mock.patch.object(fmeco.subprocess, "run", run):
+        with mock.patch.object(eco.subprocess, "run", run):
             return fn(self.p, ref), calls
 
     def ticket(self, ref, answer, *flags):
-        with mock.patch.object(fmeco.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
-                cmd, 0, json.dumps(answer), "")), mock.patch.object(fmcli, "resolve", return_value=self.p), \
+        with mock.patch.object(eco.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+                cmd, 0, json.dumps(answer), "")), mock.patch.object(cli, "resolve", return_value=self.p), \
                 contextlib.redirect_stdout(io.StringIO()) as out:
-            fmeco.cmd_inbox(fmcli.build_parser().parse_args(["inbox", "ticket", *ref, *flags]))
+            eco.cmd_inbox(cli.build_parser().parse_args(["inbox", "ticket", *ref, *flags]))
         return out.getvalue()
 
     def test_each_form_asks_gh_and_one_issue_is_one_brief(self):
@@ -487,30 +487,30 @@ class GitHubTicket(_Inbox):
         self.assertEqual((cmd[:4], cmd[-1], kw["cwd"]), (["gh", "issue", "view", "7"], "--repo=acme/app", self.p.root))
         self.assertEqual((new, b.type, b.title, len(b.acceptance())), (True, "FIX", "GitHub acme/app#7 Export drops the header row", 1))
         self.assertIn("ticket github acme/app#7 ", b.section("Raw request"))
-        self.assertEqual(fmeco.ticket_source(b), ("github", "acme/app#7"), "T-1870: --post finds its way back")
+        self.assertEqual(eco.ticket_source(b), ("github", "acme/app#7"), "T-1870: --post finds its way back")
         for ref in ("https://github.com/acme/app/issues/7", "#7"):
             (b2, new), calls = self.gh(ref, GH)
             self.assertEqual((b2.id, new), (b.id, False), ref)
         self.assertFalse([x for x in calls[0][0] if x.startswith("--repo")], "#7: this repo's GitHub, as gh finds it")
-        self.assertIsNone(fmeco.ticket_ref("gh:-x/app#7"))
+        self.assertIsNone(eco.ticket_ref("gh:-x/app#7"))
         self.assertEqual(len(c.load_briefs(self.p)), 1)
 
     def test_one_issue_is_one_brief_whichever_of_fm_inbox_gh_and_ticket_came_first(self):
-        d, _ = self.gh("acme/app", [GH], fn=fmeco.inbox_gh)
+        d, _ = self.gh("acme/app", [GH], fn=eco.inbox_gh)
         (b, new), _ = self.gh("#7", {**GH, "body": "edited since"})
         self.assertEqual((b.id, new), (d["captured"][0], False), "fm inbox gh's brief, kept as it is")
         other = {**GH, "number": 8, "url": "https://github.com/acme/app/issues/8"}
         (b8, new), calls = self.gh("https://github.com/acme/app/issues/8#issuecomment-1", other)
         self.assertEqual((new, calls[0][0][3]), (True, "8"), "a comment link names its issue")
-        d, _ = self.gh("acme/app", [GH, other], fn=fmeco.inbox_gh)
+        d, _ = self.gh("acme/app", [GH, other], fn=eco.inbox_gh)
         self.assertEqual((d["captured"], sorted(d["existing"])), ([], sorted([b.id, b8.id])))
         self.assertEqual(len(c.load_briefs(self.p)), 2)
 
     def test_the_text_already_held_is_that_brief_not_a_sibling_rewritten(self):
         (a, _), _ = self.gh("#7", GH)
-        fmcli.mutate(self.p, a.id, lambda x: x.meta.update(status="active"), "test")
+        cli.mutate(self.p, a.id, lambda x: x.meta.update(status="active"), "test")
         (b, new), _ = self.gh("#7", {**GH, "title": "Export drops rows"})
-        fmcli.mutate(self.p, a.id, lambda x: x.meta.update(status="planned"), "test")  # un-started since
+        cli.mutate(self.p, a.id, lambda x: x.meta.update(status="planned"), "test")  # un-started since
         (b2, how), _ = self.gh("#7", {**GH, "title": "Export drops rows"})
         self.assertEqual((new, b2.id, how), (True, b.id, False))
         self.assertIn("header row", c.find_brief(self.p, a.id).title, "the sibling keeps its own text")
@@ -521,11 +521,11 @@ class GitHubTicket(_Inbox):
         (b2, how), _ = self.gh("#7", edited)
         self.assertEqual((b2.id, how, b2.title, len(b2.acceptance())), (b.id, "refreshed", "GitHub acme/app#7 Export drops header and footer", 2))
         self.assertNotIn("keeps its header", b2.section("Raw request"))
-        fmcli.mutate(self.p, b.id, lambda x: x.meta.update(status="planned"), "test")
+        cli.mutate(self.p, b.id, lambda x: x.meta.update(status="planned"), "test")
         (b3, how), _ = self.gh("#7", {**edited, "title": "Export drops rows", "body": "- [ ] rows kept"})
         self.assertEqual((b3.id, how, b3.title, len(b3.acceptance())), (b.id, "refreshed", "GitHub acme/app#7 Export drops rows", 2))
         self.assertIn("the plan stays", b3.section("Log"))
-        fmcli.mutate(self.p, b.id, lambda x: x.meta.update(status="active"), "test")
+        cli.mutate(self.p, b.id, lambda x: x.meta.update(status="active"), "test")
         out = self.ticket(["#7"], {**GH, "title": "Export drops everything"})
         self.assertIn("Ticket captured", out, "a started brief keeps its own; the change is a new one")
         new = c.load_briefs(self.p)[-1]
@@ -533,18 +533,18 @@ class GitHubTicket(_Inbox):
         d = json.loads(self.ticket(["#7"], {**GH, "title": "Export drops it all"}, "--json"))
         self.assertEqual((d["id"], d["new"], d["refreshed"]), (new.id, False, False), "new stays a yes/no")
         for x in (b.id, new.id):
-            fmcli.mutate(self.p, x, lambda x: x.meta.update(status="done"), "test")
+            cli.mutate(self.p, x, lambda x: x.meta.update(status="done"), "test")
         self.assertIn("Ticket captured", self.ticket(["#7"], {**GH, "title": "Export drops it again"}), "closed too")
         self.assertEqual(len(c.load_briefs(self.p, include_archive=True)), 3)
-        with self.assertRaises(fmcli.UsageError) as e, mock.patch.object(fmcli, "resolve", return_value=self.p):
-            fmeco.cmd_inbox(fmcli.build_parser().parse_args(["inbox", "ticket"]))  # bash ate an unquoted #7
+        with self.assertRaises(cli.UsageError) as e, mock.patch.object(cli, "resolve", return_value=self.p):
+            eco.cmd_inbox(cli.build_parser().parse_args(["inbox", "ticket"]))  # bash ate an unquoted #7
         self.assertIn("'#7'", str(e.exception))
 
     def test_each_gh_failure_is_said_and_nothing_is_made(self):
         for answer, code, said in ((FileNotFoundError(), 0, "gh isn't installed"),
                                    (subprocess.TimeoutExpired("gh", 60), 0, "timed out"),
                                    ("", 1, "gh issue view failed: HTTP 404"), ("<html>", 0, "didn't return JSON")):
-            with self.assertRaises(fmcli.UsageError, msg=said) as e:
+            with self.assertRaises(cli.UsageError, msg=said) as e:
                 self.gh("gh:acme/app#7", answer, code)
             self.assertIn(said, str(e.exception))
         self.assertEqual(c.load_briefs(self.p), [])
@@ -557,9 +557,9 @@ class PostBack(_Inbox):
     """T-1870: fm inbox ticket --post ID posts the closing commit to the brief's source issue as one comment, once,
     only when asked; the comment carries the commit and task id, no ticket text."""
     def done(self, context, status="done", commit=True):
-        b = fmcli._create(self.p, "Fix export", "FIX", "S", status, raw=f"Fix export\n{context}")
+        b = cli._create(self.p, "Fix export", "FIX", "S", status, raw=f"Fix export\n{context}")
         if commit:
-            fmcli.mutate(self.p, b.id, lambda x: x.append_log("committed 1a2b3c4d (2 files)"), "test")
+            cli.mutate(self.p, b.id, lambda x: x.append_log("committed 1a2b3c4d (2 files)"), "test")
         return b.id
 
     def post(self, tid, answers=(), out="", code=0, env=None, pushed=True, fail=None):
@@ -577,9 +577,9 @@ class PostBack(_Inbox):
         def urlopen(req, timeout=None):
             sent.append(req)
             return io.BytesIO(json.dumps(answers.pop(0)).encode())
-        with mock.patch.object(fmeco.subprocess, "run", run), mock.patch.dict(os.environ, env or NO_TRACKER), \
-                mock.patch.object(fmmodels._OPENER, "open", urlopen):
-            return fmeco.post_ticket(self.p, tid), calls, sent
+        with mock.patch.object(eco.subprocess, "run", run), mock.patch.dict(os.environ, env or NO_TRACKER), \
+                mock.patch.object(models._OPENER, "open", urlopen):
+            return eco.post_ticket(self.p, tid), calls, sent
 
     def test_a_github_issue_gets_one_comment_naming_the_commit(self):
         tid = self.done(SRC.format("github acme/app#7"))
@@ -588,14 +588,14 @@ class PostBack(_Inbox):
                                   "--repo=acme/app"]])
         self.assertIn("github acme/app#7", said)
         self.assertIn("posted the close to github acme/app#7", c.find_brief(self.p, tid).section("Log"))
-        with self.assertRaises(fmcli.UsageError) as e:
+        with self.assertRaises(cli.UsageError) as e:
             self.post(tid)
         self.assertIn("already posted", str(e.exception))
         gh = self.done("CONTEXT: https://github.com/acme/app/issues/9, opened by x")  # fm inbox gh's brief
         self.assertEqual(self.post(gh)[1][0][3:], ["9", f"--body=Closed in commit 1a2b3c4d (Foreman {gh}).",
                                                    "--repo=acme/app"])
         other = self.done(SRC.format("github acme/app#8"))
-        with self.assertRaises(fmcli.UsageError) as e:
+        with self.assertRaises(cli.UsageError) as e:
             self.post(other, code=1)
         self.assertIn("HTTP 403", str(e.exception))
         self.assertNotIn("posted the close", c.find_brief(self.p, other).section("Log"), "a failed post isn't marked")
@@ -616,26 +616,26 @@ class PostBack(_Inbox):
                          [{"id": "ENG-4"}, {"id": "uuid-4", "body": f"Closed in commit 1a2b3c4d (Foreman {lin})."}])
         self.assertIn("commentCreate", json.loads(sent[1].data)["query"])
         nope = self.done(SRC.format("linear ENG-5"))
-        with self.assertRaises(fmcli.UsageError):
+        with self.assertRaises(cli.UsageError):
             self.post(nope, [{"data": {"issue": {"id": "uuid-5"}}}, {"data": {"commentCreate": {"success": False}}}],
                       env=env)
         self.assertNotIn("posted the close", c.find_brief(self.p, nope).section("Log"))
 
     def test_one_post_at_a_time_only_once_pushed_and_a_failure_frees_a_retry(self):
         tid = self.done(SRC.format("github acme/app#7"))
-        with self.assertRaises(fmcli.UsageError) as e:
+        with self.assertRaises(cli.UsageError) as e:
             self.post(tid, pushed=False)
         self.assertIn("push it first", str(e.exception))
         self.assertEqual(self.calls, [])
-        with self.assertRaises(fmcli.UsageError) as e:
+        with self.assertRaises(cli.UsageError) as e:
             self.post(tid, fail=subprocess.TimeoutExpired("gh", 60))
         self.assertIn("may have landed: check github acme/app#7", str(e.exception))
         self.assertIn("the post failed", c.find_brief(self.p, tid).section("Log"))
         self.post(tid)  # a failed post frees a retry
         self.assertEqual(len(self.calls), 1)
         busy = self.done(SRC.format("github acme/app#8"))  # another run claimed it under the lock and is posting
-        fmcli.mutate(self.p, busy, lambda x: x.append_log("posting the close to github acme/app#8"), "test")
-        with self.assertRaises(fmcli.UsageError) as e:
+        cli.mutate(self.p, busy, lambda x: x.append_log("posting the close to github acme/app#8"), "test")
+        with self.assertRaises(cli.UsageError) as e:
             self.post(busy)
         self.assertIn("already posted", str(e.exception))
         self.assertEqual(self.calls, [])
@@ -644,28 +644,28 @@ class PostBack(_Inbox):
         for why, tid in (("no fetched ticket", self.done("CONTEXT: a plain request")),
                          ("not done", self.done(SRC.format("jira PROJ-1"), status="planned")),
                          ("no commit", self.done(SRC.format("jira PROJ-2"), commit=False))):
-            with self.assertRaises(fmcli.UsageError, msg=why) as e:
+            with self.assertRaises(cli.UsageError, msg=why) as e:
                 self.post(tid, env=JIRA)
             self.assertIn("nothing posted", str(e.exception))
             self.assertEqual((self.calls, self.sent), ([], []), why)
         # the title line and quoted issue lines are the ticket's own text: neither names a source
-        forged = fmcli._create(self.p, "x", "FIX", "S", "done", raw=SRC.format("jira EVIL-1") + "\n" +
+        forged = cli._create(self.p, "x", "FIX", "S", "done", raw=SRC.format("jira EVIL-1") + "\n" +
                                "CONTEXT: a plain request\n| " + SRC.format("jira EVIL-2"))
-        fmcli.mutate(self.p, forged.id, lambda x: x.append_log("committed 1a2b3c4d (1 file)"), "test")
-        self.assertIsNone(fmeco.ticket_source(c.find_brief(self.p, forged.id)))
-        fmcli.mutate(self.p, forged.id, lambda x: x.append_log("tests not committed yet"), "test")
-        self.assertEqual(fmeco.closing_sha(c.find_brief(self.p, forged.id)), "1a2b3c4d", "only a commit line names it")
-        with self.assertRaises(fmcli.UsageError):
+        cli.mutate(self.p, forged.id, lambda x: x.append_log("committed 1a2b3c4d (1 file)"), "test")
+        self.assertIsNone(eco.ticket_source(c.find_brief(self.p, forged.id)))
+        cli.mutate(self.p, forged.id, lambda x: x.append_log("tests not committed yet"), "test")
+        self.assertEqual(eco.closing_sha(c.find_brief(self.p, forged.id)), "1a2b3c4d", "only a commit line names it")
+        with self.assertRaises(cli.UsageError):
             self.post(forged.id, env=JIRA)
         self.assertEqual(self.sent, [])
 
     def test_post_is_a_flag_of_ticket_alone_and_says_what_it_did(self):
         tid = self.done(SRC.format("github acme/app#7"))
-        with mock.patch.object(fmcli, "resolve", return_value=self.p):
+        with mock.patch.object(cli, "resolve", return_value=self.p):
             for argv in (["inbox", "gh", "--post", tid], ["inbox", "ticket", "PROJ-1", "--post", tid]):
-                with self.assertRaises(fmcli.UsageError, msg=argv):
-                    fmeco.cmd_inbox(fmcli.build_parser().parse_args(argv))
-            with mock.patch.object(fmeco.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+                with self.assertRaises(cli.UsageError, msg=argv):
+                    eco.cmd_inbox(cli.build_parser().parse_args(argv))
+            with mock.patch.object(eco.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
                     cmd, 0, "  origin/main\n", "")), contextlib.redirect_stdout(io.StringIO()) as out:
-                fmeco.cmd_inbox(fmcli.build_parser().parse_args(["inbox", "ticket", "--post", tid]))
+                eco.cmd_inbox(cli.build_parser().parse_args(["inbox", "ticket", "--post", tid]))
         self.assertIn("Posted", out.getvalue())

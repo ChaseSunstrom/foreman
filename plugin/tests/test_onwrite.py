@@ -10,7 +10,7 @@ import time
 
 from test_hooks import HookCase, parse
 
-import fmcore as c
+from sampo import core as c
 
 PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -72,14 +72,14 @@ class OnWrite(HookCase):
         self.assertEqual(self.post(notes).stdout, "")
 
     def test_foremans_own_skills_agents_and_json_pass(self):
-        import fmhooks
+        from sampo import hooks
         root = os.path.dirname(PLUGIN)
         tracked = subprocess.run(["git", "-C", root, "ls-files", "*.json"], capture_output=True, text=True).stdout
         files = glob.glob(os.path.join(PLUGIN, "**", "SKILL.md"), recursive=True) + \
             glob.glob(os.path.join(PLUGIN, "agents", "*.md")) + [os.path.join(root, f) for f in tracked.split()]
         # tracked files only: state/ holds runtime files (a guard tripfile is empty on purpose), never shipped
         self.assertGreater(len(files), 10)
-        bad = [(f, fmhooks._syntax_note(f) or fmhooks._frontmatter_problem(f)) for f in files]
+        bad = [(f, hooks._syntax_note(f) or hooks._frontmatter_problem(f)) for f in files]
         self.assertEqual([b for b in bad if b[1]], [])
 
     def test_a_block_is_logged_as_an_enforce_event(self):

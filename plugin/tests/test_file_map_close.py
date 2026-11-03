@@ -7,7 +7,7 @@ from unittest import mock
 from types import SimpleNamespace
 
 from helpers import ForemanTestCase  # noqa: F401  (puts plugin/lib on sys.path)
-import fmcli
+from sampo import cli
 
 MAP = "# M\n## 3. File map\n| Path | Purpose |\n|---|---|\n| `plugin/bin/` | cli |\n## 4. Next\n"
 
@@ -20,10 +20,10 @@ def gaps(changed, master):
         if master is not None:
             with open(os.path.join(root, "MASTER.md"), "w") as f:
                 f.write(master)
-        with mock.patch.object(fmcli.c, "git_root", return_value=root), \
-                mock.patch.object(fmcli.c, "task_base", return_value="abc"), \
-                mock.patch("fmmap.changed", return_value=changed):
-            return fmcli._file_map_gaps(SimpleNamespace(root=root), SimpleNamespace())
+        with mock.patch.object(cli.c, "git_root", return_value=root), \
+                mock.patch.object(cli.c, "task_base", return_value="abc"), \
+                mock.patch("sampo.map.changed", return_value=changed):
+            return cli._file_map_gaps(SimpleNamespace(root=root), SimpleNamespace())
 
 
 class FileMapClose(unittest.TestCase):

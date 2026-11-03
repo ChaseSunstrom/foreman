@@ -5,7 +5,7 @@ import os
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 SKILLS = os.path.join(os.path.dirname(__file__), "..", "skills")
 
@@ -91,52 +91,52 @@ class Which(ForemanTestCase):
 
     def test_a_folder_word_is_not_a_name_match(self):
         # T-2248: release/ named every book in it, so all tied and the alphabet cut the generic release book
-        import fmwhich
+        from sampo import which
         books = [{"name": f"release/{n}", "load": "", "summary": "", "text": f"release {n.replace('-', ' ')} {t}"}
                  for n, t in (("demo", "Demo: ship a short demo, release day"), ("release-notes", "Release notes: ship it"))]
-        got = fmwhich.rank("ship a release", {"playbooks": books})["playbooks"]
+        got = which.rank("ship a release", {"playbooks": books})["playbooks"]
         self.assertEqual(got[0]["name"], "release/release-notes")
         self.assertGreater(got[0]["score"], got[1]["score"])
 
     def test_only_a_playbooks_header_is_indexed(self):
         # a playbook without a ## section was indexed whole, so its body's common words outranked real headers
-        import fmplaybooks
-        import fmwhich
+        from sampo import playbooks
+        from sampo import which
         root = os.path.join(self.tmp, "books")
         os.makedirs(os.path.join(root, "references", "ui"))
         with open(os.path.join(root, "references", "ui", "long.md"), "w") as f:
             f.write("# Long\n\nUse when a thing.\n\n" + "filler words here. " * 100 + "zebra crossing\n")
-        old, fmplaybooks.ROOT = fmplaybooks.ROOT, root
+        old, playbooks.ROOT = playbooks.ROOT, root
         try:
-            text = fmwhich.playbooks()[0]["text"]
+            text = which.playbooks()[0]["text"]
         finally:
-            fmplaybooks.ROOT = old
+            playbooks.ROOT = old
         self.assertNotIn("zebra", text)
-        self.assertLessEqual(len(text), fmwhich.HEADER_MAX + 20)
+        self.assertLessEqual(len(text), which.HEADER_MAX + 20)
 
     def test_a_big_library_reads_only_the_headers_the_index_returns(self):
         # T-1835: past BIG books, fm which takes its candidates from fmplaybooks.find, not a read of every header
         from unittest import mock
-        import fmplaybooks
-        import fmwhich
+        from sampo import playbooks
+        from sampo import which
         from test_playbook_machinery import put
         root = os.path.join(self.tmp, "books")
         for i in range(12):
             put(root, f"references/misc/b{i}.md", f"# Book {i}\n\nUse when the gizmo{i} breaks.\n\n## Steps\n\n1. x\n")
         put(root, "references/fix/kiln.md", "# Kiln repair\n\nUse when the pottery kiln overheats.\n\n## Steps\n\n1. x\n")
-        with mock.patch.object(fmplaybooks, "ROOT", root), mock.patch.object(fmwhich, "BIG", 10), \
-                mock.patch.object(fmwhich, "_head", wraps=fmwhich._head) as head:
-            got = fmwhich.rank("repair the pottery kiln", {"playbooks": fmwhich.playbooks("repair the pottery kiln")})
+        with mock.patch.object(playbooks, "ROOT", root), mock.patch.object(which, "BIG", 10), \
+                mock.patch.object(which, "_head", wraps=which._head) as head:
+            got = which.rank("repair the pottery kiln", {"playbooks": which.playbooks("repair the pottery kiln")})
         self.assertEqual([x["name"] for x in got["playbooks"]], ["fix/kiln"])
         self.assertEqual(head.call_count, 1, "only the index's hit is read")
 
     def test_the_stemmer_is_fmrecalls_and_collapses_doubled_consonants(self):
-        import fmrecall
-        import fmwhich
-        self.assertEqual(fmrecall.stem("shipping"), fmrecall.stem("ship"))
-        self.assertEqual(fmrecall.stem("stopped"), "stop")
-        self.assertEqual(fmrecall.stem("calling"), "call", "l, s and z stay doubled")
-        self.assertEqual(fmwhich.words("Shipping 3D motions"), fmrecall.words("ship 3d motion", cut=6))
+        from sampo import recall
+        from sampo import which
+        self.assertEqual(recall.stem("shipping"), recall.stem("ship"))
+        self.assertEqual(recall.stem("stopped"), "stop")
+        self.assertEqual(recall.stem("calling"), "call", "l, s and z stay doubled")
+        self.assertEqual(which.words("Shipping 3D motions"), recall.words("ship 3d motion", cut=6))
 
     def test_an_unknown_task_says_so(self):
         p = self.fm("which", "xyzzy frobnicate quux", check=False)
@@ -243,15 +243,15 @@ class Shelves(ForemanTestCase):
     def test_a_shelf_that_fails_is_named_in_the_output_and_the_receipt(self):
         from unittest import mock
 
-        import fmwhich
+        from sampo import which
         p = c.find_project(self.repo)
         failed = []
-        with mock.patch.dict(os.environ, self.env()), mock.patch.object(fmwhich, "tools", side_effect=OSError("x")):
-            got = fmwhich.search("record evidence for a step", p, failed)
+        with mock.patch.dict(os.environ, self.env()), mock.patch.object(which, "tools", side_effect=OSError("x")):
+            got = which.search("record evidence for a step", p, failed)
         self.assertEqual((failed, got["tools"]), (["tools"], []))
         self.assertIn("fm task evidence", [r["load"] for r in got["commands"]], "the other shelves still answer")
-        self.assertIn("skipped: tools", fmwhich.skipped_note(failed))
-        self.assertEqual(fmwhich.skipped_note([]), "")
+        self.assertIn("skipped: tools", which.skipped_note(failed))
+        self.assertEqual(which.skipped_note([]), "")
 
     def test_a_malformed_config_is_skipped_not_fatal(self):
         self.write(os.path.join(self.repo, ".mcp.json"), "{not json")
@@ -306,27 +306,27 @@ class Shelves(ForemanTestCase):
         import subprocess
         from unittest import mock
 
-        import fmwhich
+        from sampo import which
         with mock.patch.dict(os.environ, self.env()), mock.patch("os.getcwd", return_value=self.repo), \
                 mock.patch.object(socket.socket, "connect", side_effect=AssertionError("network")), \
                 mock.patch.object(socket, "getaddrinfo", side_effect=AssertionError("network")), \
                 mock.patch.object(subprocess, "run", side_effect=AssertionError("process")), \
                 mock.patch.object(subprocess, "Popen", side_effect=AssertionError("process")):
-            got = fmwhich.search("record evidence for a step", c.find_project(self.repo))
+            got = which.search("record evidence for a step", c.find_project(self.repo))
         self.assertIn("fm task evidence", [r["load"] for r in got["commands"]])
 
     def test_the_cheap_local_hit_the_hook_reads_needs_no_plugin_index(self):
-        import fmwhich
+        from sampo import which
         self.write(os.path.join(self.hm, ".cargo", "bin", "rg2"), "#!/bin/sh\n", 0o755)
         self.write(os.path.join(self.repo, "tools", "sheetsplit.py"), '# fm new tool\n"""sheetsplit: split sheets."""\n')
         self.fm("fix", "add", "jq: command not found", "--do", "apt install jq")
         p = c.find_project(self.repo)
         from unittest import mock
-        with mock.patch.dict(os.environ, {"HOME": self.hm}), mock.patch("fmplugins.index", side_effect=AssertionError):
-            self.assertIn("rg2", fmwhich.local_hit(p, "rg2"))
-            self.assertEqual(fmwhich.local_hit(p, "sheetsplit"), "", "a repo's own tool is never put in the hook's note")
-            self.assertIn("apt install jq", fmwhich.local_hit(p, "jq"))
-            self.assertEqual(fmwhich.local_hit(p, "nothing-here"), "")
+        with mock.patch.dict(os.environ, {"HOME": self.hm}), mock.patch("sampo.plugins.index", side_effect=AssertionError):
+            self.assertIn("rg2", which.local_hit(p, "rg2"))
+            self.assertEqual(which.local_hit(p, "sheetsplit"), "", "a repo's own tool is never put in the hook's note")
+            self.assertIn("apt install jq", which.local_hit(p, "jq"))
+            self.assertEqual(which.local_hit(p, "nothing-here"), "")
 
 
 if __name__ == "__main__":

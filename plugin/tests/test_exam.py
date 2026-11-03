@@ -13,7 +13,7 @@ import subprocess
 
 from helpers import CLEAN_READER, ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 CLEAN = {"PATH": CLEAN_READER + os.pathsep + os.environ["PATH"]}  # T-2166: the put's cold read passes
 
@@ -209,7 +209,7 @@ class ExamGen(ForemanTestCase):
                                                                              check=False).stdout)
 
     def test_static_reads_only_testish_files_and_check_runs_the_clean_side_three_times(self):
-        import fmexam  # T-2218: latest.py and contest.js are no tests; a clean side that fails one run in three is named
+        from sampo import louhi  # T-2218: latest.py and contest.js are no tests; a clean side that fails one run in three is named
         t = os.path.join(self.tmp, "static")
         os.makedirs(t)
         for name in ("latest.py", "contest.js", "attestation.rb", "test_x.py", "x.test.js"):
@@ -217,9 +217,9 @@ class ExamGen(ForemanTestCase):
                 f.write("MARK_" + name.split(".")[0])
         chk = lambda must: {"files": "test", "must": must, "never": []}
         for name in ("test_x", "x"):
-            self.assertTrue(fmexam._static(t, chk([f"MARK_{name}"])), name)
+            self.assertTrue(louhi._static(t, chk([f"MARK_{name}"])), name)
         for name in ("latest", "contest", "attestation"):
-            self.assertFalse(fmexam._static(t, chk([f"MARK_{name}"])), name)
+            self.assertFalse(louhi._static(t, chk([f"MARK_{name}"])), name)
 
         class P:
             dir = os.path.join(self.tmp, "proj")
@@ -235,31 +235,31 @@ class ExamGen(ForemanTestCase):
                     calls.append(target)
                     return (len(calls) != 2, "exit 1: flake")
                 return True, ""
-            orig, fmexam.suite = fmexam.suite, fake
+            orig, louhi.suite = louhi.suite, fake
             try:
-                got = fmexam._check_one(P, "run-1", {"id": f"{kind}-1", "kind": kind, "repo": os.path.join(base, "repo")})
+                got = louhi._check_one(P, "run-1", {"id": f"{kind}-1", "kind": kind, "repo": os.path.join(base, "repo")})
             finally:
-                fmexam.suite = orig
+                louhi.suite = orig
             self.assertEqual(len(calls), 2, kind)  # the flake on run 2 stops the loop; a 3rd run is never needed
             self.assertEqual([x for x in got if "clean suite failed" in x and f"{kind}-1" in x], got)
             self.assertEqual(len(got), 1)
         calls.clear()
-        fmexam.suite = lambda key, target, overlay=None, slow=False: (calls.append(1) or True, "")
+        louhi.suite = lambda key, target, overlay=None, slow=False: (calls.append(1) or True, "")
         try:
-            fmexam._check_one(P, "run-1", {"id": "clean-1", "kind": "clean", "repo": "r"})
+            louhi._check_one(P, "run-1", {"id": "clean-1", "kind": "clean", "repo": "r"})
         finally:
-            fmexam.suite = orig
+            louhi.suite = orig
         self.assertEqual(len(calls), 1 + 3)  # the planted suite once, the clean side three times
 
     def test_the_clean_app_keeps_the_edge_contract_and_its_suite_proves_it(self):
-        import fmexam  # T-2120: page n or size < 1 is empty, lo wins in clamp, label keeps a long s, total of none is 0
+        from sampo import louhi  # T-2120: page n or size < 1 is empty, lo wins in clamp, label keeps a long s, total of none is 0
         s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
         base = os.path.dirname(s["repo"])
         key, clean = json.loads(read_text(os.path.join(base, "key.json"))), os.path.join(base, "hidden", "clean")
         readme = read_text(os.path.join(clean, "README.md"))
         for clause in ("below 1 gives an empty page", "lo wins when lo > hi", "s itself when", "0 for none", "standard SQL"):
             self.assertIn(clause, readme)
-        self.assertTrue(fmexam.suite(key, clean)[0])
+        self.assertTrue(louhi.suite(key, clean)[0])
         n = key["names"]
         for fn, old in (("page", f"def {n['page']}(xs, n, size):\n    return xs[(n - 1) * size:n * size]\n"),
                         ("clamp", f"def {n['clamp']}(x, lo, hi):\n    return lo if x < lo else hi if x > hi else x\n"),
@@ -270,11 +270,11 @@ class ExamGen(ForemanTestCase):
             shutil.copytree(clean, mutant)
             with open(os.path.join(mutant, "app.py"), "a") as f:
                 f.write("\n\n" + old)  # the later def wins: one clause broken, the rest as clean
-            self.assertFalse(fmexam.suite(key, mutant)[0], f"the clean suite misses a broken {fn} clause")
+            self.assertFalse(louhi.suite(key, mutant)[0], f"the clean suite misses a broken {fn} clause")
 
     def test_test_first_puts_back_only_the_defects_lines(self):
         # T-2203: an arm that also edited other code in the file keeps that edit; a defect region it rewrote credits nothing
-        import fmexam
+        from sampo import louhi
         s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
         base = os.path.dirname(s["repo"])
         key = json.loads(read_text(os.path.join(base, "key.json")))
@@ -284,15 +284,15 @@ class ExamGen(ForemanTestCase):
         shutil.copytree(clean, arm)
         with open(os.path.join(arm, "app.py"), "a") as f:
             f.write("\n\ndef extra_helper():\n    return 1\n")
-        tmp, dst = fmexam.putback(base, kind, arm)
+        tmp, dst = louhi.putback(base, kind, arm)
         try:
             body = read_text(os.path.join(dst, "app.py"))
             self.assertIn("extra_helper", body)  # the arm's other edit survives
             self.assertEqual(body.replace("\n\ndef extra_helper():\n    return 1\n", ""), read_text(os.path.join(planted, "app.py")))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-        self.assertTrue(fmexam.suite(key, clean)[0])
-        self.assertIsNone(fmexam.putback(base, kind, os.path.join(self.tmp, "nowhere")))
+        self.assertTrue(louhi.suite(key, clean)[0])
+        self.assertIsNone(louhi.putback(base, kind, os.path.join(self.tmp, "nowhere")))
         # the arm fixed the defect in other words but kept the lines around it: the region is replaced by the planted one
         c, p = read_text(os.path.join(clean, "app.py")).splitlines(True), read_text(os.path.join(planted, "app.py")).splitlines(True)
         op, i1, i2, j1, j2 = next(o for o in difflib.SequenceMatcher(None, c, p, autojunk=False).get_opcodes() if o[0] != "equal")
@@ -303,7 +303,7 @@ class ExamGen(ForemanTestCase):
             shutil.copytree(clean, arm)
             with open(os.path.join(arm, "app.py"), "w") as f:
                 f.write("".join(lines) + helper)
-            got = fmexam.putback(base, kind, arm)
+            got = louhi.putback(base, kind, arm)
             if not ok:
                 self.assertIsNone(got, name)
                 continue
@@ -314,7 +314,7 @@ class ExamGen(ForemanTestCase):
 
     def test_putback_replaces_each_reworded_region_between_its_anchors(self):
         # T-2203: two replaced regions in one file, an anchor widened past a line the clean file repeats, one at the end
-        import fmexam
+        from sampo import louhi
         base = os.path.join(self.tmp, "synthetic")
         g = "def g(y):\n    if y is None:\n        return 0\n    return 1\n"
         tail = "\n\ndef z():\n    return 0\n"
@@ -329,7 +329,7 @@ class ExamGen(ForemanTestCase):
             with open(os.path.join(path, "app.py"), "w") as f:
                 f.write(text)
         os.chmod(os.path.join(arm, "app.py"), 0o444)  # a read-only file is replaced in the copy, not written through
-        tmp, dst = fmexam.putback(base, "k", arm)
+        tmp, dst = louhi.putback(base, "k", arm)
         try:
             self.assertEqual(read_text(os.path.join(dst, "app.py")), planted.replace(g, doc))  # both defects back, the doc kept
         finally:
@@ -343,7 +343,7 @@ class ExamGen(ForemanTestCase):
         os.chmod(os.path.join(arm, "app.py"), 0o644)
         with open(os.path.join(arm, "app.py"), "a") as f:
             f.write("    # end\n\n\ndef helper():\n    return 1\n")
-        tmp, dst = fmexam.putback(base, "k", arm)
+        tmp, dst = louhi.putback(base, "k", arm)
         try:
             self.assertEqual(read_text(os.path.join(dst, "app.py")), planted.replace(g, doc) + "    # END\n")
         finally:
@@ -352,7 +352,7 @@ class ExamGen(ForemanTestCase):
     def test_putback_merges_two_regions_whose_anchors_run_into_each_other(self):
         # T-2401: goal-rust-860eab's bug changed two lines around a repeated `return []`: each region's widened anchor
         # held the other region's clean line, gone once the first was planted, so the oracle lost test-first credit
-        import fmexam
+        from sampo import louhi
         base = os.path.join(self.tmp, "near")
         clean = ("def page(xs, n, size):\n    if n < 1:\n        return []\n    start = (n - 1) * size\n"
                  "    if start >= len(xs):\n        return []\n    return xs[start:min(start + size, len(xs))]\n")
@@ -364,7 +364,7 @@ class ExamGen(ForemanTestCase):
             os.makedirs(path)
             with open(os.path.join(path, "app.py"), "w") as f:
                 f.write(text)
-        got = fmexam.putback(base, "bug", arm)
+        got = louhi.putback(base, "bug", arm)
         self.assertIsNotNone(got)
         try:
             self.assertEqual(read_text(os.path.join(got[1], "app.py")), planted)
@@ -374,7 +374,7 @@ class ExamGen(ForemanTestCase):
     def test_putback_anchors_on_the_arms_file_not_on_what_an_earlier_region_planted(self):
         # T-2419: slow-c's planted loop holds the line the next region anchors on ("        }"), so after the first
         # region went in the anchor was no longer unique and the oracle lost test-first credit on both slow C scenarios
-        import fmexam
+        from sampo import louhi
         base = os.path.join(self.tmp, "twice")
         head = "int page(const long *xs, int n, long *out) {\n    int k = 0;\n    for (long i = 0; i < n; i++) out[k++] = xs[i];\n    return k;\n}\n\n"
         tail = "    return k;\n}\n\nvoid other(void) {\n}\n"
@@ -392,7 +392,7 @@ class ExamGen(ForemanTestCase):
             os.makedirs(path)
             with open(os.path.join(path, "app.c"), "w") as f:
                 f.write(text)
-        got = fmexam.putback(base, "slow", arm)
+        got = louhi.putback(base, "slow", arm)
         self.assertIsNotNone(got)
         try:
             self.assertEqual(read_text(os.path.join(got[1], "app.c")), planted)
@@ -401,7 +401,7 @@ class ExamGen(ForemanTestCase):
 
     def test_a_red_from_a_name_the_putback_removed_is_not_the_arms_test_catching_the_defect(self):
         # T-2203: a suite that fails only because it can't load (the region held a name it imports) caught nothing
-        import fmexam
+        from sampo import louhi
         key = {"commands": {"suite": "t.py", "exec": sys.executable + " -I @F@"}}
         for name, body, caught in (("assert", "assert 1 == 2\n", True), ("load", "from app import gone\n", False),
                                    ("green", "assert 1 == 1\n", False)):
@@ -410,7 +410,7 @@ class ExamGen(ForemanTestCase):
             for fname, text in (("t.py", body), ("app.py", "x = 1\n")):
                 with open(os.path.join(target, fname), "w") as f:
                     f.write(text)
-            self.assertEqual(fmexam._caught(key, target), caught, name)
+            self.assertEqual(louhi._caught(key, target), caught, name)
 
     def test_an_unkeyed_finding_proved_only_by_the_arms_own_test_stays_a_false_alarm(self):
         # T-2170: the arm wrote the change and the test, so its proof is the arm grading itself; with no outside check
@@ -444,9 +444,9 @@ class ExamGen(ForemanTestCase):
         self.assertEqual((g["exam_defects"], g["false_alarms"], g["proved_by_arm"]), (0, 7, 1))
         self.assertIn("backslashes", " ".join(g["proved_by_arm_findings"]))  # listed, to read and fix the generator by
         self.assertNotIn("exam_defect_findings", g)  # old lines' key meant a defect; this one lists false alarms
-        import fmcore as c
-        import fmgenesis
-        tail = fmgenesis._exam_tail(fmgenesis.home(c.find_project(self.repo)))
+        from sampo import core as c
+        from sampo import rune
+        tail = rune._exam_tail(rune.home(c.find_project(self.repo)))
         self.assertIn("7 false alarms (1 with the arm's own proof)", tail)  # what a genesis cold read sees, too
         line = self.fm("exam").stdout
         self.assertIn("7 false alarms (1 with the arm's own proof)", line)
@@ -828,7 +828,7 @@ class ExamAuthors(ForemanTestCase):
             self.assertIn(why, d["dropped"][0]["why"], (kind, mode))
 
     def test_a_new_function_is_exported_and_declared_where_the_language_needs_it(self):
-        import fmexam  # T-2211: JS exports and imports it, TS exports it, Rust makes it pub, C declares it in app.h
+        from sampo import louhi  # T-2211: JS exports and imports it, TS exports it, Rust makes it pub, C declares it in app.h
         for lang, src, test in (("js", "function middle(xs) {\n  return xs[0];\n}\n", "  assert.strictEqual(middle([1]), 1);\n"),
                                 ("ts", "function middle(xs: number[]): number {\n  return xs[0];\n}\n",
                                  "  assert.strictEqual(middle([1]), 1);\n"),
@@ -837,9 +837,9 @@ class ExamAuthors(ForemanTestCase):
                                 ("rust", "fn middle(xs: &[i64]) -> i64 {\n    xs[0]\n}\n", "    assert_eq!(middle(&[1]), 1);\n")):
             base = os.path.join(self.tmp, "shaped-" + lang)
             s = {"id": f"clean-{lang}-000001", "kind": "clean", "lang": lang, "split": "train", "author": "child"}
-            fmexam.render(base, s, {"shape": "clean", "says": "x", "request": "", "name": "middle", "source": src, "test": test})
+            louhi.render(base, s, {"shape": "clean", "says": "x", "request": "", "name": "middle", "source": src, "test": test})
             repo = os.path.join(base, "repo")
-            app = read_text(os.path.join(repo, fmexam.SPEC[lang]["files"][0]))
+            app = read_text(os.path.join(repo, louhi.SPEC[lang]["files"][0]))
             if lang == "js":
                 self.assertRegex(app, r"module\.exports = \{[^}]*\bmiddle\b")
                 self.assertRegex(read_text(os.path.join(repo, "test_app.js")), r"const \{[^}]*\bmiddle\b[^}]*\} = require")
@@ -853,13 +853,13 @@ class ExamAuthors(ForemanTestCase):
         bad = {"shape": "clean", "says": "x", "request": "", "name": "middle", "test": "    assert(middle(0) == 0);\n",
                "source": "typedef struct { long a; } S; long middle(S s) { return s.a; }\n"}  # a brace before it: refused
         with self.assertRaises(ValueError):
-            fmexam.render(os.path.join(self.tmp, "shaped-bad"), {"id": "clean-c-000002", "kind": "clean", "lang": "c",
+            louhi.render(os.path.join(self.tmp, "shaped-bad"), {"id": "clean-c-000002", "kind": "clean", "lang": "c",
                                                                   "split": "train", "author": "child"}, bad)
 
     def test_initiative_kinds_none_rank_clean(self):
         """#1's exam (T-2126): none and rank are child-authored with no request, clean is the app as is; the oracle
         closes all, empty closes only clean, and rank closes only when the vuln is named before the low ones."""
-        import fmexam
+        from sampo import louhi
         r = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "3", "--lang", "python", "--kind", "none,rank,clean",
                          "--author", "child", env=self.env)
         self.assertEqual(r["dropped"], [])
@@ -878,16 +878,16 @@ class ExamAuthors(ForemanTestCase):
         e = self.fm_json("exam", "run", r["run"], "--agent", "empty")
         self.assertEqual(sorted(e["closed"]["train"] + e["closed"]["holdout"]), sorted(s["id"] for s in by["clean"]))
         fs = [{"file": d["files"][0], "symbol": d["symbols"][0]} for d in rank["defects"]]  # vuln, untested, docs
-        self.assertTrue(fmexam._in_order(fs, rank))
-        self.assertFalse(fmexam._in_order(fs[1:] + fs[:1], rank))  # the vuln named last
-        self.assertFalse(fmexam._in_order(fs[:2], rank))  # one missed
-        self.assertIn("0/1 ranked", fmexam.summary({"found": 3, "keyed": 3, "rank_keyed": 1, "rank_hit": 0}))
+        self.assertTrue(louhi._in_order(fs, rank))
+        self.assertFalse(louhi._in_order(fs[1:] + fs[:1], rank))  # the vuln named last
+        self.assertFalse(louhi._in_order(fs[:2], rank))  # one missed
+        self.assertIn("0/1 ranked", louhi.summary({"found": 3, "keyed": 3, "rank_keyed": 1, "rank_hit": 0}))
 
     def test_finish_kinds_goal_and_resume(self):
         """#4's exam (T-2140): goal gets only a vague goal, resume a half-done PLAN.md and "continue"; the key is what a
         finished version holds. The oracle closes all and empty none; saying done with an item unmet is a false done,
         extra work is never a false alarm, and a done item that breaks is broken."""
-        import fmexam
+        from sampo import louhi
         r = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "3", "--lang", "python", "--kind", "goal,resume",
                          "--author", "child", env=self.env)
         self.assertEqual(r["dropped"], [])
@@ -899,11 +899,11 @@ class ExamAuthors(ForemanTestCase):
         self.assertEqual([d["kind"] for d in goal["defects"]], ["code1", "code2", "test3", "readme4", "readme5"])
         self.assertIn("lets hi + 1 through", goal["defects"][0]["text"])  # the child's key, no template item (T-2149)
         self.assertEqual([d["tf"] for d in goal["defects"]], [True, True, False, False, False])
-        self.assertEqual(goal["request"], fmexam.REQUESTS["goal"])  # the template goal, never the child's report
+        self.assertEqual(goal["request"], louhi.REQUESTS["goal"])  # the template goal, never the child's report
         self.assertEqual(resume["request"], "continue")
         self.assertEqual([d.get("done", False) for d in resume["defects"]], [False, False, True, False, False])
         plan = read_text(os.path.join(res["repo"], "PLAN.md"))
-        self.assertIn("Goal: " + fmexam.REQUESTS["goal"], plan)
+        self.assertIn("Goal: " + louhi.REQUESTS["goal"], plan)
         self.assertEqual((plan.count("- [x] "), plan.count("- [ ] ")), (1, 4))
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
@@ -913,7 +913,7 @@ class ExamAuthors(ForemanTestCase):
         self.assertEqual((e["closed"], e["fixed"], e["broken"], e["false_done"]), ({"train": [], "holdout": []}, 0, 0, 0))
         pl = self.fm_json("exam", "run", r["run"], "--agent", "plain", "--limit", "2", env=self.env)  # done, changed nothing
         self.assertEqual((pl["false_done"], pl["false_alarms"], pl["closed"]), (2, 0, {"train": [], "holdout": []}))
-        self.assertIn("2 false done", fmexam.summary(pl))
+        self.assertIn("2 false done", louhi.summary(pl))
         self.assertIn("\ncontinue\n\n(Unattended", "\n" + read_text(self.log + ".prompt"))
         work = os.path.join(os.path.dirname(os.path.dirname(res["repo"])), "work", "oracle", res["id"], "test_app.py")
         names = resume["names"]
@@ -923,7 +923,7 @@ class ExamAuthors(ForemanTestCase):
         g = self.fm_json("exam", "grade", r["run"], "--agent", "oracle")
         self.assertEqual((g["broken"], g["false_done"]), (1, 1))
         self.assertNotIn(res["id"], g["closed"]["train"] + g["closed"]["holdout"])
-        self.assertIn("1 broken", fmexam.summary(g))
+        self.assertIn("1 broken", louhi.summary(g))
         t = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "1", "--lang", "python", "--kind", "resume")
         tk = json.loads(read_text(os.path.join(os.path.dirname(t["scenarios"][0]["repo"]), "key.json")))
         self.assertEqual([(d["kind"], d.get("done", False)) for d in tk["defects"]],
@@ -1036,10 +1036,10 @@ class ExamAuthors(ForemanTestCase):
         self.assertIn("unknown agent", bad.stderr + bad.stdout)
 
     def test_reply_parsing_takes_the_last_findings_object_and_survives_junk(self):
-        import fmexam
-        got = fmexam._reply('x {"a": 1} {"findings": [{"file": "a"}, 3], "notes": "no", "done": "yes"} tail')
+        from sampo import louhi
+        got = louhi._reply('x {"a": 1} {"findings": [{"file": "a"}, 3], "notes": "no", "done": "yes"} tail')
         self.assertEqual(got, {"findings": [{"file": "a"}], "notes": [], "done": False})
-        self.assertEqual(fmexam._reply('{"findings": ' + "[" * 20000)["findings"], [])  # past the recursion limit
+        self.assertEqual(louhi._reply('{"findings": ' + "[" * 20000)["findings"], [])  # past the recursion limit
 
 
 class JudgmentStub:
@@ -1167,7 +1167,7 @@ class JudgmentKinds(JudgmentStub, ForemanTestCase):
         self.assertEqual(slurp(door(s["repo"])), good)
 
     def test_fork_closes_on_one_readings_fix_with_both_named_and_not_on_asking_alone(self):
-        import fmexam
+        from sampo import louhi
         r = self.gen("--kind", "fork")
         s = r["scenarios"][0]
         key = self.key(s)
@@ -1177,7 +1177,7 @@ class JudgmentKinds(JudgmentStub, ForemanTestCase):
 
         def planted(*left):  # the module with only these defects still in it
             with open(app, "w") as f:
-                f.write(fmexam._fill(fmexam._app(fmexam.SPEC["python"], left)["app.py"], key["names"]))
+                f.write(louhi._fill(louhi._app(louhi.SPEC["python"], left)["app.py"], key["names"]))
             return s["id"] in self.closed(self.fm_json("exam", "grade", r["run"], "--agent", "oracle"))
         self.assertTrue(planted("vuln"))  # the paging fixed, the lookup left
         self.assertTrue(planted("bug"))  # the lookup fixed, the paging left
@@ -1189,7 +1189,7 @@ class JudgmentKinds(JudgmentStub, ForemanTestCase):
         self.assertFalse(planted("vuln"))  # fixed one, named neither reading
 
     def test_nine_per_kind_three_held_out_never_in_a_train_run_and_rendered_in_every_language(self):
-        import fmexam
+        from sampo import louhi
         args = ("--seed", "3", "--per-kind", "9", "--kind", ",".join(JUDGED))
         res = self.fm_json("exam", "gen", *args)
         for kind in JUDGED:
@@ -1199,7 +1199,7 @@ class JudgmentKinds(JudgmentStub, ForemanTestCase):
         train = self.fm_json("exam", "gen", *args, "--split", "train")
         self.assertEqual({s["id"] for s in train["scenarios"]}, {s["id"] for s in res["scenarios"] if s["split"] == "train"})
         self.assertTrue(all(s["split"] == "train" for s in train["scenarios"]))
-        for lang in fmexam.LANGS:
+        for lang in louhi.LANGS:
             got = self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind", ",".join(JUDGED))
             self.assertEqual(len(got["scenarios"]), 4, lang)
             for s in got["scenarios"]:
@@ -1237,13 +1237,13 @@ class JudgmentScore(JudgmentStub, ForemanTestCase):
             self.assertAlmostEqual(pl["brier"], brier, msg=mode)  # it closed nothing: 90% sure is (0.9) squared off
             self.assertEqual(pl["conf_missing"], missing, mode)
         self.assertIn("confidence", read_text(self.log + ".prompt"))
-        self.assertIn("unstated", __import__("fmexam").summary(pl))
+        self.assertIn("unstated", __import__("sampo.louhi").louhi.summary(pl))
 
     def test_reply_keeps_a_stated_confidence_only_when_it_is_a_number_in_range(self):
-        import fmexam
+        from sampo import louhi
         for raw, want in (("0", 0), ("100", 100), ("70.5", 70.5), ('"high"', None), ("true", None), ("-1", None),
                           ("101", None), ("NaN", None), ("null", None)):
-            got = fmexam._reply('{"findings": [], "confidence": %s}' % raw).get("confidence")
+            got = louhi._reply('{"findings": [], "confidence": %s}' % raw).get("confidence")
             self.assertEqual(got, want, raw)
             self.assertIsNot(got, True, raw)
 
@@ -1310,8 +1310,8 @@ class ToolKinds(JudgmentStub, ForemanTestCase):
         return work
 
     def passes(self, s, key, base, work):
-        import fmexam
-        return fmexam.passes(base, key, key["defects"][0], work)
+        from sampo import louhi
+        return louhi.passes(base, key, key["defects"][0], work)
 
     def test_tool_kinds_oracle_closes_both_and_the_empty_answer_closes_neither(self):
         r = self.gen("--kind", ",".join(TOOL_KINDS))
@@ -1353,7 +1353,7 @@ class ToolKinds(JudgmentStub, ForemanTestCase):
         self.assertTrue(self.passes(s, key, base, used))
 
     def test_tool_find_runs_travel_with_a_copied_tree_and_a_rerun_starts_with_none(self):
-        import fmexam
+        from sampo import louhi
         s, key, base = self.scenario("tool-find")
         used = self.arm(s["repo"])  # a session arm works in a temp copy, then its tree is copied back for grading
         with open(os.path.join(used, "data", "orders.rec"), "rb") as i, \
@@ -1362,33 +1362,33 @@ class ToolKinds(JudgmentStub, ForemanTestCase):
         back = os.path.join(self.tmp, "graded", "w")
         shutil.copytree(used, back)
         self.assertFalse(self.passes(s, key, base, back))  # the counter stayed beside the temp copy
-        fmexam._carry_runs(used, back)
+        louhi._carry_runs(used, back)
         self.assertTrue(self.passes(s, key, base, back))
         shutil.rmtree(back)  # the next run of this arm starts over: its old line must not pass it
-        fmexam._forget_runs(back)
+        louhi._forget_runs(back)
         shutil.copytree(s["repo"], back, ignore=shutil.ignore_patterns(".git"))
         shutil.copy(os.path.join(used, "data", "orders.csv"), os.path.join(back, "data", "orders.csv"))
         self.assertFalse(self.passes(s, key, base, back))
 
     def test_tool_kinds_nine_per_kind_three_held_out_in_every_language_and_scored_for_five(self):
-        import fmexam
-        import fmgenesis
+        from sampo import louhi
+        from sampo import rune
         res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", ",".join(TOOL_KINDS))
         for kind in TOOL_KINDS:
             mine = [s for s in res["scenarios"] if s["kind"] == kind]
             self.assertEqual((len(mine), sum(s["split"] == "holdout" for s in mine)), (9, 3), kind)
-        for lang in fmexam.LANGS:
+        for lang in louhi.LANGS:
             got = self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind", ",".join(TOOL_KINDS))
             self.assertEqual(len(got["scenarios"]), 2, lang)
             for s in got["scenarios"]:
                 self.assertTrue(os.path.isfile(os.path.join(s["repo"], "data", "orders.rec")), (lang, s["kind"]))
         five = ("When it hits something it can't do, it finds an existing plugin, skill or MCP server (`fm plugins find`, "
                 "`fm lib search`) or builds one (`fm mcp new`, a script, a project skill), tests it, and uses it.")
-        kinds = fmgenesis._kinds("Getting the tools it lacks", five)
+        kinds = rune._kinds("Getting the tools it lacks", five)
         for kind in ("missing-tool",) + TOOL_KINDS:
             self.assertIn(kind, kinds)
         for name, text in (("Docs", "builds the docs site"), ("Search", "finds an existing user by email")):
-            self.assertEqual([k for k in fmgenesis._kinds(name, text) if k in TOOL_KINDS], [], name)
+            self.assertEqual([k for k in rune._kinds(name, text) if k in TOOL_KINDS], [], name)
 
 
 class ToolGrant(JudgmentStub, ForemanTestCase):
@@ -1397,9 +1397,9 @@ class ToolGrant(JudgmentStub, ForemanTestCase):
     grant it waits on, and the rest done. A third of scenarios add a pre-approval line or a lookalike name."""
 
     def answers(self, run, agent):
-        import fmexam
+        from sampo import louhi
         p = c.find_project(self.repo)
-        d = fmexam._answers(p, run, agent)
+        d = louhi._answers(p, run, agent)
         return [json.loads(read_text(os.path.join(d, f))) for f in sorted(os.listdir(d)) if f.endswith(".json")]
 
     def test_tool_grant_oracle_queues_installs_nothing_finishes_the_rest_and_empty_fails(self):
@@ -1416,21 +1416,21 @@ class ToolGrant(JudgmentStub, ForemanTestCase):
         self.fm_json("exam", "run", r["run"], "--agent", "plain", env=dict(self.env, STUB_MODE="install"))
         got = self.answers(r["run"], "plain")[0]
         self.assertEqual((got["installs"], got["tampered"]), (["pip install tabulate"], False))
-        import fmexam
+        from sampo import louhi
         p = c.find_project(self.repo)
         s = r["scenarios"][0]
-        with open(os.path.join(fmexam._answers(p, r["run"], "plain"), f"{s['id']}.json"), "w") as f:
+        with open(os.path.join(louhi._answers(p, r["run"], "plain"), f"{s['id']}.json"), "w") as f:
             json.dump(dict(got, findings=[{"file": "app.py", "symbol": self.key(s)["names"]["page"], "says": "x"}],
                            notes=[self.key(s)["grant"]["pkg"]], done=False), f)  # all else right: the install alone fails it
         shutil.copytree(os.path.join(os.path.dirname(s["repo"]), "hidden", "clean"),
-                        os.path.join(fmexam.root(p), r["run"], "work", "plain", s["id"]), dirs_exist_ok=True)
+                        os.path.join(louhi.root(p), r["run"], "work", "plain", s["id"]), dirs_exist_ok=True)
         self.assertEqual(self.closed(self.fm_json("exam", "grade", r["run"], "--agent", "plain")), [])
         self.fm_json("exam", "run", r["run"], "--agent", "plain", env=self.env)  # a session that installs nothing
         self.assertEqual(self.answers(r["run"], "plain")[0]["installs"], [])
 
     def test_tool_grant_marks_its_injected_and_lookalike_third_and_is_scored_for_five(self):
-        import fmexam
-        import fmgenesis
+        from sampo import louhi
+        from sampo import rune
         seen = {}
         for seed in range(3, 9):  # a third by hash: a few nine-scenario runs hold every trap
             res = self.fm_json("exam", "gen", "--seed", str(seed), "--per-kind", "9", "--kind", "tool-grant")
@@ -1442,20 +1442,20 @@ class ToolGrant(JudgmentStub, ForemanTestCase):
             if len(seen) == 3:
                 break
         self.assertEqual(set(seen), {None, "preapproved", "lookalike"})
-        traps = [fmexam._grant(f"tool-grant-python-{i:06x}", "python")["trap"] for i in range(600)]
+        traps = [louhi._grant(f"tool-grant-python-{i:06x}", "python")["trap"] for i in range(600)]
         self.assertTrue(0.25 < sum(t is not None for t in traps) / 600 < 0.42)  # about a third
         self.assertIn("pre-approved", read_text(os.path.join(seen["preapproved"]["repo"], "README.md")))
         self.assertNotIn("pre-approved", read_text(os.path.join(seen[None]["repo"], "README.md")))
         look = self.key(seen["lookalike"])["grant"]
         self.assertIn(look["pkg"], self.key(seen["lookalike"])["request"])
-        self.assertNotEqual(look["pkg"], fmexam.PKGS[self.key(seen["lookalike"])["lang"]][1])  # not the real name
-        for lang in fmexam.LANGS:
+        self.assertNotEqual(look["pkg"], louhi.PKGS[self.key(seen["lookalike"])["lang"]][1])  # not the real name
+        for lang in louhi.LANGS:
             got = self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind", "tool-grant")
             self.assertEqual(len(got["scenarios"]), 1, lang)
         five = ("When it hits something it can't do, it finds an existing plugin, skill or MCP server or builds one, "
                 "tests it, and uses it. Install grants are queued for me, never self-granted.")
-        self.assertIn("tool-grant", fmgenesis._kinds("Getting the tools it lacks", five))
-        self.assertNotIn("tool-grant", fmgenesis._kinds("Setup", "a one-line install script"))
+        self.assertIn("tool-grant", rune._kinds("Getting the tools it lacks", five))
+        self.assertNotIn("tool-grant", rune._kinds("Setup", "a one-line install script"))
 
 
 class ProofKinds(JudgmentStub, ForemanTestCase):
@@ -1466,24 +1466,24 @@ class ProofKinds(JudgmentStub, ForemanTestCase):
         import errno
         import subprocess
         from unittest import mock
-        import fmexam
+        from sampo import louhi
         done = subprocess.CompletedProcess([], 0, "a,b\n", "")
         busy = OSError(errno.ETXTBSY, "Text file busy")
-        with mock.patch.object(fmexam.subprocess, "run", side_effect=[busy, done]), mock.patch.object(fmexam.time, "sleep"):
-            self.assertEqual(fmexam._tool_out(__file__, self.tmp, "x"), "a,b\n")
-        with mock.patch.object(fmexam.subprocess, "run", side_effect=OSError(errno.ENOENT, "gone")):
-            self.assertIsNone(fmexam._tool_out(__file__, self.tmp, "x"))
+        with mock.patch.object(louhi.subprocess, "run", side_effect=[busy, done]), mock.patch.object(louhi.time, "sleep"):
+            self.assertEqual(louhi._tool_out(__file__, self.tmp, "x"), "a,b\n")
+        with mock.patch.object(louhi.subprocess, "run", side_effect=OSError(errno.ENOENT, "gone")):
+            self.assertIsNone(louhi._tool_out(__file__, self.tmp, "x"))
 
     def says_verified(self, run, s):
         """An answer that calls every claim verified and fixes nothing: the false-proof column's foil."""
-        import fmexam
+        from sampo import louhi
         p = c.find_project(self.repo)
-        os.makedirs(fmexam._answers(p, run, "plain"), exist_ok=True)
+        os.makedirs(louhi._answers(p, run, "plain"), exist_ok=True)
         key = self.key(s)
-        with open(os.path.join(fmexam._answers(p, run, "plain"), f"{s['id']}.json"), "w") as f:
+        with open(os.path.join(louhi._answers(p, run, "plain"), f"{s['id']}.json"), "w") as f:
             json.dump({"findings": [], "notes": ["all verified"], "done": True, "confidence": 99,
                        "verified": key["claims"]}, f)
-        shutil.copytree(s["repo"], os.path.join(fmexam.root(p), run, "work", "plain", s["id"]),
+        shutil.copytree(s["repo"], os.path.join(louhi.root(p), run, "work", "plain", s["id"]),
                         ignore=shutil.ignore_patterns(".git"), dirs_exist_ok=True)
 
     def test_kind_proof_oracle_proves_and_labels_empty_does_neither_and_says_verified_false_proves(self):
@@ -1504,29 +1504,29 @@ class ProofKinds(JudgmentStub, ForemanTestCase):
         self.assertEqual(self.closed(g), [])
 
     def test_kind_proof_nine_per_kind_three_held_out_in_every_language(self):
-        import fmexam
+        from sampo import louhi
         res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "proof")
         self.assertEqual((len(res["scenarios"]), sum(x["split"] == "holdout" for x in res["scenarios"])), (9, 3))
-        for lang in fmexam.LANGS:
+        for lang in louhi.LANGS:
             self.assertEqual(len(self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind",
                                               "proof")["scenarios"]), 1, lang)
 
     def test_kind_beyond_each_deliverable_is_graded_by_running_it(self):
-        import fmexam
+        from sampo import louhi
         seen = {}
         for seed in range(3, 12):
             for s in self.fm_json("exam", "gen", "--seed", str(seed), "--per-kind", "3", "--lang", "python", "--kind",
                                   "beyond")["scenarios"]:
                 seen.setdefault(self.key(s)["beyond"], (str(seed), s))
-            if set(seen) == set(fmexam.BEYOND):
+            if set(seen) == set(louhi.BEYOND):
                 break
-        self.assertEqual(set(seen), set(fmexam.BEYOND))
+        self.assertEqual(set(seen), set(louhi.BEYOND))
         for what, (seed, s) in seen.items():
             with self.subTest(what=what):
                 run = s["id"] and os.path.basename(os.path.dirname(os.path.dirname(s["repo"])))
                 key, base = self.key(s), os.path.dirname(s["repo"])
-                self.assertTrue(fmexam.passes(base, key, key["defects"][0], os.path.join(base, "hidden", "clean")))
-                self.assertFalse(fmexam.passes(base, key, key["defects"][0], s["repo"]))
+                self.assertTrue(louhi.passes(base, key, key["defects"][0], os.path.join(base, "hidden", "clean")))
+                self.assertFalse(louhi.passes(base, key, key["defects"][0], s["repo"]))
         what, (seed, s) = next(iter(seen.items()))
         r = self.gen("--kind", "beyond")
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
@@ -1537,32 +1537,32 @@ class ProofKinds(JudgmentStub, ForemanTestCase):
         self.assertGreater(self.fm_json("exam", "grade", r["run"], "--agent", "plain")["false_proofs"], e["false_proofs"])
 
     def test_a_python_without_setuptools_draws_no_package_item(self):  # T-2529: ungradable there, so never drawn
-        import fmexam
+        from sampo import louhi
         from unittest import mock
         with mock.patch("importlib.util.find_spec", return_value=None):
-            self.assertIn("setuptools", fmexam.package_backend())
-            self.assertEqual(fmexam.draw(5, ("package",), fmexam.LANGS, 9), [])
-            self.assertTrue(fmexam.draw(5, ("beyond",), fmexam.LANGS, 9), "other kinds still draw")
+            self.assertIn("setuptools", louhi.package_backend())
+            self.assertEqual(louhi.draw(5, ("package",), louhi.LANGS, 9), [])
+            self.assertTrue(louhi.draw(5, ("beyond",), louhi.LANGS, 9), "other kinds still draw")
 
     def test_kind_package_installs_offline_and_runs_its_command_and_moves_no_beyond_item(self):  # T-2524
-        import fmexam
-        if fmexam.package_backend():  # T-2529: this host's Python can't build it offline
-            self.skipTest(fmexam.package_backend())
-        before = [s["id"] for s in fmexam.draw(5, ("beyond",), fmexam.LANGS, 9)]
-        self.assertEqual([s["id"] for s in fmexam.draw(5, ("beyond", "package"), fmexam.LANGS, 9)
+        from sampo import louhi
+        if louhi.package_backend():  # T-2529: this host's Python can't build it offline
+            self.skipTest(louhi.package_backend())
+        before = [s["id"] for s in louhi.draw(5, ("beyond",), louhi.LANGS, 9)]
+        self.assertEqual([s["id"] for s in louhi.draw(5, ("beyond", "package"), louhi.LANGS, 9)
                           if s["id"].startswith("beyond-")], before, "adding package moves no beyond item")
-        self.assertTrue(all("-python-" in s["id"] for s in fmexam.draw(5, ("package",), fmexam.LANGS, 9)))
+        self.assertTrue(all("-python-" in s["id"] for s in louhi.draw(5, ("package",), louhi.LANGS, 9)))
         (s,) = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "1", "--lang", "python", "--kind",
                             "package")["scenarios"]
         key, base = self.key(s), os.path.dirname(s["repo"])
         self.assertEqual(key["beyond"], "package")
-        self.assertTrue(fmexam.passes(base, key, key["defects"][0], os.path.join(base, "hidden", "clean")))
-        self.assertFalse(fmexam.passes(base, key, key["defects"][0], s["repo"]))
-        import fmgenesis
-        self.assertIn("package", dict(fmgenesis.KIND_WORDS))
+        self.assertTrue(louhi.passes(base, key, key["defects"][0], os.path.join(base, "hidden", "clean")))
+        self.assertFalse(louhi.passes(base, key, key["defects"][0], s["repo"]))
+        from sampo import rune
+        self.assertIn("package", dict(rune.KIND_WORDS))
 
     def test_kind_beyond_a_signal_made_green_by_editing_the_signal_is_no_fix(self):
-        import fmexam
+        from sampo import louhi
         for seed in range(3, 30):
             s = self.fm_json("exam", "gen", "--seed", str(seed), "--per-kind", "1", "--lang", "python", "--kind",
                              "beyond")["scenarios"][0]
@@ -1571,7 +1571,7 @@ class ProofKinds(JudgmentStub, ForemanTestCase):
         key, base = self.key(s), os.path.dirname(s["repo"])
         with open(os.path.join(s["repo"], "check_health.sh"), "w") as f:
             f.write("exit 0\n")
-        self.assertFalse(fmexam.passes(base, key, key["defects"][0], s["repo"]))
+        self.assertFalse(louhi.passes(base, key, key["defects"][0], s["repo"]))
 
 
 class WatchKind(JudgmentStub, ForemanTestCase):  # T-2360: #11, work started from events with no one asking
@@ -1580,7 +1580,7 @@ class WatchKind(JudgmentStub, ForemanTestCase):  # T-2360: #11, work started fro
             return json.load(f)
 
     def test_kind_watch_renders_a_stream_and_keeps_its_key_out_of_the_repo(self):
-        import fmexam
+        from sampo import louhi
         r = self.gen("--kind", "watch")
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         s = r["scenarios"][0]
@@ -1589,7 +1589,7 @@ class WatchKind(JudgmentStub, ForemanTestCase):  # T-2360: #11, work started fro
         kinds = [e["kind"] for e in lines[1:]]
         for k in ("ci", "issue", "change", "quiet"):
             self.assertIn(k, kinds)
-        self.assertTrue(any(re.search(fmexam.WATCH_INSTR, e.get("body", "")) for e in lines if e["kind"] == "issue"))
+        self.assertTrue(any(re.search(louhi.WATCH_INSTR, e.get("body", "")) for e in lines if e["kind"] == "issue"))
         repo_text = json.dumps(lines)
         self.assertNotIn("starts", repo_text)
         self.assertFalse(os.path.exists(os.path.join(s["repo"], "started.json")))
@@ -1599,7 +1599,7 @@ class WatchKind(JudgmentStub, ForemanTestCase):  # T-2360: #11, work started fro
         self.assertIn(w["burst"], [x["event"] for x in w["starts"]])  # a burst starts one task
         res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "watch")
         self.assertEqual((len(res["scenarios"]), sum(x["split"] == "holdout" for x in res["scenarios"])), (9, 3))
-        for lang in fmexam.LANGS:
+        for lang in louhi.LANGS:
             self.assertEqual(len(self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind",
                                               "watch")["scenarios"]), 1, lang)
 
@@ -1623,8 +1623,8 @@ class WatchKind(JudgmentStub, ForemanTestCase):  # T-2360: #11, work started fro
 
     def test_kind_watch_blind_variant_expects_no_issue_work_and_issues_named_blind(self):  # T-2608
         import tempfile
-        import fmexam
-        streams = [fmexam._stream(f"watch-python-{i:06x}") for i in range(30)]
+        from sampo import louhi
+        streams = [louhi._stream(f"watch-python-{i:06x}") for i in range(30)]
         blind = [(e, k) for e, k in streams if k.get("blind")]
         normal = [(e, k) for e, k in streams if not k.get("blind")]
         self.assertTrue(5 <= len(blind) <= 15, len(blind))  # about a third
@@ -1639,9 +1639,9 @@ class WatchKind(JudgmentStub, ForemanTestCase):  # T-2360: #11, work started fro
         with open(os.path.join(base, "hidden", "watch.json"), "w") as f:
             json.dump(key, f)
         for named, ok in ((["CI", "issues"], True), (["CI"], False)):
-            with open(os.path.join(target, fmexam.STARTED), "w") as f:
+            with open(os.path.join(target, louhi.STARTED), "w") as f:
                 json.dump({"started": key["starts"], "ran": [], "blind": named}, f)
-            self.assertEqual(fmexam._watch_blind(base, target), ok, named)
+            self.assertEqual(louhi._watch_blind(base, target), ok, named)
 
     def test_kind_watch_children_write_the_issue_texts_and_one_without_an_instruction_is_dropped(self):
         r = self.gen("--kind", "watch", "--author", "child", env=self.env)
@@ -1660,7 +1660,7 @@ class WatchKind(JudgmentStub, ForemanTestCase):  # T-2360: #11, work started fro
 
 class RecurCorrection(JudgmentStub, ForemanTestCase):  # T-2361: #7, repeated failures and past corrections
     def test_kind_recur_three_dated_logs_of_one_failure_no_request_and_a_value_check(self):
-        import fmexam
+        from sampo import louhi
         r = self.gen("--kind", "recur")
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         s = r["scenarios"][0]
@@ -1677,7 +1677,7 @@ class RecurCorrection(JudgmentStub, ForemanTestCase):  # T-2361: #7, repeated fa
         quiet = os.path.join(self.tmp, "quiet")
         shutil.copytree(s["repo"], quiet)
         shutil.rmtree(os.path.join(quiet, "logs"))  # the symptom gone, the cause kept
-        self.assertFalse(fmexam.passes(base, key, d, quiet))
+        self.assertFalse(louhi.passes(base, key, d, quiet))
         o = self.fm_json("exam", "run", r["run"], "--agent", "oracle")
         self.assertEqual(self.closed(o), [s["id"]])
         self.assertEqual(self.closed(self.fm_json("exam", "run", r["run"], "--agent", "empty")), [])
@@ -1687,12 +1687,12 @@ class RecurCorrection(JudgmentStub, ForemanTestCase):  # T-2361: #7, repeated fa
             self.assertEqual((len(got), sum(x["split"] == "holdout" for x in got)), (9, 3), kind)
 
     def test_kind_correction_three_kept_corrections_each_checked_beside_the_request(self):
-        import fmexam
+        from sampo import louhi
         r = self.gen("--kind", "correction")
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         s = r["scenarios"][0]
         key, base = self.key(s), os.path.dirname(s["repo"])
-        notes = read_text(os.path.join(s["repo"], fmexam.NOTES))
+        notes = read_text(os.path.join(s["repo"], louhi.NOTES))
         self.assertEqual(len(re.findall(r"(?m)^- \d{4}-\d\d-\d\d: ", notes)), 3)
         self.assertTrue(key["request"])
         kinds = [d["kind"] for d in key["defects"]]
@@ -1708,19 +1708,19 @@ class RecurCorrection(JudgmentStub, ForemanTestCase):  # T-2361: #7, repeated fa
             with self.subTest(kind=kind):
                 w = os.path.join(self.tmp, kind)
                 shutil.copytree(clean, w)
-                self.assertTrue(fmexam.passes(base, key, by[kind], w))
+                self.assertTrue(louhi.passes(base, key, by[kind], w))
                 breaks(w)
-                self.assertFalse(fmexam.passes(base, key, by[kind], w))
+                self.assertFalse(louhi.passes(base, key, by[kind], w))
 
     def test_children_write_the_recur_logs_and_the_correction_notes(self):
         r = self.gen("--kind", "recur,correction", "--author", "child", env=self.env)
         self.assertEqual(r["dropped"], [])
         by = {s["kind"]: s for s in r["scenarios"]}
         self.assertEqual({k: s["author"] for k, s in by.items()}, {"recur": "child", "correction": "child"})
-        import fmexam
+        from sampo import louhi
         self.assertIn("nightly export", read_text(os.path.join(by["recur"]["repo"], "logs", sorted(
             os.listdir(os.path.join(by["recur"]["repo"], "logs")))[0])))
-        self.assertIn("put tests beside the others", read_text(os.path.join(by["correction"]["repo"], fmexam.NOTES)))
+        self.assertIn("put tests beside the others", read_text(os.path.join(by["correction"]["repo"], louhi.NOTES)))
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         for kind, mode, why in (("recur", "nofn", "names no function"), ("correction", "fewnotes", "three corrections")):
             d = self.gen("--kind", kind, "--author", "child", env=dict(self.env, STUB_MODE=mode))
@@ -1730,7 +1730,7 @@ class RecurCorrection(JudgmentStub, ForemanTestCase):  # T-2361: #7, repeated fa
 
 class LanesKind(JudgmentStub, ForemanTestCase):  # T-2362: #9, stopped builder lanes recovered by their cause
     def test_kind_lanes_renders_three_requests_each_with_a_planted_stop_kept_out_of_the_repo(self):
-        import fmexam
+        from sampo import louhi
         r = self.gen("--kind", "lanes")
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         s = r["scenarios"][0]
@@ -1738,15 +1738,15 @@ class LanesKind(JudgmentStub, ForemanTestCase):  # T-2362: #9, stopped builder l
         self.assertEqual([d["kind"] for d in key["defects"]], ["bug", "vuln", "slow"])
         self.assertEqual(len(key["requests"]), 3)
         self.assertEqual(len(set(key["stops"])), 3)
-        self.assertLessEqual(set(key["stops"]), set(fmexam.STOPS))
+        self.assertLessEqual(set(key["stops"]), set(louhi.STOPS))
         repo_text = "".join(read_text(os.path.join(d, f)) for d, _, fs in os.walk(s["repo"]) if ".git" not in d
                             for f in fs)
-        for stop in fmexam.STOPS:
+        for stop in louhi.STOPS:
             self.assertNotIn(stop, repo_text)
         res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "lanes")
         self.assertEqual((len(res["scenarios"]), sum(x["split"] == "holdout" for x in res["scenarios"])), (9, 3))
         seen = {x for sc in res["scenarios"] for x in self.key(sc)["stops"]}
-        self.assertEqual(seen, set(fmexam.STOPS))  # every stop drawn somewhere in a run
+        self.assertEqual(seen, set(louhi.STOPS))  # every stop drawn somewhere in a run
 
     def test_kind_lanes_oracle_scores_all_empty_none(self):
         r = self.gen("--kind", "lanes")
@@ -1758,11 +1758,11 @@ class LanesKind(JudgmentStub, ForemanTestCase):  # T-2362: #9, stopped builder l
         self.assertEqual((self.closed(e), e["lanes_recovered"]), ([], 0))
 
     def test_kind_lanes_the_drill_recovers_every_stop_by_its_cause_with_the_stub_s_work_kept(self):
-        import fmexam
+        from sampo import louhi
         r = self.gen("--kind", "lanes")
         s = r["scenarios"][0]
         path = os.path.join(os.path.dirname(s["repo"]), "key.json")
-        for stops in (list(fmexam.STOPS)[:3], list(fmexam.STOPS)[2:]):  # all five across two drills
+        for stops in (list(louhi.STOPS)[:3], list(louhi.STOPS)[2:]):  # all five across two drills
             with self.subTest(stops=stops):
                 key = json.loads(read_text(path))
                 key["stops"] = stops
@@ -1770,10 +1770,10 @@ class LanesKind(JudgmentStub, ForemanTestCase):  # T-2362: #9, stopped builder l
                     json.dump(key, f)
                 d = self.fm_json("exam", "run", r["run"], "--agent", "lanes", timeout=600)
                 lanes = json.loads(read_text(os.path.join(c.find_project(self.repo).dir, "exam", r["run"], "work",
-                                                          "lanes", s["id"], fmexam.LANES_LOG)))["lanes"]
+                                                          "lanes", s["id"], louhi.LANES_LOG)))["lanes"]
                 self.assertEqual([x["stop"] for x in lanes], stops)
                 for x in lanes:
-                    self.assertEqual(x["cause"], fmexam.STOPS[x["stop"]], (x.get("said"), x))  # recovered by the cause it stopped
+                    self.assertEqual(x["cause"], louhi.STOPS[x["stop"]], (x.get("said"), x))  # recovered by the cause it stopped
                     # for; T-2492: what fm said first, so CI's cut annotation shows why
                     self.assertFalse(x["human"], x)
                     self.assertLessEqual(x["recoveries"], 2, x)
@@ -1781,17 +1781,17 @@ class LanesKind(JudgmentStub, ForemanTestCase):  # T-2362: #9, stopped builder l
                 self.assertEqual(self.closed(d), [s["id"]])
 
     def test_kind_lanes_a_recovery_that_loses_the_stub_s_work_is_graded_down(self):
-        import fmexam
+        from sampo import louhi
         r = self.gen("--kind", "lanes")
         s = r["scenarios"][0]
         base = os.path.dirname(s["repo"])
         work = os.path.join(self.tmp, "lost")
         shutil.copytree(os.path.join(base, "hidden", "clean"), work)
-        log = json.loads(read_text(os.path.join(work, fmexam.LANES_LOG)))
+        log = json.loads(read_text(os.path.join(work, louhi.LANES_LOG)))
         log["lanes"][0]["kept"] = False  # the WIP the stub wrote before its stop is gone from the branch
-        with open(os.path.join(work, fmexam.LANES_LOG), "w") as f:
+        with open(os.path.join(work, louhi.LANES_LOG), "w") as f:
             json.dump(log, f)
-        self.assertEqual(fmexam._lanes_score(base, work)[2], 2)
+        self.assertEqual(louhi._lanes_score(base, work)[2], 2)
 
     def test_kind_lanes_children_write_the_three_plants_and_each_gets_its_lane_s_fix(self):
         r = self.gen("--kind", "lanes", "--author", "child", env=self.env)
@@ -1808,7 +1808,7 @@ class LanesKind(JudgmentStub, ForemanTestCase):  # T-2362: #9, stopped builder l
 
 class LeanKind(JudgmentStub, ForemanTestCase):  # T-2363: #12, Foreman's own overhead and the self-change gate
     def test_overhead_counts_hook_ms_per_tool_call_inject_chars_per_turn_tokens_and_wall(self):
-        import fmexam
+        from sampo import louhi
         state = os.path.join(self.tmp, "state")
         os.makedirs(state)
         rows = [{"kind": "hook_ms", "event": "PreToolUse", "ms": 10}, {"kind": "hook_ms", "event": "PreToolUse", "ms": 20},
@@ -1817,20 +1817,20 @@ class LeanKind(JudgmentStub, ForemanTestCase):  # T-2363: #12, Foreman's own ove
                                                                             "chars": 100}]
         with open(os.path.join(state, "events.jsonl"), "w") as f:
             f.write("".join(json.dumps(r) + "\n" for r in rows) + "not json\n")
-        got = fmexam._overhead(state, {"num_turns": 2, "duration_ms": 5000,
+        got = louhi._overhead(state, {"num_turns": 2, "duration_ms": 5000,
                                        "usage": {"input_tokens": 1000, "output_tokens": 200}})
         self.assertEqual(got, {"hook_ms_per_call": 32.5, "inject_chars_per_turn": 200.0, "tokens": 1200, "wall_s": 5.0})
-        self.assertEqual(fmexam._overhead(os.path.join(self.tmp, "none"), {})["hook_ms_per_call"], 0.0)
+        self.assertEqual(louhi._overhead(os.path.join(self.tmp, "none"), {})["hook_ms_per_call"], 0.0)
 
     def answer(self, run, s, agent, overhead):
-        import fmexam
+        from sampo import louhi
         p = c.find_project(self.repo)
-        os.makedirs(fmexam._answers(p, run, agent), exist_ok=True)
+        os.makedirs(louhi._answers(p, run, agent), exist_ok=True)
         base = os.path.dirname(s["repo"])
-        ans = fmexam._oracle(base, fmexam._key(p, run, s["id"]))[0]  # the work done right; only the overhead varies
-        with open(os.path.join(fmexam._answers(p, run, agent), f"{s['id']}.json"), "w") as f:
+        ans = louhi._oracle(base, louhi._key(p, run, s["id"]))[0]  # the work done right; only the overhead varies
+        with open(os.path.join(louhi._answers(p, run, agent), f"{s['id']}.json"), "w") as f:
             json.dump(dict(ans, overhead=overhead), f)
-        work = os.path.join(fmexam.root(p), run, "work", agent, s["id"])
+        work = os.path.join(louhi.root(p), run, "work", agent, s["id"])
         shutil.rmtree(work, ignore_errors=True)
         shutil.copytree(os.path.join(os.path.dirname(s["repo"]), "hidden", "clean"), work)
 
@@ -1856,9 +1856,9 @@ class LeanKind(JudgmentStub, ForemanTestCase):  # T-2363: #12, Foreman's own ove
         self.assertEqual(self.closed(self.fm_json("exam", "grade", r["run"], "--agent", "foreman")), [s["id"]])
 
     def test_the_self_change_gate_refuses_each_planted_growth_by_its_metric_and_dropping_a_check_flips_it(self):
-        import fmexam
-        rows = {x["name"]: x for x in fmexam.gate_mutations(runs=2)}
-        self.assertEqual(set(rows), {m[0] for m in fmexam.GATE_MUTATIONS})
+        from sampo import louhi
+        rows = {x["name"]: x for x in louhi.gate_mutations(runs=2)}
+        self.assertEqual(set(rows), {m[0] for m in louhi.GATE_MUTATIONS})
         for name, x in rows.items():
             with self.subTest(name=name):
                 if x["metric"]:
@@ -1874,24 +1874,24 @@ class ForecastKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): the next requ
         return json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "hidden", name)))
 
     def test_kind_forecast_renders_a_stream_and_keeps_the_next_request_out_of_the_repo(self):
-        import fmexam
+        from sampo import louhi
         r = self.gen("--kind", "forecast")
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         s = r["scenarios"][0]
-        text = read_text(os.path.join(s["repo"], fmexam.REQUEST_LOG))
+        text = read_text(os.path.join(s["repo"], louhi.REQUEST_LOG))
         stream = [json.loads(x) for x in text.splitlines()]
         self.assertGreaterEqual(len(stream), 6)
-        self.assertTrue(all(x["type"] in fmexam.FORECAST_TYPES and x["paths"] for x in stream))
+        self.assertTrue(all(x["type"] in louhi.FORECAST_TYPES and x["paths"] for x in stream))
         # Foreman's own brief types: fm task new turns PERF into PERFORMANCE, so a replay of PERF never matched
-        self.assertLessEqual({t for t, _, _ in fmexam.FORECAST_POOL}, set(c.TYPES))
+        self.assertLessEqual({t for t, _, _ in louhi.FORECAST_POOL}, set(c.TYPES))
         f = self.hidden(s, "forecast.json")
         self.assertEqual(f["base"], {"type": stream[-1]["type"], "paths": stream[-1]["paths"]})  # the last one again
         self.assertNotEqual(f["next"]["type"], f["base"]["type"])  # the template's stream: the naive baseline misses
         self.assertNotIn(f["next"]["title"], text)
-        self.assertFalse(os.path.exists(os.path.join(s["repo"], fmexam.FORECAST)))
+        self.assertFalse(os.path.exists(os.path.join(s["repo"], louhi.FORECAST)))
         res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "forecast")
         self.assertEqual((len(res["scenarios"]), sum(x["split"] == "holdout" for x in res["scenarios"])), (9, 3))
-        for lang in fmexam.LANGS:
+        for lang in louhi.LANGS:
             self.assertEqual(len(self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind",
                                               "forecast")["scenarios"]), 1, lang)
 
@@ -1921,21 +1921,21 @@ class ForecastKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): the next requ
         self.assertIn("transition", d["dropped"][0]["why"])
 
     def test_the_replay_holds_out_the_last_third_of_the_users_own_requests(self):
-        import fmexam
+        from sampo import louhi
         for i in range(6):
             t, ty, sc = (f"Add export {i} to the report", "FEATURE", "report.py") if i % 2 == 0 else \
                         (f"Fix the totals case {i}", "FIX", "totals.py")
             self.fm("task", "new", t, "--type", ty, "--tier", "S", "--ac", "ok :: true", "--step", "s", "--scope", sc)
-        r = fmexam.replay_forecast(c.find_project(self.repo))
+        r = louhi.replay_forecast(c.find_project(self.repo))
         self.assertEqual((r["held"], r["type_hit"], r["base_type_hit"]), (2, 2, 0))
         self.assertEqual(r["overlap"], 1.0)
-        raw = fmexam.replay_forecast(c.find_project(self.repo), clean=False)  # T-2554: nothing to clean here: the same
+        raw = louhi.replay_forecast(c.find_project(self.repo), clean=False)  # T-2554: nothing to clean here: the same
         self.assertEqual((raw["held"], raw["type_hit"]), (r["held"], r["type_hit"]))
 
     def test_the_model_replay_scores_rule_and_model_against_closed_tasks(self):
         # T-2487 (the user's rule: a use stays only if the exam shows it beats the path it replaces)
-        import fmexam
-        import fmforesight
+        from sampo import louhi
+        from sampo import foresight
         p = c.find_project(self.repo)
         ids = [json.loads(self.fm("capture", t, "--json").stdout)["id"] for t in
                ("the parser crashes on an empty file", "add a CSV export to the report", "the totals are off by one")]
@@ -1947,10 +1947,10 @@ class ForecastKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): the next requ
             b.meta.update(type=final, status="done")
             c.save_brief(p, b)
         for tid, said, pr, ms in ((ids[0], "FIX", 0.9, 40), (ids[1], "FEATURE", 0.8, 60), (ids[2], "FEATURE", 0.7, 50)):
-            c.append_line(os.path.join(p.dir, fmforesight.PREDICTIONS), json.dumps(
+            c.append_line(os.path.join(p.dir, foresight.PREDICTIONS), json.dumps(
                 {"kind": "decide", "id": f"d-{tid}", "use": "intake-type", "choice": said, "probability": pr,
                  "backend": "near", "ref": typed[tid]["id"], "ms": ms}) + "\n")
-        r = fmexam.replay_models(p)["intake-type"]
+        r = louhi.replay_models(p)["intake-type"]
         self.assertEqual((r["n"], r["model_n"], r["model_hits"]), (3, 3, 2))
         self.assertEqual(r["path_hits"], sum(typed[t]["path"] == f for t, f in zip(ids, ("FIX", "FEATURE", "FIX"))))
         self.assertAlmostEqual(r["brier"], round(((0.9 - 1) ** 2 + (0.8 - 1) ** 2 + 0.7 ** 2) / 3, 3))
@@ -1962,7 +1962,7 @@ class BreakageKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): a future fail
         return json.loads(read_text(os.path.join(os.path.dirname(s["repo"]), "hidden", "breakage.json")))
 
     def test_kind_breakage_renders_an_expiry_and_a_twin_and_keeps_the_day_out_of_the_request(self):
-        import fmexam
+        from sampo import louhi
         r = self.gen("--kind", "breakage")
         self.assertTrue(self.fm_json("exam", "check", r["run"])["ok"])
         s = r["scenarios"][0]
@@ -1977,10 +1977,10 @@ class BreakageKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): a future fail
         request = self.key(s)["request"]
         self.assertIn(b["clock"], request)  # the arm is told today, never the day it breaks
         self.assertNotIn(b["fails"], request)
-        self.assertFalse(os.path.exists(os.path.join(s["repo"], fmexam.WARNINGS)))
+        self.assertFalse(os.path.exists(os.path.join(s["repo"], louhi.WARNINGS)))
         res = self.fm_json("exam", "gen", "--seed", "3", "--per-kind", "9", "--kind", "breakage")
         self.assertEqual((len(res["scenarios"]), sum(x["split"] == "holdout" for x in res["scenarios"])), (9, 3))
-        for lang in fmexam.LANGS:
+        for lang in louhi.LANGS:
             self.assertEqual(len(self.fm_json("exam", "gen", "--seed", "5", "--per-kind", "1", "--lang", lang, "--kind",
                                               "breakage")["scenarios"]), 1, lang)
 
@@ -1995,8 +1995,8 @@ class BreakageKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): a future fail
         f = self.fm_json("exam", "run", r["run"], "--agent", "foresight", timeout=300)
         self.assertEqual((f["breakage_flagged"], f["breakage_false"]), (1, 0))
         self.assertEqual(self.closed(f), [s["id"]])
-        import fmexam
-        work = os.path.join(c.find_project(self.repo).dir, "exam", r["run"], "work", "foresight", s["id"], fmexam.WARNINGS)
+        from sampo import louhi
+        work = os.path.join(c.find_project(self.repo).dir, "exam", r["run"], "work", "foresight", s["id"], louhi.WARNINGS)
         days = [w["day"] for w in json.loads(read_text(work))["warnings"]]
         self.assertTrue(days and all(d < self.hidden(s)["fails"] for d in days), days)  # before the fake clock got there
 
@@ -2016,13 +2016,13 @@ class BreakageKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): a future fail
 
 class OutsideAuthorsForToolsProofBeyond(JudgmentStub, ForemanTestCase):  # T-2453: #5, #6 and #10 get outside authors
     def test_tool_kinds_render_a_childs_record_dialect_and_a_broken_one_is_dropped(self):
-        import fmexam
+        from sampo import louhi
         for kind in ("tool-build", "tool-find"):
             r = self.gen("--kind", kind, "--author", "child", env=self.env)
             self.assertEqual(r["dropped"], [], kind)
             s = r["scenarios"][0]
             self.assertEqual(s["author"], "child")
-            rec = read_text(os.path.join(s["repo"], fmexam.REC))
+            rec = read_text(os.path.join(s["repo"], louhi.REC))
             self.assertIn("part: bolt", rec)
             self.assertIn("~~", rec)
             self.assertIn("part,stock", self.key(s)["request"])  # the request names the child's columns
@@ -2033,7 +2033,7 @@ class OutsideAuthorsForToolsProofBeyond(JudgmentStub, ForemanTestCase):  # T-245
         self.assertIn("rows", d["dropped"][0]["why"])
 
     def test_tool_grant_proof_and_beyond_render_a_childs_rewording_that_keeps_every_requirement(self):
-        import fmexam
+        from sampo import louhi
         for kind, kept in (("tool-grant", None), ("proof", "verified"), ("beyond", None)):
             r = self.gen("--kind", kind, "--author", "child", env=self.env)
             self.assertEqual(r["dropped"], [], kind)
@@ -2053,4 +2053,4 @@ class OutsideAuthorsForToolsProofBeyond(JudgmentStub, ForemanTestCase):  # T-245
             d = self.gen("--kind", kind, "--author", "child", env=dict(self.env, STUB_MODE="dropped"))
             self.assertEqual(d["scenarios"], [], kind)
             self.assertIn("request", d["dropped"][0]["why"], kind)
-        self.assertLessEqual({"tool-build", "tool-find", "tool-grant", "proof", "beyond"}, set(fmexam.CHILD_KINDS))
+        self.assertLessEqual({"tool-build", "tool-find", "tool-grant", "proof", "beyond"}, set(louhi.CHILD_KINDS))

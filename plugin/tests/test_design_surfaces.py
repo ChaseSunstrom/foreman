@@ -8,8 +8,8 @@ import unittest
 
 from helpers import PLUGIN, ForemanTestCase, headless_chrome, read_text
 
-import fmdesign
-import fmsettings
+from sampo import design
+from sampo import settings
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DESIGN = os.path.join(HERE, "fixtures", "design-surfaces", "DESIGN.md")
@@ -19,16 +19,16 @@ KIT = os.path.join(os.path.dirname(PLUGIN), "mods", "foreman-ui", "hooks", "kit.
 
 class PaneSaved(ForemanTestCase):  # T-1717
     def test_a_saved_pane_palette_reaches_fm_ui_checked_and_clear_forgets_it(self):
-        import fmcore
+        from sampo import core
         bad = self.fm("design", "tokens", DESIGN, "--to", "css", "--save", check=False)
         self.assertNotEqual(bad.returncode, 0, "--save keeps a pane palette only: never silently ignored")
-        self.assertFalse(os.path.exists(fmcore.pane_palette_path()))
+        self.assertFalse(os.path.exists(core.pane_palette_path()))
         p = self.fm("design", "tokens", DESIGN, "--to", "pane", "--save")
         self.assertIn("Saved for the foreman-ui pane", p.stderr)
         self.fm("init")
         got = json.loads(self.fm("ui", "--json").stdout)["palette_custom"]
-        self.assertTrue(got and all(k in fmcore.PANE_ALL and v.startswith("#") for k, v in got.items()), got)
-        with open(fmcore.pane_palette_path(), "w") as f:
+        self.assertTrue(got and all(k in core.PANE_ALL and v.startswith("#") for k, v in got.items()), got)
+        with open(core.pane_palette_path(), "w") as f:
             json.dump({"accent": "#123456", "evil": "#000000", "ok": "red; x", "err": 7}, f)
         self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["palette_custom"], {"accent": "#123456"})
         p = self.fm("design", "tokens", "--to", "pane", "--clear", env={"FOREMAN_WORKER_OF": "run-1"}, check=False)
@@ -54,7 +54,7 @@ class TokenCase(ForemanTestCase):
         with open(os.path.join(self.home, "tui.toml"), "w", encoding="utf-8") as f:
             f.write(text)
         problems = []
-        got = fmsettings.written(problems)
+        got = settings.written(problems)
         colors = {k: v for (s, k), (v, e, read) in got.items() if s == "app" and k.startswith("colors.")}
         unread = [k for (s, k), (v, e, read) in got.items() if s == "app" and not read]
         self.assertEqual(unread, [], text)
@@ -300,7 +300,7 @@ class Imported(TokenCase):  # T-1652: a DTCG or Figma variables export read as t
     def back(self, path):
         """What read_design makes of the ## Tokens table --to md prints for path."""
         md = self.put("DESIGN.md", "# Imported\n\n" + self.tokens("--to", "md", path=path).stdout)
-        return fmdesign.read_design(md)
+        return design.read_design(md)
 
     def test_dtcg_reads_as_tokens_and_md_reads_back(self):
         path = self.put("tokens.json", DTCG)
@@ -323,7 +323,7 @@ class Imported(TokenCase):  # T-1652: a DTCG or Figma variables export read as t
         md = self.put("DESIGN.md", "# Mine\n\n## Direction\n\nkeep me\n")
         self.tokens("--to", "md", "--out", md, path=self.put("tokens.json", DTCG))
         self.assertIn("keep me", read_text(md))
-        self.assertIn("--color-accent", fmdesign.read_design(md))
+        self.assertIn("--color-accent", design.read_design(md))
 
     def test_groups_beside_light_and_dark_are_shared_and_skips_are_named(self):  # T-1652 review: Tokens Studio
         path = self.put("studio.json", {
@@ -360,7 +360,7 @@ class Infer(ForemanTestCase):  # T-1652
         md = os.path.join(self.tmp, "DESIGN.md")
         with open(md, "w") as f:
             f.write("# X\n\n" + r.stdout)
-        got = fmdesign.read_design(md)
+        got = design.read_design(md)
         colours = [row["light_hex"].upper() for row in got.values() if row["light_hex"]]
         self.assertEqual(colours, ["#FF0000"], "#3366cc has a token; #00ff00 is used once")
         self.assertEqual(sorted(row["kind"] for row in got.values()), ["colour", "duration", "radius"])

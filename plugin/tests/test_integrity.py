@@ -10,9 +10,9 @@ class _Case(ForemanTestCase):
     def setUp(self):
         super().setUp()
         self.fm("init")
-        import fmcore as c
-        import fmdoctor
-        self.c, self.d, self.p = c, fmdoctor, c.find_project(self.repo)
+        from sampo import core as c
+        from sampo import doctor
+        self.c, self.d, self.p = c, doctor, c.find_project(self.repo)
         self.obj = os.path.join(self.repo, ".git", "objects", "ab", "c" * 38)
         os.makedirs(os.path.dirname(self.obj), exist_ok=True)
 

@@ -35,12 +35,12 @@ class Canary(unittest.TestCase):
         self.assertIn("near the idea", step)  # T-2686: Mission 7's catalogue met the rule with 'def main' 156 times
 
     def test_one_canary_term_across_most_verdicts_is_flagged(self):  # T-2686
-        import fmideas
+        from sampo import ideas
         same = "".join(f"- [new] idea {i}: grep 'x{i}': none; canary: def main found\n" for i in range(9))
         varied = "".join(f"- [new] idea {i}: none; canary: fm{i}.thing found (fm{i}.py:3)\n" for i in range(12))
-        self.assertEqual(fmideas.canary_spread(same + "- [new] y: canary: fmcost.burden found\n"), ("def main", 9, 10))
-        self.assertIsNone(fmideas.canary_spread(varied))
-        self.assertIsNone(fmideas.canary_spread(same))  # under 10 canaries: too few to judge
+        self.assertEqual(ideas.canary_spread(same + "- [new] y: canary: fmcost.burden found\n"), ("def main", 9, 10))
+        self.assertIsNone(ideas.canary_spread(varied))
+        self.assertIsNone(ideas.canary_spread(same))  # under 10 canaries: too few to judge
 
 
 class CanaryWarning(ForemanTestCase):

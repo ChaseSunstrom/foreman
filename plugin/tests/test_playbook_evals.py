@@ -8,8 +8,8 @@ from unittest import mock
 
 from helpers import FM, PLUGIN, ForemanTestCase
 
-import fmcore as c
-import fmplaybooks as pb
+from sampo import core as c
+from sampo import playbooks as pb
 
 BOOK = """# Fixture: migrations
 - Write the down migration before the up one.
@@ -56,19 +56,19 @@ class Lift(ForemanTestCase):
         def child(feature, system, prompt, model, timeout, **k):
             calls.append((feature, "migrations" in system))
             return "down migration, run it twice" if "migrations" in system else "users table"
-        with mock.patch("fmideas.run_child", side_effect=child):
+        with mock.patch("sampo.ideas.run_child", side_effect=child):
             r = pb.evaluate(BOOK, BRIEFS["briefs"], pb.real_model("haiku"))
         self.assertEqual(len(calls), 4, "each brief with and without")
         self.assertTrue(all(f == "playbook-eval" for f, _ in calls), "run_child checks and records each against fm budget")
         self.assertEqual((r["with"], r["without"]), (1, 1))
-        with mock.patch("fmideas.run_child") as rc:
+        with mock.patch("sampo.ideas.run_child") as rc:
             pb.evaluate(BOOK, BRIEFS["briefs"], pb.literal)
         rc.assert_not_called()
 
     def test_real_is_refused_up_front_when_the_budget_cant_cover_it(self):
-        import fmbudget
-        with mock.patch("fmbudget.check", side_effect=fmbudget.BudgetError("today's cap is spent")), \
-                mock.patch("fmideas.run_child") as rc:
+        from sampo import budget
+        with mock.patch("sampo.budget.check", side_effect=budget.BudgetError("today's cap is spent")), \
+                mock.patch("sampo.ideas.run_child") as rc:
             with self.assertRaises(ValueError):
                 pb.preflight_real(BRIEFS["briefs"])
         rc.assert_not_called()
@@ -99,7 +99,7 @@ class Lift(ForemanTestCase):
     def test_a_failing_real_child_names_its_brief(self):
         def child(feature, system, prompt, model, timeout, **k):
             raise ValueError("nothing came back")
-        with mock.patch("fmideas.run_child", side_effect=child):
+        with mock.patch("sampo.ideas.run_child", side_effect=child):
             with self.assertRaisesRegex(ValueError, "brief 1"):
                 pb.evaluate(BOOK, BRIEFS["briefs"], pb.real_model("haiku"))
 

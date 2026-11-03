@@ -8,7 +8,7 @@ import subprocess
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 AGENTS = os.path.join(c.PLUGIN_ROOT, "agents")
 

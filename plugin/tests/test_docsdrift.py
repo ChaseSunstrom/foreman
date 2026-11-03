@@ -7,7 +7,7 @@ from helpers import ForemanTestCase
 
 from test_prove import cli, write
 
-import fmdocs
+from sampo import docs
 
 
 class DocsDrift(ForemanTestCase):
@@ -34,7 +34,7 @@ class DocsDrift(ForemanTestCase):
         return sorted((f["file"], f["kind"], f["detail"]) for f in findings)
 
     def test_scan_reports_drift_only(self):
-        found = self.kinds(fmdocs.scan(self.repo))
+        found = self.kinds(docs.scan(self.repo))
         self.assertEqual(found, [
             ("README.md", "command", "npm run build"),
             ("README.md", "path", "src/gone.py"),
@@ -51,7 +51,7 @@ class DocsDrift(ForemanTestCase):
             f.write("**/.claude/scheduled_tasks.lock\n")
         with open(os.path.join(self.repo, "SETUP.md"), "w") as f:
             f.write("Put overrides in `.claude/settings.local.json`; the app is `src/app.py`, not `src/old.py`.\n")
-        found = [f["detail"] for f in fmdocs.scan(self.repo) if f["file"] == "SETUP.md"]
+        found = [f["detail"] for f in docs.scan(self.repo) if f["file"] == "SETUP.md"]
         self.assertEqual(found, ["src/old.py"])
 
     def test_ignored_markdown_is_not_scanned(self):
@@ -59,7 +59,7 @@ class DocsDrift(ForemanTestCase):
         os.makedirs(os.path.join(self.repo, "local"), exist_ok=True)
         with open(os.path.join(self.repo, "local", "notes.md"), "w") as f:
             f.write("Audit note: `src/gone-long-ago.py:12` was the bug.\n")
-        self.assertNotIn("local/notes.md", {f["file"] for f in fmdocs.scan(self.repo)})
+        self.assertNotIn("local/notes.md", {f["file"] for f in docs.scan(self.repo)})
 
     def test_stack_cards_and_changelogs_name_other_trees(self):
         # T-1817: a card's paths are the detected project's (./gradlew); a changelog's, files as they were then
@@ -68,7 +68,7 @@ class DocsDrift(ForemanTestCase):
             f.write("---\nname: gradle\ndetect: [file:gradlew]\n---\nRun `./gradlew build`; see `src/gone.py`.\n")
         with open(os.path.join(self.repo, "CHANGELOG.md"), "w") as f:
             f.write("## 1.0\n- `src/removed.py` is gone; `./gradlew` too.\n")
-        found = {f["file"] for f in fmdocs.scan(self.repo)}
+        found = {f["file"] for f in docs.scan(self.repo)}
         self.assertFalse(found & {"cards/gradle.md", "CHANGELOG.md"}, found)
         self.assertIn("README.md", found)  # drift elsewhere still reports
 
@@ -96,13 +96,13 @@ class TaskDocsDrift(DocsDrift):
 
     def test_task_docs_old_drift_is_a_note_not_a_blocker(self):
         self.append("README.md", "The app entry point is `src/app.py`.\n")
-        blockers, notes = fmdocs.task_docs(self.repo, "README.md")
+        blockers, notes = docs.task_docs(self.repo, "README.md")
         self.assertEqual(blockers, [])
         self.assertTrue(any("src/gone.py" in n for n in notes))
 
     def test_task_docs_drift_the_task_added_still_blocks(self):
         self.append("README.md", "Run `src/never-written.py` next.\n")
-        blockers, _ = fmdocs.task_docs(self.repo, "README.md")
+        blockers, _ = docs.task_docs(self.repo, "README.md")
         self.assertEqual(len(blockers), 1)
         self.assertIn("src/never-written.py", blockers[0])
 
@@ -112,14 +112,14 @@ class TaskDocsDrift(DocsDrift):
         with open(os.path.join(self.repo, "plugin", "rules", "foreman.md"), "w") as f:
             f.write("# Rules\n")
         subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
-        blockers, _ = fmdocs.task_docs(self.repo, "rules/foreman.md and gone/NOPE.md")
+        blockers, _ = docs.task_docs(self.repo, "rules/foreman.md and gone/NOPE.md")
         self.assertEqual(blockers, ["docs impact names gone/NOPE.md, which doesn't exist",
                                     "docs impact names rules/foreman.md, which doesn't exist (plugin/rules/foreman.md?)"])
         os.makedirs(os.path.join(self.repo, "mods", "rules"))  # T-2000: several matches are all suggested
         with open(os.path.join(self.repo, "mods", "rules", "foreman.md"), "w") as f:
             f.write("# Rules\n")
         subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
-        blockers, _ = fmdocs.task_docs(self.repo, "rules/foreman.md")
+        blockers, _ = docs.task_docs(self.repo, "rules/foreman.md")
         self.assertEqual(blockers, ["docs impact names rules/foreman.md, which doesn't exist "
                                     "(one of mods/rules/foreman.md, plugin/rules/foreman.md?)"])
 
@@ -130,17 +130,17 @@ class TaskDocsDrift(DocsDrift):
         subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "a cli"], check=True)
         self.append("README.md", "Build with `mycli build --out dist`.\n")
-        self.assertEqual(fmdocs.task_docs(self.repo, "README.md")[0], [])
+        self.assertEqual(docs.task_docs(self.repo, "README.md")[0], [])
         self.append("README.md", "Or `mycli build --renamed-flag`.\n")
-        blockers, _ = fmdocs.task_docs(self.repo, "README.md")
+        blockers, _ = docs.task_docs(self.repo, "README.md")
         self.assertEqual(len(blockers), 1, blockers)
         self.assertIn("--renamed-flag", blockers[0])
         subprocess.run(["git", "-C", self.repo, "checkout", "README.md"], check=True)
         self.append("CHANGELOG.md", "- the mycli --renamed-flag option is gone.\n")
         self.append("README.md", "A prose line, no command.\n")
-        self.assertEqual(fmdocs.task_docs(self.repo, "CHANGELOG.md and README.md")[0], [])
+        self.assertEqual(docs.task_docs(self.repo, "CHANGELOG.md and README.md")[0], [])
 
     def test_task_docs_a_new_doc_is_all_added(self):
         self.append("NEW.md", "See `src/missing.py`.\n")
-        blockers, _ = fmdocs.task_docs(self.repo, "NEW.md")
+        blockers, _ = docs.task_docs(self.repo, "NEW.md")
         self.assertTrue(any("src/missing.py" in b for b in blockers))

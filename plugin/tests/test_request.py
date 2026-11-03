@@ -7,7 +7,7 @@ import time
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 ORACLE_STUB = r'''#!/usr/bin/env python3
 import sys

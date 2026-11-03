@@ -4,7 +4,7 @@ import os
 
 from helpers import ForemanTestCase, read_json, read_text
 
-import fmplugins
+from sampo import plugins
 
 
 def write(path, text):
@@ -63,12 +63,12 @@ class Suggest(PluginsCase):  # T-1397
 
 class Find(PluginsCase):
     def test_ranks_marketplace_plugins_for_a_need(self):
-        hits = fmplugins.find("rust language server")
+        hits = plugins.find("rust language server")
         self.assertEqual(hits[0]["id"], "rust-analyzer-lsp@official")
         self.assertFalse(hits[0]["installed"])
         self.assertGreater(hits[0]["tokens"], 0, "measured from the marketplace's local copy")
-        self.assertEqual({h["id"] for h in fmplugins.find("postgres")}, {"postgres-mcp@official", "db-tools@official"})
-        self.assertEqual(fmplugins.find("kubernetes operator"), [])
+        self.assertEqual({h["id"] for h in plugins.find("postgres")}, {"postgres-mcp@official", "db-tools@official"})
+        self.assertEqual(plugins.find("kubernetes operator"), [])
 
     def test_a_directory_marketplace_outside_the_cache_is_known(self):
         repo = os.path.join(self.tmp, "fm-repo")
@@ -77,12 +77,12 @@ class Find(PluginsCase):
         write(os.path.join(repo, "mods", "board-ui", "hooks", "register.tsx"), "export const register = () => {}\n")
         write(os.path.join(self.cc, "plugins", "known_marketplaces.json"), {"localmk": {
             "source": {"source": "directory", "path": repo}, "installLocation": repo}})
-        self.assertEqual([h["id"] for h in fmplugins.find("kanban board")], ["board-ui@localmk"])
-        self.assertIsNotNone(fmplugins.content_hash("board-ui@localmk"), "pinnable: its code is hashed")
+        self.assertEqual([h["id"] for h in plugins.find("kanban board")], ["board-ui@localmk"])
+        self.assertIsNotNone(plugins.content_hash("board-ui@localmk"), "pinnable: its code is hashed")
 
     def test_short_words_match_whole_words(self):
-        self.assertEqual(fmplugins.find("db"), [h for h in fmplugins.find("db") if "db" in h["id"]])
-        self.assertEqual(fmplugins.find("go"), [], "go is not google, mongo or django")
+        self.assertEqual(plugins.find("db"), [h for h in plugins.find("db") if "db" in h["id"]])
+        self.assertEqual(plugins.find("go"), [], "go is not google, mongo or django")
 
     def test_cli(self):
         out = self.fm("plugins", "find", "rust", "language", "server", env={"CLAUDE_CONFIG_DIR": self.cc}).stdout
@@ -173,14 +173,14 @@ class Install(PluginsCase):
 
 class Check(PluginsCase):
     def kinds(self):
-        return {(f["plugin"], f["kind"]) for f in fmplugins.check()}
+        return {(f["plugin"], f["kind"]) for f in plugins.check()}
 
     def test_flags_stop_hooks_duplicate_mcp_servers_and_process_overlap(self):
         found = self.kinds()
         self.assertIn(("ralph-loop@official", "stop-hook"), found)
         self.assertEqual(len({p for p, k in found if k == "duplicate-mcp"} & {"db-tools@official", "postgres-mcp@official"}), 1)
         self.assertIn(("ideas-kit@official", "overlaps-foreman"), found)
-        self.assertTrue(all(f["action"] for f in fmplugins.check()), "every finding says what to do")
+        self.assertTrue(all(f["action"] for f in plugins.check()), "every finding says what to do")
 
     def test_a_background_stop_hook_is_not_a_conflict(self):
         # asyncRewake/async Stop hooks run after the turn and can't hold it open: no contest with Foreman's gate
@@ -191,7 +191,7 @@ class Check(PluginsCase):
     def test_foreman_overlap_matches_process_names_only(self):
         d = os.path.join(self.tmp, "q")
         write(os.path.join(d, "skills", "event-loop-debugging", "SKILL.md"), "---\nname: event-loop-debugging\n---\n")
-        self.assertEqual(fmplugins._own_findings("q@m", fmplugins.profile(d)), [])
+        self.assertEqual(plugins._own_findings("q@m", plugins.profile(d)), [])
 
     def test_curated_conflicts_are_reported(self):
         ecc = os.path.join(self.cc, "plugins", "cache", "ecc", "ecc", "1.0")
@@ -211,7 +211,7 @@ class Check(PluginsCase):
               "  which is a very long always-on description.\nother: x\n---\nbody\n")
         write(os.path.join(d, ".claude-plugin", "plugin.json"), {"name": "p", "hooks": {"Stop": []},
                                                                  "mcpServers": {"pg": {"command": "pg"}}})
-        prof = fmplugins.profile(d)
+        prof = plugins.profile(d)
         self.assertIn("very long always-on", prof["skills"][0][1])
         self.assertNotIn("other", prof["skills"][0][1])
         self.assertEqual((prof["hooks"], set(prof["mcp"])), ({"Stop"}, {"pg"}))
@@ -237,8 +237,8 @@ class Check(PluginsCase):
     def test_cli_and_doctor(self):
         out = self.fm("plugins", "check", env={"CLAUDE_CONFIG_DIR": self.cc}).stdout
         self.assertIn("ralph-loop@official", out)
-        import fmdoctor
-        r = fmdoctor.check_plugins()
+        from sampo import doctor
+        r = doctor.check_plugins()
         self.assertEqual(r.status, "WARN")
         self.assertIn("fm plugins check", r.detail)
 
@@ -247,15 +247,15 @@ class ContentHash(PluginsCase):
     """T-0036: what a pinned yes approves."""
 
     def test_local_installed_and_remote_plugins_hash_and_change_with_their_content(self):
-        local, remote = fmplugins.content_hash("rust-analyzer-lsp@official"), fmplugins.content_hash("superpowers@official")
-        self.assertTrue(local and remote and fmplugins.content_hash("db-tools@official"))
+        local, remote = plugins.content_hash("rust-analyzer-lsp@official"), plugins.content_hash("superpowers@official")
+        self.assertTrue(local and remote and plugins.content_hash("db-tools@official"))
         write(os.path.join(self.cc, "plugins", "marketplaces", "official", "plugins", "rust-analyzer-lsp", "skills",
                            "rust", "SKILL.md"), "---\nname: rust\ndescription: now does something else\n---\n")
-        self.assertNotEqual(fmplugins.content_hash("rust-analyzer-lsp@official"), local)
+        self.assertNotEqual(plugins.content_hash("rust-analyzer-lsp@official"), local)
         mk = os.path.join(self.cc, "plugins", "marketplaces", "official", ".claude-plugin", "marketplace.json")
         data = read_json(mk)
         data["plugins"][1]["source"]["ref"] = "v2"
         write(mk, data)
-        self.assertNotEqual(fmplugins.content_hash("superpowers@official"), remote)
-        self.assertIsNone(fmplugins.content_hash("nope@official"))
+        self.assertNotEqual(plugins.content_hash("superpowers@official"), remote)
+        self.assertIsNone(plugins.content_hash("nope@official"))
 

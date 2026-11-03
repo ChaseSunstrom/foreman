@@ -5,7 +5,7 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmprove
+from sampo import prove
 
 TEST = ("import unittest\nimport app\n\n\nclass T(unittest.TestCase):\n"
         "    def test_old(self):\n        self.assertEqual(app.old(), 0)\n{extra}")
@@ -47,7 +47,7 @@ class Long(ForemanTestCase):
 
     def gen(self, trust=True):
         if trust:
-            fmprove.remember(self.src)
+            prove.remember(self.src)
         return self.fm("exam", "long", "gen", "--from", self.src, "--json", check=trust)
 
     def test_gen_keeps_only_red_at_base_green_at_target_with_no_future_history(self):
@@ -154,7 +154,7 @@ class Long(ForemanTestCase):
               TEST.format(extra="\n    def test_q_is_seven(self):\n        self.assertEqual(app.q(), 7)\n"))
         subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", f"Add q ({tid})"], check=True)
-        fmprove.remember(self.repo)
+        prove.remember(self.repo)
         r = json.loads(self.fm("exam", "long", "gen", "--from", self.repo, "--json").stdout)
         goal = [s for s in r["scenarios"] if s["id"] == tid][0]["goal"]
         self.assertIn("Add q, which returns seven.", goal)
@@ -182,10 +182,10 @@ class Long(ForemanTestCase):
         self.assertIn(f"1/{g['checks']} checks", self.fm("exam", "status").stdout)
 
     def lines(self):
-        import fmcore as c
-        import fmgenesis
+        from sampo import core as c
+        from sampo import rune
         p = c.find_project(self.repo)
-        with open(os.path.join(fmgenesis.home(p), "exam.jsonl")) as f:
+        with open(os.path.join(rune.home(p), "exam.jsonl")) as f:
             return [json.loads(x) for x in f.read().splitlines()]
 
     def test_an_untrusted_source_runs_none_of_its_code(self):
@@ -198,9 +198,9 @@ class Long(ForemanTestCase):
         self.assertFalse(os.path.exists(ran))
 
     def work(self, run, agent, sid="T-1001"):
-        import fmcore as c
-        import fmlong
-        return os.path.join(fmlong._root(c.find_project(self.repo)), run, "work", agent, sid)
+        from sampo import core as c
+        from sampo import long as slong
+        return os.path.join(slong._root(c.find_project(self.repo)), run, "work", agent, sid)
 
     def grade(self, run, agent):
         return json.loads(self.fm("exam", "long", "grade", run, "--agent", agent, "--json").stdout)
@@ -230,7 +230,7 @@ class Long(ForemanTestCase):
         self.assertEqual((g["scenarios"], g["true_done"]), (2, 1), g)  # the unanswered goal is in the 2, not in the 1
 
     def test_grade_rechecks_trust(self):
-        import fmcore as c
+        from sampo import core as c
         run = json.loads(self.gen().stdout)["run"]
         self.fm("exam", "long", "run", run, "--agent", "oracle")
         os.remove(os.path.join(c.state_dir(), "prove-trusted.json"))
@@ -239,38 +239,38 @@ class Long(ForemanTestCase):
         self.assertIn("fm prove", r.stderr)
 
     def test_a_runner_timeout_is_none_not_all_red_and_a_forged_key_is_refused(self):
-        import fmlong
+        from sampo import long as slong
         t = os.path.join(self.tmp, "slow")
         write(t, "tests/test_s.py", "import time, unittest\n\n\nclass T(unittest.TestCase):\n    def test_a(self):\n        time.sleep(30)\n")
-        old, fmlong.RUN_T = fmlong.RUN_T, 1
+        old, slong.RUN_T = slong.RUN_T, 1
         try:
-            self.assertIsNone(fmlong._passed(t, ["tests/test_s.py::test_s.T.test_a"], ["tests"]))
+            self.assertIsNone(slong._passed(t, ["tests/test_s.py::test_s.T.test_a"], ["tests"]))
         finally:
-            fmlong.RUN_T = old
+            slong.RUN_T = old
         key = {"id": "x", "checks": ["../x.py::a.B.c"], "sample": [], "files": [], "test_files": [], "pypath": [],
                "base": "0" * 40, "target": "0" * 40}
         with self.assertRaises(ValueError):
-            fmlong._check_key(key)
+            slong._check_key(key)
         with self.assertRaises(ValueError):
-            fmlong._check_key(dict(key, checks=[], target="--output=x"))
+            slong._check_key(dict(key, checks=[], target="--output=x"))
 
     def test_n_zero_and_a_gen_that_keeps_nothing_fail_without_a_run(self):
-        fmprove.remember(self.src)
+        prove.remember(self.src)
         self.assertNotEqual(self.fm("exam", "long", "gen", "--from", self.src, "--n", "0", check=False).returncode, 0)
         empty = os.path.join(self.tmp, "empty")
         subprocess.run(["git", "init", "-q", "-b", "main", empty], check=True)
-        fmprove.remember(empty)
+        prove.remember(empty)
         r = self.fm("exam", "long", "gen", "--from", empty, check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(self.gen().returncode, 0)
-        import fmcore as c
-        import fmlong
-        self.assertEqual(os.listdir(fmlong._root(c.find_project(self.repo))), ["l001"])
+        from sampo import core as c
+        from sampo import long as slong
+        self.assertEqual(os.listdir(slong._root(c.find_project(self.repo))), ["l001"])
 
     # T-2262: the foreman and plain session arms and the faults planted in a long run, against a stub claude
     def stub(self):
-        import fmcore as c
-        import fmlong
+        from sampo import core as c
+        from sampo import long as slong
         from unittest import mock
         bindir = os.path.join(self.tmp, "bin")
         os.makedirs(bindir)
@@ -283,10 +283,10 @@ class Long(ForemanTestCase):
         patch.start()
         self.addCleanup(patch.stop)
         for k, v in (("KILL_T", 0.02), ("PAUSE_GAP", 0)):
-            old = getattr(fmlong, k)
-            setattr(fmlong, k, v)
-            self.addCleanup(setattr, fmlong, k, old)
-        self.p, self.fmlong = c.find_project(self.repo), fmlong
+            old = getattr(slong, k)
+            setattr(slong, k, v)
+            self.addCleanup(setattr, slong, k, old)
+        self.p, self.fmlong = c.find_project(self.repo), slong
         self.run_id = json.loads(self.gen().stdout)["run"]
 
     def calls(self):
@@ -478,25 +478,25 @@ class Long(ForemanTestCase):
         self.assertEqual(self.fmlong.grade(self.p, self.run_id, "plain")["scenarios"], 2)
 
     def test_jobs_checks_the_budget_for_the_goals_in_flight_too(self):  # T-2292
-        import fmbudget
+        from sampo import budget
         from unittest import mock
         self.stub()
         write(os.path.join(self.tmp, "bin"), "claude", SLOW)
         seen = []
-        with mock.patch.object(fmbudget, "check", lambda f, est, hint="": seen.append(round(est, 2))), \
-                mock.patch.object(fmbudget, "estimate", lambda f, n, fb=0.5: n * fb):
+        with mock.patch.object(budget, "check", lambda f, est, hint="": seen.append(round(est, 2))), \
+                mock.patch.object(budget, "estimate", lambda f, n, fb=0.5: n * fb):
             self.go("plain", limit=2, jobs=2)
         self.assertEqual(seen[0], 1.0)  # up front: both goals
         self.assertEqual(sorted(seen[1:]), [0.5, 1.0])  # the second goal to start sees the first still running
 
     def test_spend_is_checked_before_each_goal_and_doubles_for_a_resuming_fault(self):
-        import fmbudget
+        from sampo import budget
         self.stub()
         seen = []
         from unittest import mock
         flat = lambda f, n, fb=0.5: n * fb  # no measured spend: the first run records some
-        with mock.patch.object(fmbudget, "check", lambda f, est, hint="": seen.append(est)), \
-                mock.patch.object(fmbudget, "estimate", flat):
+        with mock.patch.object(budget, "check", lambda f, est, hint="": seen.append(est)), \
+                mock.patch.object(budget, "estimate", flat):
             self.go("plain")
             plain = list(seen)
             del seen[:]
@@ -569,12 +569,12 @@ class Long(ForemanTestCase):
             return [json.loads(x) for x in f]
 
     def test_the_binaries_a_checks_file_starts_by_name_most_used_first_and_never_an_interpreter(self):
-        import fmlong
+        from sampo import long as slong
         text = ("import subprocess, shutil\nsubprocess.run(['python3', 'x'])\nsubprocess.run(['sh', '-c', 'x'])\n"
                 "subprocess.run(['git', 'log'])\nsubprocess.check_output(['/usr/bin/jq', '.'])\nsubprocess.run('make test', shell=True)\n"
                 "subprocess.run(['jq', '.'])\nshutil.which('rg')\nsubprocess.run(['../evil;x'])\nsubprocess.run([name])\n")
-        self.assertEqual(fmlong._binaries(text), ["jq", "make", "rg"])
-        self.assertEqual(fmlong._binaries("def (:"), [])
+        self.assertEqual(slong._binaries(text), ["jq", "make", "rg"])
+        self.assertEqual(slong._binaries("def (:"), [])
 
     def test_missing_shadows_the_binary_with_a_127_shim_and_counts_installs_from_the_shim_logs(self):
         self.with_tool([["ls", "-l"], ["pip", "install", "x"], ["npm", "i", "y"], ["pip", "list"]])
@@ -641,25 +641,25 @@ class Long(ForemanTestCase):
 
     # T-2613: a false done split into misses on names the goal never states and real misses
     def test_a_failure_on_a_name_the_goal_never_states_is_out_of_reach(self):
-        import fmlong
+        from sampo import long as slong
         goal = "Add f1. The checks use these new names: app.f1\nDone when: f1 returns 1"
-        self.assertTrue(fmlong._reach("KeyError: 'problems'", goal))
-        self.assertTrue(fmlong._reach("AttributeError: module 'fmwatch' has no attribute '_shown'", goal))
-        self.assertTrue(fmlong._reach("ImportError: cannot import name 'KILL_T' from 'fmlong'", goal))
-        self.assertFalse(fmlong._reach("AttributeError: module 'app' has no attribute 'f1'", goal), "the goal names it")
-        self.assertFalse(fmlong._reach("AssertionError: 2 != 1", goal), "a wrong value is a real miss")
-        self.assertFalse(fmlong._reach("", goal))
+        self.assertTrue(slong._reach("KeyError: 'problems'", goal))
+        self.assertTrue(slong._reach("AttributeError: module 'fmwatch' has no attribute '_shown'", goal))
+        self.assertTrue(slong._reach("ImportError: cannot import name 'KILL_T' from 'fmlong'", goal))
+        self.assertFalse(slong._reach("AttributeError: module 'app' has no attribute 'f1'", goal), "the goal names it")
+        self.assertFalse(slong._reach("AssertionError: 2 != 1", goal), "a wrong value is a real miss")
+        self.assertFalse(slong._reach("", goal))
 
     def test_grade_classes_each_failed_check_and_counts_all_reach_false_dones(self):
-        import fmcore as c
-        import fmlong
+        from sampo import core as c
+        from sampo import long as slong
         self.add("\n\ndef info():\n    return {'problems': []}\n",
                  "\n    def test_info_reports_a_clean_tree(self):  # the key it reads is named nowhere in the goal\n        self.assertEqual(app.info()['problems'], [])\n",
                  "Add info (T-1020)")
         run = json.loads(self.gen().stdout)["run"]
         self.fm("exam", "long", "run", run, "--agent", "empty")
         p = c.find_project(self.repo)
-        with open(os.path.join(fmlong._work(p, run, "empty", "T-1020"), "app.py"), "a") as f:
+        with open(os.path.join(slong._work(p, run, "empty", "T-1020"), "app.py"), "a") as f:
             f.write("\n\ndef info():\n    return {}\n")  # built, but without the key no line of the goal names
         g = {x["id"]: x for x in self.grade(run, "empty")["goals"]}
         (m,) = g["T-1020"]["misses"]
@@ -669,25 +669,25 @@ class Long(ForemanTestCase):
         self.assertIn("has no attribute 'f1'", m["line"])
         goals = [{"answered": True, "true_done": False, "false_done": True, "false_reach": True},
                  {"answered": True, "true_done": False, "false_done": True, "false_reach": False}]
-        self.assertEqual(fmlong._totals(goals)["false_done_reach"], 1)
+        self.assertEqual(slong._totals(goals)["false_done_reach"], 1)
 
     def test_an_exception_whose_str_raises_never_stops_the_runner(self):  # T-2613
-        import fmlong
+        from sampo import long as slong
         write(self.src, "tests/test_bad.py", "import unittest\n\n\nclass E(Exception):\n    def __str__(self):\n"
               "        raise RuntimeError('no')\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n\n\n"
               "raise E()\n")
         why = {}
-        ok = fmlong._passed(self.src, ["tests/test_bad.py::test_bad.T.test_x", "tests/test_app.py::test_app.T.test_old"],
+        ok = slong._passed(self.src, ["tests/test_bad.py::test_bad.T.test_x", "tests/test_app.py::test_app.T.test_old"],
                             [], why=why)
         self.assertEqual(ok, {"tests/test_app.py::test_app.T.test_old"})
         self.assertEqual(why, {"tests/test_bad.py::test_bad.T.test_x": "E"})
 
     def test_the_grade_text_prints_the_split(self):
-        import fmlong
-        self.assertEqual(fmlong._split_line({"false_done": 6, "false_done_reach": 2}),
+        from sampo import long as slong
+        self.assertEqual(slong._split_line({"false_done": 6, "false_done_reach": 2}),
                          "false done 6 (2 only on names the goal never states)")
-        self.assertEqual(fmlong._split_line({"false_done": 0, "false_done_reach": 0}), "")
-        self.assertEqual(fmlong._split_line({"false_done": None, "false_done_reach": None}), "")
+        self.assertEqual(slong._split_line({"false_done": 0, "false_done_reach": 0}), "")
+        self.assertEqual(slong._split_line({"false_done": None, "false_done_reach": None}), "")
 
 
 class MissionEightFaults(Long):
@@ -764,8 +764,8 @@ class DoorFault(Long):
         self.addCleanup(__import__("shutil").rmtree, outside, True)
         subprocess.run(["git", "init", "-q", wt], check=True)
         os.symlink(outside, os.path.join(wt, "data"))
-        import fmlong
-        entry, data = fmlong._plant_door(wt, "s1")
+        from sampo import long as slong
+        entry, data = slong._plant_door(wt, "s1")
         self.assertIsNone(data)
         self.assertIn("outside the copy", entry.get("skipped", ""))
         self.assertEqual(os.listdir(outside), [])

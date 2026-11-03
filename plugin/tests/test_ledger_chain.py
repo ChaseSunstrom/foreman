@@ -9,8 +9,8 @@ from unittest import mock
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
-import fmtidy
+from sampo import core as c
+from sampo import tidy
 
 
 def h(raw):
@@ -207,8 +207,8 @@ class Chain(ForemanTestCase):
         r = self.verify()
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn(f"ledger.jsonl:{n}", r.stdout, "the accepted damage stays named")
-        import fmledger
-        self.assertIn("Ledger: head", fmledger.receipt(self.p))
+        from sampo import ledger
+        self.assertIn("Ledger: head", ledger.receipt(self.p))
         c.log_event(self.p, "note", data={"after": 1})
         m = self.crash(keep=12)  # a second crash, this time mid-line: broken again until it too is accepted
         c.log_event(self.p, "note")
@@ -291,12 +291,12 @@ class Chain(ForemanTestCase):
         self.assertEqual(self.verify().returncode, 0, self.verify().stdout)
 
     def test_the_receipt_names_accepted_damage(self):
-        import fmledger
+        from sampo import ledger
         c.log_event(self.p, "note")
         self.crash()
         c.log_event(self.p, "note")
         self.verify("--accept-damage")
-        self.assertIn("1 crash-damaged line accepted", fmledger.receipt(self.p))
+        self.assertIn("1 crash-damaged line accepted", ledger.receipt(self.p))
 
     def test_accept_damage_never_accepts_an_edit(self):
         for i in range(3):
@@ -364,8 +364,8 @@ class Chain(ForemanTestCase):
         with mock.patch.object(c, "now", return_value="2026-01-15T00:00:00Z"):
             for i in range(5):
                 c.log_event(self.p, "note", data={"pad": "y" * 50})
-        with mock.patch.object(fmtidy, "LEDGER_ROLL_BYTES", 0):
-            fmtidy._roll_ledger(self.p, True, [])  # every line is a past month's: the live file starts empty
+        with mock.patch.object(tidy, "LEDGER_ROLL_BYTES", 0):
+            tidy._roll_ledger(self.p, True, [])  # every line is a past month's: the live file starts empty
         self.assertEqual(len(read_text(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl")).splitlines()), 5)
         c.log_event(self.p, "note")
         r = self.verify("--json")
@@ -381,8 +381,8 @@ class Chain(ForemanTestCase):
 
     # T-1099: the roll reads bytes, keeps time order and takes the ledger's own flock
     def roll(self):
-        with mock.patch.object(fmtidy, "LEDGER_ROLL_BYTES", 0), mock.patch.object(c, "now", return_value=MARCH):
-            fmtidy._roll_ledger(self.p, True, [])
+        with mock.patch.object(tidy, "LEDGER_ROLL_BYTES", 0), mock.patch.object(c, "now", return_value=MARCH):
+            tidy._roll_ledger(self.p, True, [])
 
     def archived(self):
         with open(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl"), "rb") as f:

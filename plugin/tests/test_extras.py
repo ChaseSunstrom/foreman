@@ -8,8 +8,8 @@ from collections import Counter
 
 from helpers import PLUGIN, ForemanTestCase, read_text
 
-import fmcodetui as T
-import fmextras as x
+from sampo import smithtui as T
+from sampo import extras as x
 
 SVG = "{http://www.w3.org/2000/svg}"
 RUN = [dict(e) for e in T.SAMPLE_RUN]

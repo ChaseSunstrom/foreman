@@ -13,7 +13,7 @@ FORCE = ("no force push to main", "no force push, ever", "don't force push my br
 
 class SteerCompile(ForemanTestCase):
     def setUp(self):
-        import fmcore as c
+        from sampo import core as c
         super().setUp()
         self.fm("init")
         self.c, self.p = c, c.find_project(self.repo)
@@ -26,11 +26,11 @@ class SteerCompile(ForemanTestCase):
         return bool(self.c.rule_hits(self.p, on, text))
 
     def test_classify_by_whole_words_on_the_shape(self):
-        import fmideas
+        from sampo import ideas
         for text, kind in (("force push", "safety"), ("only pane", "scope"), ("naming format", "style"),
                            ("polling events", "wrong approach"), ("in that case", "wrong approach"),
                            ("filename justify", "wrong approach"), ("forced", "wrong approach")):
-            self.assertEqual(fmideas.classify(text), kind, text)
+            self.assertEqual(ideas.classify(text), kind, text)
 
     def test_force_push_steers_are_a_safety_proposal_and_compile_adds_a_warn_rule(self):
         self.steer(*FORCE)

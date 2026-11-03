@@ -5,7 +5,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmdoctor as d
+from sampo import doctor as d
 
 
 class ModelProbe(ForemanTestCase):
@@ -34,7 +34,7 @@ class ModelProbe(ForemanTestCase):
         r = d.check_model_pins()
         self.assertEqual(r.status, "WARN")
         self.assertIn("opus", r.detail)
-        self.assertIn("fmgenesis", r.detail)
+        self.assertIn("rune", r.detail)
         self.assertNotIn("haiku", r.detail)
         n = self.calls(log)
         self.assertGreater(n, 0)

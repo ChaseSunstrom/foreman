@@ -23,9 +23,9 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
-import fmcore as c  # noqa: E402
-import fmideas  # noqa: E402
-import fmoutcomes  # noqa: E402
+from sampo import core as c  # noqa: E402
+from sampo import ideas  # noqa: E402
+from sampo import outcomes  # noqa: E402
 
 OUT = sys.argv[1]
 N = int(sys.argv[2]) if len(sys.argv) > 2 else 30
@@ -57,7 +57,7 @@ def brief_text(b):
 
 
 def ask(model, prompt):
-    text = fmideas.run_child("moonshot-kill", SYSTEM, prompt, model, 300, project="foreman-4a056f",
+    text = ideas.run_child("moonshot-kill", SYSTEM, prompt, model, 300, project="foreman-4a056f",
                              detail="M-12 forecaster") or ""
     m = re.findall(r"P\s*=\s*(0?\.\d+|1(?:\.0+)?|0)", text)
     return min(0.99, max(0.01, float(m[-1]))) if m else None
@@ -69,7 +69,7 @@ def logit(x):
 
 def main():
     p = c.find_project(ROOT)
-    outs = fmoutcomes.outcomes(p)
+    outs = outcomes.outcomes(p)
     briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
     closed_at = {i: str(b.meta.get("updated") or "") for i, b in briefs.items()}
     # Run 2: run 1's held closes were only those whose window had ended, all of them ancient (T-0014..T-0198), so era
@@ -83,7 +83,7 @@ def main():
     now = datetime.datetime.now(datetime.timezone.utc)
     label = {}
     for i, o in outs.items():
-        closed = when(fmoutcomes.done_at(briefs[i])) if i in briefs else None
+        closed = when(outcomes.done_at(briefs[i])) if i in briefs else None
         if not closed or (now - closed).days < 14:
             continue
         fixes = [when(briefs[f].meta.get("created")) for f in o.get("by") or [] if f in briefs]
@@ -106,7 +106,7 @@ def main():
             pick += [(i, 0), (mate, 1)]
     cache = json.load(open(CACHE)) if os.path.exists(CACHE) else {}
 
-    closed = {i: when(fmoutcomes.done_at(b)) for i, b in briefs.items() if b.status == "done"}
+    closed = {i: when(outcomes.done_at(b)) for i, b in briefs.items() if b.status == "done"}
 
     def settled(j, i):  # j's 14-day label was known when i closed: no peeking at later fixes
         return j in label and closed.get(j) and closed.get(i) and (closed[i] - closed[j]).days >= 14

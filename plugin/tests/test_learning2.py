@@ -7,7 +7,7 @@ import os
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 
 class Base(ForemanTestCase):
@@ -37,15 +37,15 @@ class EvalInbox(Base):
         with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
             f.write(json.dumps({"ts": c.now(), "kind": "guard_block", "session_id": "s1", "category": "destructive",
                                 "tool": "Bash", "project": self.p.slug, "cmd": "git status --short"}) + "\n")
-        import fmcost
-        import fmfriction
+        from sampo import cost
+        from sampo import friction
         from unittest import mock
         with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:  # no active task then: state, not a rule
             f.write(json.dumps({"ts": c.now(), "kind": "guard_block", "session_id": "s1", "category": "brief",
                                 "tool": "Bash", "project": self.p.slug, "cmd": "touch notes.md"}) + "\n")
-        with mock.patch.object(fmfriction, "_recheck", lambda events: {i: "today's guard allows it"
+        with mock.patch.object(friction, "_recheck", lambda events: {i: "today's guard allows it"
                                                                          for i in range(len(events))}):
-            rows = fmcost.eval_inbox(self.p)
+            rows = cost.eval_inbox(self.p)
         self.assertTrue(any("git status --short" in r["line"] and "allows now" in r["line"] for r in rows), rows)
         self.assertFalse(any("touch notes.md" in r["line"] for r in rows), rows)
 
@@ -66,8 +66,8 @@ class Holdout(Base):
             json.dump({"label": "1.2.26", "cases": [{"id": i, "pass": True} for i in ids]}, f)
         self.assertRegex(self.fm("bench", "scorecard").stdout, rf"1\.2\.26: train {len(train)}/{len(train)} · holdout "
                                                                rf"{len(hold)}/{len(hold)}")
-        import fmevolve
-        with open(fmevolve.__file__) as f:
+        from sampo import evolve
+        with open(evolve.__file__) as f:
             self.assertIn('split="train"', f.read())
 
 
@@ -93,13 +93,13 @@ class Lesions(Base):
         os.makedirs(sessions, exist_ok=True)
         with open(os.path.join(sessions, "s.json"), "w") as f:
             json.dump({"rate_limits": {"seven_day": {"used_percentage": 10}}}, f)
-        import fmnight
-        jobs = [(n, a) for n, a, _ in fmnight.jobs(self.p) if n.startswith("model lesion")]
+        from sampo import night
+        jobs = [(n, a) for n, a, _ in night.jobs(self.p) if n.startswith("model lesion")]
         self.assertTrue(jobs)
         self.assertEqual(jobs[0][1][:2], ["evolve", "--target"])
         self.assertIn("--drop", jobs[0][1])
         c.log_event(self.p, "evolve", data={"target": jobs[0][1][2], "kept": False, "model": "Opus 9"})
-        nxt = [(n, a) for n, a, _ in fmnight.jobs(self.p) if n.startswith("model lesion")]
+        nxt = [(n, a) for n, a, _ in night.jobs(self.p) if n.startswith("model lesion")]
         self.assertNotEqual(nxt[0][1][2], jobs[0][1][2])  # the next file, not the one just ablated
 
 
@@ -115,8 +115,8 @@ class Retire(Base):
         tid = self.done("Quote shell paths", lesson="quote every path")
         self.fm("recall", "--lessons", "--retire", f"{tid}.1", "--why", "the guard enforces it now")
         self.assertIn("retired", self.fm("recall", "--lessons").stdout)
-        import fmrecall
-        fmrecall.write_tripwires(self.p)
+        from sampo import recall
+        recall.write_tripwires(self.p)
         self.assertNotIn("quote every path", read_text(os.path.join(self.p.dir, "tripwires.json")))
 
 

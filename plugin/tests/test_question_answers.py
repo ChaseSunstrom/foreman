@@ -5,8 +5,8 @@ import os
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmhooks
+from sampo import core as c
+from sampo import hooks
 
 
 class QuestionAnswers(ForemanTestCase):
@@ -31,7 +31,7 @@ class QuestionAnswers(ForemanTestCase):
                 "tool_input": {"questions": qs, "answers": answers}, "tool_response": {}}
 
     def test_answers_split_into_default_other_and_typed(self):
-        fmhooks.post_tool_use(self.payload({"Which store?": "SQLite (Recommended)", "Ship now?": "No",
+        hooks.post_tool_use(self.payload({"Which store?": "SQLite (Recommended)", "Ship now?": "No",
                                             "Name?": "gamma, my own"}))
         (row,) = self.rows()
         self.assertEqual((row["asked"], row["default"], row["other"], row["typed"], row["dismissed"]),
@@ -39,11 +39,11 @@ class QuestionAnswers(ForemanTestCase):
         self.assertEqual(row["headers"], ["Store", "Ship", "Name"])
 
     def test_a_dismissed_question_is_a_row(self):
-        fmhooks.post_tool_use_failure(dict(self.payload({}), error="The user doesn't want to proceed"))
+        hooks.post_tool_use_failure(dict(self.payload({}), error="The user doesn't want to proceed"))
         (row,) = self.rows()
         self.assertEqual((row["asked"], row["dismissed"]), (3, True))
 
     def test_other_tools_log_nothing(self):
-        fmhooks.post_tool_use({"tool_name": "Read", "tool_input": {"file_path": "x"}, "session_id": "s",
+        hooks.post_tool_use({"tool_name": "Read", "tool_input": {"file_path": "x"}, "session_id": "s",
                                "cwd": self.repo})
         self.assertEqual(self.rows(), [])

@@ -8,7 +8,7 @@ import time
 
 from helpers import ForemanTestCase, read_json, read_text, stub_corpus_replay
 
-import fmcore as c
+from sampo import core as c
 
 STUB = '''import json, os, sys, time
 verb = sys.argv[1]

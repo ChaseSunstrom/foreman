@@ -6,8 +6,8 @@ import sys
 from helpers import FM
 from test_serve import ServeCase
 
-import fmcore as c
-import fmhooks
+from sampo import core as c
+from sampo import hooks
 
 
 class Panic(ServeCase):
@@ -32,7 +32,7 @@ class Panic(ServeCase):
         self.assertIsNone(self.drive())
         self.assertEqual(c.state_dict(c.find_project(self.repo))["autonomy"], "standard")  # tightened, not rewritten
         self.assertEqual(self.meta()["autonomy"], "full")
-        self.assertFalse(fmhooks.second_due({"source": "startup"}, {}, False))
+        self.assertFalse(hooks.second_due({"source": "startup"}, {}, False))
         self.assertIn("PAUSED", self.fm("status").stdout)
         for args in (["run"], ["serve"], ["night"], ["lane", "new", "T-0001"]):
             r = self.fm(*args, check=False, env=self.env())
@@ -46,7 +46,7 @@ class Panic(ServeCase):
         # T-0591 (T-0436 review): fm session start, fm ideas, fm research ask, fm bench and fm relate still launched
         # claude children while paused; and Claude could run fm pause off itself
         from unittest import mock
-        import fmrelate
+        from sampo import relate
         pack = os.path.join(self.tmp, "pack.md")
         with open(pack, "w") as f:
             f.write("a pack\n")
@@ -58,7 +58,7 @@ class Panic(ServeCase):
             self.assertIn("fm pause off", r.stderr, args)
         self.assertEqual(self.called(), "")
         with mock.patch.dict(os.environ, {"FOREMAN_NO_BACKGROUND": ""}), mock.patch("subprocess.Popen") as popen:
-            fmrelate.spawn(c.find_project(self.repo))  # the SessionStart path: skipped, never raised
+            relate.spawn(c.find_project(self.repo))  # the SessionStart path: skipped, never raised
         popen.assert_not_called()
         out = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "fm pause off"}}).stdout
         self.assertIn('"deny"', out)
@@ -75,7 +75,7 @@ class Panic(ServeCase):
     def test_pause_now_stops_what_runs_frees_leases_and_writes_a_record(self):
         # T-1821: fm pause only stopped new starts; --now stops a running fm session's group and frees every lease
         import subprocess
-        import fmbus
+        from sampo import bus
         sid = "20261028-090000-abcd"
         runner = subprocess.Popen(["sh", "-c", "sleep 60; true", sid], start_new_session=True)
         self.addCleanup(lambda: runner.poll() is None and runner.kill())
@@ -83,7 +83,7 @@ class Panic(ServeCase):
         os.makedirs(d)
         with open(os.path.join(d, "meta.json"), "w") as f:
             json.dump({"id": sid, "status": "running", "pid": runner.pid, "turns": 1}, f)
-        fmbus._write_leases({"src/a.py": {"session": "s9", "task": "T-0001", "until": 9e12}})
+        bus._write_leases({"src/a.py": {"session": "s9", "task": "T-0001", "until": 9e12}})
         self.serve()  # a serve unit (systemctl is a stub)
         self.assertTrue(os.path.exists(self.unit))
         out = self.fm("pause", "--now", env=self.env()).stdout
@@ -109,7 +109,7 @@ class Panic(ServeCase):
         # first, then the record, and its own session last
         import subprocess
         import time
-        import fmbus
+        from sampo import bus
         sid, other = "20261028-090000-aaaa", "20261028-090000-bbbb"
         go = os.path.join(self.tmp, "go")
         fm = f"{sys.executable} {FM}"
@@ -124,7 +124,7 @@ class Panic(ServeCase):
             os.makedirs(os.path.join(c.state_dir(), "agent-sessions", s))
             with open(os.path.join(c.state_dir(), "agent-sessions", s, "meta.json"), "w") as f:
                 json.dump({"id": s, "status": "running", "pid": p.pid, "turns": 1}, f)
-        fmbus._write_leases({"src/a.py": {"session": "s9", "task": "T-0001", "until": 9e12}})
+        bus._write_leases({"src/a.py": {"session": "s9", "task": "T-0001", "until": 9e12}})
         open(go, "w").close()
         self.assertEqual(theirs.wait(timeout=20), -15)
         self.assertIn(mine.wait(timeout=20), (-15, -9))
@@ -156,7 +156,7 @@ class Panic(ServeCase):
         self.assertFalse(c.panicked())
         self.assertEqual(self.drive(), "block")
         self.assertEqual(c.state_dict(c.find_project(self.repo))["autonomy"], "full")
-        self.assertTrue(fmhooks.second_due({"source": "startup"}, {}, False))
+        self.assertTrue(hooks.second_due({"source": "startup"}, {}, False))
         self.assertNotIn("PAUSED", self.fm("status").stdout)
         self.fm("night", "--dry-run")
         self.fm("pause", "off")  # already off: nothing to do, no error

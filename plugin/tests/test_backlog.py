@@ -9,8 +9,8 @@ from unittest import mock
 
 from helpers import PLUGIN, ForemanTestCase
 
-import fmcli
-import fmcore as c
+from sampo import cli
+from sampo import core as c
 
 
 class Capture(ForemanTestCase):
@@ -28,13 +28,13 @@ class Capture(ForemanTestCase):
     def test_a_near_duplicate_of_an_open_task_is_refused_with_its_id(self):
         self.fm("capture", "Export the weekly report as CSV")
         r = self.fm("capture", "export weekly reports as a CSV", check=False)
-        self.assertEqual(r.returncode, fmcli.REFUSED_NEAR, "its own code, not a usage error's 1 or a lock's 3")
+        self.assertEqual(r.returncode, cli.REFUSED_NEAR, "its own code, not a usage error's 1 or a lock's 3")
         self.assertIn("T-0001", r.stderr)
         self.assertIn("add --anyway to keep both, or fm task log T-0001", r.stderr)
         self.assertNotIn("…", r.stderr)
         self.assertIsNone(c.find_brief(self.p, "T-0002"), "a refused capture makes no brief")
         r = self.fm("capture", "export weekly reports as a CSV", "--json", check=False)
-        self.assertEqual(r.returncode, fmcli.REFUSED_NEAR)
+        self.assertEqual(r.returncode, cli.REFUSED_NEAR)
         self.assertEqual(json.loads(r.stdout), {"refused": "near-duplicate", "of": "T-0001",
                                                 "title": "Export the weekly report as CSV"})
         out = self.fm("capture", "export weekly reports as a CSV", "--anyway").stdout
@@ -43,7 +43,7 @@ class Capture(ForemanTestCase):
     def test_a_refused_paste_leaves_no_attachment(self):
         self.fm("capture", "Export the weekly report as CSV")
         r = self.fm("capture", "export weekly reports as a CSV", "--from-file", "-", input="log line\n", check=False)
-        self.assertEqual(r.returncode, fmcli.REFUSED_NEAR)
+        self.assertEqual(r.returncode, cli.REFUSED_NEAR)
         self.assertFalse(os.path.isdir(os.path.join(self.p.dir, "attachments")), "checked before the paste is kept")
 
     def test_a_different_type_is_kept_with_a_note(self):
@@ -60,9 +60,9 @@ class Capture(ForemanTestCase):
         self.assertEqual(len(c.load_briefs(self.p)), 4)
 
     def test_recurring_obstacles_with_different_signatures_are_both_captured(self):
-        import fmfixes
-        fmfixes._escalate(self.p, "ModuleNotFoundError: No module named 'yaml'")
-        fmfixes._escalate(self.p, "ModuleNotFoundError: No module named 'toml'")
+        from sampo import fixes as sfixes
+        sfixes._escalate(self.p, "ModuleNotFoundError: No module named 'yaml'")
+        sfixes._escalate(self.p, "ModuleNotFoundError: No module named 'toml'")
         self.assertEqual(len(c.load_briefs(self.p)), 2)
 
     def test_unrelated_or_differently_scoped_requests_are_kept(self):
@@ -119,9 +119,9 @@ class _Fake:
 
 class ReverifyScan(_Repo):
     def scan(self, *briefs):
-        import fmreverify
+        from sampo import reverify
         with mock.patch.object(c, "load_briefs", return_value=list(briefs)):
-            return fmreverify.scan(self.p)
+            return reverify.scan(self.p)
 
     def test_the_own_commit_is_read_from_the_trailer_and_the_subject_only_without_one(self):
         b = _Fake("T-0002")
@@ -143,19 +143,19 @@ class ReverifyScan(_Repo):
         self.assertEqual(len({e["task"] for e in self.scan(*briefs)}), 5)
 
     def test_a_git_failure_leaves_the_watermark_where_it_was(self):
-        import fmreverify
+        from sampo import reverify
         b = _Fake("T-0002")
         self.scan(b)
-        before = fmreverify.load(self.p)["head"]
+        before = reverify.load(self.p)["head"]
         self.write("a.py", "x = 2\n")
         sha = self.commit("later change")
-        with mock.patch.object(fmreverify, "_commits", return_value=None):
+        with mock.patch.object(reverify, "_commits", return_value=None):
             self.assertEqual(self.scan(b), [])
-        self.assertEqual(fmreverify.load(self.p)["head"], before, "a failed git log must not skip its commits")
+        self.assertEqual(reverify.load(self.p)["head"], before, "a failed git log must not skip its commits")
         self.assertEqual([e["sha"] for e in self.scan(b)], [sha])
 
     def test_rewritten_history_only_moves_the_watermark(self):
-        import fmreverify
+        from sampo import reverify
         b = _Fake("T-0002")
         self.scan(b)
         self.write("b.py", "y = 1\n")
@@ -164,7 +164,7 @@ class ReverifyScan(_Repo):
         self.write("a.py", "x = 2\n")
         head = self.commit("unrelated, amended to touch a.py", "--amend")  # the scanned head is gone
         self.assertEqual(self.scan(b), [], "commits that aren't descendants of the last scan aren't this tree's")
-        self.assertEqual(fmreverify.load(self.p)["head"], head)
+        self.assertEqual(reverify.load(self.p)["head"], head)
 
 
 class Reverify(_Repo):
@@ -188,21 +188,21 @@ class Reverify(_Repo):
         return [b for b in c.load_briefs(self.p) if b.type == "FIX"]
 
     def test_a_commit_to_a_closed_tasks_file_queues_its_verify(self):
-        import fmreverify
-        self.assertEqual(fmreverify.scan(self.p), [], "the first scan only sets the watermark: no backlog flood")
+        from sampo import reverify
+        self.assertEqual(reverify.scan(self.p), [], "the first scan only sets the watermark: no backlog flood")
         self.write("b.py", "y = 1\n")
         self.commit("unrelated")
         self.write("a.py", "x = 2\n")
         self.commit("follow-up of its own (T-0001)")  # the task's own commit isn't a later change to it
         self.write("a.py", "x = 3\n")
         sha = self.commit("later change")
-        q = fmreverify.scan(self.p)
+        q = reverify.scan(self.p)
         self.assertEqual([(e["task"], e["cmd"], e["sha"]) for e in q], [("T-0001", "test -f flag", sha)])
-        self.assertEqual(len(fmreverify.scan(self.p)), 1, "a second scan neither re-queues nor duplicates")
+        self.assertEqual(len(reverify.scan(self.p)), 1, "a second scan neither re-queues nor duplicates")
 
     def test_the_sentinel_runs_the_queue_and_a_failure_captures_a_fix(self):
-        import fmreverify
-        fmreverify.scan(self.p)
+        from sampo import reverify
+        reverify.scan(self.p)
         self.write("a.py", "x = 2\n")
         os.remove(os.path.join(self.repo, "flag"))
         self.commit("later change")
@@ -212,12 +212,12 @@ class Reverify(_Repo):
         fixes = [b for b in self.fixes() if b.status not in c.CLOSED]
         self.assertEqual(len(fixes), 1)
         self.assertIn("T-0001", fixes[0].title)
-        self.assertEqual(fmreverify.load(self.p)["queue"], [], "a queued check that ran leaves the queue")
+        self.assertEqual(reverify.load(self.p)["queue"], [], "a queued check that ran leaves the queue")
         self.fm("sentinel", "--last", "0", check=False)
         self.assertEqual(len(self.fixes()), 1, "no second capture")
 
     def test_side_effects_and_tasks_no_longer_done_are_dropped_unrun(self):
-        import fmreverify
+        from sampo import reverify
         self.write("keep", "1")
         self.fm("capture", "not done yet")  # T-0002, captured
         self.queue({"task": "T-0001", "cmd": "rm -f keep"}, {"task": "T-0001", "cmd": "curl -s http://127.0.0.1:9"},
@@ -227,13 +227,13 @@ class Reverify(_Repo):
         self.assertTrue(os.path.exists(os.path.join(self.repo, "keep")), "a queued rm never runs")
         self.assertIn("4 queued re-verify entries dropped", p.stdout)
         self.assertEqual(self.fixes(), [])
-        self.assertEqual(fmreverify.load(self.p)["queue"], [])
+        self.assertEqual(reverify.load(self.p)["queue"], [])
 
     def test_entries_past_max_stay_queued(self):
-        import fmreverify
+        from sampo import reverify
         self.queue(*({"task": "T-0001", "cmd": f"test -n {i}"} for i in range(3)))
         self.fm("sentinel", "--last", "0", "--max", "1")
-        self.assertEqual([e["cmd"] for e in fmreverify.load(self.p)["queue"]], ["test -n 1", "test -n 2"])
+        self.assertEqual([e["cmd"] for e in reverify.load(self.p)["queue"]], ["test -n 1", "test -n 2"])
 
     def test_a_fix_holds_no_secret_or_escape_and_long_commands_get_their_own(self):
         self.write("out.txt", "\x1b[31mtoken ghp_" + "a" * 36 + "\n")
@@ -380,10 +380,10 @@ class Extras(ForemanTestCase):
     def test_an_l_feature_first_focus_says_spike_first_unless_the_brief_has_one(self):
         b = c.Brief.new("T-0009", "Build the sync engine", "FEATURE", "L")
         b.add_step("build it")
-        self.assertIn("Spike first", fmcli.spike_note(b))
+        self.assertIn("Spike first", cli.spike_note(b))
         b.add_step("spike: probe the conflict model in a throwaway lane")
-        self.assertEqual(fmcli.spike_note(b), "")
-        self.assertEqual(fmcli.spike_note(c.Brief.new("T-0010", "Build the sync engine", "FEATURE", "M")), "")
+        self.assertEqual(cli.spike_note(b), "")
+        self.assertEqual(cli.spike_note(c.Brief.new("T-0010", "Build the sync engine", "FEATURE", "M")), "")
         self.fm("task", "new", "Build the sync engine", "--type", "FEATURE", "--tier", "L", "--ac", "syncs :: true",
                 "--step", "build it")
         for sec in ("Interpretation", "Approach (options → choice → why)", "Build vs reuse", "Risks and rollback"):

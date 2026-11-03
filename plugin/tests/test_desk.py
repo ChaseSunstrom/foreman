@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 from helpers import PLUGIN, ForemanTestCase, read_text
 
-import fmintegrations as I
+from sampo import integrations as I
 
 SVG = "{http://www.w3.org/2000/svg}"
 
@@ -51,6 +51,6 @@ class Card(ForemanTestCase):
             self.assertIn("rsvg-convert", p.stderr)
         for bad in (["--size", "10x10"], ["--size", "wide"], ["--every", "1", "--out", out]):
             self.assertNotEqual(self.fm("desk", *bad, check=False).returncode, 0, bad)
-        source = read_text(os.path.join(PLUGIN, "lib", "fmintegrations.py"))
+        source = read_text(os.path.join(PLUGIN, "lib", "sampo", "integrations.py"))
         self.assertNotIn("socket", source)
         self.assertNotIn("http.server", source)

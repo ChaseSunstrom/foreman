@@ -80,7 +80,7 @@ class Friction(ForemanTestCase):
     def test_friction_hook_errors(self):
         # T-0437: hooks never fail a tool call; the errors they swallow went only to hooks.log, where a pass never looked
         import time
-        import fmcore as c
+        from sampo import core as c
         log = os.path.join(c.state_dir(), "logs", "hooks.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -95,7 +95,7 @@ class Friction(ForemanTestCase):
 
     def test_slow_gate_ignores_reused_passes(self):
         # T-0424: a reused pass records 0.0 s; counting it dragged the median to 0 ("12s vs usual 0s")
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo)
         with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
             for gate, times in (("fm replay", [10, 0.0, 0.0, 0.0, 11, 12]), ("pytest", [10, 0.0, 0.0, 0.0, 10, 30])):
@@ -119,7 +119,7 @@ class Friction(ForemanTestCase):
 
     def test_a_pass_waits_two_hours_after_the_last_so_it_has_friction_to_read(self):
         # T-0154: pass 2 came due 13 minutes after pass 1 with one new friction line
-        import fmcore as c
+        from sampo import core as c
         nxt = lambda: self.fm("next").stdout
         self.fm("friction", "--every", "1")
         self.fm("friction", "--mark")
@@ -156,7 +156,7 @@ class Friction(ForemanTestCase):
 
     def test_a_bare_keep_going_prompt_is_a_stall(self):
         # T-0887: "continue" after Claude stopped says it stopped too early; what the Stop hook did just before says why
-        import fmcore as c
+        from sampo import core as c
         with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
             f.write(json.dumps({"ts": c.now(), "kind": "drive_drained", "session_id": "sess-1"}) + "\n")
         for prompt in ("continue", "Keep going!", "go on please", "continue the refactor but skip the tests"):
@@ -167,7 +167,7 @@ class Friction(ForemanTestCase):
 
     def test_distinct_notes_of_one_kind_are_not_repeats(self):
         # T-0860: eight tripwire notes, each a different task's lesson on a different file, read as one note "8x"
-        import fmcore as c
+        from sampo import core as c
         with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
             for i in range(8):
                 f.write(json.dumps({"ts": c.now(), "kind": "inject", "event": "PreToolUse",
@@ -182,7 +182,7 @@ class Friction(ForemanTestCase):
 
     def test_a_note_averaging_over_1500_chars_is_named_even_every_turn(self):
         # T-2109: the repeat line skips SessionStart/UserPromptSubmit, so the biggest per-turn note was never flagged
-        import fmcore as c
+        from sampo import core as c
         with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
             for key, chars in (("session map", 1900), ("prompt hint", 300)):
                 for i in range(4):
@@ -194,7 +194,7 @@ class Friction(ForemanTestCase):
         self.assertNotIn("prompt hint", big)
 
     def test_a_deliberate_add_on_is_left_out_of_the_note_budget(self):  # T-2589: the compact recap, the repo note
-        import fmcore as c
+        from sampo import core as c
         with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
             for i in range(3):
                 f.write(json.dumps({"ts": c.now(), "kind": "inject", "event": "SessionStart", "key": "project state",
@@ -205,8 +205,8 @@ class Friction(ForemanTestCase):
 
     def test_guard_example_drops_heredoc_bodies_and_adds_the_rules_hint(self):
         # T-2280: the first 160 chars cut a heredoc before the line the guard judged
-        import fmcore as c
-        import fmhooks
+        from sampo import core as c
+        from sampo import hooks
         claude = os.path.join(self.tmp, "claude")
         os.makedirs(os.path.join(claude, "projects", "x"))
         body = "\n".join(f"print({i})  # padding padding padding" for i in range(12))
@@ -218,7 +218,7 @@ class Friction(ForemanTestCase):
             f.write(json.dumps({"ts": c.iso(c.time.time() - 60), "kind": "guard_block", "session_id": "s2",
                                 "category": "state-direct", "tool": "Bash", "rule": "x",
                                 "target": "$D/run.py (not known before it runs)",
-                                "cmd": fmhooks._window(c.redact(cmd.replace("\n", " ")), "$D/run.py")}) + "\n")  # as the hook logs it
+                                "cmd": hooks._window(c.redact(cmd.replace("\n", " ")), "$D/run.py")}) + "\n")  # as the hook logs it
             edit = "fm edit <<'EOF'\nSENTINEL-BODY\nEOF"
             f.write(json.dumps({"ts": c.iso(c.time.time() - 30), "kind": "guard_block", "session_id": "s2",
                                 "category": "core", "tool": "Bash", "target": "edit-target",
@@ -240,7 +240,7 @@ class Friction(ForemanTestCase):
 
     def test_give_up_lines_say_why_each_task_blocked(self):
         # T-2295: the line named task ids only
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(self.repo)
         for tid, why in (("T-0006", "can't reproduce"), ("T-0007", "needs the prod key")):
             c.log_event(p, "focus", task=tid)
@@ -252,7 +252,7 @@ class Friction(ForemanTestCase):
     def test_the_digest_rechecks_guard_blocks_and_shows_the_trend(self):
         # T-0187: 'done since: T-0178' said nothing of whether the fix removed its friction. Each guard block is re-run
         # through today's guard (its full command from the session's transcript); a mark keeps the window's counts
-        import fmcore as c
+        from sampo import core as c
         claude = os.path.join(self.tmp, "claude")
         os.makedirs(os.path.join(claude, "projects", "x"))
         cmds = {"ls -la\npwd": "state-direct", "npm publish": "publish"}  # a block a later fix cleared; a real one

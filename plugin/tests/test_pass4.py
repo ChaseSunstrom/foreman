@@ -85,7 +85,7 @@ class Sinks(ForemanTestCase):
             self.assertIn(sink, brief)
 
     def state_dir(self):
-        import fmcore as c
+        from sampo import core as c
         return c.find_project(self.repo).dir
 
 

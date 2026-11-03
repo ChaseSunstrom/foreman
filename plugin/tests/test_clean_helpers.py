@@ -24,19 +24,19 @@ print(json.dumps({"result": text, "total_cost_usd": 0.01}))
 
 class Pattern(ForemanTestCase):
     def test_one_test_file_pattern(self):
-        import fmbench
-        import fmcore as c
-        import fmmap
-        self.assertIs(fmbench.TEST_FILE, c.TESTISH)
-        self.assertIs(fmmap._TEST, c.TESTISH)
+        from sampo import bench
+        from sampo import core as c
+        from sampo import map as smap
+        self.assertIs(bench.TEST_FILE, c.TESTISH)
+        self.assertIs(smap._TEST, c.TESTISH)
         for path in ("web/__tests__/calc.js", "spec/calc_spec.rb", "tests/test_calc.py", "test_util.js"):
             self.assertTrue(c.TESTISH.search(path), path)
 
 
 class Children(ForemanTestCase):
     def test_every_child_runs_through_one_runner_without_background_work(self):
-        import fmideas
-        self.assertTrue(callable(fmideas.run_child) and callable(fmideas.run_children))
+        from sampo import ideas
+        self.assertTrue(callable(ideas.run_child) and callable(ideas.run_children))
         bindir = os.path.join(self.tmp, "bin")
         os.makedirs(bindir)
         with open(os.path.join(bindir, "claude"), "w") as f:
@@ -92,17 +92,17 @@ class Failures(ForemanTestCase):
         self.addCleanup(patch.stop)
 
     def rows(self, feature):
-        import fmbudget
-        return [e for e in fmbudget.ledger() if e.get("feature") == feature]
+        from sampo import budget
+        return [e for e in budget.ledger() if e.get("feature") == feature]
 
     def test_errors_keep_the_end_of_stderr_on_one_line(self):
-        import fmideas
+        from sampo import ideas
         self.stub("fail")
         with self.assertRaises(ValueError) as e:
-            fmideas.run_child("oracle", "sys", "prompt", "sonnet", 30, project="x", detail="T-0001")
+            ideas.run_child("oracle", "sys", "prompt", "sonnet", 30, project="x", detail="T-0001")
         self.assertIn("REAL ERROR: not logged in", str(e.exception))
         self.assertNotIn("\n", str(e.exception))
-        [(text, err)] = fmideas.run_children([(fmideas.child_cmd("sonnet", "s"), "p", "delight")], 30, "ideas")
+        [(text, err)] = ideas.run_children([(ideas.child_cmd("sonnet", "s"), "p", "delight")], 30, "ideas")
         self.assertIsNone(text)
         self.assertIn("REAL ERROR: not logged in", err)
         self.assertNotIn("\n", err)
@@ -110,15 +110,15 @@ class Failures(ForemanTestCase):
         self.assertEqual([r["detail"] for r in self.rows("ideas")], ["delight"])
 
     def test_a_timeout_is_recorded_like_before(self):
-        import fmideas
+        from sampo import ideas
         self.stub("sleep")
-        out = fmideas.run_children([(fmideas.child_cmd("sonnet", "s"), "p", ""), (fmideas.child_cmd("sonnet", "s"), "p",
+        out = ideas.run_children([(ideas.child_cmd("sonnet", "s"), "p", ""), (ideas.child_cmd("sonnet", "s"), "p",
                                     "delight")], 1, "research")
         self.assertEqual([e for _, e in out], ["timed out after 1s"] * 2)
         self.assertEqual([r["detail"] for r in self.rows("research")],
                          ["timed out: cost unknown", "delight (timed out: cost unknown)"])
         with self.assertRaises(ValueError) as e:
-            fmideas.run_child("oracle", "sys", "prompt", "sonnet", 1)
+            ideas.run_child("oracle", "sys", "prompt", "sonnet", 1)
         self.assertEqual(str(e.exception).count("oracle"), 1)
 
     def test_the_oracle_error_isnt_prefixed_twice(self):
@@ -132,17 +132,17 @@ class Failures(ForemanTestCase):
         self.assertIn("REAL ERROR", r.stderr + r.stdout)
 
     def test_evolves_mutation_child(self):
-        import fmcore as c
-        import fmevolve
+        from sampo import core as c
+        from sampo import evolve
         self.fm("init")
         p = c.find_project(self.repo)
         self.stub("fail")
         with self.assertRaises(ValueError) as e:
-            fmevolve.mutate(p, "plugin/rules/foreman.md", "# rules\n", [], "sonnet", timeout=30)
+            evolve.mutate(p, "plugin/rules/foreman.md", "# rules\n", [], "sonnet", timeout=30)
         self.assertIn("REAL ERROR", str(e.exception))
         self.stub("plain")
         with self.assertRaises(ValueError) as e:
-            fmevolve.mutate(p, "plugin/rules/foreman.md", "# rules\n", [], "sonnet", timeout=30)
+            evolve.mutate(p, "plugin/rules/foreman.md", "# rules\n", [], "sonnet", timeout=30)
         self.assertIn("no revised file came back", str(e.exception))
         self.assertEqual({json.loads(x)["no_background"] for x in read_text(self.log).splitlines()}, {"1"})
         self.assertEqual([r["detail"] for r in self.rows("evolve")], ["plugin/rules/foreman.md"] * 2)

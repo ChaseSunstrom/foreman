@@ -42,7 +42,7 @@ class _Stubbed(ForemanTestCase):
 
 class Cache(_Stubbed):
     def test_a_page_is_fetched_once_a_day(self):
-        import fmresearch as r
+        from sampo import research as r
         calls = []
 
         def net(url):
@@ -55,8 +55,8 @@ class Cache(_Stubbed):
                          (None, "HTTP 404"))  # a failure isn't cached
 
     def test_earlier_days_are_pruned_when_a_page_is_written(self):
-        import fmcore as c
-        import fmresearch as r
+        from sampo import core as c
+        from sampo import research as r
         old = os.path.join(c.state_dir(), "research-cache", "2020-01-01")
         os.makedirs(old)
         r.cached_fetch("https://docs.alpha.dev/x", fetch=lambda u: ("a real page " * 60, None))
@@ -97,7 +97,7 @@ class Cross(_Stubbed):
         self.assertGreaterEqual(view["research"][0]["single"], 1)
 
     def test_two_models_disagreeing_on_one_sub_question_conflict_once(self):
-        import fmresearch as r
+        from sampo import research as r
         a = r.Claim("the library supports streaming responses", "https://docs.alpha.dev/s", "", "primary", "x")
         b = r.Claim("the library does not support streaming responses", "https://blog.alpha.dev/s", "", "primary", "x")
         a2 = r.Claim(a.text, a.url, "", "primary", "x")
@@ -109,7 +109,7 @@ class Cross(_Stubbed):
         self.assertEqual(r._domain("https://news.bbc.co.uk/x"), "bbc.co.uk")
 
     def test_unverified_support_says_so_and_a_failed_second_model_is_named(self):
-        import fmresearch as r
+        from sampo import research as r
         x = r.Claim("version 3 dropped the sync client", "https://a.dev/1", "q", "primary", "x")
         y = r.Claim("version 3 dropped the sync client entirely", "https://b.dev/1", "q", "primary", "x")
         z = r.Claim("version 3 dropped the sync client too", "https://c.dev/1", "q", "primary", "x")
@@ -121,7 +121,7 @@ class Cross(_Stubbed):
         self.assertIn("opus gave no answer", x.support)
 
     def test_a_challenge_page_is_not_cached(self):
-        import fmresearch as r
+        from sampo import research as r
         calls = []
         r.cached_fetch("https://x.dev/p", fetch=lambda u: (calls.append(u), ("Just a moment..." + " " * 600, None))[1])
         r.cached_fetch("https://x.dev/p", fetch=lambda u: (calls.append(u), ("Just a moment..." + " " * 600, None))[1])

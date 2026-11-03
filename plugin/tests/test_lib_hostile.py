@@ -11,9 +11,9 @@ from unittest import mock
 
 from helpers import ForemanTestCase, read_json
 
-import fmcore as c
-import fmlib
-import fmplugins
+from sampo import core as c
+from sampo import lib
+from sampo import plugins
 
 HOSTILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "hostile")
 
@@ -49,7 +49,7 @@ class HostileCorpus(ForemanTestCase):
         self.assertGreaterEqual(sum(bool(x.get("expect")) for x in self.items), 25)
 
     def test_every_bad_item_is_quarantined_with_its_reason_and_the_clean_ones_are_not(self):
-        index = {x["path"]: x for x in fmlib._index_source(self.zoo, "zoo")}
+        index = {x["path"]: x for x in lib._index_source(self.zoo, "zoo")}
         for x in self.items:
             with self.subTest(x["path"]):
                 if x.get("absent"):  # a symlink that is no skill or agent isn't a row (CLAUDE.md -> AGENTS.md)
@@ -121,7 +121,7 @@ class HostileCorpus(ForemanTestCase):
         os.remove(os.path.join(repo, "agents", "café", "tool.md"))
         git("checkout", "--", ".")
         self.assertFalse(os.path.islink(os.path.join(repo, "agents", "café", "tool.md")))
-        rows = {x["path"]: x for x in fmlib._index_source(repo, "nonascii")}
+        rows = {x["path"]: x for x in lib._index_source(repo, "nonascii")}
         self.assertIn("symlink", rows["agents/café/tool.md"].get("quarantine", ""))
 
 
@@ -147,7 +147,7 @@ class HostileMarketplace(ForemanTestCase):
 
     def test_bad_entries_are_skipped_with_reasons_and_the_rest_load(self):
         skipped = []
-        rows = {p["id"]: p for p in fmplugins.index(skipped)}
+        rows = {p["id"]: p for p in plugins.index(skipped)}
         self.assertEqual(sorted(rows), ["good-one@hostile", "moved-tool@hostile", "new-tool@hostile"])
         self.assertEqual(rows["good-one@hostile"]["description"], "Tide tables for the shell")  # the first one wins
         self.assertEqual(rows["new-tool@hostile"]["description"], "")  # not a string: nothing, not a crash
@@ -159,16 +159,16 @@ class HostileMarketplace(ForemanTestCase):
             self.assertIn(why, text)
         self.assertEqual(rows["new-tool@hostile"]["renamed_from"], ["old-tool"])
         # the guard's pin reads the same index: a good entry still hashes, a skipped one is unknown
-        self.assertTrue(fmplugins.content_hash("good-one@hostile"))
-        self.assertIsNone(fmplugins.content_hash("outside@hostile"))
+        self.assertTrue(plugins.content_hash("good-one@hostile"))
+        self.assertIsNone(plugins.content_hash("outside@hostile"))
         out = self.fm("plugins", "find", "tide").stdout
         self.assertIn("good-one@hostile", out)
         self.assertIn("skipped", out)
 
     def test_a_renamed_or_re_sourced_plugin_reads_as_untrusted(self):
         for pid in ("good-one@hostile", "moved-tool@hostile"):
-            fmplugins.record_trust(pid)
-        trust = {p["id"]: fmplugins.trust(p) for p in fmplugins.index()}
+            plugins.record_trust(pid)
+        trust = {p["id"]: plugins.trust(p) for p in plugins.index()}
         self.assertEqual(trust["good-one@hostile"], (True, ""))
         self.assertEqual(trust["moved-tool@hostile"], (True, ""))
         trusted, why = trust["new-tool@hostile"]
@@ -178,28 +178,28 @@ class HostileMarketplace(ForemanTestCase):
         data = read_json(self.mk_file)
         data["plugins"][12]["source"]["repo"] = "evil/moved-tool"
         _write(self.mk_file, data)
-        trusted, why = fmplugins.trust(next(p for p in fmplugins.index() if p["id"] == "moved-tool@hostile"))
+        trusted, why = plugins.trust(next(p for p in plugins.index() if p["id"] == "moved-tool@hostile"))
         self.assertFalse(trusted)
         self.assertIn("changed since", why)
         data["plugins"][12]["source"] = {"source": "github", "repo": "org/moved-tool", "sha": "0000"}
         _write(self.mk_file, data)
-        self.assertFalse(fmplugins.trust(next(p for p in fmplugins.index() if p["id"] == "moved-tool@hostile"))[0])
+        self.assertFalse(plugins.trust(next(p for p in plugins.index() if p["id"] == "moved-tool@hostile"))[0])
         out = self.fm("plugins", "find", "tide", "tool").stdout
         self.assertIn("untrusted: renamed from old-tool", out)
         self.assertIn("untrusted: its name, source or sha changed", out)
 
     def test_enabling_a_re_sourced_plugin_doesnt_launder_its_trust(self):
-        fmplugins.record_trust("moved-tool@hostile")
+        plugins.record_trust("moved-tool@hostile")
         data = read_json(self.mk_file)
         data["plugins"][12]["source"]["repo"] = "evil/moved-tool"
         _write(self.mk_file, data)
         have = {"moved-tool@hostile": {"path": None, "enabled": False}, "good-one@hostile": {"path": None, "enabled": False}}
-        with mock.patch.object(fmplugins, "_claude"), mock.patch.object(fmplugins, "installed", return_value=have):
-            self.assertEqual(fmplugins.install("moved-tool@hostile")[0], "enabled")
-            self.assertEqual(fmplugins.install("good-one@hostile")[0], "enabled")
-        rows = {p["id"]: p for p in fmplugins.index()}
-        self.assertFalse(fmplugins.trust(rows["moved-tool@hostile"])[0], "an enable keeps the identity it was installed as")
-        self.assertEqual(fmplugins.trust(rows["good-one@hostile"]), (True, ""))  # no entry yet: the enable records it
+        with mock.patch.object(plugins, "_claude"), mock.patch.object(plugins, "installed", return_value=have):
+            self.assertEqual(plugins.install("moved-tool@hostile")[0], "enabled")
+            self.assertEqual(plugins.install("good-one@hostile")[0], "enabled")
+        rows = {p["id"]: p for p in plugins.index()}
+        self.assertFalse(plugins.trust(rows["moved-tool@hostile"])[0], "an enable keeps the identity it was installed as")
+        self.assertEqual(plugins.trust(rows["good-one@hostile"]), (True, ""))  # no entry yet: the enable records it
 
     def test_a_marketplace_that_is_wrong_as_a_whole_never_crashes(self):
         mks = os.path.join(self.cc, "plugins", "marketplaces")
@@ -208,10 +208,10 @@ class HostileMarketplace(ForemanTestCase):
         _write(os.path.join(mks, "name-obj", ".claude-plugin", "marketplace.json"), {"name": {}})
         _write(os.path.join(mks, "esc\x1b]0;pwn\x07", ".claude-plugin", "marketplace.json"),
                {"name": 5, "plugins": [{"name": "ok", "source": "./ok"}]})
-        names = fmplugins._marketplaces()
-        self.assertTrue(all(isinstance(n, str) and fmplugins._PLUGIN_NAME.fullmatch(n) for n in names), names)
+        names = plugins._marketplaces()
+        self.assertTrue(all(isinstance(n, str) and plugins._PLUGIN_NAME.fullmatch(n) for n in names), names)
         self.assertIn("name-list", names)
-        ids = [p["id"] for p in fmplugins.index()]
+        ids = [p["id"] for p in plugins.index()]
         self.assertIn("good-one@hostile", ids)
         self.assertTrue(all(c.plain(i) == i for i in ids), ids)
         self.assertIn("ok@esc-0-pwn", ids)

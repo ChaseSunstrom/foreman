@@ -9,20 +9,20 @@ import unittest
 
 from helpers import ForemanTestCase, headless_chrome
 
-import fmdesign
-import fmmotion
-import fmsmoke
+from sampo import design
+from sampo import motion as smotion
+from sampo import smoke
 
 FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "design", "afterglow")
 
 
 class Afterglow(ForemanTestCase):
     def found(self, name):
-        return [f["line"] for f in fmdesign.lint([os.path.join(FIX, name)]) if f["rule"] == "afterglow"]
+        return [f["line"] for f in design.lint([os.path.join(FIX, name)]) if f["rule"] == "afterglow"]
 
     def test_hover_colour_change_with_no_transition_is_flagged(self):
         self.assertEqual(self.found("slop.css"), [2, 4, 5, 6, 9, 11, 13, 14, 15, 17])
-        msg = fmdesign.lint([os.path.join(FIX, "slop.css")])[0]["detail"]
+        msg = design.lint([os.path.join(FIX, "slop.css")])[0]["detail"]
         self.assertIn("design-lint: allow afterglow", msg)
 
     def test_transition_animation_or_reduced_motion_is_clean(self):
@@ -37,7 +37,7 @@ class Afterglow(ForemanTestCase):
                 f.write(".b { transition: transform var(--dur-quick) var(--ease-out); }\n"
                         ".b:hover { transform: translateY(-1px); }\n"
                         ".c { transition: color 0s; }\n.c:hover { color: red; }\n")
-            self.assertEqual([x["line"] for x in fmdesign.lint([p]) if x["rule"] == "afterglow"], [4])
+            self.assertEqual([x["line"] for x in design.lint([p]) if x["rule"] == "afterglow"], [4])
 
     def test_tailwind_state_classes_need_a_transition_class_on_the_same_element(self):  # T-1689
         import tempfile
@@ -53,11 +53,11 @@ class Afterglow(ForemanTestCase):
                         '<a class="aria-[pressed=true]:text-red-600">aria state</a>\n'
                         '<a class="md:bg-red-500 text-red-600">no state</a>\n'
                         '<a class="hover:bg-blue-600"><!-- design-lint: allow afterglow brand flash -->x</a>\n')
-            found = [x for x in fmdesign.lint([p]) if x["rule"] == "afterglow"]
+            found = [x for x in design.lint([p]) if x["rule"] == "afterglow"]
             self.assertEqual([x["line"] for x in found], [1, 5, 7], found)
             self.assertIn("hover:bg-blue-600", found[0]["detail"])
             self.assertIn("transition", found[0]["detail"])
-        self.assertIn("Tailwind state classes in @apply", fmdesign.NOT_COVERED)
+        self.assertIn("Tailwind state classes in @apply", design.NOT_COVERED)
 
     def test_an_ancestor_or_descendant_state_matches_the_element_that_moves(self):
         # T-1707: the looks gallery's false findings; a transition only on a different element still flags
@@ -71,7 +71,7 @@ class Afterglow(ForemanTestCase):
                         ".t [aria-pressed=\"true\"] { background: red; }\n"
                         ".x .b { transition: color 120ms; }\n"
                         ".b:hover { color: red; }\n")
-            self.assertEqual([x["line"] for x in fmdesign.lint([p]) if x["rule"] == "afterglow"], [6])
+            self.assertEqual([x["line"] for x in design.lint([p]) if x["rule"] == "afterglow"], [6])
 
 
 SCORE = """[[motion]]
@@ -126,28 +126,28 @@ class Sample(ForemanTestCase):
 
     @needs_node
     def test_sampled_values_within_tolerance_pass(self):
-        got = fmmotion.verify(self.score, [
+        got = smotion.verify(self.score, [
             frames("menu-enter", "opacity", 0, 1, [[50, 0.25], [100, 0.5], [150, 0.761]]),
             frames("menu-enter", "transform", [1, 0, 0, 1, 0, 8], [1, 0, 0, 1, 0, 0],
                    [[50, [1, 0, 0, 1, 0, 6]], [100, [1, 0, 0, 1, 0, 4.1]]])])
         self.assertEqual((got["problems"], got["drifts"], got["checked"]), ([], [], 5))
-        self.assertIn("motion verify: clean, 5 sample(s)", fmmotion.report(got))
+        self.assertIn("motion verify: clean, 5 sample(s)", smotion.report(got))
 
     @needs_node
     def test_a_changed_timing_shows_in_the_diff(self):
         # the CSS ran menu-enter over 300 ms, not the score's 200: at 75 ms it is a quarter in, not three eighths
-        got = fmmotion.verify(self.score, [frames("menu-enter", "opacity", 0, 1, [[75, 0.25], [150, 0.5]]),
+        got = smotion.verify(self.score, [frames("menu-enter", "opacity", 0, 1, [[75, 0.25], [150, 0.5]]),
                                            frames("sheet-up", "opacity", 0, 1, [[100, 0.5]])])
         self.assertEqual([(d["motion"], d["property"], d["ms"]) for d in got["drifts"]],
                          [("menu-enter", "opacity", 75), ("menu-enter", "opacity", 150), ("sheet-up", "opacity", 100)])
-        text = fmmotion.report(got)
+        text = smotion.report(got)
         self.assertIn("menu-enter opacity at 75 ms (desktop start): expected 0.375, sampled 0.25 (tolerance ±0.02)",
                       text)
         self.assertIn("sheet-up opacity at 100 ms", text)  # ease-enter is far past half way at half time
         self.assertIn("3 drift(s)", text)
 
     def test_unknown_motions_unlisted_properties_and_bad_samples_are_problems(self):
-        got = fmmotion.verify(self.score, [frames("ghost", "opacity", 0, 1, [[10, 0.1]]),
+        got = smotion.verify(self.score, [frames("ghost", "opacity", 0, 1, [[10, 0.1]]),
                                            frames("sheet-up", "transform", [0], [1], [[100, [9]]]),
                                            {"motion": "menu-enter", "at": "x"}, "junk",
                                            frames("menu-enter", "opacity", 0, 1, [[10, "half"]])])
@@ -159,7 +159,7 @@ class Sample(ForemanTestCase):
 
     def test_colours_rotations_and_mismatched_values_are_noted_not_failed(self):
         # a rotation's matrix and a colour don't move linearly between their ends: comparing them would flag good CSS
-        got = fmmotion.verify(self.score, [
+        got = smotion.verify(self.score, [
             frames("menu-enter", "transform", [1, 0, 0, 1, 0, 0], [0, 1, -1, 0, 0, 0],
                    [[100, [0.707, 0.707, -0.707, 0.707, 0, 0]]]),
             frames("menu-enter", "color", [0, 0, 0], [255, 0, 0, 0.5], [[100, [128, 0, 0, 0.7]]]),
@@ -167,19 +167,19 @@ class Sample(ForemanTestCase):
             frames("menu-enter", "transform", [1, 0, 0, 1, 0, 8], [1, 0, 0, 1, 0, 0, 0], [[100, [1, 0]]])])
         self.assertEqual((got["problems"], got["drifts"], got["checked"]), ([], [], 0))
         self.assertEqual(len(got["notes"]), 2)  # one per motion and property
-        text = fmmotion.report(got)
+        text = smotion.report(got)
         self.assertIn("menu-enter transform: not comparable", text)
         self.assertIn("menu-enter color: not comparable", text)
         self.assertIn("nothing checked", text)
 
     def test_no_browser_says_so_and_checks_only_the_score(self):
-        got = fmmotion.verify(self.score, None, why="no browser: no Playwright in this checkout")
-        text = fmmotion.report(got)
+        got = smotion.verify(self.score, None, why="no browser: no Playwright in this checkout")
+        text = smotion.report(got)
         self.assertIn("no browser: no Playwright in this checkout; checked the score only", text)
         self.assertEqual((got["problems"], got["checked"]), ([], 0))
         with open(self.score, "a") as f:
             f.write('[[motion]]\nname = "bad"\nduration = 100\neasing = "linear"\nproperties = ["opacity"]\n')
-        self.assertIn("bad: no reduced form", fmmotion.report(fmmotion.verify(self.score, None, why="no browser")))
+        self.assertIn("bad: no reduced form", smotion.report(smotion.verify(self.score, None, why="no browser")))
 
     @needs_node
     def test_the_pages_sampler_writes_what_verify_reads(self):
@@ -187,7 +187,7 @@ class Sample(ForemanTestCase):
         # 200 ms is back at its start), its timing put back, and what it returns verifies clean
         js = os.path.join(self.tmp, "fake.cjs")
         with open(js, "w") as f:
-            f.write("const { sampleMotion } = require(%s);\n" % json.dumps(fmsmoke.SCRIPT) + FAKE_PAGE)
+            f.write("const { sampleMotion } = require(%s);\n" % json.dumps(smoke.SCRIPT) + FAKE_PAGE)
         p = subprocess.run([shutil.which("node"), js], capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         out = json.loads(p.stdout)
@@ -196,7 +196,7 @@ class Sample(ForemanTestCase):
         self.assertEqual((out["iterations"], out["fill"], out["at"]), ("Infinity", "none", 0))
         self.assertEqual(len(out["notes"]), 1)
         self.assertIn("motion-sheet-up: not sampled: gone", out["notes"][0])
-        got = fmmotion.verify(self.score, out["samples"])
+        got = smotion.verify(self.score, out["samples"])
         self.assertEqual((got["problems"], got["drifts"], got["checked"]), ([], [], 14))
 
     def test_cli_with_no_url_or_no_browser_says_so_and_checks_the_score(self):

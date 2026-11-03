@@ -19,7 +19,7 @@ class Probe(ForemanTestCase):
 
 class Patterns(ForemanTestCase):
     def test_docs_naming_the_patterns_dont_flag_a_change(self):
-        import fmcore as c
+        from sampo import core as c
         doc = "diff --git a/MASTER.md b/MASTER.md\n--- a/MASTER.md\n+++ b/MASTER.md\n@@ -1 +1 @@\n" \
               "+the pre-audit flags `urlopen(` and `requests.get(` calls\n"
         code = "diff --git a/get.py b/get.py\n--- a/get.py\n+++ b/get.py\n@@ -1 +1 @@\n" \

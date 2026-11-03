@@ -7,7 +7,7 @@ import unittest
 
 from helpers import ForemanTestCase, PLUGIN
 
-import fmcore as c
+from sampo import core as c
 
 SIG = "test -f healthy.flag"  # red until the fix writes the flag
 
@@ -97,8 +97,8 @@ class IncidentSentinel(Incident):
 
     def test_sentinel_ritual_in_order_closes_and_leaves_the_signal_behind(self):
         # the session transcript: the commands a session runs, in order, with the refusals between them
-        import fmreverify
-        fmreverify.scan(self.p)  # the watermark: later commits are the ones that count
+        from sampo import reverify
+        reverify.scan(self.p)  # the watermark: later commits are the ones that count
         self.open()
         tid = self.brief().id
         self.fm("capture", "--incident", "log", "restore the flag", "--expect", "signal green")
@@ -127,7 +127,7 @@ class IncidentSentinel(Incident):
         with open(os.path.join(self.repo, "healthy.flag"), "w") as f:
             f.write("changed\n")
         subprocess.run(["git", "-C", self.repo, "commit", "-qam", "touch the flag"], check=True)
-        queued = [(e["task"], e["cmd"]) for e in fmreverify.scan(self.p)]
+        queued = [(e["task"], e["cmd"]) for e in reverify.scan(self.p)]
         self.assertIn((tid, SIG), queued)
 
     def test_sentinel_close_needs_two_greens_after_the_last_edit(self):

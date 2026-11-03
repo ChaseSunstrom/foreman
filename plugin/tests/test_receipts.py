@@ -65,7 +65,7 @@ class Receipts(ForemanTestCase):
         self.assertNotIn("other.py", brief.split("Past nits on these files")[1])
 
     def fm_project_dir(self):
-        import fmcore as c
+        from sampo import core as c
         return c.find_project(self.repo).dir
 
 

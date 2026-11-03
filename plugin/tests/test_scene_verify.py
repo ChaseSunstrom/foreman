@@ -10,8 +10,8 @@ import unittest
 
 from helpers import ForemanTestCase, headless_chrome
 
-import fmscene
-import fmshot
+from sampo import scene
+from sampo import shot
 
 TRIANGLE = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 1, 0)  # three VEC3 floats: 36 bytes
 
@@ -21,10 +21,10 @@ class Sketchbook(ForemanTestCase):
     under reduced motion, its description without WebGL2."""
 
     def test_every_card_presets_each_declared_uniform(self):
-        cards = fmscene.sketch_cards()
+        cards = scene.sketch_cards()
         self.assertEqual(len(cards), 8, [c["name"] for c in cards])
         for card in cards:
-            declared = fmscene.uniforms(card["glsl"])
+            declared = scene.uniforms(card["glsl"])
             want = {u: n for u, n in declared.items() if u not in ("uRes", "uTime")}
             got = card["sketch"]
             self.assertEqual(set(got), set(want), card["name"])
@@ -33,13 +33,13 @@ class Sketchbook(ForemanTestCase):
                                 (card["name"], u, v))
 
     def test_a_sketch_line_parses_and_refuses_what_it_cannot_read(self):
-        self.assertEqual(fmscene.sketch("`uA=1 uB=0.5,0.25 uP=sweep`"), {"uA": [1.0], "uB": [0.5, 0.25], "uP": "sweep"})
+        self.assertEqual(scene.sketch("`uA=1 uB=0.5,0.25 uP=sweep`"), {"uA": [1.0], "uB": [0.5, 0.25], "uP": "sweep"})
         for bad in ("`uA=`", "`uA=x`", "`=1`", "no backticks"):
             with self.assertRaises(ValueError, msg=bad):
-                fmscene.sketch(bad)
+                scene.sketch(bad)
 
     def test_the_page_runs_each_shader_with_a_still_and_a_fallback(self):
-        page = fmscene.sketchbook_html(fmscene.sketch_cards())
+        page = scene.sketchbook_html(scene.sketch_cards())
         self.assertEqual(page.count('<figure class="sketch"'), 8)
         self.assertEqual(page.count('type="x-shader/x-fragment"'), 8)
         self.assertEqual(page.count('class="fallback"'), 8)
@@ -55,7 +55,7 @@ class Sketchbook(ForemanTestCase):
     def test_review_fixes_bare_out_hidden_canvas_card_still_and_foreign_flags(self):  # T-1784 review
         self.fm("scene", "sketchbook", cwd=self.tmp)  # the default ./sketchbook.html: a bare name has no dirname
         self.assertTrue(os.path.exists(os.path.join(self.tmp, "sketchbook.html")))
-        page = fmscene.sketchbook_html(fmscene.sketch_cards())
+        page = scene.sketchbook_html(scene.sketch_cards())
         self.assertIn(".sketch [hidden]{display:none}", page, "the author CSS display:block beats the UA [hidden]")
         self.assertIn("draw(0, 1)", page, "the cards' still: uTime 0, a swept uniform at its end")
         self.assertEqual(self.fm("scene", "sketchbook", "--balls", "5", check=False).returncode, 2)
@@ -97,7 +97,7 @@ class Gltf(ForemanTestCase):
         return path
 
     def test_a_good_file_passes_and_each_break_is_named(self):
-        self.assertEqual(fmscene.gltf_problems(self.write("ok.gltf", gltf())), [])
+        self.assertEqual(scene.gltf_problems(self.write("ok.gltf", gltf())), [])
         cases = [(gltf(asset={"version": "1.0"}), "asset.version is '1.0'"),
                  (gltf(nodes=[{"mesh": 3}]), "nodes[0].mesh: meshes index 3 out of range"),
                  (gltf(accessors=[{"bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3"}]),
@@ -107,15 +107,15 @@ class Gltf(ForemanTestCase):
                  (gltf(buffers=[{"byteLength": 36, "uri": "missing.bin"}]), "missing.bin isn't there")]
         for k, (doc, said) in enumerate(cases):
             with self.subTest(said=said):
-                found = fmscene.gltf_problems(self.write(f"bad{k}.gltf", doc))
+                found = scene.gltf_problems(self.write(f"bad{k}.gltf", doc))
                 self.assertTrue(any(said in x for x in found), found)
-        self.assertIn("not JSON", fmscene.gltf_problems(self.write("junk.gltf", b"{nope"))[0])
+        self.assertIn("not JSON", scene.gltf_problems(self.write("junk.gltf", b"{nope"))[0])
 
     def test_a_glb_reads_its_binary_chunk(self):
         doc = gltf(buffers=[{"byteLength": 36}])
-        self.assertEqual(fmscene.gltf_problems(self.write("ok.glb", glb(doc))), [])
-        self.assertTrue(any("header says" in x for x in fmscene.gltf_problems(self.write("long.glb", glb(doc, length=999)))))
-        short = fmscene.gltf_problems(self.write("short.glb", glb(doc, binary=TRIANGLE[:24])))
+        self.assertEqual(scene.gltf_problems(self.write("ok.glb", glb(doc))), [])
+        self.assertTrue(any("header says" in x for x in scene.gltf_problems(self.write("long.glb", glb(doc, length=999)))))
+        short = scene.gltf_problems(self.write("short.glb", glb(doc, binary=TRIANGLE[:24])))
         self.assertTrue(any("buffers[0] declares 36 bytes, has 24" in x for x in short), short)
 
     def test_fm_scene_check_reads_gltf_too(self):
@@ -129,16 +129,16 @@ class Gltf(ForemanTestCase):
 class Soak(ForemanTestCase):
     def test_the_verdict_from_samples(self):
         steady = [{"state": "live", "s": {"geometries": 3, "textures": 0, "frames": 90, "frame_ms": [2] * 90}}] * 3
-        self.assertEqual(fmscene.soak_problems(steady, after="poster", budget_ms=16), [])
+        self.assertEqual(scene.soak_problems(steady, after="poster", budget_ms=16), [])
         grew = steady[:1] + [{"state": "live", "s": {"geometries": 9, "textures": 2, "frames": 200,
                                                       "frame_ms": [2] * 180 + [40] * 20}}]
-        found = fmscene.soak_problems(grew, after="live", budget_ms=16)
+        found = scene.soak_problems(grew, after="live", budget_ms=16)
         self.assertTrue(any("geometries grew from 3 to 9" in x for x in found), found)
         self.assertTrue(any("textures grew from 0 to 2" in x for x in found), found)
         self.assertTrue(any("p95 frame time 40 ms is over the 16 ms budget" in x for x in found), found)
         self.assertTrue(any("still live after dispose()" in x for x in found), found)
         dead = [{"state": "failed", "s": None, "error": "boom"}]
-        self.assertTrue(any("never drew" in x for x in fmscene.soak_problems(dead, after="poster")))
+        self.assertTrue(any("never drew" in x for x in scene.soak_problems(dead, after="poster")))
 
     def test_it_says_why_it_skips(self):
         path = os.path.join(self.tmp, "scene.json")
@@ -158,7 +158,7 @@ class Soak(ForemanTestCase):
                        "meshes": [{"name": "ball", "geometry": {"type": "sphere"}, "material": "m"}],
                        "animations": {"spin": {"target": "ball", "property": "rotation", "times": [0, 2],
                                                "values": [[0, 0, 0], [0, 360, 0]]}}}, f)
-        got = fmscene.soak(path, three(), seconds=3, budget_ms=1000)
+        got = scene.soak(path, three(), seconds=3, budget_ms=1000)
         self.assertNotIn("skipped", got, got)
         self.assertEqual(got["problems"], [], got)
         self.assertGreater(got["frames"], 10, got)

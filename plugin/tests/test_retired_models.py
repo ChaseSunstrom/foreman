@@ -7,7 +7,7 @@ import sys
 import unittest
 
 import helpers  # noqa: F401  (puts plugin/lib on sys.path)
-import fmmodels as m
+from sampo import models as m
 from test_code import CodeCase
 
 

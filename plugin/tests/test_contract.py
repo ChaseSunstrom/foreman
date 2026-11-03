@@ -5,9 +5,9 @@ import time
 
 from test_hooks import HookCase, parse
 
-import fmbudget as bud
-import fmcontract as con
-import fmcore as c
+from sampo import budget as bud
+from sampo import contract as con
+from sampo import core as c
 
 
 class Contract(HookCase):
@@ -60,8 +60,8 @@ class Contract(HookCase):
         self.assertIn("bound that ended it: spend", r)
 
     def seed(self, **costs):
-        import fmcost
-        path = fmcost._cache_path(self.project())
+        from sampo import cost
+        path = cost._cache_path(self.project())
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump({"size": 0, "ts": time.time(), "costs": costs}, f)
@@ -118,13 +118,13 @@ class Contract(HookCase):
 
     def test_the_cost_refresh_child_is_spawned_at_most_once_a_minute(self):
         import subprocess
-        import fmcost
+        from sampo import cost
         calls = []
         real, subprocess.Popen = subprocess.Popen, lambda *a, **k: calls.append(a)
         try:
             os.environ.pop("FOREMAN_NO_BACKGROUND")
-            fmcost._refresh_detached(self.project())
-            fmcost._refresh_detached(self.project())
+            cost._refresh_detached(self.project())
+            cost._refresh_detached(self.project())
         finally:
             subprocess.Popen = real
             os.environ["FOREMAN_NO_BACKGROUND"] = "1"

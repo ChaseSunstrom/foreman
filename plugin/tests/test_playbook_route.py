@@ -12,8 +12,8 @@ from unittest import mock
 from helpers import ForemanTestCase
 
 import bench_playbooks as bench
-import fmcore as c
-import fmplaybooks as pb
+from sampo import core as c
+from sampo import playbooks as pb
 
 
 def put(root, rel, title, use, body="1. Do the thing.\n"):

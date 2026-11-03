@@ -4,7 +4,7 @@ import os
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class Base(ForemanTestCase):
@@ -120,12 +120,12 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
     def test_a_race_that_cant_start_gives_the_released_task_back_focused(self):  # T-2338 review
         import argparse
         from unittest import mock
-        import fmlanes
+        from sampo import lanes
         tid = self.task()
         self.assertEqual(c.find_brief(self.p, tid).status, "active")
-        with mock.patch.object(fmlanes, "builder_brief", side_effect=RuntimeError("no lane")):
+        with mock.patch.object(lanes, "builder_brief", side_effect=RuntimeError("no lane")):
             with self.assertRaises(RuntimeError):
-                fmlanes.race(self.p, c.find_brief(self.p, tid), self.repo, argparse.Namespace(confidence=None, json=True))
+                lanes.race(self.p, c.find_brief(self.p, tid), self.repo, argparse.Namespace(confidence=None, json=True))
         b = c.find_brief(self.p, tid)
         self.assertEqual(b.status, "active")
         self.assertNotIn("race", b.meta)
@@ -154,8 +154,8 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
 
 class Devil(Base):
     def test_second_plan_has_a_devils_advocate_role(self):
-        import fmsecond
-        self.assertIn("rejected", fmsecond.ROLES["devil"])
+        from sampo import second
+        self.assertIn("rejected", second.ROLES["devil"])
         self.assertIn("devil", self.fm("second", "--help").stdout)
 
 

@@ -4,7 +4,7 @@ import os
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class Proof(ForemanTestCase):
@@ -274,21 +274,21 @@ class Proof(ForemanTestCase):
         from contextlib import redirect_stdout
         from unittest import mock
 
-        import fmexam
-        import fmgenesis
+        from sampo import louhi
+        from sampo import rune
         s = {"dir": "x", "gen0": False, "gap_map": False, "lineage": False, "coverage": False, "not_yet": False,
              "generations": [], "live": None, "exam_lines": 0, "unproven": 2, "unproven_kinds": {"typed": 2}}
         with mock.patch.object(c, "unproven_line", return_value="STUB-LINE") as line:
-            self.assertIn("STUB-LINE", fmgenesis._text(s))
+            self.assertIn("STUB-LINE", rune._text(s))
             line.assert_called_with(2, {"typed": 2})
         card = {"rows": [], "agent": "foreman", "bar": 0.8, "smoke": 0, "selfmade": 0, "gaps": [], "seen": True,
                 "ok": True, "long": {"state": "no long run"}}
         args = argparse.Namespace(action="scorecard", agent="foreman", bar=0.8, json=False, project=self.p.slug)
         with mock.patch.object(c, "unproven_line", return_value="STUB-LINE") as line, \
-                mock.patch.object(fmgenesis, "scorecard", return_value=dict(card)), \
+                mock.patch.object(rune, "scorecard", return_value=dict(card)), \
                 mock.patch.object(c, "unproven_summary", return_value={"n": 3, "counts": {"docs": 3}}), \
                 redirect_stdout(io.StringIO()) as buf:
-            fmexam.cmd_exam(args)
+            louhi.cmd_exam(args)
         self.assertIn("STUB-LINE", buf.getvalue())
         line.assert_called_with(3, {"docs": 3})
 
@@ -451,8 +451,8 @@ class Meaning(ForemanTestCase):  # T-2393 (Mission 7, #6): each clause of the re
         self.assertIn("meaning unproven", r.stdout)
         self.assertIn("email the weekly digest", r.stdout)
         self.assertNotIn("meaning unproven: Add a CSV export", r.stdout)  # bound to the criterion that ran green
-        import fmrecall
-        got = {cl[:20]: (n, why) for cl, n, why in fmrecall.bind(c.find_brief(self.p, tid))}
+        from sampo import recall
+        got = {cl[:20]: (n, why) for cl, n, why in recall.bind(c.find_brief(self.p, tid))}
         self.assertEqual(got["Add a CSV export but"], (1, ""))
         self.assertEqual(got["DONE-WHEN: the repor"][0], 1)  # the user's own done-when line, checked by the same criterion
 
@@ -465,12 +465,12 @@ class Meaning(ForemanTestCase):  # T-2393 (Mission 7, #6): each clause of the re
         self.assertIn("email the weekly digest", need["why"])
 
     def test_meaning_hollow_a_clause_bound_only_to_a_vacuous_check_counts_as_unbound(self):
-        import fmrecall
+        from sampo import recall
         tid = self.new()
         self.fm("task", "finish", tid, "--audit", "self", "--run", "true")
         with c.lock(self.p.dir):
             b = c.find_brief(self.p, tid)
             b.append_log("vacuous checks: ac 1")  # what fm task prove --vacuous writes when ac 1 passed on the start tree
             c.save_brief(self.p, b)
-        why = dict((cl[:20], w) for cl, n, w in fmrecall.bind(c.find_brief(self.p, tid)))
+        why = dict((cl[:20], w) for cl, n, w in recall.bind(c.find_brief(self.p, tid)))
         self.assertIn("start tree", why["Add a CSV export but"])

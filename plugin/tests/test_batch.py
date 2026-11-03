@@ -32,7 +32,7 @@ class Batch(ForemanTestCase):
 
     def test_a_host_held_by_a_lane_keeps_its_members_out_of_the_inbox(self):
         # T-2317: once a builder lane held the host, lane_view hid it and its members came back as inbox items
-        import fmcore as c
+        from sampo import core as c
         host = json.loads(self.fm("batch", *self.ids, "--json").stdout)["id"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, host)
@@ -50,7 +50,7 @@ class Batch(ForemanTestCase):
 
     def test_the_host_closing_closes_its_members(self):
         host = json.loads(self.fm("batch", *self.ids, "--json").stdout)["id"]
-        import fmcore as c
+        from sampo import core as c
         gaps = c.plan_gaps(c.find_brief(c.find_project(self.repo), host), "full")
         self.assertFalse([g for g in gaps if "eading" in g], gaps)  # T-2335: the generator writes the readings itself
         self.fm("task", "set", host, "--section", "Approach (options → choice → why)", "--text", valid_m_plan()[1])

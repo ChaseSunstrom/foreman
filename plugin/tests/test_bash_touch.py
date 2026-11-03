@@ -10,7 +10,7 @@ from helpers import ForemanTestCase
 
 class BashTouches(ForemanTestCase):
     def test_files_a_command_changed_are_the_tasks_touches(self):
-        import fmcore as c
+        from sampo import core as c
         self.fm("init")
         self.fm("task", "new", "A", "--type", "FEATURE", "--tier", "S", "--scope", "a.py", "--ac", "ok :: true",
                 "--step", "s", "--focus")

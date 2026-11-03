@@ -8,7 +8,7 @@ import threading
 import unittest
 
 import helpers  # noqa: F401  (puts plugin/lib on sys.path)
-import fmmodels as m
+from sampo import models as m
 
 KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "FM_TEST_KEY",
         "TYPESAFE_BASE_URL", "TYPESAFE_API_KEY", "TYPESAFE_MODEL", "LLM_API_KEY")  # T-2494: the user's env never leaks in
@@ -485,20 +485,22 @@ class ModelRules(unittest.TestCase):
 
     def test_models_advise_and_proof_decides_no_gate_reaches_the_model_layer(self):
         import ast
-        for mod in ("fmguard.py", "fmcore.py"):  # the guard and the evidence core never import it at all
+        for mod in ("fmguard.py", "sampo/core.py"):  # the guard and the evidence core never import it at all
             tree = ast.parse(self.source(mod))
             names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
             names |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
-            self.assertNotIn("fmmodels", names, mod)
-        tree = ast.parse(self.source("fmcli.py"))
+            names |= {f"{n.module}.{a.name}" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module
+                      for a in n.names}
+            self.assertEqual({"fmmodels", "sampo.models"} & names, set(), mod)
+        tree = ast.parse(self.source("sampo/cli.py"))
         gates = {"cmd_check", "cmd_gates", "task_finish", "task_done_in"}
         for fn in (n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in gates):
-            seg = ast.get_source_segment(self.source("fmcli.py"), fn)
-            self.assertNotRegex(seg, r"fmmodels|\bdecide\(", fn.name)  # ponytail: direct calls only, not an import walk
+            seg = ast.get_source_segment(self.source("sampo/cli.py"), fn)
+            self.assertNotRegex(seg, r"fmmodels|sampo\.models|import[^\n]*\bmodels\b|\bdecide\(", fn.name)  # ponytail: direct calls only, not an import walk
 
     def test_the_model_layer_downloads_and_installs_nothing_itself(self):
         # installs and model downloads go through the install queue (fm ask --later) for the user's yes
-        self.assertNotRegex(self.source("fmmodels.py"),
+        self.assertNotRegex(self.source("sampo/models.py"),
                             r"(?i)urlretrieve|/api/pull|\bollama pull\b|\bpip install\b|snapshot_download|hf_hub")
 
     def test_a_use_goes_live_only_by_a_decision_row_citing_its_exam(self):

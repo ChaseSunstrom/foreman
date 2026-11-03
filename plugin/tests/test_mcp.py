@@ -8,7 +8,7 @@ import sys
 
 from helpers import FM, ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class _Mcp(ForemanTestCase):
@@ -82,7 +82,7 @@ class Review(_Mcp):
     """T-0245 review: no options through a query, bounded lines, no symlinked notes, and the last check results."""
 
     def test_the_reviews_cases(self):
-        import fmcore as c
+        from sampo import core as c
         self.fm("init")
         p = c.find_project(self.repo)
         os.makedirs(os.path.join(p.dir, "research"), exist_ok=True)
@@ -137,19 +137,19 @@ class McpTools(_Mcp):
             f.write("id,name\n1,ann\n2,bob\n")
 
     def test_tools_are_listed_with_schemas_from_the_registry(self):
-        import fminstr
+        from sampo import instr
         self.fm("init")
         out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         tools = {t["name"]: t for t in out[0]["result"]["tools"]}
         for name in ("sym", "logs", "data", "trace"):
-            want = fminstr.schema(name)
+            want = instr.schema(name)
             got = tools[name]["inputSchema"]
             self.assertEqual(set(got["properties"]), set(want["properties"]), name)
             self.assertEqual(got["required"], ["file"] if name == "trace" else want["required"], name)  # no stdin
             for k, v in want["properties"].items():
                 self.assertEqual(got["properties"][k]["description"], v["description"])
                 self.assertTrue(got["properties"][k]["maxLength"])
-            self.assertIn(fminstr.TOOLS[name][1][1:], tools[name]["description"])  # capitalised
+            self.assertIn(instr.TOOLS[name][1][1:], tools[name]["description"])  # capitalised
         self.assertEqual(tools["fail"]["inputSchema"]["required"], ["text"])  # fail reads the given text
         for name in ("lib_suggest", "lib_search", "lib_show", "outline", "impact", "why"):
             self.assertEqual(tools[name]["inputSchema"]["type"], "object")
@@ -224,7 +224,7 @@ class McpTools(_Mcp):
 
 class McpFind(_Mcp):  # T-2127
     def test_find_ranks_leads_in_the_project_or_a_folder_and_never_takes_a_flag(self):
-        import fmcore as c
+        from sampo import core as c
         self.fm("init")
         os.makedirs(os.path.join(self.repo, "src"))
         os.makedirs(os.path.join(self.repo, "empty"))
@@ -256,13 +256,13 @@ class McpFind(_Mcp):  # T-2127
         self.assertRegex(rows[-1], r"^… \d+ more: fm find \./src --rank --json lists all$")
 
     def test_an_allowed_exit_with_nothing_on_stdout_is_an_error(self):
-        import fmcore as c
-        import fmmcp
+        from sampo import core as c
+        from sampo import mcp
         from unittest import mock
         self.fm("init")
         crash = subprocess.CompletedProcess([], 1, stdout="", stderr="Traceback: boom")
-        with mock.patch.object(fmmcp.subprocess, "run", return_value=crash):
-            self.assertEqual(fmmcp._fm(c.find_project(self.repo, create=False), ["find"], ok=(0, 1)),
+        with mock.patch.object(mcp.subprocess, "run", return_value=crash):
+            self.assertEqual(mcp._fm(c.find_project(self.repo, create=False), ["find"], ok=(0, 1)),
                              ("Traceback: boom", True))
 
 
@@ -449,12 +449,12 @@ class JudgmentTool(_Mcp):  # T-2344: #2 and #8 through MCP (Claude Desktop and o
 
 class ToolsTools(_Mcp):  # T-2378: #5 through MCP (Claude Desktop and other agents), read-only
     def test_which_and_grants_are_listed_and_write_nothing(self):
-        import fmgrants
+        from sampo import grants
         self.fm("init")
         p = c.find_project(self.repo)
         r = self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
         tid = re.search(r"T-\d+", r.stdout)[0]
-        fmgrants.queue(p, tid, ["plugin"], "needs a table printer", what="tabulate", fallback="plain columns")
+        grants.queue(p, tid, ["plugin"], "needs a table printer", what="tabulate", fallback="plain columns")
         ledger = os.path.getsize(os.path.join(p.dir, "ledger.jsonl"))
         out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, self.call(2, "which", task="parse json files"),
                            self.call(3, "grants"), self.call(4, "which", task=""))
@@ -500,17 +500,17 @@ class DecideTool(_Mcp):  # T-2489: the model layer's decide() for other agents, 
     BASE = {"kind": "intake-type", "prompt": "the parser crashes on an empty file", "choices": ["FIX", "FEATURE"]}
 
     def test_decide_is_listed_validates_its_input_and_answers_through_the_model_layer(self):
-        import fmcore as c
-        import fmmcp
-        import fmmodels
+        from sampo import core as c
+        from sampo import mcp
+        from sampo import models
         from unittest import mock
         self.fm("init")
         p = c.find_project(self.repo, create=False)
-        self.assertIn("decide", {t[0] for t in fmmcp.TOOLS})
+        self.assertIn("decide", {t[0] for t in mcp.TOOLS})
         got = {"choice": "FIX", "probability": 0.9, "backend": "ollama", "cleared": True, "tried": ["ollama: ok (5 ms)"],
                "ms": 5}
-        with mock.patch.object(fmmodels, "decide", return_value=got) as dec:
-            text, err = fmmcp._call(p, "decide", dict(self.BASE))
+        with mock.patch.object(models, "decide", return_value=got) as dec:
+            text, err = mcp._call(p, "decide", dict(self.BASE))
         self.assertFalse(err)
         self.assertEqual((json.loads(text)["choice"], json.loads(text)["backend"]), ("FIX", "ollama"))
         # booked under its own kind, so an outside agent's questions never score Foreman's own intake use
@@ -518,11 +518,11 @@ class DecideTool(_Mcp):  # T-2489: the model layer's decide() for other agents, 
         self.assertIs(dec.call_args.kwargs["p"], p)
         for bad in ({"kind": "has space"}, {"choices": ["one"]}, {"choices": "FIX"}, {"choices": ["a", 2]},
                     {"choices": ["x"] * 13}, {"prompt": ""}, {"prompt": "x" * 4001}):
-            with mock.patch.object(fmmodels, "decide") as dec:
-                text, err = fmmcp._call(p, "decide", dict(self.BASE, **bad))
+            with mock.patch.object(models, "decide") as dec:
+                text, err = mcp._call(p, "decide", dict(self.BASE, **bad))
             self.assertTrue(err, bad)
             dec.assert_not_called()
-        with mock.patch.object(fmmodels, "decide", return_value=None):
-            text, err = fmmcp._call(p, "decide", dict(self.BASE))
+        with mock.patch.object(models, "decide", return_value=None):
+            text, err = mcp._call(p, "decide", dict(self.BASE))
         self.assertTrue(err)
         self.assertIn("no backend answered", text)

@@ -6,7 +6,7 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class Base(ForemanTestCase):
@@ -111,7 +111,7 @@ class PlanRigour(Base):
 
 class SelfDocsModules(Base):
     def test_master_names_every_module(self):
-        import fmdoctor
+        from sampo import doctor
         home = os.path.join(self.tmp, "fh")
         os.makedirs(os.path.join(home, "plugin", "lib"))
         for m in ("fmcore", "fmnew"):
@@ -119,18 +119,18 @@ class SelfDocsModules(Base):
                 f.write("")
         with open(os.path.join(home, "MASTER.md"), "w") as f:
             f.write("fmcore does things.\n")
-        self.assertEqual(fmdoctor.missing_modules(home), ["fmnew"])
+        self.assertEqual(doctor.missing_modules(home), ["fmnew"])
 
 
 class CalibrationLedger(Base):
     """T-1061: closes that keep missing their plan slow the project to approval for M."""
 
     def close(self, miss):
-        import fmoutcomes
-        fmoutcomes.record_close(self.p, dict(outside=9 if miss else 0))
+        from sampo import outcomes
+        outcomes.record_close(self.p, dict(outside=9 if miss else 0))
 
     def test_a_directory_scope_covers_its_subtree_and_the_start_scope_is_what_counts(self):
-        import fmoutcomes
+        from sampo import outcomes
         t = self.new("Dir", "FEATURE", "S", "--scope", "src/")
         self.fm("task", "step", t, "add", "x")
         self.fm("focus", t)
@@ -140,8 +140,8 @@ class CalibrationLedger(Base):
         self.assertEqual(c.find_brief(self.p, t).meta["plan0_scope"], ["src/"])
         scope = type("B", (), {"meta": {"scope": b.meta["plan0_scope"]}})
         self.assertEqual(c.scope_drift(scope, ["src/a/b.py", "src/c.py", "lib/x.py"]), ["lib/x.py"])
-        self.assertFalse(fmoutcomes.missed(dict(outside=2)))
-        self.assertTrue(fmoutcomes.missed(dict(outside=3)))
+        self.assertFalse(outcomes.missed(dict(outside=2)))
+        self.assertTrue(outcomes.missed(dict(outside=3)))
 
     def test_predictions_are_bounded_and_fixed_once_work_starts(self):
         t = self.new("P")
@@ -153,52 +153,52 @@ class CalibrationLedger(Base):
         self.assertNotEqual(self.fm("task", "set", t, "predict_minutes=300", check=False).returncode, 0)
 
     def test_an_overnight_gap_is_not_work_time(self):
-        import fmoutcomes
+        from sampo import outcomes
         h = 3600
-        self.assertEqual(fmoutcomes.active_minutes([0, 600, 600 + 10 * h, 600 + 10 * h + 300]), 15)
+        self.assertEqual(outcomes.active_minutes([0, 600, 600 + 10 * h, 600 + 10 * h + 300]), 15)
 
     def test_garbage_verdicts_are_skipped_and_the_gap_says_to_ask_the_user(self):
-        import fmoutcomes
+        from sampo import outcomes
         c.update_meta(self.p, plan_verdicts=["x", [1], None, ["bad", True, 1], [c.now(), True]])
-        self.assertEqual(fmoutcomes.plan_window(self.p), [True])
+        self.assertEqual(outcomes.plan_window(self.p), [True])
         c.update_meta(self.p, plan_verdicts="junk")
-        self.assertFalse(fmoutcomes.misses(self.p))
+        self.assertFalse(outcomes.misses(self.p))
         m = self.new("M work", "FEATURE", "M")
         self.assertIn("ask", " ".join(c.plan_gaps(c.find_brief(self.p, m), "slow")))
 
     def test_old_verdicts_are_ignored(self):
-        import fmoutcomes
+        from sampo import outcomes
         for _ in range(5):
             self.close(1)
-        self.assertTrue(fmoutcomes.misses(self.p))
+        self.assertTrue(outcomes.misses(self.p))
         old = "2020-01-01T00:00:00Z"
         c.update_meta(self.p, plan_verdicts=[[old, True]] * 5)
-        self.assertFalse(fmoutcomes.misses(self.p))
+        self.assertFalse(outcomes.misses(self.p))
 
     def test_slow_blocks_fm_run_and_names_the_way_out(self):
-        import fmserve
+        from sampo import serve
         m = self.new("M work", "FEATURE", "M")
         for _ in range(5):
             self.close(1)
-        self.assertIsNone(fmserve._next_runnable(self.p, set(), set()))
+        self.assertIsNone(serve._next_runnable(self.p, set(), set()))
         self.assertIn("fm task set", " ".join(c.plan_gaps(c.find_brief(self.p, m), "slow")))
         self.assertIn("slow", self.fm("autonomy").stdout)
 
     def test_misses_after_three_of_five_and_not_after_one(self):
-        import fmoutcomes
+        from sampo import outcomes
         for miss in (1, 0, 1, 0, 1):
             self.close(miss)
-        self.assertTrue(fmoutcomes.misses(self.p))
+        self.assertTrue(outcomes.misses(self.p))
         for _ in range(3):
             self.close(0)
-        self.assertFalse(fmoutcomes.misses(self.p))  # the last five hold 1 miss
-        self.assertFalse(fmoutcomes.missed(dict(planned=1, changed=9)))  # a count of scope entries is no longer a signal
+        self.assertFalse(outcomes.misses(self.p))  # the last five hold 1 miss
+        self.assertFalse(outcomes.missed(dict(planned=1, changed=9)))  # a count of scope entries is no longer a signal
 
     def test_minutes_and_attempts_predictions_count(self):
-        import fmoutcomes
-        self.assertTrue(fmoutcomes.missed(dict(predict_minutes=10, minutes=25)))
-        self.assertTrue(fmoutcomes.missed(dict(predict_attempts=1, attempts=2)))
-        self.assertFalse(fmoutcomes.missed(dict(predict_minutes=10, minutes=15, predict_attempts=2, attempts=2)))
+        from sampo import outcomes
+        self.assertTrue(outcomes.missed(dict(predict_minutes=10, minutes=25)))
+        self.assertTrue(outcomes.missed(dict(predict_attempts=1, attempts=2)))
+        self.assertFalse(outcomes.missed(dict(predict_minutes=10, minutes=15, predict_attempts=2, attempts=2)))
 
     def test_slow_gates_m_not_s_and_the_digest_says_so(self):
         m, s = self.new("M work", "FEATURE", "M"), self.new("S work")

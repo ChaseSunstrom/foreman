@@ -45,9 +45,9 @@ class Confirm(ForemanTestCase):
                "CLAUDE_CONFIG_DIR": cc, "FOREMAN_SESSION_ID": "new-session"}
         self.fm("init")
         self.fm("autonomy", "full")
-        import fmcore as c
-        import fmcost
-        d = os.path.join(cc, "projects", os.path.basename(fmcost.transcripts_dir(self.repo)))
+        from sampo import core as c
+        from sampo import cost
+        d = os.path.join(cc, "projects", os.path.basename(cost.transcripts_dir(self.repo)))
         os.makedirs(d)
         with open(os.path.join(d, "old-session.jsonl"), "w") as f:
             f.write(json.dumps({"type": "user", "message": {"role": "user", "content": "export the report as CSV"}}))
@@ -74,7 +74,7 @@ class Confirm(ForemanTestCase):
 
 class Filters(ForemanTestCase):
     def test_bench_git_runs_no_filter_driver(self):
-        import fmbench
+        from sampo import bench
         repo = os.path.join(self.tmp, "r")
         os.makedirs(repo)
         git(repo, "init", "-q")
@@ -101,17 +101,17 @@ class Filters(ForemanTestCase):
         os.environ["HOME"] = home
         with open(os.path.join(repo, "a.txt"), "w") as f:
             f.write("changed\n")
-        fmbench._safe_git(repo, "add", "-A")
-        fmbench._safe_git(repo, "diff", "--cached", "HEAD")
-        fmbench._safe_git(repo, "checkout", "HEAD", "--", "a.txt")
-        with fmbench._worktree(repo, "HEAD"):
+        bench._safe_git(repo, "add", "-A")
+        bench._safe_git(repo, "diff", "--cached", "HEAD")
+        bench._safe_git(repo, "checkout", "HEAD", "--", "a.txt")
+        with bench._worktree(repo, "HEAD"):
             pass
         self.assertFalse(os.path.exists(marker))
 
 
 class AtomicWrite(ForemanTestCase):
     def test_a_planted_temp_name_doesnt_redirect_the_write(self):
-        import fmcore as c
+        from sampo import core as c
         target = os.path.join(self.repo, "notes.md")
         outside = os.path.join(self.tmp, "elsewhere.md")
         os.symlink(outside, os.path.join(self.repo, f".notes.md.{os.getpid()}.tmp"))  # the name the old code used

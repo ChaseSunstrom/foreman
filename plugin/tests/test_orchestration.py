@@ -8,7 +8,7 @@ import time
 from helpers import ForemanTestCase, read_text
 from test_serve import ServeCase
 
-import fmcore as c
+from sampo import core as c
 
 
 def git(root, *args):

@@ -47,10 +47,10 @@ class CodeFakes(CodeCase):
         self.assertLess(time.monotonic() - t0, 20, out)  # one 30 s timeout alone would fail this
         self.assertNotEqual(r.returncode, 0, out)
         self.assertIn("usage limit: ", out)
-        import fmcode  # T-1476 review: a word in passing labels a stall, only a stated limit kills the worker
-        self.assertIsNone(fmcode._LIMIT_FIRM.search("checking the disk quota of /tmp"))
-        self.assertIsNone(fmcode._LIMIT_FIRM.search("GET /api -> 429 retrying"))
-        self.assertTrue(fmcode._LIMIT_FIRM.search("Claude usage limit reached. Your limit will reset at 5pm."))
+        from sampo import smith  # T-1476 review: a word in passing labels a stall, only a stated limit kills the worker
+        self.assertIsNone(smith._LIMIT_FIRM.search("checking the disk quota of /tmp"))
+        self.assertIsNone(smith._LIMIT_FIRM.search("GET /api -> 429 retrying"))
+        self.assertTrue(smith._LIMIT_FIRM.search("Claude usage limit reached. Your limit will reset at 5pm."))
         self.assertNotIn("timed out", out)
         self.assertNotIn("fix round", out)
 

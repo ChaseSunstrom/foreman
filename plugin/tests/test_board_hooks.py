@@ -5,9 +5,9 @@ import os
 
 from test_hooks import HookCase
 
-import fmcore as c
-import fmdoctor as d
-import fmhooks
+from sampo import core as c
+from sampo import doctor as d
+from sampo import hooks
 
 
 def parse(proc):
@@ -60,24 +60,24 @@ class WhatsNew(HookCase):
            "- Second thing.\n\n## 9.9.8 — 2098-01-01\n- Old.\n")
 
     def test_bullets_of_one_version(self):
-        self.assertEqual(fmhooks.whats_new("9.9.9", self.LOG), ["First thing.", "Second thing."])
-        self.assertEqual(fmhooks.whats_new("1.0.0", self.LOG), [])
+        self.assertEqual(hooks.whats_new("9.9.9", self.LOG), ["First thing.", "Second thing."])
+        self.assertEqual(hooks.whats_new("1.0.0", self.LOG), [])
 
     def test_the_first_session_after_an_upgrade_says_whats_new_once(self):
-        rev = fmhooks._rev()
+        rev = hooks._rev()
         log = os.path.join(self.tmp, "CHANGELOG.md")
         with open(log, "w") as f:
             f.write(self.LOG.replace("9.9.9", rev))
         seen = os.path.join(c.state_dir(), "seen-version")
-        self.assertIsNone(fmhooks._whats_new_note(log))  # a fresh install isn't an upgrade
+        self.assertIsNone(hooks._whats_new_note(log))  # a fresh install isn't an upgrade
         with open(seen, "w") as f:
             f.write("0.0.1")
-        self.assertIsNone(fmhooks._whats_new_note(os.path.join(self.tmp, "missing.md")))  # no notes here: kept for later
-        self.assertIsNone(fmhooks._whats_new_note(log, headless=True))  # a headless run never uses it up
-        msg = fmhooks._whats_new_note(log)
+        self.assertIsNone(hooks._whats_new_note(os.path.join(self.tmp, "missing.md")))  # no notes here: kept for later
+        self.assertIsNone(hooks._whats_new_note(log, headless=True))  # a headless run never uses it up
+        msg = hooks._whats_new_note(log)
         self.assertIn(f"Foreman {rev}", msg)
         self.assertIn("• First thing.", msg)
-        self.assertIsNone(fmhooks._whats_new_note(log))  # once
+        self.assertIsNone(hooks._whats_new_note(log))  # once
 
     def test_session_start_carries_it_as_a_system_message(self):
         self.fm("init")
@@ -86,8 +86,8 @@ class WhatsNew(HookCase):
         first = parse(self.hook("SessionStart", {"source": "startup", "session_id": "s1"}))
         again = parse(self.hook("SessionStart", {"source": "startup", "session_id": "s1"}))
         self.assertNotIn("What's new", again.get("systemMessage", ""))
-        self.assertTrue("What's new" in first.get("systemMessage", "") or not fmhooks.whats_new(
-            fmhooks._rev(), open(os.path.join(os.path.dirname(c.PLUGIN_ROOT), "CHANGELOG.md")).read()))
+        self.assertTrue("What's new" in first.get("systemMessage", "") or not hooks.whats_new(
+            hooks._rev(), open(os.path.join(os.path.dirname(c.PLUGIN_ROOT), "CHANGELOG.md")).read()))
 
     def test_a_stop_waiting_on_background_work_isnt_idle(self):
         self.fm("init")

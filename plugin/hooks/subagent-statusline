@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath
 
 def active_id(cwd):
     try:
-        import fmcore as c
+        from sampo import core as c
         p = c.find_project(cwd or os.getcwd())
         if p:
             with open(os.path.join(p.dir, "badge.txt")) as f:

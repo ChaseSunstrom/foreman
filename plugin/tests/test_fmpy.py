@@ -5,7 +5,7 @@ import sys
 
 from helpers import ForemanTestCase
 
-import fmpy
+from sampo import py
 
 
 class Fmpy(ForemanTestCase):
@@ -30,7 +30,7 @@ class Fmpy(ForemanTestCase):
         old = os.environ["PATH"], os.environ.get("HOME")
         os.environ["PATH"], os.environ["HOME"] = path or os.path.join(self.tmp, "bin"), self.tmp
         try:
-            return fmpy.target(v)
+            return py.target(v)
         finally:
             os.environ["PATH"] = old[0]
             if old[1] is None:
@@ -40,20 +40,20 @@ class Fmpy(ForemanTestCase):
 
     def test_old_python_reruns_under_a_saved_supported_one(self):
         # JARVIS: python3 is 3.11.2 and argparse there dropped `fm task evidence ID --step N CMD RESULT`
-        self.assertTrue(fmpy.ok((3, 12, 7)) and fmpy.ok((3, 14, 0)))
-        self.assertFalse(fmpy.ok((3, 11, 2)) or fmpy.ok((3, 13, 0)) or fmpy.ok((3, 12, 6)))
+        self.assertTrue(py.ok((3, 12, 7)) and py.ok((3, 14, 0)))
+        self.assertFalse(py.ok((3, 11, 2)) or py.ok((3, 13, 0)) or py.ok((3, 12, 6)))
         good = self.fake("python3.12", "3 12 14")
         self.fake("python3.13", "3 13 0")  # 3.13.0 is below the floor too: skipped
         self.assertIsNone(self.target((3, 13, 1)), "a supported python3 never re-execs")
-        self.assertFalse(os.path.exists(fmpy.saved_path()))
+        self.assertFalse(os.path.exists(py.saved_path()))
         self.assertEqual(self.target((3, 11, 2)), good)
-        with open(fmpy.saved_path()) as f:
+        with open(py.saved_path()) as f:
             self.assertEqual(f.read().strip(), good)
         self.assertEqual(self.target((3, 11, 2), path="/nonexistent"), good, "found once, then read back")
         self.assertEqual(self.runs("python3.12"), 1)
-        os.chmod(fmpy.saved_path(), 0o666)
+        os.chmod(py.saved_path(), 0o666)
         self.assertIsNone(self.target((3, 11, 2)), "a file others can write would choose the guard's interpreter")
-        os.chmod(fmpy.saved_path(), 0o644)
+        os.chmod(py.saved_path(), 0o644)
         real = sys.executable
         try:
             sys.executable = good
@@ -71,11 +71,11 @@ class Fmpy(ForemanTestCase):
         old = os.environ["PATH"]
         os.environ["PATH"] = os.path.join(self.tmp, "bin")
         try:
-            self.assertEqual(fmpy.refresh(), good)  # fm doctor searches again
+            self.assertEqual(py.refresh(), good)  # fm doctor searches again
         finally:
             os.environ["PATH"] = old
         self.assertEqual(self.target((3, 11, 2)), good)
-        self.assertEqual(stat.S_IMODE(os.stat(fmpy.saved_path()).st_mode) & 0o022, 0)
+        self.assertEqual(stat.S_IMODE(os.stat(py.saved_path()).st_mode) & 0o022, 0)
 
 
 class HookUnderOldPython(ForemanTestCase):

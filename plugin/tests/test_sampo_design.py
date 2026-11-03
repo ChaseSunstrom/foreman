@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 
 from helpers import PLUGIN, read_text
 
-import fmdesign
+from sampo import design
 
 ROOT = os.path.join(os.path.dirname(PLUGIN), "design", "sampo")
 DIRS = os.path.join(ROOT, "directions")
@@ -44,7 +44,7 @@ def hex_of(theme, role):
 
 
 def ratio(a, b):
-    return fmdesign.contrast(fmdesign.parse_colour(a), fmdesign.parse_colour(b))
+    return design.contrast(design.parse_colour(a), design.parse_colour(b))
 
 
 def directions():
@@ -154,7 +154,7 @@ class Tokens(unittest.TestCase):
             cols = [series[f"s{i}"]["$value"] for i in range(1, 7)]
             for c in cols:
                 self.assertGreaterEqual(ratio(c, hex_of(theme, "raised")), 3, f"{theme}: {c}")
-            hues = [fmdesign.oklch_of(fmdesign.parse_colour(c))[2] for c in cols]
+            hues = [design.oklch_of(design.parse_colour(c))[2] for c in cols]
             for i, a in enumerate(hues):
                 for j, b in enumerate(hues[:i]):
                     gap = min(abs(a - b), 360 - abs(a - b))
@@ -172,7 +172,7 @@ class Tokens(unittest.TestCase):
     def test_status_hues_stay_clear_of_the_forge(self):
         # forge light and ember are brand fire, never a status: each status hue sits 30 degrees or more away
         def hue(h):
-            return fmdesign.oklch_of(fmdesign.parse_colour(h))[2]
+            return design.oklch_of(design.parse_colour(h))[2]
 
         for theme in ("light", "dark"):
             for status in ("error", "warning", "success"):

@@ -6,7 +6,7 @@ import subprocess
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 STATUSLINE = os.path.join(ROOT, "plugin", "hooks", "statusline")

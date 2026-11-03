@@ -33,19 +33,19 @@ class SuiteHygiene(unittest.TestCase):
         # T-0744: under load (a finish's full run beside other work) host_strain() turned lanes and ambient runs off,
         # and test_hooks.Stop, test_ambient and test_orchestration failed only then
         import helpers  # noqa: F401  (it pins the host every test sees)
-        import fmcore
+        from sampo import core
         self.assertIn("load=", os.environ.get("FOREMAN_HOST", ""))
-        self.assertIsNone(fmcore.host_strain())
+        self.assertIsNone(core.host_strain())
 
     def test_a_test_that_replaces_path_still_cant_reach_the_paid_claude(self):
         # T-0993: fmcore's native-install fallback (T-0990) found the real ~/.local/bin/claude for tests that replace
         # PATH, around the lockout (T-0992); every fm a test starts inherits this environment
         import tempfile
         import helpers  # noqa: F401  (it sets the lockout)
-        import fmcore
+        from sampo import core
         with tempfile.TemporaryDirectory() as empty:
             env = dict(os.environ, PATH=empty, HOME=os.path.expanduser("~"))
-            self.assertEqual(fmcore.claude_path(env)["PATH"], empty)
+            self.assertEqual(core.claude_path(env)["PATH"], empty)
 
     def test_the_screenshot_harness_runs_on_a_socket_of_its_own(self):
         # T-0744: two suites at once shared tmux -L fm-shot and killed each other's session
@@ -65,16 +65,17 @@ class SuiteHygiene(unittest.TestCase):
 
 
 # T-1264: files whose functions are called by a name built at run time: the prefix, and the file and code that build it
-DISPATCHED = {"fmcodetui.py": ("_on_", "fmcodetui.py", 'f"_on_{kind}"'),
-              "fminstr.py": ("cmd_", "fmcli.py", 'lazy("fminstr", "cmd_" + name)'),
-              "fmoutcomes.py": ("_", "fmoutcomes.py", 'globals()["_" + flag]')}
+DISPATCHED = {"sampo/smithtui.py": ("_on_", "sampo/smithtui.py", 'f"_on_{kind}"'),
+              "sampo/instr.py": ("cmd_", "sampo/cli.py", 'lazy("sampo.instr", "cmd_" + name)'),
+              "sampo/outcomes.py": ("_", "sampo/outcomes.py", 'globals()["_" + flag]')}
 
 
 def dead(lib, words):
-    """T-1264: "file:line name" for each function in lib/*.py that no word in `words` names besides its own def."""
+    """T-1264: "file:line name" for each function in lib/*.py and lib/sampo/*.py that no word in `words` names besides its
+    own def."""
     found = []
-    for path in sorted(glob.glob(f"{lib}/*.py")):
-        name = os.path.basename(path)
+    for path in sorted(glob.glob(f"{lib}/*.py") + glob.glob(f"{lib}/sampo/*.py")):
+        name = os.path.relpath(path, lib)
         with open(path, encoding="utf-8") as f:
             src = f.read()
         prefix, where, how = DISPATCHED.get(name, (None, None, None))
@@ -117,7 +118,7 @@ class UndefinedNames(unittest.TestCase):
         # nowhere, each a NameError at run time (in the guard, a blocked call)
         self.assertEqual(unbound("import os\ndef f(a):\n    return os, a, len, _gone\n"), ["3 _gone"])
         plugin, found = os.path.dirname(HERE), []
-        for path in sorted(glob.glob(f"{plugin}/lib/*.py") + glob.glob(f"{plugin}/hooks/*")):
+        for path in sorted(glob.glob(f"{plugin}/lib/*.py") + glob.glob(f"{plugin}/lib/sampo/*.py") + glob.glob(f"{plugin}/hooks/*")):
             if not os.path.isfile(path):  # T-0783: importing a hook script leaves hooks/__pycache__/
                 continue
             with open(path, encoding="utf-8") as f:

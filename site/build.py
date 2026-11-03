@@ -559,16 +559,16 @@ def build(out):
             raise SystemExit(f"build.py: site/index.html lost the {what} mark: {mark}")
     totals, asof = stats.get("totals") or {}, str(stats.get("generated") or "")
     sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))  # T-1283: fm code tui draws its own picture
-    import fmcodetui
-    import fmreplay
-    import fmscene
-    looks = [c for c in fmscene.sketch_cards() if c["name"] in LANDING_SHADERS]
+    from sampo import smithtui
+    from sampo import replay
+    from sampo import scene
+    looks = [c for c in scene.sketch_cards() if c["name"] in LANDING_SHADERS]
     if len(looks) != len(LANDING_SHADERS):  # a renamed card would ship a short strip
         raise SystemExit("build.py: a landing shader card is missing: " + ", ".join(LANDING_SHADERS))
-    page = page.replace(SHADER_MARK, fmscene.sketchbook_html(looks, page=False), 1)
+    page = page.replace(SHADER_MARK, scene.sketchbook_html(looks, page=False), 1)
     cards = stats.get("cards") or {}
     counts = {"tasks": totals.get("tasks_done", 0), "tests": (stats.get("code") or {}).get("tests", 0),  # T-2040
-              "cards": sum(cards.values()), "areas": len(cards), "pages": len(P.PAGES), "replay": fmreplay.MAX}
+              "cards": sum(cards.values()), "areas": len(cards), "pages": len(P.PAGES), "replay": replay.MAX}
     if not (counts["tests"] and counts["cards"]):  # review: a stats.json without them shipped "0 tests"
         raise SystemExit("build.py: site/data/stats.json has no code.tests or cards; run site/stats.py")
     page = page.replace(PROOF_MARK, proof(totals, asof), 1)
@@ -601,14 +601,14 @@ def build(out):
     for f in ("live.mp4", "demo.svg"):
         shutil.copy2(os.path.join(ROOT, "demo", f), os.path.join(out, "demo", f))
     with open(os.path.join(ROOT, "demo", "code-tui.jsonl"), encoding="utf-8") as f:
-        fmcodetui.snapshot([json.loads(line) for line in f if line.strip()], os.path.join(out, "assets", "code-tui.svg"),
+        smithtui.snapshot([json.loads(line) for line in f if line.strip()], os.path.join(out, "assets", "code-tui.svg"),
                            (120, 34))
-    fmcodetui.tour_svg(os.path.join(out, "assets", "code-tui-tour.svg"), (120, 34))  # T-2061: today's TUI, every build
+    smithtui.tour_svg(os.path.join(out, "assets", "code-tui-tour.svg"), (120, 34))  # T-2061: today's TUI, every build
     os.makedirs(os.path.join(out, "assets", "examples"), exist_ok=True)  # T-1320: each example's last screen
     for name, _ in EXAMPLES:
         src = os.path.join(ROOT, "demo", "examples", name + ".jsonl")
         if os.path.isfile(src):
-            fmcodetui.snapshot(load_example(src)["events"], os.path.join(out, "assets", "examples", name + ".svg"),
+            smithtui.snapshot(load_example(src)["events"], os.path.join(out, "assets", "examples", name + ".svg"),
                                (120, 34))
     os.makedirs(os.path.join(out, "stories"), exist_ok=True)  # T-1541: each recorded run as a case study
     for name, label in EXAMPLES:

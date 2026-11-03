@@ -22,7 +22,7 @@ REPO = re.compile(r"chasesunstrom(?:\.github\.io)?/foreman", re.I)  # the repo's
 KEY = re.compile(r"\.foreman\b")  # a data key the exporter in plugin/lib writes; it renames with the internals (T-2748)
 QUOTED = re.compile(  # text a built page quotes verbatim from files this task leaves alone: it renames with its source
     r"duel-\w+-foreman-\d{8}"  # recorded bench run ids, which sampo bench repro takes as they are
-    r"|every Foreman project"  # plugin/lib/fmcodetui.py's key map (T-2748)
+    r"|every Foreman project"  # plugin/lib/sampo/smithtui.py's key map (T-2748)
     r"|Foreman(?:&#x27;|')s own|In Foreman, start it"  # the playbooks under plugin/skills/playbooks
     r'|<ol class="tape".*?</ol>')  # the Decisions page's tape: decisions as they were recorded
 

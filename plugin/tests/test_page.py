@@ -5,7 +5,7 @@ import re
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 CATALOGUE = [
     {"id": "step-truth", "capability": "Step pointer follows the work", "mark": "build", "why": "user-reported",

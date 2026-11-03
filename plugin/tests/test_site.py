@@ -10,7 +10,7 @@ import unittest
 
 from helpers import PLUGIN
 
-import fmshot
+from sampo import shot
 
 SITE = os.path.join(os.path.dirname(PLUGIN), "site")
 RECTS = """JSON.stringify([...document.querySelectorAll('header.top .brand, header.top .nav > *')]
@@ -27,7 +27,7 @@ class Header(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.browser = fmshot.find_browser("test_site")[0]
+        cls.browser = shot.find_browser("test_site")[0]
         if not cls.browser:
             raise unittest.SkipTest("no headless Chromium (FOREMAN_CHROME, PATH or Playwright's)")
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=SITE)
@@ -41,9 +41,9 @@ class Header(unittest.TestCase):
         cls.server.server_close()
 
     def rects(self, width, page="index.html"):
-        b = fmshot.Browser(self.browser, (width, 640))
+        b = shot.Browser(self.browser, (width, 640))
         try:
-            fmshot.load(b, f"http://127.0.0.1:{self.server.server_address[1]}/{page}")
+            shot.load(b, f"http://127.0.0.1:{self.server.server_address[1]}/{page}")
             got = b.call("Runtime.evaluate", b.sid, expression=RECTS, returnByValue=True)
             return json.loads(got["result"]["value"])
         finally:
@@ -70,9 +70,9 @@ class CodePageCoversFmCode(unittest.TestCase):
     def test_every_verb_and_flag_is_on_the_page(self):
         import argparse
         import re
-        import fmcli
+        from sampo import cli
         import test_site_build
-        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        sub = next(a for a in cli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
         code = sub.choices["code"]
         flags = {o for a in code._actions for o in a.option_strings
                  if o.startswith("--") and o != "--help" and a.help != argparse.SUPPRESS}  # --tui is internal
@@ -142,10 +142,10 @@ class ProofPage(unittest.TestCase):  # T-2395: #6/#10 on the site, built from Fo
             import build
         finally:
             sys.path.pop(0)
-        import fmcore
+        from sampo import core
         page = next(x for x in pages.PAGES if x["slug"] == "verifying")
         text = json.dumps(page["blocks"], default=str)
-        for kind in fmcore.PROOF_KINDS:
+        for kind in core.PROOF_KINDS:
             self.assertIn(kind, text)
         for word in ("sampo prove --rollup", "proof", "beyond", "unproven"):
             self.assertIn(word, text)

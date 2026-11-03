@@ -69,18 +69,18 @@ class BlastInPlan(Base):
         return tid
 
     def risks(self):
-        import fmcore as c
+        from sampo import core as c
         return c.find_brief(c.find_project(self.repo), "T-0003").section("Risks and rollback")
 
     def test_names_neighbours_and_past_fixes_once(self):
         tid = self.plan("Touch the session", "app/session.py")
         self.fm("graph", "build")
         import time
-        import fmcore as c
-        import fmgraph
+        from sampo import core as c
+        from sampo import graph
         t0 = time.monotonic()
-        line = fmgraph.blast_line(c.find_project(self.repo), ["app/session.py"])
-        self.assertLess(time.monotonic() - t0, fmgraph.BLAST_BUDGET)  # the seeded graph answers well inside the cap; wall clock: BLAST_BUDGET deadline (blast_line runs git)
+        line = graph.blast_line(c.find_project(self.repo), ["app/session.py"])
+        self.assertLess(time.monotonic() - t0, graph.BLAST_BUDGET)  # the seeded graph answers well inside the cap; wall clock: BLAST_BUDGET deadline (blast_line runs git)
         self.assertIn("app/auth.py", line)
         self.fm("focus", tid)
         r = self.risks()
@@ -114,9 +114,9 @@ class BlastReach(BlastInPlan):
         return tid
 
     def line(self, text, scope=None):
-        import fmcore as c
-        import fmgraph
-        return fmgraph.blast_line(c.find_project(self.repo), scope, text=text)
+        from sampo import core as c
+        from sampo import graph
+        return graph.blast_line(c.find_project(self.repo), scope, text=text)
 
     def test_files_named_in_the_text_get_the_line_once(self):
         tid = self.named("Reading 1: change `app/session.py::open_session`, not billing. Reading 2: skip.")
@@ -167,8 +167,8 @@ class BlastBuild(Base):
 
     def run_line(self, background):
         from unittest import mock
-        import fmcore as c
-        import fmgraph
+        from sampo import core as c
+        from sampo import graph
         p = c.find_project(self.repo)
         env = {} if background else {"FOREMAN_NO_BACKGROUND": "1"}
         real = subprocess.Popen
@@ -179,7 +179,7 @@ class BlastBuild(Base):
         with mock.patch.dict(os.environ, env), mock.patch("subprocess.Popen", fake):
             if background:
                 os.environ.pop("FOREMAN_NO_BACKGROUND", None)
-            line = [fmgraph.blast_line(p, ["app/session.py"]) for _ in range(2)]
+            line = [graph.blast_line(p, ["app/session.py"]) for _ in range(2)]
         return line, pop
 
     def test_a_missing_graph_starts_one_build_and_no_line(self):
@@ -199,19 +199,19 @@ class BlastBuild(Base):
         self.assertEqual((line, pop.call_count), (["", ""], 1))
 
     def test_a_ledger_append_alone_does_not_make_it_stale(self):  # review: hooks append events all the time
-        import fmcore as c
-        import fmgraph
+        from sampo import core as c
+        from sampo import graph
         self.fm("graph", "build")
         p = c.find_project(self.repo)
         with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
             f.write('{"event": "noise"}\n')
         line, pop = self.run_line(True)
         self.assertEqual(pop.call_count, 0)
-        self.assertIn("app/auth.py", fmgraph.blast_line(p, ["app/session.py"]))
+        self.assertIn("app/auth.py", graph.blast_line(p, ["app/session.py"]))
 
     def test_the_build_removes_its_lock_and_a_future_lock_is_expired(self):
-        import fmcore as c
-        import fmgraph
+        from sampo import core as c
+        from sampo import graph
         p = c.find_project(self.repo)
         lock = os.path.join(p.dir, "graph.building")
         with open(lock, "w") as f:
@@ -229,8 +229,8 @@ class BlastBuild(Base):
         self.assertEqual(pop.call_count, 1)
 
     def test_the_line_is_computed_before_the_project_lock(self):
-        import fmcore as c  # source order: git and sqlite waits must not sit inside the lock every verb queues on
-        src = open(os.path.join(c.PLUGIN_ROOT, "lib", "fmcli.py")).read()
+        from sampo import core as c  # source order: git and sqlite waits must not sit inside the lock every verb queues on
+        src = open(os.path.join(c.PLUGIN_ROOT, "lib", "sampo", "cli.py")).read()
         body = src.split("def cmd_focus")[1].split("\ndef ")[0]
         self.assertLess(body.index("blast_line"), body.index("with c.lock(p.dir)"))
 

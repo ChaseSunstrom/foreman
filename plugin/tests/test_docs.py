@@ -35,13 +35,13 @@ def frontmatter(path):
 def fm_mention_problems(text):
     """T-1701: each `fm VERB [word]` in backticks that names no command, or a lowercase word that isn't one of the
     verb's subcommands or its first positional's choices. The one checker every skill test shares."""
-    import fmcli
+    from sampo import cli
 
     def first_positional_choices(parser):
         pos = next((a for a in parser._actions if not a.option_strings), None)
         return pos.choices if pos is not None else None
 
-    verbs, bad = first_positional_choices(fmcli.build_parser()), []
+    verbs, bad = first_positional_choices(cli.build_parser()), []
     for verb, word in re.findall(r"`fm ([\w-]+)((?: [a-z][\w-]*)?)", text):
         inner = first_positional_choices(verbs[verb]) if verb in verbs else None
         if verb not in verbs:
@@ -181,7 +181,7 @@ class Skills(unittest.TestCase):
 
     def test_the_job_skills_are_short_and_name_only_real_playbooks_and_verbs(self):
         # T-1701: debug-test, release and research wrap playbooks and fm verbs that exist, and fire on task words
-        import fmdoctor
+        from sampo import doctor
         self.assertEqual(fm_mention_problems("`fm nosuch` `fm lane nosuch ID` `fm lane brief ID` `fm task hypo ID add`"),
                          ["fm nosuch", "fm lane nosuch"], "the checker itself")
         jobs = ("debug-test", "release", "research", "refactor", "performance", "security-audit", "write-docs")
@@ -199,13 +199,13 @@ class Skills(unittest.TestCase):
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)), ref)
                 self.assertIn("`fm ", body, "wraps at least one fm verb")
                 self.assertEqual(fm_mention_problems(body), [])
-        self.assertEqual([p for p in fmdoctor._description_problems(os.path.join(PLUGIN, "skills"))
+        self.assertEqual([p for p in doctor._description_problems(os.path.join(PLUGIN, "skills"))
                           if any(j in p for j in jobs)], [])
 
     def test_the_directions_skill_offers_six_measured_cards_and_saves_the_pick(self):
         # T-1508: one sentence in, six distinct one-screen directions out, the pick saved as DESIGN.md with an
         # audacity level; the worked example is held to the card format and its stated contrasts are measured
-        import fmcodetui
+        from sampo import smithtui
         body = read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md"))
         for word in ("six", "DESIGN.md", "audacity", "AskUserQuestion", "fm decide", "runner-up",
                      "`../playbooks/references/ui/design-direction.md`", "references/cards.md"):
@@ -223,7 +223,7 @@ class Skills(unittest.TestCase):
         self.assertGreaterEqual(len(stated), 6)
         for fg, bg, ratio in stated:
             with self.subTest(pair=(fg, bg)):
-                got = fmcodetui.contrast(fg, bg)
+                got = smithtui.contrast(fg, bg)
                 self.assertAlmostEqual(got, float(ratio), delta=0.05)
                 self.assertGreaterEqual(got, 4.5)
 
@@ -244,7 +244,7 @@ class Skills(unittest.TestCase):
         self.assertRegex(body, r"`fm design extract SRC`[^.]*DESIGN\.md")
 
     def test_audit_reference_defines_every_lens_fm_requires(self):
-        import fmcore as c
+        from sampo import core as c
         body = read_text(os.path.join(PLUGIN, "skills", "intake", "references", "audit.md"))
         for lens in c.AUDIT_LENSES:
             with self.subTest(lens=lens):
@@ -281,17 +281,17 @@ class PluginParity(unittest.TestCase):
         import glob
         import sys
         sys.path.insert(0, os.path.join(PLUGIN, "lib"))
-        import fmwhich
-        src = read_text(os.path.join(PLUGIN, "lib", "fmcli.py"))
+        from sampo import which
+        src = read_text(os.path.join(PLUGIN, "lib", "sampo", "cli.py"))
         tiers = {m.group(1): m.group(2) for m in re.finditer(
             r'\badd\("([a-z][\w-]*)"[^\n]*?(?:\n[^\n]*?){0,6}?tier=\("([^"]+)"', src)}
         docs = "".join(read_text(p) for p in glob.glob(os.path.join(PLUGIN, "commands", "*.md"))
                        + glob.glob(os.path.join(PLUGIN, "skills", "*", "SKILL.md"))
                        + glob.glob(os.path.join(PLUGIN, "skills", "*", "references", "*.md"))
                        + [os.path.join(PLUGIN, "rules", "foreman.md")])
-        indexed = {x["name"] for x in fmwhich.commands()}
+        indexed = {x["name"] for x in which.commands()}
         lost = [v for v, tier in sorted(tiers.items()) if not tier.startswith("Internal")
-                and v not in indexed | fmwhich.SELF | fmwhich.FOREMAN_ONLY and not re.search(rf"\bfm {v}\b", docs)]
+                and v not in indexed | which.SELF | which.FOREMAN_ONLY and not re.search(rf"\bfm {v}\b", docs)]
         self.assertEqual(lost, [], "verbs a Claude Code session can't find")
         self.assertGreater(len(tiers), 100, "the tier parse found the verbs")
         rules = read_text(os.path.join(PLUGIN, "rules", "foreman.md"))
@@ -312,13 +312,13 @@ class CodeExamples(unittest.TestCase):  # T-1353
         import contextlib
         import io
         import shlex
-        import fmcli
+        from sampo import cli
         line = re.sub(r"^sampo smith", "fm code", example.split(" > ")[0])  # a shell redirect isn't the CLI's
         for pat, value in self.FILL:
             line = re.sub(pat, value, line)
         try:
             with contextlib.redirect_stderr(io.StringIO()):
-                return fmcli.build_parser().parse_args(shlex.split(line)[1:])
+                return cli.build_parser().parse_args(shlex.split(line)[1:])
         except SystemExit:
             return None
 
@@ -397,22 +397,22 @@ class Agents(unittest.TestCase):
 
 class PluginConflicts(unittest.TestCase):
     def test_setup_plugins_and_fm_plugins_share_one_curated_conflict_list(self):
-        import fmplugins
+        from sampo import plugins
         with open(os.path.join(os.path.dirname(PLUGIN), "setup-plugins.sh")) as f:
             names = {m.split("@")[0] for m in re.findall(r'^conflict "([^"]+)"', f.read(), re.M)}
-        self.assertEqual(names, set(fmplugins.KNOWN_CONFLICTS))
+        self.assertEqual(names, set(plugins.KNOWN_CONFLICTS))
 
 
 class OutputStyle(unittest.TestCase):
     def test_foreman_style_is_well_formed_and_keeps_the_coding_instructions(self):
-        import fmsetup
+        from sampo import setup
         path = os.path.join(PLUGIN, "output-styles", "foreman.md")
         with open(path) as f:
             text = f.read()
         head, body = text.split("---\n")[1], text.split("---\n", 2)[2]
         self.assertIn("name: Foreman", head)
         self.assertIn("keep-coding-instructions: true", head)
-        self.assertEqual(fmsetup.OUTPUT_STYLE, "foreman:Foreman")  # plugin styles are selected as <plugin>:<name>
+        self.assertEqual(setup.OUTPUT_STYLE, "foreman:Foreman")  # plugin styles are selected as <plugin>:<name>
         for needle in ("✓", "Changed:", "Next:", "Needs you", "write nothing between tool calls"):
             self.assertIn(needle, body)
         self.assertNotIn("▸ Step", body, "the band and tool rows show steps; replies don't repeat them (T-0095)")
@@ -802,51 +802,51 @@ class Fences(unittest.TestCase):
             f.write(text)
 
     def test_the_documented_runnable_fences_run_green_in_a_temp_home(self):
-        import fmdemo
-        found = fmdemo.fences()
+        from sampo import demo
+        found = demo.fences()
         self.assertEqual({w.split(":")[0] for w, _ in found}, {"README.md", "MASTER.md"}, "each doc marks one")
-        self.assertEqual(fmdemo.run_fences(), [])
+        self.assertEqual(demo.run_fences(), [])
 
     def test_a_failing_fence_is_named_and_runs_away_from_the_real_home(self):
         import tempfile
-        import fmdemo
+        from sampo import demo
         with tempfile.TemporaryDirectory() as tmp:
             self.fixture(tmp, "Prose.\n\n```bash\nexit 3\n```\n\n```bash runnable\n"
                               "cat\necho \"in its folder: ${HOME#$PWD/} ${FOREMAN_HOME#$PWD/} ${FOREMAN_STATE#$PWD/}"
                               " ${TMPDIR#$PWD/}\" >&2\ntest -d \"$TMPDIR\"\nexit 4\n```\n")
-            fails = fmdemo.run_fences(tmp, timeout=20)
+            fails = demo.run_fences(tmp, timeout=20)
         self.assertEqual(len(fails), 1, "an unmarked fence never runs")
         # cat met a closed stdin (no hang); HOME, Foreman's home, state and TMPDIR all sit in the fence's own folder
         self.assertEqual(fails[0], "README.md:7: fence exited 4: in its folder: home foreman foreman/state tmp")
 
     def test_a_hung_fence_is_stopped(self):
         import tempfile
-        import fmdemo
+        from sampo import demo
         with tempfile.TemporaryDirectory() as tmp:
             self.fixture(tmp, "~~~sh runnable\nsleep 30\n~~~\n")
-            self.assertEqual(fmdemo.run_fences(tmp, timeout=1), ["README.md:1: timed out after 1 s"])
+            self.assertEqual(demo.run_fences(tmp, timeout=1), ["README.md:1: timed out after 1 s"])
 
     def test_each_template_passes_its_own_check(self):
-        import fmnew
+        from sampo import new
         build = self._site("build")
-        self.assertEqual(set(fmnew.TEMPLATES), {"web", "scene", "panel"})
-        for name in fmnew.TEMPLATES:
-            path = fmnew.source(name)
+        self.assertEqual(set(new.TEMPLATES), {"web", "scene", "panel"})
+        for name in new.TEMPLATES:
+            path = new.source(name)
             self.assertTrue(os.path.isfile(path), path)
-            self.assertEqual(fmnew.check(path, run=True), [], name)  # run: the shipped panel sits in Foreman's repo
+            self.assertEqual(new.check(path, run=True), [], name)  # run: the shipped panel sits in Foreman's repo
             if path.endswith(".html"):  # and loads nothing from another host
                 self.assertEqual(build.outside_loads(read_text(path), ".html"), [], name)
 
     def test_the_checks_catch_a_template_gone_loose(self):
         import tempfile
         import unittest.mock
-        import fmnew
+        from sampo import new
         with tempfile.TemporaryDirectory() as tmp:
             page = os.path.join(tmp, "index.html")
             with open(page, "w", encoding="utf-8") as f:
-                f.write(re.sub(r"--font-(\w+):[^;]+;", r"--font-\1: Inter, sans-serif;", read_text(fmnew.source("web")))
+                f.write(re.sub(r"--font-(\w+):[^;]+;", r"--font-\1: Inter, sans-serif;", read_text(new.source("web")))
                         .replace("var(--font-body)", "Inter, sans-serif").replace("var(--font-display)", "Inter"))
-            self.assertIn("generic-font", " ".join(fmnew.check(page)))
+            self.assertIn("generic-font", " ".join(new.check(page)))
             panels = {"wide": "lambda st, w, h, app: [[('x' * (w + 1), 'text')]]",
                       "lines": "lambda st, w, h, app: [[('x', 'text')]] * (h + 1)",
                       "style": "lambda st, w, h, app: [[('x', 'purple')]]",
@@ -856,17 +856,17 @@ class Fences(unittest.TestCase):
                 path = os.path.join(tmp, "p.py")
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(f"def setup(api):\n    api.panel('p', 'P', {fn})\n")
-                self.assertIn(want, " ".join(fmnew.check(path)), want)
+                self.assertIn(want, " ".join(new.check(path)), want)
             with open(path, "w", encoding="utf-8") as f:
                 f.write("def setup(api):\n    raise RuntimeError('boom')\n")
-            self.assertIn("boom", " ".join(fmnew.check(path)))
+            self.assertIn("boom", " ".join(new.check(path)))
             self.assertFalse(os.path.exists(os.path.join(tmp, "__pycache__")), "a check writes nothing beside it")
 
     def test_a_panel_that_quits_or_hangs_never_passes(self):
         # the check runs in a child (limits, a timeout, a process-group kill): nothing the file does ends it early green
         import tempfile
         import unittest.mock
-        import fmnew
+        from sampo import new
         draw = "def setup(api):\n    api.panel('p', 'P', draw)\n\n\ndef draw(st, w, h, app):\n"
         files = {"sys.exit(0)": "import sys\nsys.exit(0)\n",  # at import
                  "sys.exit(0) ": draw + "    __import__('sys').exit(0)\n",  # while drawing
@@ -874,33 +874,33 @@ class Fences(unittest.TestCase):
                                      "        except:  # noqa: E722\n            pass\n",
                  "timed out ": "import signal\nsignal.alarm(0)\n" + draw + "    while True:\n        pass\n",
                  "ended before the check finished": draw + "    print('[]')\n    __import__('os')._exit(0)\n"}
-        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(fmnew, "CHECK_SECONDS", 2):
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(new, "CHECK_SECONDS", 2):
             for want, body in files.items():
                 path = os.path.join(tmp, "p.py")
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(body)
-                found = fmnew.check(path)
+                found = new.check(path)
                 self.assertEqual(len(found), 1, (want, found))
                 self.assertIn(want.strip(), found[0], want)
 
     def test_a_panel_check_runs_only_what_fm_code_would(self):
         import subprocess
         import tempfile
-        import fmnew
+        from sampo import new
         good = "def setup(api):\n    api.panel('p', 'P', lambda st, w, h, app: [])\n"
         with tempfile.TemporaryDirectory() as tmp:
             loose = os.path.join(tmp, "loose.py")
             with open(loose, "w", encoding="utf-8") as f:
                 f.write(good)
             os.chmod(loose, 0o664)
-            self.assertIn("another user can change it", " ".join(fmnew.check(loose, run=True)))
+            self.assertIn("another user can change it", " ".join(new.check(loose, run=True)))
             repo = os.path.join(tmp, "repo")
             subprocess.run(["git", "init", "-q", repo], check=True)
             mark, inside = os.path.join(tmp, "ran"), os.path.join(repo, "tools", "p.py")
             os.makedirs(os.path.dirname(inside))
             with open(inside, "w", encoding="utf-8") as f:
                 f.write(f"open({mark!r}, 'w').close()\n" + good)
-            found = fmnew.check(inside)
+            found = new.check(inside)
             self.assertIn("--run", " ".join(found))
             self.assertFalse(os.path.exists(mark), "a project's file never ran")
             p = _fm_temp(tmp, "new", "check", inside)
@@ -913,7 +913,7 @@ class Fences(unittest.TestCase):
 
     def test_fm_new_lists_copies_and_never_overwrites(self):
         import tempfile
-        import fmnew
+        from sampo import new
         with tempfile.TemporaryDirectory() as tmp:
             p = _fm_temp(tmp, "new", "templates", "list")
             self.assertEqual(p.returncode, 0, p.stderr)
@@ -921,7 +921,7 @@ class Fences(unittest.TestCase):
                 self.assertRegex(p.stdout, rf"(?m)^\s*{name}\b")
             p = _fm_temp(tmp, "new", "web", "site")
             self.assertEqual(p.returncode, 0, p.stderr)
-            self.assertEqual(read_text(os.path.join(tmp, "site", "index.html")), read_text(fmnew.source("web")))
+            self.assertEqual(read_text(os.path.join(tmp, "site", "index.html")), read_text(new.source("web")))
             p = _fm_temp(tmp, "new", "web", "site")
             self.assertEqual(p.returncode, 1, "a second copy never overwrites the first")
             self.assertIn("--force", p.stderr)
@@ -947,11 +947,11 @@ class HelpAnswers(unittest.TestCase):
     """T-1519: 'can Foreman do X?' is answered from fm help: the commands whose help says so, or a plain no."""
 
     def test_the_commands_whose_help_answers_the_question(self):
-        import fmrecall
-        self.assertEqual(fmrecall.can("Can Foreman scaffold an MCP server?")[0][0], "mcp")
-        self.assertEqual(fmrecall.can("can it start me from a web page template")[0][0], "new")
-        self.assertEqual(fmrecall.can("can foreman bake a cake"), [])
-        self.assertEqual(fmrecall.can("can foreman do it?"), [], "a question of stop words names nothing")
+        from sampo import recall
+        self.assertEqual(recall.can("Can Foreman scaffold an MCP server?")[0][0], "mcp")
+        self.assertEqual(recall.can("can it start me from a web page template")[0][0], "new")
+        self.assertEqual(recall.can("can foreman bake a cake"), [])
+        self.assertEqual(recall.can("can foreman do it?"), [], "a question of stop words names nothing")
 
     def test_fm_help_with_words_answers_and_says_no_plainly(self):
         import tempfile
@@ -980,8 +980,8 @@ class CardDates(unittest.TestCase):
     def test_a_verified_date_is_held_to_a_real_past_day(self):
         import datetime
         import tempfile
-        import fmlib
-        card = read_text(os.path.join(fmlib.CARDS, "tools", "jq.md"))
+        from sampo import lib as slib
+        card = read_text(os.path.join(slib.CARDS, "tools", "jq.md"))
         today = datetime.date.today()
         cases = {"2026-13-01": "not a date", (today + datetime.timedelta(days=2)).isoformat(): "in the future",
                  "2020-01-01": None, today.isoformat(): None,
@@ -992,7 +992,7 @@ class CardDates(unittest.TestCase):
                 with open(os.path.join(tmp, "tools", "jq.md"), "w", encoding="utf-8") as f:
                     bare = re.sub(r"(?m)^verified:.*\n", "", card)
                     f.write(bare.replace("\n---\n", f"\nverified: {value}\n---\n", 1))
-                problems, notes = fmlib.lint(tmp)
+                problems, notes = slib.lint(tmp)
                 if problem:
                     self.assertEqual(len(problems), 1, problems)
                     self.assertIn(problem, problems[0])
@@ -1002,8 +1002,8 @@ class CardDates(unittest.TestCase):
 
     def test_fm_lib_show_says_when_a_card_was_verified(self):
         import tempfile
-        import fmlib
-        dated = [x for x in fmlib.cards() if x.get("verified")]
+        from sampo import lib as slib
+        dated = [x for x in slib.cards() if x.get("verified")]
         self.assertTrue(dated, "at least one card has been verified")
         with tempfile.TemporaryDirectory() as tmp:
             p = _fm_temp(tmp, "lib", "show", dated[0]["name"])

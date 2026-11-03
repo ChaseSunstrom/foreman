@@ -7,16 +7,16 @@ import shutil
 
 from helpers import ForemanTestCase, read_text
 
-import fmdesign
-import fmpage
-import fmtaste
+from sampo import design
+from sampo import page
+from sampo import taste
 
 # a load from another host: a src/href, a CSS url() or an @import that names one (an SVG xmlns is no load)
 OUTSIDE = re.compile(r"""(?:\b(?:src|href|action|poster)\s*=\s*["']?|url\(\s*["']?|@import\s*["']?)(?:[a-z][\w+.-]*:)?//""",
                      re.I)
 
 
-def names(folder=fmtaste.LOOKS):
+def names(folder=taste.LOOKS):
     return sorted(n[:-3] for n in os.listdir(folder) if n.startswith("look-") and n.endswith(".md"))
 
 
@@ -56,14 +56,14 @@ class Gallery(ForemanTestCase):
         self.assertRegex(reduce, r"\.bc \.window \{[^}]*overflow-x: auto", "a still ticker scrolls by hand")
         self.assertRegex(reduce, r"\.bc \.track span\[aria-hidden[^{]*\{[^}]*display: none", "no duplicate lap")
         # each specimen wears its own card's palette
-        for card in fmpage.look_cards():
+        for card in page.look_cards():
             block = re.search(r'#%s \{([^}]*)\}' % card["name"], html)
             self.assertIsNotNone(block, card["name"])
             for role in ("--surface", "--text", "--accent"):
                 self.assertIn(f"{role}: {card['roles'][role]}", block.group(1), (card["name"], role))
 
     def test_the_loader_reads_palette_roles_and_the_type_pair(self):
-        cards = {x["name"]: x for x in fmpage.look_cards()}
+        cards = {x["name"]: x for x in page.look_cards()}
         self.assertEqual(sorted(cards), names())
         self.assertEqual(cards["look-archive-ledger"]["faces"], ["transitional serif", "mono"])
         self.assertEqual(cards["look-transit-signage"]["faces"], ["neo-grotesk"])
@@ -76,14 +76,14 @@ class Gallery(ForemanTestCase):
     def test_a_card_without_its_own_specimen_gets_the_plain_one_and_its_text_is_escaped(self):
         folder = os.path.join(self.tmp, "looks")
         os.makedirs(folder)
-        shutil.copy(os.path.join(fmtaste.LOOKS, "look-lido.md"), folder)
-        with open(os.path.join(fmtaste.LOOKS, "look-lido.md"), encoding="utf-8") as f:
+        shutil.copy(os.path.join(taste.LOOKS, "look-lido.md"), folder)
+        with open(os.path.join(taste.LOOKS, "look-lido.md"), encoding="utf-8") as f:
             text = (f.read().replace('title: "Look: Lido"', 'title: "Look: Pier </style><script>x()</script>"')
                     .replace("An open-air public pool:", "A pier <img src=x onerror=y()> & </section>:")
                     .replace("Clear and calm:", "Clear `</code><b>bold` and calm <script>z()</script>:"))
         with open(os.path.join(folder, "look-pier.md"), "w", encoding="utf-8") as f:
             f.write(text.replace("name: look-lido", "name: look-pier"))
-        html = fmpage.looks_html(fmpage.look_cards(folder))
+        html = page.looks_html(page.look_cards(folder))
         self.assertEqual(re.findall(r'<section class="specimen" id="(look-[\w-]+)"', html), ["look-lido", "look-pier"])
         self.assertEqual(html.count('class="plate" data-plate="fallback"'), 1)
         for raw in ("<script>x()", "<img src=x", "<script>z()", "<b>bold", "& </section>"):
@@ -132,12 +132,12 @@ class Cards(ForemanTestCase):  # T-1650
     def test_card_text_is_escaped_and_colours_are_the_cards_own(self):
         folder = os.path.join(self.tmp, "looks")
         os.makedirs(folder)
-        with open(os.path.join(fmtaste.LOOKS, "look-lido.md"), encoding="utf-8") as f:
+        with open(os.path.join(taste.LOOKS, "look-lido.md"), encoding="utf-8") as f:
             text = (f.read().replace('title: "Look: Lido"', 'title: "Look: Pier </style><script>x()</script>"')
                     .replace("An open-air public pool:", "A pier <img src=x onerror=y()> &:"))
         with open(os.path.join(folder, "look-pier.md"), "w", encoding="utf-8") as f:
             f.write(text.replace("name: look-lido", "name: look-pier"))
-        html = fmpage.cards_html(fmpage.look_cards(folder))
+        html = page.cards_html(page.look_cards(folder))
         for raw in ("<script>x()", "<img src=x"):
             self.assertNotIn(raw, html)
         self.assertIn("Pier &lt;/style&gt;", html)
@@ -159,7 +159,7 @@ class Roll(ForemanTestCase):
     def test_the_same_seed_gives_the_same_coherent_look_and_never_a_generic_face(self):
         a, b = self.roll("--seed", "7"), self.roll("--seed", "7")
         self.assertEqual(a, b)
-        cards = {x["name"]: x for x in fmpage.look_cards()}
+        cards = {x["name"]: x for x in page.look_cards()}
         picked = set()
         for n in range(8):
             got = self.roll("--seed", str(n))
@@ -169,7 +169,7 @@ class Roll(ForemanTestCase):
             self.assertEqual([t["class"] for t in got["type"]], card["faces"])
             self.assertEqual(got["motion"], card["motion"])
             for t in got["type"]:
-                self.assertNotIn(t["lead"].strip('"').lower(), fmdesign.GENERIC_FONTS, t)
+                self.assertNotIn(t["lead"].strip('"').lower(), design.GENERIC_FONTS, t)
                 self.assertNotRegex(t["stack"], r"(?i)(?<![\w-])inter(?![\w-])", t)
         self.assertGreater(len(picked), 3, "seeds spread over the cards")
         self.assertFalse(os.path.exists(self.md), "a roll without --apply writes nothing")

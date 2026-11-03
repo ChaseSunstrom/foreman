@@ -25,7 +25,7 @@ say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 run() { if [ "$DRY" = 1 ]; then echo "    (dry-run) $*"; else "$@"; fi; }
 
 # The state dir in use (FOREMAN_STATE, <home>/state, or the read-only-home fallback), as fm resolves it.
-state="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import fmcore; print(fmcore.state_dir())' "$HERE/lib" 2>/dev/null \
+state="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from sampo import core; print(core.state_dir())' "$HERE/lib" 2>/dev/null \
   || echo "$FOREMAN_HOME/state")"
 manifest="$state/install-manifest.json"
 if [ -f "$manifest" ]; then

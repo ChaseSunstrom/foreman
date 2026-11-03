@@ -8,7 +8,7 @@ from unittest import mock
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 class TrustCase(ForemanTestCase):
@@ -167,7 +167,7 @@ class AskMemory(TrustCase):
     def test_its_security_review_a_highlight_inside_a_secret_and_the_index_cap(self):
         # T-0728: snippet() put [ ] around the matched word inside a secret, so the redactor no longer saw it; and
         # nothing capped what one question indexed
-        import fmrecall
+        from sampo import recall
         key = "sk-ant-api03-" + "k" * 40
         p = c.find_project(self.repo)
         os.makedirs(os.path.join(p.dir, "research"), exist_ok=True)
@@ -175,9 +175,9 @@ class AskMemory(TrustCase):
             f.write(f"deploy key {key} for staging\n")
         out = self.fm("recall", "--ask", "api03 deploy key staging", "-n", "500").stdout
         self.assertNotIn("k" * 20, out)
-        self.assertLessEqual(len([x for x in out.splitlines() if re.match(r"\d+\. ", x)]), fmrecall.HITS_MAX)
-        with mock.patch.object(fmrecall, "INDEX_MAX", 10):
-            self.assertEqual(fmrecall.ask(p, "deploy key staging"), [], "nothing past the cap is indexed")
+        self.assertLessEqual(len([x for x in out.splitlines() if re.match(r"\d+\. ", x)]), recall.HITS_MAX)
+        with mock.patch.object(recall, "INDEX_MAX", 10):
+            self.assertEqual(recall.ask(p, "deploy key staging"), [], "nothing past the cap is indexed")
 
     def test_an_answer_cites_the_task_behind_a_ledger_note(self):
         out = self.fm("recall", "--ask", "why was the export flaky?").stdout

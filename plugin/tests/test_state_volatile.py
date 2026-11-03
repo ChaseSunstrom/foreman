@@ -6,7 +6,7 @@ from unittest import mock
 
 from helpers import ForemanTestCase  # noqa: F401  (puts plugin/lib on the path)
 
-import fmdoctor as d
+from sampo import doctor as d
 
 
 class StateVolatile(unittest.TestCase):

@@ -77,7 +77,7 @@ class Rewind(ForemanTestCase):
         # T-2029: every prompt ran three git commands and a second brief scan, though only a proved step can rewind
         from unittest import mock
 
-        import fmcore as c
+        from sampo import core as c
         tid = self.fm_json("task", "new", "Unproved", "--type", "FIX", "--tier", "S", "--ac", "it works :: true",
                            "--step", "one")["id"]
         self.fm("focus", tid)

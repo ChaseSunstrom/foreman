@@ -8,7 +8,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 def parse(proc):
@@ -62,13 +62,13 @@ class Loop(ForemanTestCase):
     def test_a_round_ahead_of_pace_drops_the_ideas_fan_out(self):
         # T-1966: the brief sent the model to fm ideas while usage was ahead of pace and its lens subagents waited
         from unittest import mock
-        import fmloop
+        from sampo import loop as sloop
         self.fm("loop", "on")
         p = c.find_project(self.repo)
-        with mock.patch("fmbudget.degrade", return_value=None):
-            self.assertIn("fm ideas --pack", fmloop.round_brief(p))
-        with mock.patch("fmbudget.degrade", return_value="weekly usage 80%"):
-            brief = fmloop.round_brief(p)
+        with mock.patch("sampo.budget.degrade", return_value=None):
+            self.assertIn("fm ideas --pack", sloop.round_brief(p))
+        with mock.patch("sampo.budget.degrade", return_value="weekly usage 80%"):
+            brief = sloop.round_brief(p)
         self.assertNotIn("fm ideas", brief)
         self.assertIn("Optional work is dropped (weekly usage 80%)", brief)  # or the spent risk budget: not usage
         self.assertIn("isn't counted dry", brief)  # T-1990: T-1986's rule, said where the yield is asked for
@@ -76,19 +76,19 @@ class Loop(ForemanTestCase):
     def test_a_main_thread_round_names_the_lenses_to_sweep(self):
         # T-2004: "review what shipped" alone shrank rounds to 1-3 follow-ups and the user asked for breadth again
         from unittest import mock
-        import fmloop
+        from sampo import loop as sloop
         self.fm("loop", "on")
-        with mock.patch("fmbudget.degrade", return_value="weekly usage 80%"):
-            brief = fmloop.round_brief(c.find_project(self.repo))
+        with mock.patch("sampo.budget.degrade", return_value="weekly usage 80%"):
+            brief = sloop.round_brief(c.find_project(self.repo))
         self.assertIn("one grounded idea per lens", brief)
-        for lens in fmloop.MAIN_LENSES:
+        for lens in sloop.MAIN_LENSES:
             self.assertIn(lens, brief)
 
     def test_a_round_lists_what_recent_work_left_behind_learned_from_history(self):
         # T-2073: the user had to ask for the site, skills and playbooks to catch up; no folder list, the repo's own
         # history says what usually moves with what
         import subprocess
-        import fmloop
+        from sampo import loop as sloop
 
         def commit(files, msg):
             for path, text in files.items():
@@ -103,23 +103,23 @@ class Loop(ForemanTestCase):
         for i in range(4):
             commit({**hub, "lib.py": f"x{i} = 1\n", "site/page.html": f"<p>{i}</p>\n"}, f"both {i}")
         p = c.find_project(self.repo)
-        self.assertEqual(fmloop.lag(p), [], "everything that moves together just moved")
+        self.assertEqual(sloop.lag(p), [], "everything that moves together just moved")
         for i in range(4):  # the page now moves with the code half the time, and missed the last 4
             commit({**hub, "lib.py": f"y{i} = 1\n"}, f"code {i}")
-        left = fmloop.lag(p)
+        left = sloop.lag(p)
         self.assertEqual(left, ["- site/page.html: owes ~2.0 updates (lib.py changed in 4 commits since it last did; "
                                 "they move together 50% of the time)"])  # old.txt: 27% with the hub, 8 commits: noise
         self.fm("loop", "on")
-        brief = fmloop.round_brief(p)
+        brief = sloop.round_brief(p)
         self.assertIn("- site/page.html: owes", brief)
         self.assertIn("Surfaces: every area of this repo (CHANGELOG.md, README.md, lib.py, old.txt, site)", brief)
         os.rename(os.path.join(self.repo, ".git"), os.path.join(self.repo, "git-gone"))
-        self.assertIsNone(fmloop.lag(p))  # no history is unknown, never "nothing owed"
+        self.assertIsNone(sloop.lag(p))  # no history is unknown, never "nothing owed"
 
     def test_a_round_lists_the_asks_no_brainstorm_predicted(self):
         # T-2076: the round brief carries the brainstorms' misses, so the main thread asks what would have caught them
         import re
-        import fmloop
+        from sampo import loop as sloop
         p = c.find_project(self.repo)
         d = os.path.join(p.dir, "research", "brainstorm-20250101-000000")
         os.makedirs(d)
@@ -128,19 +128,19 @@ class Loop(ForemanTestCase):
         out = self.fm("capture", "Add more playbooks for every stage", "--source", "user").stdout
         tid = re.search(r"T-\d+", out).group(0)
         self.fm("loop", "on")
-        brief = fmloop.round_brief(p)
+        brief = sloop.round_brief(p)
         self.assertIn("Asks no brainstorm predicted", brief)
         self.assertIn(f"- {tid}: Add more playbooks for every stage", brief)
 
     def test_a_budget_limited_round_leaves_the_dry_streak_alone(self):
         # T-1986: with optional work dropped there is no ideas fan-out; a spent budget ended the loop as "2 dry rounds"
         from unittest import mock
-        import fmloop
+        from sampo import loop as sloop
         self.fm("loop", "on")
         p = c.find_project(self.repo)
-        with mock.patch("fmbudget.degrade", return_value="today's risk budget is spent"):
+        with mock.patch("sampo.budget.degrade", return_value="today's risk budget is spent"):
             for _ in range(3):
-                s, stop = fmloop.record_yield(p, 1)
+                s, stop = sloop.record_yield(p, 1)
         self.assertFalse(stop)
         self.assertEqual(s["dry"], 0)
         self.assertTrue(s["limited"])
@@ -224,7 +224,7 @@ class LagKept(ForemanTestCase):
         # T-2075: a file fm decide kept (why it stays) was listed again every round
         import subprocess
         from unittest import mock
-        import fmloop
+        from sampo import loop as sloop
 
         def commit(path, date):
             with open(os.path.join(self.repo, path), "a", encoding="utf-8") as f:
@@ -236,14 +236,14 @@ class LagKept(ForemanTestCase):
         commit("data.py", "2026-01-01")
         p = c.find_project(self.repo)
         drift = [("page.html", 2.0, "lib.py", 4, 0.5), ("data.py", 2.0, "lib.py", 4, 0.5)]
-        with mock.patch("fmmap.drift", return_value=drift):
-            self.assertEqual(len(fmloop.lag(p)), 2)
+        with mock.patch("sampo.map.drift", return_value=drift):
+            self.assertEqual(len(sloop.lag(p)), 2)
             with open(os.path.join(p.dir, "decisions.md"), "a", encoding="utf-8") as f:
                 f.write("| 2026-01-02 | [x] page.html stays: nothing in it changes with lib.py | why |\n")
-            left = fmloop.lag(p)  # "a.py" must not match inside "data.py", nor "page.html" inside "mypage.html"
+            left = sloop.lag(p)  # "a.py" must not match inside "data.py", nor "page.html" inside "mypage.html"
             self.assertEqual([x.split(":")[0] for x in left], ["- data.py"])
             commit("page.html", "2026-02-01")  # changed after the decision: listed again
-            self.assertEqual(len(fmloop.lag(p)), 2)
+            self.assertEqual(len(sloop.lag(p)), 2)
 
 
 class LoopReview(ForemanTestCase):

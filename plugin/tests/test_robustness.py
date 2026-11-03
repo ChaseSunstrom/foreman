@@ -7,7 +7,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 MALFORMED = {
     "T-0090-truncated.md": b"---\nid: T-0090\ntype: FIX\ntier: S\n",

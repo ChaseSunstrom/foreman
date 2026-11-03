@@ -10,7 +10,7 @@ from unittest import mock
 
 from helpers import FM, LIB, ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 first = lambda text: json.JSONDecoder().raw_decode(text)[0]  # noqa: E731 — --focus prints its own lines after the JSON
 
@@ -303,6 +303,6 @@ class Lsp(ForemanTestCase):
                           home=home)
         self.assertEqual(p.returncode, 0, p.stderr[-500:])
         self.assertEqual(os.listdir(home), [])
-        with open(os.path.join(LIB, "fmintegrations.py"), encoding="utf-8") as f:
+        with open(os.path.join(LIB, "sampo", "integrations.py"), encoding="utf-8") as f:
             src = f.read()
         self.assertNotRegex(src, r"(?m)^\s*(import|from)\s+(socket|http|socketserver|urllib)\b")

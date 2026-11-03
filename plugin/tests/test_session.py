@@ -9,7 +9,7 @@ from unittest import mock
 
 from helpers import FM, ForemanTestCase
 
-import fmsession as s
+from sampo import session as s
 
 # stream-json like claude -p: init, an assistant text + tool call, its result, the final result. STUB_SLEEP holds the
 # turn open (for stop); the prompt and --resume come back in the text so the test can see what the runner passed.

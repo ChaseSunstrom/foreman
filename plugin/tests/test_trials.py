@@ -4,8 +4,8 @@ from unittest import mock
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmtrials as tr
+from sampo import core as c
+from sampo import trials as tr
 
 
 def ago(days):
@@ -51,9 +51,9 @@ class Trials(ForemanTestCase):
         self.assertIn("pending, 30 days left", out)
 
     def test_by_below_one_is_refused(self):
-        import fmcli
+        from sampo import cli
         for by in (0, -3):
-            with self.assertRaises(fmcli.UsageError):
+            with self.assertRaises(cli.UsageError):
                 tr.add(self.p, "rule X", "corrections", by)
         self.assertEqual(tr.load(self.p), [])
 
@@ -79,9 +79,9 @@ class SelfFixTrials(ForemanTestCase):
         self.p = c.find_project(self.repo)
 
     def capture(self, days, source="ci", key=KEY, title="FIX: CI red on main"):
-        import fmeco
+        from sampo import eco
         with mock.patch.object(c, "now", lambda: ago(days)):
-            return fmeco.capture_once(self.p, f"{title}\n{key}", "FIX", source, key=key)[0]
+            return eco.capture_once(self.p, f"{title}\n{key}", "FIX", source, key=key)[0]
 
     def fixed(self, sightings_before, finished=20):
         """A ci capture seen sightings_before times (the filing included), focused and finished `finished` days ago."""
@@ -139,19 +139,19 @@ class SelfFixTrials(ForemanTestCase):
         self.assertEqual([t.get("verdict") for t in tr.load(self.p)], ["didn't hold"])
 
     def test_a_signal_filed_as_discovered_registers_by_its_trigger(self):  # T-2351 review: ci-red, did-not-hold, …
-        import fmeco
-        b = fmeco.capture_once(self.p, "FIX: CI on main is red at abc1234 (test)\nCI-red: abc1234", "FIX", "discovered",
+        from sampo import eco
+        b = eco.capture_once(self.p, "FIX: CI on main is red at abc1234 (test)\nCI-red: abc1234", "FIX", "discovered",
                                key="CI-red: abc1234", trigger="ci-red", trial_key="ci:main:test")[0]
         self.assertEqual(b.meta.get("trigger"), "ci-red")
-        mine = fmeco.capture_once(self.p, "FIX: something I noticed", "FIX", "discovered")[0]
+        mine = eco.capture_once(self.p, "FIX: something I noticed", "FIX", "discovered")[0]
         self.assertIsNone(mine.meta.get("trigger_key"))  # the session's own capture: no signal fired
 
     def test_a_ci_failure_on_a_new_run_is_the_same_key(self):  # T-2351 review: the run URL changes every run
-        import fmeco
+        from sampo import eco
         keys = []
         for run in (7, 8):
             with mock.patch.object(c, "now", lambda: ago(1)):
-                fmeco.capture_once(self.p, f"CI failed on main: run {run}\nCONTEXT: https://ci/{run}, ", "FIX", "ci",
+                eco.capture_once(self.p, f"CI failed on main: run {run}\nCONTEXT: https://ci/{run}, ", "FIX", "ci",
                                    key=f"CONTEXT: https://ci/{run}, ", trial_key="ci:main:test")
         seen = [e["data"]["key"] for e in c.ledger_events(self.p, ("trigger_seen",))]
         self.assertEqual(len(seen), 2)

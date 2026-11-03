@@ -10,8 +10,8 @@ from unittest import mock
 
 from helpers import PLUGIN, ForemanTestCase, read_text
 
-import fmcli
-import fmcore as c
+from sampo import cli
+from sampo import core as c
 
 
 class Chaos(ForemanTestCase):
@@ -44,7 +44,7 @@ class Chaos(ForemanTestCase):
                 with mock.patch.object(c, "write_atomic", crashing), \
                         mock.patch("sys.stdout"), mock.patch("sys.stderr"):
                     try:
-                        fmcli.main(argv)
+                        cli.main(argv)
                     except BaseException:
                         pass
                 after = {b.id: b.status for b in c.load_briefs(p)}  # always loads
@@ -101,10 +101,10 @@ class Mutation(ForemanTestCase):
     def test_the_real_guard_has_flip_and_drop_sites(self):
         # T-0496's script became fm bench guard --mutate --flip (T-1121); judging is tested on fixtures (test_replay)
         import fmguard
-        import fmmutate
+        from sampo import mutate
         with open(os.path.join(PLUGIN, "lib", "fmguard.py"), encoding="utf-8") as f:
             src = f.read()
-        flips = fmmutate.flips(src)
+        flips = mutate.flips(src)
         self.assertGreater(len(flips), 50)
         self.assertTrue(all(m["src"] != src for m in flips[:20]))
-        self.assertGreater(len(fmmutate.mutants(src, fmguard.CATEGORIES)), 30)
+        self.assertGreater(len(mutate.mutants(src, fmguard.CATEGORIES)), 30)

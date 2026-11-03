@@ -133,13 +133,13 @@ class Due(_Stubbed):
             self.fm("capture", t, "--tier", "M")
         self.assertIn("not due", self.fm("relate", "--if-due", env=self.env).stdout)  # once a day
         self.assertEqual(len(self.calls()), 1)
-        import fmcore as c
-        import fmrelate
+        from sampo import core as c
+        from sampo import relate
         meta = c.read_meta(c.find_project(self.repo))
-        self.assertFalse(fmrelate.due(meta, ["T-0004", "T-0005", "T-0006"]))  # ran today
+        self.assertFalse(relate.due(meta, ["T-0004", "T-0005", "T-0006"]))  # ran today
         meta["relate_day"] = "2000-01-01"
-        self.assertTrue(fmrelate.due(meta, ["T-0004", "T-0005", "T-0006"]))  # tomorrow: three new
-        self.assertFalse(fmrelate.due(meta, ["T-0001", "T-0005", "T-0006"]))  # T-0001 was seen
+        self.assertTrue(relate.due(meta, ["T-0004", "T-0005", "T-0006"]))  # tomorrow: three new
+        self.assertFalse(relate.due(meta, ["T-0001", "T-0005", "T-0006"]))  # T-0001 was seen
 
     def wait_for_run(self):
         for _ in range(100):  # detached: the command returned before the run did
@@ -159,7 +159,7 @@ class Due(_Stubbed):
 
     def test_session_start_runs_it_in_the_background(self):
         self.seven()
-        import fmcore as c  # only fm relate in the background: the day's review and the canary would race the cleanup
+        from sampo import core as c  # only fm relate in the background: the day's review and the canary would race the cleanup
         c.update_meta(c.find_project(self.repo), second_session=c.now()[:10])
         with open(os.path.join(c.state_dir(), "canary.at"), "a"):
             pass
@@ -179,11 +179,11 @@ class Review(_Stubbed):
     """The T-0383 review's fixes, one test each."""
 
     def meta(self):
-        import fmcore as c
+        from sampo import core as c
         return c.read_meta(c.find_project(self.repo))
 
     def set_meta(self, **kw):
-        import fmcore as c
+        from sampo import core as c
         c.update_meta(c.find_project(self.repo), **kw)
 
     def deps(self, tid):
@@ -196,7 +196,7 @@ class Review(_Stubbed):
                 "--step", "a")
 
     def test_a_failed_child_leaves_the_day_unclaimed_and_is_logged(self):
-        import fmcore as c
+        from sampo import core as c
         self.seven()
         self.fm("relate", "--if-due", env=dict(self.env, STUB_EXIT="1"))
         meta = self.meta()
@@ -209,7 +209,7 @@ class Review(_Stubbed):
         self.assertEqual(self.deps("T-0001"), "[T-0004]")
 
     def test_a_fresh_claim_dedupes_a_concurrent_trigger(self):
-        import fmcore as c
+        from sampo import core as c
         self.seven()
         self.set_meta(relate_claim=c.now())
         self.assertIn("already running", self.fm("relate", "--if-due", env=self.env).stdout)
@@ -219,12 +219,12 @@ class Review(_Stubbed):
         self.assertEqual(len(self.calls()), 1)
 
     def test_clear_turns_the_automatic_runs_off_until_on(self):
-        import fmrelate
+        from sampo import relate
         self.seven()
         self.fm("relate", "--clear", env=self.env)
         self.assertIn("off", self.fm("relate", "--if-due", env=self.env).stdout)
         self.assertEqual(self.calls(), [])
-        self.assertFalse(fmrelate.due(self.meta(), ["T-0001", "T-0002", "T-0003"]))
+        self.assertFalse(relate.due(self.meta(), ["T-0001", "T-0002", "T-0003"]))
         self.fm("relate", "--on", env=self.env)
         self.fm("relate", "--if-due", env=self.env)
         self.assertEqual(len(self.calls()), 1)
@@ -265,15 +265,15 @@ class Review(_Stubbed):
         self.assertEqual(len(self.deps("T-0001").strip("[]").split(",")), 5)
 
     def test_fm_run_never_batches_a_task_with_what_it_inferred_it_needs(self):
-        import fmcore as c
-        import fmserve
+        from sampo import core as c
+        from sampo import serve
         self.planned("base", "a.txt")                 # T-0001
         self.planned("builds on T-0001", "b.txt")     # T-0002: a mention, so an inferred edge
         self.planned("free", "c.txt")                 # T-0003
         self.fm("relate", "--no-child", env=self.env)
         self.assertEqual(self.deps("T-0002"), "[T-0001]")
         p = c.find_project(self.repo)
-        self.assertEqual([b.id for b in fmserve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0003"])
+        self.assertEqual([b.id for b in serve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0003"])
 
     def test_a_cycle_through_an_inferred_edge_names_fm_relate(self):
         self.planned("builds on T-0002", "a.txt")     # T-0001
@@ -287,7 +287,7 @@ class Review(_Stubbed):
 class Order(ForemanTestCase):
     @staticmethod
     def brief(id, status="planned", priority="normal", inferred=(), group=None):
-        import fmcore as c
+        from sampo import core as c
         b = c.Brief.new(id, f"task {id}", "FEATURE", "S", now="2026-01-01T00:00:00Z", status=status)
         b.meta.update(priority=priority, inferred_deps=list(inferred))
         if group:
@@ -295,7 +295,7 @@ class Order(ForemanTestCase):
         return b
 
     def test_an_inferred_edge_never_holds_back_an_urgent_task(self):
-        import fmcore as c
+        from sampo import core as c
         for status in ("planned", "captured"):
             briefs = [self.brief("T-0001", status, "urgent", inferred=["T-0002"]), self.brief("T-0002", status)]
             q = c.order_queue(briefs)[0] if status == "planned" else c.rank_inbox(briefs)
@@ -303,7 +303,7 @@ class Order(ForemanTestCase):
 
     def test_keys_and_dependencies_are_read_once_per_brief(self):
         from unittest import mock
-        import fmcore as c
+        from sampo import core as c
         briefs = [self.brief(f"T-{i:04d}", inferred=[f"T-{i - 1:04d}"] if i % 3 else [], group=f"g{i % 7}")
                   for i in range(1, 301)]
         inbox = [self.brief(b.id, "captured", inferred=b.meta["inferred_deps"], group=b.meta["group"]) for b in briefs]

@@ -16,8 +16,8 @@ LIB = os.path.join(PLUGIN, "lib")
 sys.path.insert(0, LIB)
 STDIN = None
 try:  # T-0368: below Python 3.12.7, run this hook under a supported Python. A child, not exec: only its answer (exit 0
-    import fmpy  # or 2) is relayed; if it crashes, the hook runs here as before, so a broken interpreter never opens
-    _exe = fmpy.target(sys.version_info)  # the guard (Claude Code reads exit 1 as allow)
+    from sampo import py  # or 2) is relayed; if it crashes, the hook runs here as before, so a broken interpreter never opens
+    _exe = py.target(sys.version_info)  # the guard (Claude Code reads exit 1 as allow)
     if _exe:
         import subprocess
         STDIN = sys.stdin.buffer.read()
@@ -49,27 +49,35 @@ def committed_library():
         if os.path.realpath((git("rev-parse", "--show-toplevel") or "").strip() or "/nonexistent") != \
                 os.path.realpath(root):
             return False
-        names = [os.path.basename(n)[:-3] for n in (git("ls-tree", "--name-only", "HEAD", "plugin/lib/") or "").split()
-                 if os.path.basename(n).startswith("fm") and n.endswith(".py")]
-        if not {"fmcore", "fmguard", "fmhooks"} <= set(names):
+        names = [os.path.basename(n)[:-3] for n in (git("ls-tree", "--name-only", "HEAD", "plugin/lib/sampo/") or "").split()
+                 if n.endswith(".py") and os.path.basename(n) != "__init__.py"]
+        if not {"core", "hooks"} <= set(names) or git("cat-file", "-e", "HEAD:plugin/lib/fmguard.py") is None:
             return False
-        for name in ["fmcore", "fmguard"] + sorted(set(names) - {"fmcore", "fmguard"}):  # fmcore first: others import it
-            src = git("show", f"HEAD:plugin/lib/{name}.py")
+        pkg = types.ModuleType("sampo")  # T-2748: the library is the sampo package; the old fm* paths are shims
+        pkg.__path__ = [os.path.join(LIB, "sampo")]
+        pkg.__file__ = os.path.join(LIB, "sampo", "__init__.py")
+        sys.modules["sampo"] = pkg
+        for name in ["core", "fmguard"] + sorted(set(names) - {"core"}):  # core first: the rest import it
+            rel = "lib/fmguard.py" if name == "fmguard" else f"lib/sampo/{name}.py"
+            src = git("show", f"HEAD:plugin/{rel}")
             if src is None:
                 return False
-            mod = types.ModuleType(name)
-            mod.__file__ = os.path.join(LIB, f"{name}.py")
-            sys.modules[name] = mod
-            exec(compile(src, f"HEAD:plugin/lib/{name}.py", "exec"), mod.__dict__)
+            full = name if name == "fmguard" else f"sampo.{name}"
+            mod = types.ModuleType(full)
+            mod.__file__ = os.path.join(PLUGIN, rel)
+            sys.modules[full] = mod
+            if full != name:
+                setattr(pkg, name, mod)
+            exec(compile(src, f"HEAD:plugin/{rel}", "exec"), mod.__dict__)
         return True
     except Exception:
         return False
 
 
 try:
-    import fmhooks
+    from sampo import hooks
     if AGENT:
-        import fmagents
+        from sampo import agents
 except Exception as exc:  # broken install: never block unless this is the guard
     # T-2532: every event runs as last committed (Stop, SessionStart and the rest too, not silently off)
     if not committed_library():
@@ -80,16 +88,16 @@ except Exception as exc:  # broken install: never block unless this is the guard
         print(f"Foreman guard unavailable ({exc!r}); the tool call was blocked (fail-closed). "
               "Fix the plugin or run: claude plugin disable foreman@foreman", file=sys.stderr)
         sys.exit(2)
-    import fmhooks
+    from sampo import hooks
     if AGENT:
         try:
-            import fmagents
+            from sampo import agents
         except Exception:  # no committed adapter either: refuse in the way every agent reads as a block
             if not TOOL_EVENT:
                 sys.exit(0)
             print(f"Foreman guard unavailable ({exc!r}); the tool call was blocked (fail-closed)", file=sys.stderr)
             sys.exit(2)
-    fmhooks.log_error(EVENT, f"the working copy of Foreman's library failed to import ({exc!r}); using the "
+    hooks.log_error(EVENT, f"the working copy of Foreman's library failed to import ({exc!r}); using the "
                              f"committed library (fix plugin/lib)")
 _data = STDIN.decode("utf-8", "replace") if STDIN is not None else sys.stdin.read()
-sys.exit(fmagents.hook(AGENT, EVENT, _data) if AGENT else fmhooks.run(EVENT, _data))
+sys.exit(agents.hook(AGENT, EVENT, _data) if AGENT else hooks.run(EVENT, _data))

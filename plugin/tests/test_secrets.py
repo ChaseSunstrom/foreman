@@ -139,19 +139,19 @@ class Secrets(ForemanTestCase):
     def test_one_placeholder_rule_for_the_commit_refusal_and_the_close_warning(self):
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
-        import fmsecrets
+        from sampo import secrets
         fake = "sk-" + "dummyfixture" + "A1b2C3d4E5f6"
         real = "sk-" + "Zq8Lm2Xv9Rt4Wn7Bc3Hd6Jk"
-        self.assertEqual(fmsecrets.scan_text(f"k = '{fake}'\n"), [])
-        self.assertEqual(fmsecrets.scan_text(f"x {fake}\n"), [])
-        self.assertTrue(fmsecrets.scan_text(f"x {real}\n"))
-        self.assertTrue(fmsecrets.is_placeholder(fake) and not fmsecrets.is_placeholder(real))
+        self.assertEqual(secrets.scan_text(f"k = '{fake}'\n"), [])
+        self.assertEqual(secrets.scan_text(f"x {fake}\n"), [])
+        self.assertTrue(secrets.scan_text(f"x {real}\n"))
+        self.assertTrue(secrets.is_placeholder(fake) and not secrets.is_placeholder(real))
         # a token is fake only by a whole placeholder word; chance "your"/"fake" in a real body doesn't excuse it
         chance = "sk-ant-api03-" + "Zq8Lm2Xv9R" + "your" + "Wn7Bc3Hd6Jk4Pt5Qs1Fg"
-        self.assertTrue(fmsecrets.scan_text(f"x {chance}\n"))
-        self.assertTrue(fmsecrets.scan_text("x sk-ant-api03-" + "Zq8Lm2Xv9R" + "fake" + "Wn7Bc3Hd6Jk4Pt5Qs1Fg\n"))
+        self.assertTrue(secrets.scan_text(f"x {chance}\n"))
+        self.assertTrue(secrets.scan_text("x sk-ant-api03-" + "Zq8Lm2Xv9R" + "fake" + "Wn7Bc3Hd6Jk4Pt5Qs1Fg\n"))
         for ph in ("AKIA" + "IOSFODNN7EXAMPLE", "sk-ant-EXAMPLE" + "0123456789abcdef", "sk-" + "x" * 20, "sk-your-key-here-" + "0123456789"):
-            self.assertEqual(fmsecrets.scan_text(f"x {ph}\n"), [], ph)
+            self.assertEqual(secrets.scan_text(f"x {ph}\n"), [], ph)
 
 
 if __name__ == "__main__":

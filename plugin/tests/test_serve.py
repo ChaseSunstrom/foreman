@@ -5,8 +5,8 @@ import sys
 
 from helpers import FM, ForemanTestCase, git_repo, read_text
 
-import fmcore as c
-import fmserve
+from sampo import core as c
+from sampo import serve as sserve
 
 
 class ServeCase(ForemanTestCase):
@@ -133,12 +133,12 @@ class Serve(ServeCase):
         # a newline in the repo path or PATH would end its line and start a new unit directive
         bad = type("P", (), {"root": "/srv/app\nExecStartPre=/bin/evil", "slug": "app-1"})()
         with self.assertRaises(c.PolicyError):
-            fmserve.unit_text(bad, None)
+            sserve.unit_text(bad, None)
         p = c.find_project(self.repo)
         old = os.environ["PATH"]
         os.environ["PATH"] = old + ":/x\nExecStartPre=/bin/evil"
         try:
-            text = fmserve.unit_text(p, None)
+            text = sserve.unit_text(p, None)
         finally:
             os.environ["PATH"] = old
         self.assertNotIn("\nExecStartPre", text)
@@ -260,7 +260,7 @@ class Run(RunCase):
         import types
         t = self.task("one")
         p = c.find_project(self.repo)
-        argv = fmserve._session_cmd(p, c.find_brief(p, t), types.SimpleNamespace(runner="codex"), {})
+        argv = sserve._session_cmd(p, c.find_brief(p, t), types.SimpleNamespace(runner="codex"), {})
         self.assertEqual(argv[1:], [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "code", "--task", t, "--worker", "codex"])
         before = c.find_brief(p, t).status
         r = self.run_fm("--runner", "nosuch", check=False)
@@ -334,7 +334,7 @@ class Run(RunCase):
         # T-0434: each loop beats into the state dir; a clean stop removes it, a killed run leaves it, and doctor's
         # dead-man check tells the notify command once per stale episode
         import time
-        import fmdoctor
+        from sampo import doctor
         p = c.find_project(self.repo)
         beat, seen, told = (os.path.join(p.dir, "heartbeat-run.json"), os.path.join(self.tmp, "seen"),
                             os.path.join(self.tmp, "told"))
@@ -348,12 +348,12 @@ class Run(RunCase):
         self.run_fm(check=False)
         self.assertTrue(os.path.exists(beat))
         self.fm("notify", f'echo "$1" >> {told}')
-        self.assertEqual(fmdoctor.check_heartbeats([p]).status, "PASS")  # not overdue yet
+        self.assertEqual(doctor.check_heartbeats([p]).status, "PASS")  # not overdue yet
         later = time.time() + 86400
-        r = fmdoctor.check_heartbeats([p], now=later)
+        r = doctor.check_heartbeats([p], now=later)
         self.assertEqual(r.status, "WARN")
         self.assertIn("fm run", r.detail)
-        fmdoctor.check_heartbeats([p], now=later)
+        doctor.check_heartbeats([p], now=later)
         self.assertEqual(len(read_text(told).splitlines()), 1)  # once per stale episode
         self.assertIn("T-0002", read_text(told))
 
@@ -414,7 +414,7 @@ class RunRoute(RunCase):
         self.assertTrue(self.claudes() and all("--model haiku" in l for l in self.claudes()), self.claudes())
 
     def test_a_probe_session_is_marked_and_runs_one_model_down(self):
-        import fmlanes
+        from sampo import lanes
         p = c.find_project(self.repo)
         for i in range(5):  # five closed sonnet S lanes that held
             t = self.task(f"old {i}")
@@ -423,7 +423,7 @@ class RunRoute(RunCase):
             b.meta["status"] = "done"
             c.save_brief(p, b)
         tid = self.task("probe me")
-        while not fmlanes.is_probe(tid):  # tasks pile up until one's id is a probe by the hash; fm run works them all
+        while not lanes.is_probe(tid):  # tasks pile up until one's id is a probe by the hash; fm run works them all
             tid = self.task("probe me")
         self.stub("claude", self.finisher)
         out = self.run_fm().stdout

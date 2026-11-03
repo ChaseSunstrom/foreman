@@ -15,8 +15,8 @@ from unittest import mock
 
 from helpers import ForemanTestCase, git_repo, read_text
 
-import fmcore as c
-import fmdoctor as d
+from sampo import core as c
+from sampo import doctor as d
 
 first = lambda text: json.JSONDecoder().raw_decode(text)[0]  # --json prints the task first
 
@@ -254,24 +254,24 @@ class GateLock(ForemanTestCase):
         import argparse
         import contextlib
         from unittest import mock
-        import fmcli
+        from sampo import cli
         took = []
 
         @contextlib.contextmanager
         def lock(label, **kw):
             took.append(label)
             yield
-        with mock.patch.object(c, "gate_lock", lock), mock.patch.object(fmcli, "_cmd_check", return_value=0):
+        with mock.patch.object(c, "gate_lock", lock), mock.patch.object(cli, "_cmd_check", return_value=0):
             for affected, repeat, want in ((True, 0, []), (False, 3, []), (False, 0, ["fm check"])):
                 took.clear()
-                fmcli.cmd_check(argparse.Namespace(action="run", affected=affected, repeat=repeat))
+                cli.cmd_check(argparse.Namespace(action="run", affected=affected, repeat=repeat))
                 self.assertEqual(took, want, (affected, repeat))
 
     def test_a_long_held_lock_is_waited_on_only_so_long(self):  # T-1753: a hung check elsewhere held it 40+ min
         import argparse
         import threading
         from unittest import mock
-        import fmcli
+        from sampo import cli
         held, release = threading.Event(), threading.Event()
 
         def hold():
@@ -284,17 +284,17 @@ class GateLock(ForemanTestCase):
         err = io.StringIO()
         try:
             with mock.patch.dict(os.environ, {"FOREMAN_GATE_WAIT": "0.3"}), mock.patch("sys.stderr", err), \
-                    mock.patch.object(fmcli, "_cmd_check", return_value=0) as run:
-                self.assertEqual(fmcli.cmd_check(argparse.Namespace(action="run", affected=False, repeat=0)), 0)
+                    mock.patch.object(cli, "_cmd_check", return_value=0) as run:
+                self.assertEqual(cli.cmd_check(argparse.Namespace(action="run", affected=False, repeat=0)), 0)
             run.assert_called_once()
             self.assertIn("hung check", err.getvalue())
             self.assertIn("running beside it", err.getvalue())
         finally:
             release.set()
             t.join()
-        with mock.patch.object(fmcli, "_cmd_check", side_effect=c.LockTimeout("project lock busy")):
+        with mock.patch.object(cli, "_cmd_check", side_effect=c.LockTimeout("project lock busy")):
             with self.assertRaises(c.LockTimeout):  # the check's own lock timeout isn't mistaken for the gate's
-                fmcli.cmd_check(argparse.Namespace(action="run", affected=False, repeat=0))
+                cli.cmd_check(argparse.Namespace(action="run", affected=False, repeat=0))
 
     def test_second_run_waits_and_names_holder(self):
         import threading
@@ -328,16 +328,16 @@ class GateLock(ForemanTestCase):
         self.assertEqual(order, ["first in", "first out", "second in"])
 
     def test_nested_run_does_not_deadlock(self):
-        code = "import fmcore as c\nwith c.gate_lock('inner', timeout=1):\n    print('ok')"
+        code = "from sampo import core as c\nwith c.gate_lock('inner', timeout=1):\n    print('ok')"
         with c.gate_lock("outer"):
             r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=20,
-                               env={**os.environ, "PYTHONPATH": os.path.dirname(c.__file__)})
+                               env={**os.environ, "PYTHONPATH": os.path.dirname(os.path.dirname(c.__file__))})
         self.assertEqual(r.stdout.strip(), "ok", r.stderr)
 
     def test_stale_held_value_takes_the_lock(self):
         # FOREMAN_GATE_HELD=999999 with no holder: ignored, the lock is really taken, and a second process waits on us
-        code = "import fmcore as c\nwith c.gate_lock('probe', timeout=0.5):\n    print('ok')"
-        env = {**os.environ, "PYTHONPATH": os.path.dirname(c.__file__), "FOREMAN_GATE_HELD": "999999"}
+        code = "from sampo import core as c\nwith c.gate_lock('probe', timeout=0.5):\n    print('ok')"
+        env = {**os.environ, "PYTHONPATH": os.path.dirname(os.path.dirname(c.__file__)), "FOREMAN_GATE_HELD": "999999"}
         os.environ["FOREMAN_GATE_HELD"] = "999999"
         try:
             with c.gate_lock("stale"):

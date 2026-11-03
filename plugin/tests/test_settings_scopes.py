@@ -4,7 +4,7 @@ import os
 
 from helpers import ForemanTestCase, read_text
 
-import fmcodetui as T
+from sampo import smithtui as T
 
 
 def write(path, text):
@@ -48,9 +48,9 @@ class Layers(ForemanTestCase):
 class App(ForemanTestCase):
     def setUp(self):
         super().setUp()
-        import fmsettings
+        from sampo import settings
         from unittest import mock
-        guard = mock.patch.object(fmsettings, "in_claude_code", return_value=False)  # the app's own terminal
+        guard = mock.patch.object(settings, "in_claude_code", return_value=False)  # the app's own terminal
         guard.start()
         self.addCleanup(guard.stop)
 

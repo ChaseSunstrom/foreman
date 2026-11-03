@@ -10,8 +10,8 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmplaybooks as pb
+from sampo import core as c
+from sampo import playbooks as pb
 
 SHIPPED = ("# Alpha\n\nUse when the alpha widget misbehaves.\n\n## The procedure\n\n1. Run {{test}} first.\n"
            "2. Then {{nosuch}}; CI: {{ci}}.\n3. Leave {{ .GoFiles }}, {{.Name}}, ${{matrix}} and {{{raw}}} alone.\n")
@@ -87,9 +87,9 @@ class Load(ForemanTestCase):
 
     def test_a_broken_map_is_one_note_not_silence(self):
         from unittest import mock
-        import fmmap
+        from sampo import map as smap
         p = c.find_project(self.repo)
-        with mock.patch.object(fmmap, "load", side_effect=ValueError("bad map")), \
+        with mock.patch.object(smap, "load", side_effect=ValueError("bad map")), \
                 mock.patch("sys.stderr", new_callable=__import__("io").StringIO) as err:
             text = pb.load("references/fix/alpha.md", self.lib, p)
         self.assertIn("1. Run {{test?}} first.", text)
@@ -222,11 +222,11 @@ class Writable(ForemanTestCase):
 
     def test_a_worker_may_show_a_playbook(self):
         import argparse
-        import fmcli
+        from sampo import cli
         for action in ("show", "route", "preview"):
-            self.assertTrue(fmcli._worker_may(argparse.Namespace(verb="playbooks", action=action)), action)
+            self.assertTrue(cli._worker_may(argparse.Namespace(verb="playbooks", action=action)), action)
         for action in ("eval", "blame"):  # --real spends; blame runs git in whatever repo FOREMAN_PLAYBOOKS names
-            self.assertFalse(fmcli._worker_may(argparse.Namespace(verb="playbooks", action=action)), action)
+            self.assertFalse(cli._worker_may(argparse.Namespace(verb="playbooks", action=action)), action)
 
     def test_a_shipped_playbook_names_a_fact(self):
         out = self.fm("playbooks", "show", "verify/verification-loop").stdout

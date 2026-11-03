@@ -12,33 +12,33 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "lib"))
-import fmcode  # noqa: E402
-import fmmodels  # noqa: E402
+from sampo import smith  # noqa: E402
+from sampo import models  # noqa: E402
 
 
 def run(argv, cwd):
-    env = dict(fmcode.worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-probe")
+    env = dict(smith.worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-probe")
     p = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
-    res = next(filter(None, map(fmmodels.stream_result, reversed(p.stdout.splitlines()))), None) or {}
+    res = next(filter(None, map(models.stream_result, reversed(p.stdout.splitlines()))), None) or {}
     u = res.get("usage") or {}
     seen = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
     return res, seen, p
 
 
 def main():
-    claude = fmcode.RUNNERS["claude"]
+    claude = smith.RUNNERS["claude"]
     ok = True
     with tempfile.TemporaryDirectory() as repo:
         subprocess.run(["git", "init", "-q", repo], check=True)
         ask = "Reply with the word OK and nothing else."
         today = [w.replace("{prompt}", ask) for w in shlex.split(claude["plan"])]
-        lean = today + fmcode.lean_args(claude, "plan")
+        lean = today + smith.lean_args(claude, "plan")
         (r1, before, _), (r2, after, p2) = run(today, repo), run(lean, repo)
         print(f"planner input tokens: as before {before}, lean {after}")
         if not (r1.get("result") and r2.get("result") and 0 < after < before):
             ok = False
             print(f"✗ lean planner: {r2.get('result')!r} {p2.stderr[-300:]}")
-        work = fmcode.worker_argv("claude", "Use the Write tool twice: create note.txt containing OK, then create .env "
+        work = smith.worker_argv("claude", "Use the Write tool twice: create note.txt containing OK, then create .env "
                                             "containing X=1. Then say what happened.")
         r3, _, p3 = run(work, repo)
         note, env = (os.path.exists(os.path.join(repo, f)) for f in ("note.txt", ".env"))

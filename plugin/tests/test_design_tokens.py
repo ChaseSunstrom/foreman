@@ -11,8 +11,8 @@ import unittest
 
 from helpers import PLUGIN, ForemanTestCase, read_text
 
-import fmcodetui
-import fmdesign
+from sampo import smithtui
+from sampo import design
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UI = os.path.join(HERE, "fixtures", "design-tokens", "ui")
@@ -50,30 +50,30 @@ class Palette(ForemanTestCase):
                              ("oklch(0.50 0.170 27)", "#B02B27"), ("oklch(1 0 0)", "#FFFFFF"),
                              ("oklch(0 0 0)", "#000000")):
             with self.subTest(value=value):
-                self.assertEqual(fmdesign.hex_of(fmdesign.parse_colour(value)), hexed)
+                self.assertEqual(design.hex_of(design.parse_colour(value)), hexed)
 
     def test_contrast_is_wcag_2_relative_luminance(self):
-        self.assertAlmostEqual(fmdesign.contrast((1, 1, 1), (0, 0, 0)), 21.0, places=6)
-        self.assertAlmostEqual(fmdesign.contrast((1, 1, 1), (1, 1, 1)), 1.0, places=6)
+        self.assertAlmostEqual(design.contrast((1, 1, 1), (0, 0, 0)), 21.0, places=6)
+        self.assertAlmostEqual(design.contrast((1, 1, 1), (1, 1, 1)), 1.0, places=6)
         rnd = random.Random(1507)
         for _ in range(300):  # an independent implementation: fm code's theme check, on 8-bit hex
             a, b = ("#%06x" % rnd.randrange(1 << 24) for _ in range(2))
-            self.assertAlmostEqual(fmdesign.contrast(fmdesign.parse_colour(a), fmdesign.parse_colour(b)),
-                                   fmcodetui.contrast(a, b), places=9)
+            self.assertAlmostEqual(design.contrast(design.parse_colour(a), design.parse_colour(b)),
+                                   smithtui.contrast(a, b), places=9)
 
     def test_srgb_to_oklch_round_trips(self):
         rnd = random.Random(7)
         for _ in range(200):
             h = "#%06X" % rnd.randrange(1 << 24)
-            L, C, hue = fmdesign.oklch_of(fmdesign.parse_colour(h))
-            self.assertEqual(fmdesign.hex_of(fmdesign.parse_colour(f"oklch({L} {C} {hue})")), h)
+            L, C, hue = design.oklch_of(design.parse_colour(h))
+            self.assertEqual(design.hex_of(design.parse_colour(f"oklch({L} {C} {hue})")), h)
 
     def test_every_seed_gives_passing_pairs_in_both_themes(self):
         for seed in SEEDS:
             with self.subTest(seed=seed):
-                pal = fmdesign.palette(seed)
-                self.assertEqual(set(pal["light"]), set(fmdesign.ROLES))
-                self.assertEqual(set(pal["dark"]), set(fmdesign.ROLES))
+                pal = design.palette(seed)
+                self.assertEqual(set(pal["light"]), set(design.ROLES))
+                self.assertEqual(set(pal["dark"]), set(design.ROLES))
                 self.assertEqual([p for p in pal["proofs"] if not p["pass"]], [])
                 for surface in ("surface", "surface-raised", "surface-sunken"):
                     self.assertGreaterEqual(ratio_of(pal["proofs"], "text", surface, "light"), 4.5)
@@ -81,17 +81,17 @@ class Palette(ForemanTestCase):
                 for theme in ("light", "dark"):
                     for role, tok in pal[theme].items():
                         self.assertRegex(tok["hex"], r"^#[0-9A-F]{6}$")
-                        self.assertTrue(fmdesign.in_gamut(*tok["oklch"]), (theme, role, tok))
+                        self.assertTrue(design.in_gamut(*tok["oklch"]), (theme, role, tok))
 
     def test_every_solved_pair_clears_its_floor_by_a_margin(self):
         # one 8-bit channel step can move a ratio by a few hundredths: a pair landing at exactly 4.50 isn't safe
         for seed in SEEDS:
-            for p in fmdesign.palette(seed)["proofs"]:
+            for p in design.palette(seed)["proofs"]:
                 with self.subTest(seed=seed, pair=(p["fg"], p["bg"], p["theme"])):
                     self.assertGreaterEqual(p["ratio"], p["need"] + 0.03)
 
     def test_the_accent_keeps_the_seeds_hue(self):
-        pal = fmdesign.palette("oklch(0.55 0.15 30)")
+        pal = design.palette("oklch(0.55 0.15 30)")
         for theme in ("light", "dark"):
             L, C, h = pal[theme]["accent"]["oklch"]
             self.assertAlmostEqual(h, 30, delta=1)
@@ -108,15 +108,15 @@ class Palette(ForemanTestCase):
         p = self.fm("design", "contrast", path, "--json")
         data = json.loads(p.stdout)
         self.assertEqual(data["failed"], 0)
-        pal = fmdesign.palette("#3366cc")
+        pal = design.palette("#3366cc")
         for x in data["proofs"]:  # the file proves the same numbers palette printed
             self.assertAlmostEqual(x["ratio"], ratio_of(pal["proofs"], x["fg"], x["bg"], x["theme"]), places=6)
 
     def test_dtcg_export(self):
         data = json.loads(self.fm("design", "palette", "#3366cc", "--format", "dtcg").stdout)
-        pal = fmdesign.palette("#3366cc")
+        pal = design.palette("#3366cc")
         for theme in ("light", "dark"):
-            for role in fmdesign.ROLES:
+            for role in design.ROLES:
                 tok = data[theme][role]
                 self.assertEqual(tok["$type"], "color")
                 self.assertEqual(tok["$value"]["colorSpace"], "oklch")
@@ -126,7 +126,7 @@ class Palette(ForemanTestCase):
     def test_tailwind_export(self):
         out = self.fm("design", "palette", "#3366cc", "--format", "tailwind").stdout
         self.assertIn("@theme inline {", out)
-        for role in fmdesign.ROLES:
+        for role in design.ROLES:
             self.assertIn(f"--color-{role}: var(--{role});", out)
             self.assertIn(f"--{role}: light-dark(", out)
 
@@ -273,7 +273,7 @@ class Extract(ForemanTestCase):
         path = os.path.join(self.tmp, "t.css")
         with open(path, "w", encoding="utf-8") as f:
             f.write(css)
-        return fmdesign.read_tokens(path)
+        return design.read_tokens(path)
 
     def test_which_blocks_hold_tokens(self):
         base, dark = self.tokens_of(
@@ -346,8 +346,8 @@ class Extract(ForemanTestCase):
         with open(os.path.join(path, "a.css"), "w") as f:
             f.write(":root { --x: oklch(" + "1" * 200_000 + "x); }\n" + ":not(" * 50_000 + "{ }\n" + "#{" * 50_000)
         t = time.process_time()
-        fmdesign.extract([path])
-        fmdesign.check_pairs(fmdesign.read_tokens(os.path.join(path, "a.css")), ["x/x"], strict=False)
+        design.extract([path])
+        design.check_pairs(design.read_tokens(os.path.join(path, "a.css")), ["x/x"], strict=False)
         self.assertLess(time.process_time() - t, 5)  # CPU: in-process complexity bar
 
     def test_a_worker_of_fm_code_may_not_extract(self):
@@ -399,7 +399,7 @@ class Extract(ForemanTestCase):
     def test_contrast_runs_without_foreman_for_ci(self):
         import subprocess
         import sys
-        p = subprocess.run([sys.executable, os.path.join(PLUGIN, "lib", "fmdesign.py"), "contrast",
+        p = subprocess.run([sys.executable, os.path.join(PLUGIN, "lib", "sampo", "design.py"), "contrast",
                             os.path.join(UI, "tokens.css"), "text/surface:4.5,7"], capture_output=True, text=True,
                            timeout=30)
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -411,11 +411,11 @@ class Extract(ForemanTestCase):
         path = os.path.join(self.tmp, "colour.css")
         with open(path, "w", encoding="utf-8") as f:
             f.write(re.search(r"(?ms)^```css\n(.*?)^```", text).group(1))
-        tokens = fmdesign.read_tokens(path)
+        tokens = design.read_tokens(path)
         rows = re.findall(r"(?m)^\| `([\w-]+)`(?: \(links\))? on `([\w-]+)` \| [^|]+ \| ([\d.]+) \| ([\d.]+) \|$", text)
         self.assertGreaterEqual(len(rows), 12)
         for fg, bg, light, dark in rows:
-            proofs, _ = fmdesign.check_pairs(tokens, [f"{fg}/{bg}"])
+            proofs, _ = design.check_pairs(tokens, [f"{fg}/{bg}"])
             with self.subTest(pair=(fg, bg)):
                 self.assertEqual((f"{ratio_of(proofs, fg, bg, 'light'):.2f}", f"{ratio_of(proofs, fg, bg, 'dark'):.2f}"),
                                  (light, dark))
@@ -438,8 +438,8 @@ class Extract(ForemanTestCase):
             self.assertIn("fm design extract", doc)
             self.assertIn("`## Direction` section", doc)
         self.assertIn("## Tokens", direction_md)
-        self.assertTrue(fmdesign.has_direction("# D\n\n## Direction\nPoster, audacity wild.\n"))
-        self.assertFalse(fmdesign.has_direction("# D\n\n## Tokens\n\n```\n## Direction\n```\n"))
+        self.assertTrue(design.has_direction("# D\n\n## Direction\nPoster, audacity wild.\n"))
+        self.assertFalse(design.has_direction("# D\n\n## Tokens\n\n```\n## Direction\n```\n"))
 
 
 if __name__ == "__main__":

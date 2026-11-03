@@ -7,8 +7,8 @@ import subprocess
 from helpers import ForemanTestCase
 from test_hooks import HookCase
 
-import fmcli
-import fmcore as c
+from sampo import cli
+from sampo import core as c
 
 
 def block(path, body):
@@ -26,7 +26,7 @@ class CompactDiff(ForemanTestCase):
                 + block("MASTER.md", f"@@ -1,2 +1,2 @@\n{long_ctx}\n-a\n{long_add}\n")
                 + block("plugin/tests/fixtures/run.txt", "@@ -0,0 +1,3 @@\n+f1\n+f2\n+f3\n")
                 + block("package-lock.json", "@@ -1 +1 @@\n-x\n+y\n"))
-        out = fmcli._compact_diff(diff)
+        out = cli._compact_diff(diff)
         self.assertEqual(out.count("+new rule"), 1, "one copy of a repeated change")
         self.assertIn("plugin/evals/x/prompt.md: the same change as plugin/rules/foreman.md", out)
         self.assertIn("plugin/evals/y/prompt.md: the same change as plugin/rules/foreman.md", out)
@@ -38,14 +38,14 @@ class CompactDiff(ForemanTestCase):
         self.assertLess(len(out), len(diff))
 
     def test_pre_audit_flags_a_hotspot_file_only(self):
-        import fmmap
-        found = [x for x in fmmap.pre_audit(self.repo, "", ["a.py", "b.py"], {"fixy": {"a.py": 4}}) if "hotspot" in x]
+        from sampo import map as smap
+        found = [x for x in smap.pre_audit(self.repo, "", ["a.py", "b.py"], {"fixy": {"a.py": 4}}) if "hotspot" in x]
         self.assertEqual(len(found), 1)
         self.assertIn("a.py", found[0])
 
     def test_a_file_with_a_changed_line_over_4000_chars_is_left_out(self):
         long = "x" * 20000
-        out = fmcli._compact_diff(block("demo/live.cast", f"@@ -0,0 +1,2 @@\n+{long}\n+short\n")
+        out = cli._compact_diff(block("demo/live.cast", f"@@ -0,0 +1,2 @@\n+{long}\n+short\n")
                                   + block("a.py", "@@ -1 +1 @@\n-x = 1\n+x = 2\n"))
         self.assertIn("demo/live.cast: generated or minified (a changed line over 4000 characters), +2 −0 lines, left out", out)
         self.assertNotIn("x" * 100, out)
@@ -53,7 +53,7 @@ class CompactDiff(ForemanTestCase):
 
     def test_a_plain_diff_is_unchanged(self):
         diff = block("a.py", "@@ -1 +1 @@\n-x = 1\n+x = 2\n")
-        self.assertEqual(fmcli._compact_diff(diff), diff)
+        self.assertEqual(cli._compact_diff(diff), diff)
 
 
 PERSONAS = ("art director", "accessibility reviewer", "first-time user")
@@ -106,8 +106,8 @@ class DesignLens(HookCase):
         self.assertIn("ok.png", design)
 
     def test_only_a_lens_heading_switches_the_lens(self):  # review: "## Design notes" is not the design lens
-        import fmlanes
-        got = fmlanes.reviewer_findings("## maintainer\n- LOW — a.py:1 — x\n## Design notes\n- LOW — b.py:2 — y\n"
+        from sampo import lanes
+        got = lanes.reviewer_findings("## maintainer\n- LOW — a.py:1 — x\n## Design notes\n- LOW — b.py:2 — y\n"
                                         "## Edge cases\n- LOW — c.py:3 — z\n## lens: design\n- LOW — d.py:4 — w\n"
                                         "## edge: changes needed\n- LOW — e.py:5 — v")
         self.assertEqual([x[0] for x in got], ["maintainer"] * 3 + ["design", "edge"])
@@ -186,38 +186,38 @@ class DesignLens(HookCase):
         self.assertIn("m.py: f, g", text)
 
     def test_hunk_header_text_is_plain_and_bounded(self):  # T-2312: repo text is data
-        import fmlanes
+        from sampo import lanes
         d = ("diff --git a/x.c b/x.c\n--- a/x.c\n+++ b/x.c\n@@ -1 +1 @@ int \x1b]0;pwn\x07evil" + "z" * 200 + "(void)\n"
              "@@ -9 +9 @@\n")
-        got = fmlanes.functions_changed(d)["x.c"]
+        got = lanes.functions_changed(d)["x.c"]
         self.assertEqual(len(got), 1)
         self.assertNotIn("\x1b", got[0])
         self.assertLessEqual(len(got[0]), 40)
 
     def test_function_names_credit_changed_defs_skip_quoted_files_and_say_how_many_more(self):  # T-2312 review
-        import fmlanes
+        from sampo import lanes
         d = ("diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n"
              "@@ -3 +3 @@ def prev():\n-def f(a):\n+def f(a, b):\n"
              "@@ -9,0 +10,2 @@ def prev():\n+async def added():\n+    pass\n"
              'diff --git "a/q\\303\\251.py" "b/q\\303\\251.py"\n@@ -1 +1 @@ def stray():\n'
              "diff --git a/n.py b/n.py\n" + "".join(f"@@ -{i} +{i} @@ def g{i}():\n" for i in range(1, 12)))
-        got = fmlanes.functions_changed(d)
+        got = lanes.functions_changed(d)
         self.assertEqual(got["m.py"], ["f", "added"], "a changed def is not credited to the function before it")
         self.assertNotIn("stray", str(got))
         self.assertEqual(got["n.py"][:2], ["g1", "g2"])
-        self.assertIn("+3 more", fmlanes.functions_line(got))
+        self.assertIn("+3 more", lanes.functions_line(got))
 
     def test_a_hunk_names_git_context_and_its_defs_unless_it_starts_on_a_def_line(self):  # T-2312: never hide an edit
-        import fmlanes
+        from sampo import lanes
         both = ("diff --git a/m.py b/m.py\n@@ -4 +4,3 @@ def f():\n-    return 1\n+    return 2\n+\n+def g():\n")
-        self.assertEqual(fmlanes.functions_changed(both)["m.py"], ["f", "g"])
+        self.assertEqual(lanes.functions_changed(both)["m.py"], ["f", "g"])
         sig = "diff --git a/m.py b/m.py\n@@ -3 +3 @@ def prev():\n-def f(a):\n+def f(a, b):\n"
-        self.assertEqual(fmlanes.functions_changed(sig)["m.py"], ["f"])
+        self.assertEqual(lanes.functions_changed(sig)["m.py"], ["f"])
 
     def test_a_secret_in_a_hunk_header_reaches_neither_the_brief_nor_the_merge_output(self):  # T-2312 review
-        import fmlanes
+        from sampo import lanes
         key = "sk-live-9f8e7d6c5b4a39281706"
-        self.assertNotIn(key, str(fmlanes.functions_changed(
+        self.assertNotIn(key, str(lanes.functions_changed(
             f'diff --git a/a.py b/a.py\n@@ -5 +5 @@ API_KEY = "{key}"\n')))
         self.write(".env", f"TOKEN={key}\nA=1\nB=2\nC=3\nD=4\n")
         self.write("a.py", f'API_KEY = "{key}"\nA=1\nB=2\nC=3\nD=4\n')

@@ -40,8 +40,8 @@ atexit.register(shutil.rmtree, CLEAN_READER, True)
 os.environ.setdefault("FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
 # T-1791: the Claude Code env fm install-user sets (T-1796's 200k compact window) belongs to the running session, not a
 # test: the bench stub read an inherited window as a soak and 10 tests failed in every installed session
-import fmsetup  # noqa: E402
-for _k in fmsetup.ENV:
+from sampo import setup  # noqa: E402
+for _k in setup.ENV:
     os.environ.pop(_k, None)
 
 
@@ -257,7 +257,7 @@ def stub_corpus_replay(repo, drifted=0, days=0, cases=3):
     """T-1401: the ledger record fm replay --cases leaves, without running the replay: red when drifted, days old."""
     import time
     from unittest import mock
-    import fmcore as c
+    from sampo import core as c
     p = c.find_project(repo, create=True)
     with mock.patch.object(c, "now", return_value=c.iso(time.time() - days * 86400)):
         c.log_event(p, "guard_corpus", data={"cases": cases, "drifted": drifted, "broken": 0})
@@ -277,7 +277,7 @@ def git_repo(parent, name="app"):
     return root
 
 
-class ForemanTestCase(unittest.TestCase):
+class SampoTestCase(unittest.TestCase):
     """Each test gets its own FOREMAN_HOME and a scratch git repo."""
 
     def setUp(self):
@@ -366,6 +366,9 @@ class ForemanTestCase(unittest.TestCase):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             os.symlink(sys.executable, path)
         return path
+
+
+ForemanTestCase = SampoTestCase  # T-2748: the old name, which most test files still import
 
 
 # T-1361: misbehaving fake runner CLIs. One small sh script per failure mode; each ends by itself in seconds even if

@@ -5,7 +5,7 @@ import time
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys, time
@@ -97,12 +97,12 @@ class Ideas(Stubbed):
         self.assertNotIn("super improve it", " ".join(calls[0]["args"]))
 
     def test_the_grid_lens_sends_its_note_to_the_child(self):  # T-2672
-        import fmideas
-        self.assertIn("one idea per cell", fmideas.LENS_NOTES["grid"])
+        from sampo import ideas
+        self.assertIn("one idea per cell", ideas.LENS_NOTES["grid"])
         self.fm("ideas", "--pack", self.pack, "--lens", "grid", env=self.env)
         stdin = self.calls()[0]["stdin"]
         self.assertIn("Lens: grid", stdin)
-        self.assertIn(fmideas.LENS_NOTES["grid"], stdin)
+        self.assertIn(ideas.LENS_NOTES["grid"], stdin)
 
     def test_the_pack_is_one_cached_system_prompt_and_the_first_child_warms_it(self):  # T-1265
         env = dict(self.env, STUB_SLEEP="1", FOREMAN_IDEAS_WARM="5", STUB_JSON="1")
@@ -123,11 +123,11 @@ class Ideas(Stubbed):
         self.assertEqual(manifest["cache"], {"read": 200, "written": 100})
 
     def test_a_pack_that_already_carries_the_users_words_gets_them_once(self):  # T-2249
-        import fmcore as c
-        import fmideas
+        from sampo import core as c
+        from sampo import ideas
         self.fm("task", "new", "make the totals add up", "--type", "FIX", "--tier", "S", "--ac", "ok :: true",
                 "--step", "s")
-        voice = fmideas.user_voice(c.find_project(self.repo))
+        voice = ideas.user_voice(c.find_project(self.repo))
         self.assertIn("make the totals add up", voice)
         with open(self.pack, "a") as f:  # what fm mission writes
             f.write(voice)
@@ -225,7 +225,7 @@ class Ideas(Stubbed):
         # asks no idea predicted feed the next brainstorm, with a lens that turns each into the question that would have
         # caught it, and each run leaves questions for the next ("prompt yourself on how to prompt yourself")
         import re
-        import fmideas
+        from sampo import ideas
         p = c.find_project(self.repo)
         d = os.path.join(p.dir, "research", "brainstorm-20250101-000000")
         os.makedirs(d)
@@ -243,9 +243,9 @@ class Ideas(Stubbed):
         cap("Add a skills catalogue that Claude reaches for")  # predicted
         miss = cap("Refresh the website docs for the code UI")
         cap("Clean the cache folder", "discovered")  # not the user's ask
-        self.assertEqual(fmideas.misses(p), [(miss, "Refresh the website docs for the code UI")])
-        import fmmission  # fm mission passes its own lenses, so it adds the blind-spots one itself
-        self.assertIn("blind spots", fmmission.compose(p)["lenses"])
+        self.assertEqual(ideas.misses(p), [(miss, "Refresh the website docs for the code UI")])
+        from sampo import mission  # fm mission passes its own lenses, so it adds the blind-spots one itself
+        self.assertIn("blind spots", mission.compose(p)["lenses"])
         self.env["STUB_QUESTION"] = "Which screen did nobody open?"
         res = json.loads(self.fm("ideas", "--pack", self.pack, "--json", env=self.env).stdout)
         lenses = {next(l for l in x["stdin"].splitlines() if l.startswith("Lens: "))[6:].split(" — ")[0]
@@ -263,7 +263,7 @@ class Ideas(Stubbed):
         last = self.calls()[-1]["stdin"]
         self.assertIn("- Which screen did nobody open?", last)
         self.assertNotIn("Lens: blind spots", last, "a caller's own lenses stay as given")
-        prompt = read_text(fmideas.PROMPT)
+        prompt = read_text(ideas.PROMPT)
         self.assertIn("Next question:", prompt)
         self.assertIn('"blind spots"', prompt)
 
@@ -279,8 +279,8 @@ class Ideas(Stubbed):
         lenses = {next(l for l in x["stdin"].splitlines() if l.startswith("Lens: "))[6:] for x in self.calls()}
         self.assertTrue({"capability map", "approaches"} <= lenses, lenses)
         self.assertIn("10-15 ideas", self.calls()[0]["stdin"])
-        import fmideas
-        prompt = read_text(fmideas.PROMPT)
+        from sampo import ideas
+        prompt = read_text(ideas.PROMPT)
         self.assertIn('"capability map"', prompt)
         self.assertIn('"approaches"', prompt)
 
@@ -311,11 +311,11 @@ class Ideas(Stubbed):
 class ChildCommand(ForemanTestCase):
     def test_children_carry_the_run_cap(self):
         """T-0776: a runaway child stops at fm budget's per-command cap."""
-        import fmbudget
-        import fmideas
-        import fmresearch
-        cap = f"{fmbudget.effective()[0]['run']:g}"
-        for argv in (fmideas.child_cmd("haiku", "s"), fmresearch._child("haiku", "WebFetch", "s")):
+        from sampo import budget
+        from sampo import ideas
+        from sampo import research
+        cap = f"{budget.effective()[0]['run']:g}"
+        for argv in (ideas.child_cmd("haiku", "s"), research._child("haiku", "WebFetch", "s")):
             self.assertEqual(argv[argv.index("--max-budget-usd") + 1], cap)
 
 
@@ -405,5 +405,5 @@ class SeenIndex(ForemanTestCase):
 
     def test_seen_reads_only_the_idea_sections(self):
         # T-1056: coverage and kill bullets were read back as idea titles
-        import fmideas
-        self.assertEqual(fmideas.seen_titles(self.INDEX), ["Cache the parser", "Quote shell paths", "Warm the cache at start"])
+        from sampo import ideas
+        self.assertEqual(ideas.seen_titles(self.INDEX), ["Cache the parser", "Quote shell paths", "Warm the cache at start"])

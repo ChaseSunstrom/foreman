@@ -14,8 +14,8 @@ import urllib.parse
 
 from helpers import ForemanTestCase, read_text
 
-import fmsettings
-import fmsettingsserve
+from sampo import settings
+from sampo import settingsserve
 
 
 class Serve(ForemanTestCase):
@@ -26,14 +26,14 @@ class Serve(ForemanTestCase):
         self.toml = os.path.join(self.home, "tui.toml")
         self.settings = os.path.join(self.uhome, ".claude", "settings.json")
         self.patches = [mock.patch.dict(os.environ, {"HOME": self.uhome}),
-                        mock.patch.object(fmsettings, "in_claude_code", return_value=False)]
+                        mock.patch.object(settings, "in_claude_code", return_value=False)]
         for x in self.patches:
             x.start()
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
-        self.server, self.token = fmsettingsserve.make()
+        self.server, self.token = settingsserve.make()
         self.port = self.server.server_address[1]
         self.stop = threading.Event()
-        self.thread = threading.Thread(target=fmsettingsserve.serve, args=(self.server, 30, self.stop), daemon=True)
+        self.thread = threading.Thread(target=settingsserve.serve, args=(self.server, 30, self.stop), daemon=True)
         self.thread.start()
         self.cookie = None
 
@@ -73,7 +73,7 @@ class Serve(ForemanTestCase):
     def test_binds_loopback_only_with_a_long_random_token(self):
         self.assertEqual(self.server.server_address[0], "127.0.0.1")
         self.assertGreaterEqual(len(self.token), 43, "32 bytes from secrets, url-safe")
-        self.assertNotEqual(fmsettingsserve.make()[1], self.token)
+        self.assertNotEqual(settingsserve.make()[1], self.token)
 
     def test_the_url_token_works_once_and_becomes_a_cookie(self):
         h = self.login()
@@ -92,7 +92,7 @@ class Serve(ForemanTestCase):
         self.login()
         status, body, h = self.req()
         self.assertEqual(status, 200)
-        for e in fmsettings.schema():
+        for e in settings.schema():
             self.assertIn(html.escape(e["key"]), body)
         self.assertIn("default-src 'none'", h["Content-Security-Policy"])
         self.assertEqual(h["X-Frame-Options"], "DENY")
@@ -101,9 +101,9 @@ class Serve(ForemanTestCase):
         self.assertNotIn("<script", body)
 
     def test_schema_text_is_escaped(self):
-        evil = dict(fmsettings.schema()[0], help='<script>alert(1)</script>"', key="x<b>")
-        with mock.patch.object(fmsettings, "rows", return_value=[dict(evil, value="<i>", where="w")]):
-            page = fmsettingsserve.page("nonce", "")
+        evil = dict(settings.schema()[0], help='<script>alert(1)</script>"', key="x<b>")
+        with mock.patch.object(settings, "rows", return_value=[dict(evil, value="<i>", where="w")]):
+            page = settingsserve.page("nonce", "")
         self.assertNotIn("<script>", page)
         self.assertNotIn("x<b>", page)
         self.assertIn("&lt;script&gt;", page)
@@ -113,7 +113,7 @@ class Serve(ForemanTestCase):
         self.assertEqual(self.req(path="/?t=" + "x" * len(self.token))[0], 403)
         self.assertEqual(self.req(path="/?t=%C3%A9%FF")[0], 403)
         self.assertEqual(self.req(path=f"/?t={self.token}x")[0], 403)
-        self.assertEqual(self.req(headers={"Cookie": f"{fmsettingsserve.cookie_name(self.port)}={self.token}"})[0],
+        self.assertEqual(self.req(headers={"Cookie": f"{settingsserve.cookie_name(self.port)}={self.token}"})[0],
                          403, "the URL's token isn't the cookie")
         self.assertEqual(self.req(headers={"Cookie": "bad\x7f;;=="})[0], 403)
         self.login()  # wrong tries never spend the real token
@@ -142,7 +142,7 @@ class Serve(ForemanTestCase):
         for m in ("PUT", "DELETE", "OPTIONS", "PATCH"):
             self.assertIn(self.req(m)[0], (405, 501), m)
         h = {"Origin": f"http://127.0.0.1:{self.port}"}
-        big = "key=border&value=" + "d" * (fmsettingsserve.BODY_MAX + 1)
+        big = "key=border&value=" + "d" * (settingsserve.BODY_MAX + 1)
         self.assertEqual(self.req("POST", "/set", big, h)[0], 413)
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)  # a digit int() takes that isn't ASCII
         c.putrequest("POST", "/set", skip_host=True)
@@ -165,8 +165,8 @@ class Serve(ForemanTestCase):
             slow.close()
 
     def test_a_valid_change_lands_through_the_setter(self):
-        real = fmsettings.set_key
-        with mock.patch.object(fmsettings, "set_key", side_effect=real) as setter:
+        real = settings.set_key
+        with mock.patch.object(settings, "set_key", side_effect=real) as setter:
             status, body, _ = self.post({"key": "border", "value": "double", "surface": "app"})
         self.assertEqual(status, 200, body)
         setter.assert_called_once()
@@ -179,12 +179,12 @@ class Serve(ForemanTestCase):
             f.write('[profile.tmux]\nwhen = { tmux = true }\nborder = "double"\n')
         status, body, _ = self.post({"key": "border", "value": "heavy", "surface": "app"})
         self.assertEqual(status, 200, body)
-        self.assertIn(html.escape(fmsettings.overrides("border")[0]), body)
+        self.assertIn(html.escape(settings.overrides("border")[0]), body)
 
     def test_an_invalid_value_is_refused_with_the_setters_message(self):
         status, body, _ = self.post({"key": "border", "value": "nope", "surface": "app"})
         self.assertEqual(status, 422)
-        _, refused = fmsettings.set_key("border", "nope", "app")
+        _, refused = settings.set_key("border", "nope", "app")
         self.assertTrue(refused)
         self.assertIn(html.escape(refused[0]), body)
         self.assertFalse(os.path.exists(self.toml) and "nope" in read_text(self.toml))
@@ -196,8 +196,8 @@ class Serve(ForemanTestCase):
         with open(self.settings, "w", encoding="utf-8") as f:
             json.dump({"model": "x"}, f)
         before = read_text(self.settings)
-        with mock.patch.object(fmsettings, "in_claude_code", return_value=True), \
-                mock.patch.object(fmsettings, "_guard_block", return_value="the guard says no") as guard:
+        with mock.patch.object(settings, "in_claude_code", return_value=True), \
+                mock.patch.object(settings, "_guard_block", return_value="the guard says no") as guard:
             status, body, _ = self.post({"key": "motion", "value": "off"})  # both surfaces
         self.assertTrue(guard.called)
         self.assertGreaterEqual(status, 400)
@@ -207,8 +207,8 @@ class Serve(ForemanTestCase):
         self.assertFalse(os.path.exists(self.toml))
 
     def test_it_stops_when_idle(self):
-        server, _ = fmsettingsserve.make()
-        t = threading.Thread(target=fmsettingsserve.serve, args=(server, 0.3), daemon=True)
+        server, _ = settingsserve.make()
+        t = threading.Thread(target=settingsserve.serve, args=(server, 0.3), daemon=True)
         start = time.monotonic()
         t.start()
         t.join(5)

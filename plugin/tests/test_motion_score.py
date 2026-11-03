@@ -9,7 +9,7 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmmotion
+from sampo import motion as smotion
 
 DESIGN = """# DESIGN.md: demo
 
@@ -61,7 +61,7 @@ class Format(ForemanTestCase):
         return path
 
     def problems(self, text, **kw):
-        return [f"{p['motion']}: {p['problem']}" for p in fmmotion.check(self.score(text, **kw))["problems"]]
+        return [f"{p['motion']}: {p['problem']}" for p in smotion.check(self.score(text, **kw))["problems"]]
 
     def test_a_motion_without_a_reduced_form_fails_naming_it(self):
         text = GOOD.replace('reduced = "instant"\n', "")
@@ -71,7 +71,7 @@ class Format(ForemanTestCase):
         self.assertIn("reduced", got[0])
 
     def test_a_good_score_resolves_its_tokens(self):
-        got = fmmotion.check(self.score(GOOD))
+        got = smotion.check(self.score(GOOD))
         self.assertEqual(got["problems"], [])
         by = {m["name"]: m for m in got["motions"]}
         self.assertEqual([by[n]["ms"] for n in ("menu-enter", "row-move", "badge-pulse")], [220, 300, 300])
@@ -117,7 +117,7 @@ class Format(ForemanTestCase):
         for text, name in (("[[motion]\n", "motion.toml"), ("{", "m.json"), ("[1]", "m.json"),
                            ("[" * 100000 + "]" * 100000, "deep.json")):
             with self.subTest(text=text[:20]), self.assertRaises(ValueError):
-                fmmotion.check(self.score(text, name=name))
+                smotion.check(self.score(text, name=name))
         fifo, big, latin = (os.path.join(self.repo, n) for n in ("fifo.toml", "big.toml", "latin.toml"))
         os.mkfifo(fifo)  # read with O_NONBLOCK: refused, never waited on
         with open(big, "w") as f:
@@ -126,13 +126,13 @@ class Format(ForemanTestCase):
             f.write(b'[[motion]]\nname = "caf\xe9"\n')
         for path, want in ((fifo, "not a regular file"), (big, "over 1000 KB"), (latin, "not UTF-8")):
             with self.subTest(path=path), self.assertRaisesRegex(ValueError, want):
-                fmmotion.check(path)
+                smotion.check(path)
 
     def test_named_tables_work_like_entries(self):
         text = ('[motion.menu-enter]\nduration = 220\neasing = " Ease-Out "\nproperties = ["opacity"]\nreduced = "none"\n'
                 '[motion.row]\nname = "other"\nduration = 100\neasing = "linear"\nproperties = ["opacity"]\n'
                 'reduced = "fade"\n')
-        got = fmmotion.check(self.score(text))
+        got = smotion.check(self.score(text))
         self.assertEqual([(m["name"], m["curve"]) for m in got["motions"]], [("menu-enter", "ease-out"), ("row", "linear")])
         self.assertEqual([f"{p['motion']}: {p['problem']}" for p in got["problems"]],
                          ["row: name 'other' differs from its table key"])
@@ -158,7 +158,7 @@ class Format(ForemanTestCase):
         for easing in [*good, *bad]:
             text = f'[motion.a]\nduration = 100\neasing = "{easing}"\nproperties = ["opacity"]\nreduced = "fade"\n'
             with self.subTest(easing=easing):
-                got = fmmotion.check(self.score(text))
+                got = smotion.check(self.score(text))
                 if easing in good:
                     self.assertEqual((got["problems"], got["motions"][0]["curve"]), ([], good[easing]))
                 else:
@@ -172,7 +172,7 @@ class Format(ForemanTestCase):
                'reduced = "fade"\n'
         for design in (DESIGN.replace("## Next", extra), DESIGN.replace("## Next", extra).replace("## Tokens", "## TOKENS")):
             with self.subTest(design=design[:30]):
-                got = fmmotion.check(self.score(text, design=design))
+                got = smotion.check(self.score(text, design=design))
                 self.assertEqual(got["problems"], [])
                 self.assertEqual([(m["ms"], m["curve"]) for m in got["motions"]],
                                  [(90, "linear(0, 0.5 50%, 1)"), (220, "linear")])
@@ -196,7 +196,7 @@ class Format(ForemanTestCase):
         with open(os.path.join(self.repo, "tokens.css"), "w") as f:
             f.write(f":root {{\n  --ease-spring: {curve};\n}}\n")
         self.fm("design", "extract", "tokens.css")
-        got = fmmotion.check(self.score('[motion.a]\nduration = 300\neasing = "--ease-spring"\nproperties = ["opacity"]\n'
+        got = smotion.check(self.score('[motion.a]\nduration = 300\neasing = "--ease-spring"\nproperties = ["opacity"]\n'
                                         'reduced = "fade"\n', design=None))
         self.assertEqual((got["problems"], got["motions"][0]["curve"]), ([], curve))
 
@@ -205,7 +205,7 @@ class Format(ForemanTestCase):
             f.write(":root {\n  --dur-enter: 220ms;\n  --ease-brand: cubic-bezier(0.2, 0, 0, 1);\n"
                     "  --dur-slow: .3s;\n}\n")
         self.fm("design", "extract", "tokens.css")
-        got = fmmotion.check(self.score(GOOD, design=None))
+        got = smotion.check(self.score(GOOD, design=None))
         self.assertEqual(got["problems"], [])
         self.assertEqual([(m["ms"], m["curve"]) for m in got["motions"]][::2],
                          [(220, "cubic-bezier(0.05, 0.7, 0.1, 1)"), (300, "cubic-bezier(0.2, 0, 0, 1)")])
@@ -232,13 +232,13 @@ class Compile(ForemanTestCase):
 
     def targets(self, text=GOOD, **kw):
         path = self.score(text, **kw)
-        out = {to: fmmotion.compile_score(path, to) for to in fmmotion.TARGETS}
+        out = {to: smotion.compile_score(path, to) for to in smotion.TARGETS}
         self.assertTrue(all(problems == [] for _, problems in out.values()), out)
         return {to: t for to, (t, _) in out.items()}
 
     def test_every_target_carries_the_scores_durations_and_easings(self):
         got = self.targets()
-        motions = fmmotion.check(os.path.join(self.repo, "motion.toml"))["motions"]
+        motions = smotion.check(os.path.join(self.repo, "motion.toml"))["motions"]
         css, _ = css_vars(got["css"])
         for m in motions:
             n = m["name"]
@@ -285,7 +285,7 @@ class Compile(ForemanTestCase):
     def test_the_header_label_cant_end_its_comment(self):
         for name in ("x*/a{}</*.toml", "a*", "</style>"):
             with self.subTest(name=name):
-                label = fmmotion._label(name)
+                label = smotion._label(name)
                 self.assertNotIn("*/", label)
                 self.assertNotIn("</", label)
         css = self.targets(name="a*.toml")["css"]
@@ -366,7 +366,7 @@ console.log(JSON.stringify({{ full, reduce, app: run(), table }}));
         self.assertEqual(got["table"], [False, True, True, True, False, True])
 
     def test_a_score_with_problems_compiles_nothing(self):
-        text, problems = fmmotion.compile_score(self.score(GOOD.replace('reduced = "none"\n', "")), "css")
+        text, problems = smotion.compile_score(self.score(GOOD.replace('reduced = "none"\n', "")), "css")
         self.assertIsNone(text)
         self.assertIn("badge-pulse", problems[0]["motion"])
 
@@ -404,7 +404,7 @@ class Lab(ForemanTestCase):
     score = Format.score
 
     def page(self, text=GOOD):
-        page, problems = fmmotion.compile_score(self.score(text), "lab")
+        page, problems = smotion.compile_score(self.score(text), "lab")
         self.assertEqual(problems, [])
         return page
 
@@ -413,7 +413,7 @@ class Lab(ForemanTestCase):
         self.assertTrue(page.startswith("<!doctype html>"))
         self.assertNotIn("<script src", page)  # self-contained: opens from a file, offline
         data = json.loads(re.search(r"const MOTIONS = (.*);\n", page).group(1))
-        want = fmmotion.check(os.path.join(self.repo, "motion.toml"))["motions"]
+        want = smotion.check(os.path.join(self.repo, "motion.toml"))["motions"]
         self.assertEqual([(m["name"], m["ms"], m["curve"], m["reduced"]) for m in data],
                          [(m["name"], m["ms"], m["curve"], m["reduced"]) for m in want])
         self.assertEqual(data[1]["bezier"], [0.45, 0, 0.2, 1])  # handles to drag

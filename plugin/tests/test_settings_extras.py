@@ -11,10 +11,10 @@ import unittest.mock as mock
 
 from helpers import ForemanTestCase, read_text
 
-import fmcli
-import fmcodetui as T
-import fmideas
-import fmsettings
+from sampo import cli
+from sampo import smithtui as T
+from sampo import ideas
+from sampo import settings as ssettings
 
 STUB = """#!/usr/bin/env python3
 import json, os, sys
@@ -34,7 +34,7 @@ class _Home(ForemanTestCase):
         self.toml = os.path.join(self.home, "tui.toml")
         self.env = {"HOME": self.uhome, "CLAUDECODE": "", "CLAUDE_CODE_ENTRYPOINT": ""}
         self.patches = [mock.patch.dict(os.environ, {"HOME": self.uhome}),
-                        mock.patch.object(fmsettings, "in_claude_code", return_value=False)]
+                        mock.patch.object(ssettings, "in_claude_code", return_value=False)]
         for x in self.patches:
             x.start()
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
@@ -82,13 +82,13 @@ class _Home(ForemanTestCase):
 class Log(_Home):
     def test_sets_and_undos_are_logged_and_filtered_by_key(self):
         self.put('theme = "paper"\n')
-        fmsettings.set_key("theme", "riso", surface="app")
-        fmsettings.set_key("border", "heavy", surface="app")
-        fmsettings.undo()
-        got = [(e["how"], [(c["key"], c["old"], c["new"]) for c in e["changes"]]) for e in fmsettings.changelog()]
+        ssettings.set_key("theme", "riso", surface="app")
+        ssettings.set_key("border", "heavy", surface="app")
+        ssettings.undo()
+        got = [(e["how"], [(c["key"], c["old"], c["new"]) for c in e["changes"]]) for e in ssettings.changelog()]
         self.assertEqual(got, [("set", [("theme", "paper", "riso")]), ("set", [("border", None, "heavy")]),
                                ("undo", [("border", "heavy", None)])])
-        self.assertEqual([e["how"] for e in fmsettings.changelog("theme")], ["set"])
+        self.assertEqual([e["how"] for e in ssettings.changelog("theme")], ["set"])
         out = self.settings("log", "border").stdout
         self.assertIn("set · app border: unset → heavy", out)
         self.assertIn("undo · app border: heavy → unset", out)
@@ -97,8 +97,8 @@ class Log(_Home):
 
     def test_a_key_set_by_hand_three_times_gets_a_macro_suggested(self):  # T-1876
         for v in ("heavy", "double", "heavy"):
-            fmsettings.set_key("border", v, surface="app")
-        fmsettings.set_key("theme", "riso", surface="app")
+            ssettings.set_key("border", v, surface="app")
+        ssettings.set_key("theme", "riso", surface="app")
         tip = "border set by hand 3 times: fm settings macro border --set border=heavy saves it as one command"
         self.assertIn(tip, self.settings("log").stdout)
         self.assertNotIn("theme set by hand", self.settings("log").stdout)
@@ -109,8 +109,8 @@ class Log(_Home):
 
     def test_a_key_undone_three_times_is_named_with_where_it_came_from(self):
         for v in ("heavy", "double"):
-            fmsettings.set_key("border", v, surface="app")
-            fmsettings.undo()
+            ssettings.set_key("border", v, surface="app")
+            ssettings.undo()
         self.term("set", "border", "heavy")
         out = self.term("undo")
         self.assertIn("app border: undone 3 times", out)
@@ -124,7 +124,7 @@ class Macro(_Home):
         self.assertIn("calm: theme=paper border=square", self.settings("macro").stdout)
         self.term("macro", "calm")
         self.assertEqual((self.cfg()["preset"], self.cfg()["border"]), ("paper", "square"))
-        self.assertEqual(fmsettings.changelog()[-1]["how"], "macro calm")
+        self.assertEqual(ssettings.changelog()[-1]["how"], "macro calm")
         self.term("undo")
         self.assertEqual((self.cfg()["preset"], self.cfg()["border"]), (T.DEFAULTS["preset"], T.DEFAULTS["border"]))
 
@@ -132,7 +132,7 @@ class Macro(_Home):
         for args in (("calm", "--set", "nope=1"), ("../x", "--set", "theme=paper"), ("calm", "--set", "theme=wiggle"),
                      ("calm", "--set", "theme"), ("ghost",)):
             self.assertNotEqual(self.settings("macro", *args, check=False).returncode, 0, args)
-        self.assertEqual(fmsettings.macros(), {})
+        self.assertEqual(ssettings.macros(), {})
 
 
 class Duel(_Home):
@@ -160,7 +160,7 @@ class Replay(_Home):
         self.assertEqual([r["run"] for r in got["runs"]], ["the sample run", "run.events.jsonl", "a stress burst"])
         for r in got["runs"]:
             self.assertIsNone(r["failure"], r)
-            self.assertGreaterEqual(r["frames"], len(fmsettings.REPLAY_SIZES))
+            self.assertGreaterEqual(r["frames"], len(ssettings.REPLAY_SIZES))
 
     def test_a_change_names_what_it_breaks_and_writes_nothing(self):
         draw = T.render
@@ -170,7 +170,7 @@ class Replay(_Home):
                 raise IndexError("narrow double border")
             return draw(st, w, h, cfg, *a, **k)
         with mock.patch.object(T, "render", render):
-            got = fmsettings.replay([("border", "double")], events=[self.events()])
+            got = ssettings.replay([("border", "double")], events=[self.events()])
         self.assertTrue(got["runs"] and all(r["breaks"] for r in got["runs"]), got)
         self.assertIn("IndexError", got["runs"][0]["with"]["failure"])
         self.assertEqual(read_text(self.toml), "")
@@ -200,7 +200,7 @@ class Words(_Home):
         self.assertIn("border", " ".join(json.load(open(self.args))), "the settings it may change go to the model")
         self.term("words", "a light calm look", "--apply", env=env)
         self.assertEqual((self.cfg()["preset"], self.cfg()["border"]), ("paper", "heavy"))
-        self.assertEqual(fmsettings.changelog()[-1]["how"], "words")
+        self.assertEqual(ssettings.changelog()[-1]["how"], "words")
         self.term("undo")
         self.assertEqual(self.cfg()["preset"], T.DEFAULTS["preset"])
 
@@ -213,8 +213,8 @@ class Words(_Home):
 
     def test_a_change_undone_twice_is_never_proposed_again(self):
         for _ in range(2):
-            fmsettings.set_key("theme", "paper", surface="app")
-            fmsettings.undo()
+            ssettings.set_key("theme", "paper", surface="app")
+            ssettings.undo()
         env = self.stub('{"theme": "paper"}')
         out = self.settings("words", "light", "--apply", env=env).stdout
         self.assertIn("undone 2 times", out)
@@ -233,7 +233,7 @@ class Review(_Home):
 
     def test_a_project_scope_set_is_logged(self):
         self.term("set", "border", "heavy", "--scope", "project")
-        self.assertEqual([(e["how"], e["changes"][0]["key"], e["changes"][0]["new"]) for e in fmsettings.changelog()],
+        self.assertEqual([(e["how"], e["changes"][0]["key"], e["changes"][0]["new"]) for e in ssettings.changelog()],
                          [("set --scope project", "border", "heavy")])
 
     def test_a_run_failing_without_the_change_is_said_not_nothing_breaks(self):
@@ -245,19 +245,19 @@ class Review(_Home):
             return draw(st, w, h, cfg, *a, **k)
         out = io.StringIO()
         with mock.patch.object(T, "render", render), contextlib.redirect_stdout(out):
-            rc = fmcli.main(["settings", "replay", "--set", "border=heavy", "--runs", "0"])
+            rc = cli.main(["settings", "replay", "--set", "border=heavy", "--runs", "0"])
         self.assertEqual(rc, 1)
         self.assertIn("already fail without border=heavy", out.getvalue())
         self.assertNotIn("nothing breaks", out.getvalue())
 
     def test_a_newline_in_a_value_stays_one_line(self):
-        self.assertEqual(fmsettings._plain("a\nb"), "a\\nb")
+        self.assertEqual(ssettings._plain("a\nb"), "a\\nb")
 
     def test_undo_json_carries_the_hint(self):
         for v in ("heavy", "double"):
-            fmsettings.set_key("border", v, surface="app")
-            fmsettings.undo()
-        fmsettings.set_key("border", "heavy", surface="app")
+            ssettings.set_key("border", v, surface="app")
+            ssettings.undo()
+        ssettings.set_key("border", "heavy", surface="app")
         self.assertIn("undone 3 times", " ".join(json.loads(self.term("undo", "--json"))["hints"]))
 
     def test_without_a_terminal_the_guard_decides_macro_and_words_apply(self):
@@ -265,7 +265,7 @@ class Review(_Home):
         self.assertEqual(self.settings("macro", "calm", check=False).returncode, 2)
         env = Words.stub(self, '{"border": "heavy"}')
         self.assertEqual(self.settings("words", "heavy", "--apply", env=env, check=False).returncode, 2)
-        self.assertEqual((read_text(self.toml), fmsettings.changelog()), ("", []))
+        self.assertEqual((read_text(self.toml), ssettings.changelog()), ("", []))
 
     def test_a_child_timeout_doesnt_print_its_prompt(self):
         import subprocess
@@ -275,9 +275,9 @@ class Review(_Home):
 
             def communicate(self, *a, **k):
                 raise subprocess.TimeoutExpired(["claude", "-p", "THE WHOLE PROMPT"], 180)
-        with mock.patch.object(fmideas, "_popen", return_value=Slow()), mock.patch.object(fmideas, "_reap"), \
-                mock.patch.object(fmideas.fmbudget, "check"):
+        with mock.patch.object(ideas, "_popen", return_value=Slow()), mock.patch.object(ideas, "_reap"), \
+                mock.patch.object(ideas.budget, "check"):
             with self.assertRaises(ValueError) as e:
-                fmideas.run_child("settings words", "THE WHOLE PROMPT", "x", "haiku", 180)
+                ideas.run_child("settings words", "THE WHOLE PROMPT", "x", "haiku", 180)
         self.assertNotIn("THE WHOLE PROMPT", str(e.exception))
         self.assertIn("180 s", str(e.exception))

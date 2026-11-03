@@ -4,8 +4,8 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmlanes
+from sampo import core as c
+from sampo import lanes
 
 MSG = """**Verdict** — changes needed.
 
@@ -57,9 +57,9 @@ class ReviewerFindings(ForemanTestCase):
         self.stop("- HIGH — a.py:1 — a retry abort leaves partial state — fix — high\n"
                   "- HIGH — b.py:2 — wrong signal from stale state — fix — high")
         p = c.find_project(self.repo)
-        self.assertEqual(len(fmlanes.defect_classes(p)), 2)
+        self.assertEqual(len(lanes.defect_classes(p)), 2)
         self.fm("task", "finding", self.tid, "edge", "rejected", "a retry abort leaves partial state")
-        out = "\n".join(fmlanes.defect_classes(p))
+        out = "\n".join(lanes.defect_classes(p))
         self.assertNotIn("half-done", out)
         self.assertIn("stale", out)
 

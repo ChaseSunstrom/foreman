@@ -8,8 +8,8 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
-import fmcli
-import fmcore as c
+from sampo import cli
+from sampo import core as c
 
 
 def run_raising(exc):
@@ -19,13 +19,13 @@ def run_raising(exc):
     fake = mock.Mock()
     fake.parse_args.return_value = argparse.Namespace(cmd="x", fn=boom)
     err = io.StringIO()
-    with mock.patch.object(fmcli, "_parser_for", return_value=fake), \
-            mock.patch.object(fmcli, "_task_shape", side_effect=lambda p, a: a), \
-            mock.patch.object(fmcli, "_options_first", side_effect=lambda p, a: a), \
-            mock.patch.object(fmcli, "_sync_in"), \
+    with mock.patch.object(cli, "_parser_for", return_value=fake), \
+            mock.patch.object(cli, "_task_shape", side_effect=lambda p, a: a), \
+            mock.patch.object(cli, "_options_first", side_effect=lambda p, a: a), \
+            mock.patch.object(cli, "_sync_in"), \
             mock.patch.dict(os.environ, {"FOREMAN_WORKER_OF": ""}), \
             contextlib.redirect_stderr(err):
-        rc = fmcli.main(["x"])
+        rc = cli.main(["x"])
     return rc, err.getvalue()
 
 
@@ -54,7 +54,7 @@ class ExitNext(unittest.TestCase):
             self.check(PermissionError(13, "denied", "/state/meta.json"), 4)
 
     def test_usage_keeps_its_own(self):
-        e = fmcli.UsageError("u")
+        e = cli.UsageError("u")
         e.then = "fm help"
         rc, err = run_raising(e)
         self.assertEqual((rc, err.count("Next:")), (1, 1))

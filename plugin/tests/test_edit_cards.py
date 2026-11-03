@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from test_builder import _Tasks, git
 from test_hooks import HookCase
 
-import fmcore as c
+from sampo import core as c
 
 PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HEAD = "Foreman: stack card"
@@ -95,8 +95,8 @@ class EditCards(_CardCase):
         self.assertEqual([b for b in bullets if b not in lines], [], "every bullet is whole")
 
     def test_no_avoid_section_missing_card_or_bad_map_injects_nothing(self):
-        import fmlib
-        self.assertIsNone(fmlib.avoid_note("x", "---\nname: x\n---\nSummary.\n\n## Do\n- a\n"))
+        from sampo import lib
+        self.assertIsNone(lib.avoid_note("x", "---\nname: x\n---\nSummary.\n\n## Do\n- a\n"))
         self.map([card("no-such-card", "lang", 5, "ext:.py")])
         self.assertEqual(self.edit("a.py"), "")
         self.assertEqual(self.injected(), [], "nothing injected, nothing logged")
@@ -119,12 +119,12 @@ class EditCards(_CardCase):
         self.assertIn("Mutable default arguments", self.edit("a.py"))
 
     def test_the_map_carries_each_cards_area_score_and_file_signals(self):
-        import fmmap
+        from sampo import map as smap
         with open(os.path.join(self.repo, "app.py"), "w") as f:
             f.write("x = 1\n")
         subprocess.run(["git", "-C", self.repo, "add", "app.py"], check=True)
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "py"], check=True)
-        m = fmmap.load(self.project(), rebuild=True)
+        m = smap.load(self.project(), rebuild=True)
         py = [x for x in m["lib_cards"] if x["name"] == "python"]
         self.assertTrue(py, m["lib_cards"])
         self.assertEqual(py[0]["area"], "lang")
@@ -137,7 +137,7 @@ class EditCards(_CardCase):
 
 class EditCardsDoctor(HookCase):
     def test_doctor_counts_seven_days_of_enforce_events_by_kind(self):
-        import fmdoctor
+        from sampo import doctor
         self.fm("init")
         p = self.project()
         c.log_event(p, "enforce", data={"file": "a.json", "problem": "bad"})  # T-0947's validator block
@@ -148,12 +148,12 @@ class EditCardsDoctor(HookCase):
         old = (datetime.now(timezone.utc) - timedelta(days=9)).isoformat()
         with open(os.path.join(p.dir, "ledger.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": old, "event": "enforce", "data": {"kind": "card_injected"}}) + "\n")
-        r = fmdoctor.check_enforce(p)
+        r = doctor.check_enforce(p)
         self.assertEqual(r.status, "PASS")
         for want in ("validator_block 2", "merge_refused 1", "lane_unverified 1", "card_injected 1"):
             self.assertIn(want, r.detail)
-        self.assertIn("check_enforce(", inspect.getsource(fmdoctor.run_all))
-        self.assertIn("none", fmdoctor.check_enforce(None).detail)
+        self.assertIn("check_enforce(", inspect.getsource(doctor.run_all))
+        self.assertIn("none", doctor.check_enforce(None).detail)
 
 
 class EditCardsMerge(_Tasks):
@@ -210,15 +210,15 @@ class LangCardsKept(HookCase):
     still gets its language's card (Foreman's own map had 8 claude-code cards and no python)."""
 
     def test_language_cards_survive_a_crowded_top_eight(self):
-        import fmlib
+        from sampo import lib
         rows = [{"name": f"tool{i}", "area": "tools", "score": 50 - i, "detect": ["ext:.py"]} for i in range(10)]
         rows.append({"name": "python", "area": "lang", "score": 3, "detect": ["ext:.py"]})
-        real = fmlib.suggest
-        fmlib.suggest = lambda root, files, n=None: rows if n is None else rows[:n]
+        real = lib.suggest
+        lib.suggest = lambda root, files, n=None: rows if n is None else rows[:n]
         try:
-            names = [r["name"] for r in fmlib.for_map(self.repo, [])]
+            names = [r["name"] for r in lib.for_map(self.repo, [])]
         finally:
-            fmlib.suggest = real
+            lib.suggest = real
         self.assertIn("python", names)
         self.assertLessEqual(len(names), 8 + 3)  # the top 8 plus at most a few languages
 

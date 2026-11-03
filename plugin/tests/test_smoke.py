@@ -10,7 +10,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmsmoke
+from sampo import smoke
 
 BIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin")
 
@@ -62,11 +62,11 @@ class Smoke(ForemanTestCase):
         self.assertIn("http(s) url", r.stderr, "http(s) only")
 
     def test_doctor_nudges_a_web_ui_without_smoke(self):
-        self.assertEqual(fmsmoke.nudge(["web UI"], {}), "this project has a web UI and no product check: "
+        self.assertEqual(smoke.nudge(["web UI"], {}), "this project has a web UI and no product check: "
                                                          "fm smoke set web <url>")
-        self.assertIsNone(fmsmoke.nudge(["web UI"], {"smoke": {"web": "http://x/"}}))
-        self.assertIsNone(fmsmoke.nudge(["server"], {}))
-        self.assertIsNone(fmsmoke.nudge(["web UI"], {"smoke": {"off": "a Claude Code UI mod, no URL"}}))
+        self.assertIsNone(smoke.nudge(["web UI"], {"smoke": {"web": "http://x/"}}))
+        self.assertIsNone(smoke.nudge(["server"], {}))
+        self.assertIsNone(smoke.nudge(["web UI"], {"smoke": {"off": "a Claude Code UI mod, no URL"}}))
 
     def test_smoke_off_for_a_ui_no_url_serves(self):
         self.fm("init")
@@ -101,7 +101,7 @@ GOOD = """<!doctype html><html><head><meta name="viewport" content="width=device
 </script></body></html>"""
 
 
-@unittest.skipUnless(fmsmoke.playwright(os.environ.get("FOREMAN_SMOKE_ROOT") or os.getcwd()),
+@unittest.skipUnless(smoke.playwright(os.environ.get("FOREMAN_SMOKE_ROOT") or os.getcwd()),
                      "no Playwright here (FOREMAN_PLAYWRIGHT or a node_modules/playwright)")
 class SmokeInABrowser(unittest.TestCase):
     """The crawl itself, against two local pages: it must name each kind of defect, and pass a healthy page."""
@@ -127,8 +127,8 @@ class SmokeInABrowser(unittest.TestCase):
         cls.server.shutdown()
 
     def crawl(self, page):
-        pw = fmsmoke.playwright(os.environ.get("FOREMAN_SMOKE_ROOT") or os.getcwd())
-        res = fmsmoke.crawl(pw, f"{self.base}/{page}", os.path.join(self.dir, "shots-" + page))
+        pw = smoke.playwright(os.environ.get("FOREMAN_SMOKE_ROOT") or os.getcwd())
+        res = smoke.crawl(pw, f"{self.base}/{page}", os.path.join(self.dir, "shots-" + page))
         if res.get("skipped"):  # T-1509: a Playwright without its browser
             self.skipTest(res["skipped"])
         return res

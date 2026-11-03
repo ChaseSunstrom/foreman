@@ -13,7 +13,7 @@ def ts(ago_min):
 
 class Splits(ForemanTestCase):
     def test_stage_times_against_typical(self):
-        import fmcore as c
+        from sampo import core as c
         self.fm("init")
         tid = "T-0001"
         self.fm("task", "new", "slow one", "--type", "FIX", "--tier", "M", "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a",
@@ -43,7 +43,7 @@ class Splits(ForemanTestCase):
         self.assertIsNone(sp["verifying"]["sign"])
 
     def test_stage_events_logged_once_per_transition(self):
-        import fmcore as c
+        from sampo import core as c
         self.fm("init")
         self.fm("task", "new", "t", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
         self.fm("task", "log", "T-0001", "noise")  # no stage move: no event
@@ -60,13 +60,13 @@ class Splits(ForemanTestCase):
         self.assertIn("executing", [e["data"]["to"] for e in evs if e["event"] == "stage" and e["task"] == "T-0002"])
 
     def test_splits_prefer_stage_events(self):
-        import fmwatch
+        from sampo import watch
         evs = [{"ts": ts(100), "event": "task_new", "task": "T-1"},
                {"ts": ts(90), "event": "stage", "task": "T-1", "data": {"from": "planning", "to": "executing"}},
                {"ts": ts(30), "event": "stage", "task": "T-1", "data": {"from": "executing", "to": "verifying"}},
                {"ts": ts(10), "event": "task_plan", "task": "T-1"}]  # a proxy that would say otherwise
-        import fmcore as c
-        got = fmwatch._stage_secs(evs, c.parse_ts(ts(0)))
+        from sampo import core as c
+        got = watch._stage_secs(evs, c.parse_ts(ts(0)))
         self.assertAlmostEqual(got["executing"], 60 * 60, delta=2)
         self.assertAlmostEqual(got["verifying"], 30 * 60, delta=2)
         self.assertNotIn("planning", got)

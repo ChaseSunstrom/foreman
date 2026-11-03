@@ -8,7 +8,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = "def add(a, b):\n    return a + b\n"
@@ -171,24 +171,24 @@ class CloseGates(ForemanTestCase):
     @unittest.skipUnless(shutil.which("nice"), "no nice on this host: the sentinel starts as before")
     def test_the_background_sentinel_runs_at_low_priority(self):
         # T-1463: started at full priority, it competed for CPU with the next task's foreground finish and tests
-        import fmcli
+        from sampo import cli
         from unittest import mock
-        started, real = [], fmcli.subprocess.Popen
+        started, real = [], cli.subprocess.Popen
         env = {k: v for k, v in os.environ.items() if k not in ("FOREMAN_SENTINEL", "FOREMAN_NO_BACKGROUND")}
         # subprocess is shared: only the sentinel's own start is faked, git and the rest run for real
         fake = lambda argv, **kw: (started.append(argv) or mock.Mock(pid=1)) if "sentinel" in argv else real(argv, **kw)
         with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(c, "host_strain", lambda: False), \
-                mock.patch.object(fmcli.subprocess, "Popen", fake):
-            self.assertEqual(fmcli._sentinel(self.p), "started")
+                mock.patch.object(cli.subprocess, "Popen", fake):
+            self.assertEqual(cli._sentinel(self.p), "started")
         self.assertEqual(started[0][:3], ["nice", "-n", "10"])
 
     def test_only_one_sentinel_runs_at_a_time(self):
-        import fmcli
+        from sampo import cli
         with open(os.path.join(self.p.dir, "sentinel.pid"), "w") as f:
             f.write(str(os.getpid()))  # a live run
         os.environ["FOREMAN_SENTINEL"] = "sync"
         try:
-            self.assertIsNone(fmcli._sentinel(self.p))
+            self.assertIsNone(cli._sentinel(self.p))
         finally:
             del os.environ["FOREMAN_SENTINEL"]
 

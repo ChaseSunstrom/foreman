@@ -7,8 +7,8 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmmap
+from sampo import core as c
+from sampo import map as smap
 
 
 class RoundG(ForemanTestCase):
@@ -43,7 +43,7 @@ class RoundG(ForemanTestCase):
                 "diff --git a/cart.py b/cart.py\n--- a/cart.py\n+++ b/cart.py\n-def compute_total(items):\n"
                 "+def total(items):\n")
         self.write("api.py", "from cart import compute_total\n")
-        found = "\n".join(fmmap.pre_audit(self.repo, diff, ["tests/test_x.py", "cart.py"]))
+        found = "\n".join(smap.pre_audit(self.repo, diff, ["tests/test_x.py", "cart.py"]))
         self.assertIn("2 assertion(s) removed from tests/test_x.py", found)
         self.assertIn("test skipped or narrowed in tests/test_x.py", found)
         self.assertIn("removed compute_total is still named in api.py", found)
@@ -53,9 +53,9 @@ class RoundG(ForemanTestCase):
             self.write("schema.sql", f"-- v{i}\n")
             self.write("models.py", f"V = {i}\n")
             self.commit(f"v{i}")
-        m = fmmap.load(self.p, rebuild=True)
+        m = smap.load(self.p, rebuild=True)
         self.assertEqual(m["pairs"].get("schema.sql"), ["models.py"])
-        found = "\n".join(fmmap.pre_audit(self.repo, "", ["schema.sql"], m))
+        found = "\n".join(smap.pre_audit(self.repo, "", ["schema.sql"], m))
         self.assertIn("schema.sql usually changes with models.py", found)
 
     def test_one_shot_notes_rearm_after_a_new_context(self):
@@ -104,9 +104,9 @@ class RoundG(ForemanTestCase):
                                                "      - run: python -m pytest -q\n      - run: ruff check .\n"
                                                "      - run: echo hi\n")
         self.commit()
-        m = fmmap.load(self.p, rebuild=True)
+        m = smap.load(self.p, rebuild=True)
         self.assertEqual(m["ci"], ["python -m pytest -q", "ruff check ."])
-        self.assertIn("CI runs: python -m pytest -q", fmmap.render(m))
+        self.assertIn("CI runs: python -m pytest -q", smap.render(m))
 
     def test_environment_failures_are_labelled(self):
         self.fm("check", "add", "python3 -c 'import no_such_module_xyz'")
@@ -120,7 +120,7 @@ class RoundG(ForemanTestCase):
         self.assertIn("looks generated or vendored", out)
         self.assertNotIn("generated", self.hook("PostToolUse", {"tool_name": "Edit",
                                                                 "tool_input": {"file_path": hand}}).stdout)
-        found = "\n".join(fmmap.pre_audit(self.repo, "", ["api_pb2.py", "README.md"]))
+        found = "\n".join(smap.pre_audit(self.repo, "", ["api_pb2.py", "README.md"]))
         self.assertIn("generated or vendored file edited: api_pb2.py", found)
         self.assertNotIn("README.md", found)
         self.assertTrue(os.path.exists(gen))

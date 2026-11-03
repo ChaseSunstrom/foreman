@@ -6,7 +6,7 @@ import time
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 REFS = os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references")
 
@@ -49,8 +49,8 @@ class Verifier(Base):
         self.assertIn("no tests ran", c.find_brief(self.p, tid).section("Verification evidence"))
 
     def test_the_oracle_asks_for_a_negative_twin(self):
-        import fmideas
-        self.assertIn("negative twin", fmideas.ORACLE)
+        from sampo import ideas
+        self.assertIn("negative twin", ideas.ORACLE)
 
 
 class Stale(Base):
@@ -60,8 +60,8 @@ class Stale(Base):
         self.fm("task", "evidence", tid, "--step", "1", "--run", "grep -q ok a.txt")
         later = time.time() + 5
         os.utime(os.path.join(self.repo, "a.txt"), (later, later))
-        import fmcli
-        warns = fmcli._close_warnings(self.p, c.find_brief(self.p, tid), [])
+        from sampo import cli
+        warns = cli._close_warnings(self.p, c.find_brief(self.p, tid), [])
         self.assertTrue(any("a.txt changed after" in w for w in warns), warns)
 
 
@@ -74,10 +74,10 @@ class Observable(Base):
 
 class Independent(Base):
     def test_findings_need_a_reproducer_and_builders_name_their_weakest_link(self):
-        import fmcli
-        import fmlanes
-        self.assertIn("reproducer", fmcli._REVIEW_OUT)
-        self.assertIn("weakest link", fmlanes.contract("T-9", "abc", "/m"))
+        from sampo import cli
+        from sampo import lanes
+        self.assertIn("reproducer", cli._REVIEW_OUT)
+        self.assertIn("weakest link", lanes.contract("T-9", "abc", "/m"))
 
 
 class Forge(Base):
@@ -105,8 +105,8 @@ class CatchRate(Base):
         with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:
             f.writelines(json.dumps(r) + "\n" for r in rows)
         tid = self.task("tests pass :: pytest -q", "lint is clean :: make lint", "suite :: make test", "unit :: make unit")
-        import fmcli
-        warns = " ".join(fmcli._close_warnings(self.p, c.find_brief(self.p, tid), []))
+        from sampo import cli
+        warns = " ".join(cli._close_warnings(self.p, c.find_brief(self.p, tid), []))
         self.assertRegex(warns, r"`pytest -q` caught a failure in 2 task")
         self.assertRegex(warns, r"`make lint` never failed in 3 run")
         self.assertRegex(warns, r"`make test` caught a failure in 1 task")
@@ -120,6 +120,6 @@ class CatchRate(Base):
         rows.append({"ts": c.now(), "task": tid, "event": "prove", "data": {"cmd": "make lint -k one", "red": 1, "green": 0}})
         with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:
             f.writelines(json.dumps(r) + "\n" for r in rows)
-        import fmcli
-        warns = " ".join(fmcli._close_warnings(self.p, c.find_brief(self.p, tid), []))
+        from sampo import cli
+        warns = " ".join(cli._close_warnings(self.p, c.find_brief(self.p, tid), []))
         self.assertNotIn("never failed", warns)

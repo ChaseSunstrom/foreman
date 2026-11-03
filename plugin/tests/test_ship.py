@@ -5,7 +5,7 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 
 def sh(root, *a):
@@ -159,8 +159,8 @@ class Ship(ForemanTestCase):
         self.assertTrue(self.granted())
 
     def test_ci_globs_follow_github_rules(self):  # T-2572
-        import fmrelease
-        g = fmrelease._glob_re
+        from sampo import release
+        g = release._glob_re
         self.assertTrue(g("site/genesis/gen-*/**").match("site/genesis/gen-2/a/b.md"))
         self.assertFalse(g("site/genesis/gen-*/**").match("site/x.md"))
         self.assertFalse(g("site/genesis/*.md").match("site/genesis/gen-2/x.md"))

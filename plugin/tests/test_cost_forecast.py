@@ -6,8 +6,8 @@ import time
 from helpers import ForemanTestCase
 from test_hooks import HookCase, parse
 
-import fmcore as c
-import fmcost
+from sampo import core as c
+from sampo import cost
 
 
 class CostForecast(ForemanTestCase):
@@ -50,7 +50,7 @@ class TaskCostCap(HookCase):
 
     def history(self, active):
         p = self.project()
-        folder = fmcost.transcripts_dir(p.root)
+        folder = cost.transcripts_dir(p.root)
         os.makedirs(folder, exist_ok=True)
         events, lines = [], []
         for i, (tid, tokens) in enumerate([("T-0901", 100000), ("T-0902", 100000), (active, 300000)]):
@@ -96,16 +96,16 @@ class TaskCostCap(HookCase):
 
     def test_every_dispatcher_holds_a_capped_task(self):
         # T-1127: only the interactive drive held it; fm run and fm next still dispatched it
-        import fmserve
+        from sampo import serve
         self.fm("init")
         t = self.task("Current", type_="FEATURE", tier="M")
         self.history(t)
         self.fm("task", "set", t, "cost_cap=200k")
         p = self.project()
-        self.assertIsNone(fmserve._next_runnable(p, set(), set()), "fm run's picker skips the capped task")
+        self.assertIsNone(serve._next_runnable(p, set(), set()), "fm run's picker skips the capped task")
         self.assertIn("cost cap", self.fm("next").stdout)
         self.fm("task", "set", t, "cost_cap=5M")  # a new cap lifts the hold
-        got = fmserve._next_runnable(p, set(), set())
+        got = serve._next_runnable(p, set(), set())
         self.assertEqual(getattr(got, "id", None), t)
 
     def test_the_brief_readers_show_the_cost_line(self):
@@ -140,7 +140,7 @@ class TaskCostCap(HookCase):
         # review: attribution by global time put session A's turns on session B's task
         self.fm("init")
         p = self.project()
-        folder = fmcost.transcripts_dir(p.root)
+        folder = cost.transcripts_dir(p.root)
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
             f.write(json.dumps({"ts": self.day(1, 1), "task": "T-0911", "event": "touched", "session_id": "A"}) + "\n")
@@ -148,7 +148,7 @@ class TaskCostCap(HookCase):
         with open(os.path.join(folder, "A.jsonl"), "w") as f:  # A works at 03:00, after B's 02:00 event
             f.write(json.dumps({"type": "assistant", "timestamp": self.day(1, 3), "sessionId": "A",
                                 "message": {"id": "a1", "usage": {"input_tokens": 50000}, "content": []}}) + "\n")
-        costs = fmcost.task_costs(p, 7)
+        costs = cost.task_costs(p, 7)
         self.assertEqual(costs.get("T-0911"), 50000)
         self.assertFalse(costs.get("T-0912"))
 
@@ -174,7 +174,7 @@ class TaskCostCap(HookCase):
                   ev(11, 2, "✗ exit 1 · FAILED"), ev(13, 2, "exit 0 · OK"), ev(15, 3, "✗ exit 1 · FAILED")]
         with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
             f.writelines(json.dumps(e) + "\n" for e in events)
-        folder = fmcost.transcripts_dir(p.root)
+        folder = cost.transcripts_dir(p.root)
         os.makedirs(folder, exist_ok=True)
         turns = [(10, 100000), (12, 50000), (14, 30000), (16, 20000)]  # 10 h: red→green's work, not a retry; 12 h: step 2's retry; 16 h: step 3's, still open
         with open(os.path.join(folder, "s.jsonl"), "w") as f:

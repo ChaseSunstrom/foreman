@@ -5,21 +5,21 @@ import subprocess
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmmap
+from sampo import core as c
+from sampo import map as smap
 
 
 class FirstCheck(ForemanTestCase):
     def test_a_runnable_gate_is_offered_for_plain_python_tests(self):
         # T-0850: a root-level test_app.py found no gate, and the old hint "pytest (or python3 -m unittest)" isn't a command
-        self.assertIn("python3 -m unittest discover -q", fmmap._gates(self.repo, ["app.py", "test_app.py"], []))
-        self.assertIn("python3 -m unittest discover -s tests -q", fmmap._gates(self.repo, ["tests/test_a.py"], []))
-        self.assertIn("python3 -m pytest -q", fmmap._gates(self.repo, ["pytest.ini", "tests/test_a.py"], []))
-        self.assertIn("python3 -m pytest -q", fmmap._gates(self.repo, ["conftest.py", "test_a.py"], []))
+        self.assertIn("python3 -m unittest discover -q", smap._gates(self.repo, ["app.py", "test_app.py"], []))
+        self.assertIn("python3 -m unittest discover -s tests -q", smap._gates(self.repo, ["tests/test_a.py"], []))
+        self.assertIn("python3 -m pytest -q", smap._gates(self.repo, ["pytest.ini", "tests/test_a.py"], []))
+        self.assertIn("python3 -m pytest -q", smap._gates(self.repo, ["conftest.py", "test_a.py"], []))
         # T-0987 (T-0978: Haiku ran unittest discover, which import-errors here, not the repo's runner)
-        self.assertEqual(fmmap._gates(self.repo, ["plugin/tests/run.py", "plugin/tests/test_a.py"], [])[0],
+        self.assertEqual(smap._gates(self.repo, ["plugin/tests/run.py", "plugin/tests/test_a.py"], [])[0],
                          "python3 plugin/tests/run.py")
-        self.assertEqual(fmmap._gates(self.repo, ["run_tests.py", "test_a.py"], [])[0], "python3 run_tests.py")
+        self.assertEqual(smap._gates(self.repo, ["run_tests.py", "test_a.py"], [])[0], "python3 run_tests.py")
 
     def test_check_with_no_gates_prints_the_line_to_add_one(self):
         self.fm("init")

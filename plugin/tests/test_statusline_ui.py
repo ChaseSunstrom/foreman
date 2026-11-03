@@ -8,7 +8,7 @@ import subprocess
 
 from helpers import CLEAN_READER, ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 STATUSLINE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hooks", "statusline")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -75,9 +75,9 @@ class StatuslineUi(ForemanTestCase):
             self.assertLessEqual(len(ANSI.sub("", line)), 40)
 
     def test_a_genesis_tower_shows_its_stage_amber_when_it_cant_go_on(self):  # T-2118
-        import fmgenesis
+        from sampo import rune
         p = c.find_project(self.repo)
-        fmgenesis.init(p, b"go\n")
+        rune.init(p, b"go\n")
         c.regen_views(p)
         self.assertIn("⌂ gen 1 · seed", ANSI.sub("", self.run_line("300")[1]))
         seed = os.path.join(self.tmp, "seed.md")

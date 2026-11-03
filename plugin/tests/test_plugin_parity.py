@@ -5,10 +5,10 @@ import os
 import unittest
 
 import helpers  # noqa: F401 — puts plugin/lib on the path
-import fmcli
-import fmcodetui
+from sampo import cli
+from sampo import smithtui
 
-PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(fmcli.__file__)))
+PLUGIN = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(cli.__file__))))
 CC_BUILTINS = {"/model", "ctrl+o", "Esc"}  # Claude Code's own: the model picker, the transcript, stop the turn
 # each fm code command's route in Claude Code; a new command needs one here or an APP_ONLY reason
 PLUGIN_ROUTES = {"new": "/foreman:intake", "stop": "Esc", "resume": "/foreman:resume", "diff": "git diff",
@@ -23,7 +23,7 @@ APP_ONLY = {"photo": "the app's own frame; Claude Code draws none to shoot", "br
 
 def fm_resolves(words, parser=None):
     """Each word down fm's subcommands exists; the first word that isn't a subcommand level ends the walk."""
-    parser = parser or fmcli.build_parser()
+    parser = parser or cli.build_parser()
     sub = next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
     if not sub or not words:
         return True
@@ -43,7 +43,7 @@ def resolves(route):
 
 class PluginParity(unittest.TestCase):
     def test_every_app_command_has_a_claude_code_route_or_a_reason(self):
-        commands = {cmd for cmd, _ in fmcodetui.COMMAND_LABELS}
+        commands = {cmd for cmd, _ in smithtui.COMMAND_LABELS}
         for cmd in sorted(commands):
             with self.subTest(cmd):
                 route, why = PLUGIN_ROUTES.get(cmd), APP_ONLY.get(cmd)

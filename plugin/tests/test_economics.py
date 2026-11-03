@@ -44,8 +44,8 @@ class SessionCost(ForemanTestCase):
 
     def test_one_hour_cache_writes_cost_2x_and_keep_the_cache_an_hour(self):
         # T-1820: on the 1 h cache a write costs 2× base input, not 1.25×, and a 10-min gap is not an expiry
-        import fmcost
-        self.assertEqual(fmcost.weighted({"cache_creation_input_tokens": 100, "output_tokens": 2,
+        from sampo import cost
+        self.assertEqual(cost.weighted({"cache_creation_input_tokens": 100, "output_tokens": 2,
                                           "cache_creation": {"ephemeral_1h_input_tokens": 60}}), 40 * 1.25 + 60 * 2 + 10)
         self.fm("init")
         cfg = os.path.join(self.tmp, "cfg")

@@ -261,7 +261,7 @@ class RivalSplit(_RivalBase):
         self.focus(tid, True)
 
     def test_the_M_panel_row_is_the_rival_trigger(self):
-        import fmcore as c
+        from sampo import core as c
         with open(os.path.join(c.PLUGIN_ROOT, "protocols.json")) as f:
             rules = json.load(f)
         self.assertNotEqual(rules["M"]["panel"], "optional")
@@ -290,8 +290,8 @@ class Debate(_Stubbed):
 
 class Session(_Stubbed):
     def transcript(self, sid, messages, entrypoint=None):
-        import fmcost
-        d = fmcost.transcripts_dir(self.repo).replace(os.path.expanduser("~/.claude"), self.cc, 1)
+        from sampo import cost
+        d = cost.transcripts_dir(self.repo).replace(os.path.expanduser("~/.claude"), self.cc, 1)
         d = os.path.join(self.cc, "projects", os.path.basename(d))
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, f"{sid}.jsonl"), "w") as f:
@@ -362,7 +362,7 @@ class Session(_Stubbed):
         self.transcript("old-session", ["export the report as CSV please"])
         p = self.fm("second", "session", "--if-due", env=dict(self.env, PATH="/nonexistent", HOME=self.tmp), check=False)
         self.assertNotEqual(p.returncode, 0)
-        import fmcore as c
+        from sampo import core as c
         proj = c.find_project(self.repo)
         self.assertEqual(c.read_meta(proj).get("second_session"), c.now()[:10])
         self.assertTrue(any(e.get("event") == "second_session" and "error" in (e.get("data") or {})
@@ -408,14 +408,14 @@ class Cleanup(ForemanTestCase):
 
 class Due(ForemanTestCase):
     def test_only_new_sessions_once_a_day_never_sensitive(self):
-        import fmcore as c
-        import fmhooks
+        from sampo import core as c
+        from sampo import hooks
         today = c.now()[:10]
-        self.assertTrue(fmhooks.second_due({"source": "startup"}, {}))
-        self.assertFalse(fmhooks.second_due({"source": "compact"}, {}))
-        self.assertFalse(fmhooks.second_due({"source": "startup"}, {"second_session": today}))
-        self.assertFalse(fmhooks.second_due({"source": "startup"}, {"sensitive": True}))
-        self.assertFalse(fmhooks.second_due({"source": "startup"}, {}, busy=True))
+        self.assertTrue(hooks.second_due({"source": "startup"}, {}))
+        self.assertFalse(hooks.second_due({"source": "compact"}, {}))
+        self.assertFalse(hooks.second_due({"source": "startup"}, {"second_session": today}))
+        self.assertFalse(hooks.second_due({"source": "startup"}, {"sensitive": True}))
+        self.assertFalse(hooks.second_due({"source": "startup"}, {}, busy=True))
 
 
 class LensSkills(ForemanTestCase):
@@ -443,7 +443,7 @@ class LensSkills(ForemanTestCase):
         self.assertEqual(data["lens_skills"]["adversary"][0], "/sec:sec-scan")
 
     def test_lens_tables_are_validated(self):
-        from fmcore import routing_problem
+        from sampo.core import routing_problem
         good = {"lens_words": {"adversary": ["security"]}, "lens_builtin": {"adversary": ["security-review"]}}
         self.assertIsNone(routing_problem(good))
         self.assertIsNotNone(routing_problem(dict(good, lens_words={"adversary": "security"})))
@@ -452,7 +452,7 @@ class LensSkills(ForemanTestCase):
 
 class OneWayVerb(unittest.TestCase):  # T-2521: deleting a code symbol in a tracked file is undone by git, not one-way
     def test_a_code_symbol_isn_t_a_one_way_object_and_data_still_is(self):
-        import fmcore as c
+        from sampo import core as c
 
         class B:  # the two things _one_way reads
             tier = "M"

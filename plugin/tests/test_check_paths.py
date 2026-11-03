@@ -45,7 +45,7 @@ class CheckPaths(ForemanTestCase):
         self.assertEqual(self.count("src-gate"), 3)
 
     def test_a_rename_out_of_the_paths_runs_it_and_skips_keep_the_real_runs_time(self):
-        import fmcore as c
+        from sampo import core as c
         self.fm("init")
         self.write("src/app.py", "a = 1\n")
         self.fm("check", "add", f"echo x >> {os.path.join(self.tmp, 'src-gate')}")

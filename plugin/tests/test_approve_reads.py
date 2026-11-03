@@ -5,7 +5,7 @@ import json
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 import fmguard
 
 READS = ["ls -la", "cat README.md | head -5", "git status", "git log --oneline -3", "grep -rn foo src && wc -l a.py",

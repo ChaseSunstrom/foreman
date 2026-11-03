@@ -11,8 +11,8 @@ import unittest
 
 from helpers import ForemanTestCase, read_text, valid_m_plan
 
-import fmcore as c
-import fmlanes
+from sampo import core as c
+from sampo import lanes as slanes
 
 first =lambda text: json.JSONDecoder().raw_decode(text)[0]  # --focus prints its own lines after the JSON
 
@@ -119,11 +119,11 @@ class Lanes(ForemanTestCase):
     def test_conflict_brief_resolves_from_where_the_main_session_stands(self):
         # T-2208: `git -C <lane> ...` from the main checkout is refused (the guard reads the cwd): message the builder,
         # or cd into the worktree as its own command first
-        import fmlanes
+        from sampo import lanes as slanes
         tid = self.new("Clash", self.repo, focus=False)
         path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
         p = c.find_project(self.repo)
-        out = fmlanes._conflict_brief(p, c.find_brief(p, tid), self.repo, f"foreman/{tid}", ["a.py"])
+        out = slanes._conflict_brief(p, c.find_brief(p, tid), self.repo, f"foreman/{tid}", ["a.py"])
         text = read_text(out)
         self.assertNotIn("git -C", text)
         self.assertIn("SendMessage", text)
@@ -188,7 +188,7 @@ class Lanes(ForemanTestCase):
 
     def test_the_shared_status_files_keep_the_main_checkouts_view(self):
         # review: a lane's write overwrote status.json, so the main session's statusline showed the lane's task
-        import fmcore as c
+        from sampo import core as c
         main = self.new("Main work", self.repo)
         self.new("Lane work", self.lane)
         with open(os.path.join(c.find_project(self.repo).dir, "status.json")) as f:
@@ -272,9 +272,9 @@ class Lanes(ForemanTestCase):
         return tid, path, ref
 
     def test_a_cut_off_lane_is_named_by_doctor_and_rm_moves_it_aside(self):
-        import fmdoctor
+        from sampo import doctor
         tid, path, ref = self.wreck()
-        r = fmdoctor.check_cut_off_lanes([c.find_project(self.repo)], here=c.find_project(self.repo).slug)
+        r = doctor.check_cut_off_lanes([c.find_project(self.repo)], here=c.find_project(self.repo).slug)
         self.assertEqual(r.status, "FAIL")
         self.assertIn(f"fm lane rm {tid} --why", r.detail)
         p = self.fm("lane", "rm", tid, check=False)
@@ -287,7 +287,7 @@ class Lanes(ForemanTestCase):
         self.assertTrue(os.path.isdir(os.path.join(wreck, os.path.basename(path))), "the folder is kept")
         self.assertTrue(os.path.isfile(os.path.join(wreck, "ref")), "and so is the ref")
         self.assertEqual(self.git("worktree", "list").count("\n"), 2, "the entry is pruned (main and the test's lane)")
-        self.assertEqual(fmdoctor.check_cut_off_lanes([c.find_project(self.repo)]).status, "PASS")
+        self.assertEqual(doctor.check_cut_off_lanes([c.find_project(self.repo)]).status, "PASS")
         bare = os.path.join(self.tmp, "remote.git")
         subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
         subprocess.run(["git", "-C", self.repo, "push", "-q", bare, "main"], check=True)
@@ -305,9 +305,9 @@ class Lanes(ForemanTestCase):
         self.fm("lane", "new", tid)
 
     def test_a_ref_state_git_failure_is_not_missing(self):
-        import fmlanes
+        from sampo import lanes as slanes
         with self.assertRaises(c.PolicyError):
-            fmlanes._ref_state(self.tmp, "x")  # not a repo: git exits 128
+            slanes._ref_state(self.tmp, "x")  # not a repo: git exits 128
 
     def test_a_corrupt_ref_with_one_real_file_is_still_refused(self):
         tid, path, ref = self.wreck(keep_one=True)
@@ -399,8 +399,8 @@ class Lanes(ForemanTestCase):
 
     def test_lane_friction_cap_unused_slot_and_a_gone_worktree(self):
         # T-1709: the drive compared to the default 2, not fm lane max; an unused brief and a gone worktree said nothing
-        import fmhooks
-        import fmlanes
+        from sampo import hooks
+        from sampo import lanes as slanes
         p = c.find_project(self.repo)
         self.fm("lane", "max", "6")
         briefs = []
@@ -410,8 +410,8 @@ class Lanes(ForemanTestCase):
             out = self.fm("lane", "brief", tid).stdout
             self.assertIn(f"not launching it? fm lane rm {tid} frees the slot", out)
             briefs.append(tid)
-        self.assertGreater(fmlanes.builders_cap(p), 3)
-        self.assertTrue(fmhooks.lanes_free(c.load_briefs(p), p), "3 of 6 builders out: a slot is free")
+        self.assertGreater(slanes.builders_cap(p), 3)
+        self.assertTrue(hooks.lanes_free(c.load_briefs(p), p), "3 of 6 builders out: a slot is free")
         tid = briefs[0]
         path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
         b = c.find_brief(p, tid)
@@ -423,14 +423,14 @@ class Lanes(ForemanTestCase):
 
     def stopped_builder(self, proc=None, wip="wip.py"):
         """T-1028: a builder whose launching claude process is gone, with work left in its lane."""
-        import fmbus
+        from sampo import bus
         tid = first(self.fm("task", "new", "Built", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
                             "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--json").stdout)["id"]
         path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
         b.meta["builder"] = c.now()
-        b.meta["builder_proc"] = proc or f"{fmbus.host_id()}|999999999|1"
+        b.meta["builder_proc"] = proc or f"{bus.host_id()}|999999999|1"
         c.save_brief(p, b)
         with open(os.path.join(path, wip), "w") as f:
             f.write("x = 1\n")
@@ -472,14 +472,14 @@ class Lanes(ForemanTestCase):
         self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [], "a commit minutes ago: maybe still building")
 
     def test_a_merged_lane_or_a_live_builder_is_not_named(self):
-        import fmbus
+        from sampo import bus
         tid, path = self.finished_builder()
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
-        b.meta["builder_proc"] = f"{fmbus.host_id()}|{os.getpid()}|{fmbus._proc(os.getpid())[1]}"
+        b.meta["builder_proc"] = f"{bus.host_id()}|{os.getpid()}|{bus._proc(os.getpid())[1]}"
         c.save_brief(p, b)
         self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [], "a live builder may be on a long test run")
-        b.meta["builder_proc"] = f"{fmbus.host_id()}|999999999|1"
+        b.meta["builder_proc"] = f"{bus.host_id()}|999999999|1"
         c.save_brief(p, b)
         self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [tid])
         sha = self.git("rev-parse", "HEAD", cwd=path).strip()
@@ -500,10 +500,10 @@ class Lanes(ForemanTestCase):
     def test_a_builder_whose_claude_process_ended_is_flagged_with_the_recover_command(self):
         tid, _ = self.stopped_builder()
         self.assertIn(f"fm lane recover {tid}", self.fm("next").stdout)
-        import fmbus
-        self.assertFalse(fmbus.proc_alive(999999999, "1"))
-        self.assertTrue(fmbus.proc_alive(os.getpid(), fmbus._proc(os.getpid())[1]))
-        self.assertEqual(fmbus.proc_state("elsewhere|ns|1|1"), "unknown")
+        from sampo import bus
+        self.assertFalse(bus.proc_alive(999999999, "1"))
+        self.assertTrue(bus.proc_alive(os.getpid(), bus._proc(os.getpid())[1]))
+        self.assertEqual(bus.proc_state("elsewhere|ns|1|1"), "unknown")
 
     def test_resume_keeps_the_work_frees_the_folder_and_briefs_from_the_branch(self):
         tid, path = self.stopped_builder()
@@ -520,9 +520,9 @@ class Lanes(ForemanTestCase):
         self.assertNotIn(f"fm lane recover {tid}", self.fm("next").stdout, "its new process is recorded")
 
     def test_resume_refuses_a_live_builder_unless_forced_with_a_reason(self):
-        import fmbus
-        me = fmbus._proc(os.getpid())[1]
-        tid, path = self.stopped_builder(proc=f"{fmbus.host_id()}|{os.getpid()}|{me}")
+        from sampo import bus
+        me = bus._proc(os.getpid())[1]
+        tid, path = self.stopped_builder(proc=f"{bus.host_id()}|{os.getpid()}|{me}")
         self.assertNotIn(f"fm lane recover {tid}", self.fm("next").stdout)
         self.assertNotEqual(self.fm("lane", "resume", tid, check=False).returncode, 0)
         self.assertTrue(os.path.isdir(path), "a live builder keeps its worktree")
@@ -537,13 +537,13 @@ class Lanes(ForemanTestCase):
         self.assertTrue(os.path.isdir(path))
 
     def test_a_briefed_never_launched_task_is_not_flagged(self):
-        import fmbus
+        from sampo import bus
         tid = first(self.fm("task", "new", "Idle", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
                             "--interpretation", "Reading 1: a. Reading 2: b.", "--approach", "1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a", "--json").stdout)["id"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
         b.meta["builder"] = c.now()
-        b.meta["builder_proc"] = f"{fmbus.host_id()}|999999999|1"
+        b.meta["builder_proc"] = f"{bus.host_id()}|999999999|1"
         c.save_brief(p, b)
         self.assertNotIn(f"fm lane recover {tid}", self.fm("next").stdout)
 
@@ -583,9 +583,9 @@ class BuilderGates(unittest.TestCase):
     def test_builders_run_affected_tests_and_leave_the_full_gates_to_the_merge(self):
         # T-0806: two lanes and the main thread ran three full gate runs at once (load 74): tests timed out, lanes
         # reported load as red gates, and the merge re-ran the full gates anyway
-        import fmlanes
+        from sampo import lanes as slanes
         agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
-        brief = fmlanes.contract("T-9", "abc", "/m")
+        brief = slanes.contract("T-9", "abc", "/m")
         for text in (brief, agent):
             self.assertIn("fm check --affected --evidence", text)
             self.assertIn("full gates run after the merge", text)
@@ -597,9 +597,9 @@ class BuilderGates(unittest.TestCase):
 
     def test_builders_review_their_own_change_as_an_adversary_before_reporting(self):
         # T-1147: reviewers found real defects in almost every builder branch
-        import fmlanes
+        from sampo import lanes as slanes
         agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
-        for text in (fmlanes.contract("T-9", "abc", "/m"), agent):
+        for text in (slanes.contract("T-9", "abc", "/m"), agent):
             for w in ("Self-review", "what input breaks it", "what outside text it trusts", "what is unbounded",
                       "what it writes and where", "a second run"):
                 self.assertIn(w, text)
@@ -608,13 +608,13 @@ class BuilderGates(unittest.TestCase):
 class BuilderContractOneSource(unittest.TestCase):
     def test_every_contract_rule_is_in_the_builder_agent(self):
         # T-1290: the rules live once, in fm-builder.md; the brief carries each of them with the real ids
-        import fmlanes
+        from sampo import lanes as slanes
         agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
-        self.assertFalse(hasattr(fmlanes, "CONTRACT"), "no second copy of the rules in fmlanes.py")
+        self.assertFalse(hasattr(slanes, "CONTRACT"), "no second copy of the rules in fmlanes.py")
         rules = agent.split("break none of it:\n")[1].split("\n\nReport in")[0].split("\n- ")
         rules = [r.removeprefix("- ") for r in rules[1:]]
         self.assertGreater(len(rules), 8)
-        text = fmlanes.contract("T-9", "abc123", "/main")
+        text = slanes.contract("T-9", "abc123", "/main")
         for r in rules:
             self.assertIn(r.replace("<ID>", "T-9").replace("<BASE>", "abc123").replace("<MAIN>", "/main"), text)
         self.assertNotIn("<ID>", text)
@@ -638,26 +638,26 @@ class BoardLanes(ForemanTestCase):
         return path
 
     def base(self):
-        import fmcore as c
+        from sampo import core as c
         return c.load_briefs(c.find_project(self.repo))[0].meta.get("base")
 
     def test_the_base_is_saved_before_git_merge_runs(self):
-        import fmcli
-        import fmcore as c
-        import fmlanes
+        from sampo import cli
+        from sampo import core as c
+        from sampo import lanes as slanes
         self.lane("x = 2\n")
-        head, seen, real = self.git(self.repo, "rev-parse", "HEAD").strip(), [], fmlanes._git
+        head, seen, real = self.git(self.repo, "rev-parse", "HEAD").strip(), [], slanes._git
 
         def spy(root, *args, **kw):
             if args[:2] == ("merge", "--no-ff"):
                 seen.append(self.base())
             return real(root, *args, **kw)
-        fmlanes._git = spy
+        slanes._git = spy
         try:
             p = c.find_project(self.repo)
-            fmlanes.merge(p, fmcli.need_brief(p, "T-0001"), self.repo, unverified="test")
+            slanes.merge(p, cli.need_brief(p, "T-0001"), self.repo, unverified="test")
         finally:
-            fmlanes._git = real
+            slanes._git = real
         self.assertEqual(seen, [head], "on disk before git merge ran")
         self.assertEqual(self.base(), head)
 
@@ -677,14 +677,14 @@ class BoardLanes(ForemanTestCase):
 
     def test_one_git_runner(self):
         import ast
-        import fmcore as c
+        from sampo import core as c
         lib = os.path.join(os.path.dirname(__file__), "..", "lib")
         defs = lambda m: {n.name for n in ast.walk(ast.parse(read_text(os.path.join(lib, m + ".py"))))
                           if isinstance(n, ast.FunctionDef)}
-        for m in ("fmcore", "fmguard"):
+        for m in ("sampo/core", "fmguard"):
             self.assertIn("_git", defs(m), m)
-        for m in ("fmlanes", "fmsecrets", "fmmap", "fmbench"):
-            self.assertNotIn("_git", defs(m), f"{m} runs git through fmcore._git")
+        for m in ("sampo/lanes", "sampo/secrets", "sampo/map", "sampo/bench"):
+            self.assertNotIn("_git", defs(m), f"{m} runs git through sampo.core._git")
         r = c._git(self.repo, "rev-parse", "--verify", "-q", "refs/heads/nope", proc=True)
         self.assertNotEqual(r.returncode, 0)
         r = c._git(os.path.join(self.tmp, "missing"), "status", proc=True)
@@ -698,7 +698,7 @@ class SafeGitFailsClosed(unittest.TestCase):
 
     def test_a_timed_out_config_lookup_refuses_the_command(self):
         import unittest.mock
-        import fmbench
+        from sampo import bench as sbench
         real, calls = subprocess.run, []
 
         def run(cmd, *a, **k):  # the real runner, with git config timing out
@@ -707,7 +707,7 @@ class SafeGitFailsClosed(unittest.TestCase):
                 raise subprocess.TimeoutExpired(cmd, 1)
             return real(cmd, *a, **k)
         with unittest.mock.patch.object(subprocess, "run", side_effect=run):
-            r = fmbench._safe_git("/nowhere", "checkout", "x")
+            r = sbench._safe_git("/nowhere", "checkout", "x")
         self.assertNotEqual(r.returncode, 0)
         self.assertFalse(any("checkout" in x for x in calls), calls)  # the guarded command never ran
 
@@ -721,12 +721,12 @@ class SafeGitFailsClosed(unittest.TestCase):
     def test_a_secrets_audit_that_cant_list_files_says_so(self):
         import tempfile
         import unittest.mock
-        import fmsecrets
+        from sampo import secrets
         with tempfile.TemporaryDirectory() as t:
             subprocess.run(["git", "init", "-q", t], check=True)
-            with unittest.mock.patch.object(fmsecrets.c, "_git", return_value=subprocess.CompletedProcess(
+            with unittest.mock.patch.object(secrets.c, "_git", return_value=subprocess.CompletedProcess(
                     [], 124, "", "timed out")):
-                found = fmsecrets._tree(t)
+                found = secrets._tree(t)
         self.assertTrue(found and "couldn't list" in found[0]["kind"], found)  # never a false "no credentials"
 
 
@@ -755,10 +755,10 @@ class LaneRecovery(ForemanTestCase):
 
     def live_stalled_builder(self):
         """A builder whose process is alive (this test's) and whose lane has been quiet for longer than the threshold."""
-        import fmbus
+        from sampo import bus
         import time
         self.stall_env()
-        tid, path = self.stopped_builder(proc=f"{fmbus.host_id()}|{os.getpid()}|{fmbus._proc(os.getpid())[1]}")
+        tid, path = self.stopped_builder(proc=f"{bus.host_id()}|{os.getpid()}|{bus._proc(os.getpid())[1]}")
         old = time.time() - 3600
         for root, _, names in os.walk(path):
             if ".git" not in root.split(os.sep):
@@ -769,12 +769,12 @@ class LaneRecovery(ForemanTestCase):
 
     def relaunch_stopped(self, tid, wip="again.py"):
         """A recovered lane's builder stops again: its kept branch is re-attached and a dead process recorded."""
-        import fmbus
+        from sampo import bus
         path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
         p = c.find_project(self.repo)
         b = c.find_brief(p, tid)
         b.meta["builder"] = c.now()
-        b.meta["builder_proc"] = f"{fmbus.host_id()}|999999999|1"
+        b.meta["builder_proc"] = f"{bus.host_id()}|999999999|1"
         c.save_brief(p, b)
         with open(os.path.join(path, wip), "w") as f:
             f.write("y = 2\n")
@@ -791,11 +791,11 @@ class LaneRecovery(ForemanTestCase):
         c.save_brief(p, b)
 
     def live_proc(self):
-        import fmbus
-        return f"{fmbus.host_id()}|{os.getpid()}|{fmbus._proc(os.getpid())[1]}"
+        from sampo import bus
+        return f"{bus.host_id()}|{os.getpid()}|{bus._proc(os.getpid())[1]}"
 
     def test_every_stop_cause_has_one_recovery_and_a_scenario_that_classifies_to_it(self):
-        import fmlanes
+        from sampo import lanes as slanes
         p = c.find_project(self.repo)
         self.stall_env()
         lanes = {}
@@ -808,15 +808,15 @@ class LaneRecovery(ForemanTestCase):
         lanes["guard_refused"] = self.stopped_builder(wip="g.py")[0]
         self.mark(lanes["guard_refused"], "guard", arg="core")
         lanes["stalled"] = self.live_stalled_builder()[0]
-        got = fmlanes.stop_causes(p, c.load_briefs(p), fresh=True)
+        got = slanes.stop_causes(p, c.load_briefs(p), fresh=True)
         self.usage_wall()
         lanes["usage_limit"] = self.stopped_builder(wip="u.py")[0]
-        walled = fmlanes.stop_causes(p, c.load_briefs(p), fresh=True)
+        walled = slanes.stop_causes(p, c.load_briefs(p), fresh=True)
         got[lanes["usage_limit"]] = walled[lanes["usage_limit"]]  # with the window spent, every plain stop reads as it
-        self.assertEqual(set(lanes), set(fmlanes.STOP_CAUSES), "one scenario per cause in the table, none unmapped")
+        self.assertEqual(set(lanes), set(slanes.STOP_CAUSES), "one scenario per cause in the table, none unmapped")
         for cause, tid in lanes.items():
             self.assertEqual(got[tid][0], cause, f"{tid} should classify as {cause}: {got.get(tid)}")
-            text = fmlanes.recovery_text(cause, tid, detail=got[tid][1])
+            text = slanes.recovery_text(cause, tid, detail=got[tid][1])
             self.assertTrue(text.strip(), cause)
             if cause == "no_report":
                 self.assertIn(f"fm lane merge {tid}", text)
@@ -828,26 +828,26 @@ class LaneRecovery(ForemanTestCase):
                 self.assertNotIn("recover", text)
             else:
                 self.assertIn(f"fm lane recover {tid}", text, cause)
-        self.assertIn("--agent-stopped", fmlanes.recovery_text("stalled", "T-1"))
-        self.assertIn("stop its agent", fmlanes.recovery_text("stalled", "T-1"))
-        self.assertNotIn("--agent-stopped", fmlanes.recovery_text("merge_conflict", "T-1"))
-        self.assertNotIn("--agent-stopped", fmlanes.recovery_text("red_after_merge", "T-1"))
-        self.assertIn("12:00", fmlanes.recovery_text("usage_limit", "T-1", detail="12:00"))
-        self.assertTrue(all(len(v) == 2 for v in fmlanes.STOP_CAUSES.values()), "label and recovery per cause")
+        self.assertIn("--agent-stopped", slanes.recovery_text("stalled", "T-1"))
+        self.assertIn("stop its agent", slanes.recovery_text("stalled", "T-1"))
+        self.assertNotIn("--agent-stopped", slanes.recovery_text("merge_conflict", "T-1"))
+        self.assertNotIn("--agent-stopped", slanes.recovery_text("red_after_merge", "T-1"))
+        self.assertIn("12:00", slanes.recovery_text("usage_limit", "T-1", detail="12:00"))
+        self.assertTrue(all(len(v) == 2 for v in slanes.STOP_CAUSES.values()), "label and recovery per cause")
 
     def test_a_stopped_builder_whose_fresh_commit_left_the_tree_clean_ended_without_a_report(self):
-        import fmlanes  # T-2362: the exam's lanes drill found it read as uncommitted while under 30 minutes old
+        from sampo import lanes as slanes  # T-2362: the exam's lanes drill found it read as uncommitted while under 30 minutes old
         tid, _ = self.finished_builder(when=time.strftime("%Y-%m-%dT%H:%M:%S"))
         p = c.find_project(self.repo)
-        self.assertEqual(fmlanes.stop_causes(p, c.load_briefs(p), fresh=True)[tid][0], "no_report")
+        self.assertEqual(slanes.stop_causes(p, c.load_briefs(p), fresh=True)[tid][0], "no_report")
 
     def test_a_merged_lane_and_a_lane_with_no_process_record_have_no_stop_cause(self):
-        import fmlanes
+        from sampo import lanes as slanes
         p = c.find_project(self.repo)
         merged = self.stopped_builder()[0]
         self.mark(merged, "merged")
         elsewhere = self.stopped_builder(proc="elsewhere|ns|999999999|1", wip="e.py")[0]
-        self.assertEqual(fmlanes.stop_causes(p, c.load_briefs(p), fresh=True), {}, "can't tell or merged: no cause")
+        self.assertEqual(slanes.stop_causes(p, c.load_briefs(p), fresh=True), {}, "can't tell or merged: no cause")
 
     def test_next_in_full_autonomy_is_the_recovery_with_the_agent_line_and_the_old_notes_are_gone(self):
         tid, _ = self.stopped_builder()
@@ -912,9 +912,9 @@ class LaneRecovery(ForemanTestCase):
         self.assertTrue(os.path.isdir(path))
 
     def test_recover_never_resumes_over_a_live_builder_that_is_not_stalled(self):
-        import fmbus
-        me = fmbus._proc(os.getpid())[1]
-        tid, path = self.stopped_builder(proc=f"{fmbus.host_id()}|{os.getpid()}|{me}")
+        from sampo import bus
+        me = bus._proc(os.getpid())[1]
+        tid, path = self.stopped_builder(proc=f"{bus.host_id()}|{os.getpid()}|{me}")
         for extra in ([], ["--agent-stopped"], ["--force", "it hung"]):
             r = self.fm("lane", "recover", tid, *extra, check=False, env={"FM_STALL_CACHE_S": "0"})
             self.assertNotEqual(r.returncode, 0, extra)
@@ -938,12 +938,12 @@ class LaneRecovery(ForemanTestCase):
 
     def test_a_fresh_conflict_or_red_on_a_live_lane_is_left_alone_and_fm_next_does_not_order_it(self):
         """T-2354 review: builder_proc is the main session's, so "alive" proves nothing about the builder."""
-        import fmlanes
+        from sampo import lanes as slanes
         env = {"FM_STALL_CACHE_S": "0"}
         for kind in ("conflict", "refused"):
             tid, path = self.stopped_builder(proc=self.live_proc(), wip=f"{kind}.py")
             self.mark(tid, kind)
-            self.assertNotIn(tid, fmlanes.stop_causes(c.find_project(self.repo), fresh=True), kind)
+            self.assertNotIn(tid, slanes.stop_causes(c.find_project(self.repo), fresh=True), kind)
             r = self.fm("lane", "recover", tid, check=False, env=env)
             self.assertNotEqual(r.returncode, 0, kind)
             self.assertTrue(os.path.isdir(path), f"a fresh {kind} on a live lane: its builder may still be working")
@@ -983,11 +983,11 @@ class LaneRecovery(ForemanTestCase):
         self.assertTrue(os.path.isdir(path2))
 
     def test_a_guard_refusal_names_its_grant_and_never_offers_a_rebuild(self):
-        import fmlanes
+        from sampo import lanes as slanes
         p = c.find_project(self.repo)
         tid, path = self.stopped_builder()
         self.mark(tid, "guard", arg="core")
-        self.assertEqual(fmlanes.stop_causes(p, fresh=True)[tid][0], "guard_refused")
+        self.assertEqual(slanes.stop_causes(p, fresh=True)[tid][0], "guard_refused")
         self.fm("autonomy", "full")
         out = self.fm("next").stdout
         self.assertIn(f"fm ask {tid} core", out)
@@ -1013,13 +1013,13 @@ class LaneRecovery(ForemanTestCase):
         self.assertTrue(c.find_brief(c.find_project(self.repo), tid).meta.get("lane_stop", "").startswith("merged "))
 
     def test_the_marker_survives_a_busy_ledger_and_the_ignored_lane_is_not_ordered(self):
-        import fmlanes
+        from sampo import lanes as slanes
         p = c.find_project(self.repo)
         tid, path = self.stopped_builder()
         self.mark(tid, "conflict")
         for i in range(520):  # more than the ledger tail the old marker read
             c.log_event(p, "touched", task="T-9999", data={"file": f"f{i}"})
-        self.assertEqual(fmlanes.stop_causes(p, fresh=True)[tid][0], "merge_conflict")
+        self.assertEqual(slanes.stop_causes(p, fresh=True)[tid][0], "merge_conflict")
         with open(os.path.join(path, ".gitignore"), "w") as f:
             f.write("keep.dat\n")
         with open(os.path.join(path, "keep.dat"), "w") as f:
@@ -1048,14 +1048,14 @@ class LaneRecovery(ForemanTestCase):
 
     def test_stop_causes_reads_every_lane_so_the_finished_cache_keeps_one_key(self):
         import unittest.mock
-        import fmlanes
+        from sampo import lanes as slanes
         p = c.find_project(self.repo)
         a = self.finished_builder()[0]
         b = self.stopped_builder(wip="b.py")[0]
         seen = []
         real = c.finished_lanes
         with unittest.mock.patch.object(c, "finished_lanes", side_effect=lambda pp, bs: seen.append(sorted(x.id for x in bs)) or real(pp, bs)):
-            got = fmlanes.stop_causes(p, c.load_briefs(p), fresh=True)
+            got = slanes.stop_causes(p, c.load_briefs(p), fresh=True)
         # T-2362: an ended builder's lane is judged directly (ahead and clean), so finished_lanes' cache is never split
         self.assertEqual(seen, [])
         self.assertEqual((got[a][0], got[b][0]), ("no_report", "uncommitted"))
@@ -1096,7 +1096,7 @@ class LaneRecovery(ForemanTestCase):
         self.assertIn("clash.py", brief)
 
     def test_a_lane_gets_two_recoveries_and_the_third_stop_blocks_its_task_with_both_attempts(self):
-        import fmlanes
+        from sampo import lanes as slanes
         tid, path = self.stopped_builder()
         self.fm("lane", "recover", tid)
         path = self.relaunch_stopped(tid)
@@ -1108,7 +1108,7 @@ class LaneRecovery(ForemanTestCase):
         shown = self.fm("task", "show", tid).stdout
         meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
         self.assertEqual(meta["status"], "blocked")
-        self.assertIn(fmlanes.STOP_CAUSES["uncommitted"][0], shown)
+        self.assertIn(slanes.STOP_CAUSES["uncommitted"][0], shown)
         self.assertIn("attempt 1", shown)
         self.assertIn("attempt 2", shown)
         ev = [e for e in c.ledger_events(c.find_project(self.repo), ["lane_recover"]) if e.get("task") == tid]
@@ -1228,7 +1228,7 @@ class PlanRace(RaceBase):
                                                       "simple cache"))
         self.race(tid)
         self.assertIn("option 2", self.brief(tid).section("Race"))
-        self.assertEqual(fmlanes._options(self.brief(tid))[1], 2)
+        self.assertEqual(slanes._options(self.brief(tid))[1], 2)
 
     def test_the_base_check_ignores_a_missing_program_and_a_linted_command(self):
         tid = self.task(check="nosuchprog_t2339")
@@ -1240,10 +1240,10 @@ class PlanRace(RaceBase):
         self.assertEqual([b.id for b in c.load_briefs(c.find_project(self.repo)) if b.meta.get("race_of")], [])
 
     def test_a_test_file_name_with_a_trailing_newline_is_not_a_test_file(self):
-        self.assertTrue(fmlanes._TEST_RE.fullmatch("pkg/test_a.py"))
-        self.assertTrue(fmlanes._TEST_RE.fullmatch("a_test.py"))
-        self.assertFalse(fmlanes._TEST_RE.fullmatch("test_a.py\n"))
-        self.assertFalse(fmlanes._TEST_RE.fullmatch("test_é.py"))
+        self.assertTrue(slanes._TEST_RE.fullmatch("pkg/test_a.py"))
+        self.assertTrue(slanes._TEST_RE.fullmatch("a_test.py"))
+        self.assertFalse(slanes._TEST_RE.fullmatch("test_a.py\n"))
+        self.assertFalse(slanes._TEST_RE.fullmatch("test_é.py"))
 
 
 class RaceEvidence(RaceBase):
@@ -1495,7 +1495,7 @@ class DesignRace(RaceBase):
             self.assertIn("tier", r.stderr + r.stdout)
         self.assertFalse(os.path.exists(os.path.join(self.repo, "win.txt")), "a spike never merges")
         with self.assertRaises(c.PolicyError):  # merge() itself refuses, whoever calls it
-            fmlanes.merge(c.find_project(self.repo), self.brief(b), self.repo)
+            slanes.merge(c.find_project(self.repo), self.brief(b), self.repo)
 
     def test_a_hostile_spike_note_is_marked_as_data_in_the_l_plan(self):  # T-2340 review 2
         tid, (a, b) = self.spikes()
@@ -1532,12 +1532,12 @@ class DesignRace(RaceBase):
         p = c.find_project(self.repo)
         os.environ["FM_STALL_CACHE_S"] = "0"
         self.addCleanup(os.environ.pop, "FM_STALL_CACHE_S", None)
-        import fmbus
+        from sampo import bus
         import unittest.mock
         briefs = c.load_briefs(p)
-        with unittest.mock.patch.object(fmbus, "proc_state", return_value="stopped"):  # its builder has ended
+        with unittest.mock.patch.object(bus, "proc_state", return_value="stopped"):  # its builder has ended
             self.assertEqual(c.finished_lanes(p, briefs, quiet_min=0), [])
-            self.assertEqual(fmlanes.awaiting_merge(p, briefs), [])
+            self.assertEqual(slanes.awaiting_merge(p, briefs), [])
             for x in briefs:  # the control: the same lane without the spike mark is a finished lane
                 x.meta.pop("lane_spike", None)
             self.assertEqual(c.finished_lanes(p, briefs, quiet_min=0), [a])
@@ -1580,8 +1580,8 @@ class SelfChangeGate(ForemanTestCase):
 
     def setUp(self):
         super().setUp()
-        import fmselfgate
-        self.g = fmselfgate
+        from sampo import selfgate
+        self.g = selfgate
         self.fm("init")
         self.tid = first(self.fm("task", "new", "Self change", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
                                  "--step", "s", "--json").stdout)["id"]
@@ -1672,7 +1672,7 @@ class SelfChangeGate(ForemanTestCase):
         self.assertTrue(any("budget" in r for r in rows), rows)
 
     def test_a_hook_that_blocks_without_burning_cpu_refuses_on_a_loaded_bench_too(self):
-        import fmselfgate as g  # T-2363: the lean mutation set's sleep in a hook passed a loaded bench (CPU basis only)
+        from sampo import selfgate as g  # T-2363: the lean mutation set's sleep in a hook passed a loaded bench (CPU basis only)
         base = {"Stop": {"p95": 40.0, "cpu_p95": 30.0, "load": 2.0, "budget": 150}}
         rows = g._slower(base, {"Stop": {"p95": 290.0, "cpu_p95": 31.0, "load": 2.0, "budget": 150}})
         self.assertIn("Stop", rows)
@@ -1731,7 +1731,7 @@ class SelfChangeGate(ForemanTestCase):
     def toy_base(self):
         main = "main" if "main" in self.git("branch") else "master"
         self.git("checkout", "-q", main)
-        self.write({"plugin/lib/fmreplay.py": self.TOY_REPLAY, "plugin/lib/fmguard.py": self.TOY_GUARD})
+        self.write({"plugin/lib/sampo/replay.py": self.TOY_REPLAY, "plugin/lib/fmguard.py": self.TOY_GUARD})
         self.git("add", "-A")
         self.git("commit", "-qm", "toy guard")
         self.git("checkout", "-qB", "foreman/x")
@@ -1746,7 +1746,7 @@ class SelfChangeGate(ForemanTestCase):
     def test_the_branch_is_judged_by_the_bases_replay_even_if_it_rewrites_its_own(self):  # T-2352 review
         self.toy_base()
         lie = self.TOY_REPLAY.replace("fmguard.judge(x)", "'destructive'")  # the branch's replay claims all blocked
-        self.branch({"plugin/lib/fmguard.py": "def judge(cmd):\n    return 'allow'\n", "plugin/lib/fmreplay.py": lie})
+        self.branch({"plugin/lib/fmguard.py": "def judge(cmd):\n    return 'allow'\n", "plugin/lib/sampo/replay.py": lie})
         rows = self.real_gate()
         self.assertTrue(any("rm -rf ~" in r and "base destructive, branch allow" in r for r in rows), rows)
 
@@ -1814,7 +1814,7 @@ class RouteBase(ForemanTestCase):
             self.lane(model, bad=i < bad, probe=probe)
 
     def route(self, tid=None, tier="S"):
-        return fmlanes.route(self.p, tier, tid=tid, outs=self.outs)
+        return slanes.route(self.p, tier, tid=tid, outs=self.outs)
 
     def state(self):
         with open(os.path.join(self.p.dir, "route.json"), encoding="utf-8") as f:
@@ -1827,12 +1827,12 @@ class RouteBase(ForemanTestCase):
 
 def probe_id(yes=True):
     """A task id the stable hash does (or does not) pick as a probe."""
-    return next(f"T-{i:04d}" for i in range(900, 999) if fmlanes.is_probe(f"T-{i:04d}") == yes)
+    return next(f"T-{i:04d}" for i in range(900, 999) if slanes.is_probe(f"T-{i:04d}") == yes)
 
 
 class ProbeDown(RouteBase):
     def test_the_hash_picks_about_a_fifth_of_the_ids_and_not_by_arrival_order(self):
-        hits = [fmlanes.is_probe(f"T-{i:04d}") for i in range(1, 201)]
+        hits = [slanes.is_probe(f"T-{i:04d}") for i in range(1, 201)]
         self.assertTrue(30 <= sum(hits) <= 50, sum(hits))
         self.assertNotEqual(hits[:10], [False] * 4 + [True] + [False] * 4 + [True])  # not every 5th in a row
 
@@ -1890,7 +1890,7 @@ class ProbeDown(RouteBase):
 
     def test_a_racing_task_is_never_a_probe(self):
         self.lanes("sonnet", 5)
-        self.assertEqual(fmlanes.route(self.p, "S", tid=probe_id(), outs=self.outs, racing=True)[::2], ("sonnet", False))
+        self.assertEqual(slanes.route(self.p, "S", tid=probe_id(), outs=self.outs, racing=True)[::2], ("sonnet", False))
 
 
 class ProbeProvisional(RouteBase):
@@ -1912,14 +1912,14 @@ class ProbeProvisional(RouteBase):
         return {"tier": "long", "agent": agent, "model": None, "at": at, "goals": [{"id": g, "true_done": d} for g, d in goals]}
 
     def seed_exam(self, goals, at="2000-01-01T00:00:00Z"):
-        import fmgenesis
-        fmgenesis.exam_line(self.p, self.long_run(goals, at=at))
+        from sampo import rune
+        rune.exam_line(self.p, self.long_run(goals, at=at))
 
     def test_a_long_run_at_least_as_good_as_the_run_before_confirms_it(self):
         tids = [self.lane("sonnet") for _ in range(2)]
         self.seed_exam([(tids[0], True), (tids[1], False)])
         self.promoted()
-        done = fmlanes.confirm_routes(self.p, self.long_run([(tids[0], True), (tids[1], False)]))
+        done = slanes.confirm_routes(self.p, self.long_run([(tids[0], True), (tids[1], False)]))
         self.assertEqual(len(done), 1)
         st = self.state()["S"]
         self.assertEqual((st["pick"], st["provisional"]), ("haiku", False))
@@ -1930,7 +1930,7 @@ class ProbeProvisional(RouteBase):
         tids = [self.lane("sonnet") for _ in range(2)]
         self.seed_exam([(tids[0], True), (tids[1], True)])
         self.promoted()
-        fmlanes.confirm_routes(self.p, self.long_run([(tids[0], True), (tids[1], False)]))
+        slanes.confirm_routes(self.p, self.long_run([(tids[0], True), (tids[1], False)]))
         self.assertIsNone(self.state()["S"]["pick"])
         self.assertIn("Revert S lanes to sonnet", self.decisions())
         self.assertEqual(self.route(probe_id(False))[0], "sonnet")
@@ -1938,10 +1938,10 @@ class ProbeProvisional(RouteBase):
     def test_a_long_run_that_cannot_judge_leaves_it_provisional(self):
         tids = [self.lane("sonnet") for _ in range(2)]
         self.promoted()  # no run before the promotion to compare with
-        self.assertEqual(fmlanes.confirm_routes(self.p, self.long_run([(tids[0], True)])), [])
+        self.assertEqual(slanes.confirm_routes(self.p, self.long_run([(tids[0], True)])), [])
         self.seed_exam([(tids[0], True)])
-        self.assertEqual(fmlanes.confirm_routes(self.p, self.long_run([("T-0999", True)])), [], "no goal in the tier")
-        self.assertEqual(fmlanes.confirm_routes(self.p, self.long_run([(tids[0], True)], agent="oracle")), [])
+        self.assertEqual(slanes.confirm_routes(self.p, self.long_run([("T-0999", True)])), [], "no goal in the tier")
+        self.assertEqual(slanes.confirm_routes(self.p, self.long_run([(tids[0], True)], agent="oracle")), [])
         self.assertTrue(self.state()["S"]["provisional"])
 
     def test_revert_route_restores_the_dearer_pick_and_pauses_probing_for_twenty_lanes(self):

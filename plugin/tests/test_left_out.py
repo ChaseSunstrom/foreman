@@ -8,14 +8,14 @@ import unittest
 
 from helpers import ForemanTestCase
 
-import fmcore as c
+from sampo import core as c
 
 LIBDIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
 
 
 def silent_sites():
     out = []
-    for f in sorted(glob.glob(os.path.join(LIBDIR, "fm*.py"))):
+    for f in sorted(glob.glob(os.path.join(LIBDIR, "fm*.py")) + glob.glob(os.path.join(LIBDIR, "sampo", "*.py"))):
         lines = open(f, encoding="utf-8").read().split("\n")
         for i, l in enumerate(lines):
             if not re.search(r"join\(.*\[:[0-9]+\]\)", l) or "# not a list:" in l:

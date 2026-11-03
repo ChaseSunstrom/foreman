@@ -10,9 +10,9 @@ import unittest
 
 from helpers import PLUGIN, ForemanTestCase, git_repo
 
-import fmcore as c
-import fmdoctor as d
-import fmsetup
+from sampo import core as c
+from sampo import doctor as d
+from sampo import setup
 
 
 class Checks(unittest.TestCase):
@@ -133,13 +133,13 @@ class Checks(unittest.TestCase):
     def test_low_disk_warns(self):
         # T-1450: the disk filled on 2026-10-22 and hooks failed writing state (ENOSPC) with no warning first
         import collections
-        import fmcore
+        from sampo import core
         Usage = collections.namedtuple("Usage", "total used free")
         for n in range(3):
             self.write(f"volt/.claude/worktrees/agent-{n}/f", "x")
         self.write("gitter/.claude/worktrees/agent-0/f", "x")
         os.makedirs(os.path.join(self.t, "quiet"))
-        projects = [(fmcore.Project(name, os.path.join(self.t, name), ""), {}) for name in ("volt", "gitter", "quiet")]
+        projects = [(core.Project(name, os.path.join(self.t, name), ""), {}) for name in ("volt", "gitter", "quiet")]
         low = d.check_disk(self.t, lambda _: Usage(900e9, 893e9, 7e9), projects)
         self.assertEqual(low.status, "WARN")
         self.assertIn("7 GB free", low.detail)
@@ -341,22 +341,22 @@ class Checks(unittest.TestCase):
 
     def test_self_docs_hold_fm_help_to_every_command_once(self):
         # T-1011: T-0974 added fm approve-reads with no help tier; only the full suite's test_help noticed, after commit
-        import fmcli
+        from sampo import cli
         from unittest import mock
-        fmcli.build_parser()
+        cli.build_parser()
         tiers = [(t, " ".join(w for w in n.split() if w != "approve-reads") + (" status teleport" if i == 0 else ""))
-                 for i, (t, n) in enumerate(fmcli.HELP_TIERS)]
-        real, saved = fmcli.build_parser, list(fmcli.HELP_TIERS)  # T-1378: the parser is built once, so put them back
+                 for i, (t, n) in enumerate(cli.HELP_TIERS)]
+        real, saved = cli.build_parser, list(cli.HELP_TIERS)  # T-1378: the parser is built once, so put them back
 
         def broken():
             parser = real()
-            fmcli.HELP_TIERS[:] = tiers
+            cli.HELP_TIERS[:] = tiers
             return parser
         try:
-            with mock.patch.object(fmcli, "build_parser", broken):
+            with mock.patch.object(cli, "build_parser", broken):
                 r = d.check_self_docs()
         finally:
-            fmcli.HELP_TIERS[:] = saved
+            cli.HELP_TIERS[:] = saved
         self.assertEqual(r.status, "FAIL")
         for needle in ("fm help's tiers lack approve-reads", "list status twice", "teleport isn't an fm command"):
             self.assertIn(needle, r.detail)
@@ -398,7 +398,7 @@ class Checks(unittest.TestCase):
         self.assertIn("fm serve status", r.detail)
 
     def test_env(self):
-        both = dict(fmsetup.ENV)
+        both = dict(setup.ENV)
         self.assertEqual(d.check_env({"env": both}, {}).status, "PASS")
         self.assertEqual(d.check_env({"env": dict(both, CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="50")}, {}).status, "PASS",
                          "the user's own value counts")
@@ -674,7 +674,7 @@ class HookErrors(ForemanTestCase):
 
     def test_one_hours_tracebacks_of_one_bug_are_one_run_and_a_failing_feed_does_not_stop_the_rest(self):  # T-2349 review
         from unittest import mock
-        import fmrecall
+        from sampo import recall
         self.fm("init")
         p = c.find_project(self.repo)
         log = os.path.join(self.home, "state", "logs", "hooks.log")
@@ -686,7 +686,7 @@ class HookErrors(ForemanTestCase):
         d.feed_self_failures(p, [], "s1")
         self.assertEqual([b for b in c.load_briefs(p) if "keyerror" in b.title], [])
         open(log, "w").close()
-        seen, real = [], fmrecall.note_own
+        seen, real = [], recall.note_own
 
         def flaky(pp, text, who, *a, **k):
             seen.append(text)
@@ -694,7 +694,7 @@ class HookErrors(ForemanTestCase):
                 raise RuntimeError("lock gone")
             return real(pp, text, who, *a, **k)
         results = [d.Result("one", "FAIL", "a"), d.Result("two", "FAIL", "b")]
-        with mock.patch.object(fmrecall, "note_own", flaky):
+        with mock.patch.object(recall, "note_own", flaky):
             d.feed_self_failures(p, results, "s1")
         self.assertEqual(len(seen), 2, "the second feed ran after the first raised")
 
@@ -702,7 +702,7 @@ class HookErrors(ForemanTestCase):
         # T-1139: NameError BATCH_AT came from a half-written edit; the line it names no longer reads that way
         log = os.path.join(self.home, "state", "logs", "hooks.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
-        src = os.path.join(d.PLUGIN, "lib", "fmdoctor.py")
+        src = os.path.join(d.PLUGIN, "lib", "sampo", "doctor.py")
         with open(src) as f:
             first = f.readline().rstrip("\n")
         frame = f"  File \"{src}\", line 1, in <module>\n"
@@ -950,15 +950,15 @@ class ScanCache(ForemanTestCase):
     # T-2298: usage burn and unloaded skills reuse their result while the files they read are unchanged
     def setUp(self):
         super().setUp()
-        import fmcost
-        self.fmcost = fmcost
+        from sampo import cost
+        self.fmcost = cost
         self.calls = {"burn": 0, "events": 0}
         self.cfg = os.path.join(self.tmp, "cfg")
         os.makedirs(os.path.join(self.cfg, "projects", "-p"))
         self.transcript = os.path.join(self.cfg, "projects", "-p", "s.jsonl")
         with open(self.transcript, "w") as f:
             f.write("{}\n")
-        self._saved = (fmcost.burn_findings, c.global_events, os.environ.get("CLAUDE_CONFIG_DIR"))
+        self._saved = (cost.burn_findings, c.global_events, os.environ.get("CLAUDE_CONFIG_DIR"))
         os.environ["CLAUDE_CONFIG_DIR"] = self.cfg
 
         def burn(*a, **k):
@@ -968,7 +968,7 @@ class ScanCache(ForemanTestCase):
         def events(since):
             self.calls["events"] += 1
             return []
-        fmcost.burn_findings, c.global_events = burn, events
+        cost.burn_findings, c.global_events = burn, events
         self.addCleanup(self.restore)
 
     def restore(self):
@@ -1005,14 +1005,14 @@ class ScanCache(ForemanTestCase):
         self.assertEqual(self.calls, {"burn": 1, "events": 1})
 
     def test_the_forecast_is_keyed_on_the_hours_it_shows(self):
-        import fmbudget
-        saved, n = fmbudget.forecast, [0]
+        from sampo import budget as sbudget
+        saved, n = sbudget.forecast, [0]
 
         def fc(now=None):
             n[0] += 1  # full_at moves with the clock; the hours before the reset shown don't
             return {"seven_day": {"resets_at": 1_000_000.0, "full_at": 1_000_000.0 - 7200 + n[0]}}
-        fmbudget.forecast = fc
-        self.addCleanup(setattr, fmbudget, "forecast", saved)
+        sbudget.forecast = fc
+        self.addCleanup(setattr, sbudget, "forecast", saved)
         d.check_usage_burn()
         d.check_usage_burn()
         self.assertEqual(self.calls["burn"], 1)
@@ -1152,9 +1152,9 @@ class BoardDoctor(unittest.TestCase):  # T-0954
             with open(clean, "w", encoding="utf-8") as f:
                 f.write("﻿# BOM first\nfamily 👨‍👩‍👧 and ❤\n")
             self.assertEqual(d.check_invisible_text([clean]).status, "PASS")
-            import fmcore  # T-1687: VS15/16 are invisible wherever they sit; fmcore.plain drops them, doctor flags them
+            from sampo import core  # T-1687: VS15/16 are invisible wherever they sit; fmcore.plain drops them, doctor flags them
             for hidden in ("❤️", "é︎", "☺︎ plain"):
-                self.assertNotEqual(fmcore.plain(hidden), hidden)
+                self.assertNotEqual(core.plain(hidden), hidden)
                 with open(bad, "w", encoding="utf-8") as f:
                     f.write("ok\n" + hidden + "\n")
                 self.assertEqual(d.check_invisible_text([bad]).status, "WARN", repr(hidden))
@@ -1180,9 +1180,9 @@ class Headless(unittest.TestCase):
     """T-1638: fm doctor says whether headless rendering is available, or why not; never a failure."""
 
     def probe(self, path, **env):
-        import fmshot
+        from sampo import shot
         from unittest import mock
-        with mock.patch.object(fmshot, "chrome", return_value=path), mock.patch.dict(os.environ, env):
+        with mock.patch.object(shot, "chrome", return_value=path), mock.patch.dict(os.environ, env):
             return d.check_headless()
 
     def fake(self, body):
@@ -1263,33 +1263,33 @@ class NightTimers(ForemanTestCase):  # T-2357
 class ModelBackends(ForemanTestCase):  # T-2489: the model layer's backends on one line that never fails the doctor
     def test_backends_line_names_each_backend_local_or_cloud_and_the_live_uses(self):
         from unittest import mock
-        import fmmodels
+        from sampo import models
         self.fm("init")
         p = c.find_project(self.repo, create=False)
         reg = [{"name": "ollama", "local": True, "profile": {}}, {"name": "home", "local": False, "own": True, "profile": {}},
                {"name": "anthropic", "local": False, "profile": {}}]
-        with mock.patch.object(fmmodels, "registry", return_value=reg):
+        with mock.patch.object(models, "registry", return_value=reg):
             r = d.check_model_backends(p)
         self.assertEqual(r.status, "PASS")
         for word in ("local: ollama", "own: home", "cloud: anthropic", "live: none"):  # T-2494: the user's own server
             self.assertIn(word, r.detail)
-        with mock.patch.object(fmmodels, "registry", return_value=reg), mock.patch.object(
-                fmmodels, "live", side_effect=lambda p, use: use == "intake-tier"):
+        with mock.patch.object(models, "registry", return_value=reg), mock.patch.object(
+                models, "live", side_effect=lambda p, use: use == "intake-tier"):
             self.assertIn("live: intake-tier", d.check_model_backends(p).detail)
-        with mock.patch.object(fmmodels, "registry", return_value=[]):
+        with mock.patch.object(models, "registry", return_value=[]):
             r = d.check_model_backends(p)
         self.assertEqual((r.status, "no backend" in r.detail), ("PASS", True))
-        with mock.patch.object(fmmodels, "registry", side_effect=OSError("boom")):
+        with mock.patch.object(models, "registry", side_effect=OSError("boom")):
             self.assertEqual(d.check_model_backends(p).status, "PASS")
         c.write_meta(p, dict(c.read_meta(p), sensitive=True))
-        with mock.patch.object(fmmodels, "registry", return_value=reg):
+        with mock.patch.object(models, "registry", return_value=reg):
             self.assertIn("sensitive: local only", d.check_model_backends(p).detail)
 
 
 class SelfFixWeek(ForemanTestCase):  # T-2365: the week's self-fix trials on one doctor line, held against not held
     def test_the_week_s_self_fix_trials_held_against_not_held_and_none_when_none(self):
         import datetime
-        import fmtrials
+        from sampo import trials
         self.fm("init")
         p = c.find_project(self.repo, create=False)
         r = d.check_self_fixes(p)
@@ -1304,11 +1304,11 @@ class SelfFixWeek(ForemanTestCase):  # T-2365: the week's self-fix trials on one
                 fix("T-4", "2026-10-31T00:00:00Z", 7),  # still pending
                 fix("T-6", "garbage", 2, "held"),  # a malformed record is skipped, never a crash
                 {"what": "x", "moves": "corrections", "by": 3, "at": "2026-10-26T00:00:00Z", "verdict": "held"}]
-        with open(fmtrials._path(p), "w", encoding="utf-8") as f:
+        with open(trials._path(p), "w", encoding="utf-8") as f:
             json.dump(rows, f)
         r = d.check_self_fixes(p, now=now)
         self.assertEqual((r.status, r.detail), ("WARN", "last 7 days: 1 held, 1 didn't hold, 1 unmeasured"))
-        with open(fmtrials._path(p), "w", encoding="utf-8") as f:
+        with open(trials._path(p), "w", encoding="utf-8") as f:
             json.dump(rows[:1], f)
         r = d.check_self_fixes(p, now=now)
         self.assertEqual((r.status, r.detail), ("PASS", "last 7 days: 1 held, 0 didn't hold"))

@@ -4,8 +4,8 @@ import os
 
 from helpers import ForemanTestCase
 
-import fmcore as c
-import fmdoctor as d
+from sampo import core as c
+from sampo import doctor as d
 
 FAIL = "FAIL: test_a (m.C.test_a)\n"
 

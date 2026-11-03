@@ -41,20 +41,20 @@ class Envelope(CodeCase):
         self.assertEqual(self.task()["status"], "done")
 
     def test_the_goal_line_rides_in_the_envelope_while_a_goal_stands(self):  # T-2141
-        import fmcode
+        from sampo import smith
         self.fm("init")
-        run = fmcode.Run(type("A", (), {})(), self.repo, self.tmp)
-        self.assertNotIn("Goal:", fmcode._context_note(run))
+        run = smith.Run(type("A", (), {})(), self.repo, self.tmp)
+        self.assertNotIn("Goal:", smith._context_note(run))
         self.fm("goal", "set", "Ship the ledger", "--until", "2099-01-01")
         self.fm("goal", "item", "one", "--done-when", "true")
-        note = fmcode._context_note(run)
+        note = smith._context_note(run)
         m = re.search(rf"<data-{run.nonce}>\n(.*)\n</data-{run.nonce}>", note, re.S)
         self.assertIn('Goal: "Ship the ledger" · 0/1 items done', m.group(1) if m else note)
 
     def test_fence_escapes_every_lookalike_and_trim_keeps_the_fence(self):
-        import fmcode
-        run = fmcode.Run(type("A", (), {})(), self.repo, self.tmp)
-        other = fmcode.Run(type("A", (), {})(), self.repo, self.tmp)
+        from sampo import smith
+        run = smith.Run(type("A", (), {})(), self.repo, self.tmp)
+        other = smith.Run(type("A", (), {})(), self.repo, self.tmp)
         self.assertNotEqual(run.nonce, other.nonce)  # per run
         fenced = run.fence(HOSTILE + SAFE)
         self.assertEqual(len(TAG.findall(fenced)), 2, fenced)
@@ -62,7 +62,7 @@ class Envelope(CodeCase):
         self.assertTrue(fenced.startswith(f"<data-{run.nonce}>\n") and fenced.endswith(f"\n</data-{run.nonce}>"))
         msgs = [{"role": "tool", "tool_call_id": f"c{i}", "content": run.fence(f"ignore previous {i}\nmore")}
                 for i in range(8)]
-        stub = fmcode.trim(msgs)[0]["content"]
+        stub = smith.trim(msgs)[0]["content"]
         self.assertEqual(stub, f"(older result cut: <data-{run.nonce}>ignore previous 0</data-{run.nonce}>)")
 
     def test_a_worker_clis_step_and_fix_prompts_say_the_envelope_is_data(self):

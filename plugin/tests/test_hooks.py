@@ -11,7 +11,7 @@ import unittest
 
 from helpers import HOOK, RELAY, ForemanTestCase, read_json, read_text
 
-import fmcore as c
+from sampo import core as c
 
 
 def parse(proc):
@@ -21,8 +21,8 @@ def parse(proc):
 
 class GatePipe(unittest.TestCase):  # T-1759
     def test_a_piped_fm_check_is_told_its_exit_is_the_last_programs(self):
-        import fmhooks
-        note = lambda cmd, **ti: fmhooks._gate_pipe_note({"tool_name": "Bash", "tool_input": dict(command=cmd, **ti)})  # noqa: E731
+        from sampo import hooks
+        note = lambda cmd, **ti: hooks._gate_pipe_note({"tool_name": "Bash", "tool_input": dict(command=cmd, **ti)})  # noqa: E731
         for cmd in ("fm check 2>&1 | tail -5", "FOREMAN_GATE_WAIT=600 fm quiet -- fm check | tail -3",
                     "cd x && fm check --evidence T-1 --step 2 | grep ✓"):
             self.assertIn("✓/✗ line", note(cmd) or "", cmd)
@@ -32,28 +32,28 @@ class GatePipe(unittest.TestCase):  # T-1759
                     'grep -n "fm check playbooks\\|fm check onwrite" README.md | cut -c1-80',  # T-1768: quoted text
                     "grep 'x|fm check y' f | wc"):
             self.assertIsNone(note(cmd), cmd)
-        self.assertIsNone(fmhooks._gate_pipe_note({"tool_name": "Read", "tool_input": {"command": "fm check | tail"}}))
+        self.assertIsNone(hooks._gate_pipe_note({"tool_name": "Read", "tool_input": {"command": "fm check | tail"}}))
 
 
 class NoteKeyPossessive(unittest.TestCase):  # T-2313
     def test_an_apostrophe_s_does_not_leave_a_stray_s_word(self):
-        import fmhooks
-        self.assertEqual(fmhooks._note_key("T-0877's lesson for this file: x"), "lesson for this file x")
-        self.assertEqual(fmhooks._note_key("Foreman: don't edit \"quoted\" files"), "don t edit quoted files")
+        from sampo import hooks
+        self.assertEqual(hooks._note_key("T-0877's lesson for this file: x"), "lesson for this file x")
+        self.assertEqual(hooks._note_key("Foreman: don't edit \"quoted\" files"), "don t edit quoted files")
 
 
 class GatePipeOnce(ForemanTestCase):
     def test_a_later_piped_gate_in_the_session_gets_the_one_line_form(self):
         # T-1889: the full note came back after every compaction (8x in a week); the session already knows it
-        import fmhooks
+        from sampo import hooks
         pl = {"tool_name": "Bash", "tool_input": {"command": "fm check | tail -3"}, "session_id": "s1889"}
-        first = fmhooks._gate_pipe_note(pl)
+        first = hooks._gate_pipe_note(pl)
         self.assertIn("the last program's, not the gates'", first)
         self.hook("SessionStart", {"source": "compact", "session_id": "s1889"})  # re-arms one-shot notes, not this
-        again = fmhooks._gate_pipe_note(pl)
+        again = hooks._gate_pipe_note(pl)
         self.assertIn("✓/✗", again)
         self.assertLess(len(again), len(first) // 2)
-        self.assertIn("the last program's, not the gates'", fmhooks._gate_pipe_note(dict(pl, session_id="s2")))
+        self.assertIn("the last program's, not the gates'", hooks._gate_pipe_note(dict(pl, session_id="s2")))
 
 
 class BatchNoteOnce(ForemanTestCase):
@@ -166,8 +166,8 @@ class SessionStart(HookCase):
         self.assertIn("kit/store.py:2", self.headless_ss())  # an unattended run with nothing queued still gets them
 
     def test_a_big_tree_gets_a_pointer_not_a_scan(self):
-        import fmcore as c
-        import fmhooks
+        from sampo import core as c
+        from sampo import hooks
         from unittest import mock
         self.fm("init")
         self.plant()
@@ -175,23 +175,23 @@ class SessionStart(HookCase):
         for name in ("a.py", "b.py"):  # untracked: fm find reads them too, so the cap counts them
             with open(os.path.join(self.repo, name), "w") as f:
                 f.write("x = 1\n")
-        with mock.patch.object(fmhooks, "LEADS_FILES", 2):
-            note = fmhooks._leads_note(p)
+        with mock.patch.object(hooks, "LEADS_FILES", 2):
+            note = hooks._leads_note(p)
         self.assertIn("fm find --rank", note)
         self.assertIn("untested: a test that calls it", note)
         self.assertIn("fm adopt", note)  # T-2186: a repo new to Foreman starts from its baseline
         self.assertIn("fm prove", note)  # T-2122: the proving step is a verb a session runs, not a chore it skips
         tid = self.fm_json("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
         self.fm("task", "drop", tid, "done elsewhere")
-        with mock.patch.object(fmhooks, "LEADS_FILES", 2):
-            self.assertNotIn("fm adopt", fmhooks._leads_note(p))  # worked in: no gate run for a one-shot request
+        with mock.patch.object(hooks, "LEADS_FILES", 2):
+            self.assertNotIn("fm adopt", hooks._leads_note(p))  # worked in: no gate run for a one-shot request
         self.assertRegex(note, r"\b[3-9] files, too many")  # 1 tracked, the rest untracked
         self.assertNotIn("kit/store.py", note)
-        import fmfind
+        from sampo import find as sfind
         import time
-        with mock.patch.object(fmhooks, "LEADS_SECONDS", 0.05), \
-                mock.patch.object(fmfind, "scan", side_effect=lambda *a: time.sleep(0.5) or (0, [])):
-            note = fmhooks._leads_note(p)
+        with mock.patch.object(hooks, "LEADS_SECONDS", 0.05), \
+                mock.patch.object(sfind, "scan", side_effect=lambda *a: time.sleep(0.5) or (0, [])):
+            note = hooks._leads_note(p)
         self.assertIn("ran past 0.05 s", note)  # a slow scan never holds session start past its deadline
 
     def test_fm_next_in_a_repo_foreman_hasnt_worked_in_names_fm_find(self):
@@ -207,7 +207,7 @@ class SessionStart(HookCase):
     def test_session_start_shows_a_standing_mandate(self):
         # T-2186: fm mandate keeps a sweeping request standing, but only fm scout and fm night read it; no session saw it
         import time
-        import fmcore as c
+        from sampo import core as c
         self.fm("init")
         self.fm("mandate", "set", "cover the CSV importer's edge cases", "--until",
                 time.strftime("%Y-%m-%d", time.localtime(time.time() + 3 * 86400)))
@@ -335,7 +335,7 @@ class SessionStart(HookCase):
         self.assertLessEqual(len(self.ctx_of(self.run_ss())), 1500)  # T-2589: one budget, the friction rule's
 
     def test_the_whole_note_fits_one_budget_with_a_long_mandate(self):  # T-2589
-        import fmhooks
+        from sampo import hooks
         self.fm("init")
         for i in range(30):
             self.fm("task", "new", f"a fairly long task title number {i} " + "x" * 60, "--type", "FIX", "--tier", "S")
@@ -344,10 +344,10 @@ class SessionStart(HookCase):
                 time.strftime("%Y-%m-%d", time.localtime(time.time() + 3 * 86400)))
         ctx = self.ctx_of(self.run_ss())
         self.assertIn("Standing mandate", ctx)
-        self.assertLessEqual(len(ctx), fmhooks.CTX_BUDGET)
-        self.assertEqual(fmhooks.CTX_BUDGET, 1500)
-        import fmdoctor
-        self.assertEqual(fmdoctor.CTX_BUDGET, fmhooks.CTX_BUDGET, "doctor measures the hook's own budget")
+        self.assertLessEqual(len(ctx), hooks.CTX_BUDGET)
+        self.assertEqual(hooks.CTX_BUDGET, 1500)
+        from sampo import doctor
+        self.assertEqual(doctor.CTX_BUDGET, hooks.CTX_BUDGET, "doctor measures the hook's own budget")
 
     def test_sensitive_and_other_session_are_reported(self):
         self.fm("init")
@@ -789,18 +789,18 @@ class HookClaudeShape(unittest.TestCase):
     HOOK = "/opt/plug/hooks/hook"
 
     def find(self, procs):
-        import fmbus
-        import fmhooks
+        from sampo import bus
+        from sampo import hooks
         chain = [(pid, "s") for pid, *_ in procs]
         table = {pid: (exe, argv) for pid, exe, argv in procs}
-        saved = (fmbus._chain, fmhooks._argv, fmhooks._exe, sys.argv)
-        fmbus._chain = lambda pid, depth: chain[:depth]
-        fmhooks._argv, fmhooks._exe = (lambda pid: table[pid][1]), (lambda pid: table[pid][0])
+        saved = (bus._chain, hooks._argv, hooks._exe, sys.argv)
+        bus._chain = lambda pid, depth: chain[:depth]
+        hooks._argv, hooks._exe = (lambda pid: table[pid][1]), (lambda pid: table[pid][0])
         sys.argv = [self.HOOK, "UserPromptSubmit"]
         try:
-            hc = fmhooks._hook_claude()
+            hc = hooks._hook_claude()
         finally:
-            fmbus._chain, fmhooks._argv, fmhooks._exe, sys.argv = saved
+            bus._chain, hooks._argv, hooks._exe, sys.argv = saved
         return hc and hc[0]
 
     def test_the_shapes_claude_code_launches_hooks_in(self):
@@ -1026,8 +1026,8 @@ class NoTaskGate(HookCase):
 
     def test_rules_written_before_the_first_request_go_with_every_request(self):
         # T-1242 review: "NEVER touch tests/." above "## Request 1" reached no task and no compaction note
-        import fmhooks
-        reqs = fmhooks._requests("Task: NEVER touch tests/.\n\n## Request 1\nAdd half().\n\n## Request 2\nAdd third().")
+        from sampo import hooks
+        reqs = hooks._requests("Task: NEVER touch tests/.\n\n## Request 1\nAdd half().\n\n## Request 2\nAdd third().")
         self.assertEqual([r.splitlines()[0] for r in reqs], ["Add half().", "Add third()."], "titles stay the request's")
         self.assertTrue(all("NEVER touch tests/." in r for r in reqs))
 
@@ -1154,11 +1154,11 @@ class NoTaskGate(HookCase):
 
     def test_the_edit_that_loses_a_parallel_race_goes_ahead_too(self):
         # review: the second of two parallel edits found the task made and was refused "no active task"
-        import fmhooks
+        from sampo import hooks
         self.fm("init")
         self.fm("autonomy", "full")
         self.task()
-        self.assertEqual(fmhooks._first_brief(self.project(), "sess-1"), "", "a task exists: re-check, don't refuse")
+        self.assertEqual(hooks._first_brief(self.project(), "sess-1"), "", "a task exists: re-check, don't refuse")
 
     def test_an_unattended_request_needs_no_work_verb(self):
         self.fm("init")
@@ -1524,9 +1524,9 @@ class PluginPins(HookCase):
 
     def test_the_pin_is_checked_again_under_the_lock_when_the_yes_is_spent(self):
         # T-0036 edge audit: another session's newer yes (for b) mustn't be burned by a call validated against a
-        import fmhooks
+        from sampo import hooks
         self.approve("b@m")
-        why = fmhooks._use_plugin_grant(self.project(), self.tid, "claude plugin install … [plugin a@m]", "s")
+        why = hooks._use_plugin_grant(self.project(), self.tid, "claude plugin install … [plugin a@m]", "s")
         self.assertIn("b@m", why)
         self.assertEqual(self.brief().meta.get("plugin_pin", [])[:1], ["b@m"])
         self.assertIn("plugin", self.brief().meta.get("allow"))
@@ -1984,13 +1984,13 @@ class PreToolUse(HookCase):
 
     def test_a_plugin_grant_is_used_at_most_once_even_in_a_race(self):
         # round-1 edge audit: two calls that both saw the grant must not both get through
-        import fmhooks
+        from sampo import hooks
         self.fm("init")
         tid = self.task()
         self.fm_ask(tid, "plugin")
         self.hook("UserPromptSubmit", {"prompt": "yes"})
-        self.assertIsNone(fmhooks._use_plugin_grant(self.project(), tid, "claude plugin marketplace add o/a", "s"))
-        self.assertIn("already used", fmhooks._use_plugin_grant(self.project(), tid, "claude plugin marketplace add o/b",
+        self.assertIsNone(hooks._use_plugin_grant(self.project(), tid, "claude plugin marketplace add o/a", "s"))
+        self.assertIn("already used", hooks._use_plugin_grant(self.project(), tid, "claude plugin marketplace add o/b",
                                                                  "s"))
 
     def test_a_broken_working_copy_of_the_guard_falls_back_to_the_committed_one(self):
@@ -2038,7 +2038,7 @@ class PreToolUse(HookCase):
         shutil.copytree(c.PLUGIN_ROOT, os.path.join(copy, "plugin"), ignore=shutil.ignore_patterns("__pycache__", "tests"))
         for args in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
             subprocess.run(["git", "-C", copy, *args], check=True, capture_output=True)
-        with open(os.path.join(copy, "plugin", "lib", "fmhooks.py"), "a") as f:
+        with open(os.path.join(copy, "plugin", "lib", "sampo", "hooks.py"), "a") as f:
             f.write("\ndef broken(:\n")
         payload = {"session_id": "sess-1", "cwd": self.repo, "hook_event_name": "SessionStart", "source": "startup"}
         r = subprocess.run([sys.executable, os.path.join(copy, "plugin", "hooks", "hook"), "SessionStart"],
@@ -2064,7 +2064,7 @@ class PreToolUse(HookCase):
         shutil.copytree(c.PLUGIN_ROOT, os.path.join(copy, "plugin"), ignore=shutil.ignore_patterns("__pycache__", "tests"))
         for args in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
             subprocess.run(["git", "-C", copy, *args], check=True, capture_output=True)
-        core_py = os.path.join(copy, "plugin", "lib", "fmcore.py")
+        core_py = os.path.join(copy, "plugin", "lib", "sampo", "core.py")
         link = os.path.join(self.tmp, "flink")  # an install reached through a symlink (final audit, rounds 6-7)
         os.symlink(copy, link)
 
@@ -2380,9 +2380,9 @@ class Stop(HookCase):
         self.assertEqual(self.decision(self.stop("Fixed it.", session="s6")), "block")  # hold unspent
 
     def test_a_lead_is_named_by_a_whole_word_basename_line_or_a_dotted_last_segment(self):
-        import fmhooks
+        from sampo import hooks
         f = {"file": "kit/store.py", "line": 6, "symbol": "Store.get"}
-        named = fmhooks._lead_named
+        named = hooks._lead_named
         self.assertFalse(named(f, "the budget is fine, store is ok"))  # `get` inside budget is not a name
         self.assertTrue(named(f, "`get` has no test"))
         self.assertTrue(named(f, "kit/store.py:6 is a lead"))
@@ -2395,7 +2395,7 @@ class Stop(HookCase):
 
     def test_the_hold_logs_under_stop_prunes_old_records_and_skips_late(self):
         from unittest import mock
-        import fmhooks
+        from sampo import hooks
         self.leads_session("s7")
         p = self.project()
         old = os.path.join(p.dir, "leads-old.json")
@@ -2405,25 +2405,25 @@ class Stop(HookCase):
             "CLAUDE_ENV_FILE": self.env_file, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"})
         self.assertFalse(os.path.exists(old))  # pruned when a new record is written
         pl = {"session_id": "s8", "last_assistant_message": "x"}
-        with mock.patch.object(fmhooks, "_HOOK_T0", time.monotonic() - 20):
-            self.assertIsNone(fmhooks._leads_hold(p, pl, True))  # the Stop hook is past ~15 s: skipped
-        dbg = open(fmhooks._leads_path(p, "s8")).read()
+        with mock.patch.object(hooks, "_HOOK_T0", time.monotonic() - 20):
+            self.assertIsNone(hooks._leads_hold(p, pl, True))  # the Stop hook is past ~15 s: skipped
+        dbg = open(hooks._leads_path(p, "s8")).read()
         lead = {"file": "kit/store.py", "line": 2, "kind": "vuln", "symbol": "lookup", "says": "SQL built"}
-        with mock.patch.object(fmhooks, "_HOOK_T0", time.monotonic()), \
-                mock.patch.object(fmhooks, "_leads_scan", side_effect=lambda p, event="x": ([lead], None)) as scan:
-            self.assertIsNotNone(fmhooks._leads_hold(p, pl, True), dbg)  # and the hold was not spent by skipping
+        with mock.patch.object(hooks, "_HOOK_T0", time.monotonic()), \
+                mock.patch.object(hooks, "_leads_scan", side_effect=lambda p, event="x": ([lead], None)) as scan:
+            self.assertIsNotNone(hooks._leads_hold(p, pl, True), dbg)  # and the hold was not spent by skipping
         self.assertEqual(scan.call_args[0][1], "Stop")  # a Stop re-scan logs its errors under Stop
 
     def test_a_lead_no_longer_present_is_not_held_and_a_slow_rescan_skips_the_check(self):
         from unittest import mock
-        import fmfind
-        import fmhooks
+        from sampo import find as sfind
+        from sampo import hooks
         self.leads_session("s3")
         pl = {"session_id": "s3", "last_assistant_message": "nothing"}
-        with mock.patch.object(fmhooks, "LEADS_SECONDS", 0.05), mock.patch.object(fmhooks, "_HOOK_T0", time.monotonic()), \
-                mock.patch.object(fmfind, "scan", side_effect=lambda *a: time.sleep(0.5) or (0, [])):
-            self.assertIsNone(fmhooks._leads_hold(self.project(), pl, True))  # past the deadline: skipped
-        self.assertIsNone(fmhooks._leads_hold(self.project(), pl, True))  # and it counted as the one hold
+        with mock.patch.object(hooks, "LEADS_SECONDS", 0.05), mock.patch.object(hooks, "_HOOK_T0", time.monotonic()), \
+                mock.patch.object(sfind, "scan", side_effect=lambda *a: time.sleep(0.5) or (0, [])):
+            self.assertIsNone(hooks._leads_hold(self.project(), pl, True))  # past the deadline: skipped
+        self.assertIsNone(hooks._leads_hold(self.project(), pl, True))  # and it counted as the one hold
 
     def test_a_tests_pass_claim_needs_a_passing_run_after_the_last_edit(self):
         # T-0886: the Stop gate checked only "done"; "all tests pass" went unchecked against the turn's own runs
@@ -2536,7 +2536,7 @@ class Stop(HookCase):
         self.assertIsNone(self.decision(self.proof_stop("The docs are now accurate, unproven: not checked.", sid="pc-6")))
 
     def test_proof_claim_kept_after_its_hold_is_labelled_for_the_user_and_recorded_on_the_task(self):  # T-2392
-        import fmcore as c
+        from sampo import core as c
         tid = self.proof_ready()
         self.assertEqual(self.decision(self.proof_stop("The migration works and reverses.", sid="pk-1")), "block")
         p = self.proof_stop("Yes, the migration works.", sid="pk-1")  # kept, still no run and no unproven label
@@ -2603,8 +2603,8 @@ class Stop(HookCase):
         self.assertIsNone(self.decision(self.stop("Done.")))  # a damaged gate file never breaks Stop
 
     def gate(self):
-        import fmhooks
-        return fmhooks._read_gate(self.project())
+        from sampo import hooks
+        return hooks._read_gate(self.project())
 
     def test_a_multi_part_prompt_records_its_clauses_and_a_task_made_later_covers_one(self):
         # T-2146: the gate works without the agent running fm clauses
@@ -2730,10 +2730,10 @@ class Stop(HookCase):
         self.fm("init")
         self.task(tier="M", focus=False)
         self.assertEqual(self.decision(self.stop("Continuing.")), "block")
-        import fmoutcomes
+        from sampo import outcomes
         p = c.find_project(self.repo)
         for _ in range(5):
-            fmoutcomes.record_close(p, {"outside": 9})
+            outcomes.record_close(p, {"outside": 9})
         self.assertIsNone(self.decision(self.stop("Continuing.")))
 
     def test_drive_allows_stop_when_asking_the_user(self):
@@ -2904,8 +2904,8 @@ class Stop(HookCase):
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "ok", "session_id": "sess-9"}, env=harness)
         self.assertIsNone(self.decision(p))
         # T-0820: a bench replay's claude -p measures Foreman at work, not a one-off answer
-        import fmbench
-        bench = dict(fmbench._env(c.PLUGIN_ROOT, os.path.join(self.home, "state")), CLAUDE_CODE_ENTRYPOINT="sdk-cli",
+        from sampo import bench as sbench
+        bench = dict(sbench._env(c.PLUGIN_ROOT, os.path.join(self.home, "state")), CLAUDE_CODE_ENTRYPOINT="sdk-cli",
                      FOREMAN_HOME=self.home, CLAUDE_ENV_FILE=self.env_file)
         self.assertNotIn("one-off", self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env=bench)))
 
@@ -3142,7 +3142,7 @@ class Stop(HookCase):
 
     def test_running_decodes_only_this_sessions_lines(self):
         # T-2033: Stop json-loaded all 1,500 tail lines to find this session's few
-        import fmhooks
+        from sampo import hooks
         from unittest import mock
         self.fm("init")
         rows = [{"kind": "bg_start", "session_id": f"other-{i}", "id": f"o{i}"} for i in range(200)]
@@ -3152,7 +3152,7 @@ class Stop(HookCase):
         with open(os.path.join(self.home, "state", "events.jsonl"), "a", encoding="utf-8") as f:
             f.writelines(json.dumps(dict({"ts": c.now()}, **r), ensure_ascii=False) + "\n" for r in rows)
         with mock.patch("json.loads", wraps=json.loads) as loads:
-            self.assertEqual(fmhooks._running("sess-1"), ["b2"])
+            self.assertEqual(hooks._running("sess-1"), ["b2"])
         self.assertLess(loads.call_count, 10, "other sessions' lines are never decoded")
 
     def test_full_autonomy_drive_takes_inbox_requests_when_the_queue_is_empty(self):

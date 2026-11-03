@@ -2841,20 +2841,20 @@ class CredentialReadHook(ForemanTestCase):
         # review: fmguard mid-edit (a syntax error) must not stop every Read; a credential-like path falls back to the
         # committed guard, and is refused when there is none
         import sys
-        import fmhooks
+        from sampo import hooks
         key = os.path.expanduser("~/.aws/credentials")
         pl = {"tool_name": "Read", "cwd": self.repo, "tool_input": {"file_path": key}}
         plain = dict(pl, tool_input={"file_path": os.path.join(self.repo, "a.txt")})
         with mock.patch.dict(sys.modules, {"fmguard": None}):
-            self.assertIsNone(fmhooks._credential_read(plain))
-            self.assertIn("credentials", fmhooks._credential_read(pl) or "")  # the committed guard
-            with mock.patch.object(fmhooks, "_committed", return_value=None):
-                self.assertIsNone(fmhooks._credential_read(plain))
-                self.assertTrue(fmhooks._credential_read(pl))
+            self.assertIsNone(hooks._credential_read(plain))
+            self.assertIn("credentials", hooks._credential_read(pl) or "")  # the committed guard
+            with mock.patch.object(hooks, "_committed", return_value=None):
+                self.assertIsNone(hooks._credential_read(plain))
+                self.assertTrue(hooks._credential_read(pl))
 
     def test_the_hooks_credential_markers_follow_the_guards_lists(self):
-        import fmhooks
-        self.assertEqual((set(fmhooks._CRED_DIRS), set(fmhooks._CRED_FILES)), (set(g._CRED_DIRS), set(g._CRED_FILES)))
+        from sampo import hooks
+        self.assertEqual((set(hooks._CRED_DIRS), set(hooks._CRED_FILES)), (set(g._CRED_DIRS), set(g._CRED_FILES)))
 
 
 class ProtectedTouch(GuardCase):

@@ -6,7 +6,7 @@ import subprocess
 
 from helpers import ForemanTestCase, read_text
 
-import fmcore as c
+from sampo import core as c
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -344,15 +344,15 @@ class Bench(ForemanTestCase):
         self.assertIn("every commit", r.stderr)
 
     def test_test_counts_read_unittest_and_pytest_summaries(self):
-        import fmbench
-        self.assertEqual(fmbench.count_tests(["Ran 12 tests in 0.1s / FAILED (failures=2, errors=1)",
+        from sampo import bench
+        self.assertEqual(bench.count_tests(["Ran 12 tests in 0.1s / FAILED (failures=2, errors=1)",
                                               "3 failed, 9 passed in 0.2s"]), (18, 24))
-        self.assertEqual(fmbench.count_tests(["Ran 5 tests in 0.0s / OK"]), (5, 5))
-        self.assertIsNone(fmbench.count_tests(["ok"]))
+        self.assertEqual(bench.count_tests(["Ran 5 tests in 0.0s / OK"]), (5, 5))
+        self.assertIsNone(bench.count_tests(["ok"]))
 
     def test_compactions_are_counted_from_entries_not_quotes(self):
         # T-1242 review: a transcript line quoting "compact_boundary" (reading fmbench.py, say) counted as one
-        import fmbench
+        from sampo import bench
         cfg = os.path.join(self.tmp, "cfg")
         os.makedirs(os.path.join(cfg, "projects", "p"))
         with open(os.path.join(cfg, "projects", "p", "s-9.jsonl"), "w") as f:
@@ -361,31 +361,31 @@ class Bench(ForemanTestCase):
         old = os.environ.get("CLAUDE_CONFIG_DIR")
         os.environ["CLAUDE_CONFIG_DIR"] = cfg
         try:
-            self.assertEqual(fmbench._compactions("s-9"), 1)
+            self.assertEqual(bench._compactions("s-9"), 1)
         finally:
             os.environ.pop("CLAUDE_CONFIG_DIR") if old is None else os.environ.update(CLAUDE_CONFIG_DIR=old)
 
     def test_failures_are_counted_per_request(self):
-        import fmbench
+        from sampo import bench
         case = {"requests": [{"title": "INI", "tests": ["tests/test_ini.py"]},
                              {"title": "Invoice", "tests": ["tests/test_invoice.py", "tests/test_text.py"]}]}
-        self.assertEqual(fmbench.per_request(case, ["test_ini.ParseTest.test_a", "tests.test_ini.ParseTest.test_b",
+        self.assertEqual(bench.per_request(case, ["test_ini.ParseTest.test_a", "tests.test_ini.ParseTest.test_b",
                                                     "test_text.WrapTest.test_c"]),
                          [{"title": "INI", "failed": 2}, {"title": "Invoice", "failed": 1}])
 
     def test_grading_names_the_hidden_tests_that_failed(self):
-        import fmbench
-        import fmcore as c
+        from sampo import bench
+        from sampo import core as c
         out = ("FAIL: test_split (test_lexer.LexerTest.test_split)\nERROR: test_x (tests.test_ini.IniTest)\n"
                "FAILED tests/test_a.py::test_b - assert 1 == 2\n")
         failed, orig = [], c.run_command
         c.run_command = lambda *a, **k: (1, out)
         try:
-            fmbench._safe_git, safe = (lambda *a: subprocess.CompletedProcess([], 0, "", "")), fmbench._safe_git
+            bench._safe_git, safe = (lambda *a: subprocess.CompletedProcess([], 0, "", "")), bench._safe_git
             try:
-                fmbench._grade(self.repo, {"tests": [], "commit": "HEAD", "verify": ["x"]}, {}, failed=failed)
+                bench._grade(self.repo, {"tests": [], "commit": "HEAD", "verify": ["x"]}, {}, failed=failed)
             finally:
-                fmbench._safe_git = safe
+                bench._safe_git = safe
         finally:
             c.run_command = orig
         self.assertEqual(failed, ["test_lexer.LexerTest.test_split", "tests.test_ini.IniTest.test_x",

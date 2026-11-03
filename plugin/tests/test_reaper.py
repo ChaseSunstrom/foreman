@@ -50,9 +50,9 @@ def gone(pid, wait=5):
 class _Stubbed(ForemanTestCase):
     def setUp(self):
         super().setUp()
-        import fmcore as c
-        import fmideas
-        self.c, self.fmideas = c, fmideas
+        from sampo import core as c
+        from sampo import ideas
+        self.c, self.fmideas = c, ideas
         bindir = os.path.join(self.tmp, "bin")
         os.makedirs(bindir)
         self.stub = os.path.join(bindir, "claude")
@@ -236,11 +236,11 @@ class Sweep(_Stubbed):
 class Hook(_Stubbed):
     def session_start(self, background, **sweep):
         """The hook's output, the sweep it called, and the orphans_reaped events in the ledger."""
-        import fmhooks
+        from sampo import hooks
         with mock.patch.dict(os.environ, {"FOREMAN_NO_BACKGROUND": background}), \
                 mock.patch("subprocess.Popen"), \
                 mock.patch.object(self.fmideas, "sweep_orphans", **sweep) as called:
-            out = fmhooks.session_start({"source": "compact", "session_id": "s-1", "cwd": self.repo})
+            out = hooks.session_start({"source": "compact", "session_id": "s-1", "cwd": self.repo})
         events = self.c.ledger_tail(self.c.find_project(self.repo))
         return out, called, [e["data"] for e in events if e["event"] == "orphans_reaped"]
 

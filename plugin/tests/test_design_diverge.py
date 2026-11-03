@@ -6,7 +6,7 @@ import unittest
 
 from helpers import ForemanTestCase, read_text
 
-import fmtaste
+from sampo import taste
 
 
 class Diverge(ForemanTestCase):
@@ -15,8 +15,8 @@ class Diverge(ForemanTestCase):
         got = json.loads(self.fm("design", "diverge", "3", "the", "pricing", "page", "--out", out, "--json").stdout)
         names = [v["look"] for v in got["variants"]]
         self.assertEqual(len(set(names)), 3)
-        known = fmtaste.looks()
-        self.assertEqual(names[1], fmtaste.opposite(names[0], known)[0][1], "the second is the farthest from the first")
+        known = taste.looks()
+        self.assertEqual(names[1], taste.opposite(names[0], known)[0][1], "the second is the farthest from the first")
         files = sorted(os.listdir(out))
         self.assertEqual(files, [f"variant-{k}-{n}.md" for k, n in enumerate(names, 1)])
         brief = read_text(os.path.join(out, files[0]))

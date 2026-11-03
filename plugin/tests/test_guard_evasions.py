@@ -15,7 +15,7 @@ for p in (os.path.join(os.path.dirname(HERE), "lib"), os.path.join(HERE, "fixtur
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import fmreplay  # noqa: E402
+from sampo import replay  # noqa: E402
 import gen_evasions  # noqa: E402
 
 FIX = os.path.join(HERE, "fixtures")
@@ -26,7 +26,7 @@ GAPS = os.path.join(FIX, "guard_gaps.jsonl")
 @unittest.skipIf(gen_evasions.home_in_a_repo(), "the home folder is inside a git tree: the guard judges it a project")
 class GuardEvasions(unittest.TestCase):
     def _cases(self, path):
-        cases, broken = fmreplay.load_cases(path)
+        cases, broken = replay.load_cases(path)
         self.assertEqual(broken, 0, f"a line of {os.path.basename(path)} is not a case")
         return cases
 
@@ -43,14 +43,14 @@ class GuardEvasions(unittest.TestCase):
         self.assertGreater(len(cases), 0, "no evasion corpus")
         # T-1291: pin the temp folder as the real corpus test does, so a different TMPDIR cannot make a case drift
         with mock.patch.object(tempfile, "tempdir", "/var/tmp"):
-            self.assertEqual(fmreplay.drift(cases), [], "the guard disagrees with a labelled evasion")
+            self.assertEqual(replay.drift(cases), [], "the guard disagrees with a labelled evasion")
             self.assertEqual(tempfile.tempdir, "/var/tmp", "verdicts must restore tempfile's folder")
 
     def test_every_listed_gap_is_still_a_gap(self):
         gaps = self._cases(GAPS)
         self.assertGreater(len(gaps), 0, "no gaps listed")
         with mock.patch.object(tempfile, "tempdir", "/var/tmp"):
-            drifted = fmreplay.drift(gaps)
+            drifted = replay.drift(gaps)
         # every gap must still be one the guard gets wrong; a fix drops it from drift -> this fails until it moves to
         # the corpus. The recorded `got` must be what the guard actually returns now.
         self.assertEqual(len(drifted), len(gaps), "a listed gap no longer drifts: regenerate and move it to the corpus")
@@ -97,11 +97,11 @@ class SnapshotForms(unittest.TestCase):
     def judge(self, cmd, cwd):
         """(refusal or None, the hook's save note or None), in the hook's order: the guard, then the save."""
         import fmguard as g
-        import fmhooks
+        from sampo import hooks
         ctx = g.Ctx(cwd=cwd, project_root=g.project_root_for(cwd, self.home), home=self.home,
                     foreman_home=os.path.join(self.home, ".claude", "foreman"), scratch=["/tmp"], task_id="T-0001")
         refused = g.check("Bash", {"command": cmd}, ctx)
-        note = fmhooks._snapshot_note({"tool_input": {"command": cmd}, "cwd": cwd}, g)
+        note = hooks._snapshot_note({"tool_input": {"command": cmd}, "cwd": cwd}, g)
         return refused, note
 
     @staticmethod
@@ -152,7 +152,7 @@ class SnapshotForms(unittest.TestCase):
 
     def test_saves_share_one_deadline(self):
         # second review: each repo's save had its own SNAPSHOT_S; two slow ones could outlast the hook's 5 s
-        import fmhooks
+        from sampo import hooks
         given = []
 
         def slow(top, why, timeout=None, what="tree"):
@@ -161,7 +161,7 @@ class SnapshotForms(unittest.TestCase):
             time.sleep(0.3)
             return ["abc"]
         cmd = "git reset --hard; git -C ../other reset --hard; git -C ../other stash clear"
-        with mock.patch.object(fmhooks, "SNAPSHOT_S", 0.5), mock.patch.object(fmhooks.c, "snapshot", slow):
+        with mock.patch.object(hooks, "SNAPSHOT_S", 0.5), mock.patch.object(hooks.c, "snapshot", slow):
             _, note = self.judge(cmd, self.repo)
         self.assertEqual(len(given), 2, note)  # the third had no time left
         self.assertLessEqual(given[1], 0.5 - 0.3 + 0.05)

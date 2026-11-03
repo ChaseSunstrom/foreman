@@ -5,7 +5,7 @@ import os
 
 from test_hooks import HookCase, parse
 
-import fmcore as c
+from sampo import core as c
 
 MOD = "def f(x):\n    a = x + 1\n    return a\n\n\ndef g(y):\n    b = y * 2\n    return b\n"
 
@@ -58,22 +58,22 @@ class Watch(Base):
         import io
         import threading
         import time
-        import fmbus
-        fmbus.send("sess-w", "old news", sender="sess-1")
+        from sampo import bus as sbus
+        sbus.send("sess-w", "old news", sender="sess-1")
         buf, done = io.StringIO(), threading.Event()
-        t = threading.Thread(target=fmbus.watch, kwargs={"sid": "sess-w", "interval": 0.05, "out": buf,
+        t = threading.Thread(target=sbus.watch, kwargs={"sid": "sess-w", "interval": 0.05, "out": buf,
                                                          "stop": done.is_set})
         t.start()
         try:
-            beat = os.path.join(fmbus._dir(), "watch-sess-w")
+            beat = os.path.join(sbus._dir(), "watch-sess-w")
             for _ in range(100):
                 if os.path.exists(beat):
                     break
                 time.sleep(0.05)
             self.assertTrue(os.path.exists(beat), "the watcher keeps a heartbeat")
-            fmbus.send("sess-w", "use the new parser", sender="sess-1")
-            fmbus.send("sess-z", "not yours", sender="sess-1")
-            fmbus.send("all", "freeze the API", kind="steer", sender="sess-1")
+            sbus.send("sess-w", "use the new parser", sender="sess-1")
+            sbus.send("sess-z", "not yours", sender="sess-1")
+            sbus.send("all", "freeze the API", kind="steer", sender="sess-1")
             for _ in range(100):
                 if buf.getvalue().count("\n") >= 2:
                     break
@@ -98,9 +98,9 @@ class Watch(Base):
         import subprocess
         import sys
         import time
-        import fmbus
+        from sampo import bus as sbus
         from helpers import FM
-        beat = os.path.join(fmbus._dir(), "watch-sess-sig")
+        beat = os.path.join(sbus._dir(), "watch-sess-sig")
         for sig in (signal.SIGTERM, signal.SIGHUP):
             w = subprocess.Popen([sys.executable, FM, "bus", "watch", "sess-sig"], cwd=self.repo,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -119,33 +119,33 @@ class Watch(Base):
     def test_session_start_survives_a_racing_cleanup_and_keeps_to_its_own_claude(self):
         # T-0820 (round-1 review): an overlapping SessionStart removing the same dead entry crashed record_pid, and a
         # claude -p run from a session's Bash re-mapped that session's claude to itself
-        import fmbus
+        from sampo import bus as sbus
         d = os.path.join(self.home, "state", "sessions", "by-pid")
         os.makedirs(d, exist_ok=True)
-        real_remove, real_chain = os.remove, fmbus._chain
+        real_remove, real_chain = os.remove, sbus._chain
         def racing_remove(path):
             real_remove(path)
             raise FileNotFoundError(path)  # the other SessionStart got there first
         open(os.path.join(d, "999999"), "w").close()  # a dead pid's entry
         names = {101: "sh", 102: "claude", 103: "bash", 104: "claude"}  # hook → sh → child claude -p → bash → parent
-        os.remove, fmbus._chain = racing_remove, lambda pid, depth: [(p, "t") for p in names][:depth]
-        real_comm = fmbus._comm if hasattr(fmbus, "_comm") else None
-        fmbus._comm = lambda pid: names.get(pid, "")
+        os.remove, sbus._chain = racing_remove, lambda pid, depth: [(p, "t") for p in names][:depth]
+        real_comm = sbus._comm if hasattr(sbus, "_comm") else None
+        sbus._comm = lambda pid: names.get(pid, "")
         try:
-            fmbus.record_pid("sess-child")
+            sbus.record_pid("sess-child")
         finally:
-            os.remove, fmbus._chain = real_remove, real_chain
+            os.remove, sbus._chain = real_remove, real_chain
             if real_comm:
-                fmbus._comm = real_comm
+                sbus._comm = real_comm
         self.assertEqual(sorted(os.listdir(d)), ["101", "102"], "up to its own claude, not the parent session's")
 
     def test_it_finds_its_session_from_the_session_start_hook(self):
-        import fmbus
+        from sampo import bus as sbus
         saved = {k: os.environ.pop(k, None) for k in ("CLAUDE_CODE_SESSION_ID", "FOREMAN_SESSION_ID")}
         try:
-            self.assertIsNone(fmbus.own_session())
+            self.assertIsNone(sbus.own_session())
             self.hook("SessionStart", {"session_id": "sess-pid", "source": "startup"})
-            self.assertEqual(fmbus.own_session(), "sess-pid", "this process is the hook's parent")
+            self.assertEqual(sbus.own_session(), "sess-pid", "this process is the hook's parent")
         finally:
             os.environ.update({k: v for k, v in saved.items() if v})
 
@@ -155,17 +155,17 @@ class Watch(Base):
         import io
         import threading
         import time
-        import fmbus
+        from sampo import bus as sbus
         saved = {k: os.environ.pop(k, None) for k in ("CLAUDE_CODE_SESSION_ID", "FOREMAN_SESSION_ID")}
         buf, done = io.StringIO(), threading.Event()
         try:
             self.hook("SessionStart", {"session_id": "sess-first", "source": "startup"})
-            t = threading.Thread(target=fmbus.watch, kwargs={"interval": 0.05, "out": buf, "stop": done.is_set})
+            t = threading.Thread(target=sbus.watch, kwargs={"interval": 0.05, "out": buf, "stop": done.is_set})
             t.start()
             time.sleep(0.3)
             self.hook("SessionStart", {"session_id": "sess-resumed", "source": "resume"})
             time.sleep(0.3)
-            fmbus.send("sess-resumed", "picked up after the resume", sender="sess-1")
+            sbus.send("sess-resumed", "picked up after the resume", sender="sess-1")
             for _ in range(100):
                 if "picked up" in buf.getvalue():
                     break
@@ -178,17 +178,17 @@ class Watch(Base):
 
     def test_a_resume_in_the_same_claude_process_is_not_another_session(self):
         # T-0841: the same live resume told the session another one (its own first id) was active 0m ago
-        import fmhooks
+        from sampo import hooks
         now = c.now()
-        self.assertIsNone(fmhooks._other_session({"id": "sess-first", "seen": now, "pid": 4242}, "sess-b", 4242))
+        self.assertIsNone(hooks._other_session({"id": "sess-first", "seen": now, "pid": 4242}, "sess-b", 4242))
         self.assertIn("Another Claude Code session",
-                      fmhooks._other_session({"id": "sess-first", "seen": now, "pid": 4242}, "sess-b", 999) or "")
+                      hooks._other_session({"id": "sess-first", "seen": now, "pid": 4242}, "sess-b", 999) or "")
         self.assertIn("Another Claude Code session",
-                      fmhooks._other_session({"id": "sess-first", "seen": now}, "sess-b", None) or "", "unknown: as before")
+                      hooks._other_session({"id": "sess-first", "seen": now}, "sess-b", None) or "", "unknown: as before")
 
     def test_wake_prefers_a_fresh_watcher_over_tmux(self):
         import time
-        import fmbus
+        from sampo import bus as sbus
         bin_ = os.path.join(self.tmp, "bin")
         os.makedirs(bin_)
         log = os.path.join(self.tmp, "tmux.log")
@@ -197,7 +197,7 @@ class Watch(Base):
         os.chmod(os.path.join(bin_, "tmux"), 0o755)
         env = {"PATH": bin_ + os.pathsep + os.environ["PATH"]}
         self.snap("sess-w", tmux_pane="%7")
-        beat = os.path.join(fmbus._dir(), "watch-sess-w")
+        beat = os.path.join(sbus._dir(), "watch-sess-w")
         open(beat, "w").close()
         self.assertIn("woke 1", self.fm("bus", "send", "sess-w", "hi", "--wake", env=env).stdout)
         self.assertFalse(os.path.exists(log), "the watcher delivers it: nothing typed into tmux")
@@ -255,14 +255,14 @@ class Lease(Base):
 
     def test_a_long_drop_is_cut_and_a_lanes_claims_still_held_are_said(self):
         # T-1731 review: one line per lease uncapped; a lane's bare drop said "Dropped 0" with its pre-claims held
-        import fmbus
+        from sampo import bus as sbus
         a = {"CLAUDE_CODE_SESSION_ID": "sess-a"}
         self.fm("lease", "take", *[f"m{i}.py" for i in range(10)], env=a)
         out = self.fm("lease", "drop", env=a).stdout
         self.assertIn("Dropped 10 lease(s)", out)
         self.assertEqual(out.count("dropped: "), 8)
         self.assertIn("… 2 more", out)
-        fmbus.preclaim(self.project(), "T-0001", ["scope.py"])
+        sbus.preclaim(self.project(), "T-0001", ["scope.py"])
         out = self.fm("lease", "drop", env=a).stdout
         self.assertIn("still held: 1 lane claim(s) of T-0001, freed when its lane merges or is removed (fm lease list)",
                       out)  # T-1837: builders read the bare count as unfinished work
@@ -327,8 +327,8 @@ class Conductor(Base):
 
     @staticmethod
     def start_of(pid):  # T-1249: as fmbus reads it, ps where there's no /proc (macOS)
-        import fmbus
-        return fmbus._proc(pid)[1]
+        from sampo import bus as sbus
+        return sbus._proc(pid)[1]
 
     def test_it_lists_live_sessions_and_its_steer_reaches_them(self):
         self.snap("sess-x", context_pct=41)
@@ -363,27 +363,27 @@ class NoProcfs(HookCase):  # T-2492: macOS has no /proc, so a process's start ti
     def test_a_slow_ps_is_asked_again_before_the_process_counts_as_gone(self):
         import subprocess
         from unittest import mock
-        import fmbus
+        from sampo import bus as sbus
         real_isdir = os.path.isdir
         slow = subprocess.TimeoutExpired(["ps"], 5)
         done = subprocess.CompletedProcess(["ps"], 0, stdout="  1 Sat Nov  1 12:00:00 2026\n")
-        with mock.patch.object(fmbus.os.path, "isdir", side_effect=lambda x: False if x == "/proc" else real_isdir(x)), \
+        with mock.patch.object(sbus.os.path, "isdir", side_effect=lambda x: False if x == "/proc" else real_isdir(x)), \
                 mock.patch("builtins.open", side_effect=OSError("no procfs")), \
-                mock.patch.object(fmbus.subprocess, "run", side_effect=[slow, done]) as run:
-            self.assertEqual(fmbus._proc(424242), (1, "Sat Nov  1 12:00:00 2026"))
+                mock.patch.object(sbus.subprocess, "run", side_effect=[slow, done]) as run:
+            self.assertEqual(sbus._proc(424242), (1, "Sat Nov  1 12:00:00 2026"))
         self.assertEqual(len(run.call_args_list), 2)
         self.assertGreater(run.call_args_list[1].kwargs["timeout"], run.call_args_list[0].kwargs["timeout"])
 
     def comm(self, *outs):  # T-2512: _comm on a host without procfs, ps answering outs in turn
         import subprocess
         from unittest import mock
-        import fmbus
+        from sampo import bus as sbus
         real_isdir = os.path.isdir
         done = [subprocess.CompletedProcess(["ps"], 0, stdout=o) for o in outs]
-        with mock.patch.object(fmbus.os.path, "isdir", side_effect=lambda x: False if x == "/proc" else real_isdir(x)), \
+        with mock.patch.object(sbus.os.path, "isdir", side_effect=lambda x: False if x == "/proc" else real_isdir(x)), \
                 mock.patch("builtins.open", side_effect=OSError("no procfs")), \
-                mock.patch.object(fmbus.subprocess, "run", side_effect=done) as run:
-            return fmbus._comm(424242), len(run.call_args_list)
+                mock.patch.object(sbus.subprocess, "run", side_effect=done) as run:
+            return sbus._comm(424242), len(run.call_args_list)
 
     def test_a_shebang_script_named_claude_counts_as_claude(self):  # T-2512: macOS ps names it by its interpreter
         self.assertEqual(self.comm("/bin/sh\n", "/bin/sh /var/folders/x/bin/claude /usr/bin/python3 fm lane brief T-1\n"),

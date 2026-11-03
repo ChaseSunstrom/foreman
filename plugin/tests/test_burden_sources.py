@@ -14,7 +14,7 @@ def hook(name, payload, content=""):
 
 class BurdenSources(ForemanTestCase):
     def test_hook_success_stdout_is_counted_by_source(self):
-        import fmcost
+        from sampo import cost
         sc = "Foreman project " + "x" * 84  # 100 chars
         rows = [hook("SessionStart:resume", json.dumps({"hookSpecificOutput": {"additionalContext": sc}})),
                 hook("PreToolUse:Bash", json.dumps({"systemMessage": "fm card " + "y" * 42})),  # 50
@@ -27,11 +27,11 @@ class BurdenSources(ForemanTestCase):
         os.makedirs(folder)
         with open(os.path.join(folder, "s1.jsonl"), "w") as f:
             f.write("\n".join(json.dumps(r) for r in rows) + "\n")
-        s = fmcost.burden(folder, "2000")["s1"]
+        s = cost.burden(folder, "2000")["s1"]
         self.assertEqual(s["injected_chars"], 150)
         self.assertEqual(s["src:SessionStart"], 100)
         self.assertEqual(s["src:PreToolUse"], 50)
-        self.assertEqual(fmcost.by_source({"s1": s}, 1)[0], ("SessionStart", 100.0))
+        self.assertEqual(cost.by_source({"s1": s}, 1)[0], ("SessionStart", 100.0))
 
 
 if __name__ == "__main__":

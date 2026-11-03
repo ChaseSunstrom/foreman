@@ -13,18 +13,18 @@ import unittest.mock as mock
 import test_settings_serve as serve
 from helpers import ForemanTestCase, read_text
 
-import fmcli
-import fmcodetui as T
-import fmideas
-import fmsettings
-import fmsettingsserve
+from sampo import cli
+from sampo import smithtui as T
+from sampo import ideas
+from sampo import settings
+from sampo import settingsserve
 
 COLS = [["log", "files"], ["checks", "time", "tokens"]]  # files moved to the left column from the defaults
 HTS = [[1, "auto"], ["auto", "auto", 1]]
 
 
 def entry(key, surface=None):
-    return fmsettings.find(key, surface)[0]
+    return settings.find(key, surface)[0]
 
 
 class _Room(ForemanTestCase):
@@ -38,16 +38,16 @@ class _Room(ForemanTestCase):
         self.toml = os.path.join(self.home, "tui.toml")
         self.settings = os.path.join(self.uhome, ".claude", "settings.json")
         for x in (mock.patch.dict(os.environ, {"HOME": self.uhome}),
-                  mock.patch.object(fmsettings, "in_claude_code", return_value=False)):
+                  mock.patch.object(settings, "in_claude_code", return_value=False)):
             x.start()
             self.addCleanup(x.stop)
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
         self.cookie = None
 
     def serve(self):
-        self.server, self.token = fmsettingsserve.make()
+        self.server, self.token = settingsserve.make()
         self.port, stop = self.server.server_address[1], threading.Event()
-        t = threading.Thread(target=fmsettingsserve.serve, args=(self.server, 30, stop), daemon=True)
+        t = threading.Thread(target=settingsserve.serve, args=(self.server, 30, stop), daemon=True)
         t.start()
         self.addCleanup(lambda: (stop.set(), t.join(5)))
 
@@ -55,26 +55,26 @@ class _Room(ForemanTestCase):
 class Pure(_Room):
     def test_layout_moved_moves_refuses_an_only_panel_and_stops_at_the_edge(self):
         lay = T.DEFAULTS["layout"]
-        self.assertEqual(fmsettings.layout_moved(lay, 1, 1, -1, 0), (COLS, HTS, "files", 0, 1))
-        self.assertIsNone(fmsettings.layout_moved(lay, 1, 0, 0, -1), "the top: nowhere to go")
-        self.assertIsNone(fmsettings.layout_moved(lay, 1, 0, 1, 0), "the right edge")
-        with self.assertRaisesRegex(fmsettings.SettingError, "only panel"):
-            fmsettings.layout_moved(lay, 0, 0, 1, 0)
+        self.assertEqual(settings.layout_moved(lay, 1, 1, -1, 0), (COLS, HTS, "files", 0, 1))
+        self.assertIsNone(settings.layout_moved(lay, 1, 0, 0, -1), "the top: nowhere to go")
+        self.assertIsNone(settings.layout_moved(lay, 1, 0, 1, 0), "the right edge")
+        with self.assertRaisesRegex(settings.SettingError, "only panel"):
+            settings.layout_moved(lay, 0, 0, 1, 0)
         self.assertEqual(lay["columns"][0], ["log"], "the defaults untouched")
 
     def test_a_closed_range_turns_on_a_1_2_5_grid_and_an_open_one_climbs_a_ladder(self):
         fresh, tokens, narrow = entry("freshAt", "plugin"), entry("freshTokens", "plugin"), entry("layout.narrow_below")
-        self.assertEqual([fmsettings.detent(fresh, v, n) for v, n in ((60, 1), (63, 1), (63, -1), (100, 1), (0, -1))],
+        self.assertEqual([settings.detent(fresh, v, n) for v, n in ((60, 1), (63, 1), (63, -1), (100, 1), (0, -1))],
                          [65, 65, 60, 100, 0])
-        self.assertEqual([fmsettings.detent(tokens, v, n) for v, n in ((150000, 1), (150000, -1), (0, 1), (0, -1))],
+        self.assertEqual([settings.detent(tokens, v, n) for v, n in ((150000, 1), (150000, -1), (0, 1), (0, -1))],
                          [200000, 100000, 1, 0])
-        self.assertEqual((fmsettings.detent(narrow, 80, 1), fmsettings.detent(narrow, 80, -1)), (100, 50))
-        with self.assertRaises(fmsettings.SettingError):
-            fmsettings.detent(entry("border"), "rounded", 1)
+        self.assertEqual((settings.detent(narrow, 80, 1), settings.detent(narrow, 80, -1)), (100, 50))
+        with self.assertRaises(settings.SettingError):
+            settings.detent(entry("border"), "rounded", 1)
 
     def test_a_fractional_dial_turns_off_a_value_float_division_lands_under(self):
         e = dict(entry("freshAt", "plugin"), type="number", range=(0, 1), key="x")
-        self.assertEqual((fmsettings.detent(e, 0.3, 1), fmsettings.detent(e, 0.3, -1)), (0.35, 0.25))
+        self.assertEqual((settings.detent(e, 0.3, 1), settings.detent(e, 0.3, -1)), (0.35, 0.25))
 
 
 class Page(_Room):
@@ -88,7 +88,7 @@ class Page(_Room):
         return self.req("POST", "/move", "&".join(f"{k}={v}" for k, v in fields.items()), h)
 
     def test_the_layout_is_a_grid_of_panels_with_the_moves_each_can_make(self):
-        page = fmsettingsserve.page("n", "")
+        page = settingsserve.page("n", "")
         self.assertIn('class="grid"', page)
         for name in ("log", "checks", "files", "time", "tokens"):
             self.assertIn(f"<b>{name}</b>", page)
@@ -103,7 +103,7 @@ class Page(_Room):
         self.assertIn("files moved", body)
         lay = T.load_config(self.toml)[0]["layout"]
         self.assertEqual((lay["columns"], lay["heights"]), (COLS, HTS))
-        fmsettings.undo()
+        settings.undo()
         self.assertEqual(T.load_config(self.toml)[0]["layout"]["columns"], T.DEFAULTS["layout"]["columns"])
 
     def test_a_bad_move_is_refused_and_writes_nothing(self):
@@ -123,7 +123,7 @@ class Page(_Room):
         self.assertEqual(self.move(c=1, i=1, dc=-1, di=0, name="files")[0], 200)
 
     def test_enter_in_a_number_sets_what_was_typed(self):
-        page = fmsettingsserve.page("n", "")
+        page = settingsserve.page("n", "")
         form = page[page.rindex("<form", 0, page.index(">layout.narrow_below<")):]
         form = form[:form.index("</form>")]
         self.assertTrue(form[form.index("<button"):].startswith("<button>set</button>"),
@@ -131,7 +131,7 @@ class Page(_Room):
         self.assertIn('aria-label="layout.narrow_below up one detent"', form)
 
     def test_closed_ranges_are_dials_with_ticks_and_open_ones_stepped_numbers(self):
-        page = fmsettingsserve.page("n", "")
+        page = settingsserve.page("n", "")
         fresh = page[page.index(">freshAt<"):][:900]
         self.assertIn('type="range" min="0" max="100" step="any"', fresh)
         self.assertIn('<datalist id="ticks-plugin-freshAt"><option value="0"><option value="5">', fresh)
@@ -192,11 +192,11 @@ class Newcomer(_Room):
     def run_cli(self, *args):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            rc = fmcli.main(["settings", "newcomer", *args])
+            rc = cli.main(["settings", "newcomer", *args])
         return rc, out.getvalue()
 
     def test_the_scripted_newcomer_reaches_each_goal_and_writes_nothing(self):
-        got = fmsettings.newcomer()
+        got = settings.newcomer()
         self.assertTrue(got and all(g["done"] for g in got), got)
         self.assertFalse(os.path.exists(self.toml))
         self.assertFalse(os.path.exists(self.settings))
@@ -208,7 +208,7 @@ class Newcomer(_Room):
     def test_where_it_got_stuck_names_the_step_and_the_hint_missing(self):
         hints = tuple(h for h in T._SET_HINTS if h[0] != "[ ]")
         with mock.patch.object(T, "_SET_HINTS", hints):
-            got = fmsettings.newcomer()
+            got = settings.newcomer()
         stuck = [g for g in got if not g["done"]]
         self.assertEqual(len(stuck), 1, got)
         self.assertEqual((stuck[0]["step"], stuck[0]["missing"]), (2, "[ ]  turn"))
@@ -221,7 +221,7 @@ class Newcomer(_Room):
         self.assertIn("find the hidden switch: stuck at step 1", out)
         self.assertIn("flip the hidden switch", out)
         self.assertNotIn("fm settings macro", out)
-        fmsettings.save_macro("squared", ["border=square"])  # T-1876: a saved macro that reaches it is offered
+        settings.save_macro("squared", ["border=square"])  # T-1876: a saved macro that reaches it is offered
         rc, out = self.run_cli("--goals", goals, "--json")
         self.assertEqual([g["macro"] for g in json.loads(out)], ["squared"], out)
         rc, out = self.run_cli("--goals", goals)
@@ -236,8 +236,8 @@ class Newcomer(_Room):
             asked.append(prompt)
             homes.append(os.environ.get("FOREMAN_HOME"))
             return json.dumps({"keys": ":border square\n"})
-        with mock.patch.object(fmideas, "run_child", side_effect=child):
-            got = fmsettings.newcomer(goals=[{"goal": "square borders", "steps": [], "done": {"border": "square"}}],
+        with mock.patch.object(ideas, "run_child", side_effect=child):
+            got = settings.newcomer(goals=[{"goal": "square borders", "steps": [], "done": {"border": "square"}}],
                                       real=True)
         self.assertTrue(got[0]["done"], got)
         self.assertEqual(len(asked), 1)
@@ -248,8 +248,8 @@ class Newcomer(_Room):
 
     def test_a_model_that_fails_stops_its_goal_not_the_run(self):
         goals = [{"goal": "square borders", "steps": [], "done": {"border": "square"}}] * 2
-        with mock.patch.object(fmideas, "run_child", side_effect=ValueError("the daily budget is spent")):
-            got = fmsettings.newcomer(goals=goals, real=True)
+        with mock.patch.object(ideas, "run_child", side_effect=ValueError("the daily budget is spent")):
+            got = settings.newcomer(goals=goals, real=True)
             with mock.patch("shutil.which", return_value="/usr/bin/claude"):
                 rc, out = self.run_cli("--real")
         self.assertEqual([(g["done"], g["step"]) for g in got], [(False, 1)] * 2)

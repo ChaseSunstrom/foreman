@@ -13,8 +13,8 @@ import zlib
 from unittest import mock
 
 from helpers import PLUGIN, ForemanTestCase, read_text  # puts plugin/lib on sys.path
-import fmcore as c
-import fmtaste
+from sampo import core as c
+from sampo import taste
 
 LOOKS = os.path.join(PLUGIN, "skills", "library", "cards", "looks")
 
@@ -88,7 +88,7 @@ class Ledger(ForemanTestCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertFalse(os.path.exists(os.path.join(c.state_dir(), "taste", "looks.json")))
         with self.assertRaises(ValueError):
-            fmtaste.record("loved", "look-lido")
+            taste.record("loved", "look-lido")
         p = self.fm("looks", "lido", check=False)  # a look where the verb goes: the verbs named, and the fix
         self.assertNotEqual(p.returncode, 0)
         self.assertNotIn("invalid choice", p.stderr)
@@ -96,37 +96,37 @@ class Ledger(ForemanTestCase):
             self.assertIn(word, p.stderr)
 
     def test_the_ledger_stays_bounded_and_survives_a_corrupt_file(self):
-        path = fmtaste.ledger_path()
+        path = taste.ledger_path()
         os.makedirs(os.path.dirname(path))
         with open(path, "w") as f:
             f.write("{not json")
-        fmtaste.record("kept", "look-lido")  # a broken ledger starts over rather than failing every call
-        self.assertEqual(len(fmtaste.load()["events"]), 1)
+        taste.record("kept", "look-lido")  # a broken ledger starts over rather than failing every call
+        self.assertEqual(len(taste.load()["events"]), 1)
         self.assertEqual(read_text(path + ".bak"), "{not json", "the broken file is kept beside it first")
         odd = [{"signal": "kept", "look": ["x"]}, {"signal": "calibration", "pairs": [[1, {}]], "answers": "a"},
                {"signal": "calibration", "pairs": "ab"}, "junk", None]
-        self.assertEqual(fmtaste.scores(odd), {}, "a hand-edited ledger's odd rows are skipped, not a crash")
-        with mock.patch.object(fmtaste, "EVENTS_KEEP", 5):
+        self.assertEqual(taste.scores(odd), {}, "a hand-edited ledger's odd rows are skipped, not a crash")
+        with mock.patch.object(taste, "EVENTS_KEEP", 5):
             for _ in range(9):
-                fmtaste.record("not", "look-lab-notebook", why="x" * 5000)
-            events = fmtaste.load()["events"]
+                taste.record("not", "look-lab-notebook", why="x" * 5000)
+            events = taste.load()["events"]
         self.assertEqual(len(events), 5)
-        self.assertLessEqual(max(len(e.get("why", "")) for e in events), fmtaste.WHY_CAP)
+        self.assertLessEqual(max(len(e.get("why", "")) for e in events), taste.WHY_CAP)
 
     def test_learned_matches_never_outweigh_what_the_user_kept(self):
-        fmtaste.record("kept", "look-observatory")
+        taste.record("kept", "look-observatory")
         for n in range(6):  # a glob of stylesheets, each matching Lido, one of them twice
-            fmtaste.record("learned", "look-lido", source=f"s{n}.css")
-        fmtaste.record("learned", "look-lido", source="s0.css")
-        events = fmtaste.load()["events"]
+            taste.record("learned", "look-lido", source=f"s{n}.css")
+        taste.record("learned", "look-lido", source="s0.css")
+        events = taste.load()["events"]
         self.assertEqual(sum(e["signal"] == "learned" for e in events), 6, "one learned per file name and look")
-        rank = {r["look"]: r for r in fmtaste.rank()}
-        self.assertEqual(rank["look-lido"]["score"], fmtaste.LEARNED_CAP)
+        rank = {r["look"]: r for r in taste.rank()}
+        self.assertEqual(rank["look-lido"]["score"], taste.LEARNED_CAP)
         self.assertLessEqual(rank["look-lido"]["score"], rank["look-observatory"]["score"])
-        self.assertEqual([r["look"] for r in fmtaste.rank()][:2], ["look-observatory", "look-lido"], "kept wins a tie")
-        with mock.patch.object(fmtaste, "EVENTS_KEEP", 4):
-            fmtaste.record("not", "look-cartographer")
-            kept = [e["signal"] for e in fmtaste.load()["events"]]
+        self.assertEqual([r["look"] for r in taste.rank()][:2], ["look-observatory", "look-lido"], "kept wins a tie")
+        with mock.patch.object(taste, "EVENTS_KEEP", 4):
+            taste.record("not", "look-cartographer")
+            kept = [e["signal"] for e in taste.load()["events"]]
         self.assertEqual(len(kept), 4)
         self.assertEqual([s for s in kept if s != "learned"], ["kept", "not"], "learned events are trimmed first")
 
@@ -137,7 +137,7 @@ class Calibration(ForemanTestCase):
             known = {f"look-{i:02d}": {} for i in range(n)}
             rivals = set()
             for rnd in range(4):
-                got = fmtaste.pairs(known, rnd)
+                got = taste.pairs(known, rnd)
                 self.assertEqual({x for p in got for x in p}, set(known), (n, rnd))
                 self.assertTrue(all(a != b for a, b in got), (n, rnd))
                 keys = [frozenset(p) for p in got]
@@ -158,11 +158,11 @@ class Calibration(ForemanTestCase):
         for few in ("a,b", "a," * 12 + "a", "a,b,x,a,b,a,b,a,b,a,b,a"):
             p = self.fm("looks", "calibrate", "--answers", few, check=False)
             self.assertNotEqual(p.returncode, 0, few)
-        self.assertEqual(fmtaste.load()["events"], [])
+        self.assertEqual(taste.load()["events"], [])
         answers = "a,b,n,a,b,a,b,a,b,a,b,a"
         got = self.fm_json("looks", "calibrate", "--round", str(shown["round"]), "--answers", answers)
         self.assertEqual(got["answered"], 12)
-        cal = fmtaste.load()["events"][-1]
+        cal = taste.load()["events"][-1]
         self.assertEqual(cal["signal"], "calibration")
         self.assertEqual(cal["answers"], answers.replace(",", ""))
         self.assertEqual([list(x) for x in cal["pairs"]], [[a["look"], b["look"]] for a, b in pairs])
@@ -174,27 +174,27 @@ class Calibration(ForemanTestCase):
             {frozenset((a["look"], b["look"])) for a, b in pairs}), "the next calibration meets new rivals")
 
     def test_the_keyboard_picker_takes_one_key_a_pair_and_stops_on_q(self):
-        pairs = fmtaste.pairs(fmtaste.looks())
+        pairs = taste.pairs(taste.looks())
         keys = iter("x1" + "2" * 10 + "n")  # x isn't an answer: asked again
         out = io.StringIO()
-        self.assertEqual(fmtaste.pick(pairs, lambda: next(keys), out.write), list("a" + "b" * 10 + "n"))
+        self.assertEqual(taste.pick(pairs, lambda: next(keys), out.write), list("a" + "b" * 10 + "n"))
         self.assertIn("12/12", out.getvalue())
         # arrows, Shift+arrows, Home/End and F-keys send escape sequences, some with digits: none is an answer
         noise = "\x1b[A\x1b[1;2A\x1b[1~\x1b[15~\x1bOP\x1b[2;5B\x1ba"
         keys = iter(noise + "2" + noise + "1" * 11)
-        self.assertEqual(fmtaste.pick(pairs, lambda: next(keys), io.StringIO().write), list("b" + "a" * 11))
+        self.assertEqual(taste.pick(pairs, lambda: next(keys), io.StringIO().write), list("b" + "a" * 11))
         keys = iter("\x1b[1;2")  # a sequence cut off by the end of input stops, it answers nothing
-        self.assertIsNone(fmtaste.pick(pairs, lambda: next(keys, ""), io.StringIO().write))
+        self.assertIsNone(taste.pick(pairs, lambda: next(keys, ""), io.StringIO().write))
         keys = iter("12q")
-        self.assertIsNone(fmtaste.pick(pairs, lambda: next(keys), io.StringIO().write))
-        self.assertIsNone(fmtaste.pick(pairs, lambda: "", io.StringIO().write), "end of input stops it too")
+        self.assertIsNone(taste.pick(pairs, lambda: next(keys), io.StringIO().write))
+        self.assertIsNone(taste.pick(pairs, lambda: "", io.StringIO().write), "end of input stops it too")
 
     def test_ranking_orders_looks_by_what_was_kept(self):
-        fmtaste.record("kept", "look-observatory")
-        fmtaste.record("kept", "look-observatory")
-        fmtaste.record("kept", "look-lido")
-        fmtaste.record("not", "look-cartographer", why="too busy")
-        order = [r["look"] for r in fmtaste.rank()]
+        taste.record("kept", "look-observatory")
+        taste.record("kept", "look-observatory")
+        taste.record("kept", "look-lido")
+        taste.record("not", "look-cartographer", why="too busy")
+        order = [r["look"] for r in taste.rank()]
         self.assertEqual(order[:2], ["look-observatory", "look-lido"])
         self.assertEqual(order[-1], "look-cartographer")
         self.assertIn("look-observatory", self.fm("looks").stdout.splitlines()[1])
@@ -216,42 +216,42 @@ class Sources(ForemanTestCase):
         site, page = self._page()
         before = os.stat(page).st_mtime_ns
         with Opens() as seen:
-            got = fmtaste.learn([page])
-            fmtaste.rank()
-            fmtaste.record("kept", "look-lido")
-            fmtaste.pairs(fmtaste.looks())
+            got = taste.learn([page])
+            taste.rank()
+            taste.record("kept", "look-lido")
+            taste.pairs(taste.looks())
         self.assertEqual(got["learned"][0]["look"], "look-lido")
         self.assertEqual(seen.outside(LOOKS, c.state_dir()), [os.path.realpath(page)])
         self.assertNotIn(os.path.join(site, "style.css"), seen.paths)
         self.assertEqual(os.stat(page).st_mtime_ns, before, "the named file is only read")
-        event = [e for e in fmtaste.load()["events"] if e["signal"] == "learned"][0]
+        event = [e for e in taste.load()["events"] if e["signal"] == "learned"][0]
         self.assertEqual(event["source"], "page.html", "the ledger keeps the file's name, never its text or path")
 
     def test_only_local_regular_files_and_only_so_much_of_them(self):
         site, page = self._page()
         for bad in ("https://example.com/page.html", "file:///etc/passwd", site, os.path.join(site, "missing")):
             with self.subTest(bad=bad):
-                got = fmtaste.learn([bad])
+                got = taste.learn([bad])
                 self.assertEqual(got["learned"], [])
                 self.assertEqual(len(got["skipped"]), 1)
         big = os.path.join(self.tmp, "big.css")
         with open(big, "w") as f:
-            f.write("a" * (fmtaste.SOURCE_CAP + 10) + " #076E87 #F0F9FA")
-        self.assertEqual(len(fmtaste.read_named(big)), fmtaste.SOURCE_CAP)
-        self.assertEqual(fmtaste.learn([big])["learned"], [], "nothing past the cap is read")
+            f.write("a" * (taste.SOURCE_CAP + 10) + " #076E87 #F0F9FA")
+        self.assertEqual(len(taste.read_named(big)), taste.SOURCE_CAP)
+        self.assertEqual(taste.learn([big])["learned"], [], "nothing past the cap is read")
         fifo = os.path.join(self.tmp, "pipe")
         os.mkfifo(fifo)
-        self.assertEqual(len(fmtaste.learn([fifo])["skipped"]), 1, "a pipe is refused, not waited on")
+        self.assertEqual(len(taste.learn([fifo])["skipped"]), 1, "a pipe is refused, not waited on")
         heic = os.path.join(self.tmp, "x.heic")
         with open(heic, "wb") as f:
             f.write(b"\0\0\0\x18ftypheic #076E87 #076E87")
-        self.assertEqual(fmtaste.learn([heic])["learned"], [], "an unknown binary is noise, not colours")
-        with mock.patch.object(fmtaste, "LEARN_MAX", 1):
-            got = fmtaste.learn([page, page])
+        self.assertEqual(taste.learn([heic])["learned"], [], "an unknown binary is noise, not colours")
+        with mock.patch.object(taste, "LEARN_MAX", 1):
+            got = taste.learn([page, page])
         self.assertEqual((len(got["learned"]), len(got["skipped"])), (1, 1), "a run reads LEARN_MAX files at most")
         link = os.path.join(self.tmp, "link.html")
         os.symlink(page, link)
-        got = fmtaste.learn([link])
+        got = taste.learn([link])
         self.assertEqual(got["learned"], [], "a symlink is refused: the user names the file itself")
         self.assertIn("symlink", got["skipped"][0]["why"])
         p = self.fm("looks", "learn", check=False)
@@ -266,12 +266,12 @@ class Sources(ForemanTestCase):
         lido = os.path.join(self.tmp, "pool.png")
         with open(lido, "wb") as f:
             f.write(png(8, 8, rgb=(0x07, 0x6E, 0x87)))
-        self.assertEqual(fmtaste.learn([lido])["learned"][0]["look"], "look-lido")
+        self.assertEqual(taste.learn([lido])["learned"][0]["look"], "look-lido")
         bomb = os.path.join(self.tmp, "bomb.png")
         with open(bomb, "wb") as f:  # a small file that declares 10000x10000: the size is checked before decoding
             f.write(png(10000, 10000, rows=False))
         with mock.patch("PIL.Image.Image.convert", side_effect=AssertionError("decoded")):
-            got = fmtaste.learn([bomb])
+            got = taste.learn([bomb])
         self.assertEqual(got["learned"], [])
         self.assertIn("megapixels", got["skipped"][0]["why"])
 
@@ -280,7 +280,7 @@ class Sources(ForemanTestCase):
         with open(photo, "wb") as f:
             f.write(b"\x89PNG\r\n\x1a\n" + b"\0" * 64)
         with mock.patch.dict("sys.modules", {"PIL": None, "PIL.Image": None}):
-            got = fmtaste.learn([photo])
+            got = taste.learn([photo])
         self.assertEqual(got["learned"], [])
         self.assertIn("Pillow", got["skipped"][0]["why"])
         self.assertNotIn("install", got["skipped"][0]["why"].split("Pillow")[0], "detected, never installed")
@@ -288,19 +288,19 @@ class Sources(ForemanTestCase):
 
 class CodeApp(ForemanTestCase):
     def test_fm_code_has_a_keyboard_picker_that_records_twelve_answers(self):
-        import fmcodetui as tui
+        from sampo import smithtui as tui
         app = tui.App(tui.load_config()[0], spawn=lambda *a, **k: None)
         app.key("L")
         self.assertEqual(app.mode, "looks")
         text = tui.render(app.state, 120, 40, app.cfg, app).text()
         self.assertIn("1/12", text)
-        first = fmtaste.looks()[fmtaste.pairs(fmtaste.looks())[0][0]]["title"]
+        first = taste.looks()[taste.pairs(taste.looks())[0][0]]["title"]
         self.assertIn(first, text)
         for k in "1" * 11:
             app.key(k)
         app.key("\x1b")  # stopped before twelve: nothing recorded
         self.assertEqual(app.mode, "main")
-        self.assertEqual(fmtaste.load()["events"], [])
+        self.assertEqual(taste.load()["events"], [])
         app.key("L")
         screen = tui.render(app.state, 120, 40, app.cfg, app)
         self.assertNotEqual(screen.style_of(first), "select", "no row is highlighted until the user moves")
@@ -318,9 +318,9 @@ class CodeApp(ForemanTestCase):
         self.assertEqual(app.mode, "looks")
         app.key("n")
         self.assertEqual(app.mode, "main")
-        self.assertEqual(fmtaste.load()["events"][-1]["answers"], "b" + "abn" * 3 + "an")
+        self.assertEqual(taste.load()["events"][-1]["answers"], "b" + "abn" * 3 + "an")
         self.assertIn("12 answers", app.message)
-        with mock.patch.object(fmtaste, "looks", return_value={}):  # no cards to pair: a note, the screen stays
+        with mock.patch.object(taste, "looks", return_value={}):  # no cards to pair: a note, the screen stays
             app.key("L")
         self.assertEqual(app.mode, "main")
         self.assertIn("no calibration", app.message)
@@ -350,7 +350,7 @@ class Divergence(ForemanTestCase):
 
     def test_opposite_day_and_the_lookbook(self):
         got = json.loads(self.fm("looks", "opposite", "lido", "--json").stdout)["opposites"]
-        self.assertEqual(len(got), len(fmtaste.looks()) - 1)
+        self.assertEqual(len(got), len(taste.looks()) - 1)
         self.assertNotIn("look-lido", [x["look"] for x in got])
         self.assertEqual([x["distance"] for x in got], sorted((x["distance"] for x in got), reverse=True))
         page = os.path.join(self.tmp, "book.html")
