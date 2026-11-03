@@ -428,7 +428,7 @@ def _grounded(root, line, found, files, verbs):
                 t in files or any(f.startswith(t.rstrip("/") + "/") for f in files)) and os.path.realpath(
                 os.path.join(root, t)).startswith(top + os.sep):
             return f"cover {t}"
-    for v in re.findall(r"\bfm ([a-z][\w-]*)", line.lower()):
+    for v in re.findall(r"\b(?:fm|sampo) ([a-z][\w-]*)", line.lower()):
         if v in verbs:
             return f"fm {v} works for the goal"
     for sf in found:

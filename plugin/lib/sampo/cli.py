@@ -4399,7 +4399,7 @@ def _guard_named(text):
     words |= {w.rstrip("s") for w in words} | {p for w in words for p in w.split("-")}  # plugins, force-push
     named = [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE and x in words]
     named += [cat for cat, syn in _GUARD_WORDS.items() if words & syn and cat not in named]  # T-0671 review
-    return named + (["fm ask"] if re.search(r"(?i)\bfm\s+ask\b", text) else [])
+    return named + (["fm ask"] if re.search(r"(?i)\b(?:fm|sampo)\s+ask\b", text) else [])
 
 
 # ponytail: words, not meaning ("Remove the alias?" isn't one, "Delete …" is); a miss is still refused by the guard

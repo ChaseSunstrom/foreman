@@ -47,7 +47,7 @@ def scan(p):
     for b in c.load_briefs(p, include_archive=True):
         for line in b.evidence():
             m = _EVIDENCE_CMD.match(line)
-            if not m or m.group(1).split()[:1] in ([], ["fm"]) or m.group(1).startswith(("fm-", "fm check:")) \
+            if not m or m.group(1).split()[:1] in ([], ["fm"], ["sampo"]) or m.group(1).startswith(("fm-", "fm check:", "sampo check:")) \
                     or _RECORD.match(m.group(1)):
                 continue  # Foreman's own commands, reviewer notes and git reads record state; they aren't habits
             sh = shape(m.group(1))
@@ -173,7 +173,7 @@ def forge(p):
     for x in r["commands"]:
         if x["covered"]:
             continue
-        gate = x["suggest"].startswith("fm check add")
+        gate = x["suggest"].startswith(("fm check add", "sampo check add"))
         k = c.kebab(x["shape"], 40)
         file("script", x["shape"], f"script for `{c.fit(x['shape'], 60)}`", f"research/forge-{slug(x['shape'])}.sh",
              f"#!/bin/sh\n# Forge draft for the repeat `{x['shape']}` ({x['count']} runs in {x['tasks']} tasks).\n"

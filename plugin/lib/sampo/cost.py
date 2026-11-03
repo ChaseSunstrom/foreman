@@ -98,7 +98,7 @@ def _fm_verb(cmd):
         if re.fullmatch(r"cd \S+", seg):
             continue
         seg = re.sub(r"\s*(?:2>&1\s*)?\|\s*(?:tail|head|grep)\b[^|]*$", "", seg)
-        m = re.match(r"fm\s+(?:quiet\s+(?:--\S+\s+\S+\s+)*--\s+(?:fm\s+)?)?([\w-]+)(?:\s+([\w-]+))?", seg)
+        m = re.match(r"(?:fm|sampo)\s+(?:quiet\s+(?:--\S+\s+\S+\s+)*--\s+(?:(?:fm|sampo)\s+)?)?([\w-]+)(?:\s+([\w-]+))?", seg)
         if not m or "|" in seg:
             return None
         verb = verb or m[1] + (f" {m[2]}" if m[1] in _TWO_WORD and m[2] else "")
@@ -258,8 +258,8 @@ def _program(cmd):
         if not words or words[0] in ("cd", "set", "export", "true", ":"):
             continue
         name = os.path.basename(words[0])
-        if len(words) > 1 and not words[1].startswith("-") and (name == "fm" or re.fullmatch(r"python[0-9.]*|node|bash|sh", name)):
-            return f"{name} {os.path.basename(words[1]) if name != 'fm' else words[1]}"
+        if len(words) > 1 and not words[1].startswith("-") and (name in ("fm", "sampo") or re.fullmatch(r"python[0-9.]*|node|bash|sh", name)):
+            return f"{name} {os.path.basename(words[1]) if name not in ('fm', 'sampo') else words[1]}"
         return name
     return "shell"
 
@@ -1430,8 +1430,8 @@ def cmd_usage(args):
         if e.get("kind") == "next":  # T-0051: was the injected Next's command the next fm command run?
             if pending.get(sid):
                 ignored[pending[sid]] += 1
-            m = re.search(r"\bfm [a-z-]+(?: [a-z][a-z-]*)?", e.get("action", ""))  # e.g. fm task step, fm audit prep
-            pending[sid] = m.group(0) if m else None
+            m = re.search(r"\b(?:fm|sampo) ([a-z-]+(?: [a-z][a-z-]*)?)", e.get("action", ""))  # e.g. fm task step, sampo audit prep
+            pending[sid] = m.group(1) if m else None  # the words after the command: either spelling follows either
             continue
         if e.get("kind") in ("skill_named", "slash"):
             if e["kind"] == "slash":
@@ -1442,8 +1442,8 @@ def cmd_usage(args):
         if e.get("kind") != "tool":
             continue
         tool, target = e.get("tool"), str(e.get("target") or "")
-        if tool == "Bash" and pending.get(sid) and target.lstrip().startswith("fm "):
-            (followed if target.lstrip().startswith(pending[sid]) else ignored)[pending[sid]] += 1
+        if tool == "Bash" and pending.get(sid) and (ran := re.match(r"\s*(?:fm|sampo) (.*)", target, re.S)):
+            (followed if ran.group(1).startswith(pending[sid]) else ignored)[pending[sid]] += 1
             pending[sid] = None
         if tool == "Skill":
             skills[target.split(":")[-1]] += 1
@@ -1451,7 +1451,7 @@ def cmd_usage(args):
         elif tool == "Read" and (e.get("book") or "/skills/playbooks/references/" in target and target.endswith(".md")):
             books[str(e.get("book") or target.split("/skills/playbooks/references/")[1][:-3])] += 1  # T-1702: book is
             # the whole path's tail: a lane's (a subagent's) path outruns the target's cut
-        elif tool == "Bash" and (m := re.match(r"\s*fm\s+([a-z-]+)(?:\s+([a-z-]+))?", target)):
+        elif tool == "Bash" and (m := re.match(r"\s*(?:fm|sampo)\s+([a-z-]+)(?:\s+([a-z-]+))?", target)):
             cmds[m.group(1) + (" " + m.group(2) if m.group(1) == "task" and m.group(2) else "")] += 1
         if tool == "Bash" and (hit := playbooks.shown(target, listed)):
             books[hit[len("references/"):-3]] += 1
@@ -1487,7 +1487,7 @@ def _prune(args, since):
     used = set()
     for e in c.global_events(since):  # rotated logs too, or a verb used before the last fm tidy reads as unused
         if e.get("kind") == "tool" and e.get("tool") == "Bash":
-            used.update(re.findall(r"(?:^|[;&|(]\s*|\s)fm\s+([a-z][a-z-]*)", str(e.get("target") or "")))
+            used.update(re.findall(r"(?:^|[;&|(]\s*|\s)(?:fm|sampo)\s+([a-z][a-z-]*)", str(e.get("target") or "")))
     sub = next(a for a in cli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
     names = sorted(n for n in sub.choices if not n.startswith("_"))
     unused = [n for n in names if n not in used]
@@ -1501,7 +1501,7 @@ def _prune(args, since):
 
 # ---------------------------------------------------------------- fm burden (T-0712)
 
-BOOKKEEPING = re.compile(r"^(?:fm quiet (?:--\S+ \S+ )*-- )?fm (?:task|focus|checkpoint|capture|decide|log|next|queue|state|"
+BOOKKEEPING = re.compile(r"^(?:(?:fm|sampo) quiet (?:--\S+ \S+ )*-- )?(?:fm|sampo) (?:task|focus|checkpoint|capture|decide|log|next|queue|state|"
                          r"status|ask|batch|intake|gates|resume)\b")
 INJECTS = ("hook_additional_context", "async_hook_response", "hook_blocking_error", "hook_system_message")
 
@@ -1567,7 +1567,7 @@ def burden(folder, since):
                             h = j.get("hookSpecificOutput") if isinstance(j.get("hookSpecificOutput"), dict) else {}
                             # not updatedToolOutput: that is the tool's own output
                             t = "\n".join(x for x in (h.get("additionalContext"), j.get("systemMessage")) if isinstance(x, str))
-                        if "Sampo" in t or "Foreman" in t or "fm " in t:
+                        if "Sampo" in t or "Foreman" in t or "fm " in t or "sampo " in t:
                             s["injected_chars"] += len(t)
                             s["src:" + src] += len(t)
             except OSError:

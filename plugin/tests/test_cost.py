@@ -120,6 +120,30 @@ class SkillUsage(HookCase):
             self.assertLess(max(map(len, f)), 2000)
 
 
+class SampoSpelling(HookCase):
+    """T-2845: a typed `sampo …` counts as the `fm …` it is, in every reader of commands."""
+
+    def test_verb_program_and_bookkeeping_read_both_spellings(self):
+        from sampo import cost
+        for fm_cmd in ("fm task show T-0001", "cd /x && fm quiet -- fm task log T-1 'x' | tail -3", "fm check --affected"):
+            sampo_cmd = fm_cmd.replace("fm ", "sampo ")
+            self.assertEqual(cost._fm_verb(sampo_cmd), cost._fm_verb(fm_cmd), sampo_cmd)
+            self.assertIsNotNone(cost._fm_verb(sampo_cmd), sampo_cmd)
+        self.assertEqual(cost._program("sampo task show T-1"), "sampo task")
+        self.assertEqual(cost._program("fm task show T-1"), "fm task")
+        for cmd in ("fm task log T-1 x", "sampo task log T-1 x", "cd /x && sampo quiet -- sampo next && sampo focus T-1"):
+            self.assertTrue(cost._only_bookkeeping(cmd), cmd)
+        self.assertFalse(cost._only_bookkeeping("sampo task log T-1 x && pytest"))
+
+    def test_usage_counts_a_sampo_command(self):
+        self.fm("init")
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "fm next"}})
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "sampo next"}})
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "sampo task show T-0001"}})
+        got = self.fm_json("usage")["commands"]
+        self.assertEqual((got.get("next"), got.get("task show") or got.get("task")), (2, 1), got)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()

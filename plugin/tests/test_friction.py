@@ -300,6 +300,13 @@ class Friction(ForemanTestCase):
         out = self.fm("friction", env=env).stdout
         self.assertIn("guard blocks 20 → 0", out)  # per 100 tool calls, the last pass's window against this one
 
+    def test_an_edit_body_stays_in_the_example_under_either_spelling(self):  # T-2845
+        from sampo import friction
+        for word in ("fm", "sampo"):
+            shown = friction._example({"cmd": f"{word} edit f.py <<'EOF'\nkept body\nEOF"}, {})[0]
+            self.assertIn("kept body", shown, word)
+        self.assertNotIn("dropped body", friction._example({"cmd": "cat f <<'EOF'\ndropped body\nEOF"}, {})[0])
+
 
 if __name__ == "__main__":
     unittest.main()

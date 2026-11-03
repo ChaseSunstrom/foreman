@@ -100,7 +100,7 @@ def put(p, name, text):
     return path
 
 
-_CODE_REF = re.compile(r"\b[\w-]+\.(?:py|md|json|toml|sh)\b|\bfm [a-z][\w-]*|\bfm\w+\.\w+")
+_CODE_REF = re.compile(r"\b[\w-]+\.(?:py|md|json|toml|sh)\b|\b(?:fm|sampo) [a-z][\w-]*|\bfm\w+\.\w+")
 
 
 def _mission_grounded(name, text):
@@ -782,13 +782,13 @@ def reach(p, n):
     sub = os.path.join(home(p), f"gen-{n}")
     text = "\n".join(_doc(sub, f) or "" for f in sorted(os.listdir(sub)) if f.startswith("mission-")) \
         if n and os.path.isdir(sub) else ""
-    named = list(dict.fromkeys(re.findall(r"\bfm ([a-z][a-z-]*)", text)))
+    named = list(dict.fromkeys(re.findall(r"\b(?:fm|sampo) ([a-z][a-z-]*)", text)))
     if not named:
         return {"verbs": 0, "problems": []}
     import argparse
     from sampo import cli as scli
     sub_cmds = next(a for a in scli.build_parser()._actions if isinstance(a, argparse._SubParsersAction)).choices
-    verbs, said = [v for v in named if v in sub_cmds], set(re.findall(r"\bfm ([a-z][a-z-]*)", _session_text()))
+    verbs, said = [v for v in named if v in sub_cmds], set(re.findall(r"\b(?:fm|sampo) ([a-z][a-z-]*)", _session_text()))
     def mod(v):  # T-2186: the module a verb runs; cli's own verbs and core import everything, so they reach nothing
         return getattr(sub_cmds[v].get_default("fn"), "module", "sampo.cli")
     # ponytail: an import counts as running the module; count only the functions it calls if a helper-only import ever

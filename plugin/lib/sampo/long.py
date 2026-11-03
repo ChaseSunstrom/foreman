@@ -543,7 +543,7 @@ def _activity(sids, state, claim):
                             words = [w for w in cmd.split() if not re.match(r"\w+=", w)]
                             if words:
                                 w = os.path.basename(words[0])
-                                bash[c.fit(c.plain(f"fm {words[1]}" if w == "fm" and len(words) > 1 else w), 30)] += 1
+                                bash[c.fit(c.plain(f"fm {words[1]}" if w in ("fm", "sampo") and len(words) > 1 else w), 30)] += 1
     events = None
     if os.path.isdir(state):
         ev = collections.Counter(str(e.get("kind")) for e in c.tail_jsonl(os.path.join(state, "events.jsonl"), 50000))
@@ -562,7 +562,7 @@ def went(res):
     for g in res["goals"]:
         a = g.get("activity") or {}
         tools.update(a.get("tools") or {})
-        verbs.update({k: v for k, v in (a.get("bash") or {}).items() if k.startswith("fm ")})
+        verbs.update({k: v for k, v in (a.get("bash") or {}).items() if k.startswith(("fm ", "sampo "))})
     top = lambda x: ", ".join(f"{k} {v}" for k, v in x.most_common(5)) or "none kept"
     return f"where the time went: tools {top(tools)}; fm verbs {top(verbs)}"
 

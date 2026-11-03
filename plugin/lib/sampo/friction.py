@@ -75,7 +75,7 @@ def _example(e, found, allowed=False):
     allows it). A fm edit body is the judged target, so it stays."""
     import fmguard
     cmd = (_lookup(found, e) or (str(e["cmd"]),))[0][:CMD_CAP]
-    if not re.search(r"^\s*fm edit\b", cmd, re.M):
+    if not re.search(r"^\s*(?:fm|sampo) edit\b", cmd, re.M):
         cmd = fmguard._drop_data_heredocs(cmd)
     shown = c.fit(c.plain(c.redact(cmd).replace("\n", " ")), 160)
     hint = "" if allowed else fmguard._hint(str(e.get("target") or ""), e.get("category") or "").strip()

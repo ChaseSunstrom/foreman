@@ -882,7 +882,7 @@ def stranger(p, plugin, model=None, budget=3.0, timeout=20):
             what = c.fit(c.plain(str(e.get("target") or e.get("detail") or "")), 100)
             if e.get("kind") == "guard_block":
                 found.append(f"guard block ({e.get('category')})" + (f": {what}" if what else ""))
-            elif e.get("kind") == "tool_fail" and re.match(r"\s*(?:\S*/)?fm\s", str(e.get("target") or "")):
+            elif e.get("kind") == "tool_fail" and re.match(r"\s*(?:\S*/)?(?:fm|sampo)\s", str(e.get("target") or "")):
                 found.append(f"failed fm call: {what} — {c.fit(c.plain(str(e.get('error') or '')), 100)}")
         code, _ = c.run_command(repo, "python3 test_calc.py", 60, env=env)
         if code:

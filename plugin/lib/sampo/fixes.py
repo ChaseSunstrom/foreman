@@ -32,7 +32,7 @@ _RUNNERS = {"python", "python3", "node", "bash", "sh", "zsh", "npx", "bunx", "uv
 WINDOW = 4  # commands after a failure that may be its fix
 # T-1771: a command that writes files changed the code, as an Edit does: the pass after it is a code fix, never a
 # command to offer (a debugging sed on a test file was kept and offered as "the fix" for a failing run)
-_WRITES = re.compile(r"\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i|\bfm\s+(?:edit|sub)\b|\bpatch\b|"
+_WRITES = re.compile(r"\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i|\b(?:fm|sampo)\s+(?:edit|sub)\b|\bpatch\b|"
                      r"\bgit\s+(?:apply|checkout|restore|reset|stash)\b|\btee\s+(?!/dev/null\b)\S|"
                      r"(?<![\d&<>])>>?\s*(?!&|/dev/null\b)[\w./~\"'$]")
 ESCALATE = 3  # a failure met this often with no fix captures a task

@@ -2657,7 +2657,7 @@ class App:
             self.message = "stopped: r resumes"
 
     # -- cards (T-1762)
-    READ_ONLY_NEXT = re.compile(r"fm (?:task show T-\d+|code why(?: T-\d+)?|doctor|code models|code runners|code config)")
+    READ_ONLY_NEXT = re.compile(r"(?:fm|sampo) (?:task show T-\d+|code why(?: T-\d+)?|doctor|code models|code runners|code config)")
 
     def _card_key(self, k):
         """A key the card on screen takes (True), or False to let it through."""
@@ -2763,7 +2763,7 @@ class App:
     def run_next(self, nxt):
         """T-1762: a failure's next command, one key away: a resume carries the run on here; a read-only fm command's
         output opens in a view; anything else is named for the user's own shell (it may need their answer)."""
-        if nxt.startswith("fm code --resume"):
+        if nxt.startswith(("fm code --resume", "sampo code --resume")):
             return self.resume()
         if not self.READ_ONLY_NEXT.fullmatch(nxt):
             self.message = f"run it in your shell: {nxt}"

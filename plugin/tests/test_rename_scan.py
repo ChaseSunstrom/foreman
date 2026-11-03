@@ -6,6 +6,8 @@ import re
 import subprocess
 import unittest
 
+# map-links: plugin/lib/sampo/cost.py plugin/lib/sampo/repeats.py plugin/lib/sampo/friction.py plugin/lib/sampo/bench.py plugin/lib/sampo/long.py plugin/lib/sampo/smithtui.py plugin/lib/sampo/mandate.py plugin/lib/sampo/rune.py plugin/lib/sampo/fixes.py plugin/lib/sampo/cli.py plugin/lib/sampo/louhi.py plugin/lib/fmguard.py
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASELINE = 19  # 2026-11-03 (T-2818: widened to install.sh, workflows, templates, site/*.py and site/genesis; their prose renamed, Foreman Desktop and the release-subject grep kept, count unchanged at 19):876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry), 61 after MASTER.md (T-2810: MASTER's lines, and the lowercase-id forms KEPT now keeps on every surface), 42 after the mod (T-2807: the code-matched forms it keeps are listed in KEPT), 23 after the agents, listing, output style and install.sh (T-2808), 19 after the rules (T-2809); the goal is 0
 SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", "plugin/skills/**/*.md",
@@ -62,21 +64,72 @@ _BARE_FM = re.compile(r"(?:(?<![\w./-])|(?<=\\b))fm(?=\\s|\\b| |\))")  # fm as a
 _REGEXY = re.compile(r"\\[sbdwS]|\(\?|\[\^|\\\.|\|")
 
 
+# T-2845: fm on purpose, not a typed command: the MCP server's key in a runner's config, the program name the alias line
+# tests, a literal cli builds and compares in one function, a module name (fmcli) and the guard's own normalized name
+FM_ONLY_OK = (("agents.py", "servers.get('fm')"), ("cli.py", "_prog() != 'fm'"), ("cli.py", "cmd == 'fm prove --infra'"),
+              ("recall.py", "w.startswith('fm')"), ("fmguard.py", "fm.startswith('fm')"), ("fmguard.py", "name == 'fm'"))
+
+
 def fm_only_regexes():
     """T-2778: the (path, line, text) string literals in the hooks that read as a regex naming the command fm and never
     sampo. A doc may only teach sampo spellings once every pattern that matches an fm command matches sampo too."""
     import ast
+    import glob
     rows = []
-    for rel in FM_ONLY_FILES:
+    # T-2845: every library module, not three; a pattern is judged by what it matches, not by the word sampo in it
+    files = sorted(os.path.relpath(f, ROOT) for f in glob.glob(os.path.join(ROOT, "plugin/lib/sampo/*.py")))
+    for rel in dict.fromkeys(files + list(FM_ONLY_FILES)):
         with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
             tree = ast.parse(fh.read())
         docs = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr)}
+        up = {id(k): p for p in ast.walk(tree) for k in ast.iter_child_nodes(p)}
         for n in ast.walk(tree):
             if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docs:
                 s = n.value
-                if _BARE_FM.search(s) and _REGEXY.search(s) and "sampo" not in s:
+                if _BARE_FM.search(s) and _REGEXY.search(s) and fm_only_pattern(s):
                     rows.append((rel, n.lineno, s[:80]))
+            elif isinstance(n, (ast.Compare, ast.Call)) and _fm_only_compare(n, up):
+                text = ast.unparse(n)
+                if not any(rel.endswith(f) and text.startswith(t) for f, t in FM_ONLY_OK):
+                    rows.append((rel, n.lineno, text[:80]))
     return rows
+
+
+def _command_samples(words):
+    """The fm spellings a pattern might be written for: fm alone, then fm with each word the pattern itself names, bare
+    and after a shell prefix (the caller swaps the command word for sampo)."""
+    tails = ["", " x"] + [f" {w} x" for w in words] + [f" {w}" for w in words]
+    heads = ["", "cd a && ", "a; ", "FOO=1 ", "/usr/bin/", "sudo "]
+    return [h + "fm" + t for h in heads for t in tails]
+
+
+def fm_only_pattern(src):
+    """True when the regex `src` matches some typed fm command but not the same command spelled sampo."""
+    import warnings
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # a string that only looks like a regex may warn on set syntax
+            rx = re.compile(src)
+    except re.error:
+        return False
+    words = set(re.findall(r"-{0,2}[a-z][a-z-]*", re.sub(r"\\[a-zA-Z]", " ", src))) - {"fm", "sampo"}
+    for s in _command_samples(sorted(words)):
+        if rx.search(s) and not rx.search(s.replace("fm", "sampo", 1)):  # the heads hold no fm: the first is the command
+            return True
+    return False
+
+
+def _fm_only_compare(n, up):
+    """A comparison or startswith that names the command fm ("fm", "fm ", ["fm"]) with no sampo beside it (or in the
+    `a or b` it is one side of)."""
+    import ast
+    if isinstance(n, ast.Call) and not (isinstance(n.func, ast.Attribute) and n.func.attr in ("startswith", "endswith")):
+        return False
+    strs = lambda x: [c.value for c in ast.walk(x) if isinstance(c, ast.Constant) and isinstance(c.value, str)]
+    own, around = strs(n), n
+    while isinstance(up.get(id(around)), ast.BoolOp):
+        around = up[id(around)]
+    return any(s == "fm" or s.startswith("fm ") for s in own) and not any("sampo" in s for s in strs(around))
 
 
 # T-2778: the surfaces that teach commands, and the command spelling they stopped teaching (`fm task new`, `fm check`,
@@ -125,6 +178,26 @@ class RenameScan(unittest.TestCase):
             self.assertTrue(re.search(FM_SPELLING, taught), taught)
         for fine in ("foreman:fm-reviewer", "plugin/bin/fm check", "the `fm` alias", "fmguard", "~/.local/bin/fm"):
             self.assertFalse(re.search(FM_SPELLING, fine), fine)
+
+    def test_fm_only_pattern_judges_by_matching(self):  # T-2845
+        for fm_only in (r"\bfm\s+ask\b", r"^\s*fm edit\b", r"\s*(?:\S*/)?fm\s", r"fm (?:task|focus)\b",
+                        r"(?:^|[;&|(]\s*|\s)fm\s+([a-z][a-z-]*)", r"^(?:fm quiet -- )?(?:fm|sampo)x? check|\bfm [a-z-]+"):
+            self.assertTrue(fm_only_pattern(fm_only), fm_only)
+        for both in (r"\b(?:fm|sampo)\s+ask\b", r"^\s*(?:fm|sampo) edit\b", r"(?:fm|sampo)\s+(?:quiet\s+)?([\w-]+)",
+                     r"(?:sampo|fm) task", r"\bsed\s+-i|\b(?:fm|sampo)\s+(?:edit|sub)\b", r"plugin/bin/fm\b", r"fm-reviewer"):
+            self.assertFalse(fm_only_pattern(both), both)
+
+    def test_fm_only_compare_sees_the_forms(self):  # T-2845
+        import ast
+        def flagged(src):
+            tree = ast.parse(src)
+            up = {id(k): p for p in ast.walk(tree) for k in ast.iter_child_nodes(p)}
+            return any(_fm_only_compare(n, up) for n in ast.walk(tree) if isinstance(n, (ast.Compare, ast.Call)))
+        for bad in ("w == 'fm'", "t.startswith('fm ')", "x in ([], ['fm'])", "'fm ask' in out"):
+            self.assertTrue(flagged(bad), bad)
+        for good in ("w in ('fm', 'sampo')", "t.startswith(('fm ', 'sampo '))", "'fm ask' in out or 'sampo ask' in out",
+                     "w == 'git'"):
+            self.assertFalse(flagged(good), good)
 
     def test_fm_only_scan_sees_the_forms(self):
         for fm_only in (r"^fm quiet (?:-- )?", r"(?:\S*/)?fm\s+", r"\bfm code\b", r"(?<!fm )ui|ux"):

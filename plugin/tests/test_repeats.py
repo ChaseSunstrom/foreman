@@ -36,6 +36,11 @@ class Repeats(ForemanTestCase):
         self.assertEqual(set(steps), {"write a failing test", "update the changelog"})
         self.assertIn(".claude/skills/", steps["write a failing test"]["suggest"])
 
+    def test_a_sampo_spelled_evidence_command_is_not_a_habit(self):  # T-2845
+        for i in range(1, 4):
+            self.fm("task", "evidence", f"T-000{i}", "--step", "3", f"sampo task log T-000{i} 'done'", "logged")
+        self.assertFalse(any(x["shape"].startswith("sampo") for x in self.report()["commands"]))
+
     def test_interpreter_flags_do_not_split_a_habit_and_git_reads_are_not_habits(self):
         from sampo import repeats
         self.assertEqual(repeats.shape("python3 -W error::ResourceWarning -m unittest discover -s x"),

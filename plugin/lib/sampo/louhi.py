@@ -2679,10 +2679,10 @@ def _lanes_drill(base, key):
                     do(tid, step, d)
                 end(tid)
                 continue
-            if "fm ask" in out:  # a grant: only a person gives it
+            if "fm ask" in out or "sampo ask" in out:  # a grant: only a person gives it
                 row["human"] = True
                 continue
-            if "fm lane merge" in out:  # ended with its commit: the main thread reviews and merges
+            if "fm lane merge" in out or "sampo lane merge" in out:  # ended with its commit: the main thread reviews and merges
                 if fm("lane", "merge", tid)[0] == 0:
                     row["merged"] = True
                 continue
