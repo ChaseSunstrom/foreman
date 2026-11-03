@@ -4,7 +4,7 @@ import re
 
 import os
 
-from build import TYPES, columns, esc, hbars, line, pairs, table, tiles, verdicts
+from build import TYPES, columns, dials, esc, hbars, line, pairs, table, tiles, verdicts
 
 LIBRARY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin", "skills", "playbooks",
                        "references")
@@ -186,6 +186,122 @@ def _models(s):
     return row + table(["use", "rule right", "model right", "model Brier", "model ms"], [
         (u, f"{v.get('path_hits', 0)} of {v.get('n', 0)}", f"{v.get('model_hits', 0)} of {v.get('model_n', 0)}",
          two(v.get("brier")), v.get("ms") if isinstance(v.get("ms"), (int, float)) else "n/a") for u, v in sorted(rep.items())])
+
+
+def _say(text):
+    """T-2767: the tower's records still use the old name; the site says Sampo."""
+    text = re.sub(r"\bfm\b", "sampo", str(text))
+    return re.sub(r"(?i)\bforeman\b", lambda m: "Sampo" if m.group()[0] == "F" else "sampo", text)
+
+
+def _sky(sky, marks):
+    """T-2767: a page's scroll scene, one mark per record and at most 60, on a still CSS sky (style.css); where motion
+    is allowed site.js lights the sky's shader behind it and the marks play in as it scrolls into view."""
+    return f'<figure class="sky" data-sky="{sky}" aria-hidden="true"><svg viewBox="0 0 640 180">{"".join(marks)}</svg></figure>'
+
+
+def _louhi(s):
+    """T-2767: Louhi's scorecard (site/stats.py's louhi block from exam.jsonl): dials, one standing stone per exam run
+    (its height the scenarios graded, its lit share the faults found of those keyed), each arm's record and the
+    harness's own trend by generation."""
+    lo = s.get("louhi") or {}
+    runs, arms, gens = lo.get("runs") or [], lo.get("agents") or [], lo.get("gens") or []
+    own = [a for a in arms if a["agent"] in ("foreman", "sampo")]
+    out = dials([("trials", lo.get("trials") or 0), ("exam runs", len(runs)),
+                 ("scenarios graded", sum(a["scenarios"] for a in arms)),
+                 ("faults Sampo found", sum(a["found"] for a in own))], "From Louhi's exam record")
+    shown = runs[:60]
+    slot, top = 600 / max(len(shown), 1), max([r["scenarios"] for r in shown] + [1])
+    marks = []
+    for i, r in enumerate(shown):
+        h = 20 + 130 * r["scenarios"] / top
+        lit = h * min(r["found"] / r["keyed"], 1) if r["keyed"] else 0
+        x, w = 20 + slot * i + slot * .2, max(slot * .6, 1)
+        marks.append(f'<g class="mk trial"><rect class="stone" x="{x:.1f}" y="{160 - h:.1f}" width="{w:.1f}" height="{h:.1f}"/>'
+                     f'<rect class="lit" x="{x:.1f}" y="{160 - lit:.1f}" width="{w:.1f}" height="{lit:.1f}"/></g>')
+    out += _sky("aurora", marks)
+    if not arms:
+        return out + "<p>No exam has run yet.</p>"
+    name = lambda a: "Sampo" if a["agent"] in ("foreman", "sampo") else a["agent"]  # noqa: E731
+    out += pairs("Faults found of those keyed, by arm", "Each arm sat the same scenarios; the key holds the real faults.",
+                 [(name(a), a["found"], a["keyed"]) for a in arms], names=("found", "keyed"))
+    out += table(["arm", "trials", "scenarios", "keyed", "found", "false alarms", "fixed of fixable", "Brier"], [
+        (name(a), a["trials"], a["scenarios"], a["keyed"], a["found"], a["false_alarms"], f"{a['fixed']} of {a['fixable']}",
+         f"{a['brier']:.3f}" if isinstance(a.get("brier"), (int, float)) else "n/a") for a in arms])
+    if gens:
+        out += pairs("Sampo's own arm, generation by generation", "Each generation re-sits the exam with the harness it has.",
+                     [(f"gen {g['gen']}", g["found"], g["keyed"]) for g in gens], names=("found", "keyed"))
+    return out
+
+
+MOON_PHASE = {"idea": .15, "kill": .5, "slice": .75, "full": 1}
+MOON_STAGE = {"idea": "idea", "kill": "kill test", "slice": "slice", "full": "built", "not-yet": "not yet"}
+MOON_TIERS = ("low", "medium", "high", "xhigh", "extreme", "massive")
+
+
+def _moons(s):
+    """T-2767: the Moons catalogue (site/stats.py's moons block from moonshot.md): dials, one moon per entry (its size
+    the tier, its phase the stage: a sliver for an idea, half once kill-tested, full when built, a ring for not yet)
+    and the list."""
+    ms = s.get("moons") or []
+    out = dials([("moons", len(ms)), ("ideas", sum(m["stage"] == "idea" for m in ms)),
+                 ("kill-tested", sum(m["stage"] != "idea" for m in ms)), ("built", sum(m["stage"] == "full" for m in ms))],
+                "From the moonshot catalogue")
+    shown = ms[:60]
+    cols = min(len(shown), 10) or 1
+    rows = -(-len(shown) // cols)
+    cw, ch = 600 / cols, 160 / max(rows, 1)
+    marks = []
+    for i, m in enumerate(shown):
+        cx, cy = 20 + cw * (i % cols + .5), 10 + ch * (i // cols + .5)
+        r = min(cw, ch) * .42 * (.5 + .1 * (MOON_TIERS.index(m["tier"]) if m["tier"] in MOON_TIERS else 0))
+        p = MOON_PHASE.get(m["stage"])
+        if p is None:
+            marks.append(f'<g class="mk moon"><circle class="ring" cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}"/></g>')
+            continue
+        rx = r * abs(1 - 2 * p)
+        lit = (f'M{cx:.1f} {cy - r:.1f}A{r:.1f} {r:.1f} 0 0 1 {cx:.1f} {cy + r:.1f}'
+               f'A{rx:.1f} {r:.1f} 0 0 {int(p > .5)} {cx:.1f} {cy - r:.1f}Z')
+        marks.append(f'<g class="mk moon"><circle class="disc" cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}"/>'
+                     f'<path class="lit" d="{lit}"/></g>')
+    out += _sky("stars", marks)
+    if not ms:
+        return out + "<p>No moon is in the catalogue yet.</p>"
+    items = "".join(
+        f'<li data-stage="{esc(m["stage"])}"><b>{esc(m["id"])}</b> <span>{esc(_say(m["title"]))}</span> '
+        f'<small>{esc(m["tier"])} · {esc(MOON_STAGE.get(m["stage"], m["stage"]))}'
+        + (f' · needs {esc(", ".join(m["needs"]))}' if m["needs"] else "") + "</small></li>" for m in ms)
+    tiers = [(t, sum(m["tier"] == t for m in ms)) for t in MOON_TIERS]
+    out += hbars("Moons by tier", "The reviewer's estimate of each moon's size, low to massive.", [t for t in tiers if t[1]])
+    return out + f'<ol class="moons">{items}</ol>'
+
+
+def _underworld(s):
+    """T-2767: the Underworld (site/stats.py's underworld block from not-yet.md): dials, one rune stone per waiting
+    idea (a branch on its stave for each approach tried) by the river, and the list with each idea's blocker."""
+    ws = s.get("underworld") or []
+    out = dials([("waiting ideas", len(ws)), ("approaches tried", sum(w["tries"] for w in ws)),
+                 ("re-checks", sum(w["rechecks"] for w in ws)),
+                 ("unevaluated", sum(w["blocker"].startswith("unevaluated") for w in ws))], "From the not-yet record")
+    shown = ws[:60]
+    slot = 600 / max(len(shown), 1)
+    marks = ['<rect class="water" x="0" y="150" width="640" height="30"/>']
+    for i, w in enumerate(shown):
+        x = 20 + slot * (i + .5)
+        stave = "".join(f'M{x:.1f} {72 + 12 * j}l{10 if j % 2 else -10} 12' for j in range(min(w["tries"], 6)))
+        marks.append(f'<g class="mk rune"><rect class="stone" x="{x - 16:.1f}" y="54" width="32" height="96" rx="12"/>'
+                     f'<path class="glyph" d="M{x:.1f} 64V140{stave}"/></g>')
+    out += _sky("river", marks)
+    if not ws:
+        return out + "<p>Nothing waits in the underworld.</p>"
+    items = "".join(
+        f'<li><b>{esc(_say(w["idea"]))}</b> <span>{esc(_say(w["blocker"]))}</span> <small>'
+        f'{w["tries"]} tried · {w["rechecks"]} re-checks' + (f' · since {esc(w["added"])}' if w.get("added") else "")
+        + "</small></li>" for w in ws)
+    tried = sorted({w["tries"] for w in ws})
+    out += hbars("Waiting ideas by approaches tried", "How many ways each idea was tried before it waited.",
+                 [(f"{n} tried", sum(w["tries"] == n for w in ws)) for n in tried])
+    return out + f'<ol class="waiting">{items}</ol>'
 
 
 def _types(s):
@@ -634,6 +750,44 @@ PAGES = [
           "the user steer it rests on and the check that proves a standing rule still holds. A later row that "
           "reverses or revisits it is linked here, so a choice that didn't last shows as one.</p>"),
          ("chart", _decisions)]},
+    {"slug": "louhi", "nav": "Louhi", "title": "Louhi sets the trials, and keeps the score",  # T-2767
+     "desc": "Every exam run against the scenarios' keyed faults: what each arm found, what it raised in error, how well "
+             "its confidence matched, and the harness's own record by generation.",
+     "lede": "Louhi is the exam. Each run sets the same scenarios before Sampo and the plain arms, each scenario keyed "
+             "with the faults it really holds, and scores what every arm found, missed and raised in error.",
+     "blocks": [
+         ("chart", _louhi),
+         ("text", "How a trial is scored", "<p>A trial is one arm on one run of the exam. Its findings are matched "
+          "against the key: a fault on the key counts as found, one off it is a false alarm, and a fix counts only when "
+          "the scenario's own check passes after it. Each arm states how sure it is, so its <strong>Brier</strong> "
+          "score shows whether that confidence was earned (0 is perfect, 0.25 a coin toss). The numbers above come "
+          "from Louhi's own record, not from this page.</p>"),
+         ("term", "$ sampo louhi")]},
+    {"slug": "moons", "nav": "Moons", "title": "Moons: the big ideas, each tested before it is built",  # T-2767
+     "desc": "The moonshot catalogue: each idea with the reviewer's tier and how far it has come, from idea to kill "
+             "test to built.",
+     "lede": "A moon is an idea too big for one task. Each is written down with how big it is, then tested for the "
+             "one thing that would kill it before any of it is built.",
+     "blocks": [
+         ("chart", _moons),
+         ("text", "From idea to built", "<p>A moon starts as an <strong>idea</strong>. Its <strong>kill test</strong> "
+          "asks the cheapest question that could end it; one that survives gets a <strong>slice</strong>, the "
+          "smallest piece that proves the rest, and only then the <strong>full</strong> build. One that can't be "
+          "tested yet waits as <strong>not yet</strong>. The tier is the reviewer's estimate of its size, from low "
+          "to massive, and a moon that needs another waits for it.</p>"),
+         ("term", "$ sampo moons")]},
+    {"slug": "underworld", "nav": "Underworld", "title": "The Underworld keeps what isn't ready yet",  # T-2767
+     "desc": "Ideas that were tried and didn't hold, each with what blocks it, how often it was tried and when it "
+             "was last re-checked.",
+     "lede": "An idea that fails isn't thrown away. It goes to the Underworld with the reason it failed, and is "
+             "checked again when what blocked it may have changed.",
+     "blocks": [
+         ("chart", _underworld),
+         ("text", "Why keep them", "<p>Each waiting idea carries its <strong>blocker</strong>, the approaches "
+          "already tried and the <strong>re-checks</strong> since. A new request that matches one gets its history "
+          "first, so the same dead end isn't walked twice; one still <strong>unevaluated</strong> is owed a fair "
+          "test before it is called dead.</p>"),
+         ("term", "$ sampo underworld")]},
     {"slug": "guard", "nav": "The Ward", "title": "A Ward built for bypass mode",
      "desc": "Every command and edit is read before it runs; dangerous ones are refused and destructive git saves your work first.",
      "lede": "Sampo is meant to run without permission prompts, so the brake has to be real: it reads every Bash "

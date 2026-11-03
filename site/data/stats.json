@@ -3653,5 +3653,488 @@
    "marathon": 5,
    "name": "marathon"
   }
+ ],
+ "louhi": {
+  "trials": 89,
+  "runs": [
+   {
+    "run": "s0-001",
+    "trials": 11,
+    "scenarios": 505,
+    "keyed": 550,
+    "found": 298
+   },
+   {
+    "run": "genesis-s0",
+    "trials": 5,
+    "scenarios": 39,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "s7-004",
+    "trials": 3,
+    "scenarios": 66,
+    "keyed": 72,
+    "found": 44
+   },
+   {
+    "run": "s31-006",
+    "trials": 11,
+    "scenarios": 99,
+    "keyed": 198,
+    "found": 143
+   },
+   {
+    "run": "s70-010",
+    "trials": 7,
+    "scenarios": 1743,
+    "keyed": 1974,
+    "found": 1546
+   },
+   {
+    "run": "l001",
+    "trials": 14,
+    "scenarios": 84,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "l002",
+    "trials": 16,
+    "scenarios": 96,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "l003",
+    "trials": 2,
+    "scenarios": 12,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "s0-011",
+    "trials": 6,
+    "scenarios": 108,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "s11-012",
+    "trials": 1,
+    "scenarios": 18,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "s21-013",
+    "trials": 6,
+    "scenarios": 1836,
+    "keyed": 1566,
+    "found": 441
+   },
+   {
+    "run": "s0-014",
+    "trials": 3,
+    "scenarios": 9,
+    "keyed": 0,
+    "found": 0
+   },
+   {
+    "run": "s32-015",
+    "trials": 4,
+    "scenarios": 12,
+    "keyed": 12,
+    "found": 12
+   }
+  ],
+  "agents": [
+   {
+    "agent": "foreman",
+    "trials": 29,
+    "scenarios": 167,
+    "keyed": 104,
+    "found": 75,
+    "false_alarms": 26,
+    "fixable": 104,
+    "fixed": 90,
+    "brier": 0.178
+   },
+   {
+    "agent": "oracle",
+    "trials": 21,
+    "scenarios": 1807,
+    "keyed": 1857,
+    "found": 1857,
+    "false_alarms": 0,
+    "fixable": 2896,
+    "fixed": 2896,
+    "brier": 0.0
+   },
+   {
+    "agent": "plain",
+    "trials": 10,
+    "scenarios": 53,
+    "keyed": 41,
+    "found": 17,
+    "false_alarms": 21,
+    "fixable": 41,
+    "fixed": 26,
+    "brier": null
+   },
+   {
+    "agent": "empty",
+    "trials": 9,
+    "scenarios": 730,
+    "keyed": 675,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 1070,
+    "fixed": 0,
+    "brier": 0.25
+   },
+   {
+    "agent": "finders",
+    "trials": 7,
+    "scenarios": 883,
+    "keyed": 909,
+    "found": 532,
+    "false_alarms": 19,
+    "fixable": 1196,
+    "fixed": 1,
+    "brier": 0.25
+   },
+   {
+    "agent": "foresight",
+    "trials": 5,
+    "scenarios": 333,
+    "keyed": 261,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 441,
+    "fixed": 44,
+    "brier": 0.25
+   },
+   {
+    "agent": "draft-genesis",
+    "trials": 2,
+    "scenarios": 18,
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "brier": null
+   },
+   {
+    "agent": "draft-plain",
+    "trials": 2,
+    "scenarios": 18,
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "brier": null
+   },
+   {
+    "agent": "draft-oracle",
+    "trials": 1,
+    "scenarios": 3,
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "brier": null
+   },
+   {
+    "agent": "genesis",
+    "trials": 1,
+    "scenarios": 3,
+    "keyed": 3,
+    "found": 3,
+    "false_alarms": 13,
+    "fixable": 3,
+    "fixed": 0,
+    "brier": null
+   },
+   {
+    "agent": "lanes",
+    "trials": 1,
+    "scenarios": 306,
+    "keyed": 261,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 414,
+    "fixed": 27,
+    "brier": 0.25
+   },
+   {
+    "agent": "triggers",
+    "trials": 1,
+    "scenarios": 306,
+    "keyed": 261,
+    "found": 0,
+    "false_alarms": 0,
+    "fixable": 414,
+    "fixed": 9,
+    "brier": 0.25
+   }
+  ],
+  "gens": [
+   {
+    "gen": 1,
+    "trials": 11,
+    "keyed": 90,
+    "found": 61
+   },
+   {
+    "gen": 2,
+    "trials": 5,
+    "keyed": 6,
+    "found": 6
+   },
+   {
+    "gen": 3,
+    "trials": 11,
+    "keyed": 6,
+    "found": 6
+   }
+  ]
+ },
+ "moons": [
+  {
+   "id": "M-01",
+   "title": "Deliver a product from one paragraph at a fixed, warrantied price",
+   "tier": "extreme",
+   "stage": "idea",
+   "needs": [
+    "M-13",
+    "M-16",
+    "M-17",
+    "M-20"
+   ]
+  },
+  {
+   "id": "M-02",
+   "title": "Keep code as a regenerable cache of intent clauses and proofs",
+   "tier": "extreme",
+   "stage": "kill",
+   "needs": [
+    "M-18"
+   ]
+  },
+  {
+   "id": "M-03",
+   "title": "Run an owner-less project under a charter until an heir takes over",
+   "tier": "extreme",
+   "stage": "idea",
+   "needs": [
+    "M-15",
+    "M-16"
+   ]
+  },
+  {
+   "id": "M-04",
+   "title": "Own the pager for insured crash classes, from trace to proven fix",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": [
+    "M-15",
+    "M-16",
+    "M-18"
+   ]
+  },
+  {
+   "id": "M-05",
+   "title": "Merge any agent's pull request on rerun proofs, not prose review",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": [
+    "M-12",
+    "M-17"
+   ]
+  },
+  {
+   "id": "M-06",
+   "title": "Predict a policy change's effect from the ledger before running it",
+   "tier": "extreme",
+   "stage": "idea",
+   "needs": [
+    "M-16"
+   ]
+  },
+  {
+   "id": "M-07",
+   "title": "Forecast when each gate stops paying, and retire it on evidence",
+   "tier": "high",
+   "stage": "idea",
+   "needs": [
+    "M-19"
+   ]
+  },
+  {
+   "id": "M-08",
+   "title": "Pool self-trials across installs",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": [
+    "M-17",
+    "M-19"
+   ]
+  },
+  {
+   "id": "M-09",
+   "title": "Settle work between strangers by escrow released on replayed proof",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": [
+    "M-15",
+    "M-17"
+   ]
+  },
+  {
+   "id": "M-10",
+   "title": "Detect when a mechanism needs redesign, not another patch",
+   "tier": "high",
+   "stage": "idea",
+   "needs": [
+    "M-19"
+   ]
+  },
+  {
+   "id": "M-11",
+   "title": "Auction the queue by calibrated yield and Kelly-size each stake",
+   "tier": "high",
+   "stage": "idea",
+   "needs": [
+    "M-20"
+   ]
+  },
+  {
+   "id": "M-12",
+   "title": "Weight deciders by a scored market on whether a close survives",
+   "tier": "high",
+   "stage": "kill",
+   "needs": [
+    "M-16"
+   ]
+  },
+  {
+   "id": "M-13",
+   "title": "Price the user's attention and cap unreviewed output to it",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-14",
+   "title": "Breed lane strategies by tournament, with heritable genomes",
+   "tier": "high",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-15",
+   "title": "Spawn every child with expiring capability tokens and no inheritance",
+   "tier": "high",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-16",
+   "title": "Open a warranty window on landed work and count hand edits as claims",
+   "tier": "high",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-17",
+   "title": "Ship every close as a signed evidence bundle anyone can rerun",
+   "tier": "medium",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-18",
+   "title": "Prove a rewrite against the old build on recorded inputs",
+   "tier": "medium",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-19",
+   "title": "Hold every self-promotion to a false-discovery bar",
+   "tier": "medium",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-20",
+   "title": "Put a backtested p90 band on every cost quote",
+   "tier": "low",
+   "stage": "idea",
+   "needs": []
+  }
+ ],
+ "underworld": [
+  {
+   "idea": "selfjev-4b",
+   "blocker": "unevaluated: no exam arm has run it against a path it would replace",
+   "tries": 0,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "jeff",
+   "blocker": "unevaluated: no exam arm has run it against a path it would replace",
+   "tries": 0,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "Jevlike",
+   "blocker": "unevaluated: no task-specific model has been trained from Foreman's own history yet",
+   "tries": 0,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "Von",
+   "blocker": "unevaluated: intent routing has no exam arm yet",
+   "tries": 0,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "Byte-stable goal card in the cached prefix",
+   "blocker": "no measurable win: the goal card is about 120 characters",
+   "tries": 2,
+   "rechecks": 1,
+   "added": "gen-2"
+  },
+  {
+   "idea": "Proofs expire when the thing proved changes",
+   "blocker": "its kill test found no stale proof",
+   "tries": 2,
+   "rechecks": 0,
+   "added": "gen-3"
+  },
+  {
+   "idea": "Plan-time example confirmation",
+   "blocker": "its kill test needs the user present",
+   "tries": 2,
+   "rechecks": 0,
+   "added": "gen-3"
+  },
+  {
+   "idea": "M-12 \u00b7 Weight deciders by a scored market on whether a close survives",
+   "blocker": "no decider beats chance on whether a close survives 14 days unfixed, so a pool has nothing to weight",
+   "tries": 3,
+   "rechecks": 0,
+   "added": "gen-3"
+  }
  ]
 }

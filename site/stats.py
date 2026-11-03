@@ -3,7 +3,9 @@
 
 Reads this repo's Foreman state (the ledger, the task briefs) and git, and writes site/data/stats.json. Only counts,
 categories and timings are written, plus the benchmark repos' short task names and the titles of work a marathon found
-there (toy repos, published on purpose): never this repo's task titles, a path, a command or a session id. CI has no Foreman state, so
+there (toy repos, published on purpose), and the tower's moonshot titles, waiting ideas and the first clause of each
+one's blocker (T-2767, the Moons and Underworld pages, published on purpose, paths and quoted commands cut): never this
+repo's task titles, a path, a command or a session id. CI has no Foreman state, so
 this runs here and its output is committed; site/build.py only reads it."""
 import argparse
 import collections
@@ -18,6 +20,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "site", "data", "stats.json")
 TYPES = ["FEATURE", "FIX", "CLEAN", "PERFORMANCE", "SECURITY", "RESEARCH"]
+HARNESS = ("foreman", "sampo")  # T-2767: the exam's name for the harness's own arm, before and after the rename
 
 
 def git(*a):
@@ -240,6 +243,111 @@ def models(state):
     return {}
 
 
+def genesis(state, name):
+    """A tower record's text (research/genesis/NAME), or None when there is none."""
+    try:
+        with open(os.path.join(state, "research", "genesis", name), encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def short(text, cap):
+    """T-2767: a published line from a tower record: its first clause, no path and no quoted command, at most CAP
+    characters."""
+    text = re.split(r"\. |;| \(", text, maxsplit=1)[0]
+    text = " ".join(re.sub(r"`[^`]*`|\S*/\S*", " ", text).split()).rstrip(" ,:")
+    return text if len(text) <= cap else text[:cap - 1].rstrip() + "…"
+
+
+def louhi(state):
+    """T-2767: Louhi's scorecard from the exam's trials (research/genesis/exam.jsonl), one line per arm per run: each
+    run's trials, scenarios and the faults keyed and found; each arm's totals and the Brier score of its forecasts;
+    and, by generation, what the harness's own arm found of what was keyed (a run is re-sat in later generations, so
+    a generation is the line's, not the run's). A figure that isn't a number counts 0; a line with no arm isn't a
+    trial."""
+    out = {"trials": 0, "runs": [], "agents": [], "gens": []}
+    num = lambda v: v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+    runs, agents, gens = {}, {}, {}
+    for raw in (genesis(state, "exam.jsonl") or "").splitlines():
+        try:
+            row = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(row, dict) or not isinstance(row.get("agent"), str):
+            continue
+        out["trials"] += 1
+        a = agents.setdefault(row["agent"], collections.Counter())
+        a["trials"] += 1
+        for k in ("scenarios", "keyed", "found", "false_alarms", "fixable", "fixed", "brier_n", "brier_sum"):
+            a[k] += num(row.get(k))
+        if isinstance(row.get("run"), str):
+            r = runs.setdefault(row["run"], {"run": row["run"], "trials": 0, "scenarios": 0, "keyed": 0, "found": 0})
+            r["trials"] += 1
+            for k in ("scenarios", "keyed", "found"):
+                r[k] += num(row.get(k))
+        if row["agent"] in HARNESS and type(row.get("gen")) is int:
+            g = gens.setdefault(row["gen"], {"gen": row["gen"], "trials": 0, "keyed": 0, "found": 0})
+            g["trials"] += 1
+            for k in ("keyed", "found"):
+                g[k] += num(row.get(k))
+    out["runs"], out["gens"] = list(runs.values()), [gens[g] for g in sorted(gens)]
+    out["agents"] = [{"agent": name, **{k: a[k] for k in ("trials", "scenarios", "keyed", "found", "false_alarms",
+                                                          "fixable", "fixed")},
+                      "brier": round(a["brier_sum"] / a["brier_n"], 3) if a["brier_n"] else None}
+                     for name, a in sorted(agents.items(), key=lambda x: (-x[1]["trials"], x[0]))]
+    return out
+
+
+def moons(state):
+    """T-2767: the moonshot catalogue (research/genesis/moonshot.md): each moon's id, title, stage, the moons it needs,
+    and its tier (the reviewer's rating when it has one, else the author's)."""
+    sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
+    from sampo import moons as smoons
+    text = genesis(state, smoons.FILE)
+    if text is None:
+        return []
+    try:
+        with open(os.path.join(state, smoons.STORE), encoding="utf-8") as f:
+            rated = json.load(f)
+    except (OSError, ValueError):
+        rated = {}
+    rated = rated if isinstance(rated, dict) else {}
+    out = []
+    for m in smoons.parse(text):
+        r = rated.get(m["id"])
+        tier = r.get("tier") if isinstance(r, dict) and r.get("tier") in smoons.TIERS else m["author"]
+        out.append({"id": m["id"], "title": short(m["title"], 120), "tier": tier, "stage": m["stage"],
+                    "needs": re.findall(r"\bM-\d+\b", m["f"].get("needs", ""))})
+    return out
+
+
+def underworld(state):
+    """T-2767: the ideas waiting for a better day (research/genesis/not-yet.md, the Removed list left out): each one's
+    name, its blocker's first clause, how many approaches were tried, how many times the blocker was re-checked, and
+    the generation that added it."""
+    out = []
+    for sec in re.split(r"(?m)^## ", genesis(state, "not-yet.md") or "")[1:]:
+        head, _, body = sec.partition("\n")
+        if head.strip().lower() == "removed":
+            continue
+        field = lambda k: re.findall(rf"(?m)^- {k}:\s*(.*)$", body)
+        tries = 0
+        for line in field("tried"):  # approaches split on ';' outside brackets: '(T-1: a; b)' is one
+            depth, part = 0, ""
+            for ch in line + ";":
+                depth += (ch in "([") - (ch in ")]")
+                if ch == ";" and depth <= 0:
+                    tries += bool(part.strip())
+                    part = ""
+                else:
+                    part += ch
+        added = re.search(r"\bgen-\d+\b", " ".join(field("added")))
+        out.append({"idea": short(head.strip(), 120), "blocker": short(" ".join(field("blocker")[:1]), 160),
+                    "tries": tries, "rechecks": len(field("retried")), "added": added.group(0) if added else ""})
+    return out
+
+
 def merge_duels(old, new):
     """Site review: the duels named now replace the saved ones of the same name; the others stay, in order."""
     fresh = {d["name"]: d for d in new}
@@ -348,7 +456,8 @@ def main():
         with open(OUT, encoding="utf-8") as f:
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
-             "cards": cards(), "code": code_counts(), "calibration": calibration(), "proof": proof(old.get("proof")), "self_running": self_running(state), "models": models(state), "decisions": decisions(state), "bench": old.get("bench", {}) if a.no_bench else bench(),
+             "cards": cards(), "code": code_counts(), "calibration": calibration(), "proof": proof(old.get("proof")), "self_running": self_running(state), "models": models(state), "decisions": decisions(state),
+             "louhi": louhi(state), "moons": moons(state), "underworld": underworld(state),"bench": old.get("bench", {}) if a.no_bench else bench(),
              "duels": merge_duels(old.get("duels") or [], [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
                  *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
                                                      for x in (a.duel or [f"quality={state}"])) if d])}

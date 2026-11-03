@@ -109,7 +109,28 @@ h3 { font-size: var(--step-1); line-height: 1.15; }
     radial-gradient(ellipse 95% 80% at 50% 112%, color-mix(in srgb, var(--ember) 58%, transparent), transparent 82%),
     var(--stone);
 }
-.hearth canvas { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; }
+.hearth canvas, .sky canvas { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; }
+/* T-2767: the tower pages' scenes (Louhi, Moons, Underworld): one mark per record (pages.py) on a stone sky whose glow
+   is CSS, so each is whole with no script and still under reduced motion; site.js lights the same shader as the hearth
+   behind it, drifting its own way per sky, and the marks play in on a scroll timeline */
+.sky {
+  position: relative; isolation: isolate; margin: 32px 0 0; border-radius: 18px; overflow: hidden;
+  background: radial-gradient(ellipse 90% 80% at 50% 115%, color-mix(in srgb, var(--ember) 55%, transparent), transparent 80%), var(--stone);
+}
+.sky[data-sky="aurora"] { --ember: var(--s4); }
+.sky[data-sky="stars"] { --ember: var(--s5); }
+.sky[data-sky="river"] { --ember: var(--s2); }
+.sky svg { display: block; width: 100%; height: auto; }
+.sky .mk { transform-box: fill-box; transform-origin: 50% 100%; }
+.sky .moon { transform-origin: 50% 50%; }
+.sky .stone, .sky .disc { fill: color-mix(in srgb, var(--stone), white 22%); }
+.sky .lit { fill: var(--glow); }
+.sky .ring, .sky .glyph { fill: none; stroke: var(--glow); stroke-width: 3; stroke-linecap: round; }
+.sky .water { fill: color-mix(in srgb, var(--ember) 45%, transparent); }
+.feature .proof { margin-top: 32px; }
+.moons, .waiting { display: grid; gap: 10px; margin: 28px 0 0; padding-left: 1.6em; }
+.moons li, .waiting li { overflow-wrap: anywhere; }
+.moons small, .waiting small { display: block; color: var(--ink-2); }
 .mill img { width: 144px; height: 144px; filter: drop-shadow(0 8px 18px rgb(0 0 0 / .55)); }
 @media (min-width: 720px) and (max-width: 1079px) { .forge { grid-template-columns: minmax(0, 260px) minmax(0, 1fr); align-items: center; } }
 /* T-1609, T-2040: the proof ledger build.py fills from data/stats.json: four totals as plain figures. T-2759: each sits
@@ -371,7 +392,16 @@ footer .brand { font-size: 1.3rem; }
     .smithy .hammer { animation: strike linear both; animation-timeline: --smithy; animation-range: entry 40% cover 65%; }
     .smithy .sparks { animation: spark linear both; animation-timeline: --smithy; animation-range: entry 40% cover 65%; }
     .top::after { content: ""; position: absolute; inset: auto 0 0; height: 2px; background: var(--signal); transform-origin: 0 50%; animation: fill linear both; animation-timeline: scroll(root); }
+    /* T-2767: a scene's marks play in as it scrolls into view: Louhi's trial stones rise, the moons are forged, the
+       Underworld's runes waken by the river */
+    .sky { view-timeline: --sky; }
+    .sky .mk { animation: trial linear both; animation-timeline: --sky; animation-range: entry 30% cover 50%; }
+    [data-sky="stars"] .mk { animation-name: forged; }
+    [data-sky="river"] .mk { animation-name: waken; }
   }
+  @keyframes trial { from { opacity: 0; scale: 1 0; } }
+  @keyframes forged { from { opacity: 0; scale: .3; } }
+  @keyframes waken { from { opacity: 0; translate: 0 12px; } }
 }
 
 /* ---- feature pages (T-1220) ---- */

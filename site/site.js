@@ -89,20 +89,24 @@
   // T-2759: the forge's fire, heat rising in the hearth under the mill. Motion only (the still return above) and bounded:
   // it slows to rest by --autoplay-limit, burns again only under the pointer, and stops offscreen and in a hidden tab.
   // Any failure takes the canvas away, leaving the CSS glow the hearth already has.
-  var hearth = document.querySelector(".hearth");
-  if (hearth) try { fire(hearth); } catch (e) { var dead = hearth.querySelector("canvas"); if (dead) dead.remove(); }
+  // T-2767: the same fire lights the tower pages' skies, drifting its own way per data-sky: the aurora sideways, the
+  // stars barely, the river downstream; the hearth's heat rises
+  var drift = { aurora: [.3, 0], stars: [0, .05], river: [-.5, 0] };
+  document.querySelectorAll(".hearth, .sky").forEach(function (box) {
+    try { fire(box); } catch (e) { var dead = box.querySelector("canvas"); if (dead) dead.remove(); }
+  });
   function fire(box) {
     var cv = document.createElement("canvas"), gl = cv.getContext("webgl");
     if (!gl) return;
     var prog = gl.createProgram();
     var shader = function (type, src) { var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); gl.attachShader(prog, s); };
     shader(gl.VERTEX_SHADER, "attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}");
-    shader(gl.FRAGMENT_SHADER, "precision mediump float;uniform vec2 r;uniform float t;uniform vec3 a,b,c;" +
+    shader(gl.FRAGMENT_SHADER, "precision mediump float;uniform vec2 r,d;uniform float t;uniform vec3 a,b,c;" +
       "float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}" +
       "float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);" +
       "return mix(mix(h(i),h(i+vec2(1.,0.)),f.x),mix(h(i+vec2(0.,1.)),h(i+vec2(1.,1.)),f.x),f.y);}" +
       "float fbm(vec2 p){float s=0.,w=.5;for(int i=0;i<5;i++){s+=w*n(p);p*=2.03;w*=.5;}return s;}" +
-      "void main(){vec2 uv=gl_FragCoord.xy/r;float f=fbm(vec2(uv.x*r.x/r.y,uv.y)*3.+vec2(0.,-t*.7));" +
+      "void main(){vec2 uv=gl_FragCoord.xy/r;float f=fbm(vec2(uv.x*r.x/r.y,uv.y)*3.+d*t);" +
       "float heat=(1.-smoothstep(0.,.9,uv.y*1.25+(f-.5)*.6-.05))*(1.-smoothstep(.3,1.1,abs(uv.x-.5)*2.));" +
       "vec3 col=mix(a,b,smoothstep(.1,.6,heat));gl_FragColor=vec4(mix(col,c,smoothstep(.55,1.,heat)),1.);}");
     gl.linkProgram(prog);
@@ -112,7 +116,8 @@
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     var at = gl.getAttribLocation(prog, "p");
     gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
-    var u = {}; ["r", "t", "a", "b", "c"].forEach(function (k) { u[k] = gl.getUniformLocation(prog, k); });
+    var u = {}; ["r", "d", "t", "a", "b", "c"].forEach(function (k) { u[k] = gl.getUniformLocation(prog, k); });
+    gl.uniform2fv(u.d, drift[box.getAttribute("data-sky")] || [0, -.7]);
     // the theme's own stone, ember and glow, read through a 2D context so any CSS colour comes back as #rrggbb
     var probe = document.createElement("canvas").getContext("2d"), css = getComputedStyle(box);
     var rgb = function (name) {

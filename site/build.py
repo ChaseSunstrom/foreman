@@ -342,9 +342,16 @@ def proof(totals, asof=""):
     """T-1609, T-2040: the hero's proof ledger, the four totals from Sampo's own record as plain figures on hairlines
     (the diamond poster and its WebGL scene read as decoration, not data). Inline, so it is first paint. T-2759: each
     figure sits under a dial whose needle (--v) reads the same total; style.css draws the gear and the arc."""
-    items = "".join(f'<div style="--v:{reading(totals.get(k) or 0):g}"><dt>{esc(label)}</dt>'
-                    f'<dd>{esc(fmt(totals.get(k) or 0))}</dd></div>' for k, label in STATIONS)
-    return f'<div class="proof"><p>From Sampo\'s own record{", to " + esc(asof) if asof else ""}</p><dl>{items}</dl></div>'
+    return dials([(label, totals.get(k) or 0) for k, label in STATIONS],
+                 f'From Sampo\'s own record{", to " + esc(asof) if asof else ""}')
+
+
+def dials(items, note):
+    """T-2767: a row of dials, (label, count) each: the figure as text (site.js counts up to it), the needle its
+    reading. NOTE is markup."""
+    cells = "".join(f'<div style="--v:{reading(n):g}"><dt>{esc(label)}</dt><dd>{esc(fmt(n))}</dd></div>'
+                    for label, n in items)
+    return f'<div class="proof"><p>{note}</p><dl>{cells}</dl></div>'
 
 
 def layout(title, desc, body, pages, here, depth=1):
