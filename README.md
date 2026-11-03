@@ -527,7 +527,7 @@ Real runs of each kind are on the [Smith page](https://chasesunstrom.github.io/s
 
 - The harness does the stations itself: the model writes a short plan (checked, and sent back to fix when it's malformed), then picks one action at a time for each step.
 - Every edit, file write and command goes past Sampo's Ward first, so a refused `rm -rf ~` never runs; the model reads the refusal and tries another way.
-- The harness runs each criterion's check, hands a failure back to the model (three rounds, three more on `--escalate MODEL`), and closes and commits the task, or blocks it with the reason.
+- The harness runs each criterion's check, hands a failure back to the model (three rounds, three more on `--escalate MODEL`; a type and tier whose own closes keep needing later fixes starts on it), and closes and commits the task, or blocks it with the reason.
 - `--dry-plan` shows the plan and changes nothing. `--no-commit` closes without committing. `--json` prints one event per line.
 - With no model or API key set up, Smith uses the Claude Code CLI if you have it (it says so when it starts); `--worker codex` (or `gemini`, `aider`) picks another: that CLI plans in its read-only mode and does each step, and Smith still makes the task, runs every check before and after, and commits only when they pass.
 - Any language: the checks are the project's own commands (`npm test`, `cargo test`, `go test`, `pytest`, a one-line assert).

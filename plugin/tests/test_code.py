@@ -1295,6 +1295,85 @@ class Survivors(CodeCase):  # T-1754 (T-1337)
                 x.wait()
 
 
+FEAT = dict(PLAN, type="FEATURE")  # T-2739: a FEATURE close needs no red-green proof, so the seeds can be quick
+
+
+class OutcomeEscalation(CodeCase):
+    """T-2739: each close records the harness that made it; a type and tier whose fm code closes keep needing later
+    fixes starts on the --escalate model, and the journal says why."""
+
+    def seed(self, n, bad, harness="fm-code"):
+        """n closed FEATURE S tasks made under `harness`, their 30-day windows over, the first `bad` fixed later."""
+        import re
+        from sampo import core
+        p = core.find_project(self.repo)
+        old = core.iso(time.time() - 31 * 86400)
+        ids = []
+        for i in range(n):
+            self.fm("task", "new", f"Seed {i}", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                    "--focus", env={"FOREMAN_HARNESS": harness})
+            tid = core.load_briefs(p)[-1].id
+            self.fm("task", "finish", tid, "--audit", "self", "--run", "true", env={"FOREMAN_HARNESS": harness})
+            path = core.find_brief(p, tid).path
+            text = read_text(path)
+            text = re.sub(r"(?m)^updated: .*$", f"updated: {old}", text)
+            text = re.sub(r"(?m)^- \d{4}-\d\d-\d\dT[\d:]+Z done$", f"- {old} done", text)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            ids.append(tid)
+        for tid in ids[:bad]:
+            self.fm("capture", f"Crash in what {tid} added", "--type", "FIX", "--tier", "S")
+        return ids
+
+    def run_fix(self, *flags):
+        """The base model plans, then (if it still has the work) does nothing; the strong one fixes calc.py."""
+        self.serve("anthropic", plan(FEAT), call("done", summary="nothing"), name="fake")
+        strong = self.serve("anthropic", *FIX, name="strong")
+        return self.code("fix add", "--model", "fake", *flags), strong
+
+    def test_a_close_records_the_harness_that_made_it(self):
+        from sampo import core
+        self.serve("anthropic", plan(), *FIX, name="fake")
+        self.code("fix add", "--model", "fake")
+        done = [e for e in core.ledger_events(core.find_project(self.repo), ("task_done",)) if e["task"] == "T-0001"]
+        self.assertEqual([(e.get("data") or {}).get("harness") for e in done], ["fm-code"])
+
+    def test_five_settled_closes_with_30_percent_fixed_later_start_on_the_escalate_model(self):
+        self.seed(5, 2)  # 2 of 5 = 40%
+        r, strong = self.run_fix("--escalate", "strong")
+        tid = "T-0008"  # five seeds, the two captured fixes, then fm code's own
+        self.assertEqual(self.task(tid)["status"], "done", r.stdout)
+        self.assertEqual(len(strong.seen), 2, "the work ran on the escalate model")
+        self.assertIn("2 of 5", r.stdout)
+        self.assertIn('"kind": "escalate"', journal_text(self, tid))
+
+    def under_the_bar(self, n, bad, harness):
+        tid = f"T-{n + bad + 1:04d}"
+        self.seed(n, bad, harness)
+        self.serve("anthropic", plan(FEAT), *FIX, name="fake")
+        strong = self.serve("anthropic", call("done", summary="x"), name="strong")
+        r = self.code("fix add", "--model", "fake", "--escalate", "strong")
+        self.assertEqual(self.task(tid)["status"], "done", r.stdout)
+        self.assertEqual(strong.seen, [], "the base model did the work")
+        self.assertNotIn("kind\": \"escalate", journal_text(self, tid))
+
+    def test_under_30_percent_it_starts_on_the_base_model(self):
+        self.under_the_bar(5, 1, "fm-code")
+
+    def test_under_5_settled_closes_it_starts_on_the_base_model(self):
+        self.under_the_bar(4, 4, "fm-code")
+
+    def test_closes_made_under_another_harness_do_not_count(self):
+        self.under_the_bar(5, 5, "claude-code")
+
+    def test_with_no_escalate_model_set_the_journal_says_the_record_calls_for_one(self):
+        self.seed(5, 2)
+        self.serve("anthropic", plan(FEAT), *FIX, name="fake")
+        r = self.code("fix add", "--model", "fake")
+        self.assertEqual(self.task("T-0008")["status"], "done", r.stdout)
+        self.assertIn("none is set", r.stdout)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()

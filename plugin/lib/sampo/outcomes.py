@@ -155,6 +155,19 @@ def _row(r):
             + (f", {left} still in the {SURVIVE_DAYS}-day window" if left else ""))
 
 
+START_MIN, START_RATE = 5, 30  # T-2739: settled closes, and the share of them undone later, that move fm code's start
+
+
+def harness_record(p, harness, typ, tier, outs=None):
+    """T-2739: (settled closes, those fixed later or reverted) of this type and tier that `harness` made, by the
+    harness each task_done event recorded (the last close per task); a close with none recorded belongs to no one."""
+    outs = outcomes(p) if outs is None else outs
+    made = {e.get("task"): (e.get("data") or {}).get("harness") for e in c.ledger_events(p, ("task_done",))}
+    rows = [o for t, o in outs.items() if made.get(t) == harness and (o["type"], o["tier"]) == (typ, tier)
+            and o.get("window_done")]
+    return len(rows), sum(o["fate"] in ("fixed later", "reverted") for o in rows)
+
+
 def track_line(p, typ, tier):
     """One line for fm focus: this project's record for the type and tier, once it has two finished tasks."""
     r = track(p).get((typ, tier))

@@ -936,7 +936,7 @@ def cmd_task(args):
             if files:  # recall's "Start here" and edit tripwires for the next related task
                 b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))  # not a list: a recall section; the diff has the rest
             b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
-            logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"],
+            logged.update(model=_session_model(), harness=c.harness(), type=b.type, tier=b.tier, verified=b.meta["verified"],  # T-2739
                           planned=len(b.meta.get("scope") or []), changed=len(files),  # T-0644
                           **({"unproven": b.meta["unproven"]} if b.meta.get("unproven") else {}))
             # T-1061: the plan as it was at first focus (scope, predictions) against what happened

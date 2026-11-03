@@ -21,8 +21,8 @@ The guard is reached exactly as other harnesses do: plugin/hooks/hook PreToolUse
 exit 2, a deny or an ask (nobody here to answer it) is a refusal, sent back as the action's result and never run.
 The harness makes the task (fm task new --focus), runs each criterion's verify as evidence (fm task evidence --ac N
 --run) before the first step and after the last, gives a failure back to the model (3 rounds, then 3 more on
---escalate's model), blocks the task when it still fails, and closes it with fm task finish (an M task's audit lenses,
-docs and lesson come from one more slot). Every message and action goes in the project's code/<task>.jsonl journal.
+--escalate's model; T-2739: a type and tier whose fm code closes keep needing later fixes starts on it), blocks the task
+when it still fails, and closes it with fm task finish (an M task's audit lenses, docs and lesson come from one more slot). Every message and action goes in the project's code/<task>.jsonl journal.
 
     fm code "<request>" --worker CLI [--worker-timeout 1200] [--verify CMD]     (T-1214)
 An installed CLI (WORKERS, or 'CMD {prompt}') does each step and fix round in one unattended turn instead of the model;
@@ -2636,6 +2636,8 @@ def cmd_code(args):
             run.emit("resume", f"resuming {run.tid} from {run.journal}", task=run.tid)
         if run.auto and run.worker:  # T-1358: the plan's kind is known now
             route(run)
+        if args.resume is None:  # a resume doesn't re-decide (ponytail: it restarts on the base model; its fix rounds still escalate)
+            profile = _start_model(run, p, profile)
         _drive(run, profile)
     except (m.ModelError, CodeError) as e:  # T-1334: every failure ends with the one command to run next
         msg, then = f"fm code: {'model: ' if isinstance(e, m.ModelError) else ''}{e}", next_step(e, run.tid)
@@ -3141,6 +3143,31 @@ def _journal_start(run, profile):
                      "context": run.context})
     if run.usd:  # what planning spent, before there was a journal to say it
         run.log(kind="spend", usd=run.usd)
+
+
+def _start_model(run, p, profile):
+    """T-2739: the model a fresh run's steps start on. The outcome record decides: with outcomes.START_MIN settled
+    fm code closes of the plan's type and tier, START_RATE % or more fixed later or reverted, the --escalate model (the
+    base one when none is set, and the journal says so). Never fails the run: no record, no change."""
+    from sampo import outcomes
+    if profile is None or run.worker:
+        return profile
+    try:
+        pl = run.plan
+        n, bad = outcomes.harness_record(p, "fm-code", pl["type"], pl["tier"])
+    except Exception:
+        return profile
+    if n < outcomes.START_MIN or bad * 100 < outcomes.START_RATE * n:
+        return profile
+    why = (f"fm code's own {pl['type']} {pl['tier']} closes: {bad} of {n} settled ones needed a later fix or revert "
+           f"({round(100 * bad / n)}%)")
+    if not run.escalate:
+        why += "; the record calls for an --escalate model and none is set"
+    else:
+        why += f"; starting on {run.escalate['name']}"
+    run.log(kind="escalate", text=why, settled=n, bad=bad, model=run.escalate and run.escalate["name"])
+    run.emit("note", why, settled=n, bad=bad)
+    return run.escalate or profile
 
 
 def _drive(run, profile):
