@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sampo: three logo directions</title>
+<style>
+/* Values copied from tokens.json; that file is the source. */
+:root {
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, "Book Antiqua", Georgia, serif;
+  --font-text: Seravek, "Gill Sans Nova", Ubuntu, Calibri, "DejaVu Sans", "Source Sans Pro", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --surface: #F6F0E4; --raised: #FFFBF3; --sunken: #EBE1CE; --text: #16181C; --muted: #58503F;
+  --border: #8E7F66; --accent: #17436E; --bronze: #7A5020;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #121418; --raised: #1B1E24; --sunken: #0B0C0F; --text: #F6F0E4; --muted: #BDB29E;
+  --border: #6E675B; --accent: #9CCBEB; --bronze: #D9A870;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 1rem/1.5 var(--font-text); }
+section { background: var(--surface); color: var(--text); padding: 2rem clamp(1rem, 4vw, 3rem); }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; line-height: 1.2; margin: 0 0 0.5rem; }
+h1 { font-size: 2.369rem; }
+h2 { font-size: 1.777rem; margin-bottom: 1rem; }
+h3 { font-size: 1.333rem; }
+p { margin: 0 0 1rem; max-width: 70ch; }
+.muted, figcaption { color: var(--muted); }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, figcaption { font-family: var(--font-mono); font-size: 0.8125rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: 1.5rem; }
+article { background: var(--raised); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+.row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem; margin-bottom: 1rem; }
+figure { margin: 0; }
+figure img { display: block; margin-bottom: 0.25rem; }
+.well { background: var(--sunken); border-radius: 8px; padding: 0.75rem; }
+.wordmark img { width: 100%; max-width: 20rem; height: auto; }
+[data-theme="dark"] .mono { filter: invert(1); }
+.swatches { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; padding: 0; margin: 0 0 1rem; }
+.swatches li { display: flex; align-items: center; gap: 0.5rem; font: 0.8125rem var(--font-mono); }
+.swatches i { width: 1.5rem; height: 1.5rem; border-radius: 4px; border: 1px solid var(--border); }
+.reduced { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reduced { display: block; }
+}
+</style>
+</head>
+<body>
+
+<section data-theme="light" aria-labelledby="light">
+<h1>Sampo: three logo directions</h1>
+<p>Each direction is drawn around the Sampo, the mill that produces by itself, and has to read as both myth and machine.
+They are shown side by side; none is picked here. The pick waits for a cold review. Each card links to its notes:
+concept, palette use, strengths and weaknesses.</p>
+<p class="muted">The animated marks play once, for no more than 5 s; reload the page to replay them. <span class="reduced">Your system asks for
+reduced motion, so each animated mark shows its still, which is the same picture as <code>mark.svg</code>.</span></p>
+<ul class="swatches" aria-label="Brand materials">
+<li><i style="background:#FF9E3D"></i>forge light</li>
+<li><i style="background:#B07A3B"></i>hammered bronze</li>
+<li><i style="background:#16181C"></i>iron</li>
+<li><i style="background:#F6F0E4"></i>parchment</li>
+<li><i style="background:#0E2A47"></i>blueprint</li>
+<li><i style="background:#E0601F"></i>ember</li>
+</ul>
+<h2 id="light">Light theme</h2>
+<div class="grid">
+<article>
+<h3>Runestone</h3>
+<p class="muted">A carved rune millstone with a forge-lit core. <a href="directions/runestone/README.md">Card</a></p>
+<div class="row">
+<figure><img src="directions/runestone/mark.svg" width="128" height="128" alt="Runestone mark, still"><figcaption>mark.svg: the still, which is what reduced motion shows</figcaption></figure>
+<figure><img src="directions/runestone/mark-animated.svg" width="128" height="128" alt="Runestone mark, animated"><figcaption>mark-animated.svg</figcaption></figure>
+</div>
+<div class="row">
+<figure><img src="directions/runestone/mark.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure>
+<figure><img src="directions/runestone/mark.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure>
+<figure><img src="directions/runestone/icon-16.svg" width="16" height="16" alt="Runestone 16 px icon"><figcaption>icon-16</figcaption></figure>
+<figure><img src="directions/runestone/icon-16.svg" width="32" height="32" alt=""><figcaption>icon ×2</figcaption></figure>
+<figure><img class="mono" src="directions/runestone/mono.svg" width="48" height="48" alt="Runestone mono mark"><figcaption>mono</figcaption></figure>
+</div>
+<figure class="wordmark well"><img src="directions/runestone/wordmark.svg" width="204" height="64" alt="Sampo, runestone wordmark"><figcaption>wordmark.svg</figcaption></figure>
+</article>
+<article>
+<h3>Orrery</h3>
+<p class="muted">A brass orrery-gear mill in blueprint linework. <a href="directions/orrery/README.md">Card</a></p>
+<div class="row">
+<figure><img src="directions/orrery/mark.svg" width="128" height="128" alt="Orrery mark, still"><figcaption>mark.svg: the still, which is what reduced motion shows</figcaption></figure>
+<figure><img src="directions/orrery/mark-animated.svg" width="128" height="128" alt="Orrery mark, animated"><figcaption>mark-animated.svg</figcaption></figure>
+</div>
+<div class="row">
+<figure><img src="directions/orrery/mark.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure>
+<figure><img src="directions/orrery/mark.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure>
+<figure><img src="directions/orrery/icon-16.svg" width="16" height="16" alt="Orrery 16 px icon"><figcaption>icon-16</figcaption></figure>
+<figure><img src="directions/orrery/icon-16.svg" width="32" height="32" alt=""><figcaption>icon ×2</figcaption></figure>
+<figure><img class="mono" src="directions/orrery/mono.svg" width="48" height="48" alt="Orrery mono mark"><figcaption>mono</figcaption></figure>
+</div>
+<figure class="wordmark well"><img src="directions/orrery/wordmark.svg" width="204" height="64" alt="Sampo, orrery wordmark"><figcaption>wordmark.svg</figcaption></figure>
+</article>
+<article>
+<h3>Emberline</h3>
+<p class="muted">An iron-and-ember monoline mark built for terminals. <a href="directions/emberline/README.md">Card</a></p>
+<div class="row">
+<figure><img src="directions/emberline/mark.svg" width="128" height="128" alt="Emberline mark, still"><figcaption>mark.svg: the still, which is what reduced motion shows</figcaption></figure>
+<figure><img src="directions/emberline/mark-animated.svg" width="128" height="128" alt="Emberline mark, animated"><figcaption>mark-animated.svg</figcaption></figure>
+</div>
+<div class="row">
+<figure><img src="directions/emberline/mark.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure>
+<figure><img src="directions/emberline/mark.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure>
+<figure><img src="directions/emberline/icon-16.svg" width="16" height="16" alt="Emberline 16 px icon"><figcaption>icon-16</figcaption></figure>
+<figure><img src="directions/emberline/icon-16.svg" width="32" height="32" alt=""><figcaption>icon ×2</figcaption></figure>
+<figure><img class="mono" src="directions/emberline/mono.svg" width="48" height="48" alt="Emberline mono mark"><figcaption>mono</figcaption></figure>
+</div>
+<figure class="wordmark well"><img src="directions/emberline/wordmark.svg" width="176" height="64" alt="Sampo, emberline wordmark"><figcaption>wordmark.svg</figcaption></figure>
+</article>
+</div>
+</section>
+
+<section data-theme="dark" aria-labelledby="dark">
+<h2 id="dark">Dark theme</h2>
+<div class="grid">
+<article>
+<h3>Runestone</h3>
+<p class="muted">A carved rune millstone with a forge-lit core. <a href="directions/runestone/README.md">Card</a></p>
+<div class="row">
+<figure><img src="directions/runestone/mark.svg" width="128" height="128" alt="Runestone mark, still"><figcaption>mark.svg: the still</figcaption></figure>
+<figure><img src="directions/runestone/mark-animated.svg" width="128" height="128" alt="Runestone mark, animated"><figcaption>mark-animated.svg</figcaption></figure>
+</div>
+<div class="row">
+<figure><img src="directions/runestone/mark.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure>
+<figure><img src="directions/runestone/mark.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure>
+<figure><img src="directions/runestone/icon-16.svg" width="16" height="16" alt="Runestone 16 px icon"><figcaption>icon-16</figcaption></figure>
+<figure><img src="directions/runestone/icon-16.svg" width="32" height="32" alt=""><figcaption>icon ×2</figcaption></figure>
+<figure><img class="mono" src="directions/runestone/mono.svg" width="48" height="48" alt="Runestone mono mark"><figcaption>mono</figcaption></figure>
+</div>
+<figure class="wordmark well"><img src="directions/runestone/wordmark.svg" width="204" height="64" alt="Sampo, runestone wordmark"><figcaption>wordmark.svg</figcaption></figure>
+</article>
+<article>
+<h3>Orrery</h3>
+<p class="muted">A brass orrery-gear mill in blueprint linework. <a href="directions/orrery/README.md">Card</a></p>
+<div class="row">
+<figure><img src="directions/orrery/mark.svg" width="128" height="128" alt="Orrery mark, still"><figcaption>mark.svg: the still</figcaption></figure>
+<figure><img src="directions/orrery/mark-animated.svg" width="128" height="128" alt="Orrery mark, animated"><figcaption>mark-animated.svg</figcaption></figure>
+</div>
+<div class="row">
+<figure><img src="directions/orrery/mark.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure>
+<figure><img src="directions/orrery/mark.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure>
+<figure><img src="directions/orrery/icon-16.svg" width="16" height="16" alt="Orrery 16 px icon"><figcaption>icon-16</figcaption></figure>
+<figure><img src="directions/orrery/icon-16.svg" width="32" height="32" alt=""><figcaption>icon ×2</figcaption></figure>
+<figure><img class="mono" src="directions/orrery/mono.svg" width="48" height="48" alt="Orrery mono mark"><figcaption>mono</figcaption></figure>
+</div>
+<figure class="wordmark well"><img src="directions/orrery/wordmark.svg" width="204" height="64" alt="Sampo, orrery wordmark"><figcaption>wordmark.svg</figcaption></figure>
+</article>
+<article>
+<h3>Emberline</h3>
+<p class="muted">An iron-and-ember monoline mark built for terminals. <a href="directions/emberline/README.md">Card</a></p>
+<div class="row">
+<figure><img src="directions/emberline/mark.svg" width="128" height="128" alt="Emberline mark, still"><figcaption>mark.svg: the still</figcaption></figure>
+<figure><img src="directions/emberline/mark-animated.svg" width="128" height="128" alt="Emberline mark, animated"><figcaption>mark-animated.svg</figcaption></figure>
+</div>
+<div class="row">
+<figure><img src="directions/emberline/mark.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure>
+<figure><img src="directions/emberline/mark.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure>
+<figure><img src="directions/emberline/icon-16.svg" width="16" height="16" alt="Emberline 16 px icon"><figcaption>icon-16</figcaption></figure>
+<figure><img src="directions/emberline/icon-16.svg" width="32" height="32" alt=""><figcaption>icon ×2</figcaption></figure>
+<figure><img class="mono" src="directions/emberline/mono.svg" width="48" height="48" alt="Emberline mono mark"><figcaption>mono</figcaption></figure>
+</div>
+<figure class="wordmark well"><img src="directions/emberline/wordmark.svg" width="176" height="64" alt="Sampo, emberline wordmark"><figcaption>wordmark.svg</figcaption></figure>
+</article>
+</div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="t">
+<title id="t">Sampo: a brass orrery gear holding three orbiting mills, drawn as a blueprint</title>
+<path fill="#0E2A47" stroke="#B07A3B" stroke-width="1.5" stroke-linejoin="round" d="M28.65 4.7L29.84 1.08L34.16 1.08L35.35 4.7L39.35 5.5L41.84 2.6L45.83 4.26L45.54 8.07L48.93 10.33L52.34 8.6L55.4 11.66L53.67 15.07L55.93 18.46L59.74 18.17L61.4 22.16L58.5 24.65L59.3 28.65L62.92 29.84L62.92 34.16L59.3 35.35L58.5 39.35L61.4 41.84L59.74 45.83L55.93 45.54L53.67 48.93L55.4 52.34L52.34 55.4L48.93 53.67L45.54 55.93L45.83 59.74L41.84 61.4L39.35 58.5L35.35 59.3L34.16 62.92L29.84 62.92L28.65 59.3L24.65 58.5L22.16 61.4L18.17 59.74L18.46 55.93L15.07 53.67L11.66 55.4L8.6 52.34L10.33 48.93L8.07 45.54L4.26 45.83L2.6 41.84L5.5 39.35L4.7 35.35L1.08 34.16L1.08 29.84L4.7 28.65L5.5 24.65L2.6 22.16L4.26 18.17L8.07 18.46L10.33 15.07L8.6 11.66L11.66 8.6L15.07 10.33L18.46 8.07L18.17 4.26L22.16 2.6L24.65 5.5Z"/>
+<g fill="none" stroke-linecap="round">
+<circle cx="32" cy="32" r="24.5" stroke="#B07A3B"/>
+<path stroke="#B07A3B" stroke-width="0.8" d="M32 10V7.5M43 12.95L44.25 10.78M51.05 21L53.22 19.75M54 32H56.5M51.05 43L53.22 44.25M43 51.05L44.25 53.22M32 54V56.5M21 51.05L19.75 53.22M12.95 43L10.78 44.25M10 32H7.5M12.95 21L10.78 19.75M21 12.95L19.75 10.78"/>
+<path stroke="#9CCBEB" stroke-width="0.6" stroke-dasharray="4 1.5 1 1.5" d="M9 32H55M32 9V55"/>
+<g stroke="#9CCBEB" stroke-width="0.9">
+<circle cx="32" cy="32" r="8"/>
+<circle cx="32" cy="32" r="14" stroke-dasharray="2 2"/>
+<circle cx="32" cy="32" r="20"/>
+</g>
+<path stroke="#B07A3B" stroke-width="0.9" d="M32 32L36 25.07M32 32L21.28 41M32 32L48.38 43.47"/>
+</g>
+<circle cx="32" cy="32" r="3.5" fill="#FF9E3D"/>
+<circle cx="36" cy="25.07" r="1.8" fill="#F6F0E4"/>
+<circle cx="21.28" cy="41" r="2.2" fill="#9CCBEB"/>
+<circle cx="48.38" cy="43.47" r="2.6" fill="#D9A870"/>
+</svg>

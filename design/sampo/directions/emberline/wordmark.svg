@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 64" width="176" height="64" role="img" aria-labelledby="t">
+<title id="t">Sampo</title>
+<rect x="1.5" y="1.5" width="173" height="61" rx="12" fill="#16181C" stroke="#3A3F48"/>
+<path d="M34.81 44.97A17 17 0 1 1 44.97 34.81" fill="none" stroke="#F6F0E4" stroke-width="4"/>
+<rect x="26" y="24" width="6" height="10" fill="#E0601F"/>
+<path fill="#F6F0E4" d="M43 43h4v4h-4zM48 48h4v4h-4zM53 53h4v4h-4z"/>
+<g fill="none" stroke="#F6F0E4" stroke-width="3" stroke-linecap="square" stroke-linejoin="miter">
+<path transform="translate(72 0)" d="M12 26.5C11 24.8 9.3 24 7 24C4.3 24 2.5 25.4 2.5 27.6C2.5 32.4 12 30 12 35.6C12 38.2 9.8 40 7 40C4.6 40 2.8 39.1 2 37.2"/>
+<path transform="translate(88 0)" d="M12 24V40M12 32C12 27.6 9.8 24 7 24C4.2 24 2 27.6 2 32C2 36.4 4.2 40 7 40C9.8 40 12 36.4 12 32"/>
+<path transform="translate(104 0)" d="M2 40V24M2 28C2 25.5 3.4 24 5 24C6.6 24 7 25.5 7 28V40M7 28C7 25.5 8.4 24 10 24C11.6 24 12 25.5 12 28V40"/>
+<path transform="translate(120 0)" d="M2 46V24M2 32C2 27.6 4.2 24 7 24C9.8 24 12 27.6 12 32C12 36.4 9.8 40 7 40C4.2 40 2 36.4 2 32"/>
+<ellipse cx="143" cy="32" rx="5" ry="8"/>
+</g>
+<rect x="153" y="20" width="9" height="24" fill="#E0601F"/>
+</svg>

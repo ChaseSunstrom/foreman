@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="t">
+<title id="t">Sampo: the mill ring steps round, the ember cursor blinks, then the grains pour out one by one</title>
+<style>
+.ring{transform-origin:29px 29px;animation:spin 2s steps(8,end) both}
+.cur{animation:blink 0.6s steps(1,end) 4}
+.g1{animation:pour 450ms steps(3,end) 2s both}
+.g2{animation:pour 450ms steps(3,end) 2.4s both}
+.g3{animation:pour 450ms steps(3,end) 2.8s both}
+.k>*{opacity:0}
+.k1{animation:k1 500ms steps(4,end) 1.9s both}
+.k2{animation:k2 500ms steps(4,end) 2.05s both}
+@keyframes spin{from{transform:rotate(-360deg)}to{transform:rotate(0deg)}}
+@keyframes blink{50%{opacity:0}}
+@keyframes pour{from{opacity:0;transform:translate(-6px,-6px)}to{opacity:1;transform:translate(0px,0px)}}
+@keyframes k1{0%{opacity:0;transform:none}25%{opacity:1}100%{opacity:0;transform:translate(6px,-4px)}}
+@keyframes k2{0%{opacity:0;transform:none}25%{opacity:1}100%{opacity:0;transform:translate(-4px,6px)}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+<rect x="1.5" y="1.5" width="61" height="61" rx="12" fill="#16181C" stroke="#3A3F48"/>
+<path class="ring" d="M34.81 44.97A17 17 0 1 1 44.97 34.81" fill="none" stroke="#F6F0E4" stroke-width="4"/>
+<rect class="cur" x="26" y="24" width="6" height="10" fill="#E0601F"/>
+<g fill="#F6F0E4">
+<rect class="g1" x="43" y="43" width="4" height="4"/>
+<rect class="g2" x="48" y="48" width="4" height="4"/>
+<rect class="g3" x="53" y="53" width="4" height="4"/>
+</g>
+<g class="k" fill="#E0601F">
+<rect class="k1" x="45" y="37" width="2" height="2"/>
+<rect class="k2" x="37" y="45" width="2" height="2"/>
+</g>
+</svg>
