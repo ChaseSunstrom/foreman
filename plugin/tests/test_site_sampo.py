@@ -107,6 +107,14 @@ class Tokens(unittest.TestCase):
             self.assertIn(f'<meta name="theme-color" content="{roles(theme)["surface"]}" '
                           f'media="(prefers-color-scheme: {theme})">', page)
 
+    def test_every_link_in_site_stays_in_the_repo(self):  # the build copies a link's target: one outside would publish
+        root = os.path.realpath(ROOT)
+        for d, dirs, files in os.walk(os.path.join(ROOT, "site")):
+            for name in dirs + files:
+                path = os.path.join(d, name)
+                if os.path.islink(path):
+                    self.assertTrue(os.path.realpath(path).startswith(root + os.sep), f"{path} leaves the repo")
+
 
 class Built(unittest.TestCase):
     @classmethod
