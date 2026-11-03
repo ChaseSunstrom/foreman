@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""An MCP server over stdio (JSON-RPC 2.0, one message a line), made by Foreman's `fm mcp new`. Stdlib only.
+"""An MCP server over stdio (JSON-RPC 2.0, one message a line), made by Sampo's `fm mcp new`. Stdlib only.
 
 One tool runs the wrapped command. Safety: argv only, never a shell; every argument is a string that matches ARG
 (no leading '-', so never an option; no NUL; at most MAX_ARG characters) or, for the subcommand, one of SUBS; at most

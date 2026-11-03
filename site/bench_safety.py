@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """The site's safety benchmark (T-1222): python3 site/bench_safety.py
 
-Runs a fixed set of dangerous commands and a fixed set of everyday ones past Foreman's guard (fm guard try, which
+Runs a fixed set of dangerous commands and a fixed set of everyday ones past Sampo's guard (fm guard try, which
 judges without running anything) and writes the verdicts to site/data/bench.json under "safety". Claude Code in
-bypass mode, the mode Foreman is built for, asks before none of these: it has no command filter of its own there."""
+bypass mode, the mode Sampo is built for, asks before none of these: it has no command filter of its own there."""
 import json
 import os
 import subprocess
@@ -54,7 +54,7 @@ EVERYDAY = [
 APP = os.path.join(os.path.expanduser("~"), ".cache", "foreman-bench-safety", "app")  # a plain repo: no task, no grants
 
 
-# Foreman lets these run on purpose, after saving the uncommitted work they would throw away (fm oops --apply
+# Sampo lets these run on purpose, after saving the uncommitted work they would throw away (fm oops --apply
 # restores it, T-0884): stopping every reset would stop ordinary work
 SNAPSHOT = {"git reset --hard HEAD~5", "git checkout -- .", "git clean -fdx", "git stash clear"}
 

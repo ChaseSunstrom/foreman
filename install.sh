@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Foreman bootstrap. Public repo:
+# Sampo bootstrap. Public repo:
 #   curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/install.sh | bash
 # Private repo (uses your gh login):
 #   gh repo clone ChaseSunstrom/sampo ~/.claude/foreman && ~/.claude/foreman/install.sh
@@ -42,7 +42,7 @@ say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf 'sampo: %s\n' "$*" >&2; exit 1; }
 command -v git >/dev/null 2>&1 || die "'git' is required but not on PATH"
 # Claude Code is one surface, not a requirement (T-2174): without it the CC-only steps (plugins, the plugin itself,
-# the permission mode, ~/.claude wiring) are skipped and Foreman goes into whichever other agents are here.
+# the permission mode, ~/.claude wiring) are skipped and Sampo goes into whichever other agents are here.
 CLAUDE=1; command -v claude >/dev/null 2>&1 || CLAUDE=0
 if [ "$CLAUDE" = 0 ]; then
   [ "$BUILD" = 1 ] && die "--build runs Claude Code on BUILD_PROMPT.md; install Claude Code first, or drop --build"
@@ -50,7 +50,7 @@ if [ "$CLAUDE" = 0 ]; then
   PLUGINS=0 BYPASS=0
 fi
 
-# 0. Python: fm and every hook run on the python3 on PATH. Foreman needs 3.12.7+: older ones break `communicate()`
+# 0. Python: fm and every hook run on the python3 on PATH. Sampo needs 3.12.7+: older ones break `communicate()`
 #    on a closed stdin, and argparse before 3.12.7 (and in 3.13.0) drops `fm task evidence ID --ac N CMD RESULT`.
 py_ok() { python3 -c 'import sys; v = sys.version_info[:3]; sys.exit(not (v >= (3, 12, 7) and v != (3, 13, 0)))' >/dev/null 2>&1; }
 if ! py_ok; then
@@ -101,11 +101,11 @@ chmod +x "$FOREMAN_HOME"/*.sh
 # 2. Curated plugins
 if [ "$PLUGINS" = 1 ]; then
   say "Setting up plugins"
-  [ "$BUILD" = 1 ] && PASS+=(--build-tools)   # plugin-dev: only needed while building Foreman itself
+  [ "$BUILD" = 1 ] && PASS+=(--build-tools)   # plugin-dev: only needed while building Sampo itself
   "$FOREMAN_HOME/setup-plugins.sh" ${PASS[@]+"${PASS[@]}"}
 fi
 
-# 3. The Foreman plugin itself, from this repo as a local marketplace (loads in place: edits apply on /reload-plugins)
+# 3. The Sampo plugin itself, from this repo as a local marketplace (loads in place: edits apply on /reload-plugins)
 if [ "$CLAUDE" = 1 ]; then
 say "Installing the Sampo plugin"
 claude plugin marketplace add "$FOREMAN_HOME" >/dev/null 2>&1 || true
@@ -120,7 +120,7 @@ if [ "$MOD" = 1 ]; then
 fi
 fi
 
-# 4. Permission mode: bypass is Foreman's recommended mode (its guard hook + deny rules are the brakes; BUILD_PROMPT.md
+# 4. Permission mode: bypass is Sampo's recommended mode (its guard hook + deny rules are the brakes; BUILD_PROMPT.md
 # §4.7), but it's the person's choice (T-0871): asked on a terminal, set by --bypass, otherwise left as it was.
 if [ "$BYPASS" = ask ]; then
   BYPASS=0
@@ -145,7 +145,7 @@ data = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) e
 m = json.load(open(manifest)) if os.path.exists(manifest) else {}
 if "defaultMode_original" not in m:
     m["defaultMode_original"] = (data.get("permissions") or {}).get("defaultMode")
-    # What existed before Foreman touched anything, so uninstall can remove what we created (fm install-user keeps these).
+    # What existed before Sampo touched anything, so uninstall can remove what we created (fm install-user keeps these).
     m.setdefault("settings_created", not data)
     m.setdefault("permissions_created", "permissions" not in data)
     os.makedirs(os.path.dirname(manifest), exist_ok=True)
@@ -166,13 +166,13 @@ PY
   fi
 fi
 
-# 5. Foreman user wiring (reversible: plugin/uninstall.sh or `fm uninstall-user`)
+# 5. Sampo user wiring (reversible: plugin/uninstall.sh or `fm uninstall-user`)
 if [ "$WIRING" = 1 ] && [ "$CLAUDE" = 1 ]; then
   say "Wiring Sampo into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)"
   python3 "$FOREMAN_HOME/plugin/bin/fm" install-user || say "Wiring failed; run: $FOREMAN_HOME/plugin/bin/fm install-user --dry-run"
 elif [ "$WIRING" = 1 ]; then
   say "No Claude Code here: putting fm on PATH and wiring the agents found"
-  # setup.ensure_fm_link: makes the link, repairs a dangling one of Foreman's, leaves anyone else's fm alone
+  # setup.ensure_fm_link: makes the link, repairs a dangling one of Sampo's, leaves anyone else's fm alone
   python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from sampo import setup; setup.ensure_fm_link()' "$FOREMAN_HOME/plugin/lib" || true
   case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) say "Add ~/.local/bin to your PATH so any shell finds fm" ;; esac
   found=0

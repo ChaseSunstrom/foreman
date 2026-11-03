@@ -1,5 +1,5 @@
 """Drives server.py over stdio as a client would: initialize, tools/list, a good call, rejected injections.
-Made by Foreman's `fm mcp new`; run: python3 test_server.py. Make the good call assert your command's real output."""
+Made by Sampo's `fm mcp new`; run: python3 test_server.py. Make the good call assert your command's real output."""
 import json
 import os
 import subprocess

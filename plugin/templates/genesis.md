@@ -1,6 +1,6 @@
 {{goal}}
 
-RESEARCH!: Genesis. Build {{project}} into its complete, best-in-class version: Foreman finds, thinks through and does the work on its own, and seeds itself to get there
+RESEARCH!: Genesis. Build {{project}} into its complete, best-in-class version: Sampo finds, thinks through and does the work on its own, and seeds itself to get there
 {{context}}
 CONTEXT: This message is Generation 0. It writes a Seed. The Seed writes one Mission per capability gap. Missions write and build the briefs, then critique themselves. Each generation is selected on the exam and the next one is written from the critiques.
 MUST: full autonomy. Every decision through fm decide. Never ask the user anything mid-run.

@@ -7,10 +7,12 @@ import subprocess
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BASELINE = 19  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry), 61 after MASTER.md (T-2810: MASTER's lines, and the lowercase-id forms KEPT now keeps on every surface), 42 after the mod (T-2807: the code-matched forms it keeps are listed in KEPT), 23 after the agents, listing, output style and install.sh (T-2808), 19 after the rules (T-2809); the goal is 0
+BASELINE = 19  # 2026-11-03 (T-2818: widened to install.sh, workflows, templates, site/*.py and site/genesis; their prose renamed, Foreman Desktop and the release-subject grep kept, count unchanged at 19):876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry), 61 after MASTER.md (T-2810: MASTER's lines, and the lowercase-id forms KEPT now keeps on every surface), 42 after the mod (T-2807: the code-matched forms it keeps are listed in KEPT), 23 after the agents, listing, output style and install.sh (T-2808), 19 after the rules (T-2809); the goal is 0
 SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", "plugin/skills/**/*.md",
             "plugin/commands/*.md", "plugin/agents/*.md", ".claude-plugin/marketplace.json",
-            "plugin/.claude-plugin/plugin.json", "plugin/output-styles/*", "mods/foreman-ui/**", "plugin/rules/*.md")
+            "plugin/.claude-plugin/plugin.json", "plugin/output-styles/*", "mods/foreman-ui/**", "plugin/rules/*.md",
+            "install.sh", ".github/workflows/*.yml", "plugin/templates/**", "site/*.py",
+            "site/genesis/*.html", "site/genesis/*.js", "site/genesis/*.css")
 # names kept on purpose: old plugin ids, commands, agents, env, trailer and path, each an alias of its Sampo name, and
 # the one line that says what Sampo was called. T-2807: also the strings code matches (the mod's pane id 'foreman', the
 # skill namespace foreman:next, the install folder /foreman/, the resume prompt the plugin and the mod both read, the
@@ -24,6 +26,8 @@ KEPT = re.compile(r"foreman(?:-ui)?@foreman|foreman-ui|/foreman:|(?-i:foreman:(?
                   r"(?-i:[`|/.$~-]foreman|foreman[`|/.:=-]|mcp add foreman)|"
                   # strings the code still prints or matches, which a page quotes until the code is renamed (eco.py, bench.py,
                   # release.py, cost.py, the mod's drive prompt): the quote must keep matching what runs
+                  # T-2818: the desktop app and its .desktop entry keep the name until its outward rename
+                  r"Foreman Desktop|Name=Foreman|Foreman\.app|\^Foreman \[0-9\]|"
                   r"\"Foreman\"|\(Foreman ID\)|false done: Foreman|Foreman X\.Y\.Z|Continue the Foreman drive", re.I)
 
 

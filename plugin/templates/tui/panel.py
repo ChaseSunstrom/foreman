@@ -1,6 +1,6 @@
 """An fm code panel, strict by default (T-1519): a tally of the run's events by kind, to rename and grow from.
 
-`fm new panel` puts it in the tui folder of Foreman's home (~/.claude/foreman/tui/), where fm code loads extensions;
+`fm new panel` puts it in the tui folder of Sampo's home (~/.claude/foreman/tui/), where fm code loads extensions;
 then name the panel in a [layout] column of ~/.claude/foreman/tui.toml:  columns = [["log"], ["checks", "tally"]].
 `fm new check PATH` holds a copy to the rules below; plugin/templates/tui/cost_meter.py shows a command on a key.
 

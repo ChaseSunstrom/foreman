@@ -5,7 +5,7 @@ A harness that figures out and does everything itself. The user's only jobs are 
 3. Next-level, not polish: tier 3-4 first, one moonshot a generation, nothing killed for ambition; a failure goes to not-yet and is retried.
 4. Complete, and the frame grows: a capability is done with its tests, exam, docs and every surface; new capabilities, rows, lenses and exam kinds are added with evidence.
 5. General: ecosystem tools, structure-aware parsing and runtime signals over hand-written rules.
-6. Truth over self-image: signals Foreman didn't author; a check that measures format instead of substance is a bug.
+6. Truth over self-image: signals Sampo didn't author; a check that measures format instead of substance is a bug.
 7. Spend where it decides something.
 8. Every lesson becomes code: a rule plus an automatic check, in the same task.
 9. Never trade safety for autonomy.

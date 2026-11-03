@@ -1,6 +1,6 @@
-# Working rules: Foreman in one file
+# Working rules: Sampo in one file
 
-Foreman's discipline without its plugin. No hook enforces these rules: they hold as long as you follow them.
+Sampo's discipline without its plugin. No hook enforces these rules: they hold as long as you follow them.
 The full version (a guard, task state, gates, a live pane) is at https://github.com/ChaseSunstrom/sampo.
 
 ## Every request

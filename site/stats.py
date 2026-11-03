@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Aggregates of Foreman's own history for the site's charts (T-1220): python3 site/stats.py [--state DIR] [--no-bench]
+"""Aggregates of Sampo's own history for the site's charts (T-1220): python3 site/stats.py [--state DIR] [--no-bench]
 
-Reads this repo's Foreman state (the ledger, the task briefs) and git, and writes site/data/stats.json. Only counts,
+Reads this repo's Sampo state (the ledger, the task briefs) and git, and writes site/data/stats.json. Only counts,
 categories and timings are written, plus the benchmark repos' short task names and the titles of work a marathon found
 there (toy repos, published on purpose), and the tower's moonshot titles, waiting ideas and the first clause of each
 one's blocker (T-2767, the Moons and Underworld pages, published on purpose, paths and quoted commands cut): never this
-repo's task titles, a path, a command or a session id. CI has no Foreman state, so
+repo's task titles, a path, a command or a session id. CI has no Sampo state, so
 this runs here and its output is committed; site/build.py only reads it."""
 import argparse
 import collections
@@ -357,7 +357,7 @@ def merge_duels(old, new):
 def duel(state, model=None, kind=""):
     """The newest fm bench duel --vs none (with that model, if given): each case's pass, cost, turns and time for both
     arms (T-1222). `kind` (T-1242): "long", the newest run with forced compaction; "marathon", the newest whose
-    Foreman arm went on past the asked work; "", the newest with neither."""
+    Sampo arm went on past the asked work; "", the newest with neither."""
     res = os.path.join(state, "bench", "results")
     for path in sorted(glob.glob(os.path.join(res, "duel-none-foreman-*.json")), reverse=True):
         bare_path = os.path.join(res, "duel-none-bare-" + path.rsplit("duel-none-foreman-", 1)[1])
@@ -431,7 +431,7 @@ def long_history(res, model=None):
 
 
 def code_counts():
-    """T-1246: the Foreman Code page's figures, counted from the repo: the model client's tests and the endpoints
+    """T-1246: the Sampo Code page's figures, counted from the repo: the model client's tests and the endpoints
     fm code finds (local servers and keyed clouds)."""
     with open(os.path.join(ROOT, "plugin", "tests", "test_models.py"), encoding="utf-8") as f:
         tests = len(re.findall(r"(?m)^    def test_", f.read()))
@@ -444,13 +444,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--state")
     ap.add_argument("--duel", action="append", metavar="NAME=DIR",
-                    help="a Foreman project state folder whose newest duel to show, named (repeatable); default: this "
+                    help="a Sampo project state folder whose newest duel to show, named (repeatable); default: this "
                          "repo's, as the quality duel")
     ap.add_argument("--no-bench", action="store_true", help="keep the hook timings already in stats.json")
     a = ap.parse_args()
     state = a.state or state_dir()
     if not state:
-        sys.exit("no Foreman state for this repo (FOREMAN_HOME/state/projects/foreman-*)")
+        sys.exit("no Sampo state for this repo (FOREMAN_HOME/state/projects/foreman-*)")
     old = {}
     if os.path.isfile(OUT):
         with open(OUT, encoding="utf-8") as f:

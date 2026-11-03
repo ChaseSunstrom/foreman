@@ -1,6 +1,6 @@
 """A sample fm code tui extension: what the run's tokens would cost at a per-token price.
 
-Copy it into the tui folder in Foreman's home (~/.claude/foreman/tui/), then name its panel in a [layout] column of
+Copy it into the tui folder in Sampo's home (~/.claude/foreman/tui/), then name its panel in a [layout] column of
 ~/.claude/foreman/tui.toml, for example:  columns = [["log"], ["checks", "files", "cost"]]. The c key cycles the prices.
 
 An extension is a Python file with setup(api). The API is three calls (fmcodetui.API):
@@ -8,7 +8,7 @@ An extension is a Python file with setup(api). The API is three calls (fmcodetui
   api.command(name, fn, key=, label=)     fn(app); key binds it unless that key is taken; label shows under ?
   api.on(event, fn)                       fn(state, event) after each fm code event of that kind ("*": every one)
 state.ext and app.ext are dicts for an extension's own data. Styles: text, strong, dim, accent, ok, bad, warn, chart,
-chip_ok, chip_bad, chip_warn, chip_accent. Only Foreman's home folder is read: a project can't add an extension.
+chip_ok, chip_bad, chip_warn, chip_accent. Only Sampo's home folder is read: a project can't add an extension.
 Keep them quick: a panel over 50 ms on 3 frames running, a handler over 50 ms, or a command over 2 s or one that
 raises is switched off for the session, with a note in Activity."""
 
