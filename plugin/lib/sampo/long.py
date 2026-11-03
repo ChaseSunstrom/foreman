@@ -823,7 +823,7 @@ def _recur_state(wt, tdir):
             kept = not re.search(r"(?i)\bskip", f.read())
     except OSError:
         kept = False
-    env = {k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)}
+    env = c.sandbox_env({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)})  # T-2835
     try:  # the helper is the session's to change: model-written code, run apart from Foreman's own state
         r = subprocess.run([sys.executable, "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1]); "
                             "from recur_total import total; print(total('1,200;30'))", os.path.join(wt, tdir)],

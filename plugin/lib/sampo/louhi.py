@@ -1819,10 +1819,16 @@ def gen(p, seed=0, per_kind=9, langs=LANGS, kinds=KINDS, split="all", author="se
 ENV = dict(PYTHONDONTWRITEBYTECODE="1", NODE_NO_WARNINGS="1")
 
 
+def _model_env(bench):
+    """T-2835: the env model-written code runs in: a sandbox (no FOREMAN_*, CLAUDE* or GIT_* from this session, the
+    load gate off) without forge, cloud or registry credentials."""
+    return c.sandbox_env({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)}, **ENV)
+
+
 def _run(key, target, test_file, slow=False):
     """Run one test file in target with the key's commands. (ok, why)."""
     from sampo import bench  # the code run here is model-written: no forge, cloud or registry credentials reach it
-    cmds, env = key["commands"], dict({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)}, **ENV)
+    cmds, env = key["commands"], _model_env(bench)
     with tempfile.TemporaryDirectory() as out:
         for step, limit in (("build", BUILD_T), ("exec", SLOW_T if slow else EXEC_T)):
             if step not in cmds:
@@ -2023,7 +2029,7 @@ def passes(base, key, d, target):
 def _tool_out(tool, cwd, text):
     """The tool's stdout on text (run directly when executable, else by sh), or None when it fails or hangs."""
     from sampo import bench  # model-written code: no forge, cloud or registry credentials reach it
-    env = dict({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)}, **ENV)
+    env = _model_env(bench)
     for i in range(3):  # T-2543: a file another thread's fork still holds open for writing can't be exec'd (ETXTBSY)
         try:
             r = subprocess.run([tool] if os.access(tool, os.X_OK) else ["sh", tool], cwd=cwd, input=text, env=env,
@@ -2100,7 +2106,7 @@ class _Shims:
 def _sh(cmd, cwd, limit=BUILD_T):
     """True when cmd exits 0 in cwd (bash, no credentials, stdin closed, under limit)."""
     from sampo import bench
-    env = dict({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)}, **ENV)
+    env = _model_env(bench)
     try:
         return subprocess.run(["bash", "-c", cmd], cwd=cwd, env=env, capture_output=True, timeout=limit,
                               stdin=subprocess.DEVNULL).returncode == 0

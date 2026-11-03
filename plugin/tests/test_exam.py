@@ -2054,3 +2054,28 @@ class OutsideAuthorsForToolsProofBeyond(JudgmentStub, ForemanTestCase):  # T-245
             self.assertEqual(d["scenarios"], [], kind)
             self.assertIn("request", d["dropped"][0]["why"], kind)
         self.assertLessEqual({"tool-build", "tool-find", "tool-grant", "proof", "beyond"}, set(louhi.CHILD_KINDS))
+
+
+class ModelRunEnv(ForemanTestCase):
+    """T-2835: model-written code (an exam answer's tests, checks, tools and the long run's recur helper) runs in a
+    sandbox env: no FOREMAN_*, CLAUDE* or GIT_* from this session, no credentials, and the load gate off."""
+
+    def test_every_model_run_gets_the_sandbox_env(self):
+        from unittest import mock
+        from sampo import long, louhi
+        seen = []
+
+        def ran(argv, **kw):
+            seen.append(kw["env"])
+            return subprocess.CompletedProcess(argv, 0, "1230\n", "")
+        leak = {"FOREMAN_HOME": "/real", "CLAUDE_X": "1", "GIT_DIR": "/real/.git", "GITHUB_TOKEN": "t"}
+        with mock.patch.dict(os.environ, leak), mock.patch("subprocess.run", ran):
+            louhi._run({"commands": {"exec": "true @F@"}}, self.tmp, "t")
+            louhi._tool_out(__file__, self.tmp, "x")
+            louhi._sh("true", self.tmp)
+            long._recur_state(self.tmp, "d")
+        self.assertEqual(len(seen), 4)
+        for env in seen:
+            self.assertFalse(set(leak) & set(env), sorted(set(leak) & set(env)))
+            self.assertEqual(env["FOREMAN_LOAD_GATE"], "0")
+            self.assertEqual(env["PATH"], os.environ["PATH"])
