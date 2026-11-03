@@ -3250,7 +3250,7 @@ def _make_batch(p, ids, title):
                                         "read and one gate run serve them all cheaper.")  # T-2335: the plan gate wants 2 readings
         for b in members:
             crit = [(c._VERIFY_OF.sub("", a.text).strip(), c.verify_of(a.text)) for a in b.acceptance()] or \
-                [(t.strip(), v.strip() or None) for t, _, v in (x.partition(" :: ") for x in _DONE_WHEN.findall(  # T-1976
+                [(t.strip(), v) for t, v in map(c.split_verify, _DONE_WHEN.findall(  # T-1976
                     b.section("Raw request")))] or [(f"{b.title} works", None)]
             for text, verify in crit:
                 h.add_ac(f"{b.id}: {text}", verify)
@@ -3298,7 +3298,7 @@ def task_new(p, args):
                     None)
         if same:
             args.from_id, reused = same.id, f" (from inbox capture {same.id}: same title)"
-    _refuse_unrunnable(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
+    _refuse_unrunnable(p, [v for _, v in map(c.split_verify, args.ac or []) if v])
     if getattr(args, "goal", None):  # T-2135: refused before anything is made
         from sampo import mandate
         mandate.item(p, args.goal)
@@ -3347,12 +3347,11 @@ def task_new(p, args):
                 if args.from_id and given:  # T-1364: the plan given replaces the capture's own, never adds to it
                     b.set_section(name, "")
             for text in args.ac or []:  # "criterion :: verify command" (T-0042)
-                done_when, sep, verify = text.rpartition(" :: ")
-                b.add_ac(done_when, verify.strip()) if sep else b.add_ac(text)
+                b.add_ac(*c.split_verify(text))
             for text in args.step or []:
                 b.add_step(text)
         b, _ = mutate(p, b.id, plan, "task_plan", {"ac": len(args.ac or []), "step": len(args.step or [])})
-        _lint_verify(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
+        _lint_verify(p, [v for _, v in map(c.split_verify, args.ac or []) if v])
     b = _adopt_draft(p, b, args.source)
     if not args.from_id:
         _note_escapes(p, b, " ".join(filter(None, [args.title, args.raw])))
@@ -3499,8 +3498,10 @@ def _task_new_forms(sec, text):
     """T-1894: criteria and steps given with --section in the forms fm task new takes ("done when :: cmd", "1. step"),
     written as the brief keeps them; left as they were, they parsed as no verify command and no steps."""
     if sec == "Acceptance criteria":
-        text = re.sub(r"(?m)^(?=[^\s-].* :: )", "- [ ] ", text)  # T-1900: bare "done when :: cmd", as --ac takes it
-        return re.sub(r"(?m)^(-\s+\[[ xX]\]\s+(?!.*— verify with `).*) :: (.+?)\s*$", r"\1 — verify with `\2`", text)
+        def line(m):  # T-1900: a bare "done when :: cmd" line is a criterion, as --ac takes it; T-2789: both forms
+            t, v = c.split_verify(m.group(2))
+            return (m.group(1) or "- [ ] ") + t + (f" — verify with `{v}`" if v else "")
+        return re.sub(r"(?m)^(-\s+\[[ xX]\]\s+|(?=[^\s-]))(.*(?: :: |— verify with `).*)$", line, text)
     if sec == "Steps":
         if not re.search(r"(?m)^\d+\.\s", text):  # T-1900: bare lines, one step each, as --step takes them
             n = iter(range(1, text.count("\n") + 2))
@@ -3574,8 +3575,8 @@ def task_step(p, args):
 
 def task_ac(p, args):
     if args.action == "add":
-        text, sep, verify = args.arg.rpartition(" :: ")  # "criterion :: verify cmd", as with task new --ac
-        text, verify = (text, verify.strip()) if sep and not args.verify else (args.arg, args.verify)
+        text, verify = c.split_verify(args.arg)  # "criterion :: verify cmd" or "— verify with `cmd`", as with task new --ac
+        verify = args.verify or verify
         _refuse_unrunnable(p, [verify])
         b, _ = mutate(p, args.id, lambda b: _filled(b, b.add_ac(text, verify)), "ac_add", {"text": text})
         _lint_verify(p, [verify])
@@ -3590,13 +3591,7 @@ def task_ac(p, args):
             raise UsageError("fm task ac ID edit N needs --verify CMD and/or --text TEXT")
         text, verify = args.text, args.verify
         if text:  # T-2786: 'TEXT :: CMD' or 'TEXT — verify with `CMD`' carries the verify; --verify wins
-            head, sep, tail = text.rpartition(" :: ")
-            if sep:
-                text, found = head, tail.strip()
-            elif m := re.search(r"\s*—\s*verify with `(.*?)`?\s*$", text):
-                text, found = text[:m.start()], m.group(1).strip()
-            else:
-                found = None
+            text, found = c.split_verify(text)
             verify = verify if verify is not None else found
         _refuse_unrunnable(p, [verify])
         try:

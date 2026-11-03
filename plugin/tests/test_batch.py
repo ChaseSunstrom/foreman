@@ -48,6 +48,13 @@ class Batch(ForemanTestCase):
         show = self.fm("task", "show", json.loads(self.fm("batch", *ids, "--json").stdout)["id"]).stdout
         self.assertIn(f"{ids[0]}: other 0 works — verify with `true`", show)
 
+    def test_done_when_splits_on_the_last_separator_and_takes_both_forms(self):  # T-2789
+        i = self.capture("FEATURE: x\nDONE-WHEN: a :: b :: true")
+        j = self.capture("FEATURE: y\nDONE-WHEN: c — verify with `true`")
+        show = self.fm("task", "show", json.loads(self.fm("batch", i, j, "--json").stdout)["id"]).stdout
+        self.assertIn(f"{i}: a :: b — verify with `true`", show)
+        self.assertIn(f"{j}: c — verify with `true`", show)
+
     def test_the_host_closing_closes_its_members(self):
         host = json.loads(self.fm("batch", *self.ids, "--json").stdout)["id"]
         from sampo import core as c

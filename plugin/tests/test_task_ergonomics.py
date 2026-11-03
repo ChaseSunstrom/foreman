@@ -204,3 +204,29 @@ class ScopeWords(ForemanTestCase):
         self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta["scope"], ["a.py", "b.py", "c.py", "d.py"])
         cid = self.fm("capture", "fix e and f", "--scope", "e.py f.py").stdout.split()[2]
         self.assertEqual(c.find_brief(c.find_project(self.repo), cid).meta["scope"], ["e.py", "f.py"])
+
+
+class SplitVerify(TaskErgonomics):
+    """T-2789: one core.split_verify; every entry point takes 'TEXT :: CMD' and 'TEXT — verify with `CMD`', last ' :: '."""
+
+    def test_split_verify(self):
+        self.assertEqual(c.split_verify("a :: b :: true"), ("a :: b", "true"))
+        self.assertEqual(c.split_verify("a — verify with `true`"), ("a", "true"))
+        self.assertEqual(c.split_verify("plain"), ("plain", None))
+        self.assertEqual(c.split_verify("a ::  "), ("a", None))
+
+    def acs(self, tid):
+        return self.brief(tid).section("Acceptance criteria")
+
+    def test_every_entry_point_takes_both_forms(self):
+        tid = self.task(ac="one — verify with `true`")
+        self.assertIn("one — verify with `true`", self.acs(tid))
+        self.fm("task", "ac", "add", tid, "two a :: two b :: true")
+        self.fm("task", "ac", "add", tid, "three — verify with `true`")
+        self.fm("task", "ac", tid, "edit", "1", "--text", "uno — verify with `true`")
+        self.fm("task", "ac", tid, "edit", "2", "--text", "dos a :: dos b :: true")
+        self.fm("task", "set", tid, "--section", "Acceptance criteria",
+                "--text", "four — verify with `true`\nfive :: x :: true\n")
+        s = self.acs(tid)
+        for want in ("- [ ] four — verify with `true`", "- [ ] five :: x — verify with `true`"):
+            self.assertIn(want, s)

@@ -5182,6 +5182,19 @@ def strip_verify(criterion_text):
     return _VERIFY_OF.sub("", criterion_text or "").rstrip()
 
 
+_VERIFY_TAIL = lazy(r"\s*—\s*verify with `(.+?)`?\s*$")
+
+
+def split_verify(text):
+    """T-2789: (criterion, verify cmd or None) from 'TEXT :: CMD' (last ' :: ') or 'TEXT — verify with `CMD`'; the one
+    parser for what a person types (stored briefs are read with verify_of)."""
+    text = text or ""
+    if m := _VERIFY_TAIL.search(text):
+        return text[:m.start()], m.group(1).strip() or None
+    head, sep, tail = text.rpartition(" :: ")
+    return (head, tail.strip() or None) if sep else (text, None)
+
+
 def verify_of(criterion_text):
     """The verify command a criterion carries (add_ac writes "— verify with `cmd`"), or None."""
     m = _VERIFY_OF.search(criterion_text or "")
