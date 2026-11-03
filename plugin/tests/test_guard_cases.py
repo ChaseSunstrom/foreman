@@ -246,6 +246,9 @@ class AllowCorpus(ForemanTestCase):
         targets = [("plugin/lib/fmguard.py", "plugin"), ("plugin/lib/fmhooks.py", "plugin"),
                    ("plugin/lib/fmreplay.py", "plugin"), ("plugin/lib/fmevolve.py", "plugin"),  # its replay, this lock
                    ("plugin/lib/fmmutate.py", "plugin"), ("plugin/lib/fmbench.py", "plugin"),  # mutants, the bench gate
+                   ("plugin/lib/sampo/hooks.py", "plugin"), ("plugin/lib/sampo/replay.py", "plugin"),  # the guard's code under its sampo names
+                   ("plugin/lib/sampo/evolve.py", "plugin"), ("plugin/lib/sampo/mutate.py", "plugin"),
+                   ("plugin/lib/sampo/bench.py", "plugin"),
                    ("plugin/hooks/hook", "plugin"), ("plugin/hooks/hooks.json", "plugin"),
                    ("plugin/tests/test_guard_cases.py", "plugin"), ("plugin/tests/test_guard.py", "plugin"),
                    ("plugin/tests/fixtures/guard_allow.jsonl", "plugin"),
