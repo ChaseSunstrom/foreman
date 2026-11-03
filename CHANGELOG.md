@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The landing page is in the forge world: the Sampo mill turns over a forge-glow shader while runes write the headline, the stats are gears and dials of Sampo's real totals, a forge strikes beside the Smith section, and one paragraph tells where the names come from. The shader comes to rest within five seconds, runs again under the pointer, and stops offscreen; the page is complete with no JS and under reduced motion.
 - README and INSTALL now say Sampo. They carry the Runestone header in light and dark, the new verbs (`sampo smith`, `rune`, `moons`, `louhi`, `underworld`, `ward`), the Kalevala paragraph that explains the names (once), and an upgrade note listing what keeps working: `fm`, `foreman@foreman`, `/foreman:`, `FOREMAN_*`, `Foreman-Task` and `~/.claude/foreman`.
 - The site's charts now use Sampo's palette: bronze, rune blue, ember, verdigris, violet and rose. `design/sampo/tokens.json` holds six chart colours per theme, each at least 3:1 against the chart panel and well apart in hue from its neighbours. The site's chart variables and the design preview are generated from that file, and the old blue is gone.
 - The site now uses Sampo's design system. Its colours, type and motion come from `design/sampo/tokens.json` in light and dark, and it has the Runestone mark, favicon and share card. The copy now says Sampo throughout, and the install section lists the old names as aliases. At 768 px the nav no longer pushes the theme button off the page.
