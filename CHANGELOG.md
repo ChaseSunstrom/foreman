@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The site's charts now use Sampo's palette: bronze, rune blue, ember, verdigris, violet and rose. `design/sampo/tokens.json` holds six chart colours per theme, each at least 3:1 against the chart panel and well apart in hue from its neighbours. The site's chart variables and the design preview are generated from that file, and the old blue is gone.
 - The site now uses Sampo's design system. Its colours, type and motion come from `design/sampo/tokens.json` in light and dark, and it has the Runestone mark, favicon and share card. The copy now says Sampo throughout, and the install section lists the old names as aliases. At 768 px the nav no longer pushes the theme button off the page.
 - New: Sampo's logo, in `design/sampo/logo/`. The Runestone mark (a dark mill disc, a bronze rim, runes and a hot eye crossed by the rynd bar) passed a second cold design review. It comes as a 16 px icon, mono, wordmark, an animated mark with its still and a parchment light variant, plus a favicon, app and Desktop icons, README headers, a 1200×630 share card and a pane glyph. `build.py` regenerates every SVG byte for byte, and a test checks that. The wordmark is outlined from TeX Gyre Pagella, which uses the permissive GUST Font License.
 - Every list `fm` cuts short now says how many it left out, and names the flag that shows them all where one exists. Before, 22 of the 41 places `fm` cut a list printed nothing about the rest. A scan test keeps the count of silent cuts at zero.
