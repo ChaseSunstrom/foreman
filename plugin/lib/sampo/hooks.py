@@ -3075,6 +3075,12 @@ def post_tool_use(pl, ok=True):
         m = re.search(r"\bID:?\s*([\w-]+)|backgroundTaskId\W+([\w-]+)", json.dumps(pl.get("tool_response")))
         if m:
             _event({"kind": "bg_start", "session_id": pl.get("session_id"), "id": m.group(1) or m.group(2)})
+    elif ok and tool in ("Bash", "Monitor"):  # T-2790: a call the harness moved to the background after its timeout,
+        # and a Monitor, run in the background too; their notices end them like any job (unparseable: nothing)
+        m = re.search(r"moved to the background \(ID:\s*([\w-]+)|Monitor started \(task\s+([\w-]+)",
+                      json.dumps(pl.get("tool_response")))
+        if m:
+            _event({"kind": "bg_start", "session_id": pl.get("session_id"), "id": m.group(1) or m.group(2)})
     if ok and p and tool == "Bash":
         _grant_prompted(pl, p)
         note = _bash_touches(pl, p)
@@ -4278,6 +4284,12 @@ def _drive(p, sd, briefs, pl, g):
                 + (f"Optional work is dropped ({pace}): no side work; required gates still run. " if pace else "")
                 + "If nothing is independent of it, end the turn with one line naming what you wait on.")
     d.pop("waited", None)
+    if running:  # T-2790: no active task, jobs running: the next task is named once per running set, not every Stop
+        if d.get("pushed_for") == running[:5]:  # (a queued close run's own fm focus calls were raced by the repeats)
+            return None
+        d["pushed_for"] = running[:5]
+    else:
+        d.pop("pushed_for", None)
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
         return None  # no progress since the last continuation: let the turn end
     if d.get("count", 0) >= DRIVE_MAX:

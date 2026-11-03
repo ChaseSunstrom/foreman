@@ -3142,6 +3142,38 @@ class Stop(HookCase):
                                "session_id": "sess-1", "transcript_path": transcript})
         self.assertEqual(self.decision(p), "block")
 
+    def test_an_auto_backgrounded_bash_and_a_monitor_are_background_starts(self):
+        # T-2790: neither sets run_in_background, yet both run on and notify
+        from sampo import hooks
+        self.fm("init")
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "make"}, "session_id": "sess-1",
+                                  "tool_response": "Command did not complete within its 120s timeout and was moved "
+                                                   "to the background (ID: bny9agb5o)."})
+        self.hook("PostToolUse", {"tool_name": "Monitor", "tool_input": {"command": "tail -f x"}, "session_id": "sess-1",
+                                  "tool_response": "Monitor started (task bnpbatnnd, expires in 30m unless the "
+                                                   "source ends first)"})
+        self.hook("PostToolUse", {"tool_name": "Monitor", "tool_input": {}, "session_id": "sess-1",
+                                  "tool_response": "no id here"})  # unparseable: nothing recorded
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}, "session_id": "sess-1",
+                                  "tool_response": "ID: plain-output"})  # a foreground call that merely says ID
+        self.assertEqual(sorted(hooks._running("sess-1")), ["bnpbatnnd", "bny9agb5o"])
+        self.hook("UserPromptSubmit", {"prompt": "<task-notification>\n<task-id>bny9agb5o</task-id>\n"
+                                                 "</task-notification>", "session_id": "sess-1"})
+        self.assertEqual(hooks._running("sess-1"), ["bnpbatnnd"], "its notice ends it")
+
+    def test_no_active_task_a_background_job_names_the_next_task_once_per_running_set(self):
+        # T-2790: five 'fm focus T-…' blocks in a row raced a queued close run's own fm focus calls
+        self.fm("init")
+        nxt = self.task("Next one", focus=False)
+        self.bg("bq9")
+        first = parse(self.stop("Merged the lane."))
+        self.assertEqual(first.get("decision"), "block")
+        self.assertIn(nxt, first["reason"])
+        for _ in range(3):
+            self.assertIsNone(self.decision(self.stop("Waiting on the close run.")), "same running set: said once")
+        self.bg("bq10")  # a new running set is said again
+        self.assertEqual(self.decision(self.stop("Another job.")), "block")
+
     def test_a_stopped_background_task_frees_drive(self):
         self.fm("init")
         self.task()
