@@ -49,7 +49,7 @@ def tokens_css():
         return ", ".join(n if re.fullmatch(r"[A-Za-z][\w-]*", n) else json.dumps(n) for n in names)
 
     def theme(name, pad=""):
-        return "\n".join(pad + r for r in rows([f"--{k}: {v};" for k, v in own(t[name]["color"])] +
+        return "\n".join(pad + r for r in rows([f"--{k}: {v};" for k, v in own(t[name]["color"]) + own(t[name]["chart"])] +
                                                [f"color-scheme: {name};"]).splitlines())
 
     ratio = t["font"]["scale"]["ratio"]["$value"]

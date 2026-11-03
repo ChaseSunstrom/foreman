@@ -146,6 +146,29 @@ class Tokens(unittest.TestCase):
         text_roles = {r for r in tokens()["light"]["color"] if r.startswith(("text", "on-")) or r == "accent"}
         self.assertEqual(text_roles - named, set(), "a text role no pair proves")
 
+    def test_the_chart_series_pass_3_to_1_on_the_panel_and_neighbours_differ_in_hue(self):
+        """T-2757: six series per theme; the site's chart panel is the raised surface."""
+        for theme in ("light", "dark"):
+            series = tokens()[theme]["chart"]
+            self.assertEqual([k for k in series if not k.startswith("$")], [f"s{i}" for i in range(1, 7)])
+            cols = [series[f"s{i}"]["$value"] for i in range(1, 7)]
+            for c in cols:
+                self.assertGreaterEqual(ratio(c, hex_of(theme, "raised")), 3, f"{theme}: {c}")
+            hues = [fmdesign.oklch_of(fmdesign.parse_colour(c))[2] for c in cols]
+            for i, a in enumerate(hues):
+                for j, b in enumerate(hues[:i]):
+                    gap = min(abs(a - b), 360 - abs(a - b))
+                    self.assertGreaterEqual(gap, 40 if j == i - 1 else 10, f"{theme}: s{j + 1} vs s{i + 1}")
+
+    def test_the_preview_and_the_site_css_carry_the_chart_series_from_the_tokens(self):
+        preview = read_text(os.path.join(ROOT, "index.html"))
+        css = read_text(os.path.join(os.path.dirname(os.path.dirname(ROOT)), "site", "style.css"))
+        for theme in ("light", "dark"):
+            for k, v in tokens()[theme]["chart"].items():
+                if not k.startswith("$"):
+                    self.assertIn(f"--{k}: {v['$value']};", preview, theme)
+                    self.assertIn(f"--{k}: {v['$value']};", css, theme)
+
     def test_status_hues_stay_clear_of_the_forge(self):
         # forge light and ember are brand fire, never a status: each status hue sits 30 degrees or more away
         def hue(h):

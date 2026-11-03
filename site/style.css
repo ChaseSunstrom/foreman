@@ -3,7 +3,9 @@
   --surface: #F6F0E4; --raised: #FFFBF3; --sunken: #EBE1CE; --text: #16181C;
   --text-muted: #58503F; --border: #8E7F66; --stone: #16181C; --accent: #17436E;
   --on-accent: #F6F0E4; --bronze: #7A5020; --glow: #FF9E3D; --ember: #E0601F;
-  --error: #A8104A; --warning: #7A6A00; --success: #2C7A45; color-scheme: light;
+  --error: #A8104A; --warning: #7A6A00; --success: #2C7A45; --s1: #8A6212;
+  --s2: #2A6FB0; --s3: #C2410C; --s4: #1F7F73; --s5: #7A4FB5;
+  --s6: #B8326A; color-scheme: light;
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, "Book Antiqua", Georgia, serif;
   --font-text: Seravek, "Gill Sans Nova", Ubuntu, Calibri, "DejaVu Sans", "Source Sans Pro", sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace;
@@ -20,14 +22,18 @@
     --surface: #121418; --raised: #1B1E24; --sunken: #0B0C0F; --text: #F6F0E4;
     --text-muted: #BDB29E; --border: #6E675B; --stone: #262A31; --accent: #9CCBEB;
     --on-accent: #121418; --bronze: #D9A870; --glow: #FF9E3D; --ember: #F07434;
-    --error: #FF8FAB; --warning: #E2D35A; --success: #7FD49A; color-scheme: dark;
+    --error: #FF8FAB; --warning: #E2D35A; --success: #7FD49A; --s1: #D9A870;
+    --s2: #7DB7E8; --s3: #F07434; --s4: #4DB8A8; --s5: #B596E6;
+    --s6: #E87AA6; color-scheme: dark;
   }
 }
 :root[data-theme="dark"], .install, .window, .term, .ex-cmd {
   --surface: #121418; --raised: #1B1E24; --sunken: #0B0C0F; --text: #F6F0E4;
   --text-muted: #BDB29E; --border: #6E675B; --stone: #262A31; --accent: #9CCBEB;
   --on-accent: #121418; --bronze: #D9A870; --glow: #FF9E3D; --ember: #F07434;
-  --error: #FF8FAB; --warning: #E2D35A; --success: #7FD49A; color-scheme: dark;
+  --error: #FF8FAB; --warning: #E2D35A; --success: #7FD49A; --s1: #D9A870;
+  --s2: #7DB7E8; --s3: #F07434; --s4: #4DB8A8; --s5: #B596E6;
+  --s6: #E87AA6; color-scheme: dark;
 }
 /* end tokens */
 /* T-2753: the page's names for the Sampo roles. Declared again on the terminals, which take the dark roles in either
@@ -382,13 +388,7 @@ footer .brand { font-size: 1.3rem; }
 .flow .s { font: 500 12px var(--sans); fill: var(--ink-2); }
 .flow .arrow { stroke: var(--ink-2); stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
 
-/* chart tokens: the validated categorical palette (dataviz reference), stepped per theme; tokens.json has no data
-   palette yet, so it is the one set of colours kept here. Grid, axis and muted are Sampo roles, set at the top. */
-:root { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; }
-}
-:root[data-theme="dark"] { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; }
+/* chart series --s1 to --s6 come from tokens.json's chart group, in the generated block at the top */
 
 /* benchmarks (T-1222) */
 .stamp.warn { color: var(--signal-ink); }

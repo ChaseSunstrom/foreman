@@ -15,11 +15,13 @@
   color-scheme: light;
   --surface: #F6F0E4; --raised: #FFFBF3; --sunken: #EBE1CE; --text: #16181C; --muted: #58503F;
   --border: #8E7F66; --accent: #17436E; --bronze: #7A5020;
+  --s1: #8A6212; --s2: #2A6FB0; --s3: #C2410C; --s4: #1F7F73; --s5: #7A4FB5; --s6: #B8326A;
 }
 [data-theme="dark"] {
   color-scheme: dark;
   --surface: #121418; --raised: #1B1E24; --sunken: #0B0C0F; --text: #F6F0E4; --muted: #BDB29E;
   --border: #6E675B; --accent: #9CCBEB; --bronze: #D9A870;
+  --s1: #D9A870; --s2: #7DB7E8; --s3: #F07434; --s4: #4DB8A8; --s5: #B596E6; --s6: #E87AA6;
 }
 * { box-sizing: border-box; }
 body { margin: 0; font: 1rem/1.5 var(--font-text); }
@@ -68,6 +70,11 @@ reduced motion, so each animated mark shows its still, which is the same picture
 <li><i style="background:#E0601F"></i>ember</li>
 </ul>
 <h2 id="light">Light theme</h2>
+<ul class="swatches" aria-label="Chart series, this theme">
+<li><i style="background:var(--s1)"></i>s1</li><li><i style="background:var(--s2)"></i>s2</li>
+<li><i style="background:var(--s3)"></i>s3</li><li><i style="background:var(--s4)"></i>s4</li>
+<li><i style="background:var(--s5)"></i>s5</li><li><i style="background:var(--s6)"></i>s6</li>
+</ul>
 <div class="grid">
 <article>
 <h3>Runestone</h3>
