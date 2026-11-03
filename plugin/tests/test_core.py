@@ -1729,6 +1729,7 @@ class SandboxEnv(unittest.TestCase):
 
     def test_every_sandbox_builder_routes_through_the_helper(self):
         # T-2822: a builder that copies its own filter back in loses the load gate off; counted per module
-        for mod, n in (("demo", 2), ("drill", 1), ("bench", 1), ("long", 1), ("louhi", 4), ("smithbench", 1)):
+        # T-2835: + long's _recur_state and louhi's _model_env (its model-written runs)
+        for mod, n in (("demo", 2), ("drill", 1), ("bench", 1), ("long", 2), ("louhi", 5), ("smithbench", 1)):
             src = read_text(os.path.join(os.path.dirname(c.__file__), mod + ".py"))
             self.assertEqual(src.count("sandbox_env("), n, mod)
