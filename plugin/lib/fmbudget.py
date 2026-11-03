@@ -105,12 +105,24 @@ def estimate(feature, runs, fallback):
     return round(per * runs, 4)
 
 
+SNAP_SPAN = 6 * 3600  # T-2752: a snapshot this much older than the newest is another session's past, not the usage now
+
+
+def _recent_snaps():
+    """The newest statusline snapshots, newest first, none more than SNAP_SPAN older than the newest: another session's
+    stale reading (a previous subscription's) must never stand in for this session's."""
+    snaps = sorted(glob.glob(os.path.join(c.state_dir(), "sessions", "*.json")), key=os.path.getmtime)
+    if not snaps:
+        return []
+    newest = os.path.getmtime(snaps[-1])
+    return [s for s in reversed(snaps[-3:]) if newest - os.path.getmtime(s) <= SNAP_SPAN]
+
+
 def rate_limits():
     """{"five_hour": %, "seven_day": %, "week_gone": share of the week gone by} from the newest statusline snapshot
     that has any; a window whose reset time has passed reads as 0 (it emptied since the snapshot)."""
-    snaps = sorted(glob.glob(os.path.join(c.state_dir(), "sessions", "*.json")), key=os.path.getmtime)
     now = time.time()
-    for path in reversed(snaps[-3:]):
+    for path in _recent_snaps():
         try:
             with open(path, encoding="utf-8") as f:
                 rl = json.load(f).get("rate_limits") or {}
@@ -138,9 +150,8 @@ def forecast(now=None):
     """T-0973: per usage window in the newest statusline snapshot, {used, resets_at, projected (percent at reset at
     the pace so far), full_at (when it fills, if before the reset; else None)}. A straight line from the window's
     start: early in a window the projection swings, which the caller says."""
-    snaps = sorted(glob.glob(os.path.join(c.state_dir(), "sessions", "*.json")), key=os.path.getmtime)
     now = now or time.time()
-    for path in reversed(snaps[-3:]):
+    for path in _recent_snaps():
         try:
             with open(path, encoding="utf-8") as f:
                 rl = json.load(f).get("rate_limits") or {}

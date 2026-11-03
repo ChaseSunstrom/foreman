@@ -127,6 +127,21 @@ class Budget(ForemanTestCase):
         with open(os.path.join(folder, "s.json"), "w") as f:
             json.dump({"rate_limits": rl}, f)
 
+    def test_another_sessions_stale_reading_never_counts(self):  # T-2752: a previous subscription's 96% held subagents
+        folder = os.path.join(c.state_dir(), "sessions")
+        os.makedirs(folder, exist_ok=True)
+        old, cur = os.path.join(folder, "old.json"), os.path.join(folder, "cur.json")
+        week = {"used_percentage": 96, "resets_at": int(time.time() + 86400)}
+        with open(old, "w") as f:
+            json.dump({"rate_limits": {"seven_day": week}}, f)
+        os.utime(old, (time.time() - 86400, time.time() - 86400))  # a day older than this session's
+        with open(cur, "w") as f:
+            json.dump({"model": "x"}, f)  # this session's newest snapshot carries no rate_limits yet
+        self.assertNotIn("seven_day", bud.rate_limits())
+        with open(cur, "w") as f:
+            json.dump({"rate_limits": {"seven_day": dict(week, used_percentage=11)}}, f)
+        self.assertEqual(bud.rate_limits()["seven_day"], 11)
+
     def test_subagents_follow_the_weeks_pace(self):
         self.assertIsNone(bud.subagent_pause(), "unknown usage never pauses")
         day = 86400
