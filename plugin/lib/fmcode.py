@@ -905,9 +905,15 @@ class Run:
             try:
                 code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True,
                                         on_line=self.live_tools(argv[0], "--strict-mcp-config" in argv) if streams
-                                        else None, on_idle=self.live_beat(argv[0]), confine=confine)
+                                        else None, on_idle=self.live_beat(argv[0]), confine=confine,
+                                        on_spawn=lambda p: setattr(self, "wpid", p.pid))
             except ConfineError as e:
                 raise Blocked(str(e))
+            hit, self.limit_hit, self.wpid = getattr(self, "limit_hit", None), None, None
+            ended = True
+            if hit:  # T-1476: stopped at its limit message; no fix rounds or failover (a limit isn't a crash)
+                more = f"; rerun with --model {self.escalate['name']} to use another runner" if self.escalate else ""
+                raise Blocked(f"fm code: the worker {argv[0]} hit a usage limit: {hit}{more}; then fm code --resume {self.tid}")
             if streams:  # the journal keeps its reply, not the stream
                 res = next(filter(None, map(m.stream_result, reversed(out.splitlines()))), None)
                 out = res["result"] if res and isinstance(res.get("result"), str) else out
@@ -1017,6 +1023,13 @@ class Run:
                 cause, f"silent {silent} s after: {last}" if last else f"silent {silent} s")
             self.emit("stalled", f"    {who} stalled: {why}", worker=who, secs=silent, cause=cause, last=last)
             run_friction("stalled", cause)  # T-1339
+            pid = getattr(self, "wpid", None)
+            if cause == "limit" and pid and pid > 1:  # T-1476: waiting out the timeout can't lift a limit; work() blocks
+                self.limit_hit = last
+                try:
+                    os.killpg(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
         return beat
 
     def judge(self, b):

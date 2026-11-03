@@ -10,7 +10,7 @@ VERIFY = "python3 test_calc.py"
 BOUND = 40  # s: the fakes sleep 60; the step turn and 3 fix rounds stop at --worker-timeout 2 each (~10 s, more on a loaded host); a run past this hung
 
 
-class Fakes(CodeCase):
+class CodeFakes(CodeCase):
     def run_fake(self, mode):
         bin_ = os.path.join(self.tmp, "bin")
         fake_cli(bin_, "fake", mode, secs=60)
@@ -37,10 +37,18 @@ class Fakes(CodeCase):
         self.assertIn("waiting at a prompt", out)
         self.assertIn("timed out after 2 s", out)
 
-    def test_usage_limit(self):
-        out = self.run_fake("usage-limit")
-        self.assertIn("hit a rate or usage limit", out)
-        self.assertIn("timed out after 2 s", out)
+    def test_usage_limit_stops_the_run(self):  # T-1476: no waiting out the timeout, no fix rounds
+        bin_ = os.path.join(self.tmp, "bin")
+        fake_cli(bin_, "fake", "usage-limit", secs=60)
+        t0 = time.monotonic()
+        r = self.code("FIX: make calc.add add", "--worker", "fake {prompt}", "--verify", VERIFY, "--worker-timeout", "30",
+                      check=False, env={"PATH": bin_ + os.pathsep + os.environ["PATH"], "FM_STALL": "0.5", "FM_HEARTBEAT": "0.3"})
+        out = r.stdout + r.stderr
+        self.assertLess(time.monotonic() - t0, 20, out)  # one 30 s timeout alone would fail this
+        self.assertNotEqual(r.returncode, 0, out)
+        self.assertIn("usage limit: ", out)
+        self.assertNotIn("timed out", out)
+        self.assertNotIn("fix round", out)
 
     def test_garbage_json(self):
         out = self.run_fake("garbage-json")
@@ -53,8 +61,8 @@ class Fakes(CodeCase):
         self.assertIn("changed nothing", out)
 
     def test_every_mode_is_covered(self):
-        covered = {n[5:].replace("_", "-") for n in dir(self) if n.startswith("test_") and n != "test_every_mode_is_covered"}
-        self.assertEqual(covered | {"ok"}, set(FAKE_MODES))
+        covered = {n[5:].replace("_", "-") for n in dir(self) if n.startswith("test_") and n not in ("test_every_mode_is_covered", "test_usage_limit_stops_the_run")}
+        self.assertEqual(covered | {"ok", "usage-limit"}, set(FAKE_MODES))
 
 
 if __name__ == "__main__":

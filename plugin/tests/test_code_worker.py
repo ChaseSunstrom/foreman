@@ -461,13 +461,13 @@ class Worker(CodeCase):
         self.assertEqual(beats[0]["worker"], "claude")
         self.assertTrue(all(isinstance(b.get("silent"), int) for b in beats), "how long since it was last heard")
 
-    def stalled(self, before):
+    def stalled(self, before, status="done"):
         """T-1336: the stalled events of a worker turn that prints `before` (shell), then goes quiet past FM_STALL."""
         self.cli("claude", before + "\nsleep 1.6\nfix-calc\n")
         r = self.code("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json", check=False,
                       env={"PATH": self.bin + os.pathsep + os.environ["PATH"], "FM_HEARTBEAT": "0.2",
                            "FM_STALL": "0.6"})
-        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertEqual(self.task()["status"], status, r.stdout + r.stderr)
         got = [e for e in self.events(r) if e["event"] == "stalled"]
         self.assertEqual(len(got), 1, f"one stalled event per silence: {got}")
         self.assertEqual(got[0]["worker"], "claude")
@@ -501,7 +501,7 @@ class Worker(CodeCase):
         self.assertEqual(fmcode.stall_cause(b"\x1b]0;title\x07done\n"), ("silent", "done"), "escapes never show")
 
     def test_a_turn_at_a_rate_limit_names_the_limit(self):
-        e = self.stalled("echo 'Error: 429 rate limit reached, retrying in 60 s'\necho")
+        e = self.stalled("echo 'Error: 429 rate limit reached, retrying in 60 s'\necho", status="blocked")  # T-1476: the run stops there
         self.assertEqual(e["cause"], "limit", e)
         self.assertIn("limit", e["text"])
 
