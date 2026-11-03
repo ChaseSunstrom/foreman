@@ -3,7 +3,7 @@
 
 Use when you add or trim a CLAUDE.md, a `.claude/rules/*.md` file, or a skill or slash-command description, or when sessions start with too much context.
 
-Built on the cards `fm lib show cc-claude-md-rules`, `fm lib show cc-context-budget`, `fm lib show cc-skills`, `fm lib show cc-skill-descriptions` and `fm lib show cc-slash-commands`.
+Built on the cards `sampo lib show cc-claude-md-rules`, `sampo lib show cc-context-budget`, `sampo lib show cc-skills`, `sampo lib show cc-skill-descriptions` and `sampo lib show cc-slash-commands`.
 
 1. **Cost it:** everything always loaded is paid every turn. Count lines and what loads:
    ```bash

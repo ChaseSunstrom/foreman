@@ -9,10 +9,10 @@ related: [self-improvement-loops, brainstorming-lenses, grounding-ideas, retrosp
 Run rounds of build, review what shipped, and brainstorm on top of it, stopping when a round produces nothing new worth doing.
 
 ## Verify
-- `fm queue`: the next round's items exist and trace to the previous round's review.
+- `sampo queue`: the next round's items exist and trace to the previous round's review.
 - `git log --oneline -10`: each round is a distinct set of commits.
-- `fm ideas --help`: `--rounds`, `--dry`, `--seen` and `--deepen` support repeated, deduplicated idea passes.
-- `fm research list`: each round's ideas and review notes are saved.
+- `sampo ideas --help`: `--rounds`, `--dry`, `--seen` and `--deepen` support repeated, deduplicated idea passes.
+- `sampo research list`: each round's ideas and review notes are saved.
 
 ## Test first
 Set the round budget and the stop rule before round one.

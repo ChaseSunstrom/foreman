@@ -3,7 +3,7 @@
 
 Use when a game project will not load, import or export headless: Godot, Unity, Unreal, or a shader or GPU pipeline that fails to compile.
 
-Built on the cards `fm lib show godot`, `fm lib show godot-gdscript`, `fm lib show unity`, `fm lib show unreal`, `fm lib show glsl` and `fm lib show wgpu`.
+Built on the cards `sampo lib show godot`, `sampo lib show godot-gdscript`, `sampo lib show unity`, `sampo lib show unreal`, `sampo lib show glsl` and `sampo lib show wgpu`.
 
 1. **Run the engine headless and read the log**, not the editor window:
    ```bash

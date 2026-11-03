@@ -3,7 +3,7 @@
 
 Use when a stream or batch pipeline stops, lags, or feeds wrong data to people who depend on it: Kafka consumers behind, a Debezium connector failed, a replica far behind.
 
-Built on the cards `fm lib show kafka`, `fm lib show debezium`, `fm lib show postgres-replication` and `fm lib show airflow`. Declare it first with the incident playbook; this one is the data-side triage.
+Built on the cards `sampo lib show kafka`, `sampo lib show debezium`, `sampo lib show postgres-replication` and `sampo lib show airflow`. Declare it first with the incident playbook; this one is the data-side triage.
 
 1. **Stop the spread:** pause the downstream consumers or the publishing job if bad data is flowing; stale data is better than wrong data.
 2. **Where does the flow stop?** Check each hop in order:

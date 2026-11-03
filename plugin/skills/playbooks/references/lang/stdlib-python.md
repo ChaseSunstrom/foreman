@@ -62,6 +62,6 @@ risk; the standard library ships with the interpreter and is already reviewed.
 
 ## Library cards
 
-`fm lib show python` (the baseline toolchain), `fm lib show python-typing`, `fm lib show python-performance`,
-`fm lib show python-packaging`, `fm lib show click-typer`, `fm lib show httpx`, `fm lib show pydantic`. See also
+`sampo lib show python` (the baseline toolchain), `sampo lib show python-typing`, `sampo lib show python-performance`,
+`sampo lib show python-packaging`, `sampo lib show click-typer`, `sampo lib show httpx`, `sampo lib show pydantic`. See also
 `python-patterns.md` and `python-testing.md` in this folder.

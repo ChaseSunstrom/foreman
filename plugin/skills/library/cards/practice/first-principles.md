@@ -9,7 +9,7 @@ related: [assumption-mapping, approach-comparison, scope-cutting, spikes]
 Strip a problem to facts and hard constraints, then rebuild the solution from those instead of copying how it is usually done.
 
 ## Verify
-- `fm research list`: the fact sheet or reasoning note is saved.
+- `sampo research list`: the fact sheet or reasoning note is saved.
 - `grep -n "constraint\|fact" <note>`: replace with your note path; both lists exist and each fact has a source.
 - `git diff --stat`: the resulting design is smaller or simpler than the convention it replaced, or the note says why not.
 

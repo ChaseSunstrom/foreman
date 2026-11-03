@@ -23,7 +23,7 @@ A scale is a list of sizes made by multiplying one base by one ratio. Every size
 3. **Name steps by number, not by element.** `--step--1`, `--step-0` (body), `--step-1`, … A heading level picks a step; an `h2` is not a size. This lets a card title and a section heading share a step without anyone inventing 19 px.
 4. **Seven steps or fewer** in a product UI (one below body, body, up to five above). A screen using more than five distinct sizes has a hierarchy problem that more sizes will not fix.
 5. **Adjacent levels in use differ by at least 1.2×.** With a 1.125 or 1.2 ratio, skip a step between heading levels so the gap holds. Weight alone separating two levels is the "flat hierarchy" default and fails.
-6. **Steps above body are fluid; body and below are not.** Steps 1 and up scale between a phone ratio and a desktop ratio with `clamp()`, keeping a `rem` term so zoom still works (`fm lib show typography`). Leaving step 1 fixed while step 2 shrinks squeezes the gap between them below 1.2× on phones.
+6. **Steps above body are fluid; body and below are not.** Steps 1 and up scale between a phone ratio and a desktop ratio with `clamp()`, keeping a `rem` term so zoom still works (`sampo lib show typography`). Leaving step 1 fixed while step 2 shrinks squeezes the gap between them below 1.2× on phones.
 7. **Leading falls as size rises.** Unitless `line-height`: about 1.5 for body, 1.3–1.4 for steps 1–2, 1.1–1.2 for steps 3–4, 1.0–1.1 for display. Display type at 1.5 looks like separate lines, not a heading.
 8. **Tracking follows size** (always in `em`, never `px`): text under 14 px +0.01 to +0.02em; body 0; step 3 and up −0.01 to −0.02em; display −0.02 to −0.04em; all-caps labels +0.06 to +0.12em, because capitals set tight crowd into a bar.
 
@@ -111,7 +111,7 @@ Rules for the ramps:
 - **One accent hue.** It marks the one primary action per view, links and the current selection, and covers 10% of the screen or less in the squint test. A second accent hue is a second direction and fails unless `DESIGN.md` names it.
 - **Status colours are reserved.** Red means error, amber means warning, green means success, and nothing else uses them: no red brand header, no green "new" badge, no amber illustration. Each status hue sits at least 30° from the accent hue; if the brand colour is green or red, the accent takes it and that status is carried by icon and text plus a shifted hue (a teal success beside a green brand). "Info" uses the accent-subtle role or a neutral, never a fourth hue.
 - **Colour is never the only signal.** Every status also has an icon or a word; every chart series also has a label or a pattern.
-- **Stay inside sRGB** unless you design for wide gamut on purpose. Out-of-gamut OKLCH values are clipped by the browser, chroma and contrast drift, and the hex in your proof no longer matches the screen. Lower the chroma until the value fits (`fm design contrast` flags it); wide-gamut colours go in an `@media (color-gamut: p3)` block, with the sRGB value as the default.
+- **Stay inside sRGB** unless you design for wide gamut on purpose. Out-of-gamut OKLCH values are clipped by the browser, chroma and contrast drift, and the hex in your proof no longer matches the screen. Lower the chroma until the value fits (`sampo design contrast` flags it); wide-gamut colours go in an `@media (color-gamut: p3)` block, with the sRGB value as the default.
 
 ## Contrast
 
@@ -143,12 +143,12 @@ The limits are rounded toward the safe side. Tinted neutrals land within a few h
 **The proof is a check, not an eyeball.** Keep the pairs in the repo and run them in CI, so a token change that breaks contrast fails a build instead of a person:
 
 ```bash
-fm design contrast tokens/colour.css text/surface-sunken:7 text-muted/surface-sunken border/surface-sunken:3
+sampo design contrast tokens/colour.css text/surface-sunken:7 text-muted/surface-sunken border/surface-sunken:3
 ```
 
-It reads the token file's custom properties (values in `oklch()`, hex, `rgb()` or `hsl()`; roles as `var()` or `light-dark()`; dark overrides in a `.dark`, `[data-theme="dark"]` or `prefers-color-scheme: dark` block), checks each pair in both themes on the sRGB hex the browser paints (WCAG 2.x relative luminance), warns on out-of-gamut values and exits 1 on any failure. A pair is `fg/bg`, `fg/bg:3` or `fg/bg:4.5,7` (light, dark); with no pairs it checks the roles above (text, muted text, border and accent on each surface, text on the accent and subtle fills), body text 7:1 in dark. A value it can't read stops it with the token's name rather than passing silently. A CI without Sampo copies `plugin/lib/fmdesign.py` (stdlib only, Python 3.11 or later) and runs `python3 fmdesign.py contrast …` the same way. Text over images and gradients still needs a scrim and a spot check by eye (`fm lib show color-contrast`).
+It reads the token file's custom properties (values in `oklch()`, hex, `rgb()` or `hsl()`; roles as `var()` or `light-dark()`; dark overrides in a `.dark`, `[data-theme="dark"]` or `prefers-color-scheme: dark` block), checks each pair in both themes on the sRGB hex the browser paints (WCAG 2.x relative luminance), warns on out-of-gamut values and exits 1 on any failure. A pair is `fg/bg`, `fg/bg:3` or `fg/bg:4.5,7` (light, dark); with no pairs it checks the roles above (text, muted text, border and accent on each surface, text on the accent and subtle fills), body text 7:1 in dark. A value it can't read stops it with the token's name rather than passing silently. A CI without Sampo copies `plugin/lib/fmdesign.py` (stdlib only, Python 3.11 or later) and runs `python3 fmdesign.py contrast …` the same way. Text over images and gradients still needs a scrim and a spot check by eye (`sampo lib show color-contrast`).
 
-**A first palette from one colour.** `fm design palette 'oklch(0.45 0.13 258)'` makes every role above in both themes from one seed (hex, `rgb()`, `hsl()` or `oklch()`): neutrals at the seed's hue with a whisper of its chroma, the accent keeping its hue, and each text role moved in lightness until its pairs pass. It prints CSS `light-dark()` roles (`--format dtcg` for Design Tokens JSON, `tailwind` for a v4 `@theme`) and the proof on stderr, so `> tokens/colour.css` keeps only the tokens. It is a start, not a direction: status colours, hover states and the ramp names are yours to add. `fm design extract <ui root>` then writes the token table, with each pair's contrast, into `DESIGN.md`'s Tokens section.
+**A first palette from one colour.** `sampo design palette 'oklch(0.45 0.13 258)'` makes every role above in both themes from one seed (hex, `rgb()`, `hsl()` or `oklch()`): neutrals at the seed's hue with a whisper of its chroma, the accent keeping its hue, and each text role moved in lightness until its pairs pass. It prints CSS `light-dark()` roles (`--format dtcg` for Design Tokens JSON, `tailwind` for a v4 `@theme`) and the proof on stderr, so `> tokens/colour.css` keeps only the tokens. It is a start, not a direction: status colours, hover states and the ramp names are yours to add. `sampo design extract <ui root>` then writes the token table, with each pair's contrast, into `DESIGN.md`'s Tokens section.
 
 ## Dark mode
 
@@ -164,7 +164,7 @@ Dark mode is a second palette designed with the same roles, not the first palett
 8. **Images and illustrations** get a dark version or a gentle dim; logos get a light-on-dark version. A white-boxed PNG on a dark page fails.
 9. **Rerun the proof** for every pair in dark, then look at both themes side by side in screenshots, plus forced-colours mode with borders still visible.
 
-Theme switching, the no-flash script and the stored choice are in `fm lib show dark-mode`. With `light-dark()` (below), the theme is just `color-scheme` on the root: `light dark` follows the system, and a stored choice sets `light` or `dark`.
+Theme switching, the no-flash script and the stored choice are in `sampo lib show dark-mode`. With `light-dark()` (below), the theme is just `color-scheme` on the root: `light dark` follows the system, and a stored choice sets `light` or `dark`.
 
 ## Worked example
 
@@ -225,7 +225,7 @@ Adjacent levels are 1.25× apart on desktop and 1.2× on phones, so the flat-hie
 
 The sRGB hex each ramp value lands on, for design tools: `n-99 #FAFCFE`, `n-97 #F2F5F9`, `n-93 #E4E8ED`, `n-87 #CFD5DB`, `n-66 #8C939B`, `n-55 #6B727B`, `n-45 #4F565E`, `n-27 #22272C`, `n-22 #171B1F`, `n-18 #0E1216`, `blue-45 #21539C`, `blue-74 #83ADEA`, `red-50 #B02B27`, `red-72 #F07F77`. All values are inside sRGB.
 
-**The proof.** Each text role is measured on its worst surface, `--surface-sunken` (`fm design contrast tokens/colour.css text/surface-sunken:7 text-muted/surface-sunken …`):
+**The proof.** Each text role is measured on its worst surface, `--surface-sunken` (`sampo design contrast tokens/colour.css text/surface-sunken:7 text-muted/surface-sunken …`):
 
 | Pair | Needs | Light | Dark |
 |---|---|---|---|
@@ -257,13 +257,13 @@ Each line is pass or fail on the built screens and the token files.
 - [ ] Running text is at most 75ch wide on a 1440 px screen; body is at least 16 px on a phone.
 - [ ] The squint test shows three or more text greys and one clear primary action; the accent covers 10% of the screen or less.
 - [ ] Red, amber and green appear only on error, warning and success, each with an icon or word.
-- [ ] `fm design contrast` exits 0 in CI for every text role on every surface it can sit on, in both themes; dark body text is at least 7:1.
+- [ ] `sampo design contrast` exits 0 in CI for every text role on every surface it can sit on, in both themes; dark body text is at least 7:1.
 - [ ] Every role has a dark value; the dark surfaces are not `#000` and dark text is not `#FFF` unless `DESIGN.md` says why.
 - [ ] A type-as-hero headline leaves no horizontal scroll at 320 px and at 200% zoom.
 
 ## Library cards
 
-The code side lives in the stack library: `fm lib show typography` (rem sizing, fluid `clamp()`, font loading and fallback metrics), `fm lib show color-contrast` (WCAG pairs, states, forced colours, a contrast unit test), `fm lib show dark-mode` (theme switching without a flash, the stored choice), `fm lib show design-systems` (layered tokens and theming), `fm lib show css-custom-properties` (token plumbing), `fm lib show accessibility-testing` (axe in each theme), `fm lib show visual-regression` (screenshot baselines for both themes).
+The code side lives in the stack library: `sampo lib show typography` (rem sizing, fluid `clamp()`, font loading and fallback metrics), `sampo lib show color-contrast` (WCAG pairs, states, forced colours, a contrast unit test), `sampo lib show dark-mode` (theme switching without a flash, the stored choice), `sampo lib show design-systems` (layered tokens and theming), `sampo lib show css-custom-properties` (token plumbing), `sampo lib show accessibility-testing` (axe in each theme), `sampo lib show visual-regression` (screenshot baselines for both themes).
 
 Example: `references/ui/examples/type-and-colour.html`: a type scale and an OKLCH palette by role, each pair's contrast computed on the page, light and dark as their own steps. The site's Gallery shows it.
 

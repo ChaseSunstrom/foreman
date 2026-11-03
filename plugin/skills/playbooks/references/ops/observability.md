@@ -93,7 +93,7 @@ Keep the `event` names in one place so a rename is a reviewed change.
 
 ## Library cards
 
-`fm lib show opentelemetry` (SDKs, OTLP, the Collector), `fm lib show prometheus`, `fm lib show grafana`,
-`fm lib show loki`, `fm lib show log-pipelines` (structured logs, correlation ids),
-`fm lib show distributed-tracing`, `fm lib show slos-alerting`, `fm lib show sentry`, `fm lib show pii-logging`,
-`fm lib show runbooks`.
+`sampo lib show opentelemetry` (SDKs, OTLP, the Collector), `sampo lib show prometheus`, `sampo lib show grafana`,
+`sampo lib show loki`, `sampo lib show log-pipelines` (structured logs, correlation ids),
+`sampo lib show distributed-tracing`, `sampo lib show slos-alerting`, `sampo lib show sentry`, `sampo lib show pii-logging`,
+`sampo lib show runbooks`.

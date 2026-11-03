@@ -3,7 +3,7 @@
 
 Use when an iOS, Android, React, Expo or Flutter app crashes on a phone or tablet, or a push notification or deep link fails there.
 
-Built on the cards `fm lib show react-native`, `fm lib show expo`, `fm lib show flutter`, `fm lib show swiftui`, `fm lib show push-notifications` and `fm lib show deep-links`.
+Built on the cards `sampo lib show react-native`, `sampo lib show expo`, `sampo lib show flutter`, `sampo lib show swiftui`, `sampo lib show push-notifications` and `sampo lib show deep-links`.
 
 1. **Get the crash text**, not the symptom: `adb logcat -b crash -d`, `xcrun simctl spawn booted log show --last 5m --predicate 'process == "App"'`, or the Metro and `flutter logs` output. A JS red box and a native crash are different bugs.
 2. **Same build type.** Reproduce in a Release or profile build on a device; debug builds hide timing, minification and permission bugs (`npx react-native run-android --mode release`).

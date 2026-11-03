@@ -9,9 +9,9 @@ related: [grounding-ideas, value-effort-scoring, scope-cutting, brainstorming-le
 Turn a chosen idea into an executable task: outcome, criteria with verify commands, steps, scope and non-goals, ordered in the queue.
 
 ## Verify
-- `fm queue`: the new tasks appear in the intended order.
-- `fm task new --help`: shows `--ac "<done when> :: <verify cmd>"` and `--step`.
-- `fm check`: runs the criteria commands; each fails now (test first) and passes at the end.
+- `sampo queue`: the new tasks appear in the intended order.
+- `sampo task new --help`: shows `--ac "<done when> :: <verify cmd>"` and `--step`.
+- `sampo check`: runs the criteria commands; each fails now (test first) and passes at the end.
 
 ## Test first
 A brief is ready when every criterion has a command that fails today.
@@ -30,7 +30,7 @@ Pass = running each AC command on the current tree fails for the stated reason.
 - Size the tier honestly (small, several files, cross-cutting) and split anything larger than one sitting.
 - Put dependencies between tasks explicitly, and order by value, risk and unblock count.
 - Add a verification step and any audit the tier requires.
-- Create it with `fm task new "<title>" --type T --tier S --ac "<criterion> :: <command>" --step "<step>"`.
+- Create it with `sampo task new "<title>" --type T --tier S --ac "<criterion> :: <command>" --step "<step>"`.
 
 ## Avoid
 - Criteria that restate the idea ("works well"): replace with a command and an expected output.
@@ -44,4 +44,4 @@ Pass = running each AC command on the current tree fails for the stated reason.
 - [ ] Every criterion has a command that failed beforehand.
 - [ ] Scope files and non-goals are listed.
 - [ ] Tier and dependencies are set.
-- [ ] Queue order was checked with `fm queue`.
+- [ ] Queue order was checked with `sampo queue`.

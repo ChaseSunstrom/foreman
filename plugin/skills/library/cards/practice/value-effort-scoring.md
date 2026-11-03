@@ -9,9 +9,9 @@ related: [scope-cutting, grounding-ideas, ideation-to-briefs, approach-compariso
 Rank candidate work by value, effort, confidence and risk using evidence-based numbers, so the order is defensible and checkable.
 
 ## Verify
-- `fm queue`: the queue order matches the scored order, or the note says why not.
-- `fm research list`: the scoring table is saved with its inputs.
-- `fm cost`: where cost matters, the effort estimates can be compared with what similar tasks cost.
+- `sampo queue`: the queue order matches the scored order, or the note says why not.
+- `sampo research list`: the scoring table is saved with its inputs.
+- `sampo cost`: where cost matters, the effort estimates can be compared with what similar tasks cost.
 
 ## Test first
 Fix the scale and a rule that would reorder the list before scoring.

@@ -3,7 +3,7 @@
 
 Use when you change game rules, physics, pathfinding, or a simulation step and need proof that does not depend on someone playing it.
 
-Built on the cards `fm lib show game-loop`, `fm lib show game-physics`, `fm lib show pathfinding`, `fm lib show godot-gdscript` and `fm lib show unity-testing`.
+Built on the cards `sampo lib show game-loop`, `sampo lib show game-physics`, `sampo lib show pathfinding`, `sampo lib show godot-gdscript` and `sampo lib show unity-testing`.
 
 1. **Separate simulation from rendering.** If logic cannot run with no window or GPU, the first change is that split; do it test-first.
 2. **Fixed timestep, seeded randomness.** A test steps the simulation N ticks with a fixed seed and compares state, so a failure reproduces exactly.

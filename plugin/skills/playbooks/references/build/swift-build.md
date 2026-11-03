@@ -2,9 +2,9 @@
 # Swift build errors (SwiftPM, Xcode)
 
 Use when `swift build`, `swift test` or `xcodebuild` fails to compile. The goal is a green build with the smallest
-diff that fixes the cause. Built on the library cards `fm lib show swift` (the baseline),
-`fm lib show swift-package-manager` (Package.swift, resolution), `fm lib show xcodebuild` (schemes, destinations,
-signing) and `fm lib show swift-concurrency` (Swift 6 isolation and Sendable errors).
+diff that fixes the cause. Built on the library cards `sampo lib show swift` (the baseline),
+`sampo lib show swift-package-manager` (Package.swift, resolution), `sampo lib show xcodebuild` (schemes, destinations,
+signing) and `sampo lib show swift-concurrency` (Swift 6 isolation and Sendable errors).
 
 ## Diagnostic commands
 

@@ -9,8 +9,8 @@ related: [rubber-ducking, five-whys, experiment-design, red-team-review]
 Debug by reproducing first, then testing ranked hypotheses with cheap discriminating probes, changing one thing at a time.
 
 ## Verify
-- `fm task prove --help`: records the failing repro before a fix.
-- `fm task hypo --help`: records hypotheses and probes on the task.
+- `sampo task prove --help`: records the failing repro before a fix.
+- `sampo task hypo --help`: records hypotheses and probes on the task.
 - `git bisect log`: if you bisected, the log shows good and bad commits and the culprit.
 - The repro command now exits 0 and the same command failed before the fix.
 

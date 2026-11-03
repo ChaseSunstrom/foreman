@@ -9,8 +9,8 @@ related: [red-team-review, assumption-mapping, kill-criteria, second-opinions]
 Assume the work already failed, list the specific reasons, then change the plan or add a check for each of the top few.
 
 ## Verify
-- `fm second plan ID`: a model outside your context lists objections and a verdict for the brief.
-- `fm second debate ID --role pre-mortem`: the premortem role run as a separate voice, if you want one more read.
+- `sampo second plan ID`: a model outside your context lists objections and a verdict for the brief.
+- `sampo second debate ID --role pre-mortem`: the premortem role run as a separate voice, if you want one more read.
 - `git diff --stat`: the plan or tests changed after the premortem; if nothing changed, it did not count.
 
 ## Test first

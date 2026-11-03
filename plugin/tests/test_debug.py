@@ -104,7 +104,7 @@ class Debugger(ForemanTestCase):
         agent = read_text(os.path.join(c.PLUGIN_ROOT, "agents", "fm-debugger.md"))
         tools = re.search(r"(?m)^tools:\s*(.+)$", agent).group(1)
         self.assertEqual({t.strip() for t in tools.split(",")}, {"Read", "Grep", "Glob"})
-        self.assertIn("fm task hypo", agent)
+        self.assertIn("sampo task hypo", agent)
         self.fm("init")
         tid = json.loads(self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--ac", "ok", "--step", "do",
                                  "--json").stdout)["id"]

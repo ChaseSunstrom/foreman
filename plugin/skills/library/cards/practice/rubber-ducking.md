@@ -9,7 +9,7 @@ related: [scientific-debugging, five-whys, second-opinions, first-principles]
 When stuck, explain the problem step by step in writing, claim by claim, and check each claim against reality until one breaks.
 
 ## Verify
-- `fm task log --help`: the explanation is logged on the task, not only thought.
+- `sampo task log --help`: the explanation is logged on the task, not only thought.
 - Each claim in the write-up carries a command or a file line that was checked.
 - The step that broke is named, and the next action is a probe, not a guess.
 
@@ -31,7 +31,7 @@ Pass = every claim has a check that was run; the first false one is identified.
 - Say what you assumed without checking; those are the likeliest suspects.
 - Explain to a reader with no context (a fresh subagent, or yourself in a new file); the missing context is often the bug.
 - Name what you have ruled out, with evidence, so you do not retrace it.
-- When the explanation does not resolve it, hand it on with that write-up (`fm second` or a fresh debugger agent).
+- When the explanation does not resolve it, hand it on with that write-up (`sampo second` or a fresh debugger agent).
 
 ## Avoid
 - Explaining from memory of the code: open the file and read the real lines.

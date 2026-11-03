@@ -3,7 +3,7 @@
 
 Use when you tag a Go library or ship a CLI built with GoReleaser.
 
-Built on the cards `fm lib show goreleaser`, `fm lib show go-modules`, `fm lib show cobra` and `fm lib show go-testing`.
+Built on the cards `sampo lib show goreleaser`, `sampo lib show go-modules`, `sampo lib show cobra` and `sampo lib show go-testing`.
 
 1. **Gate the commit:** `go build ./... && go vet ./... && go test ./... -race -count=1`.
 2. **Tidy modules:** `go mod tidy` then `git diff --exit-code go.mod go.sum`. No local `replace` directives.

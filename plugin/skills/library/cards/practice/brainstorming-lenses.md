@@ -9,9 +9,9 @@ related: [grounding-ideas, ideation-to-briefs, capability-mapping, value-effort-
 Generate ideas by forcing different viewpoints (user, operator, attacker, maintainer, cost), then cluster, so the list is broad instead of ten variants of one thought.
 
 ## Verify
-- `fm research list`: the ideas note was saved, not left in chat.
+- `sampo research list`: the ideas note was saved, not left in chat.
 - `grep -c '^- ' .foreman/ideas.md`: replace the path with the saved note; at least 3 lenses each produced distinct items.
-- `fm ideas --help`: shows `--lens`, `--rounds`, `--dry`, `--seen` for fanning the lenses out to tool-less children.
+- `sampo ideas --help`: shows `--lens`, `--rounds`, `--dry`, `--seen` for fanning the lenses out to tool-less children.
 
 ## Test first
 Write the success claim before generating anything.
@@ -36,7 +36,7 @@ Fail = after clustering, fewer than 3 distinct clusters remain.
 - Evaluating while generating: write first, score later, or the list shrinks to the safe idea.
 - Lists of features with no user or trigger: attach a who and a when to each or discard it.
 - Stopping at the first plausible idea: demand the quota per lens before reading any of them.
-- Leaving the list in chat: save it (`fm research list` should show it) so later sessions can recall it.
+- Leaving the list in chat: save it (`sampo research list` should show it) so later sessions can recall it.
 
 ## Review
 - [ ] At least four lenses were used and each is named in the note.

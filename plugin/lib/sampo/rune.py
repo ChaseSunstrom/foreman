@@ -3101,7 +3101,7 @@ RULE_MARK = "<!-- rule -->"  # T-2504: invisible when rendered; says the line st
 RESULT = re.compile(r"\b\d+ of \d+\b|\b\d+/\d+\b|(?<!at )(?<!over )(?<!above )(?<!under )\b\d+(?:\.\d+)?%"
                     r"|\b\d+(?:\.\d+)?x (?:faster|fewer|cheaper|less|more)\b"
                     r"|\b(?:beats?|outperform\w*|better than|faster than|cheaper than)\b", re.I)  # T-2504
-SOURCE = re.compile(r"\b(?:s\d+-\d+|l\d{3})\b|\bT-\d{4,}\b|\bfm (?:outcomes|exam scorecard)\b|stats\.json")
+SOURCE = re.compile(r"\b(?:s\d+-\d+|l\d{3})\b|\bT-\d{4,}\b|\b(?:fm|sampo) (?:outcomes|exam scorecard|louhi scorecard)\b|stats\.json")
 PASS_CLAIM = re.compile(r"\b(?:passes|passed|proven)\b", re.I)
 
 
@@ -3157,7 +3157,7 @@ def _claim_row(p):
             if m.startswith("T-"):
                 if m in briefs and briefs[m].section("Verification evidence").strip():
                     return True
-            elif m.startswith(("fm ", "stats")) or m in runs:
+            elif m.startswith(("fm ", "sampo ", "stats")) or m in runs:
                 return True
         return False
     prose = _prose(p.root)
@@ -3788,7 +3788,13 @@ def _blind_row(p, n):
             continue
         try:
             argv = c.check_argv(f["Check"])
-            argv = [sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm")] + argv[1:] if argv[0] == "fm" else [sys.executable] + argv[1:]
+            if argv[0] in ("fm", "sampo"):
+                launcher = os.path.join(c.PLUGIN_ROOT, "bin", argv[0])
+                if not os.path.exists(launcher):
+                    launcher = os.path.join(c.PLUGIN_ROOT, "bin", "fm")
+                argv = [sys.executable, launcher] + argv[1:]
+            else:
+                argv = [sys.executable] + argv[1:]
             if subprocess.run(argv, cwd=p.root, capture_output=True, timeout=900).returncode:
                 bad.append(f"{head}: its check `{f['Check']}` fails")
         except (ValueError, OSError, subprocess.TimeoutExpired) as e:

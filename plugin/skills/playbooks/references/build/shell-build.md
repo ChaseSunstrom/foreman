@@ -3,9 +3,9 @@
 
 Use when a shell script fails to parse, fails ShellCheck, dies under strict mode, or fails its bats tests. Shell has
 no compiler, so "the build" here is three checks: the parser (`bash -n`), the linter (`shellcheck`) and the tests
-(`bats`). The goal is all three green with the smallest diff. Built on the library cards `fm lib show bash`
-(strict mode, bats), `fm lib show shellcheck` (the SC codes, directives), `fm lib show shell-scripting`
-(quoting, traps, POSIX sh) and `fm lib show cli-tests` (testing a script through its real entry point).
+(`bats`). The goal is all three green with the smallest diff. Built on the library cards `sampo lib show bash`
+(strict mode, bats), `sampo lib show shellcheck` (the SC codes, directives), `sampo lib show shell-scripting`
+(quoting, traps, POSIX sh) and `sampo lib show cli-tests` (testing a script through its real entry point).
 
 ## Diagnostic commands
 

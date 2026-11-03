@@ -9,8 +9,8 @@ related: [friction-logging, retrospectives, recursive-improvement, eval-driven-d
 Improve your own process in bounded rounds: measure, change one thing, re-measure, keep or revert, and record the result.
 
 ## Verify
-- `fm friction --brief`: the evidence the next round starts from.
-- `fm bench --help`: replay finished work to compare a change before adopting it.
+- `sampo friction --brief`: the evidence the next round starts from.
+- `sampo bench --help`: replay finished work to compare a change before adopting it.
 - `git log --oneline -5`: each kept change is its own commit with its measurement; reverted ones are not there.
 
 ## Test first

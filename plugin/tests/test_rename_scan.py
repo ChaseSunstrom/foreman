@@ -57,6 +57,42 @@ def library_strings():
 OLD_ADDR = re.compile(r"sunstrom(?:\.github\.io)?/foreman(?!-)", re.I)
 
 
+FM_ONLY_FILES = ("plugin/lib/sampo/hooks.py", "plugin/lib/sampo/core.py", "plugin/lib/fmguard.py")
+_BARE_FM = re.compile(r"(?:(?<![\w./-])|(?<=\\b))fm(?=\\s|\\b| |\))")  # fm as a word (fm-reviewer, fm_x, plugin/bin/fm are not)
+_REGEXY = re.compile(r"\\[sbdwS]|\(\?|\[\^|\\\.|\|")
+
+
+def fm_only_regexes():
+    """T-2778: the (path, line, text) string literals in the hooks that read as a regex naming the command fm and never
+    sampo. A doc may only teach sampo spellings once every pattern that matches an fm command matches sampo too."""
+    import ast
+    rows = []
+    for rel in FM_ONLY_FILES:
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        docs = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr)}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docs:
+                s = n.value
+                if _BARE_FM.search(s) and _REGEXY.search(s) and "sampo" not in s:
+                    rows.append((rel, n.lineno, s[:80]))
+    return rows
+
+
+# T-2778: the surfaces that teach commands, and the command spelling they stopped teaching (`fm task new`, `fm check`,
+# `fm -p DIR`, `fm <command>`; not fm-reviewer, plugin/bin/fm, `fm` as the alias's name or the fm* module names)
+TEACH_SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "plugin/skills/**/*.md", "plugin/commands/*.md",
+                  "plugin/agents/*.md", "plugin/output-styles/*", "plugin/rules/*.md")
+FM_SPELLING = r"(?<![\w./:@-])fm(?= +(?:[a-z][a-z-]*|<|-p\b))"
+FM_SPELLING_BASELINE = 0  # 2026-11-03 (T-2778): 2254 before the rewrite; lower it when a line goes, never raise it
+
+
+def fm_spellings():
+    out = subprocess.run(["git", "-C", ROOT, "grep", "-nP", FM_SPELLING, "--", *TEACH_SURFACES], capture_output=True,
+                         text=True).stdout
+    return [ln[:100] for ln in out.splitlines()]
+
+
 def leftover():
     """The (path, line) pairs on a surface that name Foreman outside the kept forms."""
     out = subprocess.run(["git", "-C", ROOT, "grep", "-niw", "foreman", "--", *SURFACES], capture_output=True,
@@ -75,6 +111,26 @@ class RenameScan(unittest.TestCase):
         rows = leftover() + library_strings()
         self.assertLessEqual(len(rows), BASELINE, f"{len(rows)} lines still say Foreman (baseline {BASELINE}); "
                                                   f"first: {rows[:3]}")
+
+    def test_no_fm_only_command_regex(self):  # T-2778
+        self.assertEqual(fm_only_regexes(), [])
+
+    def test_docs_teach_sampo_spellings_only_goes_down(self):  # T-2778
+        rows = fm_spellings()
+        self.assertLessEqual(len(rows), FM_SPELLING_BASELINE, f"{len(rows)} lines teach an fm command (baseline "
+                                                              f"{FM_SPELLING_BASELINE}); first: {rows[:3]}")
+
+    def test_fm_spelling_pattern(self):
+        for taught in ("run `fm task new`", "fm check", "(fm -p DIR capture)", "`fm <command> -h`"):
+            self.assertTrue(re.search(FM_SPELLING, taught), taught)
+        for fine in ("foreman:fm-reviewer", "plugin/bin/fm check", "the `fm` alias", "fmguard", "~/.local/bin/fm"):
+            self.assertFalse(re.search(FM_SPELLING, fine), fine)
+
+    def test_fm_only_scan_sees_the_forms(self):
+        for fm_only in (r"^fm quiet (?:-- )?", r"(?:\S*/)?fm\s+", r"\bfm code\b", r"(?<!fm )ui|ux"):
+            self.assertTrue(_BARE_FM.search(fm_only) and _REGEXY.search(fm_only), fm_only)
+        for fine in (r"(?:fm|sampo)\s+check", r"(?:^|:)fm-reviewer$", r"plugin/bin/fm\b", r"\bfm_x\b"):
+            self.assertFalse(_BARE_FM.search(fine) and "sampo" not in fine, fine)
 
     def test_kept_forms_are_not_counted(self):
         self.assertFalse(re.search(r"\bforeman\b", KEPT.sub("", "enable foreman@foreman or run /foreman:next"), re.I))

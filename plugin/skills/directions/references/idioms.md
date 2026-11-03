@@ -19,7 +19,7 @@ draw it five ways; each idiom below sets all five knobs, so the five come out fa
    words in every block; never placeholder copy.
 3. Check each against the product: an idiom whose ornament fights the content (Memphis for a bank's statements,
    Art Deco for a terminal tool) is shown, named as a stretch, never recommended.
-4. Show the five side by side (`fm looks book` for looks that match an idiom; a preview page per card only when
+4. Show the five side by side (`sampo looks book` for looks that match an idiom; a preview page per card only when
    asked) and let the user pick one era, or blend two (one owns type, the other colour).
 
 ## Avoid

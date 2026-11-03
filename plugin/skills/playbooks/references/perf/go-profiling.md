@@ -3,7 +3,7 @@
 
 Use when a Go service or CLI is slow, uses too much memory, or has a latency tail.
 
-Built on the cards `fm lib show go-pprof`, `fm lib show go-concurrency`, `fm lib show go-testing` and `fm lib show go-slog`.
+Built on the cards `sampo lib show go-pprof`, `sampo lib show go-concurrency`, `sampo lib show go-testing` and `sampo lib show go-slog`.
 
 1. **Benchmark the suspect path** so the number is repeatable: `go test -bench BenchmarkParse -benchmem -count=10 ./parse | tee old.txt`.
 2. **Capture a profile on that benchmark, not on guesswork:**

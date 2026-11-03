@@ -27,7 +27,7 @@ reference page, CLI help. For keeping a whole repo's doc set owned and fresh ove
    thing. Pass: `grep -niwE "simply|just|easy|obviously" PAGE.md` returns nothing.
 8. **Links are checked.** Relative links are verified in CI; link text says where it goes (never "click here").
 9. **Docs change with the code.** A change to behaviour updates its page in the same commit (Sampo records it
-   with `fm task finish --docs`).
+   with `sampo task finish --docs`).
 
 ## Running the examples
 
@@ -87,6 +87,6 @@ examples at the top level.
 
 ## Library cards
 
-`fm lib show technical-writing`, `fm lib show readme-writing`, `fm lib show docs-as-code`, `fm lib show api-docs`,
-`fm lib show markdownlint`, `fm lib show mkdocs`, `fm lib show sphinx`, `fm lib show docusaurus`,
-`fm lib show diagrams-as-code`, `fm lib show changelogs`.
+`sampo lib show technical-writing`, `sampo lib show readme-writing`, `sampo lib show docs-as-code`, `sampo lib show api-docs`,
+`sampo lib show markdownlint`, `sampo lib show mkdocs`, `sampo lib show sphinx`, `sampo lib show docusaurus`,
+`sampo lib show diagrams-as-code`, `sampo lib show changelogs`.

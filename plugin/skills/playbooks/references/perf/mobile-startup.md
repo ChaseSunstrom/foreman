@@ -3,7 +3,7 @@
 
 Use when an Android, iOS, Expo or Compose app has a slow cold start or dropped frames on a phone.
 
-Built on the cards `fm lib show android-macrobenchmark`, `fm lib show compose-performance`, `fm lib show expo` and `fm lib show swiftui`.
+Built on the cards `sampo lib show android-macrobenchmark`, `sampo lib show compose-performance`, `sampo lib show expo` and `sampo lib show swiftui`.
 
 1. **Measure on a release-type build on a real device.** Debug builds and simulators report numbers nobody will see.
 2. **Android:** a macrobenchmark module measures startup and jank:

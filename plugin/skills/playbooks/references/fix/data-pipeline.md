@@ -3,7 +3,7 @@
 
 Use when an Airflow, Dagster, dbt, Kafka or ETL job fails, hangs, duplicates rows or loads the wrong ones.
 
-Built on the cards `fm lib show airflow`, `fm lib show dagster`, `fm lib show dbt`, `fm lib show kafka` and `fm lib show etl-pipelines`.
+Built on the cards `sampo lib show airflow`, `sampo lib show dagster`, `sampo lib show dbt`, `sampo lib show kafka` and `sampo lib show etl-pipelines`.
 
 1. **Pin the run:** which partition or data interval, which code version, which input snapshot. Without it you are guessing.
 2. **Does it load?** `airflow dags list-import-errors`, `dagster definitions validate`, `dbt parse`. An import error looks like a scheduler outage.

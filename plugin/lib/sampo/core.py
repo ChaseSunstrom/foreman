@@ -2604,9 +2604,9 @@ def is_sweep(text):
 _DESIGN = lazy(r"(?i)\b(landing page|re-?design\w* (the |a |an |our |my |this |its )?(\w+ )?(page|screen|site|"
                      r"layout|dashboard|header|footer|menu|form|modal|look)|(visual|web|page|screen|ui) design|"
                      r"design (direction|system|language)|look and feel)\b")
-_UI = lazy(r"(?i)(?<![\w-])(?<!fm )(ui|ux)(?![\w-]| tests?\b| --)|\b(front-?end|user interface|web interface|"
+_UI = lazy(r"(?i)(?<![\w-])(?<!fm )(?<!sampo )(ui|ux)(?![\w-]| tests?\b| --)|\b(front-?end|user interface|web interface|"
                  r"restyl\w*|colou?r (scheme|palette)|typography|dark mode|design tokens|animat\w*|3-?d|webgl|"
-                 r"three\.?js|r3f)\b|(?<!fm )\bmotion\b")  # T-1700: animation, motion and 3D reach the ui-design skill
+                 r"three\.?js|r3f)\b|(?<!fm )(?<!sampo )\bmotion\b")  # T-1700: animation, motion and 3D reach the ui-design skill
 
 
 def ui_request(text):
@@ -2633,7 +2633,7 @@ _FRICTION = lazy(
     r"open|recogni[sz]ed)\b|\bjust sits there\b|\bnothing happens\b|\b(?:is|are|seems?|looks?) broken\b"
     r"|\bkeeps? (?:failing|crashing|hanging|breaking)\b|\bstuck\b(?!-)|\bconfus(?:ing|ed)\b")
 # the Foreman areas a complaint can name, first match wins; any other fm verb is its own area
-_FRICTION_AREAS = ((r"\bfm code\b", "fm code"), (r"\b(?:tui|pane|dock)\b", "the TUI"), (r"\bguard\b", "the guard"),
+_FRICTION_AREAS = ((r"\b(?:fm|sampo) (?:code|smith)\b", "fm code"), (r"\b(?:tui|pane|dock)\b", "the TUI"), (r"\bguard\b", "the guard"),
                    (r"\bstatus ?line\b", "the statusline"), (r"\bhooks?\b", "the hooks"), (r"\blanes?\b", "lanes"))
 _NOT_VERB = {"is", "isnt", "was", "doesnt", "does", "did", "didnt", "not", "to", "as", "and", "or", "on", "in", "it",
              "that", "keeps", "wont", "can", "cant", "still", "just", "has", "have", "should", "would", "will", "the",
@@ -2655,10 +2655,10 @@ def friction_area(text):
     for pat, area in _FRICTION_AREAS:
         if re.search(pat, text, re.I):
             return area
-    m = re.search(r"\bfm ([a-z][a-z-]{1,20})\b", text, re.I)
+    m = re.search(r"\b(?:fm|sampo) ([a-z][a-z-]{1,20})\b", text, re.I)
     if m and m.group(1).lower() not in _NOT_VERB:
         return "fm " + m.group(1).lower()
-    return "fm" if re.search(r"\b(?:fm|foreman)\b", text, re.I) else "this"
+    return "fm" if re.search(r"\b(?:fm|sampo|foreman)\b", text, re.I) else "this"
 
 
 def parse_intake(text):
@@ -3784,7 +3784,8 @@ def standing_rules(p):
 
 CHECK_TAG = lazy(r"\[check: ([^\]]+)\]")
 CHECK_PENDING = lazy(r"pending (T-\d{4,})")  # a rule whose check waits on a named task: the sweep stays red
-CHECK_FM = (["fm", "genesis", "check"], ["fm", "exam", "scorecard"])
+CHECK_FM = (["fm", "genesis", "check"], ["fm", "exam", "scorecard"], ["sampo", "rune", "check"], ["sampo", "louhi", "scorecard"],
+            ["sampo", "genesis", "check"], ["sampo", "exam", "scorecard"])
 TEST_ID = lazy(r"test_\w+(?:\.\w+)*")
 
 
@@ -3799,7 +3800,8 @@ def check_argv(cmd):
     if argv in CHECK_FM or (argv[:2] == ["python3", "plugin/tests/run.py"] and len(argv) > 2
                             and all(TEST_ID.fullmatch(a) for a in argv[2:])):
         return argv
-    raise ValueError(f"a check is `fm genesis check`, `fm exam scorecard` or `python3 plugin/tests/run.py test_…`, "
+    raise ValueError(f"a check is `sampo rune check` (fm genesis check), `sampo louhi scorecard` (fm exam scorecard) "
+                     f"or `python3 plugin/tests/run.py test_…`, "
                      f"not {plain(cmd)[:120]!r}")
 
 
@@ -3828,7 +3830,7 @@ def steer_checks(p, run=True, pending=True, timeout=900, fails=None):
         if cmd not in ran:
             try:
                 argv = check_argv(cmd)
-                argv = ([sys.executable, os.path.join(PLUGIN_ROOT, "bin", "fm")] + argv[1:] if argv[0] == "fm"
+                argv = ([sys.executable, os.path.join(PLUGIN_ROOT, "bin", "fm")] + argv[1:] if argv[0] in ("fm", "sampo")
                         else [sys.executable] + argv[1:])
                 r = subprocess.run(argv, cwd=p.root, capture_output=True, timeout=timeout)
                 tail = (r.stderr or r.stdout).decode(errors="replace").strip().splitlines()[-1:]
@@ -4690,7 +4692,7 @@ def all_touches(p, window=None, only=None):
 
 
 _UI_FILE = lazy(r"(?i)\.(css|scss|html|tsx|jsx|svelte|vue)$")
-_FM_RUN = r"(?:python3?\s+\S*/)?(?:\S*/)?fm\s+"  # the start of a run of fm (a clear pattern is matched from a command's first word)
+_FM_RUN = r"(?:python3?\s+\S*/)?(?:\S*/)?(?:fm|sampo)\s+"  # the start of a run of fm (a clear pattern is matched from a command's first word)
 _UI_PROOF = lazy(rf"(?i){_FM_RUN}(?:shot|smoke|stories|flow)\b")  # a run of fm shot, fm smoke, fm stories or fm flow
 PERF_NOISE = 0.15  # T-2391: a bench whose median moved by less than this share is noise (the bench gate's default tolerance, T-1439)
 DOCS_DIFF_MAX = 40  # git diffs one cold rollup spends on docs claims; the verdicts are kept, so the rest come on later calls
@@ -4897,7 +4899,7 @@ PROOF_CLAIMS = {
                 r"fine|great)\b", re.I), _UI_PROOF, 'fm task evidence {id} --run "fm shot FILE"'),
     "release": (lazy(r"\b(?:released|deployed|published|shipped)\s+(?:v?\d+\.\d+[\w.-]*|it\b|to\s+(?:prod\w*|production|npm|"
                      r"pypi|crates|main|staging)|the\s+(?:release|package|site|app|build))", re.I),
-                lazy(r"\bfm\s+(?:ship|release|prove\s+--release)\b|\bgit\s+push\b|\bnpm\s+publish\b|\btwine\s+upload\b|"
+                lazy(r"\b(?:fm|sampo)\s+(?:ship|release|prove\s+--release)\b|\bgit\s+push\b|\bnpm\s+publish\b|\btwine\s+upload\b|"
                      r"\bcargo\s+publish\b|\bgem\s+push\b"), 'fm task evidence {id} --run "fm prove --release"'),
 }
 
@@ -5508,7 +5510,7 @@ def unrunnable(cmd, root, notes=None):
                                timeout=20)
             if r.returncode:
                 return f"{words[0]} can't import {mod} (No module named {mod})"
-        elif words[0] == "fm":
+        elif words[0] in ("fm", "sampo"):
             from sampo import cli
             err = io.StringIO()
             try:

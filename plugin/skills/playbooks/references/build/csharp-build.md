@@ -2,8 +2,8 @@
 # C# build errors (dotnet, MSBuild, NuGet)
 
 Use when `dotnet build`, `dotnet test` or `dotnet restore` fails. The goal is a green build with the smallest diff
-that fixes the cause. Built on the library cards `fm lib show csharp` (the baseline), `fm lib show dotnet-cli`
-(MSBuild, restore, solution-wide settings) and `fm lib show nuget` (package references, central versions, audit).
+that fixes the cause. Built on the library cards `sampo lib show csharp` (the baseline), `sampo lib show dotnet-cli`
+(MSBuild, restore, solution-wide settings) and `sampo lib show nuget` (package references, central versions, audit).
 
 ## Diagnostic commands
 

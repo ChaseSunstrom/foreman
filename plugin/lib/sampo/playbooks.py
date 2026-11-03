@@ -55,7 +55,7 @@ _RULE = re.compile(r"^- ([a-z][a-z ]*?):[ \t]*\S", re.M)
 SHINGLE = 5
 NEAR = 0.5  # T-1834: shingle Jaccard from which two playbooks are merge candidates and a draft repeats a book
 RECORD_MAX = 20  # playbooks one close records
-_ROUTE = re.compile(r"""\bfm\s+playbooks\s+route\s+(['"]?)([\w-]+)\1(?=\s*(?:$|[;&|)\n]|-))""")  # a bare stage only
+_ROUTE = re.compile(r"""\b(?:fm|sampo)\s+playbooks\s+route\s+(['"]?)([\w-]+)\1(?=\s*(?:$|[;&|)\n]|-))""")  # a bare stage only
 TIMEOUT = 20  # seconds per python block
 REACH_DAYS = 60
 SHOWN = 30  # findings printed before "and N more"; --json lists them all
@@ -67,7 +67,7 @@ _FENCE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
 _PATH = re.compile(r"`((?:\.\./[\w.-]+/)?references/[^`\s]+)`")
 # the sentence that says when to reach for it: "Use when…", "Use PROACTIVELY when…", "Use for…", "Use before…"
 _USE = re.compile(r"(?:^|[.!?:>*]\s*)Use(?:\s+[\w-]+){0,4}?\s+(?:when|whenever|before|after|for|on)\b")
-_LIB = re.compile(r"\bfm lib show ([^\s`]+)")
+_LIB = re.compile(r"\b(?:fm|sampo) lib show ([^\s`]+)")
 _PY = {"python", "python3", "py"}
 _MARK = "/skills/playbooks/references/"  # a Read event's target, as fm cost matches it
 FACTS = ("test", "gates", "language", "entry", "ci", "layout", "hot", "cards")  # what a {{fact}} can name
@@ -82,7 +82,7 @@ _TESTY = re.compile(r"(?:^|\s)test\b")  # a gate saying test: `ruff check tests/
 _FACT = re.compile(r"(?<![$\w{])\{\{([a-z][a-z_]*)\}\}(?!\})")
 _RUNNER = re.compile(r"(^|[\s/])tests?/run(_tests)?\.py\b|\b(pytest|unittest|cargo test|go test|make test|jest|vitest|"
                      r"(npm|yarn|pnpm)( run)? test)\b")
-_SHOW = re.compile(r"\bfm\s+playbooks\s+show\s+['\"]?([\w./-]+)")
+_SHOW = re.compile(r"\b(?:fm|sampo)\s+playbooks\s+show\s+['\"]?([\w./-]+)")
 
 
 def _read(path):

@@ -3,7 +3,7 @@
 
 Use when a Go package changed and you must show it is correct, race-free and tidy before calling it done.
 
-Built on the cards `fm lib show go-testing`, `fm lib show go-fuzzing`, `fm lib show testify`, `fm lib show go-concurrency` and `fm lib show go-modules`.
+Built on the cards `sampo lib show go-testing`, `sampo lib show go-fuzzing`, `sampo lib show testify`, `sampo lib show go-concurrency` and `sampo lib show go-modules`.
 
 1. **Test first, table-driven.** The failing case goes in the package's table with a named subtest; run only it: `go test ./store -run 'TestQuery/empty_input' -count=1`.
 2. **Whole module, uncached, with the race detector:**

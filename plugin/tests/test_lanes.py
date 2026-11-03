@@ -654,9 +654,9 @@ class BuilderGates(unittest.TestCase):
         agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
         brief = slanes.contract("T-9", "abc", "/m")
         for text in (brief, agent):
-            self.assertIn("fm check --affected --evidence", text)
+            self.assertIn("sampo check --affected --evidence", text)
             self.assertIn("full gates run after the merge", text)
-            self.assertNotRegex(text, r"`fm check --evidence")
+            self.assertNotRegex(text, r"`(?:fm|sampo) check --evidence")
         self.assertIn("without `cd DIR &&` chains", brief)  # T-0808
         for text in (brief, agent):  # T-2315
             self.assertIn("never cd (not with &&, not with ;)", text)

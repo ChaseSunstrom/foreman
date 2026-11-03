@@ -192,7 +192,7 @@ class Skills(unittest.TestCase):
                 self.assertTrue(refs, "wraps at least one playbook")
                 for ref in refs:
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)), ref)
-                self.assertIn("`fm ", body, "wraps at least one fm verb")
+                self.assertRegex(body, r"`(?:fm|sampo) ", "wraps at least one sampo verb")  # T-2778: the docs teach sampo
                 self.assertEqual(fm_mention_problems(body), [])
         self.assertEqual([p for p in doctor._description_problems(os.path.join(PLUGIN, "skills"))
                           if any(j in p for j in jobs)], [])
@@ -202,7 +202,7 @@ class Skills(unittest.TestCase):
         # audacity level; the worked example is held to the card format and its stated contrasts are measured
         from sampo import smithtui
         body = read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md"))
-        for word in ("six", "DESIGN.md", "audacity", "AskUserQuestion", "fm decide", "runner-up",
+        for word in ("six", "DESIGN.md", "audacity", "AskUserQuestion", "sampo decide", "runner-up",
                      "`../playbooks/references/ui/design-direction.md`", "references/cards.md"):
             self.assertIn(word, body)
         cards = read_text(os.path.join(PLUGIN, "skills", "directions", "references", "cards.md"))
@@ -228,15 +228,15 @@ class Skills(unittest.TestCase):
         self.assertLess(len(body.splitlines()), 100)
         for ref in ("design-direction", "type-and-colour", "composition", "motion", "scene-3d", "visual-qa"):
             self.assertIn(f"`../playbooks/references/ui/{ref}.md`", body)
-        named = set(re.findall(r"`fm ([\w-]+)", body))
+        named = set(re.findall(r"`(?:fm|sampo) ([\w-]+)", body))
         for need in ("design", "scene", "motion", "looks", "page", "img", "new"):
             self.assertIn(need, named)
         self.assertEqual(fm_mention_problems(body), [])  # T-1701: the checker every skill test shares
         self.assertIn("Skill foreman:directions", body)
         # T-1714: palette writes --out (it was ignored before); extract writes DESIGN.md's Tokens section unless --out
-        palette = next(line for line in body.splitlines() if "fm design palette" in line)
-        self.assertRegex(palette, r"`fm design palette \S+ --out \S+`")
-        self.assertRegex(body, r"`fm design extract SRC`[^.]*DESIGN\.md")
+        palette = next(line for line in body.splitlines() if "sampo design palette" in line)
+        self.assertRegex(palette, r"`sampo design palette \S+ --out \S+`")
+        self.assertRegex(body, r"`sampo design extract SRC`[^.]*DESIGN\.md")
 
     def test_audit_reference_defines_every_lens_fm_requires(self):
         from sampo import core as c
@@ -286,11 +286,11 @@ class PluginParity(unittest.TestCase):
                        + [os.path.join(PLUGIN, "rules", "foreman.md")])
         indexed = {x["name"] for x in which.commands()}
         lost = [v for v, tier in sorted(tiers.items()) if not tier.startswith("Internal")
-                and v not in indexed | which.SELF | which.FOREMAN_ONLY and not re.search(rf"\bfm {v}\b", docs)]
+                and v not in indexed | which.SELF | which.FOREMAN_ONLY and not re.search(rf"\b(?:fm|sampo) {v}\b", docs)]
         self.assertEqual(lost, [], "verbs a Claude Code session can't find")
         self.assertGreater(len(tiers), 100, "the tier parse found the verbs")
         rules = read_text(os.path.join(PLUGIN, "rules", "foreman.md"))
-        self.assertRegex(rules, r"fm which", "the rules point a session at fm which")
+        self.assertRegex(rules, r"(?:fm|sampo) which", "the rules point a session at sampo which")
 
 
 class CodeExamples(unittest.TestCase):  # T-1353

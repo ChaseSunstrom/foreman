@@ -55,7 +55,7 @@ Class: low. Five value-noise lookups a pixel, no loop. Half resolution is fine; 
 Still: `uTime = 0.0`: one curtain, frozen mid-fold.
 
 ## Sketch
-The sketchbook's preset (`fm scene sketchbook`): `uIntensity=1 uHem=0.42 uSky=0.03,0.04,0.09 uLow=0.25,0.95,0.6 uHigh=0.55,0.4,0.95`
+The sketchbook's preset (`sampo scene sketchbook`): `uIntensity=1 uHem=0.42 uSky=0.03,0.04,0.09 uLow=0.25,0.95,0.6 uHigh=0.55,0.4,0.95`
 
 ## Suits
 Night themes, astronomy and travel to the north, sleep and calm apps, a launch countdown, winter campaigns.

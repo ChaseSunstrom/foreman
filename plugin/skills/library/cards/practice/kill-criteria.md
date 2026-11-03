@@ -9,16 +9,16 @@ related: [spikes, premortem, experiment-design, scope-cutting, assumption-mappin
 Write down, before starting, the observations that mean stop or change course, and check them at fixed points.
 
 ## Verify
-- `fm queue`: the brief contains the kill criteria and a checkpoint step that evaluates them.
-- `fm decide --list`: a stop, pivot or continue decision was logged at each checkpoint.
-- `fm checkpoint --help`: shows how to save a resume point before a risky step.
+- `sampo queue`: the brief contains the kill criteria and a checkpoint step that evaluates them.
+- `sampo decide --list`: a stop, pivot or continue decision was logged at each checkpoint.
+- `sampo checkpoint --help`: shows how to save a resume point before a risky step.
 
 ## Test first
 Make each criterion measurable and attach the check that reads it.
 ```markdown
 Kill if any:
 - Spike shows p95 > 500 ms with the simplest design (check: `bench.sh`)
-- More than 3 failed attempts on one step (fm rule: block and diagnose)
+- More than 3 failed attempts on one step (sampo rule: block and diagnose)
 - Needs a schema change outside the approved scope (check: `git diff --stat -- migrations/`)
 Checkpoints: after the spike, at 50% of steps, before merge.
 Pass = every criterion names a command or an observable count.
@@ -28,7 +28,7 @@ Pass = every criterion names a command or an observable count.
 - Write 2-4 criteria when planning, covering results, effort and scope drift.
 - Make each one a number or a yes/no that a command or a diff can show.
 - Set the checkpoints in the plan as steps, so they get run.
-- When a criterion fires, stop, record the decision with `fm decide`, and choose: pivot, shrink, or drop.
+- When a criterion fires, stop, record the decision with `sampo decide`, and choose: pivot, shrink, or drop.
 - Prefer a defined fallback ("ship the smaller version") written alongside the criterion.
 - After stopping, capture what was learned so the effort is not wasted.
 

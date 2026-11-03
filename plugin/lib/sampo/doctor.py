@@ -1318,7 +1318,7 @@ def _fm_commands():
     return out
 
 
-_FM_MENTION = re.compile(r"(?:^|[\s;|&(])fm\s+([a-z][\w-]*)(?:\s+([a-z][\w-]*))?")
+_FM_MENTION = re.compile(r"(?:^|[\s;|&(])(?:fm|sampo)\s+([a-z][\w-]*)(?:\s+([a-z][\w-]*))?")  # T-2778: both spellings
 
 
 # T-0954: zero-width, bidi and tag characters hide instructions from the person reading the file; a ZWJ between two
@@ -1411,6 +1411,7 @@ def check_invisible_text(paths):
 
 
 def check_self_docs(home=None, plugin=PLUGIN):
+    from sampo.cli import RENAMES as _RENAMES
     """Sampo's own docs vs its code: fm commands named in docs exist, MASTER.md lists every command, skill and
     agent, and README's install flags match install.sh --help."""
     home = home or os.path.dirname(os.path.abspath(plugin))
@@ -1424,16 +1425,20 @@ def check_self_docs(home=None, plugin=PLUGIN):
         raw = _read(path) or ""
         text = re.sub(r"```.*?```", "", raw, flags=re.S)  # fences would shift backtick pairing
         fenced = [ln for block in re.findall(r"```[^\n]*\n(.*?)```", raw, flags=re.S)  # T-0954: usage examples
-                  for ln in block.splitlines() if re.match(r"\s*(?:\$\s+)?fm\s", ln)]
+                  for ln in block.splitlines() if re.match(r"\s*(?:\$\s+)?(?:fm|sampo)\s", ln)]
         for span in re.findall(r"`([^`\n]+)`", text) + fenced:
             for m in _FM_MENTION.finditer(span):
                 top, sub = m.group(1), m.group(2)
+                if top in _RENAMES:  # T-2778: Sampo's names (smith, rune, louhi, ward, moons, underworld) run the old verbs
+                    top, *more = _RENAMES[top]
+                    sub = more[0] if more else sub
                 if top not in cmds:
                     bad.append(f"{os.path.relpath(path, home)}: `fm {top}` isn't an fm command")
                 elif cmds[top] and sub and sub not in cmds[top]:
                     bad.append(f"{os.path.relpath(path, home)}: `fm {top} {sub}` isn't an fm command")
-    listed = {w for span in re.findall(r"`(fm [^`\n]+)`", re.sub(r"```.*?```", "", master, flags=re.S))
+    listed = {w for span in re.findall(r"`((?:fm|sampo) [^`\n]+)`", re.sub(r"```.*?```", "", master, flags=re.S))
               for w in re.split(r"[\s|\[\]]+", span)}  # only names inside `fm …` spans count
+    listed |= {_RENAMES[w][0] for w in listed if w in _RENAMES}  # T-2778: `sampo smith` lists code, `sampo rune` genesis
     missing = [n for n in sorted(cmds) if n not in listed]
     if missing:
         bad.append("MASTER.md lacks fm " + ", ".join(missing))

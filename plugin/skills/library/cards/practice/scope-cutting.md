@@ -9,16 +9,16 @@ related: [value-effort-scoring, kill-criteria, ideation-to-briefs, approach-comp
 Cut the plan to the smallest version that meets the acceptance criteria, and record what was cut so it is a decision rather than a loss.
 
 ## Verify
-- `fm queue`: remaining steps all trace to a criterion.
+- `sampo queue`: remaining steps all trace to a criterion.
 - `git diff --stat`: the diff touches only files the criteria need.
-- `fm capture --help`: shows how cut items are parked as captured tasks instead of forgotten.
+- `sampo capture --help`: shows how cut items are parked as captured tasks instead of forgotten.
 
 ## Test first
 Write the criteria as the cut line; anything that cannot be tied to one is out.
 ```markdown
 Must (criteria): 1. <behaviour> :: <command>   2. ...
 Should: ... (only if Must is done and cheap)
-Cut to later: ... -> fm capture
+Cut to later: ... -> sampo capture
 Pass = every step in the plan names the criterion it serves; zero steps are orphans.
 ```
 

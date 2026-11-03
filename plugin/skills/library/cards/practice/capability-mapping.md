@@ -9,9 +9,9 @@ related: [grounding-ideas, approach-comparison, brainstorming-lenses, ideation-t
 Before building, list what the system can already do, what it almost can, and what is missing, with a file or command as proof for each row.
 
 ## Verify
-- `fm lib search WORDS`: existing cards and plugin skills for the need were looked up first.
+- `sampo lib search WORDS`: existing cards and plugin skills for the need were looked up first.
 - `grep -rn "<verb or symbol>" --include='*' . | head`: each "already exists" row has a hit you can cite.
-- `fm research list`: the map is saved where the next session finds it.
+- `sampo research list`: the map is saved where the next session finds it.
 
 ## Test first
 Write the map's claims as checkable rows before reading code.

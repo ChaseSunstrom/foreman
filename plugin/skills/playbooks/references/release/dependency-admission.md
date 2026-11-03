@@ -5,8 +5,8 @@ Use when you are about to add any new package, library, plugin, action, containe
 including a dev-only or transitive one you pull in on purpose. Upgrading one already admitted is
 `dependency-upgrade.md`.
 
-Built on library cards: `fm lib show dependency-audit` (known vulnerabilities), `fm lib show supply-chain-pinning`
-(lockfiles, hashes, pinned actions), `fm lib show sbom` (recording what ships), `fm lib show dependency-upgrades`
+Built on library cards: `sampo lib show dependency-audit` (known vulnerabilities), `sampo lib show supply-chain-pinning`
+(lockfiles, hashes, pinned actions), `sampo lib show sbom` (recording what ships), `sampo lib show dependency-upgrades`
 (keeping it current afterwards).
 
 ## The procedure
@@ -31,6 +31,6 @@ Built on library cards: `fm lib show dependency-audit` (known vulnerabilities), 
    commit, base images to a digest.
 8. **Contain it.** Call it through one module of your own so it can be swapped later; a dependency imported in
    forty files is a migration, not a swap.
-9. **Record the admission** with `fm decide "add <name>" --why "…" --rejected "…"` (the alternatives from step 1).
+9. **Record the admission** with `sampo decide "add <name>" --why "…" --rejected "…"` (the alternatives from step 1).
 
 A no on any of steps 2, 3 or 5 is a stop, not a trade-off.

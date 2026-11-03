@@ -162,13 +162,13 @@ class IncidentSkill(unittest.TestCase):
 
     def test_the_intake_skill_and_the_playbook_start_fm_incident(self):
         for text in (self.read("intake", "SKILL.md"), self.read("playbooks", "references", "ops", "incident.md")):
-            self.assertRegex(text, r"fm capture --incident '<impact>' --signal")
+            self.assertRegex(text, r"sampo capture --incident '<impact>' --signal")
         self.assertIn("live harm", self.read("intake", "SKILL.md"))
 
     def test_every_fm_incident_line_in_the_skill_docs_names_a_real_form(self):
         forms = set()
         for text in (self.read("intake", "SKILL.md"), self.read("playbooks", "references", "ops", "incident.md")):
-            forms |= set(re.findall(r"fm capture --incident (log|follow-up|status)\b", text))
+            forms |= set(re.findall(r"(?:fm|sampo) capture --incident (log|follow-up|status)\b", text))
         self.assertTrue({"log", "follow-up"} <= forms, forms)
 
 

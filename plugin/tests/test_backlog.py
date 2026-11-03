@@ -394,6 +394,6 @@ class Extras(ForemanTestCase):
     def test_the_backlog_command_drives_each_action_through_ask_user_question(self):
         with open(os.path.join(PLUGIN, "commands", "backlog.md")) as f:
             text = f.read()
-        for want in ("disable-model-invocation: true", "AskUserQuestion", "fm inbox first", "fm inbox swipe --json",
-                     "fm inbox swipe --apply", "fm inbox pick --json", "fm inbox prefer", "fm inbox ticket -"):
+        for want in ("disable-model-invocation: true", "AskUserQuestion", "sampo inbox first", "sampo inbox swipe --json",
+                     "sampo inbox swipe --apply", "sampo inbox pick --json", "sampo inbox prefer", "sampo inbox ticket -"):
             self.assertIn(want, text)

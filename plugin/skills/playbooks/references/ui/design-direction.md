@@ -6,15 +6,15 @@ Use before building or restyling any web or app screen that people will look at:
 indigo accent, 12 px cards, one sans). This playbook makes you pick a point of view, write it down, and hold the
 build to it. For terminals and Claude Code mods use `terminal-ui.md` instead.
 
-Built on two library cards: `fm lib show design-systems` (turn the knobs below into layered tokens) and
-`fm lib show typography` (rem sizing, fluid scale, font loading). This file decides *what* the UI should be;
+Built on two library cards: `sampo lib show design-systems` (turn the knobs below into layered tokens) and
+`sampo lib show typography` (rem sizing, fluid scale, font loading). This file decides *what* the UI should be;
 those cards cover *how* to ship it.
 
 ## The procedure
 
 1. **Look for a direction that already exists.** A `DESIGN.md` with a `## Direction` section, a brand guide or a
    shipped design system wins over everything below. A token file, or a `DESIGN.md` holding only the Tokens section
-   `fm design extract` writes, is a palette, not a direction: keep its values unless the direction you pick replaces
+   `sampo design extract` writes, is a palette, not a direction: keep its values unless the direction you pick replaces
    them. Pass: you name the file you followed, or say "none found".
 2. **Get the taste words.** Collect the adjectives the user used. If there are none, or only the empty ones
    (see the table), run the interview.
@@ -92,7 +92,7 @@ brand. Pass: `DESIGN.md` names the direction, the runner-up, and why the runner-
 **More points of view: the style shelf.** Twenty further looks (lab notebook, transit signage, cartographer, ceramic
 studio, broadcast graphics, archive ledger, night market, card catalogue, sewing pattern, shipping manifest,
 observatory, lido, swiss poster, darkroom, botanical press, letterpress, cinema lobby, glacier, saltpan, pit stop) are library cards with measured palettes, a contrast test and greps to check the build:
-`fm lib list --area looks`, then `fm lib show look-NAME`. They count as bank rows for steps 4 and 5.
+`sampo lib list --area looks`, then `sampo lib show look-NAME`. They count as bank rows for steps 4 and 5.
 
 ## Audacity
 
@@ -165,7 +165,7 @@ Taste words: <words> → <which word owns type and colour, which gets motion>.
 - Motion: durations <ms>; easing <curve>; under reduced motion <what remains>.
 
 ## Tokens
-<once the token file exists: `fm design extract <ui root>` writes this section, each custom property with its light
+<once the token file exists: `sampo design extract <ui root>` writes this section, each custom property with its light
 and dark value and the contrast of each text/surface pair; rerun it after a token change>
 
 ## Signature moves
@@ -229,7 +229,7 @@ Every line is pass or fail; run them on the built screens, not on the plan.
 - [ ] Each interview answer is quoted from the user or marked assumed.
 - [ ] Every colour, size, radius and duration in the components comes from a token named in `DESIGN.md`
       (`grep -nE '#[0-9a-fA-F]{3,8}\b|[0-9]+px' ` over the component styles finds only token definitions;
-      `fm lib show design-systems` has the stylelint rule for colours).
+      `sampo lib show design-systems` has the stylelint rule for colours).
 - [ ] Each knob in `DESIGN.md` falls inside its direction's and taste word's row, or the deviation is listed
       with its reason.
 - [ ] Each signature move is visible in at least one built screen.

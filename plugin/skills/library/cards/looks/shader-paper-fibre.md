@@ -63,7 +63,7 @@ Class: medium. A 3-octave fbm, a two-lookup warp and three fibre layers: eight v
 Static: nothing moves, so the still is the only frame; draw it once and on resize.
 
 ## Sketch
-The sketchbook's preset (`fm scene sketchbook`): `uIntensity=0.7 uScale=1 uPaper=0.96,0.94,0.89 uFibre=0.9,0.88,0.82`
+The sketchbook's preset (`sampo scene sketchbook`): `uIntensity=0.7 uScale=1 uPaper=0.96,0.94,0.89 uFibre=0.9,0.88,0.82`
 
 ## Suits
 Stationery, publishing and letterpress, wedding and invitation sites, archives, recipe and craft blogs, a reading view that should feel like a page.

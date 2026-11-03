@@ -4153,6 +4153,13 @@ class ProofBeforePresentation(ForemanTestCase):
         bad, _ = rune._claim_row(self.p)
         self.assertEqual([x for x in bad if x.startswith("README.md:5") or x.startswith("README.md:7")], [])
 
+    def test_a_sampo_spelled_citation_is_a_live_source(self):  # T-2778
+        from sampo import rune
+        for cite in ("`sampo outcomes`", "`sampo louhi scorecard`", "`fm outcomes`", "`fm exam scorecard`"):
+            with self.subTest(cite=cite):
+                self.write("README.md", f"# Tool\n\nIt found 9 of 10 planted bugs ({cite}).\n")
+                self.assertEqual(rune._claim_row(self.p)[0], [])
+
     def test_a_capability_claimed_to_pass_must_pass_on_the_scorecard(self):
         from sampo import rune
         from unittest import mock
@@ -4273,6 +4280,20 @@ class SealedPrediction(ForemanTestCase):
         tower_file(self.tower, "gen-1/blind-spots.md", good)
         with mock.patch("subprocess.run", return_value=red):
             self.assertTrue(any("fails" in x for x in rune._blind_row(self.p, 1)[0]))
+
+    def test_a_sampo_spelled_check_runs_the_sampo_launcher_not_the_script_as_python(self):  # T-2778
+        from sampo import rune
+        from unittest import mock
+        self.fm("decide", "Standing rule: a drive offer is made once per active task", "--why", "blind spot",
+                "--check", "sampo rune check")
+        tower_file(self.tower, "gen-1/blind-spots.md",
+                   "# Blind spots — gen 1\n\n## Repeated offers\n- Source: session replays\n"
+                   "- Rule: a drive offer is made once per active task\n- Check: sampo rune check\n")
+        import subprocess
+        with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(rune._blind_row(self.p, 1)[0], [])
+        argv = run.call_args[0][0]
+        self.assertEqual([os.path.basename(argv[1])] + argv[2:], ["sampo", "rune", "check"], argv)
 
     def test_from_gen_2_step_asks_for_the_prediction_first_and_the_sweep_checks_the_seal(self):
         from sampo import rune

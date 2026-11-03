@@ -69,6 +69,8 @@ Every request, however terse, goes round the same loop:
 curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/install.sh | bash
 ```
 
+`fm` still works as an alias.
+
 Or from inside Claude Code:
 
 ```
@@ -85,7 +87,7 @@ Or from inside Claude Code:
 Starting a page, a 3D scene or an `sampo smith` panel? Start from a template that already passes the check that keeps it strict:
 
 ```bash runnable
-sampo help can sampo scaffold an mcp server   # the commands whose help answers it, or a plain no
+sampo help can scaffold an mcp server   # the commands whose help answers it, or a plain no
 sampo new list                                  # the templates: web, scene, panel
 sampo new web site                              # site/index.html: tokens, light and dark, no outside hosts
 sampo design lint site                          # still clean: no generic-design tells

@@ -4,9 +4,9 @@
 Use when a query is slow, a page times out on the database, a new query or index goes into review, or an ORM
 call might be issuing more SQL than it looks. Schema changes belong in `migration.md`.
 
-Built on library cards: `fm lib show query-tuning` (reading plans), `fm lib show postgres-indexes` and
-`fm lib show mysql-indexes` (index types per engine), `fm lib show n-plus-one` (ORM loops),
-`fm lib show postgres-locking` (what DDL and long transactions block).
+Built on library cards: `sampo lib show query-tuning` (reading plans), `sampo lib show postgres-indexes` and
+`sampo lib show mysql-indexes` (index types per engine), `sampo lib show n-plus-one` (ORM loops),
+`sampo lib show postgres-locking` (what DDL and long transactions block).
 
 ## The procedure
 
@@ -27,7 +27,7 @@ Built on library cards: `fm lib show query-tuning` (reading plans), `fm lib show
    columns only if that makes it covering. Every index slows writes and costs disk, so name the query it serves.
    On a live Postgres table build it with `CREATE INDEX CONCURRENTLY` (see `migration.md`).
 7. **Prove it.** Same plan command, same data, before and after; plus the endpoint's timing. Pass: the slow
-   node is gone and the wall time dropped, both recorded with `fm task evidence`.
+   node is gone and the wall time dropped, both recorded with `sampo task evidence`.
 
 ## A plan you can read in ten seconds
 

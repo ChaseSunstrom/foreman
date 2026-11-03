@@ -41,6 +41,6 @@ what the shipped build really does.
 
 ## Library cards
 
-`fm lib show playwright` (scripted flows and video), `fm lib show test-data-factories` (the seed),
-`fm lib show feature-flags` (hide unfinished paths), `fm lib show smoke-tests` (the build you show works),
-`fm lib show video-transcoding` (MP4 and WebM output), `fm lib show accessibility` (captions, flashes).
+`sampo lib show playwright` (scripted flows and video), `sampo lib show test-data-factories` (the seed),
+`sampo lib show feature-flags` (hide unfinished paths), `sampo lib show smoke-tests` (the build you show works),
+`sampo lib show video-transcoding` (MP4 and WebM output), `sampo lib show accessibility` (captions, flashes).

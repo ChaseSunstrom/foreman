@@ -507,6 +507,7 @@ class SteerChecks(ForemanTestCase):
                 r = self.fm("decide", "rule: x", "--check", bad, check=False)
                 self.assertNotEqual(r.returncode, 0)
                 self.assertIn("a check is", r.stderr)
+                self.assertIn("sampo rune check", r.stderr)  # T-2778: names the sampo spellings too
 
     def test_a_steer_rule_without_a_check_warns_when_it_is_recorded(self):
         # T-2465: the doctor's steer-checks line caught a missing --check only later, twice in one session

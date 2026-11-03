@@ -5,9 +5,9 @@ Use when code reads or writes text from outside (files, HTTP, a database, a term
 timestamps, schedules anything by the calendar, or handles prices, totals, tax or currency. Bugs here pass every
 test written in one locale, one time zone and round numbers.
 
-Built on library cards: `fm lib show unicode` (normalisation, graphemes), `fm lib show timezones` (UTC storage,
-zone rules), `fm lib show time-in-tests` (freezing the clock), `fm lib show money` (minor units, rounding),
-`fm lib show i18n` (formatting per locale).
+Built on library cards: `sampo lib show unicode` (normalisation, graphemes), `sampo lib show timezones` (UTC storage,
+zone rules), `sampo lib show time-in-tests` (freezing the clock), `sampo lib show money` (minor units, rounding),
+`sampo lib show i18n` (formatting per locale).
 
 ## The procedure
 

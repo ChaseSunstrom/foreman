@@ -9,7 +9,7 @@ related: [premortem, spikes, first-principles, experiment-design, kill-criteria]
 List what the plan assumes, rank by risk and uncertainty, and test the riskiest ones first with the cheapest check.
 
 ## Verify
-- `fm queue`: the brief carries an assumptions list and the top ones have a step to test them.
+- `sampo queue`: the brief carries an assumptions list and the top ones have a step to test them.
 - `grep -n "assum" <brief or note>`: each assumption has a status (verified, refuted, open) and evidence.
 - `git log --oneline -5`: the refuting or confirming check ran before the build commits.
 

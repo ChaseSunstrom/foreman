@@ -5,9 +5,9 @@ Use when a change alters a live database: a new, renamed or dropped column or ta
 constraint or index, or a backfill. The rule underneath: old code and new code both run against the schema
 during a deploy, so every step must work with both.
 
-Built on library cards: `fm lib show zero-downtime-migrations` (expand, migrate, contract),
-`fm lib show sql-migrations` (tools and file layout), `fm lib show migration-tests` (testing up and down),
-`fm lib show postgres-locking` (which DDL takes which lock), `fm lib show feature-flags` (switching reads).
+Built on library cards: `sampo lib show zero-downtime-migrations` (expand, migrate, contract),
+`sampo lib show sql-migrations` (tools and file layout), `sampo lib show migration-tests` (testing up and down),
+`sampo lib show postgres-locking` (which DDL takes which lock), `sampo lib show feature-flags` (switching reads).
 
 ## The procedure
 

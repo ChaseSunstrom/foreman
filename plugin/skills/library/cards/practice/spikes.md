@@ -10,8 +10,8 @@ A timeboxed throwaway experiment that answers one specific question, ending in a
 
 ## Verify
 - `git status --short`: spike code is on a scratch branch or outside the tree, not mixed into the change.
-- `fm decide --list`: the answer and the resulting choice are recorded.
-- `fm research list`: the finding is saved with the command that produced it.
+- `sampo decide --list`: the answer and the resulting choice are recorded.
+- `sampo research list`: the finding is saved with the command that produced it.
 
 ## Test first
 Write the question, the timebox and the answer's shape before touching code.
@@ -27,7 +27,7 @@ Decision rule: <= 200 MB -> adopt X; > 200 MB or unfinished -> option B.
 - Set the timebox and decision rule up front; when time ends, decide with what you have.
 - Work in a scratch directory or branch; cut every corner except the one the question is about.
 - Capture the exact command and output that answer the question.
-- End with a decision recorded in the brief or `fm decide`, and delete or archive the spike code.
+- End with a decision recorded in the brief or `sampo decide`, and delete or archive the spike code.
 - Re-plan: update steps and estimates using what the spike showed.
 - If the answer is "unclear", say what second question remains, and either run one more spike or pick the safer option.
 

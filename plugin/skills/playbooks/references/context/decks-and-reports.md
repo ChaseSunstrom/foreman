@@ -39,6 +39,6 @@ is `docs.md`.
 
 ## Library cards
 
-`fm lib show technical-writing`, `fm lib show typst`, `fm lib show latex`, `fm lib show mermaid`,
-`fm lib show diagrams-as-code`, `fm lib show matplotlib`, `fm lib show plotly`, `fm lib show metrics-and-guardrails`
+`sampo lib show technical-writing`, `sampo lib show typst`, `sampo lib show latex`, `sampo lib show mermaid`,
+`sampo lib show diagrams-as-code`, `sampo lib show matplotlib`, `sampo lib show plotly`, `sampo lib show metrics-and-guardrails`
 (picking the number that matters).

@@ -78,7 +78,7 @@ Rules that hold on any grid:
 
 - **Breakpoints come from the content breaking,** not from device names: a layout changes where a line passes
   75ch, a column drops under 45ch, or a table needs a sideways scroll. Components switch on their own width with
-  container queries (`fm lib show container-queries`), so a card works in a sidebar and in a main column.
+  container queries (`sampo lib show container-queries`), so a card works in a sidebar and in a main column.
 - **Source order is reading order.** On every width, the order you see is the order a screen reader and the Tab key
   follow (WCAG 1.3.2 and 2.4.3). Lay out the phone order in the DOM and let wider grids place items without
   reordering them. Pass: each hit of
@@ -237,7 +237,7 @@ Rules, each pass or fail:
   visible cue. A hero of exactly `100vh` with nothing below the fold reads as the whole page. A full-screen hero is
   allowed when `DESIGN.md` lists it (Gallery, Poster).
 - **The artefact is the largest paint** and loads first (`fetchpriority="high"`, never lazy, real `width` and
-  `height`: `fm lib show image-optimization`), and it never starts invisible (`motion.md`).
+  `height`: `sampo lib show image-optimization`), and it never starts invisible (`motion.md`).
 - **A live hero has states.** A hero that shows real data (the example below does) gets its own rows in the state
   atlas: loading, stale and empty.
 
@@ -389,7 +389,7 @@ row per state, each designed (its words written), built, and reachable on demand
 | **Empty, all done** | good news, said as such, and what happens next | first-use wording ("Get started") on a cleared inbox | finish every item |
 | **Partial** | what loaded, in place; each failed part says so where it would have been, with its own retry | the whole screen failing because one panel did; silent gaps | fail one endpoint, keep the rest |
 | **Error, the screen** | what happened in plain words, that the reader's input is kept, the next action; a reference code in small print | a stack trace; "Something went wrong" alone; a cleared form | answer the main request with a 500 |
-| **Error, an action** | the message beside the control that caused it, focus moved there, the input kept | a toast as the only notice (`fm lib show toasts`); a cleared field | reject one submit |
+| **Error, an action** | the message beside the control that caused it, focus moved there, the input kept | a toast as the only notice (`sampo lib show toasts`); a cleared field | reject one submit |
 | **Offline** | one quiet banner; cached content with its age ("as of 17:42"); network-only actions disabled with the reason, or queued and marked pending; recovery without a reload | a modal; a blank page; actions that fail silently | devtools Offline, or a test browser context set offline |
 | **Stale** | the data's age whenever it is older than its refresh interval | numbers that might be hours old, unmarked | mock an old timestamp |
 | **No access** | what this is, who can grant access, a way to ask | a bare 403 with no way back | a role without the permission |
@@ -404,7 +404,7 @@ row per state, each designed (its words written), built, and reachable on demand
 - **States keep the layout.** Empty, error and offline states sit inside the screen's normal chrome, at the place
   the content would be, so the reader still knows where they are and what to try next. A full-page takeover is for
   the whole app being unreachable, not for one list.
-- **Failure is contained to its part.** Independent panels fail independently (`fm lib show error-boundaries`).
+- **Failure is contained to its part.** Independent panels fail independently (`sampo lib show error-boundaries`).
 - **States are announced.** Loading, the arrival of results, errors and going offline reach a screen reader through
   a polite live region, once each, not on every retry.
 
@@ -419,13 +419,13 @@ row per state, each designed (its words written), built, and reachable on demand
 - **User-written text** (names, comments, titles) gets `overflow-wrap: anywhere` on its container. Headlines don't:
   they follow `type-and-colour.md`.
 - **Counts are words, not numbers glued to nouns.** Zero is the empty state, not "0 items"; plurals come from the
-  message catalogue (`fm lib show i18n`); large counts may use compact notation (`Intl.NumberFormat` with
+  message catalogue (`sampo lib show i18n`); large counts may use compact notation (`Intl.NumberFormat` with
   `notation: 'compact'` gives "1.2K", or "1,2 Mio." in German) with the exact number in the accessible name.
 - **Long lists stay usable:** past about 100 items, paginate, virtualise or load more on request
-  (`fm lib show infinite-scroll`, `fm lib show data-tables`), and one item still looks deliberate (`auto-fill`, as
+  (`sampo lib show infinite-scroll`, `sampo lib show data-tables`), and one item still looks deliberate (`auto-fill`, as
   in Grid and rhythm).
 - **Translations grow.** German and Finnish run 30–40% longer than English; buttons and tabs size to their label,
-  never to a fixed width (`fm lib show i18n` has the pseudo-locale run).
+  never to a fixed width (`sampo lib show i18n` has the pseudo-locale run).
 
 **The overflow fixture.** Load these values into the screen's real components (a story, a seed, a test fixture) and
 look at every place they land:
@@ -563,13 +563,13 @@ Each line is pass or fail on the built screens.
 
 ## Library cards
 
-The code side lives in the stack library: `fm lib show css-layout` (grid, flexbox, logical properties),
-`fm lib show container-queries`, `fm lib show responsive-design` (320 px to wide screens, zoom),
-`fm lib show layout-shift` (reserving space for what loads late), `fm lib show skeleton-loading`,
-`fm lib show error-boundaries` (partial failure), `fm lib show offline-first` and `fm lib show pwa` (the offline
-state), `fm lib show data-tables` and `fm lib show infinite-scroll` (long lists), `fm lib show image-optimization`
-(the hero's artefact), `fm lib show toasts`, `fm lib show i18n` (plurals, pseudo-locale, right-to-left),
-`fm lib show accessibility` (reading order, live regions). Add `--section verify` for just the checks.
+The code side lives in the stack library: `sampo lib show css-layout` (grid, flexbox, logical properties),
+`sampo lib show container-queries`, `sampo lib show responsive-design` (320 px to wide screens, zoom),
+`sampo lib show layout-shift` (reserving space for what loads late), `sampo lib show skeleton-loading`,
+`sampo lib show error-boundaries` (partial failure), `sampo lib show offline-first` and `sampo lib show pwa` (the offline
+state), `sampo lib show data-tables` and `sampo lib show infinite-scroll` (long lists), `sampo lib show image-optimization`
+(the hero's artefact), `sampo lib show toasts`, `sampo lib show i18n` (plurals, pseudo-locale, right-to-left),
+`sampo lib show accessibility` (reading order, live regions). Add `--section verify` for just the checks.
 
 Example: `references/ui/examples/composition.html`: a product landing page on a 5:7 split with a spacing rhythm, depth from one light, a hero and a state atlas (empty, loading, error, done). The site's Gallery shows it.
 

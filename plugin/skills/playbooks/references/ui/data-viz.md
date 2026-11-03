@@ -64,9 +64,9 @@ those rules hold here unchanged.
 
 ## Library cards
 
-`fm lib show d3` (scales and axes), `fm lib show recharts`, `fm lib show plotly`, `fm lib show matplotlib`,
-`fm lib show data-tables` (the table view), `fm lib show color-contrast`, `fm lib show accessibility`,
-`fm lib show animation`.
+`sampo lib show d3` (scales and axes), `sampo lib show recharts`, `sampo lib show plotly`, `sampo lib show matplotlib`,
+`sampo lib show data-tables` (the table view), `sampo lib show color-contrast`, `sampo lib show accessibility`,
+`sampo lib show animation`.
 
 Example: `references/ui/examples/data-viz.html` (one chart, one claim, a direct label, a table view).
 

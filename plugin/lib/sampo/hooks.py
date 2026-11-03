@@ -1324,7 +1324,7 @@ def _secret_note(text):
 
 
 WHICH_HINT = 'Unsure which skill fits: fm which "<the task>"'  # T-1699
-_NAMES_SKILL = c.lazy(r"/[\w-]+:[\w-]+|\bskills?\b|\bplaybooks?\b|\bfm which\b", re.I)  # a request naming its own
+_NAMES_SKILL = c.lazy(r"/[\w-]+:[\w-]+|\bskills?\b|\bplaybooks?\b|\b(?:fm|sampo) which\b", re.I)  # a request naming its own
 
 
 def user_prompt_submit(pl):
@@ -3317,7 +3317,7 @@ def _auto_evidence(pl, p, ok):
     """R6 (T-0063): a Bash command that is exactly a criterion's verify command is recorded as that criterion's
     evidence with its real result, as if fm had run it ([ran]); no second run through fm task evidence --run."""
     cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
-    cmd = re.sub(r"^fm quiet (?:--(?:tail|timeout) \S+ )*(?:-- )?", "", cmd)  # the same check, run quietly
+    cmd = re.sub(r"^(?:fm|sampo) quiet (?:--(?:tail|timeout) \S+ )*(?:-- )?", "", cmd)  # the same check, run quietly
     act = c.active_brief_fast(p, p.lane) if cmd else None
     verifies = [(n, " ".join(v.split())) for n, v in (act.verify_cmds() if act else []) if v]
     base, piped = _unpiped(cmd)
@@ -3881,11 +3881,11 @@ _TEST_CLAIM = c.lazy(r"(?i)\b(?:all |the )?(?:tests?|suite|checks|gates)\s+(?:no
 # a test runner in command position (T-0907: fm checkpoint, toxic aren't runs; round-7 review: nor cat pytest.ini,
 # pip install pytest or cat run.py): after the start, a separator or a quote, behind env assignments and launchers
 _TEST_CMD = c.lazy(r"(?:^|[;&|(\n\"'])\s*(?:(?:\w+=\S*|python\d*(?:\.\d+)?(?: -m)?|uv run|poetry run|npx|bunx|"
-                       r"timeout \d+|time|nice|env|sudo|fm quiet --)\s+)*(?:\S*/)?"
+                       r"timeout \d+|time|nice|env|sudo|(?:fm|sampo) quiet --)\s+)*(?:\S*/)?"
                        r"(pytest|unittest|run\.py|(npm|yarn|pnpm|bun)( run)? test|go test|cargo test|"
                        r"make( -\S+)* (test|check)|mvn( -\S+)* (test|verify)|(gradle|gradlew) test|dotnet test|deno test|"
-                       r"node --test|bats|tox|jest|vitest|mocha|rspec|phpunit|ctest|fm check|"
-                       r"fm task (evidence|finish|prove)\b.*--run)(?![\w-])")
+                       r"node --test|bats|tox|jest|vitest|mocha|rspec|phpunit|ctest|(?:fm|sampo) check|"
+                       r"(?:fm|sampo) task (evidence|finish|prove)\b.*--run)(?![\w-])")
 _RUN_FAILED = c.lazy(r"\bFAILED\b|\b[1-9]\d* (failed|errors?)\b|✗|\bexit [1-9]\d*\b|Traceback \(most recent")
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 

@@ -5,13 +5,13 @@ Use when a public function, CLI flag, config key, endpoint, file format or setti
 shape, and someone outside this change may depend on it. Internal code with every caller in this repo needs no
 deprecation: change the callers in the same commit.
 
-Built on library cards: `fm lib show semver` (when removal is allowed), `fm lib show api-versioning` (endpoints
-and formats), `fm lib show changelogs` (writing the notice), `fm lib show feature-flags` (staged switch-offs).
+Built on library cards: `sampo lib show semver` (when removal is allowed), `sampo lib show api-versioning` (endpoints
+and formats), `sampo lib show changelogs` (writing the notice), `sampo lib show feature-flags` (staged switch-offs).
 
 ## The procedure
 
 1. **Find the users.** Grep this repo, and where you can, dependents, logs or telemetry for calls to the old
-   surface; for a rename, `fm codemod rename OLD NEW` shows every use as a diff and writes nothing until `--apply`
+   surface; for a rename, `sampo codemod rename OLD NEW` shows every use as a diff and writes nothing until `--apply`
    (run it once the replacement ships, step 2). Pass: the brief states the count found and where you looked.
 2. **Ship the replacement first.** The new path works and is documented before the old one warns. Pass: a test
    calls the replacement directly.

@@ -32,7 +32,7 @@ class Agent(ForemanTestCase):
         for tool in ("Edit", "Write", "Bash", "Read"):
             self.assertIn(tool, tools)
         self.assertNotIn("Agent", tools)  # it never launches agents of its own
-        for rule in ("fm focus", "worktree", "never push", "never merge", "fm task evidence", "git commit"):
+        for rule in ("sampo focus", "worktree", "never push", "never merge", "sampo task evidence", "git commit"):
             self.assertIn(rule, text.lower() if rule.islower() else text)
         flat = " ".join(text.split())
         self.assertIn("Create `.fm-scratch/` files", flat)  # T-2294: the Write tool, not a heredoc
@@ -44,7 +44,7 @@ class Brief(_Tasks):
         tid = self.task("Parse dates")
         res = json.loads(self.fm("lane", "brief", tid, "--json").stdout)
         brief = read_text(res["path"])
-        for part in ("Parse dates works", "python3 -c 'print(1)'", "build it", f"fm focus {tid}", "never push"):
+        for part in ("Parse dates works", "python3 -c 'print(1)'", "build it", f"sampo focus {tid}", "never push"):
             self.assertIn(part.lower(), brief.lower())
         self.assertIn('isolation: "worktree"', res["agent"])
         self.assertIn("foreman:fm-builder", res["agent"])

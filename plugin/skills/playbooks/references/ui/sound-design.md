@@ -103,8 +103,8 @@ Confirmations over 300 ms pass this script but fail step 3; keep the cue table's
 
 ## Library cards
 
-`fm lib show python-audio` (loading, resampling and measuring audio in Python), `fm lib show browser-storage`
-(remembering the choice), `fm lib show accessibility` (live regions, never sound alone), `fm lib show toasts` (the
+`sampo lib show python-audio` (loading, resampling and measuring audio in Python), `sampo lib show browser-storage`
+(remembering the choice), `sampo lib show accessibility` (live regions, never sound alone), `sampo lib show toasts` (the
 visual twin).
 
 Example: `references/ui/examples/sound-design.html`: earcons that are off until asked for, one family, peak and repeat caps, and a visual twin for every cue. The site's Gallery shows it.

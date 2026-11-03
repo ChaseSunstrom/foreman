@@ -3,8 +3,8 @@
 
 Use when a Gradle or Maven build of Java or Kotlin code fails: in configuration, dependency resolution or
 compilation. Test failures are a different job (see `references/verify/`). The goal is a green build with the
-smallest diff that fixes the cause. Built on the library cards `fm lib show java`, `fm lib show kotlin`,
-`fm lib show gradle`, `fm lib show gradle-version-catalogs` and `fm lib show maven`.
+smallest diff that fixes the cause. Built on the library cards `sampo lib show java`, `sampo lib show kotlin`,
+`sampo lib show gradle`, `sampo lib show gradle-version-catalogs` and `sampo lib show maven`.
 
 ## Diagnostic commands
 

@@ -3,10 +3,10 @@
 
 Use when cutting a version, tagging, publishing or shipping a release.
 
-1. **Gate first:** the full gate on the exact commit you'll tag (`fm check`), from a clean tree; no "fix after tagging".
+1. **Gate first:** the full gate on the exact commit you'll tag (`sampo check`), from a clean tree; no "fix after tagging".
 2. **Version:** follow the project's scheme (semver: breaking → major, feature → minor, fix → patch). Bump every place that carries it (manifests, lockfiles, plugin.json, marketplace entries) in one commit.
 3. **Changelog:** one entry per user-visible change, written for users (what changed and why it matters), grouped Added / Changed / Fixed / Removed; link task ids. Move "Unreleased" under the new version with the date.
 4. **Breaking changes** get a migration note: what to change, before → after.
 5. **Tag and publish** only with the user's yes (outward and hard to undo): `git tag -a vX.Y.Z -m …`, push the tag, then the package/registry publish.
-   **Sampo's own repo:** `fm release VERSION [--ui V] [--push]` does steps 1-3 and the publish as named, checkpointed steps (`--dry-run` prints the plan, `--resume` continues a stopped run; `release.py` is only a wrapper over it). `--push` needs the active task's `publish` grant (`fm ask ID publish --why "…"`), which the push spends; without `--push` nothing is published, and `fm release VERSION --push` later runs just the push.
+   **Sampo's own repo:** `sampo release VERSION [--ui V] [--push]` does steps 1-3 and the publish as named, checkpointed steps (`--dry-run` prints the plan, `--resume` continues a stopped run; `release.py` is only a wrapper over it). `--push` needs the active task's `publish` grant (`sampo ask ID publish --why "…"`), which the push spends; without `--push` nothing is published, and `sampo release VERSION --push` later runs just the push.
 6. **After:** confirm the published artifact installs and runs from scratch; record the evidence; open the next "Unreleased" section.

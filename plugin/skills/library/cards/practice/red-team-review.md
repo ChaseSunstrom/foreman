@@ -9,9 +9,9 @@ related: [premortem, second-opinions, scientific-debugging, decision-records]
 Attack your own change as an adversary, a hostile input and a tired operator would, and reproduce each finding before trusting it.
 
 ## Verify
-- `fm audit prep ID`: prints one brief for a read-only reviewer pass over the diff.
-- `fm second debate ID --role prosecutor`: a separate voice argues against the change.
-- `fm task evidence ID --step N --run "<cmd>"`: each finding that was real has a failing run, then a passing one after the fix.
+- `sampo audit prep ID`: prints one brief for a read-only reviewer pass over the diff.
+- `sampo second debate ID --role prosecutor`: a separate voice argues against the change.
+- `sampo task evidence ID --step N --run "<cmd>"`: each finding that was real has a failing run, then a passing one after the fix.
 
 ## Test first
 Turn each attack into a failing test or repro command.
@@ -28,7 +28,7 @@ Pass = every real finding has a repro that fails before the fix and passes after
 - Ask the operator questions: what if it fails halfway, how do I roll back, what is logged.
 - Ask the maintainer questions: what will confuse a reader, what is untested.
 - Reproduce each suspected issue with a command; classify as real, not real, or unknown.
-- Fix real ones test-first; capture the rest with `fm capture --source discovered`.
+- Fix real ones test-first; capture the rest with `sampo capture --source discovered`.
 - Run the review on a fresh context or another model so it is not anchored on your reasoning.
 
 ## Avoid

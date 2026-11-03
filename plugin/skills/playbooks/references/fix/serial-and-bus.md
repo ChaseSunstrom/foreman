@@ -3,7 +3,7 @@
 
 Use when hardware does not respond, answers garbled bytes, loses frames of data or only works sometimes.
 
-Built on the cards `fm lib show serial-uart`, `fm lib show i2c-spi`, `fm lib show can-bus`, `fm lib show ble`, `fm lib show mqtt` and `fm lib show raspberry-pi`.
+Built on the cards `sampo lib show serial-uart`, `sampo lib show i2c-spi`, `sampo lib show can-bus`, `sampo lib show ble`, `sampo lib show mqtt` and `sampo lib show raspberry-pi`.
 
 1. **Prove the link before the code.** Power, ground, wiring, the node exists:
    ```bash

@@ -29,7 +29,7 @@ method, not when a gate stays green.
 7. **Sampo state** — `/foreman:tidy`: archive finished briefs, drop stale captured ones with a reason, merge
    duplicates.
 8. **Needs improving** — duplication and smells found on the way: fix the small ones here, capture the rest
-   (`fm capture --source discovered`) with the evidence.
+   (`sampo capture --source discovered`) with the evidence.
 
 ## Done when
 Every Coverage row names its method and result (zero found is fine, with the method that found zero), behaviour is

@@ -431,7 +431,7 @@ class AnyRepo(ForemanTestCase):
         text = read_text(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "release",
                                       "SKILL.md"))
         any_part = text.split("## Foreman's own repo")[0]
-        self.assertIn("fm release VERSION", any_part)
+        self.assertIn("sampo release VERSION", any_part)
         self.assertIn("--push", any_part)
 
 

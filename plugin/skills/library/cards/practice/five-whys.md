@@ -11,7 +11,7 @@ Ask why repeatedly, each answer backed by evidence, until you reach a cause you 
 ## Verify
 - `git log --oneline -5`: the fix landed at the deepest cause you found, not only at the symptom.
 - `pytest -q` (or the project's test command): a test for the root cause exists and passes.
-- `fm task finish --help`: shows `--lesson`, which records the root cause and guard with the task.
+- `sampo task finish --help`: shows `--lesson`, which records the root cause and guard with the task.
 
 ## Test first
 Each why is a claim with proof, so write the chain as checkable lines.

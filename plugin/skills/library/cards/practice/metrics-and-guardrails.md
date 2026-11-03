@@ -9,8 +9,8 @@ related: [experiment-design, eval-driven-development, kill-criteria, self-improv
 Pick one target metric you can compute by command, plus guardrail metrics that must not regress, so progress is a number and not an impression.
 
 ## Verify
-- `fm check`: gates (the guardrails) pass on the current tree.
-- `fm bench --help`: replay-based comparison for before/after numbers.
+- `sampo check`: gates (the guardrails) pass on the current tree.
+- `sampo bench --help`: replay-based comparison for before/after numbers.
 - `git log --oneline -5`: each commit that claims an improvement has the before and after numbers in its message or the task log.
 
 ## Test first

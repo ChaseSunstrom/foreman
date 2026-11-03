@@ -3,7 +3,7 @@
 
 Use when firmware will not build or link: PlatformIO, ESP-IDF, Zephyr or STM32 projects, a Cortex-M linker script, or an overflowing flash or RAM region.
 
-Built on the cards `fm lib show platformio`, `fm lib show esp-idf`, `fm lib show zephyr`, `fm lib show stm32-hal`, `fm lib show arm-cortex-m` and `fm lib show cmake`.
+Built on the cards `sampo lib show platformio`, `sampo lib show esp-idf`, `sampo lib show zephyr`, `sampo lib show stm32-hal`, `sampo lib show arm-cortex-m` and `sampo lib show cmake`.
 
 1. **Confirm the target and toolchain** before reading errors: a wrong board or an unsourced environment makes everything fail.
    ```bash

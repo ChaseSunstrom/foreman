@@ -3,7 +3,7 @@
 
 Use when a Postgres, ClickHouse, DuckDB or MySQL query, or a batch job built on them, is slow or costly.
 
-Built on the cards `fm lib show query-tuning`, `fm lib show postgres-indexes`, `fm lib show n-plus-one`, `fm lib show clickhouse`, `fm lib show duckdb` and `fm lib show parquet-arrow`.
+Built on the cards `sampo lib show query-tuning`, `sampo lib show postgres-indexes`, `sampo lib show n-plus-one`, `sampo lib show clickhouse`, `sampo lib show duckdb` and `sampo lib show parquet-arrow`.
 
 1. **Count calls before tuning one:** a loop issuing one query per row (N+1) beats any index. Log query count per request.
 2. **Read the plan on real data volumes:** `EXPLAIN (ANALYZE, BUFFERS) <query>` in Postgres, `EXPLAIN` in DuckDB or ClickHouse. A sequential scan on a big table, rows estimated far from actual, or a sort spilling to disk names the fix.

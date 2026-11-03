@@ -5,7 +5,7 @@ description: Use whenever you fix build errors, do TDD, plan, write an ADR or ru
 
 # Sampo playbooks
 
-On-demand procedures, ported with attribution from ECC (MIT; see `plugin/THIRD_PARTY_LICENSES.md`). Load only the one you need: `fm playbooks show PATH` adds this project's facts and its `.claude/playbooks/` overlay; before editing one, `fm playbooks eval PATH` scores the shipped text against its held-out briefs (`plugin/evals/playbooks/`), with and without it; `route STAGE`, `blame PATH` (lines to tasks), `preview PATH` (checks it adds); from this repo's work, `draft ID`, `mine` (files changed together), `counter` (what failed here); to learn, `score NAME --task ID`, `kata NAME [--answer FILE]`, `lesson RANGE` (a diff in five minutes). They supplement the Sampo loop and never override it: Sampo's evidence rule, `fm` state, the guard and the focus lock still apply. Where a playbook mentions an ECC agent, command, hook or script, use the Sampo equivalent: planning → `/foreman:intake`; review agents → `foreman:fm-reviewer` or the checklist itself; security review → `/security-review` plus `references/security/security-review.md`; TDD → `../intake/references/regression-test.md`; session save/resume → `fm checkpoint` / `/foreman:resume`.
+On-demand procedures, ported with attribution from ECC (MIT; see `plugin/THIRD_PARTY_LICENSES.md`). Load only the one you need: `sampo playbooks show PATH` adds this project's facts and its `.claude/playbooks/` overlay; before editing one, `sampo playbooks eval PATH` scores the shipped text against its held-out briefs (`plugin/evals/playbooks/`), with and without it; `route STAGE`, `blame PATH` (lines to tasks), `preview PATH` (checks it adds); from this repo's work, `draft ID`, `mine` (files changed together), `counter` (what failed here); to learn, `score NAME --task ID`, `kata NAME [--answer FILE]`, `lesson RANGE` (a diff in five minutes). They supplement the Sampo loop and never override it: Sampo's evidence rule, `sampo` state, the guard and the focus lock still apply. Where a playbook mentions an ECC agent, command, hook or script, use the Sampo equivalent: planning → `/foreman:intake`; review agents → `foreman:fm-reviewer` or the checklist itself; security review → `/security-review` plus `references/security/security-review.md`; TDD → `../intake/references/regression-test.md`; session save/resume → `sampo checkpoint` / `/foreman:resume`.
 
 Core debugging, regression-test and verification procedures live with intake: `../intake/references/debugging.md`, `../intake/references/regression-test.md`, `../intake/references/verification.md`.
 
@@ -34,7 +34,7 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/security/INDEX.md` — the security review checklist, command guard rules, cloud infrastructure, bounty triage.
 
 ## BASELINE / FIX — build and compile errors
-- `references/build/INDEX.md` — build and compile errors per toolchain: C++, Rust, TypeScript, Go, JVM, Swift, C#, shell. `fm playbooks show` the index, then the one you need.
+- `references/build/INDEX.md` — build and compile errors per toolchain: C++, Rust, TypeScript, Go, JVM, Swift, C#, shell. `sampo playbooks show` the index, then the one you need.
 
 ## FIX / FEATURE / VERIFY — TDD and verification
 - `references/verify/tdd-guide.md` — Test-Driven Development specialist enforcing write-tests-first methodology. Ensures 80%+ test coverage.
@@ -56,7 +56,7 @@ Core debugging, regression-test and verification procedures live with intake: `.
 - `references/review/surface-parity.md` — A feature must reach every surface (CLI, plugin, app, pane): one source, a parity test from the code.
 
 ## Language references — idioms and testing
-For one framework, library, service or tool, use the stack library instead: `fm lib` suggests this repo's cards, `fm lib show NAME --section verify` reads one part (`../library/SKILL.md`).
+For one framework, library, service or tool, use the stack library instead: `sampo lib` suggests this repo's cards, `sampo lib show NAME --section verify` reads one part (`../library/SKILL.md`).
 - `references/lang/cpp-coding-standards.md` — C++ coding standards based on the C++ Core Guidelines (isocpp.github.io). Use when writing, reviewing…
 - `references/lang/cpp-testing.md` — Use only when writing/updating/fixing C++ tests, configuring GoogleTest/CTest, diagnosing failing or…
 - `references/lang/python-patterns.md` — Pythonic idioms, PEP 8 standards, type hints, and best practices for building robust, efficient, and…
@@ -66,7 +66,7 @@ For one framework, library, service or tool, use the stack library instead: `fm 
 - `references/lang/INDEX.md` — more: the Python standard library first.
 
 ## UI — design direction, motion, 3D, terminals and mods
-- `references/ui/INDEX.md` — the UI playbooks: design direction, type and colour, composition, interaction, motion, game feel, 3D and its template, visual QA, terminals and mods. `fm playbooks show` the index, then the one you need.
+- `references/ui/INDEX.md` — the UI playbooks: design direction, type and colour, composition, interaction, motion, game feel, 3D and its template, visual QA, terminals and mods. `sampo playbooks show` the index, then the one you need.
 
 ## OPS — incidents and observability
 - `references/ops/INDEX.md` — incident response; logs, metrics and traces worth having.

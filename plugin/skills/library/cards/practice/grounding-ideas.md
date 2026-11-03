@@ -9,9 +9,9 @@ related: [brainstorming-lenses, capability-mapping, ideation-to-briefs, value-ef
 Check every idea against the real code, data and tools so each survivor cites files or commands and each reject says why.
 
 ## Verify
-- `fm research list`: the grounded list is saved with its evidence column.
+- `sampo research list`: the grounded list is saved with its evidence column.
 - `grep -n "<symbol from the idea>" -r .`: the cited place exists and does what the idea assumes.
-- `fm ideas --help`: `--falsify` asks the idea generator to try to disprove its own items.
+- `sampo ideas --help`: `--falsify` asks the idea generator to try to disprove its own items.
 
 ## Test first
 Give each idea a falsifiable grounding claim before reading code.

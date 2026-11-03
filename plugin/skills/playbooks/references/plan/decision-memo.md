@@ -5,9 +5,9 @@ Use when a choice is costly to reverse, someone else has to approve it, or the s
 picking a library, a data store, an approach for an M or L task, a vendor, a policy. A memo is short and made
 before the work; for a lasting architecture choice, also write an ADR (`../reflect/architecture-decision-records.md`).
 
-Built on library cards: `fm lib show decision-records` (fields a future reader needs),
-`fm lib show approach-comparison` (comparing options on the same criteria), `fm lib show kill-criteria`
-(when to abandon the choice), `fm lib show adrs` (the long form).
+Built on library cards: `sampo lib show decision-records` (fields a future reader needs),
+`sampo lib show approach-comparison` (comparing options on the same criteria), `sampo lib show kill-criteria`
+(when to abandon the choice), `sampo lib show adrs` (the long form).
 
 ## The procedure
 
@@ -22,7 +22,7 @@ Built on library cards: `fm lib show decision-records` (fields a future reader n
 5. **Choose and say why in one paragraph,** naming the criterion that decided it and what you give up.
 6. **Set the revisit trigger:** a date, or a measurable condition ("p95 over 200 ms", "a second consumer
    appears") that reopens the question. Pass: someone else could tell whether the trigger has fired.
-7. **Record it:** `fm decide "<choice>" --why "…" --rejected "…" --revisit "<trigger>"`, plus `--kind costly` or
+7. **Record it:** `sampo decide "<choice>" --why "…" --rejected "…" --revisit "<trigger>"`, plus `--kind costly` or
    `--kind outward` when it is; put the memo in the task's brief or the repo's docs.
 
 ## Template

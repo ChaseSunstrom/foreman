@@ -9,8 +9,8 @@ related: [decision-records, spikes, first-principles, value-effort-scoring, seco
 Choose between three or more real approaches against criteria written before scoring, and record why the losers lost.
 
 ## Verify
-- `fm decide --list`: the choice and its rejected options are in the decision log.
-- `fm queue`: the chosen approach turned into steps in the brief.
+- `sampo decide --list`: the choice and its rejected options are in the decision log.
+- `sampo queue`: the chosen approach turned into steps in the brief.
 - `git log --oneline -5`: later commits follow the chosen approach, not a silent alternative.
 
 ## Test first
@@ -29,8 +29,8 @@ Pass = winner beats runner-up on >= 2 weighted criteria and the margin is stated
 - Score against the criteria in a small table; keep scores as words (low/med/high) with a reason per cell.
 - Name the riskiest assumption of the winner and what would make you switch.
 - Prefer reversible choices when scores are close.
-- Record with `fm decide "<choice>" --why "<reason>" --rejected "<options>"`.
-- For L-tier work, get a read from another model: `fm second plan ID`.
+- Record with `sampo decide "<choice>" --why "<reason>" --rejected "<options>"`.
+- For L-tier work, get a read from another model: `sampo second plan ID`.
 
 ## Avoid
 - Straw options (two bad, one favourite): each option needs a believable case for it; write it.

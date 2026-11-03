@@ -159,7 +159,7 @@ class Profile(_Tui):
         self.assertIn("none applies", self.fm("settings", "profile", env=self.env).stdout)
         self.assertIn("profile phone", self.fm("settings", "list", env=here).stdout)
         body = read_text(os.path.join(os.path.dirname(__file__), "..", "commands", "settings.md"))
-        self.assertIn("`fm settings profile`", body)
+        self.assertIn("`sampo settings profile`", body)
 
     def test_the_settings_screen_names_the_profile(self):
         self.write(PROFILES)

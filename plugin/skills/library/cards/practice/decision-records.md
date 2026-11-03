@@ -9,8 +9,8 @@ related: [approach-comparison, retrospectives, second-opinions, kill-criteria]
 Record each non-trivial choice with its reason, the rejected options and a revisit trigger, so it is not reopened or forgotten.
 
 ## Verify
-- `fm decide --list`: the entry exists with its date and reason.
-- `fm decide --help`: shows `--why`, `--rejected`, `--kind`, `--revisit` and `--cites`.
+- `sampo decide --list`: the entry exists with its date and reason.
+- `sampo decide --help`: shows `--why`, `--rejected`, `--kind`, `--revisit` and `--cites`.
 - `git log --oneline -5`: the change that implements the decision references it in the message or task log.
 
 ## Test first
@@ -25,7 +25,7 @@ Pass = reason cites evidence, >= 1 rejected option, revisit trigger set.
 ```
 
 ## Do
-- Record at the moment of choosing, in one command: `fm decide "<what>" --why "<reason>" --rejected "<options>"`.
+- Record at the moment of choosing, in one command: `sampo decide "<what>" --why "<reason>" --rejected "<options>"`.
 - Cite evidence in the reason: a measurement, a file, a constraint.
 - Mark the kind (reversible, costly, outward); costly and outward choices go in the final report.
 - Add a revisit trigger (`--revisit`) tied to a date or a path or a condition.

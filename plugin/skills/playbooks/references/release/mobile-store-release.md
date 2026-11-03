@@ -3,7 +3,7 @@
 
 Use when you upload a mobile build for testers or a store: iOS archive and upload, an Android bundle, fastlane lanes, Expo EAS.
 
-Built on the cards `fm lib show app-store-release`, `fm lib show play-store-release`, `fm lib show fastlane` and `fm lib show expo`.
+Built on the cards `sampo lib show app-store-release`, `sampo lib show play-store-release`, `sampo lib show fastlane` and `sampo lib show expo`.
 
 1. **Gate the commit:** tests, analyzer and a clean tree, on the commit you build.
 2. **Version and build number up**, in every place the platform reads them; stores reject a repeated build number.

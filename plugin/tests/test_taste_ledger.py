@@ -363,13 +363,13 @@ class Divergence(ForemanTestCase):
 
     def test_the_skill_and_command_offer_them(self):
         skill = read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md"))
-        for word in ("fm looks opposite", "fm looks book", "/foreman:looks tournament", "references/idioms.md"):
+        for word in ("sampo looks opposite", "sampo looks book", "/foreman:looks tournament", "references/idioms.md"):
             self.assertIn(word, skill)
         idioms = read_text(os.path.join(PLUGIN, "skills", "directions", "references", "idioms.md"))
         for era in ("Swiss", "Bauhaus", "Art Deco", "Memphis", "Brutalist"):
             self.assertIn(era, idioms)
         cmd = read_text(os.path.join(PLUGIN, "commands", "looks.md"))
-        for word in ("fm looks tournament --json", "no Neither", "fm looks opposite", "fm looks book"):
+        for word in ("sampo looks tournament --json", "no Neither", "sampo looks opposite", "sampo looks book"):
             self.assertIn(word, cmd)
 
 
@@ -377,15 +377,15 @@ class Surfaces(unittest.TestCase):
     def test_claude_code_has_a_user_only_command_and_the_directions_skill_ranks_by_it(self):
         cmd = read_text(os.path.join(PLUGIN, "commands", "looks.md"))
         self.assertIn("disable-model-invocation: true", cmd)
-        for word in ("AskUserQuestion", "fm looks calibrate", "--answers", "--round", "fm looks learn"):
+        for word in ("AskUserQuestion", "sampo looks calibrate", "--answers", "--round", "sampo looks learn"):
             self.assertIn(word, cmd)
         skill = read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md"))
-        for word in ("fm looks", "fm looks keep", "fm looks not", "fm looks revert", "the least negative",
-                     "Record nothing in `fm looks`: it holds the user's choices only.",
-                     "run `fm looks keep` or `fm looks revert` yourself"):
+        for word in ("sampo looks", "sampo looks keep", "sampo looks not", "sampo looks revert", "the least negative",
+                     "Record nothing in `sampo looks`: it holds the user's choices only.",
+                     "run `sampo looks keep` or `sampo looks revert` yourself"):
             self.assertIn(word, skill)
         for word in ("--why '", "a quote", "AskUserQuestion is denied", "record nothing",
-                     "run `fm looks keep` or `fm looks revert` yourself"):
+                     "run `sampo looks keep` or `sampo looks revert` yourself"):
             self.assertIn(word, cmd)
 
 

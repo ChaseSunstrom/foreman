@@ -3,7 +3,7 @@
 
 Use when an iOS or Android app build fails: `xcodebuild`, `npx expo` or EAS, `flutter build`, or a fastlane lane that wraps them.
 
-Built on the cards `fm lib show xcodebuild`, `fm lib show expo`, `fm lib show flutter`, `fm lib show fastlane` and `fm lib show swift-package-manager`.
+Built on the cards `sampo lib show xcodebuild`, `sampo lib show expo`, `sampo lib show flutter`, `sampo lib show fastlane` and `sampo lib show swift-package-manager`.
 
 1. **Name the layer.** Dependency resolution (SwiftPM, CocoaPods, pub, npm), compile, code signing, or packaging. Each fails with a different tool and the first error line is the one to fix; later ones echo it.
 2. **Reproduce from the command line, not the IDE:**

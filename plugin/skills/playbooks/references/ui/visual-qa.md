@@ -1,7 +1,7 @@
 <!-- Sampo's own playbook (written for Sampo, not ported). -->
 # Visual QA: screenshots, an eyeball pass and a receipt
 
-Use when a task changes what a web screen looks like: a new view, a restyle, a dark mode, a layout fix, a motion change. Green tests say the code does what the tests ask; only a frame says the screen looks right. This playbook proves a UI change by looking at it: `fm smoke` for the defects a crawler can name, the start page's frames and hostile profiles, a small frame script for the other views and fixtures, a checklist for the eye, and a receipt in the task's evidence.
+Use when a task changes what a web screen looks like: a new view, a restyle, a dark mode, a layout fix, a motion change. Green tests say the code does what the tests ask; only a frame says the screen looks right. This playbook proves a UI change by looking at it: `sampo smoke` for the defects a crawler can name, the start page's frames and hostile profiles, a small frame script for the other views and fixtures, a checklist for the eye, and a receipt in the task's evidence.
 
 It checks the decisions the sibling playbooks make; it doesn't repeat them. The stance and the cover test are in `design-direction.md`, the scale, palette and contrast proof in `type-and-colour.md`, the reduced forms in `motion.md`, a WebGL scene's survival probes in `scene-3d.md`. Terminals: `terminal-ui.md`.
 
@@ -9,21 +9,21 @@ It checks the decisions the sibling playbooks make; it doesn't repeat them. The 
 
 | Pass | What runs | Widths | Themes, motion | Finds |
 |---|---|---|---|---|
-| `fm smoke` | Sampo's crawler (`smoke_web.cjs`) in a headless Chromium | crawl: 1440×900, 390×844; the start page's frames: 360×800, 768×1024, 1440×900 | crawl: the browser's defaults; frames: light and dark, reduced motion at 360 | load and console errors, failed requests to the app's host, placeholders still showing after 5 s, visible alerts, a page wider than the screen, overlapping fixed controls; from the frames, as notes: overflow, motion under reduce |
+| `sampo smoke` | Sampo's crawler (`smoke_web.cjs`) in a headless Chromium | crawl: 1440×900, 390×844; the start page's frames: 360×800, 768×1024, 1440×900 | crawl: the browser's defaults; frames: light and dark, reduced motion at 360 | load and console errors, failed requests to the app's host, placeholders still showing after 5 s, visible alerts, a page wider than the screen, overlapping fixed controls; from the frames, as notes: overflow, motion under reduce |
 | frame script | `qa/frames.mjs` below, in the project | 360×800, 768×1024, 1440×900 | light and dark; reduced motion at 360 | the same frames for every path you name, on a seeded fixture: page overflow, junk text, a screen that still moves under reduced motion; and the frames the eye checks |
 
-Both use the project's own Playwright; Sampo never installs it. Without it, or with it but no browser, `fm smoke` prints `skipped …` and the reason, which is not a pass: `npm i -D playwright`, then `npx playwright install chromium` (or point `FOREMAN_PLAYWRIGHT` at a Playwright package folder).
+Both use the project's own Playwright; Sampo never installs it. Without it, or with it but no browser, `sampo smoke` prints `skipped …` and the reason, which is not a pass: `npm i -D playwright`, then `npx playwright install chromium` (or point `FOREMAN_PLAYWRIGHT` at a Playwright package folder).
 
-## fm smoke
+## sampo smoke
 
-1. Start the app on the seeded fixture (next section), then record its address once per project: `fm smoke set web http://localhost:5173`. This also adds `fm smoke` to the project's gates, so `fm check` runs it from then on.
-2. Run it: `fm smoke` (same as `fm smoke run`). It first shoots the start page's frame matrix (the frame script's, each frame at most 8000 px each way), then opens the page at desktop and phone width, clicks each visible tab among the first 24 `role="tab"` elements (with none, follows up to 10 same-origin nav links), and checks each view. Exit 0 means no defects; each defect prints as `✗ <viewport> <view>: <what>`. The frames' findings are notes (`· frame 360 reduce: still moving …`), so a live page keeps its gate; `--strict` (or `fm smoke set strict on`) fails on them too.
+1. Start the app on the seeded fixture (next section), then record its address once per project: `sampo smoke set web http://localhost:5173`. This also adds `sampo smoke` to the project's gates, so `sampo check` runs it from then on.
+2. Run it: `sampo smoke` (same as `sampo smoke run`). It first shoots the start page's frame matrix (the frame script's, each frame at most 8000 px each way), then opens the page at desktop and phone width, clicks each visible tab among the first 24 `role="tab"` elements (with none, follows up to 10 same-origin nav links), and checks each view. Exit 0 means no defects; each defect prints as `✗ <viewport> <view>: <what>`. The frames' findings are notes (`· frame 360 reduce: still moving …`), so a live page keeps its gate; `--strict` (or `sampo smoke set strict on`) fails on them too.
 3. The last lines are `Screenshots: <dir>`, a PNG per view named after it (`desktop-start.png`), and `Frames: <dir>/frames`, named as the frame script names them (`home-360-light.png` … `home-360-reduce.png`). The folder is `<project state>/smoke/<commit>/default` (`<commit>-dirty-<diff hash>` with uncommitted changes); a re-run on the same tree replaces it and five such folders are kept, so a receipt for the start page can point at its frames.
-4. A UI no URL serves (a plugin's own panel, an Electron shell): `fm smoke set off <why>` stops the gate. The frame script and the eyeball pass still apply wherever a page can be opened.
+4. A UI no URL serves (a plugin's own panel, an Electron shell): `sampo smoke set off <why>` stops the gate. The frame script and the eyeball pass still apply wherever a page can be opened.
 
 ### Hostile profiles
 
-`fm smoke --profile NAME` (repeatable, or `all`) crawls the same views under one hostile condition instead, into `<commit>/<profile>/`. Not a gate, and exit 0 on findings unless strict: run them when a task touches layout, data loading or colour, and fix or `fm capture` each finding. A profile can take four minutes, so in Claude Code run `--profile all` in the background (Bash's `run_in_background`).
+`sampo smoke --profile NAME` (repeatable, or `all`) crawls the same views under one hostile condition instead, into `<commit>/<profile>/`. Not a gate, and exit 0 on findings unless strict: run them when a task touches layout, data loading or colour, and fix or `sampo capture` each finding. A profile can take four minutes, so in Claude Code run `--profile all` in the background (Bash's `run_in_background`).
 
 | Profile | What it does to the page | What it finds |
 |---|---|---|
@@ -37,7 +37,7 @@ Both use the project's own Playwright; Sampo never installs it. Without it, or w
 
 Open the PNGs with the Read tool as in "Looking at the frames".
 
-Pass: `fm smoke` exits 0 on the commit you're reporting, and its output says how many views it saw. One view where you expected several means its tabs aren't `role="tab"` or its nav isn't in `nav` or `role="navigation"`: fix the markup, not the crawler.
+Pass: `sampo smoke` exits 0 on the commit you're reporting, and its output says how many views it saw. One view where you expected several means its tabs aren't `role="tab"` or its nav isn't in `nav` or `role="navigation"`: fix the markup, not the crawler.
 
 ## Seeded fixture
 
@@ -54,7 +54,7 @@ Pass: run the frame script twice on one commit and fixture; every hash it prints
 
 ## Frame script
 
-`fm smoke` already shoots this matrix for the start page on whatever data the running app has; the script covers every other path, on a seeded fixture. Copy it into the project as `qa/frames.mjs` and add `.qa/` to `.gitignore`. It writes the frames to `.qa/frames/<commit>-<fixture>/` (a `-dirty` commit when the tree has changes), prints a short hash per frame, checks what a script can, and exits 1 on any finding. `QA_FIXTURE` only names the folder: the app must already be running on that fixture, so start both with the same value.
+`sampo smoke` already shoots this matrix for the start page on whatever data the running app has; the script covers every other path, on a seeded fixture. Copy it into the project as `qa/frames.mjs` and add `.qa/` to `.gitignore`. It writes the frames to `.qa/frames/<commit>-<fixture>/` (a `-dirty` commit when the tree has changes), prints a short hash per frame, checks what a script can, and exits 1 on any finding. `QA_FIXTURE` only names the folder: the app must already be running on that fixture, so start both with the same value.
 
 ```js
 // qa/frames.mjs: the frame matrix of Sampo's visual QA playbook (ui/visual-qa.md).
@@ -117,16 +117,16 @@ console.log(`${bad.length ? "✗" : "ok"} ${paths.length * 7} frames in ${out}`)
 process.exit(bad.length ? 1 : 0);
 ```
 
-Why these widths: 360 is the narrowest phone in common use (the smallest width a layout must survive), 768 is a tablet held upright and the usual seam between a phone layout and a desktop one, 1440 is a laptop. `fm smoke`'s 390 sits between the first two; it doesn't replace either. The reduced-motion frame is taken without `animations: "disabled"` on purpose: the point is to catch motion the app itself fails to stop (autoplay video, a canvas loop, a carousel timer).
+Why these widths: 360 is the narrowest phone in common use (the smallest width a layout must survive), 768 is a tablet held upright and the usual seam between a phone layout and a desktop one, 1440 is a laptop. `sampo smoke`'s 390 sits between the first two; it doesn't replace either. The reduced-motion frame is taken without `animations: "disabled"` on purpose: the point is to catch motion the app itself fails to stop (autoplay video, a canvas loop, a carousel timer).
 
 It ignores a `null` that the product shows on purpose (a database tool): drop `null` from `JUNK` there and say so in the receipt.
 
 ## Looking at the frames
 
-The eye is the check here; the script only finds what it can name. Look at every frame of every view the task changed: seven per view per fixture. Views the task didn't touch need only `fm smoke`.
+The eye is the check here; the script only finds what it can name. Look at every frame of every view the task changed: seven per view per fixture. Views the task didn't touch need only `sampo smoke`.
 
-- **In a Claude Code session** (Sampo's plugin): run `fm smoke` and the frame script with Bash, then open each PNG the script printed with the Read tool, which shows the image. Look at them one view at a time, the six themed frames and then the reduce frame, and write the receipt from what you saw. A frame you didn't open is a frame you didn't check: list only those you read.
-- **In `fm code`:** its model reads text, not images. Name the frame script in the request as a criterion's verify ("done when the frames are clean :: QA_FIXTURE=full node qa/frames.mjs http://localhost:5173 / /settings") so the plan carries it and the harness records its run; `--verify "<that command>"` fits only a fix the script already fails on (an overflow, junk text), since `--verify` must fail before the change. Leave the eyeball line of the receipt as `eyeball: pending`. The look then happens in a Claude Code session or by a person, from the frame folder the evidence names; a finding becomes a fix task (`fm capture`).
+- **In a Claude Code session** (Sampo's plugin): run `sampo smoke` and the frame script with Bash, then open each PNG the script printed with the Read tool, which shows the image. Look at them one view at a time, the six themed frames and then the reduce frame, and write the receipt from what you saw. A frame you didn't open is a frame you didn't check: list only those you read.
+- **In `sampo smith`:** its model reads text, not images. Name the frame script in the request as a criterion's verify ("done when the frames are clean :: QA_FIXTURE=full node qa/frames.mjs http://localhost:5173 / /settings") so the plan carries it and the harness records its run; `--verify "<that command>"` fits only a fix the script already fails on (an overflow, junk text), since `--verify` must fail before the change. Leave the eyeball line of the receipt as `eyeball: pending`. The look then happens in a Claude Code session or by a person, from the frame folder the evidence names; a finding becomes a fix task (`sampo capture`).
 - **By hand:** open the frame folder in an image viewer at 100% zoom, never scaled to fit (a 1 px overlap disappears when shrunk).
 
 ## Eyeball checklist
@@ -169,10 +169,10 @@ Each line passes only if it holds on every frame you looked at. A failure is fix
 
 The receipt goes in the task's evidence, so the close shows what was looked at and when. Three records, in order:
 
-1. `fm task evidence <ID> --step N --run "fm smoke"`: the crawl, with its real exit code.
-2. `fm task evidence <ID> --step N --run "QA_FIXTURE=full node qa/frames.mjs <url> <path>..."`, and the same for `empty`: the frame paths, their hashes and the script's checks.
+1. `sampo task evidence <ID> --step N --run "sampo smoke"`: the crawl, with its real exit code.
+2. `sampo task evidence <ID> --step N --run "QA_FIXTURE=full node qa/frames.mjs <url> <path>..."`, and the same for `empty`: the frame paths, their hashes and the script's checks.
 3. The look, typed because it can't be run:
-   `fm task evidence <ID> --step N "eyeball <frames folder>" "<the receipt line below>"`
+   `sampo task evidence <ID> --step N "eyeball <frames folder>" "<the receipt line below>"`
 
 The typed line, one per fixture:
 
@@ -194,15 +194,15 @@ Rules:
 - The commit in the folder name is the one being reported (the latest fix included), never `-dirty`; retake after the last change.
 - Each mark is ✓ or ✗, never left blank; a ✗ has its `found:` line, and every `found:` ends in a fix commit or a task id.
 - `<n> frames read` counts the frames actually opened; under the frame count means the receipt says which views weren't looked at.
-- From `fm code`, the line is `eyeball .qa/frames/<commit>-<fixture>: pending` until someone looks.
+- From `sampo smith`, the line is `eyeball .qa/frames/<commit>-<fixture>: pending` until someone looks.
 
 ## Going further
 
-This is a look per task, not a regression suite. When a screen stops changing, turn its frames into committed baselines with `toHaveScreenshot` (`fm lib show visual-regression`), so a later task that moves a pixel fails a test instead of waiting for an eye.
+This is a look per task, not a regression suite. When a screen stops changing, turn its frames into committed baselines with `toHaveScreenshot` (`sampo lib show visual-regression`), so a later task that moves a pixel fails a test instead of waiting for an eye.
 
 ## Checks
 
-- [ ] `fm smoke` exits 0 on the reported commit, with more than one view per width when the app has tabs or nav.
+- [ ] `sampo smoke` exits 0 on the reported commit, with more than one view per width when the app has tabs or nav.
 - [ ] The frame script exits 0 for `full` and `empty` on the reported commit, and a second run prints the same hashes.
 - [ ] `.qa/` is in `.gitignore`; no frame is committed.
 - [ ] Every line of the eyeball checklist is marked in the receipt for every view the task changed.
@@ -210,7 +210,7 @@ This is a look per task, not a regression suite. When a screen stops changing, t
 
 ## Library cards
 
-The tooling lives in the stack library: `fm lib show playwright` (contexts, locators, emulation), `fm lib show visual-regression` (committed baselines, masking, pinned rendering), `fm lib show test-fixtures` (scoped seeds with clean-up), `fm lib show dark-mode` (the theme switch the dark frames exercise), `fm lib show animation` (reduced motion in code), `fm lib show responsive-design` (breakpoints the 768 frame tests), `fm lib show accessibility-testing` (what an automated scan adds to the eye), `fm lib show e2e-strategy` (which journeys deserve a test of their own).
+The tooling lives in the stack library: `sampo lib show playwright` (contexts, locators, emulation), `sampo lib show visual-regression` (committed baselines, masking, pinned rendering), `sampo lib show test-fixtures` (scoped seeds with clean-up), `sampo lib show dark-mode` (the theme switch the dark frames exercise), `sampo lib show animation` (reduced motion in code), `sampo lib show responsive-design` (breakpoints the 768 frame tests), `sampo lib show accessibility-testing` (what an automated scan adds to the eye), `sampo lib show e2e-strategy` (which journeys deserve a test of their own).
 
 Example: `references/ui/examples/visual-qa.html`: a frame matrix of the other examples at 360, 768 and 1440 px in light, dark and reduced motion, with its receipt. The site's Gallery shows it.
 

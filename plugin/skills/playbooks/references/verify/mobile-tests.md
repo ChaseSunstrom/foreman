@@ -3,7 +3,7 @@
 
 Use when app code changed and you must show it works on the platform, not only that it compiles.
 
-Built on the cards `fm lib show xctest`, `fm lib show swift-testing`, `fm lib show flutter-testing`, `fm lib show expo` and `fm lib show react-native`.
+Built on the cards `sampo lib show xctest`, `sampo lib show swift-testing`, `sampo lib show flutter-testing`, `sampo lib show expo` and `sampo lib show react-native`.
 
 1. **Static first:** `npx tsc --noEmit`, `flutter analyze`, or the Xcode build for the scheme.
 2. **Logic tests with no UI:**

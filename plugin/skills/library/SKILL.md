@@ -1,22 +1,22 @@
 ---
 name: library
-description: Use whenever you code or test in a language, framework, database or tool: stack cards (fm lib).
+description: Use whenever you code or test in a language, framework, database or tool: stack cards (sampo lib).
 ---
 
 # Sampo: stack library
 
-Cards are short, checkable notes, one per language, framework, service, tool or practice, in `cards/<area>/<name>.md`. They cost no context until read. `fm lib` finds them:
+Cards are short, checkable notes, one per language, framework, service, tool or practice, in `cards/<area>/<name>.md`. They cost no context until read. `sampo lib` finds them:
 
-- `fm lib suggest`: cards for this repo, from its manifests, files and extensions. SessionStart names the top ones.
-- `fm lib search WORDS`: cards and installed plugins' skills (ECC and others), ranked together.
-- `fm lib show NAME`: prints a card. For a plugin skill (`plugin:skill`), it prints the path of its SKILL.md.
-- `fm lib list [--area A]` gives counts and names. `fm lib check` lints every card.
-- Growing it: `fm lib gaps` lists dependencies no card covers; `fm lib draft NAME --area AREA` stages a skeleton, fill it in, then `fm lib admit NAME` lints it, checks it for untrusted instructions and moves it into the library.
-- At edit time the hook adds the Avoid section of the best card for the file (once per card per task); `fm lib inject off` stops it.
+- `sampo lib suggest`: cards for this repo, from its manifests, files and extensions. SessionStart names the top ones.
+- `sampo lib search WORDS`: cards and installed plugins' skills (ECC and others), ranked together.
+- `sampo lib show NAME`: prints a card. For a plugin skill (`plugin:skill`), it prints the path of its SKILL.md.
+- `sampo lib list [--area A]` gives counts and names. `sampo lib check` lints every card.
+- Growing it: `sampo lib gaps` lists dependencies no card covers; `sampo lib draft NAME --area AREA` stages a skeleton, fill it in, then `sampo lib admit NAME` lints it, checks it for untrusted instructions and moves it into the library.
+- At edit time the hook adds the Avoid section of the best card for the file (once per card per task); `sampo lib inject off` stops it.
 
 **Use in the loop.**
 - At plan time, read the cards for the stack the task touches.
-- Turn their Verify commands into criteria (`--ac "… :: <command>"`). A command that touches a live service (aws, kubectl, psql against a real host) stays a manual check, not a criterion that `fm check` runs unattended against your credentials.
+- Turn their Verify commands into criteria (`--ac "… :: <command>"`). A command that touches a live service (aws, kubectl, psql against a real host) stays a manual check, not a criterion that `sampo check` runs unattended against your credentials.
 - Write the failing test the way Test first shows.
 - Keep Avoid in mind while building, and walk Review before closing.
 
@@ -52,4 +52,4 @@ verified: YYYY-MM-DD (optional: the day you ran its Verify commands and they hel
 6. `## Review`: 4-7 `- [ ]` checks.
 7. Optionally `## Notes`, for version facts only.
 
-**Limits.** Aim for 1,200-4,000 characters in all; `fm lib check` refuses under 1,000 or over 4,500, a summary over 200, missing sections, bad signals and placeholders. Write tersely, with no "when to use" preamble. Never invent a flag, option or version: if unsure, leave it out.
+**Limits.** Aim for 1,200-4,000 characters in all; `sampo lib check` refuses under 1,000 or over 4,500, a summary over 200, missing sections, bad signals and placeholders. Write tersely, with no "when to use" preamble. Never invent a flag, option or version: if unsure, leave it out.

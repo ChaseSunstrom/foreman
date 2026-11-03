@@ -452,7 +452,7 @@ class App(_Inbox):
 
     def test_claude_code_has_the_reset(self):
         with open(os.path.join(os.path.dirname(eco.__file__), "..", "..", "commands", "backlog.md")) as f:
-            self.assertIn("fm inbox prefer --reset", f.read())
+            self.assertIn("sampo inbox prefer --reset", f.read())
 
 
 GH = {"number": 7, "title": "Export drops the header row", "body": "- [ ] the CSV keeps its header",

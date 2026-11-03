@@ -230,7 +230,7 @@ class Writable(ForemanTestCase):
 
     def test_a_shipped_playbook_names_a_fact(self):
         out = self.fm("playbooks", "show", "verify/verification-loop").stdout
-        self.assertIn("This project's tests (fm map): ", out)
+        self.assertIn("This project's tests (sampo map):", out)
         self.assertNotIn("{{test}}", out)
 
 

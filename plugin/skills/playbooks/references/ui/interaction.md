@@ -31,11 +31,11 @@ A person who acts and sees nothing assumes it didn't work, and acts again. Three
 
 1. **Every verb has an end state the person can see:** done, failed with a way forward, or queued. Write them in the verb ledger. A save that succeeds silently fails this rule; a quiet "Saved" beside the button passes.
 2. **Feedback lands where the eye is.** The change shows at the control or at the thing it changed. A toast alone is for results that happen off screen (an email sent, a file exported), and a toast for an action whose result is already visible is noise.
-3. **One press, one action.** While a write is in flight, a second press does nothing: the button stays in place, shows its busy label from the verb ledger, and ignores presses (`aria-disabled="true"` plus a guard, or `disabled` for the duration). Pass: `qa/double-press.mjs` (below) prints `ok`. Money and messages to other people also carry an idempotency key, so a retry after a dropped connection can't charge or send twice (`fm lib show idempotency`).
+3. **One press, one action.** While a write is in flight, a second press does nothing: the button stays in place, shows its busy label from the verb ledger, and ignores presses (`aria-disabled="true"` plus a guard, or `disabled` for the duration). Pass: `qa/double-press.mjs` (below) prints `ok`. Money and messages to other people also carry an idempotency key, so a retry after a dropped connection can't charge or send twice (`sampo lib show idempotency`).
 4. **Undo beats confirm.** A reversible action happens at once and offers Undo for at least 5 s (the delete storyboard in `motion.md` is this rule animated). Confirm only what can't be undone, and then the confirm button repeats the verb and the object ("Delete 3 invoices"), never "OK".
-5. **Optimistic only when it's safe.** Show the result before the server agrees only when all three hold: the server rarely refuses it, the change can be rolled back, and a refusal is shown in the same place as the change with the person's input kept. Never optimistic: payments, anything sent to another person, deletes without undo (`fm lib show optimistic-ui`).
+5. **Optimistic only when it's safe.** Show the result before the server agrees only when all three hold: the server rarely refuses it, the change can be rolled back, and a refusal is shown in the same place as the change with the person's input kept. Never optimistic: payments, anything sent to another person, deletes without undo (`sampo lib show optimistic-ui`).
 6. **Failures say which kind.** Offline, refused (bad input, no permission) and broken (server error) read differently and offer different next steps: wait or retry, fix, or try later and quote a reference. One generic error for all three fails.
-7. **Measured, not guessed.** With 4× CPU slowdown in Chrome DevTools, the Performance panel's live Interaction to Next Paint stays at or under 200 ms for every interaction on the main path (the "good" band of Core Web Vitals). A long handler is split or moved off the main thread (`fm lib show web-workers`), not hidden behind a spinner.
+7. **Measured, not guessed.** With 4× CPU slowdown in Chrome DevTools, the Performance panel's live Interaction to Next Paint stays at or under 200 ms for every interaction on the main path (the "good" band of Core Web Vitals). A long handler is split or moved off the main thread (`sampo lib show web-workers`), not hidden behind a spinner.
 
 ### Double-press probe
 
@@ -90,9 +90,9 @@ A form the button can't submit until its fields are filled needs them filled fir
 2. **Only what's on screen takes focus.** A closed drawer, a collapsed menu, an off-canvas panel or a hidden tab panel is `inert`, `hidden` or `display: none`, not just moved out of view. Probe: `OFF SCREEN`, `NOT VISIBLE`.
 3. **Nothing covers the focused thing.** A sticky header, cookie bar or chat bubble that hides the focused control fails (WCAG 2.4.11). Fix with `scroll-padding-top` (and `-bottom`) equal to the bars' heights. Probe: `COVERED`.
 4. **Order follows reading order.** The Tab path matches the order a person reads the 1440 frame: left to right, top to bottom within each region, regions in the order they appear. No `tabindex` above 0. Probe: prints the path and fails any positive `tabindex`; you compare the path to the frame.
-5. **A widget is one stop.** Tabs, menus, listboxes, radio groups, toolbars and grids take one Tab; arrows move inside (a roving `tabindex`, `fm lib show aria-patterns`). Pass: a 12-item menu costs one Tab, not twelve.
+5. **A widget is one stop.** Tabs, menus, listboxes, radio groups, toolbars and grids take one Tab; arrows move inside (a roving `tabindex`, `sampo lib show aria-patterns`). Pass: a 12-item menu costs one Tab, not twelve.
 6. **Esc closes the top layer only, and focus goes home.** After Esc, focus is back on the control that opened the layer, and the next Tab goes to the control after it. Esc never closes two layers or throws away a half-filled form without asking.
-7. **Focus moves only because the person did something.** It moves into an opened dialog (as it starts entering, `motion.md` rule 5), to the next row after a delete, to the new page's `h1` after a route change. A background refresh, a toast or a live result never steals it; those speak through a `role="status"` region (`fm lib show focus-management`).
+7. **Focus moves only because the person did something.** It moves into an opened dialog (as it starts entering, `motion.md` rule 5), to the next row after a delete, to the new page's `h1` after a route change. A background refresh, a toast or a live result never steals it; those speak through a `role="status"` region (`sampo lib show focus-management`).
 8. **No traps.** Tab leaves every widget except a modal dialog, which keeps focus inside until it closes. Probe: `Tab cycles back to stop N`.
 9. **A skip link** is the first stop on any view with navigation before the main content, and it becomes visible when focused.
 10. **Enter submits** from any single-line field of a form (a real `<form>` with a submit button), and Space and Enter both press a button.
@@ -109,7 +109,7 @@ A form the button can't submit until its fields are filled needs them filled fir
 3. Hint text sits between the label and the field, so it is read before typing, and is tied to the field with `aria-describedby`.
 4. Mark the minority: if most fields are required, label the others "(optional)"; if most are optional, mark the required ones. Never a bare red asterisk without a legend.
 5. Field width hints at the answer: a postcode field is short, a street field long.
-6. The right keyboard and autofill: `type`, `inputmode` and `autocomplete` on every field that asks for a person's details (WCAG 1.3.5; tokens in `fm lib show forms`). Paste always works, including into password and code fields (WCAG 3.3.8).
+6. The right keyboard and autofill: `type`, `inputmode` and `autocomplete` on every field that asks for a person's details (WCAG 1.3.5; tokens in `sampo lib show forms`). Paste always works, including into password and code fields (WCAG 3.3.8).
 
 **When to check: late to accuse, quick to forgive**
 
@@ -155,7 +155,7 @@ Words are interface. The same action called by three names across a flow reads a
 7. **Sentence case, digits for numbers, real plurals.** "3 files deleted" and "1 file deleted", never "file(s)". A relative time ("2 hours ago") within the week, a date after that.
 8. **Links name where they go:** "Read how roles work", not "Click here" or a bare "Learn more".
 9. **No "simply", "just" or "easily"** in instructions: they tell a stuck person the problem is them.
-10. **It fits at 360 in the longest language you ship.** German runs about a third longer than English. Pass: with the longest locale (or a pseudo-locale that pads every string by 40%) at 360, no button truncates or wraps to a third line (`fm lib show i18n`).
+10. **It fits at 360 in the longest language you ship.** German runs about a third longer than English. Pass: with the longest locale (or a pseudo-locale that pads every string by 40%) at 360, no button truncates or wraps to a third line (`sampo lib show i18n`).
 
 ### The verb ledger
 
@@ -206,7 +206,7 @@ The phone is the first layout, not a squeezed desktop. 360 px wide is the width 
 1. **Targets.** Every control is at least 24×24 CSS px (WCAG 2.5.8; the probe fails anything smaller). The main path's controls and anything pressed often are at least 44×44 (the probe lists every target between 24 and 44 for you to judge). A link inside a sentence is exempt. The hit area may be larger than what's drawn (padding, or a `::after` that extends it); adjacent targets keep at least 8 px between their hit areas.
 2. **The thumb pass (hand test).** At 360×800, the primary action of each view sits in the lower half of the screen or directly after the last field in the flow; nothing on the main path needs a reach to a top corner. Destructive actions are not next to the primary one and not in the bottom corner where the thumb rests. Pass: mark each view's primary action's position on its 360 frame.
 3. **Nothing needs hover.** Anything shown on hover (row actions, tooltips that carry information, menus) is also reachable by a tap and by focus. Under `@media (hover: none)` row actions are visible or behind an overflow button.
-4. **Every gesture has a button.** Swipe to delete also has a menu item; drag to reorder also has Move up and Move down (WCAG 2.5.7, `fm lib show drag-and-drop`); a pinch-zoomed map also has + and − (WCAG 2.5.1).
+4. **Every gesture has a button.** Swipe to delete also has a menu item; drag to reorder also has Move up and Move down (WCAG 2.5.7, `sampo lib show drag-and-drop`); a pinch-zoomed map also has + and − (WCAG 2.5.1).
 5. **The on-screen keyboard hides nothing you need.** Focusing the last field leaves that field and the submit button visible above the keyboard. Full-height layouts use `dvh` or `svh`, not `vh`; a bottom bar that must ride above the keyboard needs `interactive-widget=resizes-content` in the viewport meta on Chromium and a `visualViewport` resize handler on Safari. Pass: on a real phone or a device emulator, focus the last field of every form.
 6. **Zoom stays on, inputs don't trigger it.** The viewport never sets `user-scalable=no` or a `maximum-scale` below 2, and form text is at least 16 px so iOS doesn't zoom on focus. Probe: both.
 7. **Safe areas.** Fixed bars at the bottom pad by `env(safe-area-inset-bottom)` when the viewport uses `viewport-fit=cover`; nothing pressable sits under the home indicator or a notch.
@@ -400,7 +400,7 @@ ok 1 view(s), 0 finding(s)
 ## Running it
 
 - **In a Claude Code session** (Sampo's plugin): start the app on the seeded fixture, run `node qa/interaction.mjs <base> <paths…>`, each `node qa/double-press.mjs <url> "<button>"`, and the copy grep with Bash. Then compare the printed Tab path with each view's 1440 frame from `visual-qa.md` (open the PNG with the Read tool), and use the 360 frames for the thumb pass. Arrows, Esc and the wrong-input pass are a few lines of Playwright run the same way (`page.keyboard.press("Escape")`, then read `document.activeElement`); write them as project tests when the screen stops changing.
-- **In `fm code`:** its model reads text, which is what the probes print. Put each probe in the request as a criterion's verify ("done when the sign-up form passes the interaction probe :: node qa/interaction.mjs http://localhost:5173 /signup"); `--verify` fits a fix the probe already fails on (a missing label, a trap), since `--verify` must fail before the change. Put the verb ledger in the request as text, so the plan writes those exact strings. The hand tests stay `pending` in the receipt for a Claude Code session or a person.
+- **In `sampo smith`:** its model reads text, which is what the probes print. Put each probe in the request as a criterion's verify ("done when the sign-up form passes the interaction probe :: node qa/interaction.mjs http://localhost:5173 /signup"); `--verify` fits a fix the probe already fails on (a missing label, a trap), since `--verify` must fail before the change. Put the verb ledger in the request as text, so the plan writes those exact strings. The hand tests stay `pending` in the receipt for a Claude Code session or a person.
 - **By hand:** the same commands in a terminal, the unplugged walk in a real browser, the thumb pass and the keyboard check on a real phone.
 
 The receipt is one line in the task's evidence, next to the visual-QA one:
@@ -409,7 +409,7 @@ The receipt is one line in the task's evidence, next to the visual-QA one:
 interaction <commit>: probe ok (<views>), double-press ok (<verbs>), copy grep <n> justified, hand: walk ✓ wrong-input ✓ thumb ✓ keyboard-cover ✓
 ```
 
-From `fm code`, the `hand:` part reads `hand: pending` until someone does them; a hand test that finds something becomes a fix task (`fm capture`).
+From `sampo smith`, the `hand:` part reads `hand: pending` until someone does them; a hand test that finds something becomes a fix task (`sampo capture`).
 
 ## Checks
 
@@ -428,7 +428,7 @@ From `fm code`, the `hand:` part reads `hand: pending` until someone does them; 
 
 ## Library cards
 
-The code side lives in the stack library: `fm lib show forms` (native controls, autofill tokens, server-side errors), `fm lib show input-validation` (the server half of every check above), `fm lib show react-hook-form`, `fm lib show focus-management` (where focus goes after open, close, delete and navigation), `fm lib show keyboard-navigation`, `fm lib show aria-patterns` (roving `tabindex`, menus, tabs, comboboxes), `fm lib show dialogs`, `fm lib show toasts`, `fm lib show optimistic-ui`, `fm lib show idempotency`, `fm lib show skeleton-loading`, `fm lib show drag-and-drop`, `fm lib show responsive-design` (viewport, breakpoints, pointer and hover queries), `fm lib show i18n` (string length, plurals), `fm lib show accessibility`, `fm lib show accessibility-testing` (axe in CI, which covers what this probe doesn't), `fm lib show playwright`, `fm lib show web-workers`. Add `--section verify` for each card's checks.
+The code side lives in the stack library: `sampo lib show forms` (native controls, autofill tokens, server-side errors), `sampo lib show input-validation` (the server half of every check above), `sampo lib show react-hook-form`, `sampo lib show focus-management` (where focus goes after open, close, delete and navigation), `sampo lib show keyboard-navigation`, `sampo lib show aria-patterns` (roving `tabindex`, menus, tabs, comboboxes), `sampo lib show dialogs`, `sampo lib show toasts`, `sampo lib show optimistic-ui`, `sampo lib show idempotency`, `sampo lib show skeleton-loading`, `sampo lib show drag-and-drop`, `sampo lib show responsive-design` (viewport, breakpoints, pointer and hover queries), `sampo lib show i18n` (string length, plurals), `sampo lib show accessibility`, `sampo lib show accessibility-testing` (axe in CI, which covers what this probe doesn't), `sampo lib show playwright`, `sampo lib show web-workers`. Add `--section verify` for each card's checks.
 
 Example: `references/ui/examples/interaction.html`: a sign-up form: same-frame press feedback, fix-it errors, a sensible keyboard walk with visible focus, 44 px targets at 360 px. The site's Gallery shows it.
 

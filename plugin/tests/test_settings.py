@@ -177,7 +177,7 @@ class Command(ForemanTestCase):
         self.assertIn("keys", p.stdout + p.stderr, "the groups it takes are named")
         self.assertIn("list: a group", " ".join(self.fm("settings", "--help", env=self.env).stdout.split()))
         body = read_text(os.path.join(PluginSurface.ROOT, "plugin", "commands", "settings.md"))
-        for cmd in ("fm settings list keys", "fm settings list layout", "fm code runners --check"):
+        for cmd in ("sampo settings list keys", "sampo settings list layout", "sampo smith runners --check"):
             self.assertIn(f"`{cmd}", body, cmd)
 
     def test_get_shows_each_surface(self):
@@ -493,7 +493,7 @@ class History(ForemanTestCase):
         self.term("settings", "undo")
         self.assertEqual(read_text(self.toml), "")
         body = read_text(os.path.join(PluginSurface.ROOT, "plugin", "commands", "settings.md"))
-        for cmd in ("fm settings diff", "fm settings export", "fm settings import 'CODE'", "fm settings undo"):
+        for cmd in ("sampo settings diff", "sampo settings export", "sampo settings import 'CODE'", "sampo settings undo"):
             self.assertIn(f"`{cmd}", body, cmd)
         self.assertIn("`^[A-Za-z0-9_-]+$`", body, "a pasted code runs only when it is one share-code word")
 
@@ -543,7 +543,7 @@ class PluginSurface(unittest.TestCase):
         head, _, body = text.partition("\n---\n")
         self.assertTrue(head.startswith("---\n") and "\ndescription: " in head, "frontmatter with a description")
         self.assertIn("disable-model-invocation: true", head, "the person's command: no share of the skill listing")
-        for cmd in ("fm settings list", "fm settings get", "fm settings set"):
+        for cmd in ("sampo settings list", "sampo settings get", "sampo settings set"):
             self.assertIn(f"`{cmd}", body, cmd)
         self.assertIn("$ARGUMENTS", body)
 

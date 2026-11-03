@@ -18,7 +18,7 @@ class Reproducer(ForemanTestCase):
         text = read_text(os.path.join(AGENTS, "fm-reproducer.md"))
         self.assertRegex(text, r"(?m)^name: fm-reproducer$")
         self.assertRegex(text, r"(?m)^tools: .*Write")
-        self.assertIn("fm task prove", text)
+        self.assertIn("sampo task prove", text)
         self.assertIn("performance", read_text(os.path.join(AGENTS, "fm-reviewer.md")).lower())
 
 

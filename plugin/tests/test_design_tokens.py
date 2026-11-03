@@ -425,17 +425,17 @@ class Extract(ForemanTestCase):
         meta = text.split("---")[1]
         self.assertIn("name: design-extract", meta)
         self.assertIn("disable-model-invocation: true", meta)  # the 2,000-character listing has no room for it
-        for verb in ("fm design extract", "fm design palette", "fm design contrast", "DESIGN.md"):
+        for verb in ("sampo design extract", "sampo design palette", "sampo design contrast", "DESIGN.md"):
             self.assertIn(verb, text)
         playbook = read_text(os.path.join(PLUGIN, "skills", "playbooks", "references", "ui", "type-and-colour.md"))
-        self.assertIn("fm design contrast", playbook)
-        self.assertIn("fm design palette", playbook)
+        self.assertIn("sampo design contrast", playbook)
+        self.assertIn("sampo design palette", playbook)
         self.assertNotIn("contrast_proof.py", playbook)
         self.assertIn("Python 3.11", playbook)  # the copied file's regexes are possessive
         directions = read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md"))
         direction_md = read_text(os.path.join(PLUGIN, "skills", "playbooks", "references", "ui", "design-direction.md"))
         for doc in (directions, direction_md):  # a Tokens-only DESIGN.md is a palette, not a direction
-            self.assertIn("fm design extract", doc)
+            self.assertIn("sampo design extract", doc)
             self.assertIn("`## Direction` section", doc)
         self.assertIn("## Tokens", direction_md)
         self.assertTrue(design.has_direction("# D\n\n## Direction\nPoster, audacity wild.\n"))

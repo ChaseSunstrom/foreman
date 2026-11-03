@@ -258,7 +258,7 @@ class Bisect(Case):
         self.write('border = "double"\n')
         self.assertIn("draws", self.fm("settings", "bisect").stdout)
         body = read_text(os.path.join(os.path.dirname(__file__), "..", "commands", "settings.md"))
-        self.assertIn("`fm settings bisect`", body)
+        self.assertIn("`sampo settings bisect`", body)
 
 
 class Monkey(Case):

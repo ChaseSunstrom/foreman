@@ -1,7 +1,7 @@
 # Installing Sampo (for an agent doing it on someone's behalf)
 
 If a person asked you to install Sampo, follow these steps in order. Ask before each change to their machine; don't
-assume yes.
+assume yes. The command it installs is `sampo`; `fm` still works as an alias for it.
 
 1. **Check the basics.** Sampo needs Linux, macOS or WSL (not native Windows), `git` and Python 3.12.7 or newer as
    `python3`; Claude Code (`claude`) is optional. Run `uname -s`, `git --version`, `python3 --version` and

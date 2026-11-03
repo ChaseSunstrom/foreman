@@ -9,9 +9,9 @@ related: [metrics-and-guardrails, experiment-design, self-improvement-loops, rec
 Write the eval cases and pass criteria first, run them as a baseline, then change the system until they pass without regressing the rest.
 
 ## Verify
-- `fm evals inbox`: candidate eval cases from past failures are waiting or consumed.
-- `fm evals add --help`: how a failure becomes a saved eval case.
-- `fm bench --help`: replays finished tasks against a candidate to compare before adopting.
+- `sampo evals inbox`: candidate eval cases from past failures are waiting or consumed.
+- `sampo evals add --help`: how a failure becomes a saved eval case.
+- `sampo bench --help`: replays finished tasks against a candidate to compare before adopting.
 - The eval command exits 0 on the final tree and failed on the baseline.
 
 ## Test first

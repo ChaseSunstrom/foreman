@@ -9,10 +9,10 @@ related: [red-team-review, premortem, approach-comparison, decision-records]
 Get a review from a context that did not write the plan, then verify its claims yourself before acting on them.
 
 ## Verify
-- `fm second plan ID`: a tool-less child on another model reviews the brief and returns objections and a verdict.
-- `fm second cheapest ID`: asks for the cheapest alternative that meets the criteria.
-- `fm second debate ID`: runs for-and-against voices for a contested choice.
-- `fm audit prep ID`: a brief for one read-only reviewer pass over the finished diff.
+- `sampo second plan ID`: a tool-less child on another model reviews the brief and returns objections and a verdict.
+- `sampo second cheapest ID`: asks for the cheapest alternative that meets the criteria.
+- `sampo second debate ID`: runs for-and-against voices for a contested choice.
+- `sampo audit prep ID`: a brief for one read-only reviewer pass over the finished diff.
 
 ## Test first
 Decide in advance how you will treat the answer.

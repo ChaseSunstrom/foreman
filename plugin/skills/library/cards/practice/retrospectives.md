@@ -9,8 +9,8 @@ related: [friction-logging, decision-records, self-improvement-loops, five-whys]
 After a task or phase, record what happened against the plan, the cause of each gap, and at least one concrete change that sticks.
 
 ## Verify
-- `fm decide --list`: decisions from the work are recorded.
-- `fm task finish --help`: shows `--lesson`, which records the lesson with the task.
+- `sampo decide --list`: decisions from the work are recorded.
+- `sampo task finish --help`: shows `--lesson`, which records the lesson with the task.
 - `git log --oneline -5`: the change the retro chose (a test, a check, a rule) is committed, not just promised.
 
 ## Test first

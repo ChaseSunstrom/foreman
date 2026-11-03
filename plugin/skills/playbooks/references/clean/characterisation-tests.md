@@ -5,9 +5,9 @@ Use when you must change code that has thin or no tests and nobody can say exact
 a port to another language or library, a performance rewrite, or a cleanup that should change nothing.
 The tests record what the code does today, right or wrong; they are a safety net, not a specification.
 
-Built on library cards: `fm lib show characterization-tests` (the technique), `fm lib show golden-files` and
-`fm lib show approval-tests` (storing large outputs), `fm lib show legacy-code` (seams for untestable code),
-`fm lib show refactoring` (small behaviour-preserving steps).
+Built on library cards: `sampo lib show characterization-tests` (the technique), `sampo lib show golden-files` and
+`sampo lib show approval-tests` (storing large outputs), `sampo lib show legacy-code` (seams for untestable code),
+`sampo lib show refactoring` (small behaviour-preserving steps).
 
 ## The procedure
 

@@ -9,9 +9,9 @@ related: [metrics-and-guardrails, spikes, eval-driven-development, scientific-de
 Test a change with a stated hypothesis, a baseline, one varied factor and a pre-set success threshold, so the result can say no.
 
 ## Verify
-- `fm bench --help`: replay and compare tooling for before/after runs of finished tasks.
+- `sampo bench --help`: replay and compare tooling for before/after runs of finished tasks.
 - `git stash list; git log --oneline -3`: the baseline commit is identifiable and the variant is a separate commit or branch.
-- `fm research list`: hypothesis, method, numbers and conclusion are saved together.
+- `sampo research list`: hypothesis, method, numbers and conclusion are saved together.
 
 ## Test first
 Write the hypothesis and threshold before running the variant.
@@ -29,7 +29,7 @@ Decision: >= 20% and guardrails hold -> adopt; else revert.
 - Change one thing; if two things must change, say so and accept that the result is joint.
 - Fix input and seed; record the command so anyone can rerun it.
 - Repeat runs to see noise; if the noise is larger than the effect, the result is inconclusive, and you say so.
-- Decide by the pre-set rule; log the outcome with `fm decide` including the numbers.
+- Decide by the pre-set rule; log the outcome with `sampo decide` including the numbers.
 - Run guardrail metrics alongside the target metric.
 
 ## Avoid

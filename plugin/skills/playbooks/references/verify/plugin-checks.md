@@ -3,7 +3,7 @@
 
 Use when you changed a plugin manifest, skills, commands or agents and must show it still loads and behaves.
 
-Built on the cards `fm lib show cc-plugin-testing`, `fm lib show cc-plugin-manifest`, `fm lib show cc-mod-testing` and `fm lib show cc-plugin-evals`.
+Built on the cards `sampo lib show cc-plugin-testing`, `sampo lib show cc-plugin-manifest`, `sampo lib show cc-mod-testing` and `sampo lib show cc-plugin-evals`.
 
 1. **Structure layer:** the manifest and catalog are valid.
    ```bash

@@ -2,9 +2,9 @@
 # Go build errors
 
 Use when `go build`, `go vet` or `go test` fails to compile. The goal is a green build with the smallest diff that
-fixes the cause: no refactors, no silenced checks. Built on the library cards `fm lib show go` (the baseline),
-`fm lib show go-modules` (go.mod, go.sum, toolchains), `fm lib show go-errors` (multi-value returns, wrapping) and
-`fm lib show go-testing` (when the failure is in a `_test.go` file).
+fixes the cause: no refactors, no silenced checks. Built on the library cards `sampo lib show go` (the baseline),
+`sampo lib show go-modules` (go.mod, go.sum, toolchains), `sampo lib show go-errors` (multi-value returns, wrapping) and
+`sampo lib show go-testing` (when the failure is in a `_test.go` file).
 
 ## Diagnostic commands
 

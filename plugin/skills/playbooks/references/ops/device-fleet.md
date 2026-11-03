@@ -3,7 +3,7 @@
 
 Use when a headless Pi, a Home Assistant install, a ROS 2 robot or an MQTT sensor network goes quiet, reboots, or loses devices.
 
-Built on the cards `fm lib show raspberry-pi`, `fm lib show home-assistant`, `fm lib show mqtt` and `fm lib show ros2`.
+Built on the cards `sampo lib show raspberry-pi`, `sampo lib show home-assistant`, `sampo lib show mqtt` and `sampo lib show ros2`.
 
 1. **Power and thermals first:** `vcgencmd get_throttled` must print `0x0`; undervoltage looks like random crashes and SD-card corruption.
 2. **Is the service up?** `systemctl status <unit>` and `journalctl -u <unit> -b --no-pager | tail -50`. A restart loop names its reason there.

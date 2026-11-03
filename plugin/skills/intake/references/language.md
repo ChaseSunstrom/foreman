@@ -37,4 +37,4 @@ Canonical order: BASELINE → RESEARCH → CLEAN → PERFORMANCE → SECURITY �
 - FIX after structure settles; each fix gets a regression test that fails before and passes after.
 - FEATURE last, on a clean, measured, secure, correct base.
 - RESEARCH (Sampo): right after BASELINE, because findings shape the rest.
-- Dependencies override order (topological sort; `fm queue` reports cycles and dangling deps). Re-plan between phases (`references/execute.md`).
+- Dependencies override order (topological sort; `sampo queue` reports cycles and dangling deps). Re-plan between phases (`references/execute.md`).

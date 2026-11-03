@@ -336,7 +336,7 @@ def gist(text, question, width):
 
 
 _PLAIN = re.compile(r'"([^"`·→]+)" → ([^·\n]+)')  # the rules' "plain words" → what they run, up to the next ·
-_VERB = re.compile(r'`fm ([\w-]+)(?: ([\w-]+))?')  # each `fm verb …` in it ("serve this repo": fm ask, then fm serve)
+_VERB = re.compile(r'`(?:fm|sampo) ([\w-]+)(?: ([\w-]+))?')  # each `fm verb …` in it ("serve this repo": fm ask, then fm serve)
 
 
 def verb_docs():

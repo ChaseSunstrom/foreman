@@ -9,9 +9,9 @@ related: [self-improvement-loops, retrospectives, recursive-improvement, decisio
 Note each moment of drag as it happens (blocked command, repeated step, confusing output), with the exact trigger, so improvements target real pain.
 
 ## Verify
-- `fm friction --brief`: shows the friction evidence collected so far and what a pass should look at.
-- `fm repeats`: lists repeated manual work worth automating.
-- `fm capture --help`: friction that needs work becomes a captured task, not a note.
+- `sampo friction --brief`: shows the friction evidence collected so far and what a pass should look at.
+- `sampo repeats`: lists repeated manual work worth automating.
+- `sampo capture --help`: friction that needs work becomes a captured task, not a note.
 
 ## Test first
 Each entry must be specific enough that a fix can be tested.
@@ -35,7 +35,7 @@ Pass = entry has trigger, cost, and a repro command; no entry says only "slow" o
 
 ## Avoid
 - Vague entries ("tooling is clunky"): add the trigger and a repro or drop it.
-- Logging without acting: after a pass, at least the top item becomes a task or is rejected with a reason (`fm friction --reject`).
+- Logging without acting: after a pass, at least the top item becomes a task or is rejected with a reason (`sampo friction --reject`).
 - Treating a one-off as a pattern: wait for two occurrences, or note it as a single.
 - Fixing friction by weakening a safety guard: fix the false positive with a fixture, never by lowering the guard.
 - Dumping raw transcripts: summarise to the line that matters.

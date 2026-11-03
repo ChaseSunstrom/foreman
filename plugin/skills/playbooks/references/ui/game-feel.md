@@ -57,7 +57,7 @@ How to do each one well; the numbers are the Caps table's.
 
 **Squash and stretch.** Scale along the velocity: stretch on the way up, squash on landing, keeping the area so it reads as soft rather than as resizing. It is a render transform on the sprite, applied from the body's state; the physics shape keeps its size, or a squash lets things clip through floors. On UI, a press squash uses `--pop` at `--dur-tap` and releases with `--ease-enter`.
 
-**Hit-stop.** Freeze both parties of an impact for a few frames so the hit reads. Freeze the *simulation*, not the renderer: skip fixed steps in the accumulator (`fm lib show game-loop`) while the freeze lasts, keep drawing, keep reading input into a buffer and apply it on the first step after. Scale the length with the hit (light 40–60 ms, heavy up to the cap) and budget it, or a combo turns into a slideshow. Measure it in simulation ticks so a replay freezes on the same ticks.
+**Hit-stop.** Freeze both parties of an impact for a few frames so the hit reads. Freeze the *simulation*, not the renderer: skip fixed steps in the accumulator (`sampo lib show game-loop`) while the freeze lasts, keep drawing, keep reading input into a buffer and apply it on the first step after. Scale the length with the hit (light 40–60 ms, heavy up to the cap) and budget it, or a combo turns into a slideshow. Measure it in simulation ticks so a replay freezes on the same ticks.
 
 **Screen shake (trauma).** Each hit adds *trauma* (0..1); trauma decays at a fixed rate; the shake drawn is trauma² × the cap × the person's shake setting, so small hits stay subtle and stacked hits grow. Offsets come from smooth noise at ~20 Hz, not a fresh random number per frame (which reads as jitter, and varies with frame rate). Apply the offset to the view only: the camera's world position, the HUD, aim and hit detection don't move. The code below enforces every shake cap.
 
@@ -83,7 +83,7 @@ The rule from `motion.md` carries over: **keep the meaning, drop the travel.** E
 
 ## The capped primitives
 
-Engine-free and pure functions of state and time, so they test without a window (`fm lib show game-loop`). Port them line for line; the asserts become the test.
+Engine-free and pure functions of state and time, so they test without a window (`sampo lib show game-loop`). Port them line for line; the asserts become the test.
 
 ```python
 # juice.py: capped game-feel primitives. Render-only, except hit-stop (pass simulation time).
@@ -201,12 +201,12 @@ Pass the settings in once: `Shake(seed, scale=0 if reduced else shake_setting)`.
 
 ## Engine notes
 
-- **Phaser** (`fm lib show phaser`): `this.cameras.main.shake(duration, intensity)` takes intensity as a fraction of the camera size and defaults to 0.05, which is over the cap: pass ≤ 0.02 and ≤ 500 ms, or drive the offset from `Shake`. `this.cameras.main.flash(...)` goes through `FlashGate`. Hit-stop: `this.physics.pause()`, then `this.time.delayedCall(ms, () => this.physics.resume())`; the scene clock keeps running while physics is paused.
-- **Pygame** (`fm lib show pygame`): draw the world to its own surface, blit it at `(dx, dy)`, then draw the HUD on top unshaken. Hit-stop skips steps in the fixed-step accumulator.
-- **Godot** (`fm lib show godot`): set `Camera2D.offset` in `_process` (render), never in `_physics_process`; a HUD in a `CanvasLayer` doesn't move with the camera. For hit-stop through `Engine.time_scale = 0`, restore it with `get_tree().create_timer(sec, true, false, true)` (the last argument ignores time scale), or the timer never fires.
-- **LÖVE** (`fm lib show love2d`): `love.graphics.push()`, `translate(dx, dy)`, draw the world, `pop()`, then the HUD.
-- **Unity** (`fm lib show unity`): hit-stop via `Time.timeScale = 0` must restore in a coroutine waiting on `WaitForSecondsRealtime`; plain `WaitForSeconds` never returns while time is stopped. Cinemachine Impulse amplitudes are clamped to the shake cap.
-- **DOM and canvas UI** (`fm lib show animation`): squash and element shake use `motion.md`'s tokens through WAAPI or CSS; a canvas confetti loop is a `prefers-reduced-motion` exception with a comment saying why, per `motion.md`.
+- **Phaser** (`sampo lib show phaser`): `this.cameras.main.shake(duration, intensity)` takes intensity as a fraction of the camera size and defaults to 0.05, which is over the cap: pass ≤ 0.02 and ≤ 500 ms, or drive the offset from `Shake`. `this.cameras.main.flash(...)` goes through `FlashGate`. Hit-stop: `this.physics.pause()`, then `this.time.delayedCall(ms, () => this.physics.resume())`; the scene clock keeps running while physics is paused.
+- **Pygame** (`sampo lib show pygame`): draw the world to its own surface, blit it at `(dx, dy)`, then draw the HUD on top unshaken. Hit-stop skips steps in the fixed-step accumulator.
+- **Godot** (`sampo lib show godot`): set `Camera2D.offset` in `_process` (render), never in `_physics_process`; a HUD in a `CanvasLayer` doesn't move with the camera. For hit-stop through `Engine.time_scale = 0`, restore it with `get_tree().create_timer(sec, true, false, true)` (the last argument ignores time scale), or the timer never fires.
+- **LÖVE** (`sampo lib show love2d`): `love.graphics.push()`, `translate(dx, dy)`, draw the world, `pop()`, then the HUD.
+- **Unity** (`sampo lib show unity`): hit-stop via `Time.timeScale = 0` must restore in a coroutine waiting on `WaitForSecondsRealtime`; plain `WaitForSeconds` never returns while time is stopped. Cinemachine Impulse amplitudes are clamped to the shake cap.
+- **DOM and canvas UI** (`sampo lib show animation`): squash and element shake use `motion.md`'s tokens through WAAPI or CSS; a canvas confetti loop is a `prefers-reduced-motion` exception with a comment saying why, per `motion.md`.
 
 ## Check it
 
@@ -220,7 +220,7 @@ Pass the settings in once: `Shake(seed, scale=0 if reduced else shake_setting)`.
 
 ## Library cards
 
-`fm lib show game-loop` (fixed step, hit-stop's home), `fm lib show game-physics` (render interpolation, why collision shapes don't squash), `fm lib show phaser`, `fm lib show pygame`, `fm lib show godot`, `fm lib show godot-gdscript`, `fm lib show love2d`, `fm lib show unity`, `fm lib show monogame`, `fm lib show animation` (WAAPI and CSS for playful UI), `fm lib show accessibility`. Add `--section verify` for each card's checks.
+`sampo lib show game-loop` (fixed step, hit-stop's home), `sampo lib show game-physics` (render interpolation, why collision shapes don't squash), `sampo lib show phaser`, `sampo lib show pygame`, `sampo lib show godot`, `sampo lib show godot-gdscript`, `sampo lib show love2d`, `sampo lib show unity`, `sampo lib show monogame`, `sampo lib show animation` (WAAPI and CSS for playful UI), `sampo lib show accessibility`. Add `--section verify` for each card's checks.
 
 Example: `references/ui/examples/game-feel.html`: a small toy whose events follow a juice table, under the hard caps, with its reduced-motion fallback and sound off by default. The site's Gallery shows it.
 

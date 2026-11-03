@@ -32,7 +32,7 @@ The six are a choice only if they differ. Check the whole set before showing it.
 
 | Rule | Holds when |
 |---|---|
-| Sources | at least four come from the bank or the looks (`fm lib list --area looks`); at most two are `own` |
+| Sources | at least four come from the bank or the looks (`sampo lib list --area looks`); at most two are `own` |
 | Ground | at least one dark ground and at least one mid or tinted ground: not six shades of white |
 | Type | at least three type classes across the six (serif, grotesk, humanist, geometric, mono, condensed, rounded display) |
 | Density | at least one sparse and one dense |
@@ -78,7 +78,7 @@ direction, `direction-<N>-<slug>.html`, in a temporary folder outside the repo (
 - **Motion.** The card's motion, plus a `@media (prefers-reduced-motion: reduce)` path that keeps only opacity or
   nothing.
 - **Signature move above the fold** at 1440×900 and at 360 px wide.
-- **Check.** `fm design lint <folder>` reports nothing, or each finding is fixed or answered in the card; give the
+- **Check.** `sampo design lint <folder>` reports nothing, or each finding is fixed or answered in the card; give the
   user the file paths. With a browser at hand, `visual-qa.md`'s frame matrix gives one shot per page.
 
 ## Example

@@ -3,7 +3,7 @@
 
 Use when a dbt model, SQL transform, parquet export or dataframe step changed and you must show the data is still right, not just that the job exits 0.
 
-Built on the cards `fm lib show dbt`, `fm lib show pandera`, `fm lib show parquet-arrow`, `fm lib show duckdb` and `fm lib show etl-pipelines`.
+Built on the cards `sampo lib show dbt`, `sampo lib show pandera`, `sampo lib show parquet-arrow`, `sampo lib show duckdb` and `sampo lib show etl-pipelines`.
 
 1. **Contract first:** keys unique, not null, foreign keys present. `dbt test --select model_name`, or a `pandera` schema on the dataframe at the boundary.
 2. **Parse and build only what changed:** `dbt parse`, then `dbt build --select state:modified+ --state path/to/prod-artifacts --target dev` (never the prod target).

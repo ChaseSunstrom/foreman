@@ -3,7 +3,7 @@
 
 Use when you tag a plugin version or change its marketplace catalog entry.
 
-Built on the cards `fm lib show cc-plugin-release`, `fm lib show cc-marketplaces`, `fm lib show cc-plugin-manifest` and `fm lib show cc-plugin-testing`.
+Built on the cards `sampo lib show cc-plugin-release`, `sampo lib show cc-marketplaces`, `sampo lib show cc-plugin-manifest` and `sampo lib show cc-plugin-testing`.
 
 1. **One version everywhere.** List every version string you ship and make them equal:
    ```bash

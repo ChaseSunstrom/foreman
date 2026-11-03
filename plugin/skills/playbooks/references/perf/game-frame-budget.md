@@ -3,7 +3,7 @@
 
 Use when a game runs below 60 fps or hitches as the entity count grows.
 
-Built on the cards `fm lib show game-loop`, `fm lib show shader-performance`, `fm lib show opengl`, `fm lib show vulkan`, `fm lib show unity` and `fm lib show godot`.
+Built on the cards `sampo lib show game-loop`, `sampo lib show shader-performance`, `sampo lib show opengl`, `sampo lib show vulkan`, `sampo lib show unity` and `sampo lib show godot`.
 
 1. **Set the budget:** 16.6 ms for 60 fps, 8.3 ms for 120. Measure frame time in milliseconds, never fps.
 2. **Find the bound:** CPU (simulation, draw-call submission) or GPU (fill rate, shaders, overdraw). Shrinking the resolution and seeing frame time fall means GPU-bound; it staying flat means CPU-bound.
