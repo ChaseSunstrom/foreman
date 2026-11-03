@@ -54,6 +54,16 @@ class Atlas(Base):
         self.assertRegex(self.fm("focus", tid).stdout, r"Caution: lib/a\.py: 2 of 3 tasks that touched it needed")
 
 
+    def test_weak_areas_list_needs_two_bad_tasks_like_caution(self):  # T-2764: one bad task is an anecdote
+        sets = [["lib/a.py", "lib/b.py"], ["lib/a.py"], ["lib/a.py", "lib/b.py"], ["lib/b.py"]]
+        ids = [self.done(f"Task {i}", files=f) for i, f in enumerate(sets)]
+        self.fix_of(ids[0])
+        self.fix_of(ids[1])
+        out = self.fm("outcomes", "--atlas").stdout
+        self.assertRegex(out, r"lib/a\.py: 2 of 3")
+        self.assertNotIn("lib/b.py", out)
+
+
 class Honest(Base):
     def test_finish_flags_criteria_edited_after_focus_and_smooth_runs(self):
         with open(os.path.join(self.repo, "p.txt"), "w") as f:

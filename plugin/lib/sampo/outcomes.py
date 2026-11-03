@@ -1065,7 +1065,7 @@ def atlas_lines(p, outs=None, n=8):
     a = atlas(p, outs)
     out = []
     for title, rows in (("Files", a["files"]), ("Languages", a["languages"])):
-        rows = [r for r in rows if r[2] or r[3]][:n]
+        rows = [r for r in rows if max(r[2], r[3]) >= 2][:n]  # T-2764: caution()'s bar, two distinct tasks
         out += [f"{title} where work didn't hold (of {ATLAS_MIN}+ tasks):"] + [
             f"- {k}: {bad} of {total} needed a later fix or revert" + (f", {weak} closed weak" if weak else "")
             for k, total, bad, weak in rows] if rows else []
