@@ -1,53 +1,65 @@
-<p align="center"><img src="site/assets/foreman.svg" width="96" height="96" alt="Foreman logo: a hard hat with a check mark"></p>
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="design/sampo/logo/readme-header-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="design/sampo/logo/readme-header-light.svg">
+  <img src="design/sampo/logo/readme-header-dark.svg" width="720" alt="Sampo: the Runestone, a rune-carved millstone with a hot eye, beside the Sampo wordmark">
+</picture></p>
 
-<h1 align="center">Foreman</h1>
+<h1 align="center">Sampo</h1>
+
+<p align="center"><i>formerly Foreman</i></p>
 
 <p align="center"><b>The discipline layer for coding agents.</b><br>
-Claude Code, Codex, Gemini CLI, opencode, or its own <code>fm code</code> on any model.<br>
+Claude Code, Codex, Gemini CLI, opencode, or its own <code>sampo smith</code> on any model.<br>
 It plans before it edits, proves its work with commands it really ran, keeps to one task at a time<br>
-and works through the queue, while a guard stops the commands you'd never want run in bypass mode.</p>
+and works through the queue, while a Ward stops the commands you'd never want run in bypass mode.</p>
 
 <p align="center"><a href="https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml"><img src="https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml/badge.svg" alt="tests"></a></p>
 
 <p align="center">
   <a href="#quick-start"><b>Install</b></a> ·
   <a href="#how-it-works"><b>How it works</b></a> ·
-  <a href="#the-guard"><b>The guard</b></a> ·
+  <a href="#the-Ward"><b>The Ward</b></a> ·
   <a href="#features"><b>Features</b></a> ·
-  <a href="#foreman-code-any-model-foremans-loop"><b>Any model</b></a> ·
+  <a href="#smith-any-model-sampos-loop"><b>Any model</b></a> ·
   <a href="MASTER.md"><b>Docs</b></a> ·
   <a href="https://chasesunstrom.github.io/foreman/"><b>Site</b></a>
 </p>
 
 <p align="center">
-  <img src="demo/live.svg" width="960" alt="Claude Code 2.1.301 with the foreman-ui mod, working a real Foreman fix in a copy of this repo: the chat reads as a tree, each call a compact branch under the prompt with its diff or result; a scout subagent finds the parser; Claude writes the test and the fix, fm task prove shows the test fails without the change, and the task closes; the live tree above the prompt shows the session and its subagent with their latest calls and time bars, and the Foreman pane beside it shows the work bar, the stage rail and steps, the Activity lanes, the Agents graph, History and the Today charts">
+  <img src="demo/live.svg" width="960" alt="Claude Code 2.1.301 with the sampo-ui mod, working a real Sampo fix in a copy of this repo: the chat reads as a tree, each call a compact branch under the prompt with its diff or result; a scout subagent finds the parser; Claude writes the test and the fix, sampo task prove shows the test fails without the change, and the task closes; the live tree above the prompt shows the session and its subagent with their latest calls and time bars, and the Sampo pane beside it shows the work bar, the stage rail and steps, the Activity lanes, the Agents graph, History and the Today charts">
 </p>
-<p align="center"><sub>A real session in a copy of this repo: one typed request, then about two minutes of Claude working through Foreman (sped up while the model thinks). Its fix is in Foreman now (T-1213). <a href="demo/live.mp4">MP4</a></sub></p>
+<p align="center"><sub>A real session in a copy of this repo: one typed request, then about two minutes of Claude working through Sampo (sped up while the model thinks). Its fix is in Sampo now (T-1213). <a href="demo/live.mp4">MP4</a></sub></p>
 
 ## Why
 
 Coding agents are fast. Left alone, they also edit before they understand, say "tests pass" without running them, chase new ideas mid-task, lose their place after a compaction, and in bypass mode will run the one command you'd never type.
 
-Foreman is the foreman on that job site, whichever agent works it: Claude Code, Codex, Gemini CLI, opencode, or `fm code` on a model of your choice.
+Sampo is the mill that produces by itself, on every job site, whichever agent works it: Claude Code, Codex, Gemini CLI, opencode, or `sampo smith` on a model of your choice.
 
-| Foreman | So that |
+| Sampo | So that |
 |---|---|
 | **Plans first** | Every request becomes a brief before any edit: type, size, what "done" means and the command that proves it. No task, no edit. |
-| **Proves it** | Evidence is a command fm ran and recorded, never a sentence. A fix needs a test that failed first. Nothing closes without its audits. |
-| **Guards bypass mode** | A fail-closed guard stops wide deletes, force-pushes, credential reads and `curl \| sh`, and saves uncommitted work before git throws it away. |
+| **Proves it** | Evidence is a command sampo ran and recorded, never a sentence. A fix needs a test that failed first. Nothing closes without its audits. |
+| **Guards bypass mode** | A fail-closed Ward stops wide deletes, force-pushes, credential reads and `curl \| sh`, and saves uncommitted work before git throws it away. |
 | **Stays on task** | One active task. New ideas go to the inbox instead of being chased; `NOW:` switches on purpose. |
 | **Never loses its place** | State lives on disk, so after `/compact` or in a new session Claude resumes at the exact step. A revert reopens the step it undid. |
-| **Keeps going** | Drive mode works the whole queue, then finds its own next work. `fm run` and `fm serve` keep it going headless. |
-| **Learns** | Your corrections and Foreman's own friction become lessons, tripwires and fixes. |
+| **Keeps going** | Drive mode works the whole queue, then finds its own next work. `sampo run` and `sampo serve` keep it going headless. |
+| **Learns** | Your corrections and Sampo's own friction become lessons, tripwires and fixes. |
+
+<details><summary>The names</summary>
+
+**The names.** They come from the Kalevala. Ilmarinen the smith forged the Sampo, the mill that makes by itself: that is **Smith**, the task loop that plans, builds and proves. Väinämöinen sang runes that made things: **Rune**, the tower that writes itself toward a goal. Louhi set impossible tasks: **Louhi**, the exam. The stolen sun and moon were forged anew: **Moons**, the ideas worth forging. Lost words were fetched back from the underworld: **Underworld**, the not-yet ledger. And the **Ward** guards.
+
+</details>
 
 ## How it works
 
-<p align="center"><img src="site/assets/diagrams/loop.svg" width="880" alt="The Foreman loop: capture, expand, ground, plan (understand), execute (build), verify (prove), reflect and record (learn), then the next queued task starts by itself"></p>
+<p align="center"><img src="site/assets/diagrams/loop.svg" width="880" alt="The Sampo loop: capture, expand, ground, plan (understand), execute (build), verify (prove), reflect and record (learn), then the next queued task starts by itself"></p>
 
 Every request, however terse, goes round the same loop:
 
 - **Understand.** Intake turns your words into a **brief**: its type, its size (S, M or L), what done means with the command that proves it, and the steps.
-- **Build.** Edits wait for the brief, and every command passes the guard.
+- **Build.** Edits wait for the brief, and every command passes the Ward.
 - **Prove.** A task closes only with fresh evidence and its audits.
 - **Learn.** Lessons and decisions are recorded, then the next queued task starts by itself.
 
@@ -67,32 +79,32 @@ Or from inside Claude Code:
 | Then | How |
 |---|---|
 | **Ask for something** | `fix the login timeout on slow wifi`, in plain words. That's the whole interface. |
-| **Watch it first** | `fm demo` runs the real `fm` and guard hook on a seeded bug in a throwaway repo: no model calls, nothing left behind. |
-| **See where things stand** | Bare `fm` in a project says what's next; `fm help` answers "can it…?" in plain words; `fm which NEED` searches past fixes, your tools, MCP servers, binaries, skills and plugins at once, and says which hits need a grant. |
+| **Watch it first** | `sampo demo` runs the real `sampo` and Ward hook on a seeded bug in a throwaway repo: no model calls, nothing left behind. |
+| **See where things stand** | Bare `sampo` in a project says what's next; `sampo help` answers "can it…?" in plain words; `sampo which NEED` searches past fixes, your tools, MCP servers, binaries, skills and plugins at once, and says which hits need a grant. |
 
-Starting a page, a 3D scene or an `fm code` panel? Start from a template that already passes the check that keeps it strict:
+Starting a page, a 3D scene or an `sampo smith` panel? Start from a template that already passes the check that keeps it strict:
 
 ```bash runnable
-fm help can foreman scaffold an mcp server   # the commands whose help answers it, or a plain no
-fm new list                                  # the templates: web, scene, panel
-fm new web site                              # site/index.html: tokens, light and dark, no outside hosts
-fm design lint site                          # still clean: no generic-design tells
+sampo help can sampo scaffold an mcp server   # the commands whose help answers it, or a plain no
+sampo new list                                  # the templates: web, scene, panel
+sampo new web site                              # site/index.html: tokens, light and dark, no outside hosts
+sampo design lint site                          # still clean: no generic-design tells
 ```
 
-Nothing found for a missing tool or skill? Build it: `fm new tool NAME` writes `tools/NAME.py` and a `tests/test_NAME.py` that fails until it works; `fm new skill NAME` writes a project skill in the listing's format.
+Nothing found for a missing tool or skill? Build it: `sampo new tool NAME` writes `tools/NAME.py` and a `tests/test_NAME.py` that fails until it works; `sampo new skill NAME` writes a project skill in the listing's format.
 
 <p align="center">
-  <img src="demo/demo.svg" width="860" alt="fm demo: Foreman refuses an edit made before any task exists and an rm -rf ~, records a failing test, the fix and a passing test, refuses to close the task until the audit is given, then closes and commits it">
+  <img src="demo/demo.svg" width="860" alt="sampo demo: Sampo refuses an edit made before any task exists and an rm -rf ~, records a failing test, the fix and a passing test, refuses to close the task until the audit is given, then closes and commits it">
 </p>
 
 <details>
 <summary><b>More ways to install, requirements and flags</b></summary>
 
-The first session puts `fm` on your PATH (`~/.local/bin/fm`, made when nothing is there and repaired after an update; anyone else's `fm` stays). `fm doctor` fails with the line to add to your shell profile when a new terminal still can't find it. `eval "$(fm complete --shell bash)"` in your `~/.bashrc` (or `--shell zsh`) gives tab completion for commands, options and live task ids. `fm demo --pace 1` plays the demo at the speed above.
+The first session puts `sampo` on your PATH (`~/.local/bin/fm`, made when nothing is there and repaired after an update; anyone else's `sampo` stays). `sampo doctor` fails with the line to add to your shell profile when a new terminal still can't find it. `eval "$(sampo complete --shell bash)"` in your `~/.bashrc` (or `--shell zsh`) gives tab completion for commands, options and live task ids. `sampo demo --pace 1` plays the demo at the speed above.
 
-The plugin-system install changes nothing outside the plugin: the hooks and the guard run, and the first session reads Foreman's rules from the plugin. Say "finish setting up Foreman" later to add the rest (status line, deny rules, the bypass question, `fm` in your shell). `fm uninstall-user` undoes it.
+The plugin-system install changes nothing outside the plugin: the hooks and the Ward run, and the first session reads Sampo's rules from the plugin. Say "finish setting up Sampo" later to add the rest (status line, deny rules, the bypass question, `sampo` in your shell). `sampo uninstall-user` undoes it.
 
-**Having Claude install it for you?** Tell it: "install Foreman following https://github.com/ChaseSunstrom/foreman/blob/main/INSTALL.md". [INSTALL.md](INSTALL.md) has it explain the defaults and ask before each change.
+**Having Claude install it for you?** Tell it: "install Sampo following https://github.com/ChaseSunstrom/foreman/blob/main/INSTALL.md". [INSTALL.md](INSTALL.md) has it explain the defaults and ask before each change.
 
 **Private repo** (uses your `gh` login):
 
@@ -100,32 +112,32 @@ The plugin-system install changes nothing outside the plugin: the hooks and the 
 gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 ```
 
-**Requirements:** Linux, macOS or WSL (not native Windows), `git`, and Python 3.12.7 or newer as `python3`. Claude Code (`claude`, tested on 2.1.304; the pane needs 2.1.299 or later) is optional: without it the installer skips the Claude Code plugin and settings, puts `fm` on your PATH and wires Codex, Gemini CLI or opencode if it finds them (or points you at `fm code`). When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
+**Requirements:** Linux, macOS or WSL (not native Windows), `git`, and Python 3.12.7 or newer as `python3`. Claude Code (`claude`, tested on 2.1.304; the pane needs 2.1.299 or later) is optional: without it the installer skips the Claude Code plugin and settings, puts `sampo` on your PATH and wires Codex, Gemini CLI or opencode if it finds them (or points you at `sampo smith`). When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
 
 **Flags:**
 
 - `--security`: Trail of Bits security skills.
 - `--docs`: Office and PDF skills.
-- `--apply-conflicts`: disable plugins that compete with Foreman instead of only reporting them.
+- `--apply-conflicts`: disable plugins that compete with Sampo instead of only reporting them.
 - `--no-plugins`: skip the curated plugin setup.
 - `--bypass` / `--no-bypass`: make bypass mode your default, or keep your current permission mode, without being asked.
-- `--no-mod`: skip the foreman-ui mod.
+- `--no-mod`: skip the sampo-ui mod.
 - `--no-wiring`: don't touch `~/.claude`.
 - `--build`: open Claude Code on `/foreman:build` to rebuild from `BUILD_PROMPT.md`.
-- `--desktop`: also install Foreman Desktop from its newest release (the AppImage and a menu entry on Linux x86_64, the app in `~/Applications` on macOS).
+- `--desktop`: also install Sampo Desktop from its newest release (the AppImage and a menu entry on Linux x86_64, the app in `~/Applications` on macOS).
 
 **What `install.sh` does:**
 
 1. Clones this repo to `~/.claude/foreman`, or fast-forwards it if it's clean and on `main`.
 2. Runs `setup-plugins.sh`. It installs the curated plugins that are missing, and installs language-server plugins only when the server is on your PATH. It reports conflicting or heavy plugins but never uninstalls anything.
 3. Registers this repo as a local plugin marketplace and installs `foreman@foreman`. The plugin loads in place, so edits under `plugin/` apply on `/reload-plugins`.
-4. Asks whether to make `bypassPermissions` your default permission mode. That is Foreman's recommended mode, because its guard is built for it. On a yes (or `--bypass`) it sets it, backing up `settings.json` and recording the original. With no terminal to ask on and no `--bypass`, your permission mode stays as it was.
-5. Wires Foreman into `~/.claude` with `fm install-user` unless you pass `--no-wiring`. That adds:
-   - a statusLine wrapper (your original line and claude-hud still render above the Foreman line);
+4. Asks whether to make `bypassPermissions` your default permission mode. That is Sampo's recommended mode, because its Ward is built for it. On a yes (or `--bypass`) it sets it, backing up `settings.json` and recording the original. With no terminal to ask on and no `--bypass`, your permission mode stays as it was.
+5. Wires Sampo into `~/.claude` with `sampo install-user` unless you pass `--no-wiring`. That adds:
+   - a statusLine wrapper (your original line and claude-hud still render above the Sampo line);
    - deny rules for catastrophic commands;
    - a raised Stop-hook continuation cap for drive mode;
-   - a marked block in `~/.claude/CLAUDE.md` and the `~/.claude/rules/foreman.md` symlink;
-   - a `~/.local/bin/fm` link so `fm` works in any shell (unless a different `fm` is already there).
+   - a marked block in `~/.claude/CLAUDE.md` and the `~/.claude/rules/sampo.md` symlink;
+   - a `~/.local/bin/fm` link so `sampo` works in any shell (unless a different `sampo` is already there).
 
    Every change is recorded in `state/install-manifest.json`, so it can be undone exactly.
 
@@ -149,7 +161,7 @@ DONE-WHEN: all tests pass and the CSV opens in Excel
 | `NOW:` · `PAUSE` · `STATUS` | switch tasks on purpose · checkpoint · where things stand |
 | "super improve it" | a brainstorm first: each idea checked against the real code, the best ones queued |
 | `FULL AUTO` | the whole queue without questions; decisions recorded, one summary at the end (`STANDARD AUTONOMY` switches back) |
-| "is foreman ok?" · "clean up" · "this repo is sensitive" | Claude runs `fm doctor`, `fm tidy` or `fm sensitive on`. You never have to type a command. |
+| "is sampo ok?" · "clean up" · "this repo is sensitive" | Claude runs `sampo doctor`, `sampo tidy` or `sampo sensitive on`. You never have to type a command. |
 
 Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, after a baseline check.
 
@@ -158,18 +170,18 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 
 - **Open-ended requests** ("super improve it", "just get it done") get a brainstorm first. Several tool-less sub-agents each look through a different lens, then Claude checks every idea against the real code and queues the best. A brainstorm runs up to six short `claude -p` (Sonnet) sessions, which count against your plan's usage.
 - **Audits before done:** finished work is checked through independent lenses: intent, adversary, edge cases, operations and maintainability. Small tasks get a self-check; large ones get all five. A change that touches UI also gets a design read: an art director, an accessibility reviewer and a first-time user, with the task's screenshots.
-- **Review:** `/foreman:review [range | branch | T-0123]` runs one reviewer per lens over a diff, then two skeptics try to refute every finding, so only confirmed defects come back, with the `fm task finding` lines to record them.
+- **Review:** `/foreman:review [range | branch | T-0123]` runs one reviewer per lens over a diff, then two skeptics try to refute every finding, so only confirmed defects come back, with the `sampo task finding` lines to record them.
 - **Ideas:** `/foreman:ideas "<request>"` brainstorms with agents that read the code while they think, so each idea arrives marked new, partial or already built, with evidence and a ready intake block. Both workflows are multi-agent runs and cost more than a single pass.
-- **Docs stay current:** bigger tasks can't close until they record which docs they changed, and those docs must exist and match the code. Drift elsewhere is reported when a task closes (`fm docs` shows it any time).
-- Long sessions compact earlier, since Foreman's state makes that cheap.
+- **Docs stay current:** bigger tasks can't close until they record which docs they changed, and those docs must exist and match the code. Drift elsewhere is reported when a task closes (`sampo docs` shows it any time).
+- Long sessions compact earlier, since Sampo's state makes that cheap.
 
 </details>
 
-## The guard
+## The Ward
 
-<p align="center"><img src="site/assets/diagrams/guard.svg" width="880" alt="The guard: every command passes the guard hook first; tests, builds and in-scope edits run; commands that would discard uncommitted work are snapshotted first; dangerous ones are refused with how to grant them"></p>
+<p align="center"><img src="site/assets/diagrams/guard.svg" width="880" alt="The Ward: every command passes the Ward hook first; tests, builds and in-scope edits run; commands that would discard uncommitted work are snapshotted first; dangerous ones are refused with how to grant them"></p>
 
-Foreman is built for bypass mode (no tool-call prompts), which the installer offers to turn on. What still stops a dangerous command is Foreman's guard hook, plus 20 deny rules for the truly catastrophic cases.
+Sampo is built for bypass mode (no tool-call prompts), which the installer offers to turn on. What still stops a dangerous command is Sampo's Ward hook, plus 20 deny rules for the truly catastrophic cases.
 
 | Area | Stopped until you grant it |
 |---|---|
@@ -178,40 +190,40 @@ Foreman is built for bypass mode (no tool-call prompts), which the installer off
 | **Secrets** | reading credential files (~/.ssh keys, ~/.aws/credentials, ~/.netrc …), sending the environment or a key over the network, `curl \| sh` |
 | **System** | disk, firewall and system-service changes |
 | **Outward** | publish and deploy commands; starting a remote session |
-| **Foreman itself** | direct writes to Foreman state; edits to Foreman's protected core and to Claude Code's `~/.claude.json` |
+| **Sampo itself** | direct writes to Sampo state; edits to Sampo's protected core and to Claude Code's `~/.claude.json` |
 
-A blocked command says how to authorize it for the current task. Anything that needs you (Foreman's own code, a remote session, installing plugins or MCP servers, destructive categories) comes as Claude Code's own permission prompt, saying exactly what a yes grants.
+A blocked command says how to authorize it for the current task. Anything that needs you (Sampo's own code, a remote session, installing plugins or MCP servers, destructive categories) comes as Claude Code's own permission prompt, saying exactly what a yes grants.
 
 <details>
 <summary><b>Snapshots, the risk budget and other protections</b></summary>
 
-- The guard reads every Bash command and file edit before it runs, including the commands fm stores and runs later.
-- Work snapshots save uncommitted work before `git reset --hard`, `checkout -- .`, `clean -f` and the like. `fm snapshots` lists them, each with the command that brings it back; `fm oops` shows the newest and `fm oops --apply` restores it.
-- `fm sensitive on` keeps a repo's content from leaving the machine; `fm sensitive suggest` lists what hints a repo needs it (`.env*`, `*.pem`, secret or prod in a path) and changes nothing.
-- A daily risk budget: destructive guard blocks, failed closes and reverts spend points, and past the cap Claude's autonomy steps down a notch until tomorrow (`fm risk`; only you move the cap).
-- Install commands are checked before they run: a package one edit from a popular name, or published in the last 30 days, gets a note (`fm deps check "<cmd>"`). A command copied from a web page or MCP result asks before it runs.
-- `fm posture lite` (yours to type: `! fm posture lite`; Claude may not lower it) keeps only the guard and the evidence gate in a repo where the rest of Foreman is in the way (no injected notes, no drive); `fm posture full` brings it back.
+- The Ward reads every Bash command and file edit before it runs, including the commands sampo stores and runs later.
+- Work snapshots save uncommitted work before `git reset --hard`, `checkout -- .`, `clean -f` and the like. `sampo snapshots` lists them, each with the command that brings it back; `sampo oops` shows the newest and `sampo oops --apply` restores it.
+- `sampo sensitive on` keeps a repo's content from leaving the machine; `sampo sensitive suggest` lists what hints a repo needs it (`.env*`, `*.pem`, secret or prod in a path) and changes nothing.
+- A daily risk budget: destructive Ward blocks, failed closes and reverts spend points, and past the cap Claude's autonomy steps down a notch until tomorrow (`sampo risk`; only you move the cap).
+- Install commands are checked before they run: a package one edit from a popular name, or published in the last 30 days, gets a note (`sampo deps check "<cmd>"`). A command copied from a web page or MCP result asks before it runs.
+- `sampo posture lite` (yours to type: `! sampo posture lite`; Claude may not lower it) keeps only the Ward and the evidence gate in a repo where the rest of Sampo is in the way (no injected notes, no drive); `sampo posture full` brings it back.
 
 </details>
 
 <details>
 <summary><b>Standing yes, trust mode, sensitive repos and turning bypass off</b></summary>
 
-**Working on Foreman itself a lot?** Say "don't ask to edit Foreman". One prompt (`fm ask ID core --standing`) asks for a standing yes. It covers Foreman's own code, rules and evals for every later task, until `fm standing off`. Claude Code's settings, Foreman state and the guard file itself still ask each time.
+**Working on Sampo itself a lot?** Say "don't ask to edit Sampo". One prompt (`sampo ask ID core --standing`) asks for a standing yes. It covers Sampo's own code, rules and evals for every later task, until `sampo standing off`. Claude Code's settings, Sampo state and the Ward file itself still ask each time.
 
-**Trust mode.** To let Claude edit those too (the guard and Claude Code's settings, never Foreman state), type `/fm-trust on` yourself. The foreman-ui mod only accepts it from your own prompt (or your phone), never from Claude, a scheduled prompt or a skill, and the guard refuses any attempt by Claude to turn it on. The band shows `⚠ trust on` while it lasts. `/fm-trust off` (or `fm trust off`) ends it. Other questions come as a prompt too.
+**Trust mode.** To let Claude edit those too (the Ward and Claude Code's settings, never Sampo state), type `/fm-trust on` yourself. The sampo-ui mod only accepts it from your own prompt (or your phone), never from Claude, a scheduled prompt or a skill, and the Ward refuses any attempt by Claude to turn it on. The band shows `⚠ trust on` while it lasts. `/fm-trust off` (or `sampo trust off`) ends it. Other questions come as a prompt too.
 
-**Fewer dialogs outside bypass mode.** In Claude Code's default mode every Bash command off your allow list asks. Type `! fm approve-reads on` and Foreman answers that dialog for commands that only read (`ls`, `cat`, `grep`, `git status` or `git log`, `find` without `-exec` or `-delete`, …).
+**Fewer dialogs outside bypass mode.** In Claude Code's default mode every Bash command off your allow list asks. Type `! sampo approve-reads on` and Sampo answers that dialog for commands that only read (`ls`, `cat`, `grep`, `git status` or `git log`, `find` without `-exec` or `-delete`, …).
 - Every part of the command has to be one of those without a writing flag, with no redirect except to `/dev/null` and no `$` (a variable can print a secret). Anything else still asks.
-- Only you can turn it on (the guard refuses it from Claude); `fm approve-reads off` ends it.
+- Only you can turn it on (the Ward refuses it from Claude); `sampo approve-reads off` ends it.
 
-**Sensitive repos.** To opt a repo out (client code, anything with production credentials), tell Claude "this repo is sensitive" (it runs `fm sensitive on`). That writes this to the repo's `.claude/settings.local.json`, kept out of commits via `.git/info/exclude`, and Foreman shows the repo as sensitive at session start:
+**Sensitive repos.** To opt a repo out (client code, anything with production credentials), tell Claude "this repo is sensitive" (it runs `sampo sensitive on`). That writes this to the repo's `.claude/settings.local.json`, kept out of commits via `.git/info/exclude`, and Sampo shows the repo as sensitive at session start:
 
 ```json
 { "permissions": { "defaultMode": "default" } }
 ```
 
-Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` and `bypassPermissions` in project and local settings. `fm sensitive off` undoes it.
+Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` and `bypassPermissions` in project and local settings. `sampo sensitive off` undoes it.
 
 **Turning bypass off.** To turn bypass off everywhere, set `defaultMode` back to `"auto"` (or delete it) in `~/.claude/settings.json`. The original is in `~/.claude/foreman/backups/`.
 
@@ -221,20 +233,20 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 
 | | What you get | Try |
 |---|---|---|
-| **Plans** | Briefs with type, tier, criteria and steps; M and L work lists approaches first; the queue orders itself | `fm queue` |
-| **Knows your stack** | Over 1,000 stack cards in 29 areas; a card's pitfalls arrive with the first edit of a file it covers | `fm lib` |
-| **Verifies** | Gates that reuse a pass on an identical tree; a fix needs a test that failed first | `fm check` · `fm task prove` |
-| **Shows what happened** | A branch ranked by review risk; any line traced back to the words you asked in | `fm tour` · `fm why` |
-| **Runs unattended** | Drive mode, full auto, one fresh session per task, budgeted nightly jobs | `fm run` · `fm night` |
-| **Learns a fix once** | A failure that was fixed before gets its fix offered next time, in any project | `fm fix list` |
-| **Changes many spots** | Batches of exact replacements, applied all or none, inside the task's scope | `fm edit` · `fm sub` |
+| **Plans** | Briefs with type, tier, criteria and steps; M and L work lists approaches first; the queue orders itself | `sampo queue` |
+| **Knows your stack** | Over 1,000 stack cards in 29 areas; a card's pitfalls arrive with the first edit of a file it covers | `sampo lib` |
+| **Verifies** | Gates that reuse a pass on an identical tree; a fix needs a test that failed first | `sampo check` · `sampo task prove` |
+| **Shows what happened** | A branch ranked by review risk; any line traced back to the words you asked in | `sampo tour` · `sampo why` |
+| **Runs unattended** | Drive mode, full auto, one fresh session per task, budgeted nightly jobs | `sampo run` · `sampo night` |
+| **Learns a fix once** | A failure that was fixed before gets its fix offered next time, in any project | `sampo fix list` |
+| **Changes many spots** | Batches of exact replacements, applied all or none, inside the task's scope | `sampo edit` · `sampo sub` |
 | **Improves itself** | Rule changes backtested on your real sessions; self-improvement kept only when evals agree | `/foreman:improve` |
-| **Proves migrations, data and releases** | Migrations up, down, up on a throwaway database; data commands on a copy, invariants checked before and after; the release built offline, run from a throwaway prefix, tagged by `fm release V` in any repo | `fm prove --migration`, `--data`, `--release` |
-| **Runs incidents** | `fm capture --incident '<impact>' --signal CMD` opens an urgent FIX only when the harm signal is red, keeps a UTC timeline, closes only on the same signal green twice plus one follow-up, and leaves the signal for `fm sentinel` | `fm capture --incident` |
-| **Checks infra files** | Dockerfiles, compose, Terraform, Helm, Kubernetes, CI workflows, shell, systemd units: each through its own validator on a copy, offline; no validator installed, unproven | `fm prove --infra` |
-| **Finds problems unasked** | Untested code, undeclared imports, SQL built from input, slow loops, flaky tests, stale docs, leaked keys: no model, worst first; proven on a copy | `fm find --rank [--ladder]` (tools: trusted only), `fm prove --capture N`/`--docs`, `/foreman:initiative` |
-| **Seeds itself** | Genesis: generations toward one goal you write; a rewrite stays only if it closed more exam scenarios | `fm genesis step` |
-| **Stays light** | Only the guard and write validators run in line; hooks take about 20 ms | `fm doctor` |
+| **Proves migrations, data and releases** | Migrations up, down, up on a throwaway database; data commands on a copy, invariants checked; the release built offline, run from a throwaway prefix, tagged by `sampo release V` in any repo | `sampo prove --migration`, `--data`, `--release` |
+| **Runs incidents** | `sampo capture --incident '<impact>' --signal CMD` opens an urgent FIX only when the harm signal is red, keeps a UTC timeline, closes only on the same signal green twice plus one follow-up, and leaves the signal for `sampo sentinel` | `sampo capture --incident` |
+| **Checks infra files** | Dockerfiles, compose, Terraform, Helm, Kubernetes, CI workflows, shell, systemd units: each through its own validator on a copy, offline; no validator installed, unproven | `sampo prove --infra` |
+| **Finds problems unasked** | Untested code, undeclared imports, SQL built from input, slow loops, flaky tests, stale docs, leaked keys: no model, worst first; proven on a copy | `sampo find --rank [--ladder]` (tools: trusted only), `sampo prove --capture N`/`--docs`, `/foreman:initiative` |
+| **Seeds itself** | Rune: generations toward one goal you write; a rewrite stays only if it closed more exam scenarios | `sampo rune step` |
+| **Stays light** | Only the Ward and write validators run in line; hooks take about 20 ms | `sampo doctor` |
 
 <details>
 <summary><b>Plans</b></summary>
@@ -242,7 +254,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 - Intake turns a request into briefs: type and tier (S, M or L), acceptance criteria with the commands that prove them, steps, scope and risks.
 - M and L work lists the approaches first.
 - The queue orders itself, dependencies included.
-- Each brief lives in Foreman's state, outside your repo, unless you turn on `fm sync`.
+- Each brief lives in Sampo's state, outside your repo, unless you turn on `sampo sync`.
 
 </details>
 
@@ -251,26 +263,26 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 
 - Over 1,000 stack cards in 29 areas: languages and frameworks, data, ML and LLM apps, infra, cloud, ops, testing, security, architecture, product domains, UX patterns and visual design, games and hardware, building Claude Code plugins, hooks, skills and mods, practice (brainstorming, premortems, experiments) and a style shelf of twenty named looks with measured palettes.
 - Each card gives the exact commands that verify the work, a failing-test recipe, the mistakes models actually make, and a review checklist.
-- Cards cost no context until they are read. `fm lib` picks the ones that match your repo's manifests and files, and the session start names them. `fm lib show fastapi pytest --section verify` reads just the parts you need.
+- Cards cost no context until they are read. `sampo lib` picks the ones that match your repo's manifests and files, and the session start names them. `sampo lib show fastapi pytest --section verify` reads just the parts you need.
 - The first edit of a file a card covers brings that card's pitfalls (its Avoid section, under 700 characters) into Claude's context, once per card per task.
 - A card is picked by what the file imports as well as by its type: a file that imports `@tauri-apps/api`, `fastapi`, `tokio` or `github.com/gin-gonic/gin` gets that framework's card beside its language's (at most two an edit).
-- The audit brief carries the review checklists of the cards a task used. `fm lib stats` shows which cards actually reach Claude, `fm lib inject off` turns injection off, and `fm doctor -v` counts how often it and the other enforced checks fired this week.
-- `fm lib search` also finds installed plugins' skills, disabled ones included, so a big skill pack can stay off and still be found.
-- `fm lib source add <git URL>` indexes a third-party skills repo read-only: a shallow, markdown-only checkout in Foreman's state, with no hooks, filters, submodules or symlinks, and nothing run.
-- `fm lib source defaults` adds eleven vetted ones (wshobson/agents, trailofbits/skills, VoltAgent subagents, K-Dense scientific skills, morluto/rea, and anthropics' skills, claude-code, claude-cookbooks, claude-plugins-official, financial-services and prompt-eng-interactive-tutorial), searchable next to the cards at no context cost; `--dry` lists them without cloning.
-- Each source is pinned to the commit it was added at (`fm lib source update` moves the pin and names a licence class that moved). Its licence class comes from its licence file: open (MIT, Apache, BSD, ISC, MPL), source-available (any other licence) or ideas-only (none). `fm lib show` gives ideas-only entries as name and description only.
+- The audit brief carries the review checklists of the cards a task used. `sampo lib stats` shows which cards actually reach Claude, `sampo lib inject off` turns injection off, and `sampo doctor -v` counts how often it and the other enforced checks fired this week.
+- `sampo lib search` also finds installed plugins' skills, disabled ones included, so a big skill pack can stay off and still be found.
+- `sampo lib source add <git URL>` indexes a third-party skills repo read-only: a shallow, markdown-only checkout in Sampo's state, with no hooks, filters, submodules or symlinks, and nothing run.
+- `sampo lib source defaults` adds eleven vetted ones (wshobson/agents, trailofbits/skills, VoltAgent subagents, K-Dense scientific skills, morluto/rea, and anthropics' skills, claude-code, claude-cookbooks, claude-plugins-official, financial-services and prompt-eng-interactive-tutorial), searchable next to the cards at no context cost; `--dry` lists them without cloning.
+- Each source is pinned to the commit it was added at (`sampo lib source update` moves the pin and names a licence class that moved). Its licence class comes from its licence file: open (MIT, Apache, BSD, ISC, MPL), source-available (any other licence) or ideas-only (none). `sampo lib show` gives ideas-only entries as name and description only.
 
 </details>
 
 <details>
 <summary><b>Verifies</b></summary>
 
-- `fm check` runs the project's gates and reuses a pass on an identical tree. A new test file that is only another open task's red-first test is left out and named, so one task's deliberate red doesn't block another's close.
+- `sampo check` runs the project's gates and reuses a pass on an identical tree. A new test file that is only another open task's red-first test is left out and named, so one task's deliberate red doesn't block another's close.
 - A close runs the tests linked to what the task changed and refuses a new failure. Every few closes the full gates run in the background, and a red run becomes one urgent baseline task by itself.
-- `fm task evidence --run` records a command's real exit code and output.
+- `sampo task evidence --run` records a command's real exit code and output.
 - Test first at edit time: in a fix or feature task that has changed no test and recorded no failing run, the first edit of a source file brings one line saying to write and run the failing test first. Once per task, never a block.
-- `fm task prove` shows a test failing on the start tree and passing now. `--hunks` reverts each hunk to show the tests notice it.
-- `fm task finish` closes a task in one call, but only with fresh evidence and the audits, docs note and lesson its size needs. It counts its warnings in one line first (a leftover `breakpoint()` or conflict marker among them) and ends by saying where the work landed: committed and pushed, or not. Paths you list in a `.fmproved` file (one glob a line) can't change without a test that failed first and passes now.
+- `sampo task prove` shows a test failing on the start tree and passing now. `--hunks` reverts each hunk to show the tests notice it.
+- `sampo task finish` closes a task in one call, but only with fresh evidence and the audits, docs note and lesson its size needs. It counts its warnings in one line first (a leftover `breakpoint()` or conflict marker among them) and ends by saying where the work landed: committed and pushed, or not. Paths you list in a `.fmproved` file (one glob a line) can't change without a test that failed first and passes now.
 - The suite runs in CI on every push.
 
 </details>
@@ -278,31 +290,31 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 <details>
 <summary><b>Shows you what happened</b></summary>
 
-- `fm tour --since main` ranks a whole branch, or a night's run, by review risk and says which files are safe to skim.
-- `fm why FILE:LINE` traces a line back to the task and the words you asked in.
-- `fm at T-0042 -- pytest` runs any command as of a task's start.
-- `fm show X` takes a task id, a FILE:LINE or plain words and shows the task, the line's history or related past work.
-- `fm prove --rollup [--days N] [--json]` lists done tasks no run here proved (T-2273, T-2391), by kind: typed, red or inconclusive evidence (a red run counts as proven when the same command ran green later; a `--bench` run is green), a UI file changed with no `fm shot`, smoke, stories or flow run, a docs claim (a flag, path or command) the task added with no `fm prove --docs`, infra, migration or data files with no validator run, a PERFORMANCE close with no `--bench` or one inside the noise band, a RESEARCH close citing no saved note, and a hollow criterion. Each row prints its upgrade command, or `waiting` when it needs an install or a grant; with the queue empty `fm next` names the newest row that can run. The count shows as `unproven: N (fm prove --rollup) · kind counts` in `fm status`, `fm digest`, `fm genesis status` and `fm exam scorecard`, and `fm task finish` lists what the close still needs under "Not verified". A reply that claims a speedup, accurate docs, a working migration, a rendered UI or a release with no run of that kind is held once at Stop; kept anyway, it is labelled unproven for you, and commits and `fm pr` carry an `Unproven:` line. Each clause of your request is bound to the criterion sharing its words; a clause no green, failable check covers is listed as meaning unproven at the close and in `fm prove --rollup`. The exam grades it too: proof scenarios count claims proven by hidden checks, the unprovable one labelled, and false proofs; beyond scenarios run non-code deliverables (a migration pair, a CI workflow, README examples, an incident's harm signal). The same rows reach every surface (T-2395): `fm code`'s close prints the Not verified lines, the pane's band shows the count and the kind most need, the MCP `proof` tool serves Claude Desktop and other agents, AGENTS.md points other CLIs at `fm prove --rollup`, and the site's verifying page charts the count per day.
-- `fm digest` sums up the week; `fm outcomes --readme` gives the track record in one sentence.
-- `fm outcomes` grades every close by whether it survived 30 days (nothing reverted it, fixed it or corrected it), and `--claims`, `--regret`, `--graveyard` and `--seen` read those grades. `fm ship --chance N` states the chance CI's blocking jobs pass, settled by `fm ci-watch` within hours (the ship kind in `--judgment`). `--predictions` shows how often Foreman's guesses at your next request and at a task's effort beat a naive baseline; one that trails it over 20 tries is muted (`--unmute KIND`). `fm round close` tags a round and lists what it closed.
+- `sampo tour --since main` ranks a whole branch, or a night's run, by review risk and says which files are safe to skim.
+- `sampo why FILE:LINE` traces a line back to the task and the words you asked in.
+- `sampo at T-0042 -- pytest` runs any command as of a task's start.
+- `sampo show X` takes a task id, a FILE:LINE or plain words and shows the task, the line's history or related past work.
+- `sampo prove --rollup [--days N] [--json]` lists done tasks no run here proved (T-2273, T-2391), by kind: typed, red or inconclusive evidence (a red run counts as proven when the same command ran green later; a `--bench` run is green), a UI file changed with no `sampo shot`, smoke, stories or flow run, a docs claim (a flag, path or command) the task added with no `sampo prove --docs`, infra, migration or data files with no validator run, a PERFORMANCE close with no `--bench` or one inside the noise band, a RESEARCH close citing no saved note, and a hollow criterion. Each row prints its upgrade command, or `waiting` when it needs an install or a grant; with the queue empty `sampo next` names the newest row that can run. The count shows as `unproven: N (sampo prove --rollup) · kind counts` in `sampo status`, `sampo digest`, `sampo rune status` and `sampo louhi scorecard`, and `sampo task finish` lists what the close still needs under "Not verified". A reply that claims a speedup, accurate docs, a working migration, a rendered UI or a release with no run of that kind is held once at Stop; kept anyway, it is labelled unproven for you, and commits and `sampo pr` carry an `Unproven:` line. Each clause of your request is bound to the criterion sharing its words; a clause no green, failable check covers is listed as meaning unproven at the close and in `sampo prove --rollup`. The exam grades it too: proof scenarios count claims proven by hidden checks, the unprovable one labelled, and false proofs; beyond scenarios run non-code deliverables (a migration pair, a CI workflow, README examples, an incident's harm signal). The same rows reach every surface (T-2395): `sampo smith`'s close prints the Not verified lines, the pane's band shows the count and the kind most need, the MCP `proof` tool serves Claude Desktop and other agents, AGENTS.md points other CLIs at `sampo prove --rollup`, and the site's verifying page charts the count per day.
+- `sampo digest` sums up the week; `sampo outcomes --readme` gives the track record in one sentence.
+- `sampo outcomes` grades every close by whether it survived 30 days (nothing reverted it, fixed it or corrected it), and `--claims`, `--regret`, `--graveyard` and `--seen` read those grades. `sampo ship --chance N` states the chance CI's blocking jobs pass, settled by `sampo ci-watch` within hours (the ship kind in `--judgment`). `--predictions` shows how often Sampo's guesses at your next request and at a task's effort beat a naive baseline; one that trails it over 20 tries is muted (`--unmute KIND`). `sampo round close` tags a round and lists what it closed.
 
 </details>
 
 <details>
 <summary><b>Runs unattended</b></summary>
 
-- Drive mode and full autonomy work the queue without stopping; `fm notify` tells you when it's done.
-- `fm run` works the queue in one fresh `claude -p` session per task (`--max-usd` caps what it spends); `fm serve` runs Remote Control on a server.
-- `fm scout` finds work nobody asked for: a newer Claude Code to adopt, dependencies with no stack card, doctor failures (filed in Foreman's own inbox), a weekly brainstorm, and up to 3 `fm find` leads a day in your own projects.
-- `fm night` runs budgeted background jobs: it works the queue under the night's budget, composts finished lanes and proposes merged lessons.
-- `fm goal set|plan|item|link|show|verdict` keeps a big goal as items with done-when checks across days; one `Goal:` line shows in sessions, `fm code`, `AGENTS.md`, the band and the MCP `goal` tool until `fm goal verdict` says finished.
-- `fm draft` has the top queued small task drafted on a throwaway branch while Claude waits; `fm lane race T` has two builders take different approaches and `fm lane pick` merges the better one.
-- A missing tool gets a note on the spot (`fm which` searches every shelf, `fm new tool` builds one) and holds the task until a run gets past it: in Claude Code (PostToolUseFailure), `fm code`, Codex, Gemini CLI and opencode. Installs queue for your yes (`fm ask ID plugin --later`), shown in the band and the read-only MCP `which` and `grants` tools.
-- Every M plan names two readings, three or more options with how each fails, and `Choice N (NN%)`, a bet outcomes score; `fm focus` and `fm code`'s planner hold to it. A one-way, ambiguous step parks for you. `fm outcomes --judgment` sets the stated Brier beside the base rate's, with races (`fm lane race`) and how often the first choice lost (also the MCP `calibration` tool). It also prints an interim read, labeled as never scored: bets on tasks closed 7 or more days ago, and how many held so far.
-- `fm ci-watch` follows the CI run of the commit you pushed and turns a failure into a fix task; `fm pr threads` turns review comments into steps and `fm pr train` merges approved, green PRs in order after a re-test.
-- **The forever loop.** `fm loop on` keeps Foreman improving without being asked: when the queue and inbox run out, `fm next` and the Stop drive start the next round instead of ending the run.
+- Drive mode and full autonomy work the queue without stopping; `sampo notify` tells you when it's done.
+- `sampo run` works the queue in one fresh `claude -p` session per task (`--max-usd` caps what it spends); `sampo serve` runs Remote Control on a server.
+- `sampo scout` finds work nobody asked for: a newer Claude Code to adopt, dependencies with no stack card, doctor failures (filed in Sampo's own inbox), a weekly brainstorm, and up to 3 `sampo find` leads a day in your own projects.
+- `sampo night` runs budgeted background jobs: it works the queue under the night's budget, composts finished lanes and proposes merged lessons.
+- `sampo goal set|plan|item|link|show|verdict` keeps a big goal as items with done-when checks across days; one `Goal:` line shows in sessions, `sampo smith`, `AGENTS.md`, the band and the MCP `goal` tool until `sampo goal verdict` says finished.
+- `sampo draft` has the top queued small task drafted on a throwaway branch while Claude waits; `sampo lane race T` has two builders take different approaches and `sampo lane pick` merges the better one.
+- A missing tool gets a note on the spot (`sampo which` searches every shelf, `sampo new tool` builds one) and holds the task until a run gets past it: in Claude Code (PostToolUseFailure), `sampo smith`, Codex, Gemini CLI and opencode. Installs queue for your yes (`sampo ask ID plugin --later`), shown in the band and the read-only MCP `which` and `grants` tools.
+- Every M plan names two readings, three or more options with how each fails, and `Choice N (NN%)`, a bet outcomes score; `sampo focus` and `sampo smith`'s planner hold to it. A one-way, ambiguous step parks for you. `sampo outcomes --judgment` sets the stated Brier beside the base rate's, with races (`sampo lane race`) and how often the first choice lost (also the MCP `calibration` tool). It also prints an interim read, labeled as never scored: bets on tasks closed 7 or more days ago, and how many held so far.
+- `sampo ci-watch` follows the CI run of the commit you pushed and turns a failure into a fix task; `sampo pr threads` turns review comments into steps and `sampo pr train` merges approved, green PRs in order after a re-test.
+- **The forever loop.** `sampo loop on` keeps Sampo improving without being asked: when the queue and inbox run out, `sampo next` and the Stop drive start the next round instead of ending the run.
   - A round reviews what shipped since the last one, brainstorms past the newest earlier brainstorms, grounds the ideas in the code, queues every one that holds up and builds them.
-  - It counts how many ideas the round queued (`fm loop yield N` says it outright). Two thin rounds in a row (fewer than three each) or `fm loop off` end it.
+  - It counts how many ideas the round queued (`sampo loop yield N` says it outright). Two thin rounds in a row (fewer than three each) or `sampo loop off` end it.
   - Usage running ahead of pace pauses it until there is room, and a closed task or a new round counts as progress, so the drive's 50-push cap stops only real spinning. The pane and the band show `∞ round N` while it runs.
 
 </details>
@@ -310,105 +322,105 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 <details>
 <summary><b>Learns a fix once</b></summary>
 
-- When a command fails and a later one on the same program gets past it, Foreman keeps the pair with no one asking.
-- The next time any session meets that failure, in this project or another on the machine, Claude gets the fix in the failure's context (`Foreman: known fix for this failure … Try that before anything else`), and a command that failed before is flagged before it runs again.
+- When a command fails and a later one on the same program gets past it, Sampo keeps the pair with no one asking.
+- The next time any session meets that failure, in this project or another on the machine, Claude gets the fix in the failure's context (`Sampo: known fix for this failure … Try that before anything else`), and a command that failed before is flagged before it runs again.
 - A look around (`ls`, `cat`, `git status`) or a retry that happens to pass teaches nothing. A code edit between the failure and the pass makes it a code fix, so nothing is kept.
 - A fix that keeps missing stops being offered, and a failure met three times with no fix becomes a task to remove its cause.
-- Project fixes travel with the repo: `fm sync on` mirrors them into `.foreman/fixes.md`, so clones, other machines and teammates' sessions get them through git. A fix that only came with the repo is offered as a hint to check (never as an instruction, never before a command runs) until you adopt it with `fm fix trust N`. A sensitive project's fixes stay in that project.
-- `fm fix list` shows them, `fm fix add "<error>" --do "<what works>"` teaches one the hooks can't see, `fm fix rm N` forgets one. A hook only ever says a fix; it never runs one.
+- Project fixes travel with the repo: `sampo sync on` mirrors them into `.foreman/fixes.md` (`.sampo/` once the per-repo mirror is renamed), so clones, other machines and teammates' sessions get them through git. A fix that only came with the repo is offered as a hint to check (never as an instruction, never before a command runs) until you adopt it with `sampo fix trust N`. A sensitive project's fixes stay in that project.
+- `sampo fix list` shows them, `sampo fix add "<error>" --do "<what works>"` teaches one the hooks can't see, `sampo fix rm N` forgets one. A hook only ever says a fix; it never runs one.
 
 </details>
 
 <details>
 <summary><b>Changes many spots in one call</b></summary>
 
-- `fm edit` takes a batch of exact replacements on stdin (JSON, or `@@ file` / `<<<` old / `===` new / `>>>` blocks) and applies them all or none: each old text must be there once (or be marked `all`), each file inside the task's scope, and each one the guard would let an Edit write.
-- `fm sub PATTERN REPL --glob G` previews a regex change as per-file counts and writes it with `--apply`. The third edit of one file in a row says so, once.
-- `fm lane max N` lets up to six builders work at once on an unattended run.
-- When the session that launched a builder ends, `fm next` names the stopped builder and `fm lane resume ID` takes it back: its uncommitted files (secret-looking ones left out) become a WIP commit on its branch, the worktree is freed, and a new builder brief merges that branch first. It refuses a builder that may still run, or one recorded on another host, unless you give `--force "<why>"`.
+- `sampo edit` takes a batch of exact replacements on stdin (JSON, or `@@ file` / `<<<` old / `===` new / `>>>` blocks) and applies them all or none: each old text must be there once (or be marked `all`), each file inside the task's scope, and each one the Ward would let an Edit write.
+- `sampo sub PATTERN REPL --glob G` previews a regex change as per-file counts and writes it with `--apply`. The third edit of one file in a row says so, once.
+- `sampo lane max N` lets up to six builders work at once on an unattended run.
+- When the session that launched a builder ends, `sampo next` names the stopped builder and `sampo lane resume ID` takes it back: its uncommitted files (secret-looking ones left out) become a WIP commit on its branch, the worktree is freed, and a new builder brief merges that branch first. It refuses a builder that may still run, or one recorded on another host, unless you give `--force "<why>"`.
 
 </details>
 
 <details>
 <summary><b>Improves itself</b></summary>
 
-- `fm backtest --rule/--fix/--card` shows how often a change would have fired on your real recent sessions before it ships; `fm rule add … --moves corrections --by 30` makes a change a trial the digest grades later; `fm adopt` learns from a repo's history of reverts and fixes.
-- `fm friction` digests Foreman's own friction (`--minutes`: an estimate of the minutes it cost this week), and `fm burden --by-verb` lists the verbs nobody calls. Lessons come back as tripwires on related work.
-- `/foreman:improve` builds candidates in a separate git worktree, runs the `claude plugin eval` suite against the live version, and only proposes changes that score at least as well. You approve every merge, and it can't edit its own guard, permission settings, rules or eval suite without your authorization.
+- `sampo backtest --rule/--fix/--card` shows how often a change would have fired on your real recent sessions before it ships; `sampo rule add … --moves corrections --by 30` makes a change a trial the digest grades later; `sampo adopt` learns from a repo's history of reverts and fixes.
+- `sampo friction` digests Sampo's own friction (`--minutes`: an estimate of the minutes it cost this week), and `sampo burden --by-verb` lists the verbs nobody calls. Lessons come back as tripwires on related work.
+- `/foreman:improve` builds candidates in a separate git worktree, runs the `claude plugin eval` suite against the live version, and only proposes changes that score at least as well. You approve every merge, and it can't edit its own Ward, permission settings, rules or eval suite without your authorization.
 
 </details>
 
 <details>
 <summary><b>Seeds itself</b></summary>
 
-- Genesis runs generations toward one goal you write once (gen-0: your goals, MUST and NEVER lines). `fm genesis draft "<line>"` writes a whole gen-0 from one line to start from, carrying your standing intent; `fm genesis init` saves it and `/foreman:genesis` drives it.
-- `fm genesis step` names the next action from the tower's files alone, so a killed session picks up where it stopped. gen-0 is sealed by its hash, and each generation's seed is checked against it word for word (`fm genesis drift`), then a cold reviewer on a stronger model reads only the generation's diff, exam lines, outcomes and friction (`fm genesis review`; each grounded finding becomes a task, a top gap or a dismissal with its reason), then Foreman hunts blind spots from inputs it didn't write (each class found becomes a rule with a check; each generation also seals a prediction of your next three steers and scores every real steer against it), then the gap map is redrawn against the current code and the next generation's Missions are ranked by expected value from it, the exam, survival and the review (empty coverage cells only break ties), then the whole project is swept (`fm genesis sweep`, which also turns red on a grant kind no earlier generation used); a rewrite is kept only if it closed more exam scenarios than its parent (`fm genesis select`), and three reverted generations in a row stop the tower and hand it back to you. `fm genesis exam` grades Genesis itself: drafts from "make this great", from nothing and from "super improve this" on generated projects, scored against your gen-0 on a held-out third, beside a plain model.
-- Every generation also advances a moonshot campaign. One catalogue grows toward 100 ideas on a six-tier ambition scale, from "a clever new check" up to "changes what building software means". The strongest model rates each idea without seeing its author's rating, and every extreme and massive idea gets a kill test first. Ideas are built in climbing order, smaller ones that unblock big ones first, and each generation must move at least one big idea forward a stage (`fm genesis moonshot rate|order`).
-- You shouldn't have to write steers. `fm exam steer` measures how well Foreman expands your raw words into a complete standing rule. A stronger model judges each expansion against the rule you actually ended up with. A clause only counts when the judge quotes the expansion's own words, and a third of the cases are held out. Each instruction-shaped message you send is expanded in the background and queued with that held-out score. If the score is under 70%, the expansion is also listed for you to read. A `steer:` correction on that task becomes a new case. The held-out rate is shown on the Genesis page.
-- With 10 or more tasks done and the queue drained, `fm scout` offers Genesis once (by itself under full autonomy). It waits on your own yes whatever the autonomy, and a no is never asked again. The site's Genesis page shows every generation live (`fm genesis live on`).
+- Rune runs generations toward one goal you write once (gen-0: your goals, MUST and NEVER lines). `sampo rune draft "<line>"` writes a whole gen-0 from one line to start from, carrying your standing intent; `sampo rune init` saves it and `/foreman:genesis` drives it.
+- `sampo rune step` names the next action from the tower's files alone, so a killed session picks up where it stopped. gen-0 is sealed by its hash, and each generation's seed is checked against it word for word (`sampo rune drift`), then a cold reviewer on a stronger model reads only the generation's diff, exam lines, outcomes and friction (`sampo rune review`; each grounded finding becomes a task, a top gap or a dismissal with its reason), then Sampo hunts blind spots from inputs it didn't write (each class found becomes a rule with a check; each generation also seals a prediction of your next three steers and scores every real steer against it), then the gap map is redrawn against the current code and the next generation's Missions are ranked by expected value from it, the exam, survival and the review (empty coverage cells only break ties), then the whole project is swept (`sampo rune sweep`, which also turns red on a grant kind no earlier generation used); a rewrite is kept only if it closed more exam scenarios than its parent (`sampo rune select`), and three reverted generations in a row stop the tower and hand it back to you. `sampo rune exam` grades Rune itself: drafts from "make this great", from nothing and from "super improve this" on generated projects, scored against your gen-0 on a held-out third, beside a plain model.
+- Every generation also advances a Moons campaign (`sampo moons`, the moonshots). One catalogue grows toward 100 ideas on a six-tier ambition scale, from "a clever new check" up to "changes what building software means". The strongest model rates each idea without seeing its author's rating, and every extreme and massive idea gets a kill test first. Ideas are built in climbing order, smaller ones that unblock big ones first, and each generation must move at least one big idea forward a stage (`sampo moons rate|order`).
+- You shouldn't have to write steers. `sampo louhi steer` measures how well Sampo expands your raw words into a complete standing rule. A stronger model judges each expansion against the rule you actually ended up with. A clause only counts when the judge quotes the expansion's own words, and a third of the cases are held out. Each instruction-shaped message you send is expanded in the background and queued with that held-out score. If the score is under 70%, the expansion is also listed for you to read. A `steer:` correction on that task becomes a new case. The held-out rate is shown on the Rune page.
+- With 10 or more tasks done and the queue drained, `sampo scout` offers Rune once (by itself under full autonomy). It waits on your own yes whatever the autonomy, and a no is never asked again. The site's Rune page shows every generation live (`sampo rune live on`).
 
 </details>
 
 <details>
 <summary><b>Stays light</b></summary>
 
-Only the guard (on tool calls that can change something) and the write validators (after a write) run synchronously; everything else that records runs async or once per turn, and nothing is injected unless it changes what Claude should do next. `fm doctor` reports each hook's p95 latency, and the pane's hooks tank shows it live (about 20 ms here).
+Only the Ward (on tool calls that can change something) and the write validators (after a write) run synchronously; everything else that records runs async or once per turn, and nothing is injected unless it changes what Claude should do next. `sampo doctor` reports each hook's p95 latency, and the pane's hooks tank shows it live (about 20 ms here).
 
 </details>
 
 ## Seeing what's going on
 
-<p align="center"><img src="site/assets/diagrams/architecture.svg" width="880" alt="How the pieces fit: Claude Code, other agents, fm code and headless runs call Foreman's hooks and the fm CLI, which keep state on disk; the foreman-ui pane, the status line, Foreman Desktop and MCP clients read fm's JSON"></p>
+<p align="center"><img src="site/assets/diagrams/architecture.svg" width="880" alt="How the pieces fit: Claude Code, other agents, Smith and headless runs call Sampo's hooks and the sampo CLI, which keep state on disk; the sampo-ui pane, the status line, Sampo Desktop and MCP clients read sampo's JSON"></p>
 
-- **In Claude Code**, the `foreman-ui` mod draws Foreman live: a card above the prompt with the task, a stage rail and a step bar; an animated row for each tool call; `/fm` for a dashboard with live charts; a true-color status line below the prompt.
-- **Foreman Desktop** shows every project, agent session and device in one window.
-- **Other agents** (Codex, Gemini CLI, opencode) run the same guard and context, and `fm mcp` serves the project read-only to any MCP client.
+- **In Claude Code**, the `sampo-ui` mod draws Sampo live: a card above the prompt with the task, a stage rail and a step bar; an animated row for each tool call; `/fm` for a dashboard with live charts; a true-color status line below the prompt.
+- **Sampo Desktop** shows every project, agent session and device in one window.
+- **Other agents** (Codex, Gemini CLI, opencode) run the same Ward and context, and `sampo mcp` serves the project read-only to any MCP client.
 
 <details>
-<summary><b>The foreman-ui mod in detail</b></summary>
+<summary><b>The sampo-ui mod in detail</b></summary>
 
 **The card.** Above the prompt sits a card showing:
 - the task's type chip, id and title, and its stage on a mini rail (●━●━◉─○─○);
 - a true-color gradient step bar that animates while Claude works;
 - audits, queue and inbox counts, and what waits on you;
 - speedrun splits: each stage's time against your typical for that kind of task, green under and red over;
-- when idle, one line on what Foreman learned this week (fixes that worked or missed, rules to propose);
+- when idle, one line on what Sampo learned this week (fixes that worked or missed, rules to propose);
 - `[f]` dashboard and `[n]` next.
 
-Set `palette: 'cb'` for a colourblind-safe ok/error pair (errors keep their ✗), or `'riso'` for fm code's risograph inks, and in the history press `b` to step back in time and `l` to return to live.
+Set `palette: 'cb'` for a colourblind-safe ok/error pair (errors keep their ✗), or `'riso'` for Smith's risograph inks, and in the history press `b` to step back in time and `l` to return to live.
 
 **The chat.** Every row reads like a section of the pane: a mark, a bold label in the row's colour, its subject, a rule fading out in that colour and the facts on the right.
 - Your prompts (`❯ You`), Claude's replies (`● Claude`), commands, edits, subagents and every other tool (skills, MCP calls, artifacts …) get one. A tool's result of up to three lines sits in its row; a longer one keeps Claude Code's own block under it, which expands.
 - While a call runs, a comet runs along its rule beside the elapsed time. A command shows its lines, its output (failures first when it failed), the files it changed and a commit.
 - An edit's diff keeps a line of context either side of each change, breaks between hunks with `┄`, and washes only the words that changed in a changed line, never the whole width.
 - A review's findings list each one with what came of it (fixed, skipped), where it is and the short claim.
-- Successful `fm` bookkeeping commands fold to one quiet `⚙ fm …  ✓ …` line, while failures keep their full row; finished reads and background-task notifications also fold to one quiet line.
+- Successful `sampo` bookkeeping commands fold to one quiet `⚙ sampo …  ✓ …` line, while failures keep their full row; finished reads and background-task notifications also fold to one quiet line.
 
 **The chat as a tree.** Each turn is one tree: your prompt at the root, every call Claude makes a branch (`├─`) on a rail down the left, its replies on branches too, and the turn's closing line (`└─ ✻ worked 22s · 6 tools · 1 edit`) the tip.
 - Finished calls are compact, so the chat scrolls far less: a passing command shows its description, one line of the command and a line count; a failure shows its failures in full; a diff shows four changed lines and a count of the rest; reads and searches sit on one line.
 - The `chat` setting `full` brings back the long rows.
 
-**Turns.** The working spinner names the Foreman step it's on. The line closing each turn says what the turn did (`4 tools · 2 edits +30 −4 · ✓ T-0012 step 3/5`). When Claude stops with Foreman work waiting, the prompt offers `/foreman:next` as ghost text (never while a question waits on you). The footer says when Foreman needs you and shows `full auto` and `drive off` as modes.
+**Turns.** The working spinner names the Sampo step it's on. The line closing each turn says what the turn did (`4 tools · 2 edits +30 −4 · ✓ T-0012 step 3/5`). When Claude stops with Sampo work waiting, the prompt offers `/foreman:next` as ghost text (never while a question waits on you). The footer says when Sampo needs you and shows `full auto` and `drive off` as modes.
 
-**Context.** The band carries a context meter. At 85% Foreman checkpoints the task once, so a `/compact` resumes at the exact step. When a task closes with context at 40% or more, the mod compacts right there: it keeps your standing requests and live decisions, drops finished work, and Foreman's resume note restores the exact point. The threshold is the mod's `freshAt` setting; 0 turns it off.
+**Context.** The band carries a context meter. At 85% Sampo checkpoints the task once, so a `/compact` resumes at the exact step. When a task closes with context at 40% or more, the mod compacts right there: it keeps your standing requests and live decisions, drops finished work, and Sampo's resume note restores the exact point. The threshold is the mod's `freshAt` setting; 0 turns it off.
 
 **Your project's own timings.** Sizes read as words (`FIX · small`, `· medium`, `· large`) and carry this project's history:
 - The band shows how long you've been on the task and what that type and size usually takes (`12m on it · usually ~25m`): the median from first focus to done, once three such tasks have closed.
 - The band shows the whole queue (done today, queued, in the inbox, what's next), so it never looks nearly finished while work waits.
 
 **Prompts and background work.**
-- Every Foreman permission prompt gets a plain-words note under it saying what a yes grants and why.
+- Every Sampo permission prompt gets a plain-words note under it saying what a yes grants and why.
 - When Claude waits on background shells (started in the background, or moved there with ctrl+b), the band says so (`◷ waiting on 2 background shells · cargo test · 3m 12s · Claude picks up when they finish`) and the pane lists them. Each leaves when its notification arrives or it is stopped.
 - Coming back to a long unattended run, the band tells you what closed since your last message (`✔ since your last message: 3 done · …`) until you write again.
 
 **The mascot.** The pane's top-right corner has Claude Code's own Claude from the welcome screen. Its `mascot` setting picks blue, orange, purple, green or off. It dances while Claude works, blinks while idle and cheers when a task closes, with a mini Claude in its own color beside it for each running subagent.
 
 **The dashboard.** `/fm` (or `[f]`) opens one panel beside the chat that fills the dock exactly. Each section sits under a titled divider in its own colour, says only what it must, and draws its numbers as pictures. Activity and Today keep a fixed height, the lists take the rows they hold, and History takes what's left, so nothing jumps as work comes and goes. Top to bottom:
-- **The head:** project, mode and the mascot; a bar of the work, done today against what's left (now, queued, inbox, blocked); and the one thing that needs you, most urgent first: a paused Foreman hook, a question waiting for your answer, a yes Foreman is waiting for, a plan waiting for approval (✓ approve, or *show* to read it), a task that just closed (a green sweep, grade, proof and time), failing gates, halved spend caps, a decision due for another look; otherwise *nothing needs you*.
+- **The head:** project, mode and the mascot; a bar of the work, done today against what's left (now, queued, inbox, blocked); and the one thing that needs you, most urgent first: a paused Sampo hook, a question waiting for your answer, a yes Sampo is waiting for, a plan waiting for approval (✓ approve, or *show* to read it), a task that just closed (a green sweep, grade, proof and time), failing gates, halved spend caps, a decision due for another look; otherwise *nothing needs you*.
 - **The task:** type, id and size, criteria proved and time on it against the usual, the title, a bar with a segment per step (*3 of 5 steps done · 2 left*), the stage rail from plan to close, and the steps around the current one. With nothing active: what's next and how many closed today, or a plan waiting for your yes. <!-- rule -->
 - **Activity:** one braille lane per kind of tool call (edit, run, read, agent, skill, web) plotting the session's calls over the last 30 minutes, each ending with what runs there now or the last thing it touched.
 - **Agents**, while there are any: a node graph rooted at this session, with a branch (`├─`, `└─`) to each subagent (running, or finished in the last half hour), each brainstorm and each lone git worktree, and a builder's worktree under its agent. Every node's bar sits in one column on a shared axis, with a dot where a tool call or an answer landed, and ■ stop for a subagent quiet ten minutes.
-- **Up next:** plans waiting for your yes (each with ✓ approve), the queue, the inbox with Start and Drop, and a capture box (Enter runs `fm capture` without interrupting Claude).
+- **Up next:** plans waiting for your yes (each with ✓ approve), the queue, the inbox with Start and Drop, and a capture box (Enter runs `sampo capture` without interrupting Claude).
 - **Sessions**, when there are others: each with its context and task, and one steer for all.
 - **History:** what happened, newest first, one line each, red for a failure and green for a pass or a close.
 - **Closed per day** for 14 days beside **Today**: four tanks for context, spend against the day's cap, hook latency and gates passed.
@@ -418,112 +430,112 @@ Set `palette: 'cb'` for a colourblind-safe ok/error pair (errors keep their ✗)
 - This session sits at the root (its task and step, a comet along its rule) with the last thing Claude said it is doing and its latest calls; then a branch per subagent with its own words streaming in, its worktree if it is a builder, and its latest calls, each spinning while it runs, then ✓ or ✗ with its time.
 - It keeps one height for the whole turn, so the chat above never shifts as calls come and go, and every node has a time bar in one column, as in the pane's Agents graph. When it runs out of room, words go first, then older calls, then the least recent agents fold into a count.
 - It stays two minutes after the last call, then shrinks to one line for the session. With the panel open the band shows only that tree.
-- The charts move at about 30 fps while Claude works and stand still when idle; the `motion` setting picks `full`, `calm` (8 fps) or `off`. Toasts mark finished steps and tasks, needed yeses (with a soft chime) and guard refusals.
-- The mod only renders `fm ui --json` and runs `fm` on your presses; rules and gates stay in fm and the classic hooks.
+- The charts move at about 30 fps while Claude works and stand still when idle; the `motion` setting picks `full`, `calm` (8 fps) or `off`. Toasts mark finished steps and tasks, needed yeses (with a soft chime) and Ward refusals.
+- The mod only renders `sampo ui --json` and runs `sampo` on your presses; rules and gates stay in sampo and the classic hooks.
 
 **The status line.** Under the prompt is one clean true-color layout:
 - a session line: model, folder, branch, context and rate-limit bars, cost, lines changed;
-- a Foreman line: task, stage, step bar, audits, queue, autonomy, guard.
+- a Sampo line: task, stage, step bar, audits, queue, autonomy, Ward.
 
-When the mod's card is above the prompt, the Foreman line shrinks to a chip on the session line. `"statusline_layout": "stack"` in the install manifest brings back the old stack of your original line, claude-hud and the Foreman lines. `NO_COLOR` set drops the colour from Foreman's own lines. In tmux, `set -g status-right '#(cd #{pane_current_path} && fm state --line)'` puts the same task, step and queue in the status bar for the pane you're in (it never creates a project).
+When the mod's card is above the prompt, the Sampo line shrinks to a chip on the session line. `"statusline_layout": "stack"` in the install manifest brings back the old stack of your original line, claude-hud and the Sampo lines. `NO_COLOR` set drops the colour from Sampo's own lines. In tmux, `set -g status-right '#(cd #{pane_current_path} && sampo state --line)'` puts the same task, step and queue in the status bar for the pane you're in (it never creates a project).
 
-Also: per-subagent rows, terminal titles and desktop notifications, `fm watch`, and an optional OpenTelemetry → telegraf → InfluxDB → Grafana setup in `plugin/observability/`. `/tui fullscreen`, `/focus` and `Ctrl+O` help too.
+Also: per-subagent rows, terminal titles and desktop notifications, `sampo watch`, and an optional OpenTelemetry → telegraf → InfluxDB → Grafana setup in `plugin/observability/`. `/tui fullscreen`, `/focus` and `Ctrl+O` help too.
 
 </details>
 
 <details>
 <summary><b>Other agents, MCP and the desktop app</b></summary>
 
-**Other agents:** `fm agents install codex|gemini|opencode` puts Foreman into Codex, Gemini CLI or opencode: its guard, per-turn context, `fm mcp` server and a short rules block. They run through the same hook Claude Code runs (`hook --agent X EVENT`).
-- The adapters are built to each tool's documented hook format and tested against recorded payloads, but not yet verified against live CLIs: check that a refused command is refused there before relying on the guard.
-- `fm agents list` shows what's wired, and `fm agents uninstall X` takes out exactly what install added.
+**Other agents:** `sampo agents install codex|gemini|opencode` puts Sampo into Codex, Gemini CLI or opencode: its Ward, per-turn context, `sampo mcp` server and a short rules block. They run through the same hook Claude Code runs (`hook --agent X EVENT`).
+- The adapters are built to each tool's documented hook format and tested against recorded payloads, but not yet verified against live CLIs: check that a refused command is refused there before relying on the Ward.
+- `sampo agents list` shows what's wired, and `sampo agents uninstall X` takes out exactly what install added.
 - Codex also gets the drive and done-gate (its Stop hook).
-- Two things stay Claude Code only: Gemini's AfterAgent would discard the answer it blocks, and the `fm ask` permission prompt needs Claude Code to show it.
+- Two things stay Claude Code only: Gemini's AfterAgent would discard the answer it blocks, and the `sampo ask` permission prompt needs Claude Code to show it.
 - A config with comments (JSONC) is left alone with a note.
-- The files that load the hooks are protected core, like Claude Code's settings: `~/.codex/hooks.json` and `config.toml`, `~/.gemini/settings.json`, and opencode's `opencode.json` and `plugins/`, including their project-level copies. An agent that edits them, or runs `fm agents uninstall`, needs your yes.
+- The files that load the hooks are protected core, like Claude Code's settings: `~/.codex/hooks.json` and `config.toml`, `~/.gemini/settings.json`, and opencode's `opencode.json` and `plugins/`, including their project-level copies. An agent that edits them, or runs `sampo agents uninstall`, needs your yes.
 
-**MCP:** `fm mcp` serves the project read-only to any MCP client: its state, next action, recall, research and briefs, the stack library (`lib_suggest`, `lib_search`, `lib_show`) and the instruments (`outline`, `sym`, `impact`, `why`, `fail` on given text, `logs`, `data`, `trace`), `find`, `exam_scorecard` (Genesis' done gate) and `genesis_status` (the tower's stage and next action).
-- Paths must resolve inside the project, values can't start with `-`, each is length-capped, each call has a timeout, and everything sent is redacted. `fm mcp register claude` prints the `claude mcp add` line; `fm mcp register desktop` prints the `mcpServers` stanza for Claude Desktop's config (fm by absolute path, the project by `-p`), so Desktop reaches `find` and the rest.
-- `fm mcp new NAME --wrap 'CMD' [--sub a,b]` writes a stdlib-only MCP server for any CLI, plus a test that drives it over stdio. The server runs argv, never a shell; it has a timeout and an output cap; and it refuses to wrap destructive commands (`rm`, `git push`, a shell…). Register it with `fm mcp register claude DIR`.
+**MCP:** `sampo mcp` serves the project read-only to any MCP client: its state, next action, recall, research and briefs, the stack library (`lib_suggest`, `lib_search`, `lib_show`) and the instruments (`outline`, `sym`, `impact`, `why`, `fail` on given text, `logs`, `data`, `trace`), `find`, `exam_scorecard` (Rune' done gate) and `genesis_status` (the tower's stage and next action).
+- Paths must resolve inside the project, values can't start with `-`, each is length-capped, each call has a timeout, and everything sent is redacted. `sampo mcp register claude` prints the `claude mcp add` line; `sampo mcp register desktop` prints the `mcpServers` stanza for Claude Desktop's config (the sampo binary by absolute path, the project by `-p`), so Desktop reaches `find` and the rest.
+- `sampo mcp new NAME --wrap 'CMD' [--sub a,b]` writes a stdlib-only MCP server for any CLI, plus a test that drives it over stdio. The server runs argv, never a shell; it has a timeout and an output cap; and it refuses to wrap destructive commands (`rm`, `git push`, a shell…). Register it with `sampo mcp register claude DIR`.
 
-**Knowledge out:** `fm recall --export-rules` writes the lessons from finished tasks to `.claude/rules/foreman-lessons/`, one rule file per task scoped by `paths:` to the files it touched, so Claude Code loads a lesson only with its files, even without Foreman. `fm decide --export-adr DIR` writes one ADR file per recorded decision. `fm task defer ID --until "when PATH changes"` brings a task back in `fm next` once that file changes.
+**Knowledge out:** `sampo recall --export-rules` writes the lessons from finished tasks to `.claude/rules/sampo-lessons/`, one rule file per task scoped by `paths:` to the files it touched, so Claude Code loads a lesson only with its files, even without Sampo. `sampo decide --export-adr DIR` writes one ADR file per recorded decision. `sampo task defer ID --until "when PATH changes"` brings a task back in `sampo next` once that file changes.
 
-**Desktop app:** [Foreman Desktop](https://github.com/ChaseSunstrom/foreman-desktop) (Tauri 2 + Svelte 5; `install.sh --desktop` installs its newest release) shows every project, agent session and device in one animated window.
+**Desktop app:** [Sampo Desktop](https://github.com/ChaseSunstrom/foreman-desktop) (Tauri 2 + Svelte 5; `install.sh --desktop` installs its newest release) shows every project, agent session and device in one animated window.
 - Live project dashboards with Start, Drop, Approve-plan, capture, drive and autonomy controls.
 - It starts, watches, messages and stops sessions for Claude Code, Codex, Gemini CLI and opencode.
 - It opens every Claude Code session on every device: terminal, Remote Control and headless. For each, it shows the conversation with images, subagents and their transcripts, and scratchpad files and pictures, and it can continue the session.
 - A Remote control page, a Ctrl+K palette, and agents and devices pages, with your tailnet's machines suggested.
 
-The app never talks to a server: it runs `fm … --json` on this machine, and on other devices over ssh. Its live views come from `fm projects --follow`, `fm ui --follow`, `fm session list --follow` and `fm session tail --follow`.
+The app never talks to a server: it runs `sampo … --json` on this machine, and on other devices over ssh. Its live views come from `sampo projects --follow`, `sampo ui --follow`, `sampo session list --follow` and `sampo session tail --follow`.
 
 </details>
 
-## Every harness: headless, other agents and fm code
+## Every harness: headless, other agents and Smith
 
 ### Headless on a server
 
-| | `fm serve` | `fm run` |
+| | `sampo serve` | `sampo run` |
 |---|---|---|
 | **What** | Claude Code Remote Control as a systemd user unit | The queue in fresh `claude -p` sessions, one task each |
-| **Start** | Ask Claude to "serve this repo" (one yes grants `remote`) | `fm run` (`--max-usd` caps the spend) |
+| **Start** | Ask Claude to "serve this repo" (one yes grants `remote`) | `sampo run` (`--max-usd` caps the spend) |
 | **You** | Send requests from claude.ai/code or the Claude app | Come back to closed tasks |
 | **When it fails** | Restarts; stops after five failed restarts in ten minutes | Waits out a usage limit; blocks a stuck task with the reason |
 
 <details>
-<summary><b>Serving, fm run, nightly runs and the sandbox</b></summary>
+<summary><b>Serving, sampo run, nightly runs and the sandbox</b></summary>
 
-**`fm serve`.** In a repo on your server, ask Claude to "serve this repo". Claude asks you once (a yes grants `remote`), then `fm serve` starts Claude Code Remote Control there as a systemd user unit, and the project switches to full autonomy with drive on.
+**`sampo serve`.** In a repo on your server, ask Claude to "serve this repo". Claude asks you once (a yes grants `remote`), then `sampo serve` starts Claude Code Remote Control there as a systemd user unit, and the project switches to full autonomy with drive on.
 - The unit survives logout and reboot: it turns on linger, or says why it couldn't.
-- It restarts on failure. After five failed restarts in ten minutes it stops, and `fm serve status` or `fm doctor` says why. It doesn't wait out usage limits.
+- It restarts on failure. After five failed restarts in ten minutes it stops, and `sampo serve status` or `sampo doctor` says why. It doesn't wait out usage limits.
 - Send feature requests from claude.ai/code or the Claude app whenever you like. They're captured, planned, built, audited and committed one after another.
-- "Stop serving" (`fm serve stop`) undoes it, and uninstall stops every unit.
+- "Stop serving" (`sampo serve stop`) undoes it, and uninstall stops every unit.
 - Claude Code has to trust the repo first: open `claude` there once.
 
-**`fm run`** works the queue in fresh `claude -p` sessions, one task each, so a long queue never piles up in one context.
+**`sampo run`** works the queue in fresh `claude -p` sessions, one task each, so a long queue never piles up in one context.
 - It waits out a usage limit (up to six hours by default) before retrying. A task that makes no progress is blocked with the reason, so the next run moves on.
 - The machine is kept from sleeping while it runs (systemd-inhibit, where there is one).
-- Self-running: `fm state`, the pane's band and `fm code` carry one line of what ran or waits by itself (triggers fired today and their routes, installs waiting for your yes, lanes recovering, self-fix trials due, how the next-request predictions do against their baseline); `fm triggers` has the table and the MCP `triggers` tool the same, as JSON.
-- To run `fm night` every night and `fm night --tick` hourly, `fm night --stage` writes both systemd timers into state and queues one request for your yes (`--watch-ci`, `--watch-issues OWNER/REPO` add those lines); after the yes `fm night --install` starts them, `fm night --uninstall` removes them.
+- Self-running: `sampo state`, the pane's band and `sampo smith` carry one line of what ran or waits by itself (triggers fired today and their routes, installs waiting for your yes, lanes recovering, self-fix trials due, how the next-request predictions do against their baseline); `sampo triggers` has the table and the MCP `triggers` tool the same, as JSON.
+- To run `sampo night` every night and `sampo night --tick` hourly, `sampo night --stage` writes both systemd timers into state and queues one request for your yes (`--watch-ci`, `--watch-issues OWNER/REPO` add those lines); after the yes `sampo night --install` starts them, `sampo night --uninstall` removes them.
 
-**The sandbox** is opt-in: `fm run --sandbox`, or `fm sandbox on` to keep it for later runs and `fm night` timers (`--no-sandbox` skips it for one run).
-- Each session then runs under Claude Code's own sandbox (bubblewrap with socat on Linux, Seatbelt on macOS): Bash writes only the checkout, the cache dirs, Foreman's state and the git dir.
-- It reaches only the allowed domains (`fm sandbox allow DOMAIN`; default: the git remote's host and the package registries for the project's languages).
-- `fm run` refuses to start when the host can't run the sandbox. `fm outbound ID` lists the hosts and queries a task's sessions reached.
+**The sandbox** is opt-in: `sampo run --sandbox`, or `sampo sandbox on` to keep it for later runs and `sampo night` timers (`--no-sandbox` skips it for one run).
+- Each session then runs under Claude Code's own sandbox (bubblewrap with socat on Linux, Seatbelt on macOS): Bash writes only the checkout, the cache dirs, Sampo's state and the git dir.
+- It reaches only the allowed domains (`sampo sandbox allow DOMAIN`; default: the git remote's host and the package registries for the project's languages).
+- `sampo run` refuses to start when the host can't run the sandbox. `sampo outbound ID` lists the hosts and queries a task's sessions reached.
 
 </details>
 
-### Foreman Code: any model, Foreman's loop
+### Smith: any model, Sampo's loop
 
-`fm code "make calc.add add"` runs Foreman's loop without Claude Code, on whatever model you have: a local server (Ollama, LM Studio, llama.cpp, vLLM), a profile in `$FOREMAN_HOME/models.json`, or a cloud whose API key is set (`fm code models` lists them).
+`sampo smith "make calc.add add"` runs Sampo's loop without Claude Code, on whatever model you have: a local server (Ollama, LM Studio, llama.cpp, vLLM), a profile in `$FOREMAN_HOME/models.json`, or a cloud whose API key is set (`sampo smith models` lists them).
 
 Or it hands each step to a coding CLI you already have: claude, codex, gemini or aider.
 
-Every edit and command goes past Foreman's guard first, the harness runs each check itself, and the task closes and commits only when they pass. Ask in plain words:
+Every edit and command goes past Sampo's Ward first, the harness runs each check itself, and the task closes and commits only when they pass. Ask in plain words:
 
-- A bug: `fm code "total() in cart.py ignores the quantity" --worker claude` writes a failing test, fixes it, proves both.
-- A feature: `fm code "add a --json flag to todo.py, with a test"`.
-- A change across files: `fm code "rename fetch_user to load_user everywhere"`.
-- Docs: `fm code "document every environment variable config.py reads in README.md"`.
-- A question: `fm code "what does parse_dates do with a date that has no timezone?"` answers from the files, citing them, and changes nothing.
-- A new project: in an empty `git init` folder, `fm code "make a Python CLI that counts lines, words and characters, with tests"`.
-- The app: `fm code` on its own opens it, the way `claude` does, and `fm code tui --tour` plays a 30-second guided run.
+- A bug: `sampo smith "total() in cart.py ignores the quantity" --worker claude` writes a failing test, fixes it, proves both.
+- A feature: `sampo smith "add a --json flag to todo.py, with a test"`.
+- A change across files: `sampo smith "rename fetch_user to load_user everywhere"`.
+- Docs: `sampo smith "document every environment variable config.py reads in README.md"`.
+- A question: `sampo smith "what does parse_dates do with a date that has no timezone?"` answers from the files, citing them, and changes nothing.
+- A new project: in an empty `git init` folder, `sampo smith "make a Python CLI that counts lines, words and characters, with tests"`.
+- The app: `sampo smith` on its own opens it, the way `claude` does, and `sampo smith tui --tour` plays a 30-second guided run.
 
-Real runs of each kind are on the [fm code page](https://chasesunstrom.github.io/foreman/features/code.html#ex-fix), recorded in `demo/examples/`.
+Real runs of each kind are on the [Smith page](https://chasesunstrom.github.io/foreman/features/code.html#ex-fix), recorded in `demo/examples/`.
 
 <details>
 <summary><b>How a run works</b></summary>
 
 - The harness does the stations itself: the model writes a short plan (checked, and sent back to fix when it's malformed), then picks one action at a time for each step.
-- Every edit, file write and command goes past Foreman's guard first, so a refused `rm -rf ~` never runs; the model reads the refusal and tries another way.
+- Every edit, file write and command goes past Sampo's Ward first, so a refused `rm -rf ~` never runs; the model reads the refusal and tries another way.
 - The harness runs each criterion's check, hands a failure back to the model (three rounds, three more on `--escalate MODEL`), and closes and commits the task, or blocks it with the reason.
 - `--dry-plan` shows the plan and changes nothing. `--no-commit` closes without committing. `--json` prints one event per line.
-- With no model or API key set up, fm code uses the Claude Code CLI if you have it (it says so when it starts); `--worker codex` (or `gemini`, `aider`) picks another: that CLI plans in its read-only mode and does each step, and fm code still makes the task, runs every check before and after, and commits only when they pass.
+- With no model or API key set up, Smith uses the Claude Code CLI if you have it (it says so when it starts); `--worker codex` (or `gemini`, `aider`) picks another: that CLI plans in its read-only mode and does each step, and Smith still makes the task, runs every check before and after, and commits only when they pass.
 - Any language: the checks are the project's own commands (`npm test`, `cargo test`, `go test`, `pytest`, a one-line assert).
-- A run that was killed or lost its model carries on with `fm code --resume`.
-- `cat error.log | fm code "fix the crash in this log"` reads what's piped on stdin as the request's context (up to 256 KB).
-- claude's own flags work where they mean the same thing: `fm code -p "fix add"` (`--print`) is `--plain`, `-c` (`--continue`) is `--resume` (the newest unfinished run), and `--output-format json` is `--json` (`text` and `stream-json` are refused). fm's `-p PROJECT` goes before the verb (`fm -p SLUG code …`), or `--project` after it.
+- A run that was killed or lost its model carries on with `sampo smith --resume`.
+- `cat error.log | sampo smith "fix the crash in this log"` reads what's piped on stdin as the request's context (up to 256 KB).
+- claude's own flags work where they mean the same thing: `sampo smith -p "fix add"` (`--print`) is `--plain`, `-c` (`--continue`) is `--resume` (the newest unfinished run), and `--output-format json` is `--json` (`text` and `stream-json` are refused). sampo's `-p PROJECT` goes before the verb (sampo, then `-p SLUG`, then `smith …`), or `--project` after it.
 - While a coding CLI works, each file it reads or edits and each command it runs shows as it happens (claude's stream; `--json` gives `tool` events), and a quiet turn says it's still working every 10 s.
-- `fm code why [ID]` explains a run (the newest with no ID): how it ended or that a kill stopped it, the steps done, a stall's cause, and the one command to run next.
+- `sampo smith why [ID]` explains a run (the newest with no ID): how it ended or that a kill stopped it, the steps done, a stall's cause, and the one command to run next.
 - In a repo marked sensitive, only a model on this machine is used.
 
 </details>
@@ -531,42 +543,42 @@ Real runs of each kind are on the [fm code page](https://chasesunstrom.github.io
 <details>
 <summary><b>Workers and runners</b></summary>
 
-- `fm code "FIX: make calc.add add" --worker codex --verify "python3 test_calc.py"` hands each step to a CLI you already have (`claude`, `codex`, `gemini`, `aider`, or your own `'CMD {prompt}'`), one unattended turn at a time, killed after `--worker-timeout` seconds (1200). `--verify` plans without a model.
+- `sampo smith "FIX: make calc.add add" --worker codex --verify "python3 test_calc.py"` hands each step to a CLI you already have (`claude`, `codex`, `gemini`, `aider`, or your own `'CMD {prompt}'`), one unattended turn at a time, killed after `--worker-timeout` seconds (1200). `--verify` plans without a model.
 - Only codex runs shell commands, inside its own sandbox. It and the verify get no forge, cloud, registry or other credentials, and a sensitive repo is refused.
-- After each turn the harness kills what the worker left running and puts back anything Foreman refuses (a protected file, ignored or not, a planted git hook or config, your shell startup files, other agents' settings and the MCP servers in `~/.claude.json`) and says so. The worker runs as you, so Foreman judges what it wrote, not what it read or sent; its own verify decides, never the worker's word.
-- `fm code runners` lists every coding CLI fm code knows (claude, codex, gemini, aider, opencode, qwen, cursor-agent, goose, amp), which are installed, which can plan read-only, the one a run with no flags uses, and every runner's record. `--check` asks each for its version and names any configured model id its provider has retired, with the replacement.
-- `fm code runners --use codex` makes it the default; add `--here` for this project only (a name, never a command; `--use ''` clears it).
-- `fm code runners --ping [NAME]` asks each installed runner one tiny question through its read-only plan command and says how it answered (ok, not logged in, usage limit, flag refused, endpoint down, no answer), how fast, and its version; it spends a few tokens a runner.
+- After each turn the harness kills what the worker left running and puts back anything Sampo refuses (a protected file, ignored or not, a planted git hook or config, your shell startup files, other agents' settings and the MCP servers in `~/.claude.json`) and says so. The worker runs as you, so Sampo judges what it wrote, not what it read or sent; its own verify decides, never the worker's word.
+- `sampo smith runners` lists every coding CLI Smith knows (claude, codex, gemini, aider, opencode, qwen, cursor-agent, goose, amp), which are installed, which can plan read-only, the one a run with no flags uses, and every runner's record. `--check` asks each for its version and names any configured model id its provider has retired, with the replacement.
+- `sampo smith runners --use codex` makes it the default; add `--here` for this project only (a name, never a command; `--use ''` clears it).
+- `sampo smith runners --ping [NAME]` asks each installed runner one tiny question through its read-only plan command and says how it answered (ok, not logged in, usage limit, flag refused, endpoint down, no answer), how fast, and its version; it spends a few tokens a runner.
 - Your own CLI goes in `$FOREMAN_HOME/code.toml`: `[runners.mine]` with `work = "mycli {prompt}"` (and `plan = …` for its read-only mode), then `runner = "mine"`. Only claude's read-only mode has been verified to only read; another plans only when you name it, with a note, and the run stops if its plan changes a file.
 - A template that turns its CLI's own approvals off (`--yolo`, `--dangerously-skip-permissions`, `danger-full-access`, `--approval-mode yolo`, …) is refused until you add the `[ack]` line the refusal prints, which holds that exact template's hash: change the template and it needs a new one.
-- `runner = "auto"` in code.toml: fm code plans with the usual runner, then gives the work to the runner with the best record on that kind of task (FIX, FEATURE, …): 3 or more past runs, two thirds closed, the least spent per closed run.
+- `runner = "auto"` in code.toml: Smith plans with the usual runner, then gives the work to the runner with the best record on that kind of task (FIX, FEATURE, …): 3 or more past runs, two thirds closed, the least spent per closed run.
 - When a worker turn fails: a usage limit that resets within `limit_wait` seconds (code.toml, default 3600) is waited out and the turn done again; past it the run stops and says when to resume. With `chain = ["claude", "codex"]` in code.toml, a crash, timeout or signed-out runner hands the turn to the next one.
-- The claude sessions fm code starts run lean: none of your plugins, MCP servers or settings hooks load there, only Foreman's guard, and the planner also has no tool that runs code (`--restricted`). On this machine that halved a planner call's input (31,620 → 15,286 tokens); `python3 plugin/tests/e2e/lean_probe.py` measures it and checks the guard still refuses. `lean = false` in `$FOREMAN_HOME/code.toml` launches them as before.
-- A lean worker whose session starts with an MCP server, an `mcp__` tool or a plugin that isn't built in is stopped at its first line and the run blocks, naming them. Inside a run, a coding CLI's `fm` only reads: every command that changes Foreman's state, grants above all, is refused there.
-- `fm code bench --model qwen2.5-coder:32b` (or `--worker codex`) grades a model or CLI as a Foreman worker on five seeded tasks in throwaway repos: a seed counts only when its own check passes afterwards, the dangerous one must leave its canary file alone, and the score is kept in `code-bench.jsonl` so runs can be compared. `--seeds operator,rename` picks seeds, `--seed-timeout` (600 s) and `--max-steps` (40) bound each one, and `--json` prints the run.
+- The claude sessions Smith starts run lean: none of your plugins, MCP servers or settings hooks load there, only Sampo's Ward, and the planner also has no tool that runs code (`--restricted`). On this machine that halved a planner call's input (31,620 → 15,286 tokens); `python3 plugin/tests/e2e/lean_probe.py` measures it and checks the Ward still refuses. `lean = false` in `$FOREMAN_HOME/code.toml` launches them as before.
+- A lean worker whose session starts with an MCP server, an `mcp__` tool or a plugin that isn't built in is stopped at its first line and the run blocks, naming them. Inside a run, a coding CLI's `sampo` only reads: every command that changes Sampo's state, grants above all, is refused there.
+- `sampo smith bench --model qwen2.5-coder:32b` (or `--worker codex`) grades a model or CLI as a Sampo worker on five seeded tasks in throwaway repos: a seed counts only when its own check passes afterwards, the dangerous one must leave its canary file alone, and the score is kept in `code-bench.jsonl` so runs can be compared. `--seeds operator,rename` picks seeds, `--seed-timeout` (600 s) and `--max-steps` (40) bound each one, and `--json` prints the run.
 
 </details>
 
 <details>
 <summary><b>The app, settings, costs and hooks</b></summary>
 
-- `fm code` on its own opens the app: inside a project, that project's active task, queue, inbox, blocked tasks and past runs; `Esc` (or `p` from a run) lists every Foreman project on the machine, newest first, with what each is doing.
-- `Enter` or `r` on a task runs it there (`fm code --task ID`: the task's own criteria and steps are the plan, no planner call; one run per task at a time), `Enter` on a past run replays it, `n` starts a new request in that project's folder, and `m` picks the runner.
-- On a terminal, `fm code "make calc.add add"` opens the app with that run going, the way `claude "<prompt>"` does; `--plain`, `--json`, `--dry-plan` or a pipe keep the line-by-line output.
-- `fm code tui "make calc.add add"` runs the same loop in a terminal UI: a track of the stations, check chips, change bars, a time chart and tokens per call, with the diff (`d`), past runs (`h`), the model or worker picker (`m`) and the settings (`,`) a key away.
-- It draws in 24-bit colour and moves: the working station pulses, counters and bars ease to their values, a guard refusal flashes and the close sweeps the track (`motion = reduced` or `off` stills it; `--record run.mp4 --events RUN.jsonl` films a run, [demo](https://chasesunstrom.github.io/foreman/features/code.html)). `z` hushes motion to reduced, then off, then full again, for the Claude Code pane too.
-- After a run closes, `u` twice undoes it (a `git revert` of its commit, marked undone in past runs) and `P` shows its pull request text from `fm pr`, which Enter posts when the task holds the publish grant.
+- `sampo smith` on its own opens the app: inside a project, that project's active task, queue, inbox, blocked tasks and past runs; `Esc` (or `p` from a run) lists every Sampo project on the machine, newest first, with what each is doing.
+- `Enter` or `r` on a task runs it there (`sampo smith --task ID`: the task's own criteria and steps are the plan, no planner call; one run per task at a time), `Enter` on a past run replays it, `n` starts a new request in that project's folder, and `m` picks the runner.
+- On a terminal, `sampo smith "make calc.add add"` opens the app with that run going, the way `claude "<prompt>"` does; `--plain`, `--json`, `--dry-plan` or a pipe keep the line-by-line output.
+- `sampo smith tui "make calc.add add"` runs the same loop in a terminal UI: a track of the stations, check chips, change bars, a time chart and tokens per call, with the diff (`d`), past runs (`h`), the model or worker picker (`m`) and the settings (`,`) a key away.
+- It draws in 24-bit colour and moves: the working station pulses, counters and bars ease to their values, a Ward refusal flashes and the close sweeps the track (`motion = reduced` or `off` stills it; `--record run.mp4 --events RUN.jsonl` films a run, [demo](https://chasesunstrom.github.io/foreman/features/code.html)). `z` hushes motion to reduced, then off, then full again, for the Claude Code pane too.
+- After a run closes, `u` twice undoes it (a `git revert` of its commit, marked undone in past runs) and `P` shows its pull request text from `sampo pr`, which Enter posts when the task holds the publish grant.
 - During a run, `n` asks about the code beside it, and Tab turns that box into a ticket for after it: tickets ride a rail under the track and start one by one as each run closes (`T` reorders or drops them).
-- When a run stalls or stops, `x` on its card hands the task to a live CLI in this terminal, with the task's brief as the opening prompt; when you exit it, the app re-runs the task's checks through the guard (`fm code --recheck ID`) and says whether it can close.
-- Before a project's first run its welcome shows what a run needs (fm on PATH, a runner, the folder as a project), each missing one with the key that fixes it, and `e` asks "explain this repo". The app's header names what holds the run in: Landlock (with its ABI) or Foreman's guard only. The runners screen (`,` then `r`) shows each one's last answer as a lamp, and `p` pings the selected runner.
-- `fm code tui --tour` plays a 30-second guided run with a caption naming each panel as it comes alive; `--tour --snapshot FILE.svg` writes it as one animated SVG, no video tools needed ([the tour](https://chasesunstrom.github.io/foreman/assets/code-tui-tour.svg), drawn from today's code at each site build).
+- When a run stalls or stops, `x` on its card hands the task to a live CLI in this terminal, with the task's brief as the opening prompt; when you exit it, the app re-runs the task's checks through the Ward (`sampo smith --recheck ID`) and says whether it can close.
+- Before a project's first run its welcome shows what a run needs (sampo on PATH, a runner, the folder as a project), each missing one with the key that fixes it, and `e` asks "explain this repo". The app's header names what holds the run in: Landlock (with its ABI) or Sampo's Ward only. The runners screen (`,` then `r`) shows each one's last answer as a lamp, and `p` pings the selected runner.
+- `sampo smith tui --tour` plays a 30-second guided run with a caption naming each panel as it comes alive; `--tour --snapshot FILE.svg` writes it as one animated SVG, no video tools needed ([the tour](https://chasesunstrom.github.io/foreman/assets/code-tui-tour.svg), drawn from today's code at each site build).
 - Themes: night, paper, signal for colour-blind eyes, mono, and `theme = "riso"` for risograph inks on a paper stock (`palette = "riso"` puts the inks on any theme, and on the pane). On a terminal that draws a half block one column wide, the built track stands up as a lit rail; `?` shows the keys as a poster.
-- `fm code tui --print-config > ~/.claude/foreman/tui.toml` gives you its theme, motion, layout and keys to edit. `fm settings list` shows them beside the Claude Code pane's, `fm settings set motion reduced` changes one in place, keeping your comments, `fm settings diff` lists the ones you changed, `fm settings export` prints them as one share code for `fm settings import CODE`, and `fm settings undo` puts the last set or import back.
+- `sampo smith tui --print-config > ~/.claude/foreman/tui.toml` gives you its theme, motion, layout and keys to edit. `sampo settings list` shows them beside the Claude Code pane's, `sampo settings set motion reduced` changes one in place, keeping your comments, `sampo settings diff` lists the ones you changed, `sampo settings export` prints them as one share code for `sampo settings import CODE`, and `sampo settings undo` puts the last set or import back.
 - Inside the app, `,` lists the settings by group with search, changed-only and `:set KEY VALUE`; a theme, palette or motion change is a preview until a key keeps it, and goes back after 10 s without one.
 - A Python file in `~/.claude/foreman/tui/` can add a panel or a command (see `plugin/templates/tui/cost_meter.py`); one that fails or runs slow (a panel over 50 ms, a command over 2 s) is switched off with a note, never taking the screen down.
-- `fm code config` lists every fm code setting with its value and where it came from (a flag, the environment, the project, code.toml or models.json, or the default); `--explain KEY` says what one does and how to change it. A code.toml that doesn't parse is named with its line.
-- What a run costs: a claude CLI's own count, or a models.json profile's `"price": {"in": 3, "out": 15}` (USD per million tokens), goes to `fm budget`'s ledger call by call and onto the run's close line. `--max-usd 2` stops a run once it has spent $2 (a resume keeps what it spent), and each claude turn gets `--max-budget-usd` with what is left.
-- Run events to your own tools: in `$FOREMAN_HOME/code.toml`, `[on]` with `closed = "notify-send done"`, `blocked = "…"` or `needs-you = "…"` runs that command with the event's JSON on stdin, past Foreman's guard, 30 s at most. `fm state --line` ends with the newest run (`code T-0007 closed`), for tmux and prompt segments.
+- `sampo smith config` lists every Smith setting with its value and where it came from (a flag, the environment, the project, code.toml or models.json, or the default); `--explain KEY` says what one does and how to change it. A code.toml that doesn't parse is named with its line.
+- What a run costs: a claude CLI's own count, or a models.json profile's `"price": {"in": 3, "out": 15}` (USD per million tokens), goes to `sampo budget`'s ledger call by call and onto the run's close line. `--max-usd 2` stops a run once it has spent $2 (a resume keeps what it spent), and each claude turn gets `--max-budget-usd` with what is left.
+- Run events to your own tools: in `$FOREMAN_HOME/code.toml`, `[on]` with `closed = "notify-send done"`, `blocked = "…"` or `needs-you = "…"` runs that command with the event's JSON on stdin, past Sampo's Ward, 30 s at most. `sampo state --line` ends with the newest run (`code T-0007 closed`), for tmux and prompt segments.
 
 </details>
 
@@ -575,25 +587,25 @@ Real runs of each kind are on the [fm code page](https://chasesunstrom.github.io
 <details>
 <summary><b>Rule first, then local, then cloud; live only by the exam</b></summary>
 
-Some calls can go to a model: a request's type and size, whether two items are the same, whether a lead is real. Foreman asks a deterministic rule first, then local models (Ollama, LM Studio, llama.cpp, vLLM), then cloud ones, and never a cloud model from a sensitive project. Every answer is booked with its probability.
+Some calls can go to a model: a request's type and size, whether two items are the same, whether a lead is real. Sampo asks a deterministic rule first, then local models (Ollama, LM Studio, llama.cpp, vLLM), then cloud ones, and never a cloud model from a sensitive project. Every answer is booked with its probability.
 
 - Each use starts in shadow mode: the rule decides and its call is logged; the hourly tick has a local model answer the same questions. The exam replays both against your closed tasks at zero tokens.
-- A use goes live only by a `model-live` decision citing the exam run that showed it beating the rule. No guard or evidence gate ever asks a model, and the layer downloads and installs nothing itself.
+- A use goes live only by a `model-live` decision citing the exam run that showed it beating the rule. No Ward or evidence gate ever asks a model, and the layer downloads and installs nothing itself.
 - A server you own goes in `$FOREMAN_HOME/models.json` with `"own": true` and its key named by `key_env` (never the key itself): it is asked after loopback servers and before clouds, and the night's shadow pass may use it, but never for a sensitive project. `TYPESAFE_BASE_URL` (with `TYPESAFE_MODEL`, `TYPESAFE_API_KEY`) adds a Jev-compatible server the same way.
-- Other agents ask the same layer through the `decide` MCP tool; their answers are booked apart from Foreman's own. `fm doctor`'s model backends line lists what it can reach and which uses are live; the site's Model layer page shows the newest exam replay.
+- Other agents ask the same layer through the `decide` MCP tool; their answers are booked apart from Sampo's own. `sampo doctor`'s model backends line lists what it can reach and which uses are live; the site's Model layer page shows the newest exam replay.
 
 </details>
 
-## When not to use Foreman
+## When not to use Sampo
 
 | Skip it for | Why, and what instead |
 |---|---|
 | **Quick one-off questions or scripts** | Planning, evidence and audits are overhead for a five-minute job; even an S task has a brief. Plain Claude Code is faster. |
-| **Native Windows** | Foreman needs Linux, macOS or WSL. |
-| **Approving every command yourself** | It's built for bypass mode with the guard as the brake. It works in the default mode too, but its drive keeps stopping at prompts. |
-| **Tight token budgets** | Brainstorms, second plans and audits run extra model sessions (capped by `fm budget`). Turn them down, or skip Foreman. |
-| **Installing no plugins** | [`plugin/templates/CLAUDE.lite.md`](plugin/templates/CLAUDE.lite.md) is the discipline in under 40 lines for a CLAUDE.md, with nothing enforcing it. `fm bench duel --vs snippet` measures what it's worth. |
-| **Code that must not leave the machine** | Mark the repo sensitive (`fm sensitive on`) so outward tools are refused, or don't use cloud-facing features there. |
+| **Native Windows** | Sampo needs Linux, macOS or WSL. |
+| **Approving every command yourself** | It's built for bypass mode with the Ward as the brake. It works in the default mode too, but its drive keeps stopping at prompts. |
+| **Tight token budgets** | Brainstorms, second plans and audits run extra model sessions (capped by `sampo budget`). Turn them down, or skip Sampo. |
+| **Installing no plugins** | [`plugin/templates/CLAUDE.lite.md`](plugin/templates/CLAUDE.lite.md) is the discipline in under 40 lines for a CLAUDE.md, with nothing enforcing it. `sampo bench duel --vs snippet` measures what it's worth. |
+| **Code that must not leave the machine** | Mark the repo sensitive (`sampo sensitive on`) so outward tools are refused, or don't use cloud-facing features there. |
 
 To add the lite rules to a project:
 
@@ -608,20 +620,26 @@ curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/plugin/t
 | [`MASTER.md`](MASTER.md) | The system map: how to prompt it, every file, how the parts interact, operations and limitations. Start here. |
 | [`INSTALL.md`](INSTALL.md) | Installation steps written for an agent to follow, asking before each change. |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release notes. |
-| [`BUILD_PROMPT.md`](BUILD_PROMPT.md) | The spec Foreman was built from, including the plugin choices (§4.6 and Appendix A). |
+| [`BUILD_PROMPT.md`](BUILD_PROMPT.md) | The spec Sampo was built from, including the plugin choices (§4.6 and Appendix A). |
 | [The site](https://chasesunstrom.github.io/foreman/) | A page per feature, with recorded runs. |
 
 ## Updating and removing
 
+<details><summary>Upgrading (formerly Foreman)</summary>
+
+**Upgrading.** Sampo was formerly Foreman, and nothing you have breaks: `fm` stays as an alias that works as before and prints one deprecation line a day; the plugin ids `foreman@foreman` and `foreman-ui@foreman`, the `/foreman:` commands, the `foreman:` agents, the `FOREMAN_*` variables and the `Foreman-Task` commit trailer keep working; and `~/.claude/foreman` is migrated once by `sampo migrate` (`sampo migrate --undo` restores it exactly). The renamed verbs keep their old spellings too: `code` is `sampo smith`, `genesis` is `sampo rune`, `exam` is `sampo louhi` and `guard` is `sampo ward`. The GitHub repo is still ChaseSunstrom/foreman until it is renamed, so the install lines above are unchanged.
+
+</details>
+
 - **Update:** `git pull` in `~/.claude/foreman` (then `/reload-plugins`), or rerun `install.sh`.
-- **Health check:** ask "is foreman ok?" (`fm doctor`). It also names any line in your CLAUDE.md, rules or Claude Code's memory that contradicts Foreman's, such as "never run the tests", with a fix. **Hygiene:** "clean up" (`fm tidy`).
+- **Health check:** ask "is sampo ok?" (`sampo doctor`). It also names any line in your CLAUDE.md, rules or Claude Code's memory that contradicts Sampo's, such as "never run the tests", with a fix. **Hygiene:** "clean up" (`sampo tidy`).
 - **Remove:** `~/.claude/foreman/plugin/uninstall.sh`. It uninstalls the plugin and marketplace and undoes the wiring. It keeps `state/` unless you pass `--purge-state`, and `--dry-run` previews.
 
 <details>
 <summary><b>Starting from a clean slate (optional)</b></summary>
 
 `reset-claude.sh` resets only the parts that change Claude's behavior, after backing up `~/.claude` and `~/.claude.json` to `~/.claude-reset/<timestamp>/`. It resets:
-- plugins, except the ones Foreman keeps;
+- plugins, except the ones Sampo keeps;
 - user hooks and permissions;
 - the global CLAUDE.md, rules, skills, agents and commands.
 
@@ -648,22 +666,22 @@ python3 demo/record.py [--mp4]                                  # re-record the 
 python3 demo/record_live.py [--from-cast]                       # re-record Claude Code + the mod (demo/live.*; a Sonnet turn)
 ```
 
-`fm release-check` also runs every fence marked `bash runnable` in this file and MASTER.md, each in a throwaway home with stdin closed and a timeout. That is hygiene, not a sandbox: a runnable fence is trusted like the tests and can still reach any file and the network. Mark a fence runnable only when it needs nothing but `fm` and the shell.
+`sampo release-check` also runs every fence marked `bash runnable` in this file and MASTER.md, each in a throwaway home with stdin closed and a timeout. That is hygiene, not a sandbox: a runnable fence is trusted like the tests and can still reach any file and the network. Mark a fence runnable only when it needs nothing but `sampo` and the shell.
 
 The README's diagrams are hand-written SVGs in `site/assets/diagrams/`, each on its own dark tile so they read on light and dark pages alike.
 
 ```
-BUILD_PROMPT.md       the spec Foreman was built from
+BUILD_PROMPT.md       the spec Sampo was built from
 MASTER.md             system map (start here)
 CHANGELOG.md          release notes
 install.sh            one-liner bootstrap
 setup-plugins.sh      curated plugin setup (safe to re-run; --dry-run to preview)
 configure-repo.sh     one-time for forks: point everything at your GitHub repo
 reset-claude.sh       optional: reset Claude Code's behavior layer before installing
-release.py            thin wrapper over `fm release VERSION [--push]` (--push needs the task's publish grant)
-.claude-plugin/       local marketplace "foreman"
-plugin/               the Foreman plugin (fm, hooks, skills, rules, agents, tests, evals)
-demo/                 the README's recordings (Claude Code with the mod; fm demo) and the scripts that make them
+release.py            thin wrapper over `sampo release VERSION [--push]` (--push needs the task's publish grant)
+.claude-plugin/       local marketplace "sampo"
+plugin/               the Sampo plugin (sampo, hooks, skills, rules, agents, tests, evals)
+demo/                 the README's recordings (Claude Code with the mod; sampo demo) and the scripts that make them
 site/                 the project site; site/assets/diagrams holds the README's diagrams
 local/ state/ backups/   machine-specific, gitignored
 ```

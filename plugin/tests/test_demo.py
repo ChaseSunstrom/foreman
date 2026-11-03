@@ -49,7 +49,7 @@ class Demo(ForemanTestCase):
     def test_listed_where_a_newcomer_starts(self):
         self.assertIn("fm demo", self.fm("--help").stdout)
         self.assertIn("demo", self.fm("help", "--all").stdout)
-        self.assertIn("fm demo", read_text(os.path.join(os.path.dirname(fmdemo.__file__), "..", "..", "README.md")))
+        self.assertIn("sampo demo", read_text(os.path.join(os.path.dirname(fmdemo.__file__), "..", "..", "README.md")))
 
 
 if __name__ == "__main__":

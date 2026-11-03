@@ -85,7 +85,7 @@ class BoardSurfaces(ForemanTestCase):
         self.assertIsNone(c.find_project(plain, create=False))
 
     def test_docs_name_the_tmux_line_and_lsp_diagnostics(self):
-        self.assertIn("fm state --line)", read_text(os.path.join(ROOT, "README.md")))
+        self.assertIn("sampo state --line)", read_text(os.path.join(ROOT, "README.md")))
         ref = read_text(os.path.join(ROOT, "plugin", "skills", "intake", "references", "execute.md"))
         self.assertIn("LSP", ref)
         self.assertIn("diagnostics", ref)

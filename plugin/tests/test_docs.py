@@ -51,6 +51,20 @@ def fm_mention_problems(text):
     return bad
 
 
+# T-2760 (SAMPO.md): the docs show `sampo VERB`; the renamed verbs keep their old CLI spelling until step 2 lands them,
+# and moons and underworld are new verbs with no old one, so those two are accepted by name
+SAMPO_OLD = {"smith": "code", "rune": "genesis", "louhi": "exam", "ward": "guard"}
+SAMPO_NEW = ("moons", "underworld")
+
+
+def sampo_mention_problems(text):
+    """The `sampo VERB [word]` mentions in backticks that name no command (the renamed verbs read as their old names)."""
+    text = re.sub(rf"`sampo ({'|'.join(SAMPO_NEW)})\b", "", text)
+    text = re.sub(r"`sampo -\S*", "", text)  # a flag, not a verb
+    text = re.sub(r"`sampo ([\w-]+)", lambda m: "`fm " + SAMPO_OLD.get(m.group(1), m.group(1)), text)
+    return fm_mention_problems(text)
+
+
 def rel(path):
     return os.path.relpath(path, PLUGIN)
 
@@ -61,8 +75,8 @@ class Judgment(unittest.TestCase):  # T-2344: #2 and #8 described where a reader
         for name in ("MASTER.md", "README.md", "CHANGELOG.md"):
             text = read_text(os.path.join(root, name))
             for word in ("Choice N (NN%)", "fm lane race", "one-way", "fm outcomes --judgment"):
-                with self.subTest(doc=name, word=word):
-                    self.assertIn(word, text)
+                with self.subTest(doc=name, word=word):  # README speaks Sampo's `sampo` (T-2760); the rest still `fm`
+                    self.assertTrue(word in text or word.replace("fm ", "sampo ") in text)
 
 
 class LiteRules(unittest.TestCase):  # T-1264
@@ -285,21 +299,21 @@ class PluginParity(unittest.TestCase):
 
 
 class CodeExamples(unittest.TestCase):  # T-1353
-    """Every `fm code …` example in README's Foreman Code section parses with fm's own parser to the code verb, so
-    a renamed or removed flag can't linger in the docs."""
+    """Every `sampo smith …` example in README's Smith section parses with the CLI's own parser to the code verb (Smith
+    is `fm code` until the verb lands, T-2760), so a renamed or removed flag can't linger in the docs."""
     FILL = ((r"\[NAME\]", "claude"), (r"\bID\b", "T-0001"), (r"\bUSD\b", "1"), (r"\bN\b", "1"))
 
     def examples(self):
         text = read_text(os.path.join(os.path.dirname(PLUGIN), "README.md"))
-        section = re.search(r"(?ms)^### Foreman Code.*?(?=^### |\Z)", text).group(0)
-        return sorted(set(re.findall(r"`(fm code[^`]*)`", section)))
+        section = re.search(r"(?ms)^### Smith.*?(?=^### |\Z)", text).group(0)
+        return sorted(set(re.findall(r"`(sampo smith[^`]*)`", section)))
 
     def parse(self, example):
         import contextlib
         import io
         import shlex
         import fmcli
-        line = example.split(" > ")[0]  # a shell redirect isn't fm's
+        line = re.sub(r"^sampo smith", "fm code", example.split(" > ")[0])  # a shell redirect isn't the CLI's
         for pat, value in self.FILL:
             line = re.sub(pat, value, line)
         try:
@@ -312,7 +326,50 @@ class CodeExamples(unittest.TestCase):  # T-1353
         found = self.examples()
         self.assertGreater(len(found), 10, found)
         self.assertEqual([x for x in found if getattr(self.parse(x), "cmd", None) != "code"], [])
-        self.assertIsNone(self.parse("fm code runners --made-up-flag"), "a flag fm doesn't have fails")
+        self.assertIsNone(self.parse("sampo smith runners --made-up-flag"), "a flag the CLI doesn't have fails")
+
+
+class SampoFrontDoor(unittest.TestCase):  # T-2760
+    """README and INSTALL speak Sampo: the Runestone header, the myth once, the kept names in one upgrade note, and
+    every `sampo VERB` they show a real verb."""
+    ROOT = os.path.dirname(PLUGIN)
+
+    def doc(self, name):
+        return read_text(os.path.join(self.ROOT, name))
+
+    def test_the_header_is_a_picture_of_the_dark_and_light_runestone(self):
+        text = self.doc("README.md")
+        head = text[:text.index("</picture>")]
+        self.assertIn("<picture>", head)
+        for mode in ("dark", "light"):
+            path = f"design/sampo/logo/readme-header-{mode}.svg"
+            self.assertRegex(head, rf'<source media="\(prefers-color-scheme: {mode}\)" srcset="{path}"')
+            self.assertTrue(os.path.isfile(os.path.join(self.ROOT, path)), path)
+        self.assertNotIn("foreman.svg", text)
+
+    def test_the_myth_is_told_once_in_the_readme_and_not_in_install(self):
+        self.assertEqual(self.doc("README.md").count("Ilmarinen"), 1)
+        self.assertNotIn("Ilmarinen", self.doc("INSTALL.md"))
+        paragraph = next(p for p in self.doc("README.md").split("\n\n") if "Ilmarinen" in p)
+        for name in ("Smith", "Rune", "Louhi", "Moons", "Underworld", "Ward"):
+            self.assertIn(name, paragraph)
+
+    def test_one_upgrade_note_names_every_kept_form_and_sampo_migrate(self):
+        text = self.doc("README.md")
+        note = next(p for p in text.split("\n\n") if "Foreman-Task" in p)
+        for kept in ("`fm`", "foreman@foreman", "foreman-ui@foreman", "/foreman:", "foreman:", "FOREMAN_*",
+                     "Foreman-Task", "~/.claude/foreman", "sampo migrate", "--undo", "formerly Foreman"):
+            self.assertIn(kept, note)
+        self.assertEqual(text.count("Foreman-Task"), 1)
+
+    def test_every_sampo_verb_the_front_door_docs_show_exists(self):
+        self.assertEqual(sampo_mention_problems("`sampo nosuch` `sampo smith runners` `sampo moons rate` `sampo rune step`"),
+                         ["fm nosuch"], "the checker itself")
+        for name in ("README.md", "INSTALL.md"):
+            text = self.doc(name)
+            self.assertGreater(len(re.findall(r"`sampo [a-z]", text)), 10 if name == "README.md" else 1, name)
+            self.assertEqual(sampo_mention_problems(text), [], name)
+            self.assertNotRegex(text, r"`fm [a-z]", f"{name}: a bare fm command")
 
 
 class Agents(unittest.TestCase):
@@ -969,7 +1026,7 @@ class Logo(unittest.TestCase):  # T-2041
         self.assertIsNone(svg.find(f".//{ns}text"), "no text: fonts differ by host, so the mark is all paths")
         self.assertNotIn("href", text, "nothing loaded from elsewhere")
         self.assertEqual(re.findall(r"url\((?!#)", text), [], "only in-file gradients")
-        self.assertIn('src="site/assets/foreman.svg"', read_text(os.path.join(root_dir, "README.md")))
+        self.assertIn("design/sampo/logo/readme-header-dark.svg", read_text(os.path.join(root_dir, "README.md")))  # T-2760: the Runestone header replaced the hard hat
 
 
 class ReadmeShape(unittest.TestCase):  # T-2052
