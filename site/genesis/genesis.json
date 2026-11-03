@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-03T17:53:50Z",
+ "updated": "2026-11-03T17:58:52Z",
  "rev": "aa1fc81e",
  "capabilities": [
   {
@@ -25420,7 +25420,7 @@
  },
  "not_yet": 8,
  "not_yet_open": 8,
- "unproven": 731,
+ "unproven": 732,
  "unproven_kinds": {
   "meaning": 582,
   "research-uncited": 30,
@@ -25431,7 +25431,7 @@
   "docs": 72,
   "perf-noise": 1,
   "infra": 2,
-  "ui-unshot": 8
+  "ui-unshot": 9
  },
  "next": {
   "stage": "mission",
