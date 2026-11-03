@@ -6115,6 +6115,7 @@ class _Parser(argparse.ArgumentParser):
         choices = re.findall(r"'?([\w-]+)'?", bad.group(2)) if bad else []
         if bad and not near:
             near = [FOLDED[bad.group(1)]] if bad.group(1) in FOLDED else difflib.get_close_matches(bad.group(1), choices, n=1)
+            near = near or [x for x in _LISTS if bad.group(1) in ("list", "ls") and x in choices][:1]  # T-2735
         word = unknown[0] if unknown else bad.group(1) if bad else ""
         gone = TOMBSTONES.get((words[0] if words else "", word))  # T-2641: removed on purpose, not mistyped
         if gone:
@@ -8334,6 +8335,7 @@ def _options_first(parser, argv):
 
 # T-2461: verbs folded into the verb that holds their job; the old name only names the new home (never an alias: an
 # alias would carry a user-only word past fmguard's per-verb table, e.g. prove's --yes-run)
+_LISTS = ("list", "runs", "status", "show")  # T-2735: what an unknown 'list' or 'ls' most likely meant, in order
 FOLDED = {"proof": "prove --rollup", "calibration": "outcomes --judgment", "incident": "capture --incident",
           "sweep": "projects --sweep", "instruments": "which --instruments", "suspects": "whyred --suspects"}
 # T-1180: what builders and small models guess, run as what they meant (one quiet note says which); first match wins

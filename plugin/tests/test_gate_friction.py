@@ -78,7 +78,8 @@ class Typos(ForemanTestCase):
     def test_nearest_subcommand_and_flag(self):
         self.fm("init")
         for argv, want in ((["tsk", "show", "T-0001"], "task"), (["task", "evidense", "T-1"], "evidence"),
-                           (["check", "--evidance", "T-1"], "--evidence"), (["capture", "x", "--tyep", "FIX"], "--type")):
+                           (["check", "--evidance", "T-1"], "--evidence"), (["capture", "x", "--tyep", "FIX"], "--type"),
+                           (["exam", "list"], "runs")):  # T-2735: "list" is nowhere near "runs" by spelling
             p = self.fm(*argv, check=False)
             self.assertNotEqual(p.returncode, 0)
             self.assertIn(f"did you mean {want}", p.stderr, argv)
