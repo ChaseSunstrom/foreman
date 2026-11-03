@@ -6339,7 +6339,8 @@ def _build_parser(only=None):
     # only the root: subparsers keep argparse's own help
     ap.format_help = lambda: START_HERE.replace("usage: fm", f"usage: {prog}", 1)
     ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
-    sp = ap.add_subparsers(dest="cmd", required=True, metavar="<command>")
+    # T-2814: prog given, or argparse before 3.14 prefixes every subcommand's usage with the root's custom usage line
+    sp = ap.add_subparsers(dest="cmd", required=True, metavar="<command>", prog=prog)
 
     tiered = []  # T-1144: (order, title, name): each command's fm help tier, declared where it is registered
 
