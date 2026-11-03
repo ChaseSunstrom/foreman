@@ -31,6 +31,17 @@ CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "cre
               "git-destructive", "pipe-shell", "publish", "confirm", "confine", "brief"]
 # confine (T-0234): a builder writes in its worktree only; brief (T-0308): no edits without a task — start one
 NOT_AUTHORIZABLE = {"state-direct", "self-authorize", "confine", "brief"}
+# T-2745: Sampo is Foreman's new name; the guard refuses under each sampo name what it refuses under the fm one.
+# Every site that keys on `fm` reads these. The env twins are matched as (?:FOREMAN|SAMPO)_X, the module prefixes by
+# startswith, the verb twins by _fm_subcommand.
+KNOWS_SAMPO = True
+FM_PROGRAMS = ("fm", "sampo")  # the program, and the script a python call runs: plugin/bin/<name>
+FM_SCRIPT_ENDS = tuple("/" + p for p in FM_PROGRAMS)
+FM_MODULE_PREFIXES = ("fm", "sampo")  # imports of fm* or sampo, sampo.* are Foreman's modules
+FM_NAME_RE = "(?:fm|sampo)"
+GUARD_FILES = ("fmguard.py", "sampo/ward.py")  # the guard under its old and new path (= _sampo_name("fmguard"))
+VERB_TWINS = {"rune": "genesis", "louhi": "exam", "ward": "guard", "smith": "code", "moons": "genesis moonshot",
+              "underworld": "genesis"}  # ponytail: no rule keys on these verbs yet; a later one reads the old name
 # fm subcommands that undo or grant what only the user decides: sub -> (the word that makes it so, why, what they type).
 # One table, so the next one isn't forgotten.
 USER_ONLY_FM = {
@@ -559,7 +570,7 @@ def _standing_covers(path, ctx):
     """A standing core yes (T-0119) covers Foreman's own code, rules, evals and spec; never this guard file, Claude
     Code's settings or Foreman state, which still ask each time."""
     fh, path = ctx.foreman_home, _plain_path(path)
-    if path is None or _under(os.path.join(fh, "plugin", "lib", "fmguard.py"), path):
+    if path is None or any(_under(os.path.join(fh, "plugin", "lib", *g.split("/")), path) for g in GUARD_FILES):
         return False  # not a path, the guard itself, or a whole-tree write that includes it
     return path in {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")} or any(
         _strictly_under(path, os.path.join(fh, "plugin", d)) for d in _CORE_DIRS)
@@ -674,8 +685,8 @@ def classify_write(path, ctx, real=True):
     # a link (real=False) is judged where it is, and where its folder really is (a link inside a linked folder)
     for p in (_variants(path) if real else {path, os.path.join(os.path.realpath(os.path.dirname(path)),
                                                                 os.path.basename(path))}):
-        mirror = os.path.join(ctx.project_root, ".foreman") if ctx.project_root else None  # fm sync writes it
-        if any(d and _under(p, d) for d in [*ctx.state_dirs, mirror]):
+        mirrors = [os.path.join(ctx.project_root, d) for d in (".foreman", ".sampo")] if ctx.project_root else []  # fm sync
+        if any(d and _under(p, d) for d in [*ctx.state_dirs, *mirrors]):
             cats.append("state-direct")
         if _is_core(p, ctx):
             cats.append("core")
@@ -1078,7 +1089,7 @@ def _drop_data_heredocs(cmd, only=None):
         for quote, delim in starts:
             # T-1141: fm edit reads its heredoc as edit blocks it applies through the guard's own Edit check, never runs it
             data = bool(quote) and not re.search(r"[|`;&]|\$\(", line) and (
-                line.split()[:2] == ["fm", "edit"]
+                line.split()[:2] in [[p, "edit"] for p in FM_PROGRAMS]
                 or line.split()[:1] in (["cat"], ["tee"]) and (only is None or only(line)))
             while i < len(lines) and not _ends_body(lines[i], delim, line):
                 if not data:
@@ -1587,8 +1598,20 @@ _EXEC_API = lazy(r"\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\b|\bPo
 
 # Any Foreman module (fm*.py in plugin/lib), so new modules are covered without editing this list. Calls into the entry
 # point modules count as mutating; fmcore/fmguard/fmdocs/fmdoctor are mostly read-only, so their mutators are by name.
-_FM_INTERNALS = lazy(r"\b(?:import|from)\s+fm[a-z]+\b|(?:__import__|import_module)\s*\(\s*['\"]fm[a-z]+")
-_FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas|fmserve|fmplugins)"
+_FM_INTERNALS = lazy(r"\b(?:import|from)\s+(?:fm[a-z]+|sampo(?:\.\w+)?)\b|(?:__import__|import_module)\s*\(\s*['\"](?:fm[a-z]+|sampo(?:\.\w+)?)")
+_SAMPO_ROLES = {"guard": "ward", "genesis": "rune", "exam": "louhi", "moonshot": "moons", "code": "smith",
+                "codebench": "smithbench", "codemod": "smithmod", "codeterm": "smithterm", "codetui": "smithtui"}
+
+
+def _sampo_name(fm):
+    """T-2745: the sampo module an fm module becomes (T-2742's map): fmcli -> sampo.cli, fmguard -> sampo.ward."""
+    name = fm[2:] if fm.startswith("fm") else fm
+    return "sampo." + _SAMPO_ROLES.get(name, name)
+
+
+_FM_ENTRY_MODULES = ("fmcli", "fmhooks", "fmsetup", "fmtidy", "fmideas", "fmserve", "fmplugins")
+# each fm entry module and its sampo twin; a bare `sampo` (the package) counts too, to be safe
+_FM_ENTRY = "(?:" + "|".join(_FM_ENTRY_MODULES + tuple(re.escape(_sampo_name(m)) for m in _FM_ENTRY_MODULES) + (r"sampo(?!\.\w+\b(?!\s*\())",)) + ")"  # bare: not `sampo.mod…` (a module, judged by its own name) but `sampo.fn(`
 _FM_MUTATORS = lazy(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
                           r"add_rule|drop_rule|add_veto|drop_veto|"  # T-0971 review: the user's rules and vetoes
                           r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals|_activate_fallback|"
@@ -1597,7 +1620,7 @@ _FM_MUTATORS = lazy(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_ev
                           rf"\b{_FM_ENTRY}\s*\.\s*\w+\s*\(|\bfrom\s+{_FM_ENTRY}\s+import\b|\bimport\s+{_FM_ENTRY}\s+as\b|"
                           rf"(?:__import__|import_module)\s*\(\s*['\"]{_FM_ENTRY}|"
                           # T-0170: a writer imported by name, then called under an alias (from fmcore import x as w)
-                          r"\bfrom\s+fm[a-z]+\s+import\s+[^\n;]*\b(?:save_brief|write_meta|update_meta|write_atomic|"
+                          r"\bfrom\s+(?:fm[a-z]+|sampo(?:\.\w+)?)\s+import\s+[^\n;]*\b(?:save_brief|write_meta|update_meta|write_atomic|"
                           r"log_event|regen_views|init_project|checkpoint|mutate|restore_default_state)\b")
 
 
@@ -1664,11 +1687,11 @@ def _subst_bodies(text, tails=True, clean=False):
 def _real_fm(argv, ctx):
     """argv runs Foreman's own fm: bare `fm` (the caller has ruled out PATH, alias and function changes), or its real
     path, directly or as python's script. Anything else named fm is just a program (automated review of T-0153)."""
-    fm_bin = os.path.realpath(os.path.join(ctx.foreman_home, "plugin", "bin", "fm"))
-    same = lambda path: os.path.realpath(os.path.join(ctx.cwd, os.path.expanduser(path))) == fm_bin
+    fm_bins = {os.path.realpath(os.path.join(ctx.foreman_home, "plugin", "bin", p)) for p in FM_PROGRAMS}
+    same = lambda path: os.path.realpath(os.path.join(ctx.cwd, os.path.expanduser(path))) in fm_bins
     if not argv:
         return False
-    if argv[0] == "fm":
+    if argv[0] in FM_PROGRAMS:
         return True
     if re.match(r"^python[0-9.]*$", os.path.basename(argv[0])):
         return len(argv) > 1 and not argv[1].startswith("-") and same(argv[1])
@@ -1681,7 +1704,7 @@ def _mask_fm(cmd, ctx):
     interpreter code (T-0153). Heredoc bodies are kept; where the quote scan can't follow, nothing is blanked."""
     shell, bodies = _heredocs(cmd)
     if ("$'" in shell or len(re.findall(r"(?<!<)<<(?!<)", shell)) != len(re.findall(_HEREDOC_START, shell))
-            or "#" in shell or re.search(r"\bPATH\b|\balias\b|\bhash\b|\bfunction\s+fm\b|\bfm\s*\(\s*\)", shell)):
+            or "#" in shell or re.search(r"\bPATH\b|\balias\b|\bhash\b|\bfunction\s+" + FM_NAME_RE + r"\b|\b" + FM_NAME_RE + r"\s*\(\s*\)", shell)):
         return cmd  # the quote scan can't follow, or which program `fm` names could change: blank nothing
     out, seg, q, esc = [], [], None, False
 
@@ -1783,7 +1806,7 @@ def _python_units(cmd):
 
 # T-1887: names python, the loader, bash or Foreman read: never a plain prefix of a heredoc the guard parses
 _PRE_DENY = lazy(r"(?:PATH|HOME|IFS|CDPATH|ENV|BASH_ENV|TMPDIR|GCONV_PATH|LOCPATH|NLSPATH|GLIBC_TUNABLES|LD_\w*"
-                       r"|MALLOC_\w*|PYTHON\w*|CLAUDE\w*|FOREMAN\w*|FM_\w*|XDG_\w*|CODEX_\w*)$")
+                       r"|MALLOC_\w*|PYTHON\w*|CLAUDE\w*|FOREMAN\w*|SAMPO\w*|FM_\w*|XDG_\w*|CODEX_\w*)$")
 
 
 # module → (functions it may call, values it may name: flags, exception classes, argv); nothing that holds a module
@@ -1957,7 +1980,7 @@ def _writes_unrun_source(line, cmd, ctx):
 
 _DRAFT_EXT = (".txt", ".patch", ".diff", ".md", ".json")
 # review: only flags that take no value (-W/-X would take the script's place, leaving the draft to run)
-_DRAFT_USE = lazy(r"\s*fm\s+edit\b.*|\s*python[0-9.]*\s+(?:-[BEIOPRSbdqsuv]+\s+)*([\w./~@+-]+\.py)\s.*")
+_DRAFT_USE = lazy(r"\s*" + FM_NAME_RE + r"\s+edit\b.*|\s*python[0-9.]*\s+(?:-[BEIOPRSbdqsuv]+\s+)*([\w./~@+-]+\.py)\s.*")
 
 
 def _writes_unrun_draft(line, cmd, ctx):
@@ -2074,7 +2097,7 @@ def _drives_fm(cmd, cwd=None):
         modules = [a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names] + \
                   [n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
         odd = sorted(names & _DYNAMIC) + sorted(x for x in names if x.startswith("__")) + \
-            [m for m in modules if m.split(".")[0] not in _PLAIN_IMPORTS and not m.startswith("fm")]
+            [m for m in modules if m.split(".")[0] not in _PLAIN_IMPORTS and not m.startswith(FM_MODULE_PREFIXES)]
         if odd:  # its strings could still run: a process, a module it wrote, pickle, dunder walking…
             return f"dynamic code or an import outside re, json, textwrap and the like ({_ident(odd[0])})"
         # review (T-0286): python - (and -c) imports from its folder first — a json.py there runs
@@ -2084,8 +2107,10 @@ def _drives_fm(cmd, cwd=None):
         shadow = [m for m in modules for x in (".py", "") if os.path.exists(os.path.join(run, m.split(".")[0] + x))]
         if modules and shadow:
             return f"python's run folder holds a file named like its import ({_ident(shadow[0])})"
-        fm_from = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("fm")]
-        fm_import = [a for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names if a.name.startswith("fm")]
+        fm_from = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+                   and (n.module or "").startswith(FM_MODULE_PREFIXES)]
+        fm_import = [a for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names
+                     if a.name.startswith(FM_MODULE_PREFIXES)]
         if fm_from or (fm_import and _FM_MUTATORS.search(code)):
             return f"it imports {_ident((fm_from[0].module if fm_from else fm_import[0].name) or 'fm')}"
     return ""
@@ -2113,7 +2138,7 @@ def _interp_code(cmd):
             continue
         argv, _ = _strip_wrappers(_tokens(re.split(r"[;&|()\n`]", before)[-1]))
         name = os.path.basename(argv[0]) if argv else ""
-        if name == "fm" or (re.match(r"^python[0-9.]*$", name) and argv[1:2] and argv[1].endswith("/fm")):
+        if name in FM_PROGRAMS or (re.match(r"^python[0-9.]*$", name) and argv[1:2] and argv[1].endswith(FM_SCRIPT_ENDS)):
             out.append(shell[last:m.start()] + " ")
             last = m.end()
     return "".join(out) + shell[last:] + "\n" + bodies
@@ -2376,7 +2401,7 @@ def _hides_claude(words):
     return False
 
 
-_CONFINE_SET = lazy(r"^FOREMAN_CONFINE\+?=")
+_CONFINE_SET = lazy(r"^(?:FOREMAN|SAMPO)_CONFINE\+?=")
 
 
 def _unconfines(words):
@@ -2548,9 +2573,9 @@ def fm_calls(cmd):
     for c in _split(_tokens(_lines(_strip_heredocs(cmd)))):
         argv, _ = _strip_wrappers(c.argv)
         name, args = (os.path.basename(argv[0]) if argv else ""), argv[1:]
-        if name == "fm":
+        if name in FM_PROGRAMS:
             calls.append(args)
-        elif re.match(r"^python[0-9.]*$", name) and args[:1] and args[0].endswith("/fm"):
+        elif re.match(r"^python[0-9.]*$", name) and args[:1] and args[0].endswith(FM_SCRIPT_ENDS):
             calls.append(args[1:])
     return calls
 
@@ -3698,8 +3723,8 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                                   lambda p, x: classify_system_mode(p, x, recursive),
                                   f" ({name} {'recursive' if recursive else 'opening write to others'} on a system "
                                   "folder)", guess=False)
-        if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
-            fm_args = args[1:] if name != "fm" else args
+        if name in FM_PROGRAMS or (re.match(r"^python[0-9.]*$", name) and any(a.endswith(FM_SCRIPT_ENDS) for a in args[:1])):
+            fm_args = args[1:] if name not in FM_PROGRAMS else args
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
                 found.append(("self-authorize", "an agent may not grant core or remote"))
             sub, rest = _fm_subcommand(fm_args)
@@ -4351,7 +4376,7 @@ def _rm_hit(text):
 def _fm_hit(text):
     """The first `fm …` the guard itself refuses an agent (USER_ONLY_FM verbs, --allow core|remote), as (position, line):
     read from the guard's own tables, so a new entry there is caught here."""
-    for m in re.finditer(r"\bfm\b([^\n;&|]*)", text):
+    for m in re.finditer(r"\b" + FM_NAME_RE + r"\b([^\n;&|]*)", text):
         if _commented(text, m.start()):
             continue
         args = [a.replace('"', "").replace("'", "") for a in m.group(1)[:_LINE_CAP].split()]
@@ -4390,7 +4415,7 @@ def _literal_scan(text, ctx=None):
             out.append((at(hit[0]), hit[1].strip()[:120], why))
     # a write into Foreman's state: find the path as a plain substring (a regex over the whole text was 30 ms), then
     # look for a writing word on that line
-    marks = [".claude/foreman/state", "FOREMAN_HOME}/state", "FOREMAN_HOME/state"]
+    marks = [".claude/foreman/state", ".claude/sampo/state", "FOREMAN_HOME}/state", "FOREMAN_HOME/state", "SAMPO_HOME}/state", "SAMPO_HOME/state"]
     if ctx is not None:  # the state folder this guard runs with, when it isn't under ~/.claude/foreman
         marks.append(ctx.state_dir or os.path.join(ctx.foreman_home, "state"))
     # a path, quote, backslash or backtick before the verb (/bin/rm, \rm, "rm", `rm`); not rm-rf-helper or install-manifest
@@ -5202,12 +5227,18 @@ def _fm_trailing(rest, positionals):
     return []
 
 
-def _fm_subcommand(args, takes_value=("-p", "--project")):
-    """(first word that isn't an option, what follows it); `takes_value` options consume the next word."""
+def _fm_subcommand(args, takes_value=("-p", "--project"), twins=True):
+    """(first word that isn't an option, what follows it); `takes_value` options consume the next word. T-2745: a verb
+    twin (rune, louhi, ward, smith, moons) reads as the fm verb it renames."""
     i = 0
     while i < len(args) and args[i].startswith("-"):
         i += 2 if args[i] in takes_value else 1
-    return (args[i], args[i + 1:]) if i < len(args) else (None, [])
+    if i >= len(args):
+        return None, []
+    if twins and args[i] in VERB_TWINS:
+        old = VERB_TWINS[args[i]].split()
+        return old[0], old[1:] + args[i + 1:]
+    return args[i], args[i + 1:]
 
 
 _CLAUDE_CHANGES = {"plugin": {"install", "i", "enable", "disable", "uninstall", "remove", "update"},
@@ -5295,7 +5326,7 @@ def _check_system(name, args):
         # hooks from another folder, set for one command (-c, --config-env) or persistently (git config)
         if any(re.match(r"(?i)(--config-env=|-c)?core\.hookspath=", a) for a in args):
             return [("system", "git with core.hooksPath (hooks from another folder)")]
-        sub, rest = _fm_subcommand(args, takes_value=("-C", "-c"))
+        sub, rest = _fm_subcommand(args, takes_value=("-C", "-c"), twins=False)
         values = [a for a in rest if not a.startswith("-")]
         if sub == "config" and [v.lower() for v in values[:1]] == ["core.hookspath"] and len(values) > 1 \
                 and not set(rest) & {"--get", "--get-all", "--list", "-l", "--unset", "--unset-all"}:
@@ -5390,8 +5421,10 @@ def _check_publish(name, args):
         return []
     if re.match(r"^python[0-9.]*$", name) and args[:1] == ["-m"] and len(args) > 1:
         name, args = args[1], args[2:]
-    if re.match(r"^python[0-9.]*$", name) and args[:1] and args[0].endswith("/fm"):  # T-1881: python3 plugin/bin/fm
+    if re.match(r"^python[0-9.]*$", name) and args[:1] and args[0].endswith(FM_SCRIPT_ENDS):  # T-1881: python3 plugin/bin/fm
         name, args = "fm", args[1:]
+    if name == "sampo":
+        name = "fm"
     pos = _positionals(args)
     joined = " ".join(pos[:2])  # not a list: a path or word fragment, not a list
     for verb in _PUBLISH.get(name, []):
