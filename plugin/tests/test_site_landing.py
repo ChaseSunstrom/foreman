@@ -17,7 +17,7 @@ from test_site_build import media_blocks
 from test_site_hero import KEYS, ROOT, build_copy, build_module, hero
 
 sys.path.insert(0, os.path.join(PLUGIN, "lib"))
-import fmdesign  # noqa: E402
+from sampo import design  # noqa: E402
 
 MYTH = ("Kalevala", "Ilmarinen", "Väinämöinen", "Louhi", "Smith", "Rune", "Moons", "Underworld", "Ward")
 
@@ -117,14 +117,14 @@ class Landing(unittest.TestCase):
         self.assertRegex(lanes, r'<figure class="smithy" aria-hidden="true">\s*<svg')
 
     def test_design_lint_passes(self):
-        found = fmdesign.lint([os.path.join(self.out, "index.html"), os.path.join(self.out, "style.css")])
+        found = design.lint([os.path.join(self.out, "index.html"), os.path.join(self.out, "style.css")])
         self.assertEqual(found, [], found)
 
     def test_phone_width_and_contrast_in_both_themes(self):
         browser = headless_chrome()
         if not browser:
             self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
-        import fmshot
+        from sampo import shot
         probe = """(() => {
           const solid = el => { for (; el; el = el.parentElement) { const c = getComputedStyle(el).backgroundColor;
             if (!/^rgba\\(.*,\\s*0(\\.0+)?\\)$|transparent/.test(c) && !/^rgba/.test(c)) return c; }
@@ -137,12 +137,12 @@ class Landing(unittest.TestCase):
         rgb = lambda c: tuple(int(x) / 255 for x in re.findall(r"[\d.]+", c)[:3])
         for scheme in ("light", "dark"):
             for reduced in (True, False):
-                b = fmshot.Browser(browser, (320, 640), reduced=reduced)
+                b = shot.Browser(browser, (320, 640), reduced=reduced)
                 try:
                     b.call("Emulation.setEmulatedMedia", b.sid, features=[
                         {"name": "prefers-color-scheme", "value": scheme},
                         {"name": "prefers-reduced-motion", "value": "reduce" if reduced else "no-preference"}])
-                    fmshot.load(b, "file://" + os.path.join(self.out, "index.html"))
+                    shot.load(b,"file://" + os.path.join(self.out, "index.html"))
                     got = b.call("Runtime.evaluate", b.sid, expression=probe, returnByValue=True)["result"]["value"]
                 finally:
                     b.close()
@@ -152,7 +152,7 @@ class Landing(unittest.TestCase):
                     self.assertFalse(got["glow"], f"no shader under reduced motion ({where})")
                     self.assertTrue(got["pairs"])
                     for sel, fg, bg in got["pairs"]:
-                        self.assertGreaterEqual(fmdesign.contrast(rgb(fg), rgb(bg)), 4.5, f"{sel}: {fg} on {bg} ({where})")
+                        self.assertGreaterEqual(design.contrast(rgb(fg), rgb(bg)), 4.5, f"{sel}: {fg} on {bg} ({where})")
 
 
 if __name__ == "__main__":
