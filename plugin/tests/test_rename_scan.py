@@ -7,7 +7,7 @@ import subprocess
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BASELINE = 402  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry); the goal is 0
+BASELINE = 61  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry), 61 after MASTER.md (T-2810: MASTER's lines, and the lowercase-id forms KEPT now keeps on every surface); the goal is 0
 SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", "plugin/skills/**/*.md",
             "plugin/commands/*.md", "plugin/agents/*.md", ".claude-plugin/marketplace.json",
             "plugin/.claude-plugin/plugin.json", "plugin/output-styles/*", "mods/foreman-ui/**", "plugin/rules/*.md")
@@ -15,7 +15,13 @@ SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", 
 # the one line that says what Sampo was called
 KEPT = re.compile(r"foreman(?:-ui)?@foreman|/foreman:|foreman:fm-|FOREMAN_|Foreman-Task|\.claude/foreman|"
                   r"formerly Foreman|was called Foreman|renamed from Foreman|"
-                  r"chasesunstrom(?:\.github\.io)?/foreman", re.I)  # the repo's address moves only when it is renamed
+                  r"chasesunstrom(?:\.github\.io)?/foreman|"  # the repo's address moves only when it is renamed
+                  # T-2810: lowercase ids a page names as code (.foreman/, refs/foreman/, foreman-ui, foreman.md, a `foreman` arm,
+                  # `claude mcp add foreman`): a folder, ref, file, plugin or arm name, kept like the plugin id; a capital F is prose
+                  r"(?-i:[`|/.$~-]foreman|foreman[`|/.:=-]|mcp add foreman)|"
+                  # strings the code still prints or matches, which a page quotes until the code is renamed (eco.py, bench.py,
+                  # release.py, cost.py, the mod's drive prompt): the quote must keep matching what runs
+                  r"\"Foreman\"|\(Foreman ID\)|false done: Foreman|Foreman X\.Y\.Z|Continue the Foreman drive", re.I)
 
 
 LIB_KEPT = re.compile(r"Foreman(?=\)-Task|-Task|\(\?)|user\.name=Foreman|Foreman@|;Foreman-|foreman:Foreman|\(\?:Foreman\||Foreman guard\)|Foreman \{v\}|\(\?:Sampo\|Foreman\)|\(Sampo\|Foreman\)|Foreman\) snapshot")
@@ -61,6 +67,13 @@ class RenameScan(unittest.TestCase):
     def test_kept_forms_are_not_counted(self):
         self.assertFalse(re.search(r"\bforeman\b", KEPT.sub("", "enable foreman@foreman or run /foreman:next"), re.I))
         self.assertTrue(re.search(r"\bforeman\b", KEPT.sub("", "Foreman plans before it edits"), re.I))
+
+    def test_lowercase_ids_are_kept_but_prose_is_not(self):  # T-2810
+        for kept in ("the `foreman` arm", "writes .foreman/ in the repo", "refs/foreman/shipped", "foreman-ui mod", "rules/foreman.md",
+                     "foreman.shiptest", "claude mcp add foreman -- fm mcp", "oracle|empty|foreman|plain"):
+            self.assertFalse(re.search(r"\bforeman\b", KEPT.sub("", kept), re.I), kept)
+        for prose in ("is foreman ok?", "Foreman.", "ask Foreman-owned work", "the foreman arm", "Foreman's ui"):
+            self.assertTrue(re.search(r"\bforeman\b", KEPT.sub("", prose), re.I), prose)
 
 
 if __name__ == "__main__":
