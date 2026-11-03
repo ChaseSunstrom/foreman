@@ -29,7 +29,8 @@ def gaps(changed, b, listed="# scores\nplugin/lib/fmexam.py\nsite/*.py\n", then=
                 f.write(listed)
         with mock.patch.object(cli.c, "git_root", return_value=root), \
                 mock.patch.object(cli.c, "task_base", return_value="abc"), \
-                mock.patch("sampo.map.changed", return_value=changed):
+                mock.patch("sampo.map.changed", return_value=changed), \
+                mock.patch.object(cli, "_theirs", return_value=[]):  # T-2791: no other lane's merge in this unit
             return cli._proved_gaps(SimpleNamespace(root=root), b, then=list(then))
 
 
