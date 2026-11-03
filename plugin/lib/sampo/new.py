@@ -202,10 +202,11 @@ def born(folder, name):
              ("its check as the gate", [sys.executable, fm, "check", "add", f"fm new check {TEMPLATES[name][1]}"]),
              ("first commit", ["git", "add", "-A"]), ("", ["git", "commit", "-qm", f"Born from fm new {name}"]),
              ("fm check", [sys.executable, fm, "check"])]
-    out = []
+    out, env = [], dict(os.environ, FOREMAN_LOAD_GATE="0")  # T-2834: a fresh scaffold's few tests never wait on load
     for step, argv in steps:
         try:
-            r = subprocess.run(argv, cwd=folder, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
+            r = subprocess.run(argv, cwd=folder, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL,
+                               env=env)
             ok = r.returncode == 0
         except (OSError, subprocess.SubprocessError):
             ok = False

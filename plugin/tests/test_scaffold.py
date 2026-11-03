@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from unittest import mock
 
 from helpers import PLUGIN, ForemanTestCase, read_text
 
@@ -22,6 +23,20 @@ class Born(ForemanTestCase):
                                                              capture_output=True, text=True).stdout)
         p = self.fm("check", cwd=demo, env=self.env(), check=False)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_its_steps_run_with_the_load_gate_off_and_the_rest_of_the_env_kept(self):
+        # T-2834: on a loaded host the born fm check waited up to 600 s on wait_for_load; a fresh scaffold's few tests
+        # are not a gate competing for the machine
+        from sampo import new
+        seen = []
+        ran = lambda argv, **kw: seen.append((argv, kw.get("env"))) or subprocess.CompletedProcess(argv, 0)  # noqa: E731
+        with mock.patch.dict(os.environ, {"FOREMAN_HOST": "load=99,cpus=1", "T2834_KEPT": "1"}), \
+                mock.patch("subprocess.run", ran):
+            new.born(self.tmp, "web")
+        check = [env for argv, env in seen if argv[-1] == "check"]
+        self.assertEqual(len(check), 1, seen)
+        self.assertEqual(check[0]["FOREMAN_LOAD_GATE"], "0")
+        self.assertEqual(check[0]["T2834_KEPT"], "1")
 
     def test_an_existing_folder_only_gets_the_file(self):
         here = os.path.join(self.tmp, "here")
