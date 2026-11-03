@@ -902,6 +902,16 @@ def project_by_slug(slug):
     return None
 
 
+def match_project(name, rows):
+    """T-1344: the (slug, root) rows that NAME picks: an exact slug alone, else every slug that starts with it or whose
+    folder is named it (case aside). One row is the project; several are an ambiguous name; none an unknown one."""
+    rows, n = list(rows), str(name).lower()
+    exact = [r for r in rows if r[0].lower() == n]
+    if exact:
+        return exact[:1]
+    return [r for r in rows if r[0].lower().startswith(n) or os.path.basename(str(r[1]).rstrip("/")).lower() == n]
+
+
 def main_worktree(gr):
     """T-0134: the main checkout of a linked worktree (the parent of the repo's common .git folder), or None for a
     main checkout (a .git folder, not a file) or a submodule (its common dir isn't a .git folder)."""

@@ -2022,6 +2022,49 @@ class Home(unittest.TestCase):
         for want in ("new", "fix login", "gone", "folder missing", "old"):
             self.assertIn(want, text)
 
+    def test_ranked_by_need(self):
+        """T-1344: asks/blocked > failed run > running > queue age (longest waiting first), a missing folder last;
+        the note says what changed since the home was last opened."""
+        P = lambda n, **k: dict({"project": n, "root": f"/w/{n}", "exists": True, "queue": 0, "updated": 100.0}, **k)  # noqa
+        self.PROJECTS = [P("idle", updated=900.0), P("queued-new", queue=1, updated=800.0),
+                         P("queued-old", queue=1, updated=50.0), P("running", active={"id": "T-1", "title": "go"}),
+                         P("failed", failed=True), P("asks", waits=2), P("blocked", blocked=1, updated=1.0),
+                         P("gone", exists=False, waits=9)]
+        T, app = self.app()
+        app.home_seen = 120.0
+        app.show_home()
+        self.assertEqual([p["project"] for p in app.items],
+                         ["asks", "blocked", "failed", "running", "queued-old", "queued-new", "idle", "gone"])
+        self.assertIn("changed since you last looked: queued-new, idle", app.home_note)
+        self.assertIn("changed since", self.text(T, app))
+        app.show_home()  # opened again: nothing moved since
+        self.assertIn("nothing changed", app.home_note)
+
+    def test_prefix_and_jump(self):
+        """T-1344: a unique prefix or folder name picks a project, an ambiguous one names the matches; typing a name
+        in the home jumps to it."""
+        rows = [("alpha-1f2e", "/w/alpha"), ("alpine-3a4b", "/w/alpine"), ("beta-9c8d", "/x/zeta")]
+        m = c.match_project
+        self.assertEqual(m("beta-9c8d", rows), [rows[2]])
+        self.assertEqual(m("bet", rows), [rows[2]])
+        self.assertEqual(m("zeta", rows), [rows[2]], "the folder's name")
+        self.assertEqual(m("alp", rows), rows[:2], "ambiguous: both named")
+        self.assertEqual(m("nope", rows), [])
+        self.PROJECTS = [{"project": n, "root": r, "exists": True, "updated": float(i)}
+                         for i, (n, r) in enumerate(rows)]
+        T, app = self.app()
+        app.show_home()
+        for ch in "/bet":
+            app.key(ch)
+        self.assertEqual(app.items[app.item_index]["project"], "beta-9c8d")
+        app.key("KEY_BACKSPACE")
+        app.key("KEY_BACKSPACE")
+        app.key("KEY_BACKSPACE")
+        for ch in "alpi":
+            app.key(ch)
+        self.assertEqual(app.items[app.item_index]["project"], "alpine-3a4b")
+        self.assertEqual(app.mode, "home")
+
     def test_a_project_view_lists_its_work_and_runs_a_queued_task_there(self):
         T, app = self.app()
         app.show_home()

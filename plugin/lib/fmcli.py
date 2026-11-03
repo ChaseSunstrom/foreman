@@ -53,6 +53,11 @@ def out(args, data, text):
 def resolve(args, create=True):
     if getattr(args, "project", None):
         p = c.project_by_slug(args.project)
+        if not p:  # T-1344: a unique slug prefix or folder name does too; an ambiguous one names its matches
+            found = c.match_project(args.project, [(q.slug, q.root) for q, _ in c.all_projects()]) if args.project else []
+            if len(found) > 1:
+                raise UsageError(f"project {args.project!r} matches {', '.join(s for s, _ in found)}: name one")
+            p = found and c.project_by_slug(found[0][0])
         if not p:
             raise UsageError(f"unknown project {args.project!r} (see state/registry.md)")
         return p

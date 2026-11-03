@@ -1639,7 +1639,11 @@ def _deck_view(cv, st, app, cfg):
     """T-1345: the home as a deck: a card per project (what Foreman noticed first), as many columns as fit. The focus
     ring glides from the last card to the selected one (fx.ease: at once with motion reduced or off), which is drawn
     focused once the ring lands. Each card's place is kept for the keys (deck_cols) and Enter's grow (deck_rects)."""
-    iy, ix, ih, iw = _overlay(cv, cfg, "Foreman projects", HOME_NOTE, cv.w - 2, cv.h - 2)
+    note = f"/{app.jump} · Esc stops" if app.jump is not None else HOME_NOTE
+    iy, ix, ih, iw = _overlay(cv, cfg, "Foreman projects", note, cv.w - 2, cv.h - 2)
+    if app.home_note and ih > 2:  # T-1344: what changed since the last open
+        cv.line(iy, ix, [(_printable(app.home_note, iw), "dim")], ix + iw)
+        iy, ih = iy + 1, ih - 1
     app.deck_rects = {}
     if ih < 2 or iw < 8:
         return
@@ -1747,7 +1751,32 @@ def _work_row(it):
 
 def fm_projects():
     """Every Foreman project on this machine, as fm projects --json lists them."""
-    return (_fm_json("projects").get("projects") or [])
+    import fmcore
+    rows = [p for p in (_fm_json("projects").get("projects") or []) if isinstance(p, dict)]
+    for p in rows:  # T-1344: a project whose last run ended blocked or in error ranks as failed
+        q = fmcore.project_by_slug(str(p.get("project")))
+        last = history(os.path.join(q.dir, "code"))[:1] if q else []
+        p["failed"] = bool(last) and last[0]["status"] in ("blocked", "error")
+    return rows
+
+
+def need_rank(p):
+    """T-1344: a project's place on the home, smallest first: asks or blocked tasks, a failed last run, a run going, a
+    queue (the longest-waiting first: oldest activity), then the rest; a missing folder last, newest first within."""
+    if p.get("exists") is False:
+        return (9, -_num(p.get("updated")))
+    tier = 0 if p.get("waits") or p.get("blocked") else 1 if p.get("failed") else 2 if p.get("active") else \
+        3 if p.get("queue") else 4
+    return (tier, _num(p.get("updated")) if tier == 3 else -_num(p.get("updated")))
+
+
+def _changed_line(items, seen):
+    """T-1344: the one line of what moved since the home was last opened (at `seen`, None the first time)."""
+    if seen is None:
+        return "first look: nothing to compare with"
+    names = [str(p.get("project")) for p in items if _num(p.get("updated")) > seen]
+    return ("changed since you last looked: " + ", ".join(names[:4]) + (f" +{len(names) - 4} more" if len(names) > 4 else "")
+            ) if names else "nothing changed since you last looked"
 
 
 def fm_project_state(p):
@@ -2198,6 +2227,8 @@ class App:
         self.runner_proc = None  # the CLI a runner test started: stop() ends its process group with the app
         self.tui = None  # T-1543: tui.toml as the app last read it ({path, text}, fmsettings.boot): watched for edits
         self.home_items, self.home_index = None, 0  # the home list a view over it goes back to
+        # T-1344: when the home was last opened (seen_file keeps it across runs), its changed-since line, the typed jump
+        self.home_seen, self.seen_file, self.home_note, self.jump = None, None, "", None
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "search": self.open_search,  # T-1313
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
@@ -2842,8 +2873,21 @@ class App:
             found = list(self.projects_source())
         except Exception as e:  # fm isn't answering: say so, keep the screen
             found, self.message = [], f"can't list projects: {e}"
-        self.items = sorted((x for x in found if isinstance(x, dict)),  # a missing folder last, then newest first
-                            key=lambda x: (x.get("exists") is False, -_num(x.get("updated"))))
+        self.items = sorted((x for x in found if isinstance(x, dict)), key=need_rank)  # T-1344
+        if self.home_seen is None and self.seen_file:
+            try:
+                with open(self.seen_file) as f:
+                    self.home_seen = float(f.read().strip())
+            except (OSError, ValueError):
+                pass
+        self.home_note = _changed_line(self.items, self.home_seen)
+        self.home_seen, self.jump = time.time(), None
+        if self.seen_file:
+            try:
+                with open(self.seen_file, "w") as f:
+                    f.write(str(self.home_seen))
+            except OSError:  # the marker is a nicety: the home draws without it
+                pass
         try:
             seen = [dict(n, kind="noticed") for n in (self.noticed_source or list)() if isinstance(n, dict)]
         except Exception:  # what Foreman noticed is extra: home draws without it
@@ -2871,7 +2915,33 @@ class App:
         self.project_items, self.project_index = rows, 0
         self.items, self.item_index, self.mode = rows, 0, "project"
 
+    def _jump_key(self, k):
+        """T-1344: / starts typing a project's name, each letter moves to the first project whose name starts with it
+        (else whose folder is named so); Esc or Enter ends it. True when k was the jump's."""
+        if self.jump is None:
+            if k != "/":
+                return False
+            self.jump = ""
+            return True
+        if k in ("\x1b", "\n", "\r"):
+            self.jump = None
+        elif k in ("KEY_BACKSPACE", "\x7f", "\b"):
+            self.jump = self.jump[:-1]
+        elif isinstance(k, str) and len(k) == 1 and k.isprintable():
+            self.jump += k
+        else:
+            return False
+        rows = [(i, str(x.get("project")), str(x.get("root") or "")) for i, x in enumerate(self.items)
+                if x.get("kind") != "noticed"]
+        import fmcore
+        found = fmcore.match_project(self.jump, [(s, r) for _, s, r in rows]) if self.jump else []
+        if found:  # the first on the home that matches, so the one at the top of the ranking wins
+            self.item_index = next(i for i, s, r in rows if s in {f[0] for f in found})
+        return True
+
     def _home_key(self, k):
+        if self.mode == "home" and self._jump_key(k):
+            return None
         cmd = self._list_cmd(k)
         cols = self.deck_cols if self.mode == "home" else 1  # T-1345: up and down move a row of cards
         step = {"up": -cols, "down": cols, "page_up": -10, "page_down": 10}.get(cmd)
@@ -4864,6 +4934,11 @@ def main(args, words, home=False):
     app.tui = seen  # T-1543: an edit to tui.toml while it runs is read back in
     app.cfg = app._layer(app.cfg)  # T-1611: this project's settings and the repo's pins over tui.toml
     app.sweep()  # T-1756: runners a killed run left, stopped as the app opens
+    try:
+        import fmcore
+        app.seen_file = os.path.join(fmcore.state_dir(), "code_home_seen")  # T-1344
+    except OSError:
+        pass
     if home:  # T-1330: inside a project, its view; elsewhere every project
         app.show_home()
         here = next((x for x in app.items if p and x.get("project") == p.slug and x.get("kind") != "noticed"),
