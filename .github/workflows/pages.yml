@@ -5,7 +5,8 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", "demo/live.mp4", "demo/demo.svg", ".github/workflows/pages.yml"]
+    paths: ["site/**", "design/sampo/tokens.json", "design/sampo/logo/**", "demo/live.mp4", "demo/demo.svg",
+            ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 concurrency:

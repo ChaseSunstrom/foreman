@@ -86,8 +86,8 @@ class CodePageCoversFmCode(unittest.TestCase):
         text = " ".join(x for b in page["blocks"] for x in b if isinstance(x, str)) + page["lede"]
         text = re.sub(r"<[^>]+>", "", text)
         missing = sorted(f for f in flags if f not in self.SKIP and not re.search(re.escape(f) + r"(?![\w-])", text))
-        missing += sorted("fm code " + v for v in verbs if v not in self.SKIP and not re.search(
-            r"fm code (?:\w+ )?" + re.escape(v) + r"\b", text))
+        missing += sorted("sampo code " + v for v in verbs if v not in self.SKIP and not re.search(
+            r"sampo code (?:\w+ )?" + re.escape(v) + r"\b", text))
         self.assertEqual(missing, [], "on fm code's --help but not on the Foreman Code page (site/pages.py): add a "
                                       "sentence, or an entry with a reason in SKIP")
         for k in self.SKIP:  # a stale entry hides nothing
@@ -103,8 +103,8 @@ class GoalPage(unittest.TestCase):
             sys.path.pop(0)
         page = next(x for x in pages.PAGES if x["slug"] == "planning")
         text = json.dumps(page["blocks"], default=str)
-        for word in ("Goal to finish", "fm goal set", "fm goal item", "fm goal link", "fm goal show", "fm goal verdict",
-                     "fm task new", "--goal", "across days"):
+        for word in ("Goal to finish", "sampo goal set", "sampo goal item", "sampo goal link", "sampo goal show",
+                     "sampo goal verdict", "sampo task new", "--goal", "across days"):
             self.assertIn(word, text)
 
 
@@ -118,7 +118,7 @@ class LacksPage(unittest.TestCase):  # T-2378: #5 on the site, its figures from 
             sys.path.pop(0)
         page = next(x for x in pages.PAGES if x["slug"] == "lacks")
         text = json.dumps(page["blocks"], default=str)
-        for word in ("fm which", "fm new tool", "fm ask", "--later", "never", "fm code", "Codex", "MCP", "band"):
+        for word in ("sampo which", "sampo new tool", "sampo ask", "--later", "never", "sampo code", "Codex", "MCP", "band"):
             self.assertIn(word, text)
         tools = {"misses": 41, "resolved": 30, "proved": 7, "searches": 55, "queued": 3, "refused": 1}
         html = build.render_page(page, {"tools": tools}, pages.PAGES)
@@ -146,7 +146,7 @@ class ProofPage(unittest.TestCase):  # T-2395: #6/#10 on the site, built from Fo
         text = json.dumps(page["blocks"], default=str)
         for kind in fmcore.PROOF_KINDS:
             self.assertIn(kind, text)
-        for word in ("fm prove --rollup", "proof", "beyond", "unproven"):
+        for word in ("sampo prove --rollup", "proof", "beyond", "unproven"):
             self.assertIn(word, text)
         proof = {"n": 12, "counts": {"typed": 5, "meaning": 4}, "history": [{"day": "2026-10-30", "n": 15},
                                                                              {"day": "2026-10-31", "n": 12}]}
@@ -198,8 +198,8 @@ class SelfRunningPage(unittest.TestCase):  # T-2364: Mission 8 on the site, its 
             sys.path.pop(0)
         page = next(x for x in pages.PAGES if x["slug"] == "self-running")
         text = json.dumps(page["blocks"], default=str)
-        for word in ("fm triggers", "precision", "route", "fm night --tick", "install", "fm lane recover", "trial",
-                     "fm outcomes --predictions", "baseline", "lean", "generation"):
+        for word in ("sampo triggers", "precision", "route", "sampo night --tick", "install", "sampo lane recover",
+                     "trial", "sampo outcomes --predictions", "baseline", "lean", "generation"):
             self.assertIn(word, text)
         sr = {"triggers": [{"trigger": "ci-red", "fired": 9, "precision": 0.78, "route": "inbox"}], "installs": 2,
               "recoveries": 3, "trials": {"held": 4, "didn't hold": 1}, "predictions": [{"kind": "next-request",
@@ -224,8 +224,8 @@ class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its fig
             sys.path.pop(0)
         page = next(x for x in pages.PAGES if x["slug"] == "judgment")
         text = json.dumps(page["blocks"], default=str)
-        for word in ("Reading", "fails if", "Choice N (NN%)", "fm lane race", "one-way", "fm outcomes --judgment", "Brier",
-                     "base rate", "MCP", "fm code"):
+        for word in ("Reading", "fails if", "Choice N (NN%)", "sampo lane race", "one-way", "sampo outcomes --judgment",
+                     "Brier", "base rate", "MCP", "sampo code"):
             self.assertIn(word, text)
         cal = {"scored": 30, "pending": 4, "brier": {"stated": 0.18, "base": 0.24}, "bars": {"research": 70, "race": 55},
                "races": {"run": 5, "judged": 4, "first_lost": 1}, "doors_parked": ["T-1"],

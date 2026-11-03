@@ -532,7 +532,7 @@ class Site(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             shutil.copytree(os.path.join(self.ROOT, "site"), os.path.join(tmp, "site"),
                             ignore=shutil.ignore_patterns("__pycache__"))
-            for d in ("demo", "plugin"):
+            for d in ("demo", "plugin", "design"):  # T-2753: the build reads design/sampo/tokens.json
                 os.symlink(os.path.join(self.ROOT, d), os.path.join(tmp, d))
             with open(os.path.join(tmp, "site", "fixture.html"), "w", encoding="utf-8") as f:
                 f.write('<link href="https://fonts.googleapis.com/css2?family=Barlow" rel="stylesheet">')
@@ -572,10 +572,10 @@ class Site(unittest.TestCase):
             {"case": "<ini>", "id": "c2", "foreman": side(True, 0.30, 10), "bare": side(True, 0.20, 10)},
             {"case": "lru", "id": "c3", "foreman": side(True, 0.1, 10), "bare": side(True, 0.1, 10)}]}]}
         html = pages._loses(duels)
-        self.assertIn("2 row(s) where Foreman did worse", html)
-        self.assertIn("Claude Code passed, Foreman didn&#x27;t", html)  # escaped, as every cell
+        self.assertIn("2 row(s) where Sampo did worse", html)
+        self.assertIn("Claude Code passed, Sampo didn&#x27;t", html)  # escaped, as every cell
         self.assertIn("cost 50% higher", html)
-        self.assertIn("fm bench repro duel-none-foreman-1 c1", html)
+        self.assertIn("sampo bench repro duel-none-foreman-1 c1", html)
         self.assertIn("&lt;ini&gt;", html)
         self.assertNotIn(">lru<", html)
         self.assertIn("lost no row", pages._loses({"duels": [{"name": "q", "cases": [duels["duels"][0]["cases"][2]]}]}))
@@ -632,7 +632,7 @@ class Site(unittest.TestCase):
             sys.path.pop(0)
         bench = next(p for p in pages.PAGES if p["slug"] == "benchmarks")
         kind, title, body = bench["blocks"][0]
-        self.assertEqual((kind, title), ("text", "Why use Foreman"))
+        self.assertEqual((kind, title), ("text", "Why use Sampo"))
         stats = read_json(os.path.join(self.ROOT, "site", "data", "stats.json"))
         stats.update(read_json(os.path.join(self.ROOT, "site", "data", "bench.json")))
         text = body(stats)

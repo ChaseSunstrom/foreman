@@ -2,7 +2,7 @@
 """Build the Pages site (T-1220): python3 site/build.py [OUT]  (default: _site beside site/)
 
 Copies site/ (the landing page, style.css, assets) and the demo files, then renders one page per capability from
-site/pages.py with charts drawn from site/data/stats.json (made by site/stats.py on a machine with Foreman's state).
+site/pages.py with charts drawn from site/data/stats.json (made by site/stats.py on a machine with Sampo's state).
 Charts are inline SVG that follow the page's light and dark tokens; every mark has a hover title and every chart a
 data table. Stdlib only, so the Pages workflow runs it with the runner's Python. T-1411: the pages load nothing from
 another host (fonts are the reader's own, named first in style.css with system fallbacks); the build fails on any
@@ -25,8 +25,65 @@ def _v(rel):  # T-2060, T-2063: browsers keep a file by its URL, so the URL carr
         return rel + "?v=" + hashlib.sha256(f.read()).hexdigest()[:8]
 
 
-ICON, CSS, JS = _v("assets/foreman.svg"), _v("style.css"), _v("site.js")
-SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "share.html", "__pycache__"}
+# T-2753: assets/sampo.svg, favicon.ico and share.png are links into design/sampo/logo, so the Runestone files have one home
+ICON, FAVICON, CSS, JS = _v("assets/sampo.svg"), _v("assets/favicon.ico"), _v("style.css"), _v("site.js")
+SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "__pycache__"}
+TOKENS = os.path.join(ROOT, "design", "sampo", "tokens.json")
+TOKENS_START = "/* tokens: python3 site/build.py --tokens writes this block from design/sampo/tokens.json; edit the json */"
+TOKENS_END = "/* end tokens */"
+NIGHT = ".install, .window, .term, .ex-cmd"  # terminals are iron in either theme
+
+
+def tokens_css():
+    """T-2753: design/sampo/tokens.json as custom properties, the one source of the site's colours, type and motion."""
+    with open(TOKENS, encoding="utf-8") as f:
+        t = json.load(f)
+
+    def own(group):
+        return [(k, v["$value"]) for k, v in group.items() if not k.startswith("$")]
+
+    def rows(decls, per=4):
+        return "\n".join("  " + " ".join(decls[i:i + per]) for i in range(0, len(decls), per))
+
+    def stack(names):
+        return ", ".join(n if re.fullmatch(r"[A-Za-z][\w-]*", n) else json.dumps(n) for n in names)
+
+    def theme(name, pad=""):
+        return "\n".join(pad + r for r in rows([f"--{k}: {v};" for k, v in own(t[name]["color"])] +
+                                               [f"color-scheme: {name};"]).splitlines())
+
+    ratio = t["font"]["scale"]["ratio"]["$value"]
+    light = "\n".join([
+        rows([f"--font-{k}: {stack(t['font'][k]['$value'])};" for k in ("display", "text", "mono")], 1),
+        rows([f"--step-{n}: {round(ratio ** n, 3)}rem;" for n in range(1, 7)], 3),
+        rows([f"--dur-{k}: {v};" for k, v in own(t["motion"]["duration"])]),
+        rows([f"--ease-{k}: cubic-bezier({', '.join(str(x) for x in v)});" for k, v in own(t["motion"]["easing"])] +
+             [f"--autoplay-limit: {t['motion']['autoplay-limit']['$value']};"], 2)])
+    return (f"{TOKENS_START}\n:root {{\n{theme('light')}\n{light}\n}}\n"
+            f"@media (prefers-color-scheme: dark) {{\n  :root:not([data-theme=\"light\"]) {{\n{theme('dark', '  ')}\n  }}\n}}\n"
+            f":root[data-theme=\"dark\"], {NIGHT} {{\n{theme('dark')}\n}}\n{TOKENS_END}")
+
+
+def _token_span(css):
+    start, end = css.find(TOKENS_START), css.find(TOKENS_END)
+    if start < 0 or end < start:
+        raise SystemExit("build.py: site/style.css lost its tokens block; run python3 site/build.py --tokens")
+    return start, end + len(TOKENS_END)
+
+
+def check_tokens(css):
+    """The build refuses a style.css whose tokens block isn't what tokens.json makes, so the two never drift."""
+    start, end = _token_span(css)
+    if css[start:end] != tokens_css():
+        raise SystemExit("build.py: site/style.css's tokens block is stale; run python3 site/build.py --tokens")
+
+
+def write_tokens(path):
+    with open(path, encoding="utf-8") as f:
+        css = f.read()
+    start, end = _token_span(css)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(css[:start] + tokens_css() + css[end:])
 TYPES = ["FEATURE", "FIX", "CLEAN", "PERFORMANCE", "SECURITY", "RESEARCH"]
 esc = html.escape
 
@@ -166,7 +223,7 @@ def hbars(title, note, items, unit="", series=1, budget=None):
     return figure(title, note, "".join(out), table(head, rows))
 
 
-def pairs(title, note, rows, names=("With Foreman", "Claude Code"), unit=""):
+def pairs(title, note, rows, names=("With Sampo", "Claude Code"), unit=""):
     """Two horizontal bars per row (series 1 and 2), each with its value at the tip: rows are (label, a, b)."""
     rows = list(rows)
     top = max([max(a, b) for _, a, b in rows] + [1e-9])
@@ -188,7 +245,7 @@ def pairs(title, note, rows, names=("With Foreman", "Claude Code"), unit=""):
                   table(["", names[0], names[1]], [[k, a, b] for k, a, b in rows]))
 
 
-def verdicts(rows, names=("Claude Code alone", "With Foreman")):
+def verdicts(rows, names=("Claude Code alone", "With Sampo")):
     """A table of commands and what each setup does with them; the stamp carries the outcome, never colour alone."""
     stamp = {"deny": '<span class="stamp stop">Stopped</span>', "saved": '<span class="stamp sig">Saved first</span>',
              "allow": '<span class="stamp warn">Runs</span>', "run": '<span class="stamp warn">Runs</span>'}
@@ -275,10 +332,10 @@ STATIONS = [("tasks_done", "tasks done"), ("evidence", "evidence runs"), ("proof
 
 
 def proof(totals, asof=""):
-    """T-1609, T-2040: the hero's proof ledger, the four totals from Foreman's own record as plain figures on hairlines
+    """T-1609, T-2040: the hero's proof ledger, the four totals from Sampo's own record as plain figures on hairlines
     (the diamond poster and its WebGL scene read as decoration, not data). Inline, so it is first paint."""
     items = "".join(f"<div><dt>{esc(label)}</dt><dd>{esc(fmt(totals.get(k) or 0))}</dd></div>" for k, label in STATIONS)
-    return f'<div class="proof"><p>From Foreman\'s own record{", to " + esc(asof) if asof else ""}</p><dl>{items}</dl></div>'
+    return f'<div class="proof"><p>From Sampo\'s own record{", to " + esc(asof) if asof else ""}</p><dl>{items}</dl></div>'
 
 
 def layout(title, desc, body, pages, here, depth=1):
@@ -292,18 +349,19 @@ def layout(title, desc, body, pages, here, depth=1):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>try {{ var t = localStorage.getItem("fm-theme"); if (t) document.documentElement.setAttribute("data-theme", t); }} catch (e) {{}}</script>
-<title>{esc(title)} · Foreman</title>
+<title>{esc(title)} · Sampo</title>
 <meta name="description" content="{esc(desc)}">
-<meta property="og:title" content="{esc(title)} · Foreman">
+<meta property="og:title" content="{esc(title)} · Sampo">
 <meta property="og:description" content="{esc(desc)}">
 <meta property="og:image" content="https://chasesunstrom.github.io/foreman/assets/share.png">
 <link rel="icon" href="{up}{ICON}" type="image/svg+xml">
+<link rel="icon" href="{up}{FAVICON}" sizes="32x32">
 <link rel="stylesheet" href="{up}{CSS}">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="{up}index.html"><img src="{up}{ICON}" alt="" width="28" height="28">Foreman</a>
+    <a class="brand" href="{up}index.html"><img src="{up}{ICON}" alt="" width="28" height="28">Sampo</a>
     <nav class="nav" aria-label="Main">
       <a class="hide-sm" href="{up}features/index.html">Features</a>
       <a href="{up}index.html#install">Install</a>
@@ -320,13 +378,13 @@ def layout(title, desc, body, pages, here, depth=1):
 </div>
 <footer>
   <div class="wrap">
-    <a class="brand" href="{up}index.html"><img src="{up}{ICON}" alt="" width="22" height="22">Foreman</a>
+    <a class="brand" href="{up}index.html"><img src="{up}{ICON}" alt="" width="22" height="22">Sampo</a>
     <nav aria-label="Links">
       <a href="https://github.com/ChaseSunstrom/foreman">Source</a>
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/README.md">Read me</a>
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/CHANGELOG.md">Changelog</a>
     </nav>
-    <p class="fine">A community project for coding agents. Not made by or affiliated with Anthropic or any agent's maker. Charts are drawn from Foreman's own record of building itself.</p>
+    <p class="fine">A community project for coding agents. Not made by or affiliated with Anthropic or any agent's maker. Charts are drawn from Sampo's own record of building itself.</p>
   </div>
 </footer>
 <script src="{up}{JS}"></script>
@@ -370,7 +428,7 @@ def _took(sec):
 
 def example_html(name, label, ex):
     pl, worker = ex["plan"], ex["worker"]
-    cmd = f"fm code {shlex.quote(ex['request'])}" + (f" --worker {shlex.quote(worker)}" if worker else "")
+    cmd = f"sampo code {shlex.quote(ex['request'])}" + (f" --worker {shlex.quote(worker)}" if worker else "")
     rows = []
     for i, c in enumerate(pl.get("criteria") or [], 1):
         got = ex["checks"].get(i, {})
@@ -386,7 +444,7 @@ def example_html(name, label, ex):
     end = {"closed": "Closed", "blocked": "Blocked", "error": "Stopped", "answer": "Answer"}.get(ex["end"], "Ended")
     return (f'<article class="ex" id="ex-{name}"><header><span class="ex-kind">{esc(label)}</span>'
             f'<p class="ex-cmd"><code>{esc(cmd)}</code></p></header><div class="ex-body">'
-            f'<img class="ex-shot" src="../assets/examples/{name}.svg" loading="lazy" alt="fm code tui at the end of this '
+            f'<img class="ex-shot" src="../assets/examples/{name}.svg" loading="lazy" alt="sampo code tui at the end of this '
             f'run: {esc(pl.get("title", ""))}"><div class="ex-facts">'
             + (f'<p><b>Plan</b> {esc(pl.get("type", ""))} {esc(pl.get("tier", ""))} · {esc(pl.get("title", ""))}</p>'
                if pl.get("type") else '<p><b>Plan</b> a question: answered from the files, no task, nothing changed</p>')
@@ -397,7 +455,7 @@ def example_html(name, label, ex):
             + (f'<div class="ex-answer"><p><b>{end}</b></p>{"".join(f"<p>{esc(x)}</p>" for x in ex["end_text"].split(chr(10)) if x.strip())}</div>'
                if ex["end"] == "answer" else f'<p class="ex-end"><b>{end}</b> {esc(ex["end_text"])}</p>')
             + f'<p class="ex-meta">{esc(" · ".join(x for x in facts if x))} · replay it: '
-              f'<code>fm code tui --events demo/examples/{name}.jsonl</code> · '
+              f'<code>sampo code tui --events demo/examples/{name}.jsonl</code> · '
               f'<a href="../stories/{name}.html">the case study</a></p></div></div></article>')
 
 
@@ -430,7 +488,7 @@ def case_study_html(name, label, ex):
     return (f'<p class="kicker">Case study · {esc(label)}</p><h1>{esc(title)}</h1><p class="lede">{esc(ex["request"])}'
             f'</p>{example_html(name, label, ex)}<section><h2>The run, event by event</h2>'
             f'<ol class="timeline">{timeline}</ol></section>'
-            '<p class="next"><a href="../features/code.html">Back to fm code</a></p>')
+            '<p class="next"><a href="../features/code.html">Back to sampo code</a></p>')
 
 
 def examples_html(folder=None):
@@ -464,10 +522,10 @@ def render_page(p, stats, pages):
 def render_index(pages):
     cards = "".join(f'<a class="fcard" href="{p["slug"]}.html"><b>{esc(p["nav"])}</b><span>{esc(p["desc"])}</span></a>'
                     for p in pages)
-    body = ('<p class="kicker">Features</p><h1>Everything Foreman does</h1><p class="lede">Each page shows what one part '
-            'of Foreman does, how it works, the commands, and charts from Foreman\'s own record of building itself.</p>'
+    body = ('<p class="kicker">Features</p><h1>Everything Sampo does</h1><p class="lede">Each page shows what one part '
+            'of Sampo does, how it works, the commands, and charts from Sampo\'s own record of building itself.</p>'
             f'<div class="fgrid">{cards}</div>')
-    return layout("Features", "Every part of Foreman, with charts from its own history.", body, pages, "index")
+    return layout("Features", "Every part of Sampo, with charts from its own history.", body, pages, "index")
 
 
 def build(out):
@@ -479,9 +537,12 @@ def build(out):
     if os.path.isfile(bench_path):  # T-1222: the safety benchmark (site/bench_safety.py)
         with open(bench_path, encoding="utf-8") as f:
             stats.update(json.load(f))
+    with open(os.path.join(HERE, "style.css"), encoding="utf-8") as f:
+        check_tokens(f.read())
     if os.path.isdir(out):
         shutil.rmtree(out)
     shutil.copytree(HERE, out, ignore=lambda d, names: [n for n in names if n in SOURCE_ONLY])
+    shutil.copyfile(os.path.join(out, ICON.split("?")[0]), os.path.join(out, "assets", "foreman.svg"))  # old links, new mark
     with open(os.path.join(out, "index.html"), encoding="utf-8") as f:  # T-1609: the hero's poster
         page = f.read()
     for what, mark in (("proof", PROOF_MARK), ("shaders", SHADER_MARK)):  # review: a lost mark shipped a hero with no proof
@@ -502,9 +563,10 @@ def build(out):
     if not (counts["tests"] and counts["cards"]):  # review: a stats.json without them shipped "0 tests"
         raise SystemExit("build.py: site/data/stats.json has no code.tests or cards; run site/stats.py")
     page = page.replace(PROOF_MARK, proof(totals, asof), 1)
-    for old, new in (('rel="icon" href="assets/foreman.svg"', f'rel="icon" href="{ICON}"'),
+    for old, new in (('rel="icon" href="assets/sampo.svg"', f'rel="icon" href="{ICON}"'),
+                     ('rel="icon" href="assets/favicon.ico"', f'rel="icon" href="{FAVICON}"'),
                      ('rel="stylesheet" href="style.css"', f'rel="stylesheet" href="{CSS}"'),
-                     ('<img src="assets/foreman.svg"', f'<img src="{ICON}"'),
+                     ('<img src="assets/sampo.svg"', f'<img src="{ICON}"'),
                      ('<script src="site.js">', f'<script src="{JS}">')):
         if old not in page:  # a reworded tag would ship the old, cached file
             raise SystemExit(f"build.py: site/index.html lost {old}")
@@ -520,7 +582,8 @@ def build(out):
         gpage = f.read()
     if 'href="../style.css"' not in gpage:
         raise SystemExit('build.py: site/genesis/index.html lost href="../style.css"')
-    gpage = gpage.replace('href="../style.css"', f'href="../{CSS}"').replace('"../assets/foreman.svg"', f'"../{ICON}"')
+    gpage = (gpage.replace('href="../style.css"', f'href="../{CSS}"').replace('"../assets/sampo.svg"', f'"../{ICON}"')
+             .replace('"../assets/favicon.ico"', f'"../{FAVICON}"'))
     with open(gpath, "w", encoding="utf-8") as f:
         f.write(gpage)
     os.makedirs(os.path.join(out, "demo"), exist_ok=True)
@@ -560,8 +623,12 @@ def build(out):
 
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "_site")
-    if target.startswith("-"):  # it takes no options: `--check` once became a folder that got committed
-        print("usage: python3 site/build.py [OUTPUT_FOLDER] (default _site; it takes no options)", file=sys.stderr)
+    if sys.argv[1:] == ["--tokens"]:  # T-2753: rewrite style.css's tokens block after design/sampo/tokens.json changes
+        write_tokens(os.path.join(HERE, "style.css"))
+        print("site/style.css: tokens block written from design/sampo/tokens.json")
+        sys.exit()
+    if target.startswith("-"):  # its one option is --tokens: `--check` once became a folder that got committed
+        print("usage: python3 site/build.py [OUTPUT_FOLDER] | --tokens (default _site)", file=sys.stderr)
         sys.exit(2)
     if not safe_out(target):
         sys.exit(f"build.py: refusing to wipe {target}: give a new or build-only folder, such as _site")

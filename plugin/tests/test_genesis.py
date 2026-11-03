@@ -265,7 +265,7 @@ class GenesisExport(ForemanTestCase):
         nav = lambda page: re.search(r'<nav class="nav".*?</nav>', page, re.S).group(0)
         links = lambda page: re.findall(r">([^<>]+)</a>", nav(page))
         self.assertEqual(links(html), links(landing))
-        self.assertIn('href="index.html" aria-current="page">Genesis</a>', html)
+        self.assertIn('href="index.html" aria-current="page">Rune</a>', html)
         self.assertNotRegex(read_text(os.path.join(root, "site", "genesis", "genesis.css")), r"(?m)--bg:\s*#|Inter|\.sheet|^\.head\b")
 
     def test_the_page_markdown_escapes_and_keeps_only_safe_links(self):

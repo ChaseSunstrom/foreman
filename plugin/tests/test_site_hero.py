@@ -30,7 +30,7 @@ def build_copy(tmp, totals=None, edit_index=None, edit_stats=None):
     """Build a copy of site/ the way the workflow does, its stats.json totals updated with `totals` and its
     index.html passed through `edit_index`; the finished process."""
     shutil.copytree(os.path.join(ROOT, "site"), os.path.join(tmp, "site"), ignore=shutil.ignore_patterns("__pycache__"))
-    for d in ("demo", "plugin"):
+    for d in ("demo", "plugin", "design"):  # design: the tokens and the logo the build reads (T-2753)
         os.symlink(os.path.join(ROOT, d), os.path.join(tmp, d))
     if totals or edit_stats:
         path = os.path.join(tmp, "site", "data", "stats.json")

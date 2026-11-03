@@ -8,7 +8,7 @@ button { font: inherit; color: inherit; }
 
 .kicker, .label, .lvl .k, .stats dt { font: 600 .78rem/1.4 var(--sans); letter-spacing: .1em; text-transform: uppercase; }
 .kicker { color: var(--signal-ink); margin: clamp(32px, 6vw, 64px) 0 10px; }
-.kicker .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin: 0 6px 1px 0; vertical-align: middle; animation: pulse 2s ease-in-out infinite; }
+.kicker .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin: 0 6px 1px 0; vertical-align: middle; animation: pulse calc(var(--dur-turn) / 2) var(--ease-move) 2; } /* two beats, under the autoplay limit, then still */
 @keyframes pulse { 50% { opacity: .35; } }
 h1 { font-size: clamp(2.3rem, 5vw, 3.8rem); line-height: 1.06; text-wrap: balance; }
 h1 em { font-style: normal; background: linear-gradient(transparent 64%, var(--mark) 0); padding: 0 .06em; margin: 0 -.06em; }
@@ -27,7 +27,7 @@ section { padding: 34px 0 6px; }
 @media (min-width: 1040px) { .grid2 { grid-template-columns: minmax(0, .88fr) minmax(0, 1fr); } }
 
 .gens { display: flex; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; }
-.gens button { appearance: none; border: 1px solid var(--rule); background: var(--panel); border-radius: 999px; padding: 4px 12px; cursor: pointer; font: 600 .78rem var(--mono); color: var(--ink-2); transition: color .15s ease-out, background-color .15s ease-out, border-color .15s ease-out; }
+.gens button { appearance: none; border: 1px solid var(--rule); background: var(--panel); border-radius: 999px; padding: 4px 12px; cursor: pointer; font: 600 .78rem var(--mono); color: var(--ink-2); transition: color var(--dur-small) ease-out, background-color var(--dur-small) ease-out, border-color var(--dur-small) ease-out; }
 .gens button[aria-pressed="true"] { border-color: var(--signal); color: var(--signal-ink); background: var(--wash); }
 
 /* A: the tower */
@@ -51,7 +51,7 @@ button.lvl:hover, .tile:hover, .trow:hover, .cap:hover, .doc:hover { border-colo
 }
 .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
 @media (max-width: 420px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.tile { appearance: none; border: 1px solid var(--rule-2); border-radius: 6px; background: var(--panel-2); padding: 6px 7px; text-align: left; cursor: pointer; min-height: 54px; transition: transform .15s, border-color .15s, opacity .15s; }
+.tile { appearance: none; border: 1px solid var(--rule-2); border-radius: 6px; background: var(--panel-2); padding: 6px 7px; text-align: left; cursor: pointer; min-height: 54px; transition: transform var(--dur-small), border-color var(--dur-small), opacity var(--dur-small); }
 .tile b { display: block; font: 700 .8rem/1.2 var(--sans); overflow-wrap: anywhere; }
 .tile i { display: block; font: 600 .62rem/1.3 var(--mono); font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 2px; }
 .tile.written { border-color: var(--accent); } .tile.written i { color: var(--accent); }
@@ -101,7 +101,7 @@ button.lvl:hover, .tile:hover, .trow:hover, .cap:hover, .doc:hover { border-colo
 .tier { border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); padding: 10px 14px; }
 .tier b { display: block; font-size: 1.02rem; }
 .tier span { font-size: .8rem; color: var(--ink-2); }
-.tier strong { display: block; font: condensed 700 2.2rem/1 var(--display); font-variant-numeric: tabular-nums; margin-top: 6px; }
+.tier strong { display: block; font: 600 2.2rem/1 var(--display); font-variant-numeric: tabular-nums; margin-top: 6px; }
 .tier small { font: 500 .7rem var(--mono); color: var(--ink-2); }
 .tier.hi { border-color: var(--signal); background: var(--wash); }
 .share { margin-top: 12px; position: relative; height: 26px; border-radius: 6px; background: var(--panel); border: 1px solid var(--rule); overflow: hidden; }
@@ -139,7 +139,7 @@ tr:last-child td { border-bottom: 0; }
 
 /* the drawer: any node opens its full doc */
 dialog { border: 0; padding: 0; margin: 0 0 0 auto; width: min(760px, 100vw); max-width: 100vw; height: 100vh; max-height: 100vh; background: var(--panel); color: var(--ink); box-shadow: -20px 0 60px -20px rgba(0, 0, 0, .5); border-left: 1px solid var(--rule-2); }
-dialog[open] { animation: slide .22s cubic-bezier(.2, .8, .2, 1); }
+dialog[open] { animation: slide var(--dur-enter) var(--ease-enter); }
 @keyframes slide { from { transform: translateX(40px); opacity: 0; } }
 dialog::backdrop { background: rgba(5, 12, 28, .55); }
 .dh { position: sticky; top: 0; background: var(--panel); border-bottom: 1px solid var(--rule); padding: 14px 18px; display: flex; gap: 12px; align-items: start; z-index: 1; }

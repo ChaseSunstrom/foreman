@@ -1,5 +1,5 @@
 """The feature pages (T-1220): content as data, charts as calls into build.py's helpers over site/data/stats.json.
-Every claim here is something Foreman does today; the charts are its own record of building itself."""
+Every claim here is something Sampo does today; the charts are its own record of building itself."""
 import re
 
 import os
@@ -91,7 +91,7 @@ def _field_guide(s):
 
 
 def _daily_types(s):
-    return columns("Tasks closed per day, by type", "Every task Foreman closed on its own code, from the ledger.",
+    return columns("Tasks closed per day, by type", "Every task Sampo closed on its own code, from the ledger.",
                    s["daily"], TYPES)
 
 
@@ -133,7 +133,7 @@ def _proof(s):
     top = sorted((pr.get("counts") or {}).items(), key=lambda kv: -kv[1])[:5]
     row = tiles([("done tasks unproven", pr.get("n", 0))] + [(f"need {k}", v) for k, v in top])
     hist = pr.get("history") or []
-    return row + (columns("Unproven done tasks per day", "fm prove --rollup's count, last 30 days of closes, each time the site "
+    return row + (columns("Unproven done tasks per day", "sampo prove --rollup's count, last 30 days of closes, each time the site "
                           "was built.", hist, ["n"]) if len(hist) > 1 else "")
 
 
@@ -179,10 +179,10 @@ def _models(s):
     mo = s.get("models") or {}
     rep = {k: v for k, v in (mo.get("replay") or {}).items() if isinstance(v, dict)}
     two = lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else "n/a"  # noqa: E731
-    row = tiles([("uses scored", len(rep)), ("exam run", mo.get("run") or "none yet"),
+    row = tiles([("uses scored", len(rep)), ("Louhi run", mo.get("run") or "none yet"),
                  ("model answers booked", sum(v.get("model_n") or 0 for v in rep.values()))])
     if not rep:
-        return row + "<p>No exam run has scored a use yet: the shadow rows wait for tasks to close with their truth.</p>"
+        return row + "<p>No Louhi run has scored a use yet: the shadow rows wait for tasks to close with their truth.</p>"
     return row + table(["use", "rule right", "model right", "model Brier", "model ms"], [
         (u, f"{v.get('path_hits', 0)} of {v.get('n', 0)}", f"{v.get('model_hits', 0)} of {v.get('model_n', 0)}",
          two(v.get("brier")), v.get("ms") if isinstance(v.get("ms"), (int, float)) else "n/a") for u, v in sorted(rep.items())])
@@ -193,12 +193,12 @@ def _types(s):
 
 
 def _evidence(s):
-    return columns("Evidence runs recorded per day", "Each one is a command Foreman ran and stored with its exit code and output.",
+    return columns("Evidence runs recorded per day", "Each one is a command Sampo ran and stored with its exit code and output.",
                    s["daily"], ["evidence"])
 
 
 def _guard(s):
-    return hbars("Guard refusals by rule", "Every block on record, all time. Most are Foreman protecting its own code and state.",
+    return hbars("Ward refusals by rule", "Every block on record, all time. Most are Sampo protecting its own code and state.",
                  sorted(s["guard"].items(), key=lambda kv: -kv[1]))
 
 
@@ -244,7 +244,7 @@ def _wall(s):
         parts = [int(x) if x.isdigit() else 0 for x in str(r["version"]).split(".")[:3]] + [0, 0, 0]
         hue = (parts[0] * 97 + parts[1] * 31 + parts[2] * 7) % 360
         covers.append(
-            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 100" role="img" aria-label="Foreman '
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 100" role="img" aria-label="Sampo '
             f'{esc(r["version"])}, {esc(r["day"])}: {r["tests"]} tests"><rect width="150" height="100" '
             f'fill="hsl({hue} 38% 20%)"/><text x="12" y="44" font-size="26" font-weight="700" fill="hsl({hue} 70% 82%)"'
             f' font-family="system-ui,sans-serif">{esc(r["version"])}</text><text x="12" y="64" font-size="11" '
@@ -265,7 +265,7 @@ def _totals(s, keys):
     t = s["totals"]
     names = {"tasks_done": "Tasks closed", "evidence": "Evidence runs", "proofs": "Red-to-green proofs",
              "commits": "Commits", "gate_runs": "Gate runs", "subagents": "Subagents", "lanes_merged": "Lanes merged",
-             "findings": "Review findings", "guard_blocks": "Guard blocks", "captures": "Ideas captured",
+             "findings": "Review findings", "guard_blocks": "Ward blocks", "captures": "Ideas captured",
              "lessons_shown": "Lessons recalled"}
     return tiles([(names[k], t[k]) for k in keys])
 
@@ -289,19 +289,19 @@ def _duel(s, name):
     time_f, time_b = sum(c["foreman"]["seconds"] for c in cs), sum(c["bare"]["seconds"] for c in cs)
     pct = lambda a, b: round((a / b - 1) * 100) if b else 0
     n = len(cs)
-    head = tiles([("Tasks passed, with Foreman", f"{won} of {n}"), (f"Cost of the {n}, with Foreman", f"${cost_f:.2f}"),
-                  (f"Time for the {n}, with Foreman", f"{time_f:.0f} s"), ("Tasks passed, Claude Code", f"{lost} of {n}"),
+    head = tiles([("Tasks passed, with Sampo", f"{won} of {n}"), (f"Cost of the {n}, with Sampo", f"${cost_f:.2f}"),
+                  (f"Time for the {n}, with Sampo", f"{time_f:.0f} s"), ("Tasks passed, Claude Code", f"{lost} of {n}"),
                   (f"Cost of the {n}, Claude Code", f"${cost_b:.2f}"), (f"Time for the {n}, Claude Code", f"{time_b:.0f} s")],
                  "three")
     if won > lost:
-        verdict = f"Foreman passed {won - lost} more of the {len(cs)} tasks."
+        verdict = f"Sampo passed {won - lost} more of the {len(cs)} tasks."
     elif won == lost:
         verdict = f"Both passed {won} of the {len(cs)} tasks."
     else:
-        verdict = f"Foreman passed {lost - won} fewer of the {len(cs)} tasks."
+        verdict = f"Sampo passed {lost - won} fewer of the {len(cs)} tasks."
     for what, a, b in (("cost", cost_f, cost_b), ("time", time_f, time_b)):
         p = pct(a, b)
-        verdict += (f" Foreman's {what} was {abs(p)}% {'lower' if p < 0 else 'higher'}." if abs(p) >= 3 else
+        verdict += (f" Sampo's {what} was {abs(p)}% {'lower' if p < 0 else 'higher'}." if abs(p) >= 3 else
                     f" Its {what} was within 3% of Claude Code's.<!-- source: site/stats.json -->")
 
     def cell(x):
@@ -311,7 +311,7 @@ def _duel(s, name):
         return f"{mark} {x['passed']} of {x['runs']} runs" if x.get("runs", 1) > 1 else f"{mark} hidden tests"
     rows = "".join(f"<tr><td>{esc(c['case'])}</td><td>{cell(c['foreman'])}</td><td>{cell(c['bare'])}</td></tr>"
                    for c in cs)
-    table = ('<div class="verdicts"><table><thead><tr><th>Task</th><th>With Foreman</th><th>Claude Code</th></tr>'
+    table = ('<div class="verdicts"><table><thead><tr><th>Task</th><th>With Sampo</th><th>Claude Code</th></tr>'
              f'</thead><tbody>{rows}</tbody></table></div>')
     return (head + f"<p><strong>{verdict}</strong></p>" + _ran_on(d) + table
             + pairs("Cost per task", "USD, as Claude Code reports it.", [(c["case"], c["foreman"]["cost"], c["bare"]["cost"]) for c in cs], unit="")
@@ -319,29 +319,29 @@ def _duel(s, name):
                     [(c["case"], round(c["foreman"]["seconds"]), round(c["bare"]["seconds"])) for c in cs], unit=" s"))
 
 
-LOSS = 1.25  # T-1261: Foreman loses a row when Claude Code passes and it doesn't, or it costs or takes 25% more
+LOSS = 1.25  # T-1261: Sampo loses a row when Claude Code passes and it doesn't, or it costs or takes 25% more
 
 
 def _loses(s):
-    """T-1261: every duel row where Foreman did worse than Claude Code, generated from the same results as the charts,
+    """T-1261: every duel row where Sampo did worse than Claude Code, generated from the same results as the charts,
     each with the command that reruns it on both sides (fm bench repro LABEL CASE)."""
     rows = []
     for d in s.get("duels") or []:
         for c in d.get("cases") or []:
             f, b = c.get("foreman") or {}, c.get("bare") or {}
-            why = ["Claude Code passed, Foreman didn't"] if b.get("pass") and not f.get("pass") else []
+            why = ["Claude Code passed, Sampo didn't"] if b.get("pass") and not f.get("pass") else []
             for what, k in (("cost", "cost"), ("time", "seconds")):
                 if (b.get(k) or 0) > 0 and (f.get(k) or 0) > LOSS * b[k]:
                     why.append(f"{what} {round((f[k] / b[k] - 1) * 100)}% higher")
             if why:
-                cmd = f"fm bench repro {d['label']} {c['id']}" if d.get("label") and c.get("id") else ""
+                cmd = f"sampo bench repro {d['label']} {c['id']}" if d.get("label") and c.get("id") else ""
                 rows.append(f"<tr><td>{esc(d.get('name') or '')}</td><td>{esc(c.get('case') or '')}</td>"
                             f"<td>{esc('; '.join(why))}</td><td>"
                             + (f"<code>{esc(cmd)}</code>" if cmd else "not recorded with this run") + "</td></tr>")
     if not rows:
-        return ("<p><strong>Foreman lost no row in these runs</strong>: no task Claude Code passed and Foreman failed, "
+        return ("<p><strong>Sampo lost no row in these runs</strong>: no task Claude Code passed and Sampo failed, "
                 "and none cost or took 25% more.<!-- source: site/stats.json --></p>")
-    return (f"<p><strong>{len(rows)} row(s) where Foreman did worse.</strong> Each command reruns that row on both "
+    return (f"<p><strong>{len(rows)} row(s) where Sampo did worse.</strong> Each command reruns that row on both "
             "sides with its run's model and settings.</p><div class=\"verdicts\"><table><thead><tr><th>Run</th>"
             "<th>Task</th><th>Where it lost</th><th>Rerun it</th></tr></thead><tbody>" + "".join(rows)
             + "</tbody></table></div>")
@@ -357,15 +357,15 @@ def _why(s):
     pct = lambda a, b: round((a / b - 1) * 100) if b else 0
     more = lambda p: f"{abs(p)}% {'more' if p >= 0 else 'less'}"
 
-    def gap(name):  # (cost %, time %) of Foreman against Claude Code over a duel's cases
+    def gap(name):  # (cost %, time %) of Sampo against Claude Code over a duel's cases
         d = duel(name)
         cs = (d or {}).get("cases") or []
         sums = [sum(c[arm][k] for c in cs) for k in ("cost", "seconds") for arm in ("foreman", "bare")]
         return (pct(sums[0], sums[1]), pct(sums[2], sums[3])) if cs else None
     out = [f"<p><strong>It stops what you'd regret.</strong> In bypass mode, out of {len(bad)} dangerous commands "
-           "(deleting a home folder, force-pushing, reading SSH keys, publishing a package) Foreman stopped "
+           "(deleting a home folder, force-pushing, reading SSH keys, publishing a package) Sampo stopped "
            f"{stopped}" + (f" and saved a copy before the other {saved}" if saved else "") + f". Claude Code on its "
-           f"own ran all {len(bad)}. Foreman stopped {'none' if not false else false} of {len(ok)} everyday "
+           f"own ran all {len(bad)}. Sampo stopped {'none' if not false else false} of {len(ok)} everyday "
            "commands.</p>",
            "<p><strong>It leaves a record.</strong> Every task has a plan, the checks that ran and their output, and a "
            "commit you can revert.</p>"]
@@ -375,17 +375,17 @@ def _why(s):
         time_ = " and ".join(("about the same time" if abs(g[1]) < 5 else f"{more(g[1])} time") + f" with {m}"
                              for g, m in ((q, "Sonnet"), (h, "Haiku")) if g)
         out.append("<p><strong>What the quality runs show.</strong> On small tasks where the request spells out every "
-                   f"rule, both sides pass everything. There Foreman costs {cost}, and takes {time_}, so for a short, "
+                   f"rule, both sides pass everything. There Sampo costs {cost}, and takes {time_}, so for a short, "
                    "fully specified task you're watching, Claude Code alone is cheaper.</p>")
     hist = (duel("long") or {}).get("history") or []
     if hist:
         fp, bp, runs = (sum(x[k] for x in hist) for k in ("f_pass", "b_pass", "runs"))
         fc, bc = (sum(x[k] * x["runs"] for x in hist) / runs for k in ("f_cost", "b_cost"))
         out.append("<p><strong>It finishes long work.</strong> Asked for eight requests in one Haiku session whose "
-                   f"context compacts as it goes, Foreman passed every hidden test in {fp} of {runs} runs over "
+                   f"context compacts as it goes, Sampo passed every hidden test in {fp} of {runs} runs over "
                    f"{len(hist)} duel{'s' if len(hist) > 1 else ''}. Claude Code on its own did in {bp} of {runs}; in the "
                    "first duel, the runs that fell short wrote the modules they got wrong after their first compaction, "
-                   "and the one that passed wrote them before it. Foreman keeps each request's text and gives it back "
+                   "and the one that passed wrote them before it. Sampo keeps each request's text and gives it back "
                    f"after every compaction. It cost about {more(pct(fc, bc))} there (${fc:.3f} against ${bc:.3f} a "
                    "session) and took longer. " + _per_correct(fc * runs, fp, bc * runs, bp, pct, more) + "</p>")
     m = (duel("marathon") or {}).get("cases") or []
@@ -393,7 +393,7 @@ def _why(s):
         f = m[0]["foreman"]
         comp = ([e.get("compactions") for e in f.get("each") or []] or [f.get("compactions")])[0]
         t = ([e.get("tests") for e in f.get("each") or []] or [f.get("tests")])[0] or [0, 1]
-        out.append(f"<p><strong>It keeps going.</strong> In a marathon, once the asked work was done, Foreman went on "
+        out.append(f"<p><strong>It keeps going.</strong> In a marathon, once the asked work was done, Sampo went on "
                    f"through {comp} compactions, found and fixed {len(f.get('found') or [])} things nobody asked for, "
                    + ("and still passed every hidden test.</p>" if t[0] == t[1] else
                       f"and passed {t[0]} of {t[1]} hidden tests.</p>"))
@@ -412,19 +412,19 @@ def _per_correct(f_total, f_pass, b_total, b_pass, pct, more):
     """T-1254: what one session that passed every hidden test cost on each side: all the runs' cost over the runs
     that passed, since a session that falls short has to be run again."""
     if not f_pass:
-        return "With Foreman no run passed every test."
+        return "With Sampo no run passed every test."
     f = f_total / f_pass
     if not b_pass:
         return (f"Claude Code alone never passed every test, so its sessions bought no fully correct result; each "
-                f"one with Foreman cost ${f:.3f}.")
+                f"one with Sampo cost ${f:.3f}.")
     b = b_total / b_pass
-    return (f"Counted per session that passed every test, which is what you'd pay to get one, Foreman cost ${f:.3f} "
+    return (f"Counted per session that passed every test, which is what you'd pay to get one, Sampo cost ${f:.3f} "
             f"against ${b:.3f}: {more(pct(f, b))} per fully correct session.")
 
 
 def _long(s, name):
     """T-1242: one multi-request session per side, compacting as it goes: the hidden tests passing at the end, the
-    compactions, cost and time; for a marathon, the work Foreman found and did after the asked work."""
+    compactions, cost and time; for a marathon, the work Sampo found and did after the asked work."""
     d = next((x for x in s.get("duels") or [] if x.get("name") == name), None)
     if not d or not d.get("cases"):
         return "<p><strong>Not run yet.</strong> Its results replace this line when the run finishes.</p>"
@@ -443,33 +443,33 @@ def _long(s, name):
     many = len(f.get("each") or []) > 1
     per = " (each run)" if many else ""
     comp = lambda x: ", ".join(str(v) for v in each(x, "compactions")) or "0"
-    head = tiles([(f"Hidden tests passing{per}, with Foreman", tests(f)), (f"Compactions{per}, with Foreman", comp(f)),
-                  ("Mean cost, with Foreman" if many else "Cost, with Foreman", f"${f['cost']:.2f}"),
+    head = tiles([(f"Hidden tests passing{per}, with Sampo", tests(f)), (f"Compactions{per}, with Sampo", comp(f)),
+                  ("Mean cost, with Sampo" if many else "Cost, with Sampo", f"${f['cost']:.2f}"),
                   (f"Hidden tests passing{per}, Claude Code", tests(b)), (f"Compactions{per}, Claude Code", comp(b)),
                   ("Mean cost, Claude Code" if many else "Cost, Claude Code", f"${b['cost']:.2f}")], "three")
-    said = (f"Foreman's session took {f['seconds'] / 60:.0f} min and Claude Code's {b['seconds'] / 60:.0f} min"
+    said = (f"Sampo's session took {f['seconds'] / 60:.0f} min and Claude Code's {b['seconds'] / 60:.0f} min"
             + (" on average." if many else ".")
-            + (" Foreman's ran until its dollar cap, as a marathon does." if f.get("capped") else ""))
+            + (" Sampo's ran until its dollar cap, as a marathon does." if f.get("capped") else ""))
     def mark(x):
         return "✓ all pass" if not x["failed"] else f"✗ {x['failed']} failing"
     short = lambda t: " ".join(re.sub(r"[:(;].*", "", t).split()[:6]).rstrip(",.") or t  # as the duel tables do
     reqs = list(zip(f.get("requests") or [], b.get("requests") or []))
-    table = ('<div class="verdicts"><table><thead><tr><th>Request</th><th>With Foreman</th><th>Claude Code</th></tr>'
+    table = ('<div class="verdicts"><table><thead><tr><th>Request</th><th>With Sampo</th><th>Claude Code</th></tr>'
              "</thead><tbody>" + "".join(f"<tr><td>{esc(short(x['title']))}</td><td>{mark(x)}</td><td>{mark(z)}</td></tr>"
                                          for x, z in reqs) + "</tbody></table></div>") if reqs else ""
     found = f.get("found") or []
-    work = ("<p>What Foreman found and did on its own after the asked work:</p><ul>"
+    work = ("<p>What Sampo found and did on its own after the asked work:</p><ul>"
             + "".join(f"<li>{esc(x.rsplit(' (discovered)', 1)[0])}</li>" for x in found) + "</ul>") if found else (
-        "<p>Foreman found nothing more worth doing before its cap.</p>" if d.get("marathon") else "")
+        "<p>Sampo found nothing more worth doing before its cap.</p>" if d.get("marathon") else "")
     return head + f"<p><strong>{said}</strong></p>" + _ran_on(d) + table + work
 
 
-FLOW_CODE = """<div class="flow"><svg viewBox="0 0 760 210" role="img" aria-label="fm code: the harness runs every station; the model fills one slot at a time">
+FLOW_CODE = """<div class="flow"><svg viewBox="0 0 760 210" role="img" aria-label="sampo code: the harness runs every station; the model fills one slot at a time">
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
 <rect class="box" x="10" y="20" width="130" height="64" rx="10"/><text class="t" x="24" y="46">Your request</text><text class="s" x="24" y="66">one line is enough</text>
 <rect class="box hot" x="170" y="20" width="150" height="64" rx="10"/><text class="t" x="184" y="46">Plan slot</text><text class="s" x="184" y="66">type, size, checks, steps</text>
 <rect class="box hot" x="350" y="20" width="150" height="64" rx="10"/><text class="t" x="364" y="46">Action slot</text><text class="s" x="364" y="66">read, search, edit, run</text>
-<rect class="box" x="530" y="20" width="210" height="64" rx="10"/><text class="t" x="544" y="46">Foreman's guard</text><text class="s" x="544" y="66">refusals go back to the model</text>
+<rect class="box" x="530" y="20" width="210" height="64" rx="10"/><text class="t" x="544" y="46">Sampo's Ward</text><text class="s" x="544" y="66">refusals go back to the model</text>
 <rect class="box" x="350" y="126" width="150" height="64" rx="10"/><text class="t" x="364" y="152">Harness verifies</text><text class="s" x="364" y="172">runs the checks itself</text>
 <rect class="box" x="530" y="126" width="210" height="64" rx="10"/><text class="t" x="544" y="152">Task closed</text><text class="s" x="544" y="172">evidence, audit, commit</text>
 <path class="arrow" d="M140 52H166"/><path class="arrow" d="M320 52H346"/><path class="arrow" d="M500 52H526"/>
@@ -479,14 +479,14 @@ FLOW_CODE = """<div class="flow"><svg viewBox="0 0 760 210" role="img" aria-labe
 PAGES = [
     {"slug": "planning", "nav": "Planning", "title": "Every request becomes a plan first",
      "desc": "Intake turns a request into a brief with a type, a size, criteria and the commands that prove them.",
-     "lede": "A plain request is enough. Foreman classifies it, writes a brief with what done means and the command "
+     "lede": "A plain request is enough. Sampo classifies it, writes a brief with what done means and the command "
              "that proves it, and only then lets an edit happen.",
      "blocks": [
          ("text", "What a brief holds", "<ul><li><strong>Type and size.</strong> FIX, FEATURE, CLEAN, PERFORMANCE, "
           "SECURITY or RESEARCH, and S, M or L.</li><li><strong>Acceptance criteria</strong>, each with the command "
           "that proves it.</li><li><strong>Steps, scope and risks.</strong> M and L work lists its approaches first "
           "and says why it chose one.</li><li><strong>An approval</strong> when the work is large, unless you put "
-          "Foreman in full auto.</li></ul>"),
+          "Sampo in full auto.</li></ul>"),
          ("term", "FIX: login times out after 30s on slow networks\n"
                   "FEATURE: export report as CSV @src/reports\n"
                   "CONTEXT: Django app; don't touch migrations\n"
@@ -494,21 +494,21 @@ PAGES = [
          ("text", "One task at a time", "<p>One task is active. New ideas land in the inbox instead of being chased "
           "halfway, and the queue orders itself: baseline, cleanups, performance, security, fixes, then features, "
           "dependencies first. <code>NOW:</code> switches on purpose.</p>"),
-         ("text", "Goal to finish", "<p>A big goal is one record, not a hope. <code>fm goal set</code> keeps its words and "
-          "an end date; <code>fm goal item</code> adds each thing it must contain with a done-when check; "
-          "<code>fm goal link</code> (or <code>fm task new --goal N</code>) ties a task to the item it builds; "
-          "<code>fm goal show</code> lists drift: work outside the goal, items with no task, items claimed done whose "
-          "check fails. <code>fm goal verdict</code> says <em>finished</em> only when every item is done, every check "
+         ("text", "Goal to finish", "<p>A big goal is one record, not a hope. <code>sampo goal set</code> keeps its words and "
+          "an end date; <code>sampo goal item</code> adds each thing it must contain with a done-when check; "
+          "<code>sampo goal link</code> (or <code>sampo task new --goal N</code>) ties a task to the item it builds; "
+          "<code>sampo goal show</code> lists drift: work outside the goal, items with no task, items claimed done whose "
+          "check fails. <code>sampo goal verdict</code> says <em>finished</em> only when every item is done, every check "
           "passes now and the gates are green; otherwise <em>stopped</em>, with each cause. A stopped goal blocks a "
           "done claim once, shows in the band, and the MCP <code>goal</code> tool and AGENTS.md carry it.</p>"
           "<p>It carries across days: one line, <code>Goal: &quot;…&quot; · 2/5 items done · next: 3. …</code>, opens "
-          "every session, survives compaction, and rides in <code>fm code</code>'s run prompt, so the plan outlives "
+          "every session, survives compaction, and rides in <code>sampo code</code>'s run prompt, so the plan outlives "
           "the conversation.</p>"),
          ("chart", _sizes), ("chart", _types)]},
     {"slug": "judgment", "nav": "Judgment", "title": "It says how sure it is, and is scored on it",  # T-2344
      "desc": "Every M plan names its readings, its options and how each fails, and a choice with a confidence that "
              "outcomes score.",
-     "lede": "A plan that can't be wrong can't be checked. Foreman's plans say what else the request could mean, what "
+     "lede": "A plan that can't be wrong can't be checked. Sampo's plans say what else the request could mean, what "
              "else could be built and how each would fail, and bet a number on the pick; the outcomes keep score.",
      "blocks": [
          ("text", "The plan shape", "<ul><li><strong>Readings.</strong> Two ways to read the request (Reading 1, "
@@ -516,12 +516,12 @@ PAGES = [
           "each with how it fails if it's wrong (<em>fails if: …</em>): one that uses what exists, one that does "
           "less.</li><li><strong>A choice with a number.</strong> <code>Choice N (NN%)</code>: the percent it would "
           "bet the pick holds. Under the race bar, a cold rival reads the request without the plan and its "
-          "dissent is answered before work starts.</li></ul><p><code>fm focus</code> refuses a plan without them, "
-          "and <code>fm code</code>'s planner on any model writes the same shape and meets the same gate.</p>"),
-         ("text", "Races and doors", "<p>When the bet is low, <code>fm lane race</code> builds two options side by "
+          "dissent is answered before work starts.</li></ul><p><code>sampo focus</code> refuses a plan without them, "
+          "and <code>sampo code</code>'s planner on any model writes the same shape and meets the same gate.</p>"),
+         ("text", "Races and doors", "<p>When the bet is low, <code>sampo lane race</code> builds two options side by "
           "side and the evidence picks; the record keeps how often the first choice lost. A step that is one-way "
           "(it deletes untracked data) and ambiguous parks for you instead of guessing; a two-way step just goes.</p>"),
-         ("text", "The score", "<p><code>fm outcomes --judgment</code> buckets every stated number against what happened and "
+         ("text", "The score", "<p><code>sampo outcomes --judgment</code> buckets every stated number against what happened and "
           "puts its Brier score beside the base rate's. If the stated numbers score worse, the base rate routes in "
           "their place until they don't, and a bar the outcomes say is too low is raised. The MCP "
           "<code>calibration</code> tool (Claude Desktop, other agents) reads the same record without changing it, "
@@ -529,33 +529,33 @@ PAGES = [
          ("chart", _judgment)]},
     {"slug": "lacks", "nav": "Getting tools", "title": "It gets the tools it lacks, and asks before it installs",  # T-2378
      "desc": "A missing tool is noticed, found on a shelf or built and proved, and an install waits for your yes.",
-     "lede": "When the work needs something that isn't there, Foreman says so on the spot, looks on every shelf it has, "
+     "lede": "When the work needs something that isn't there, Sampo says so on the spot, looks on every shelf it has, "
              "builds what's missing with a test, and queues an install for you instead of granting it to itself.",
      "blocks": [
          ("text", "Noticed where it happens", "<p>A command that fails because a tool is missing gets a note right "
-          "there: what's already here, <code>fm which</code> to look on every shelf, or <code>fm new tool</code> to "
+          "there: what's already here, <code>sampo which</code> to look on every shelf, or <code>sampo new tool</code> to "
           "build it. The miss belongs to the task: it can't finish until a run gets past it. The same note reaches "
-          "<code>fm code</code> on any model and Codex, Gemini CLI and opencode, whose after-tool events go through "
+          "<code>sampo code</code> on any model and Codex, Gemini CLI and opencode, whose after-tool events go through "
           "the same check.</p>"),
-         ("text", "Found, built, proved", "<p><code>fm which</code> searches past fixes, the project's own tools, MCP "
-          "servers, binaries, skills, playbooks, fm commands, stack cards and plugins, best first. A tool Foreman "
+         ("text", "Found, built, proved", "<p><code>sampo which</code> searches past fixes, the project's own tools, MCP "
+          "servers, binaries, skills, playbooks, sampo commands, stack cards and plugins, best first. A tool Sampo "
           "builds counts only once runs prove it.</p>"),
-         ("text", "Installs wait for you", "<p>An install is never self-granted. <code>fm ask ID plugin --later</code> "
+         ("text", "Installs wait for you", "<p>An install is never self-granted. <code>sampo ask ID plugin --later</code> "
           "queues it with the miss behind it, what was searched and what the work does meanwhile; it never expires, "
           "and a no is remembered. The band shows the queue while it waits, and the MCP <code>which</code> and "
           "<code>grants</code> tools read the same record from Claude Desktop or another agent, changing nothing.</p>"),
          ("chart", _lacks)]},
     {"slug": "proof", "nav": "Proof", "title": "Nothing is done until a command proves it",
-     "desc": "Evidence is a command Foreman ran and recorded; a fix needs a test that failed first.",
-     "lede": "Saying the tests pass is not evidence. Foreman records the real command, its exit code and its output, "
+     "desc": "Evidence is a command Sampo ran and recorded; a fix needs a test that failed first.",
+     "lede": "Saying the tests pass is not evidence. Sampo records the real command, its exit code and its output, "
              "and refuses to close a task without it.",
      "blocks": [
          ("chart", lambda s: _totals(s, ["evidence", "proofs", "gate_runs", "tasks_done"])),
-         ("text", "How a task closes", "<ul><li><strong>Evidence per step.</strong> <code>fm task evidence --run</code> "
-          "runs the check and stores what happened.</li><li><strong>Red, then green.</strong> <code>fm task prove</code> "
+         ("text", "How a task closes", "<ul><li><strong>Evidence per step.</strong> <code>sampo task evidence --run</code> "
+          "runs the check and stores what happened.</li><li><strong>Red, then green.</strong> <code>sampo task prove</code> "
           "runs the test on the starting tree and on the changed one, and shows it fails without the change.</li>"
-          "<li><strong>Gates.</strong> <code>fm check</code> runs the project's gates and reuses a pass on an "
-          "identical tree.</li><li><strong>One call to close.</strong> <code>fm task finish</code> checks the evidence, "
+          "<li><strong>Gates.</strong> <code>sampo check</code> runs the project's gates and reuses a pass on an "
+          "identical tree.</li><li><strong>One call to close.</strong> <code>sampo task finish</code> checks the evidence, "
           "the audits, the docs note and the lesson the task's size needs, then commits its own files.</li></ul>"),
          ("chart", _evidence),
          ("term", "T-0042  FIX small  login times out on slow wifi\n"
@@ -565,7 +565,7 @@ PAGES = [
                   "✓ audits  self, adversary")]},
     {"slug": "verifying", "nav": "What isn't proved", "title": "It says what no run proved",  # T-2395
      "desc": "Every done task whose claim no command here proved is listed by kind, with the command that closes it.",
-     "lede": "A green close can still rest on words. Foreman reads each done task for claims no run backed, lists them "
+     "lede": "A green close can still rest on words. Sampo reads each done task for claims no run backed, lists them "
              "by kind, and shows the count wherever you look.",
      "blocks": [
          ("text", "The kinds", "<p>Each kind is a claim with its own proof: <code>typed</code> evidence (pasted, not "
@@ -575,92 +575,92 @@ PAGES = [
           "<code>research-uncited</code>, <code>hollow</code> (a test that can't fail), <code>claimed</code> (a proof "
           "word said with no run behind it) and <code>meaning</code> (a clause of the request no criterion checks)."
           "</p>"),
-         ("text", "Where it shows", "<p><code>fm prove --rollup</code> lists each unproven task with the command that closes "
-          "it. The close itself prints the Not verified lines, in <code>fm task finish</code> and in "
-          "<code>fm code</code> on any model; commits and pull requests carry an Unproven trailer; the pane's band "
+         ("text", "Where it shows", "<p><code>sampo prove --rollup</code> lists each unproven task with the command that closes "
+          "it. The close itself prints the Not verified lines, in <code>sampo task finish</code> and in "
+          "<code>sampo code</code> on any model; commits and pull requests carry an Unproven trailer; the pane's band "
           "shows the count and the kind most need; the MCP <code>proof</code> tool gives Claude Desktop and other "
-          "agents the same rows; the exam's proof and beyond kinds count a false proof against the run.</p>"),
+          "agents the same rows; the Louhi exam's proof and beyond kinds count a false proof against the run.</p>"),
          ("chart", _proof)]},
     {"slug": "self-running", "nav": "Self-running", "title": "Work starts by itself, and it is scored",  # T-2364
      "desc": "Triggers, installs waiting for your yes, lanes that recover, self-fixes on trial and predictions, each "
              "measured against a baseline.",
-     "lede": "Foreman starts work nobody asked for: a red build, a new issue, a file that changed, its own repeated "
+     "lede": "Sampo starts work nobody asked for: a red build, a new issue, a file that changed, its own repeated "
              "failures. Each source is scored, each recovery logged, each guess held to a naive baseline.",
      "blocks": [
-         ("text", "Triggers", "<p>Every source that files tasks is a row in <code>fm triggers</code>: how often it "
+         ("text", "Triggers", "<p>Every source that files tasks is a row in <code>sampo triggers</code>: how often it "
           "fired, its precision (the share of its tasks that got done) and its route: the inbox, the queue, a builder "
-          "lane, or muted. <code>fm night --tick</code> is the model-free pass that runs them: standing orders, the "
+          "lane, or muted. <code>sampo night --tick</code> is the model-free pass that runs them: standing orders, the "
           "cached CI result, and the CI check or a repo's issues only where you said yes. What it can't watch, and "
-          "why (no yes, a sensitive project, no network), shows in <code>fm doctor</code>, so a quiet night means "
+          "why (no yes, a sensitive project, no network), shows in <code>sampo doctor</code>, so a quiet night means "
           "quiet.</p>"),
          ("text", "Installs and recoveries", "<p>An install the work needs waits for your yes, and the timers that "
           "run the tick install only after it. A builder lane that stops (killed, at the usage wall, hung, clashing "
-          "with main, red at merge) is recovered by its cause with <code>fm lane recover</code>, at most twice before "
+          "with main, red at merge) is recovered by its cause with <code>sampo lane recover</code>, at most twice before "
           "a person looks.</p>"),
-         ("text", "Self-fixes and predictions", "<p>A fix Foreman makes to its own repeated failure is a trial, "
+         ("text", "Self-fixes and predictions", "<p>A fix Sampo makes to its own repeated failure is a trial, "
           "graded on whether the failure stayed gone. Its guesses at your next request and at effort are scored in "
-          "<code>fm outcomes --predictions</code> against a naive baseline; one that trails the baseline over 20 tries "
+          "<code>sampo outcomes --predictions</code> against a naive baseline; one that trails the baseline over 20 tries "
           "is muted.</p>"),
          ("text", "Staying lean", "<p>Each generation records its footprint when it starts; the lean ratchet fails "
           "a generation that ends bigger than it began, and the self-change gate refuses a merge that grows the hooks, "
           "the context or the verbs with nothing cut to pay for it.</p>"),
          ("chart", _self_running)]},
     {"slug": "model-layer", "nav": "Model layer", "title": "Models advise; proof decides",  # T-2489
-     "desc": "A rule first, then local models, then cloud: each use runs in shadow until the exam shows the model is right more often than the rule.",
+     "desc": "A rule first, then local models, then cloud: each use runs in shadow until Louhi, the exam, shows the model is right more often than the rule.",
      "lede": "Some calls (a request's type and size, whether two items are the same, whether a lead is real) can go to a "
-             "model. Foreman asks the cheapest that can answer, books every answer, and lets one take over only when "
+             "model. Sampo asks the cheapest that can answer, books every answer, and lets one take over only when "
              "its record says so.",
      "blocks": [
          ("text", "The order it asks in", "<ul><li><strong>The rule first.</strong> The deterministic path answers when "
           "it is sure.</li><li><strong>Local models next</strong>, on this machine; a <strong>sensitive</strong> "
           "project never goes further.</li><li><strong>Cloud last</strong>: a cloud model only when no local answer clears the "
           "bar.</li></ul><p>Every answer is booked with its probability, so each use has a Brier score against what "
-          "really happened. No gate or guard ever asks a model: proof comes from a run, never an opinion. A model "
+          "really happened. No gate, and not the Ward, ever asks a model: proof comes from a run, never an opinion. A model "
           "download or install waits for your yes like any other install.</p>"),
          ("text", "Shadow, then live", "<p>Each use starts in <strong>shadow</strong> mode: the rule decides and "
-          "its call is logged; the night tick asks local models the same questions. The exam replays both against "
+          "its call is logged; the night tick asks local models the same questions. Louhi, the exam, replays both against "
           "the tasks' real outcomes at zero tokens. A use goes live only by a <code>model-live</code> decision row "
-          "citing the exam run that showed it beating the rule on accuracy, cost or latency. Other agents ask the "
-          "same layer through the <code>decide</code> MCP tool; their questions are booked apart from Foreman's own, "
-          "and <code>fm doctor</code> lists the backends it can reach.</p>"),
+          "citing the Louhi run that showed it beating the rule on accuracy, cost or latency. Other agents ask the "
+          "same layer through the <code>decide</code> MCP tool; their questions are booked apart from Sampo's own, "
+          "and <code>sampo doctor</code> lists the backends it can reach.</p>"),
          ("chart", _models)]},
     {"slug": "decisions", "nav": "Decisions", "title": "Every decision on one tape",  # T-2348
-     "desc": "Each fm decide row with its confidence, whether it was a door, and the later row that reversed it.",
-     "lede": "Foreman decides on its own under full autonomy, so every choice is written down: what was chosen, why, "
+     "desc": "Each sampo decide row with its confidence, whether it was a door, and the later row that reversed it.",
+     "lede": "Sampo decides on its own under full autonomy, so every choice is written down: what was chosen, why, "
              "how sure it was, and what happened to it later.",
      "blocks": [
-         ("text", "What a row holds", "<p><code>fm decide</code> writes each choice to the project's decisions file: "
+         ("text", "What a row holds", "<p><code>sampo decide</code> writes each choice to the project's decisions file: "
           "its kind (reversible, or a door: costly or outward, which the final report lists), the confidence stated, "
           "the user steer it rests on and the check that proves a standing rule still holds. A later row that "
           "reverses or revisits it is linked here, so a choice that didn't last shows as one.</p>"),
          ("chart", _decisions)]},
-    {"slug": "guard", "nav": "The guard", "title": "A guard built for bypass mode",
+    {"slug": "guard", "nav": "The Ward", "title": "A Ward built for bypass mode",
      "desc": "Every command and edit is read before it runs; dangerous ones are refused and destructive git saves your work first.",
-     "lede": "Foreman is meant to run without permission prompts, so the brake has to be real: it reads every Bash "
+     "lede": "Sampo is meant to run without permission prompts, so the brake has to be real: it reads every Bash "
              "command and file edit before it runs, including the scripts a command calls.",
      "blocks": [
          ("text", "What it refuses", "<ul><li><strong>Deletes outside the project</strong>, the home folder, the root.</li>"
           "<li><strong>Downloads piped into a shell</strong>, force pushes to the default branch, credential reads.</li>"
-          "<li><strong>Edits to Foreman itself and its state</strong>, unless you say yes for that task.</li>"
+          "<li><strong>Edits to Sampo itself and its state</strong>, unless you say yes for that task.</li>"
           "<li><strong>Hidden ways to run code:</strong> <code>tar -I</code>, <code>find -exec</code>, "
           "<code>git -c core.*</code>, <code>BASH_ENV</code>, and scripts it reads line by line.</li></ul>"),
          ("chart", _guard),
-         ("text", "It fails closed, and saves your work", "<p>If the guard crashes or times out, the call is blocked. "
-          "Before <code>git reset --hard</code>, <code>checkout -- .</code> or <code>clean -f</code>, Foreman snapshots "
-          "your uncommitted work; <code>fm oops --apply</code> brings it back. Every change to the guard is replayed "
+         ("text", "It fails closed, and saves your work", "<p>If the Ward crashes or times out, the call is blocked. "
+          "Before <code>git reset --hard</code>, <code>checkout -- .</code> or <code>clean -f</code>, Sampo snapshots "
+          "your uncommitted work; <code>sampo oops --apply</code> brings it back. Every change to the Ward is replayed "
           "against thousands of real commands to show what it would newly block or allow.</p>"),
          ("chart", lambda s: _latency(s, {"PreToolUse:Bash", "PreToolUse:Bash:block", "PreToolUse:Bash:script",
                                           "PreToolUse:Edit"}))]},
     {"slug": "permissions", "nav": "Permissions", "title": "You decide what Claude may never grant itself",
      "desc": "Grants, trust mode, sensitive repos and a daily risk budget keep the dangerous switches in your hands.",
-     "lede": "Some things only you can allow: editing Foreman, pushing, starting a server, installing plugins. Claude "
+     "lede": "Some things only you can allow: editing Sampo, pushing, starting a server, installing plugins. Claude "
              "asks once through Claude Code's own prompt, and your yes covers exactly that.",
      "blocks": [
-         ("text", "The switches", "<ul><li><strong>Grants per task.</strong> <code>core</code> (Foreman's own code), "
+         ("text", "The switches", "<ul><li><strong>Grants per task.</strong> <code>core</code> (Sampo's own code), "
           "<code>publish</code> (a push or release), <code>remote</code> (serving a repo), <code>plugin</code> "
-          "(installs).</li><li><strong>Trust mode.</strong> <code>/fm-trust on</code> lets Claude edit the guard and "
+          "(installs).</li><li><strong>Trust mode.</strong> <code>/fm-trust on</code> lets Claude edit the Ward and "
           "Claude Code's settings; only you can type it.</li><li><strong>Sensitive repos.</strong> "
-          "<code>fm sensitive on</code> keeps a repo's content from leaving the machine.</li><li><strong>A daily risk "
+          "<code>sampo sensitive on</code> keeps a repo's content from leaving the machine.</li><li><strong>A daily risk "
           "budget.</strong> Destructive blocks and failed closes spend points; past the cap, autonomy steps down a "
           "notch until tomorrow.</li></ul>"),
          ("chart", lambda s: hbars("Refusals that waited for a yes", "Blocks in the categories only you can grant.",
@@ -676,28 +676,28 @@ PAGES = [
           "classes a project keeps shipping go into the next builder's brief, so the same mistake is checked for "
           "before it is made again. <code>/foreman:review</code> runs one reviewer per lens over a diff, then two "
           "skeptics try to refute each finding.</p>")]},
-    {"slug": "lanes", "nav": "Builder lanes", "title": "Many hands, one foreman",
-     "desc": "Independent tasks run in parallel git worktrees, each reviewed before Foreman merges it.",
+    {"slug": "lanes", "nav": "Builder lanes", "title": "Many hands, one Smith",
+     "desc": "Independent tasks run in parallel git worktrees, each reviewed before Sampo merges it.",
      "lede": "Independent tasks go to builder subagents, each in its own git worktree with a brief that says exactly "
              "what to build, how to test it and what not to touch.",
      "blocks": [
          ("chart", _lanes), ("chart", _agents),
-         ("text", "From brief to merge", "<ul><li><strong>Brief.</strong> <code>fm lane brief ID</code> writes the "
+         ("text", "From brief to merge", "<ul><li><strong>Brief.</strong> <code>sampo lane brief ID</code> writes the "
           "contract: the base commit, test first, the files it may change, the defects reviewers keep finding.</li>"
           "<li><strong>Review.</strong> An independent reviewer reads the branch; findings go back to the builder.</li>"
-          "<li><strong>Merge.</strong> <code>fm lane merge</code> runs the task's criteria first and refuses a red "
+          "<li><strong>Merge.</strong> <code>sampo lane merge</code> runs the task's criteria first and refuses a red "
           "branch.</li><li><strong>Resume.</strong> A stopped session picks its lanes back up.</li></ul>")]},
     {"slug": "drive", "nav": "Drive and headless", "title": "It keeps going until the queue is done",
-     "desc": "Drive mode, full auto, fm run and fm serve keep work moving without you watching.",
+     "desc": "Drive mode, full auto, sampo run and sampo serve keep work moving without you watching.",
      "lede": "Drive mode works through the whole queue. In full auto Claude decides, records why, and saves what only "
              "you can approve for one summary at the end.",
      "blocks": [
          ("chart", _daily_types),
          ("text", "Ways to run unattended", "<ul><li><strong>Drive.</strong> The Stop hook names the next task, so a "
-          "session doesn't stop while work remains.</li><li><strong><code>fm run</code></strong> works the queue in "
-          "fresh headless sessions, one task each, and waits out usage limits.</li><li><strong><code>fm serve</code>"
+          "session doesn't stop while work remains.</li><li><strong><code>sampo run</code></strong> works the queue in "
+          "fresh headless sessions, one task each, and waits out usage limits.</li><li><strong><code>sampo serve</code>"
           "</strong> runs Claude Code Remote Control on a server as a service, so you can send work from your phone."
-          "</li><li><strong><code>fm loop on</code></strong> keeps improving without being asked: build a round, "
+          "</li><li><strong><code>sampo loop on</code></strong> keeps improving without being asked: build a round, "
           "review it, brainstorm on top, repeat.</li></ul>"),
          ("chart", lambda s: _totals(s, ["tasks_done", "commits", "captures", "subagents"]))]},
     {"slug": "cards", "nav": "Stack cards", "title": "It knows your stack, and costs no context until it matters",
@@ -706,16 +706,16 @@ PAGES = [
              "make and a review checklist. Cards cost nothing until a matching file is edited.",
      "blocks": [
          ("chart", _cards),
-         ("text", "Picked by what you touch", "<p><code>fm lib</code> picks the cards that match your repo's manifests "
+         ("text", "Picked by what you touch", "<p><code>sampo lib</code> picks the cards that match your repo's manifests "
           "and files. The first edit of a file a card covers brings in that card's pitfalls, once per session; a file "
-          "that imports a framework gets that framework's card too. <code>fm lib source add</code> indexes another "
+          "that imports a framework gets that framework's card too. <code>sampo lib source add</code> indexes another "
           "skills repo read-only.</p>")]},
-    {"slug": "panel", "nav": "The panel", "title": "Foreman, live inside Claude Code",
-     "desc": "The foreman-ui mod draws the task, the stage rail, agents, activity and charts in the session itself.",
-     "lede": "The foreman-ui mod shows Foreman's state as you work: a card above the prompt, a docked panel beside the "
+    {"slug": "panel", "nav": "The panel", "title": "Sampo, live inside Claude Code",
+     "desc": "The Sampo pane draws the task, the stage rail, agents, activity and charts in the session itself.",
+     "lede": "The Sampo pane shows Sampo's state as you work: a card above the prompt, a docked panel beside the "
              "chat, a status line under it, and a chat that reads as a tree.",
      "blocks": [
-         ("raw", '<img class="shot" src="../assets/poster.jpg" alt="Claude Code with the foreman-ui panel: the task, '
+         ("raw", '<img class="shot" src="../assets/poster.jpg" alt="Claude Code with the Sampo panel: the task, '
                  'its stage rail and steps, activity lanes, agents, history and today\'s charts" loading="lazy">'),
          ("text", "What it shows", "<ul><li><strong>The task</strong>, its stage from plan to close, and the step bar."
           "</li><li><strong>Activity lanes</strong> for edits, runs, reads, agents, skills and web calls.</li><li>"
@@ -723,52 +723,52 @@ PAGES = [
           ": context, spend, hook time and gates as small charts.</li></ul>"),
          ("chart", lambda s: _latency(s, {"SessionStart", "UserPromptSubmit", "Stop", "PostToolUse"}))]},
     {"slug": "speed", "nav": "Speed", "title": "Light enough to forget it's there",
-     "desc": "Only the guard runs synchronously; everything else records asynchronously or once per turn.",
-     "lede": "Hooks run on every tool call, so each has a time budget and the bench holds them to it. Only the guard "
+     "desc": "Only the Ward runs synchronously; everything else records asynchronously or once per turn.",
+     "lede": "Hooks run on every tool call, so each has a time budget and the bench holds them to it. Only the Ward "
              "and the write validators run in the call's path.",
      "blocks": [
          ("chart", _latency),
          ("text", "How it stays fast", "<ul><li><strong>Budgets per hook</strong>, checked by "
           "<code>bench_hooks.py</code> on every release.</li><li><strong>Reused gate passes.</strong> "
-          "<code>fm check</code> skips a gate that passed on an identical tree.</li><li><strong>Cached verdicts.</strong> "
-          "Scripts the guard read are cached by content.</li><li><strong>Notes once.</strong> Context is injected only "
+          "<code>sampo check</code> skips a gate that passed on an identical tree.</li><li><strong>Cached verdicts.</strong> "
+          "Scripts the Ward read are cached by content.</li><li><strong>Notes once.</strong> Context is injected only "
           "when it changes what Claude should do next.</li></ul>"),
          ("chart", lambda s: tiles([("Gate runs", s["gate_seconds"]["runs"]),
                                     ("Median full gate run, s", s["gate_seconds"]["median"])]))]},
     {"slug": "learning", "nav": "Learning", "title": "It learns a fix once, and improves itself",
      "desc": "Known fixes, lessons, tripwires and a self-improvement loop turn friction into fixes.",
-     "lede": "When a command fails and a later one gets past it, Foreman keeps the pair. The next session that meets "
+     "lede": "When a command fails and a later one gets past it, Sampo keeps the pair. The next session that meets "
              "the same failure gets the fix in the failure message, in any project on the machine.",
      "blocks": [
          ("chart", lambda s: _totals(s, ["lessons_shown", "findings", "captures", "tasks_done"])),
          ("text", "Where improvements come from", "<ul><li><strong>Lessons</strong> written at each close and shown "
-          "to the next task that touches the same code.</li><li><strong>Friction passes</strong> that mine real guard "
-          "refusals and repeated manual work into tasks.</li><li><strong>Backtests.</strong> <code>fm backtest</code> "
+          "to the next task that touches the same code.</li><li><strong>Friction passes</strong> that mine real Ward "
+          "refusals and repeated manual work into tasks.</li><li><strong>Backtests.</strong> <code>sampo backtest</code> "
           "shows how often a rule change would have fired on your real sessions before it ships.</li><li><strong>"
-          "Foreman on Foreman.</strong> It is built with itself; the charts on these pages are that record.</li></ul>"),
+          "Sampo on Sampo.</strong> It is built with itself; the charts on these pages are that record.</li></ul>"),
          ("chart", _tests)]},
     {"slug": "initiative", "nav": "Initiative", "title": "It finds the work before you ask",  # T-2127
-     "desc": "fm find ranks likely defects worst first; fm scout files the proven ones from your own projects.",
-     "lede": "Foreman reads your tree for likely defects: imports no manifest declares, docs naming files or code "
+     "desc": "sampo find ranks likely defects worst first; sampo scout files the proven ones from your own projects.",
+     "lede": "Sampo reads your tree for likely defects: imports no manifest declares, docs naming files or code "
              "that aren't there, secrets, untested public code, SQL built from a parameter. Nothing in the tree runs, "
              "and each lead stays unproven until a failing test shows it.",
      "blocks": [
-         ("text", "Useful, not noisy", "<ul><li><strong>Worst first.</strong> <code>fm find --rank</code> orders "
+         ("text", "Useful, not noisy", "<ul><li><strong>Worst first.</strong> <code>sampo find --rank</code> orders "
           "leads by severity, reach and each finder's track record.</li><li><strong>Your drops teach it.</strong> A "
           "finder whose leads you mostly drop is muted, and the band says so.</li><li><strong>A few a day.</strong> "
-          "<code>fm scout --slow</code> files at most 3 leads open and 3 a day, only kinds that prove themselves, "
-          "never one you dropped.</li><li><strong>Proven, then fixed.</strong> <code>fm prove --capture 5</code> "
+          "<code>sampo scout --slow</code> files at most 3 leads open and 3 a day, only kinds that prove themselves, "
+          "never one you dropped.</li><li><strong>Proven, then fixed.</strong> <code>sampo prove --capture 5</code> "
           "proves what it can on a throwaway copy and files each proven lead as a task whose check stays red until "
           "it's fixed; nothing proven leaves a receipt. <code>/foreman:initiative</code> runs map, find, prove and "
           "fix end to end.</li><li><strong>Only your trees.</strong> A tree whose recent commits aren't yours "
           "is skipped; where others commit too, each lead waits for your yes.</li><li><strong>Deeper when you "
-          "allow it.</strong> <code>fm find --ladder</code> adds each stack's own analyzers (ruff, go vet, gosec), "
-          "run only in a tree you trusted with <code>fm prove PATH --yes-run</code>, tree-sitter rules when the "
+          "allow it.</strong> <code>sampo find --ladder</code> adds each stack's own analyzers (ruff, go vet, gosec), "
+          "run only in a tree you trusted with <code>sampo prove PATH --yes-run</code>, tree-sitter rules when the "
           "binding is installed, and git history to rank hotspots; a fixed bug no finder flagged becomes a blind "
           "spot and a task for a new rule.</li><li><strong>Everywhere.</strong> "
-          "The terminal, the <code>find</code> MCP tool for other agents and Desktop, and Foreman Code through its "
+          "The terminal, the <code>find</code> MCP tool for other agents and Desktop, and Sampo Code through its "
           "run tool.</li></ul>"),
-         ("term", "$ fm find --rank\n2 candidate(s) in 2 files under ~/app; each is unproven until a failing test "
+         ("term", "$ sampo find --rank\n2 candidate(s) in 2 files under ~/app; each is unproven until a failing test "
                   "shows it.\n0.30  src/m.py:1  dep  use: imports zorblax, which no manifest declares\n0.10  README.md:0  "
                   "docs  ./nowhere/setup.md: docs path: ./nowhere/setup.md"),
          ("chart", lambda s: _totals(s, ["captures", "tasks_done", "proofs"]))]},
@@ -776,60 +776,60 @@ PAGES = [
      "desc": "Batch edits, history tracing, time travel and branch tours.",
      "lede": "A handful of commands do in one call what usually takes several turns.",
      "blocks": [
-         ("text", "The ones you'll use", "<ul><li><strong><code>fm edit</code></strong> applies a batch of exact "
-          "replacements across files, all or none.</li><li><strong><code>fm why FILE:LINE</code></strong> traces a "
-          "line back to the task and the words you asked in.</li><li><strong><code>fm at T-0042 -- pytest</code>"
-          "</strong> runs any command as of a task's start.</li><li><strong><code>fm tour --since main</code>"
-          "</strong> ranks a branch by review risk and says what's safe to skim.</li><li><strong><code>fm digest"
+         ("text", "The ones you'll use", "<ul><li><strong><code>sampo edit</code></strong> applies a batch of exact "
+          "replacements across files, all or none.</li><li><strong><code>sampo why FILE:LINE</code></strong> traces a "
+          "line back to the task and the words you asked in.</li><li><strong><code>sampo at T-0042 -- pytest</code>"
+          "</strong> runs any command as of a task's start.</li><li><strong><code>sampo tour --since main</code>"
+          "</strong> ranks a branch by review risk and says what's safe to skim.</li><li><strong><code>sampo digest"
           "</code></strong> sums up the week.</li></ul>"),
          ("term", "@@ src/app.py\n<<<\ntimeout = 30\n===\ntimeout = 90\n>>>\n@@ src/old.py\n<<<\nimport legacy\n===\n>>>"),
          ("chart", lambda s: _totals(s, ["commits", "evidence", "gate_runs"]))]},
-    {"slug": "code", "nav": "Foreman Code", "title": "Foreman Code: the loop, on any model",
-     "desc": "fm code runs Foreman's stations itself, so small and local models only fill small checked slots.",
-     "lede": "<code>fm code</code> is Foreman's own harness: it runs plan, edit, verify and close itself, "
+    {"slug": "code", "nav": "Sampo Code", "title": "Sampo Code: the loop, on any model",
+     "desc": "sampo code runs Sampo's stations itself, so small and local models only fill small checked slots.",
+     "lede": "<code>sampo code</code> is Sampo's own harness: it runs plan, edit, verify and close itself, "
              "and the model only fills one small checked slot at a time. That is what lets a small local model do "
              "real work, and a big one go faster.",
      "blocks": [
          ("raw", FLOW_CODE),
-         ("text", "Open the app", "<p><code>fm code</code> on its own opens the app, the way <code>claude</code> "
+         ("text", "Open the app", "<p><code>sampo code</code> on its own opens the app, the way <code>claude</code> "
           "does. Inside a project it shows that project's active task, queue, inbox, blocked tasks and past runs; "
-          "<code>Esc</code> lists every Foreman project on the machine with what each is doing. <code>Enter</code> "
-          "on a task runs it in its own folder (<code>fm code --task ID</code>: the task's criteria and steps are the "
+          "<code>Esc</code> lists every Sampo project on the machine with what each is doing. <code>Enter</code> "
+          "on a task runs it in its own folder (<code>sampo code --task ID</code>: the task's criteria and steps are the "
           "plan), <code>n</code> starts a new request there and <code>m</code> picks the runner.</p>"),
-         ("text", "Watch it work", "<p><code>fm code tui</code> runs a request in a terminal UI drawn from the "
+         ("text", "Watch it work", "<p><code>sampo code tui</code> runs a request in a terminal UI drawn from the "
           "harness's own events: the stations as a track, each check as a pass or fail chip, changed files as bars, "
-          "where the time went, and tokens per model call. A guard refusal stands out in the activity log; the "
+          "where the time went, and tokens per model call. A Ward refusal stands out in the activity log; the "
           "model's own words are one key away (<code>t</code>). <code>d</code> shows the diff, <code>h</code> past "
           "runs, <code>m</code> picks the model or worker for the next request. It moves: the working station pulses, "
           "counters and bars ease to their values, a refusal flashes (<code>motion = reduced</code> or <code>off</code> stills it). "
           "Themes (night, paper, signal for colour-blind eyes, riso, mono), layout "
-          "and keys come from <code>tui.toml</code>, and a Python file in Foreman's home folder can add a panel, a "
+          "and keys come from <code>tui.toml</code>, and a Python file in Sampo's home folder can add a panel, a "
           "command or an event handler.</p>"),
          ("raw", '<picture><source media="(prefers-reduced-motion: reduce)" srcset="../assets/code-tui.svg">'
           '<img class="shot" src="../assets/code-tui-tour.svg" width="1040" height="678" loading="lazy" '
-          'alt="fm code tui --tour: a sample run in the real screen, a caption naming each panel as it lights: the '
+          'alt="sampo code tui --tour: a sample run in the real screen, a caption naming each panel as it lights: the '
           'track, red checks before the fix, the activity log, a refused rm -rf, tokens per call, changed files, '
           'green checks and the commit"></picture>'
-          '<p><small>Drawn by <code>fm code tui --tour --snapshot FILE.svg</code> from today\'s code each time the site '
+          '<p><small>Drawn by <code>sampo code tui --tour --snapshot FILE.svg</code> from today\'s code each time the site '
           'builds.</small></p>'),
          ("text", "More than one request", "<ul><li><strong>Work the queue.</strong> <code>g</code> runs each queued "
           "task in turn and ends with a digest; pressed during a run, the queue starts when it ends.</li><li><strong>"
-          "Ask beside a run.</strong> <code>n</code> during a run, or <code>fm code --ask</code>, answers a question "
+          "Ask beside a run.</strong> <code>n</code> during a run, or <code>sampo code --ask</code>, answers a question "
           "about the code read-only, next to the run already working in that tree.</li><li><strong>Follow up.</strong> "
-          "<code>fm code --after ID</code> hands the planner the earlier run's request, plan, ending and files; "
+          "<code>sampo code --after ID</code> hands the planner the earlier run's request, plan, ending and files; "
           "<code>T</code> lines up tickets that run after this one.</li><li><strong>Take it back.</strong> <code>u"
           "</code> reverts a closed run's commit; <code>P</code> drafts its pull request; <code>x</code> hands a "
-          "stuck run to a live CLI, then <code>fm code --recheck ID</code> checks what it did.</li><li><strong>Know "
-          "why.</strong> <code>fm code why</code> says how a run ended, what it was on, a stall's cause and the one "
-          "command to run next; blocked, stalled and killed runs feed Foreman's own improvement round.</li><li><strong>"
-          "Keep a frame.</strong> <code>F</code> saves the screen as SVG and PNG; <code>fm code tui --chaos SECONDS"
+          "stuck run to a live CLI, then <code>sampo code --recheck ID</code> checks what it did.</li><li><strong>Know "
+          "why.</strong> <code>sampo code why</code> says how a run ended, what it was on, a stall's cause and the one "
+          "command to run next; blocked, stalled and killed runs feed Sampo's own improvement round.</li><li><strong>"
+          "Keep a frame.</strong> <code>F</code> saves the screen as SVG and PNG; <code>sampo code tui --chaos SECONDS"
           "</code> throws hostile events, keys and resizes at a headless app and exits 1 on a crash, with the seed to "
           "replay it.</li></ul>"),
-         ("text", "Every verb and flag", "<p>Checked against <code>fm code --help</code> by a site test, so a new "
-          "flag can't ship unwritten here.</p><ul><li><strong>Verbs.</strong> <code>fm code models</code> lists the "
-          "model profiles; <code>fm code runners</code> every coding CLI and model it can use; <code>fm code config"
-          "</code> its settings; <code>fm code why</code> how a run ended; <code>fm code bench</code> grades a "
-          "model or worker; <code>fm code tui</code> opens the app.</li><li><strong>Shape a run.</strong> "
+         ("text", "Every verb and flag", "<p>Checked against <code>sampo code --help</code> by a site test, so a new "
+          "flag can't ship unwritten here.</p><ul><li><strong>Verbs.</strong> <code>sampo code models</code> lists the "
+          "model profiles; <code>sampo code runners</code> every coding CLI and model it can use; <code>sampo code config"
+          "</code> its settings; <code>sampo code why</code> how a run ended; <code>sampo code bench</code> grades a "
+          "model or worker; <code>sampo code tui</code> opens the app.</li><li><strong>Shape a run.</strong> "
           "<code>--model</code> picks the profile and <code>--escalate</code> gives three more fix rounds on a "
           "stronger model after three fail; <code>--max-steps</code> and <code>--max-usd</code> cap the turns and the dollars; "
           "<code>--dry-plan</code> prints the plan and changes nothing; <code>--verify CMD</code> makes the plan "
@@ -838,37 +838,37 @@ PAGES = [
           "(<code>-c</code>/<code>--continue</code> takes the newest); <code>--worker-timeout</code> limits each "
           "worker turn.</li><li><strong>Claude's spellings.</strong> <code>-p</code>/<code>--print</code> is "
           "<code>--plain</code>: one line per event, no screen; <code>--json</code> (or <code>--output-format "
-          "json</code>) prints the run's events as JSON lines.</li><li><strong>Runners.</strong> <code>fm code "
+          "json</code>) prints the run's events as JSON lines.</li><li><strong>Runners.</strong> <code>sampo code "
           "runners --check</code> runs each CLI's <code>--version</code> and flags a model the provider is retiring; "
           "<code>--ping [NAME]</code> asks a runner one tiny question and says how it answered, how fast; "
           "<code>--probe MODEL</code> scores a profile 0 to 10 on ten small graded prompts; <code>--use NAME"
           "</code> makes a runner the default, <code>--here</code> for this project only.</li><li><strong>Config."
-          "</strong> <code>fm code config --explain KEY</code> says what a setting does, its value and where it came "
-          "from; <code>fm code tui --print-config</code> prints <code>tui.toml</code> with your changes over the "
+          "</strong> <code>sampo code config --explain KEY</code> says what a setting does, its value and where it came "
+          "from; <code>sampo code tui --print-config</code> prints <code>tui.toml</code> with your changes over the "
           "defaults; <code>--themes</code> shows every theme side by side.</li><li><strong>Bench.</strong> "
-          "<code>fm code bench --seeds A,B</code> runs some seeds; <code>--variants base,evidence</code> runs them "
+          "<code>sampo code bench --seeds A,B</code> runs some seeds; <code>--variants base,evidence</code> runs them "
           "once per prompt variant; <code>--seed-timeout</code> limits each seed.</li><li><strong>Record it."
-          "</strong> <code>fm code tui --events FILE --snapshot SVG --size WxH</code> draws a recorded run, "
+          "</strong> <code>sampo code tui --events FILE --snapshot SVG --size WxH</code> draws a recorded run, "
           "<code>--record VIDEO</code> plays it into an mp4 or gif, <code>--tour</code> is the 30-second guided "
           "run, and <code>--chaos SECONDS --seed SEED</code> replays a crash.</li><li><strong>Unattended.</strong> "
-          "<code>--stale-ok REASON</code> runs on even when the guard replay is red or over a week old, and logs the "
+          "<code>--stale-ok REASON</code> runs on even when the Ward replay is red or over a week old, and logs the "
           "waiver.</li></ul>"),
-         ("text", "Every key","<p>Read from the key map fm code tui ships, so a new key shows here at the next build. "
+         ("text", "Every key","<p>Read from the key map sampo code tui ships, so a new key shows here at the next build. "
           "<code>?</code> shows the same list in the app, and <code>tui.toml</code> rebinds any of them.</p>"),
          ("chart", _keys),
          ("examples", "Examples: real runs of every kind",
           "<p>Each card below is one real run, in a throwaway repo on this machine, with nothing set up but Claude "
           "Code's own CLI: <code>--worker claude</code> plans in Claude's read-only mode, then does each step, while "
-          "fm code makes the task, runs every check before and after the work, and closes it with a commit only when "
+          "sampo code makes the task, runs every check before and after the work, and closes it with a commit only when "
           "the checks pass. A fix, a feature, a rename across files, docs, a question, a project from an empty folder "
           "and another language: the cards are drawn from each run's own events, kept in <code>demo/examples/</code>, "
-          "and <code>fm code tui --events</code> replays any of them.</p>"),
+          "and <code>sampo code tui --events</code> replays any of them.</p>"),
          ("text", "Any model, any CLI", "<ul><li><strong>Any OpenAI-compatible endpoint</strong>: Ollama, LM Studio, "
           "llama.cpp, vLLM, OpenRouter, Groq, OpenAI, Gemini's compatible endpoint, and Anthropic's API.</li><li>"
           "<strong>Other CLIs as workers.</strong> claude, codex, gemini or aider do a step; the harness "
-          "judges the diff and runs the checks itself.</li><li><strong>The same guard</strong> on every command and "
-          "edit, through the hook other harnesses use.</li><li><strong>A bench</strong>: <code>fm code bench</code> grades any model or CLI as a "
-          "Foreman worker on five seeded tasks in throwaway repos, counting a task only when its own check passes "
+          "judges the diff and runs the checks itself.</li><li><strong>The same Ward</strong> on every command and "
+          "edit, through the hook other harnesses use.</li><li><strong>A bench</strong>: <code>sampo code bench</code> grades any model or CLI as a "
+          "Sampo worker on five seeded tasks in throwaway repos, counting a task only when its own check passes "
           "afterwards.</li></ul>"),
          ("chart", lambda s: tiles([("Model client tests", (s.get("code") or {}).get("model_tests", "?")),
                                     ("Endpoints it finds", (s.get("code") or {}).get("endpoints", "?")), ("Status", "Shipped, still growing")]))]},
@@ -876,11 +876,11 @@ PAGES = [
      "desc": "Real runs, published whichever way they fall: dangerous commands, and real tasks graded blind.",
      "lede": "Benchmarks run for real on this machine and published as they came out: a set of commands that destroy "
              "work or leak secrets, sixteen fully specified coding tasks graded by hidden tests, and one long session "
-             "of eight requests that compacts as it goes, each run with Foreman and with Claude Code on its own.",
+             "of eight requests that compacts as it goes, each run with Sampo and with Claude Code on its own.",
      "blocks": [
-         ("text", "Why use Foreman", _why),
-         ("text", "Safety: what runs in bypass mode", "<p>Bypass mode is how Foreman is meant to run: no permission "
-          "prompts. Claude Code on its own asks before none of these in that mode. Foreman's guard judges each one "
+         ("text", "Why use Sampo", _why),
+         ("text", "Safety: what runs in bypass mode", "<p>Bypass mode is how Sampo is meant to run: no permission "
+          "prompts. Claude Code on its own asks before none of these in that mode. Sampo's Ward judges each one "
           "before it runs; the everyday set checks that it doesn't get in the way of normal work.</p>"),
          ("chart", _safety),
          ("text", "Quality: eight fully specified tasks, graded blind", "<p>Each task asks for one small module in "
@@ -888,7 +888,7 @@ PAGES = [
           "token bucket, CSV lines). The request states every rule its hidden tests check, so passing means doing "
           "the whole spec, not guessing wording. Both sides get the same request, model, budget and time limit, each "
           "in a clean worktree, three runs per task; a task counts as passed when at least two of its three runs pass. "
-          "The Claude Code side runs with no plugins but keeps Foreman's guard on, so neither side can damage the "
+          "The Claude Code side runs with no plugins but keeps Sampo's Ward on, so neither side can damage the "
           "machine. <code>bench/spec-suite/make.py</code> builds the repo.</p>"),
          ("chart", lambda s: _duel(s, "quality")),
          ("text", "Harder: eight tasks where checking matters", "<p>A second neutral repo, an invoicing package whose "
@@ -900,7 +900,7 @@ PAGES = [
          ("chart", lambda s: _duel(s, "hard")),
          ("text", "The harder tasks with a smaller model", "<p>The same eight harder tasks with Haiku on both sides, "
           "where mistakes should be likelier and a test run at the end should matter more. Haiku sessions cost about "
-          "a cent each, so Foreman's fixed cost (its skill and agent listings, its hooks and the test run at the end) "
+          "a cent each, so Sampo's fixed cost (its skill and agent listings, its hooks and the test run at the end) "
           "weighs more here.</p>"),
          ("chart", lambda s: _duel(s, "hard-haiku")),
          ("text", "One long session: eight requests, compacting as it goes", "<p>The eight harder tasks asked for "
@@ -909,21 +909,21 @@ PAGES = [
           "gone. The hidden tests of all eight requests grade where each side ends up. Each session is capped at "
           "$0.50; each side runs three times and the table shows the first run's per-request result.</p>"),
          ("chart", lambda s: _long(s, "long")),
-         ("text", "A marathon: Foreman keeps going", "<p>The same long session, but once the asked work is closed, "
-          "Foreman's side looks for more work in the repo and does it, test first, until its $1 cap. Claude Code "
+         ("text", "A marathon: Sampo keeps going", "<p>The same long session, but once the asked work is closed, "
+          "Sampo's side looks for more work in the repo and does it, test first, until its $1 cap. Claude Code "
           "on its own stops when the asked work is done. The hidden tests still grade the end state, so work found "
           "later can't quietly break what was asked for.</p>"),
          ("chart", lambda s: _long(s, "marathon")),
-         ("text", "Where Foreman loses", "<p>Generated from the same results as the tables above: every row where "
-          "Claude Code passed and Foreman didn't, or Foreman cost or took 25% more. Each one reruns on its own with "
-          "<code>fm bench repro</code>, both sides, with that run's model and settings.<!-- rule --></p>"),
+         ("text", "Where Sampo loses", "<p>Generated from the same results as the tables above: every row where "
+          "Claude Code passed and Sampo didn't, or Sampo cost or took 25% more. Each one reruns on its own with "
+          "<code>sampo bench repro</code>, both sides, with that run's model and settings.<!-- rule --></p>"),
          ("chart", _loses),
-         ("text", "What the duels changed in Foreman", "<p>Reading the sessions turn by turn showed where Foreman's "
+         ("text", "What the duels changed in Sampo", "<p>Reading the sessions turn by turn showed where Sampo's "
           "extra cost went: not into its context (about 2,000 tokens), but into turns spent on its own commands. A "
-          "first run on these tasks cost Foreman 8 to 13 turns where Claude Code used 4. The fixes moved Foreman's "
+          "first run on these tasks cost Sampo 8 to 13 turns where Claude Code used 4. The fixes moved Sampo's "
           "bookkeeping out of the model and into its hooks:</p><ul><li><strong>The task makes itself.</strong> The "
           "first edit of a one-request session creates its task from the request and goes ahead.</li><li><strong>It "
-          "closes itself.</strong> At the end, Foreman runs the project's tests and closes and commits the task when "
+          "closes itself.</strong> At the end, Sampo runs the project's tests and closes and commits the task when "
           "they pass. When they fail, it tells the agent once, so the run fixes its work instead of ending on "
           "it.</li><li><strong>It starts informed.</strong> The session begins with the project's layout and test "
           "command, so the agent writes instead of listing folders.</li><li><strong>Less friction.</strong> Commands "
@@ -932,12 +932,12 @@ PAGES = [
           "of later requests after a compaction (44 of 105 hidden tests once)<!-- source: T-1242 -->: a summary keeps a request's name and "
           "drops its rules. Now each request is its own task holding its text, the open ones come back after every "
           "compaction, and the next one is focused with its text when the agent moves on.</li></ul>"),
-         ("text", "The first run, and why it was replaced", "<p>The first duel used six tasks from Foreman's own "
-          "history and came out at 0 of 6 for Foreman, 1 of 6 for Claude Code, with Foreman costing 33% more<!-- source: T-1231 -->. "
-          "Reading its transcripts showed the case set couldn't measure either side: three cases graded what Foreman "
+         ("text", "The first run, and why it was replaced", "<p>The first duel used six tasks from Sampo's own "
+          "history and came out at 0 of 6 for Sampo, 1 of 6 for Claude Code, with Sampo costing 33% more<!-- source: T-1231 -->. "
+          "Reading its transcripts showed the case set couldn't measure either side: three cases graded what Sampo "
           "had learned from this user's own past corrections, which a fresh session can't have, and the other three "
-          "checked exact wording their requests never stated. Both sides also worked inside Foreman's own code, which "
-          "the guard protects. The transcripts did show where Foreman spent extra turns on its own commands; those "
+          "checked exact wording their requests never stated. Both sides also worked inside Sampo's own code, which "
+          "the Ward protects. The transcripts did show where Sampo spent extra turns on its own commands; those "
           "were cut before this run.</p>"),
          ("text", "Method and limits", "<ul><li><strong>Small sample.</strong> Sixteen tasks, three runs each, two "
           "models, and five long sessions a side: enough to see a direction, not a precise rate.</li><li><strong>"
@@ -945,23 +945,23 @@ PAGES = [
           "today's models without help, so those runs measure cost and time; the long session is where they part. "
           "A public benchmark is next.</li><li><strong>Compaction is brought forward.</strong> The long sessions "
           "compact at 40,000 tokens instead of near the model's limit, to show in minutes what a day-long session "
-          "meets.</li><li><strong>Reproduce it.</strong> <code>fm bench duel --vs none</code> runs the quality "
+          "meets.</li><li><strong>Reproduce it.</strong> <code>sampo bench duel --vs none</code> runs the quality "
           "benchmark on your own finished tasks; <code>bench/spec-suite/README.md</code> gives the long-session "
           "commands; <code>python3 site/bench_safety.py</code> reruns the safety set."
-          "</li><li><strong>Other plugins.</strong> <code>fm bench duel PLUGIN</code> runs the same cases with another "
-          "plugin beside Foreman.</li></ul>")]},
+          "</li><li><strong>Other plugins.</strong> <code>sampo bench duel PLUGIN</code> runs the same cases with another "
+          "plugin beside Sampo.</li></ul>")]},
     {"slug": "playbooks", "nav": "Playbooks", "title": "A field guide to the playbooks",
-     "desc": "Every procedure Foreman can load, by stage, with when to use it.",
+     "desc": "Every procedure Sampo can load, by stage, with when to use it.",
      "lede": "A playbook is a short procedure loaded only when its stage comes up: a flaky test, a migration, a "
              "release. Each one names when to use it and the steps that prove the work.",
      "blocks": [
-         ("text", "Using and learning them", "<ul><li><strong>Load one.</strong> <code>fm playbooks show NAME</code> "
+         ("text", "Using and learning them", "<ul><li><strong>Load one.</strong> <code>sampo playbooks show NAME</code> "
           "fills in the project's facts and adds its own notes from <code>.claude/playbooks/</code>.</li><li><strong>"
-          "Practise.</strong> <code>fm playbooks kata NAME</code> gives held-out briefs to answer; <code>--answer "
-          "FILE</code> scores yours.</li><li><strong>Score a run.</strong> <code>fm playbooks score NAME --task ID"
+          "Practise.</strong> <code>sampo playbooks kata NAME</code> gives held-out briefs to answer; <code>--answer "
+          "FILE</code> scores yours.</li><li><strong>Score a run.</strong> <code>sampo playbooks score NAME --task ID"
           "</code> shows which steps a finished task followed.</li><li><strong>Learn from a change.</strong> <code>"
-          "fm playbooks lesson RANGE</code> is a five-minute read of a diff: what changed, where, what its tasks "
-          "learned and the checklists to read it with.</li><li><strong>Grow your own.</strong> <code>fm playbooks "
+          "sampo playbooks lesson RANGE</code> is a five-minute read of a diff: what changed, where, what its tasks "
+          "learned and the checklists to read it with.</li><li><strong>Grow your own.</strong> <code>sampo playbooks "
           "draft ID</code> turns a finished task into a draft; <code>mine</code> and <code>counter</code> read the "
           "repo's history for what changes together and what failed.</li></ul>"),
          ("chart", _field_guide)]},
@@ -970,27 +970,27 @@ PAGES = [
      "lede": "A shader look is a card: the fragment shader, its uniforms, what it costs, its still frame and what it "
              "suits. Each one below runs its card's own preset.",
      "blocks": [
-         ("text", "Using one", "<ul><li><strong>Read the card.</strong> <code>fm lib show shader-aurora-bands</code> "
-          "prints the shader, its uniforms and when not to use it.</li><li><strong>Check it.</strong> <code>fm scene "
+         ("text", "Using one", "<ul><li><strong>Read the card.</strong> <code>sampo lib show shader-aurora-bands</code> "
+          "prints the shader, its uniforms and when not to use it.</li><li><strong>Check it.</strong> <code>sampo scene "
           "shader CARD</code> checks the GLSL with no browser, and with glslangValidator when it's installed.</li>"
-          "<li><strong>See them all.</strong> <code>fm scene sketchbook --out FILE</code> writes this page; each "
+          "<li><strong>See them all.</strong> <code>sampo scene sketchbook --out FILE</code> writes this page; each "
           "thumbnail draws only while on screen, and without WebGL2 it shows the card's description.</li></ul>"),
          ("chart", _sketchbook)]},
     {"slug": "gallery", "nav": "Gallery", "title": "What each design playbook builds",
      "desc": "A worked example page for every UI playbook, shipped beside it and built with the site.",
      "lede": "Every UI playbook ends in a page you can open: the playbook's rules applied to one small screen, in "
-             "one file with no outside host. Each passes <code>fm new check</code> and keeps the five-rule UI "
+             "one file with no outside host. Each passes <code>sampo new check</code> and keeps the five-rule UI "
              "contract: reduced motion, contrast, keyboard, 360 px and designed states.",
      "blocks": [
          ("chart", _gallery),
          ("text", "Use one", "<ul><li><strong>Open it from disk.</strong> Each example lives at <code>plugin/skills/"
-          "playbooks/references/ui/examples/</code> (the 3D one is the <code>fm new scene</code> template), named on "
+          "playbooks/references/ui/examples/</code> (the 3D one is the <code>sampo new scene</code> template), named on "
           "its playbook's <code>Example:</code> line.</li><li><strong>Start from it.</strong> Copy the file, then "
-          "<code>fm new check FILE</code> keeps it to the same rules.</li><li><strong>Rebuild.</strong> <code>python3 "
+          "<code>sampo new check FILE</code> keeps it to the same rules.</li><li><strong>Rebuild.</strong> <code>python3 "
           "site/build.py</code> copies every example into this gallery.</li></ul>")]},
     {"slug": "releases", "nav": "Releases", "title": "Shipped in small, gated releases",
      "desc": "Every release passes the full gates and a release check before it reaches main.",
-     "lede": "<code>fm release</code> runs the ritual as nine named steps with a checkpoint after each: gates, version "
+     "lede": "<code>sampo release</code> runs the ritual as nine named steps with a checkpoint after each: gates, version "
              "bumps, changelog, commit, release check, push, round close and a canary in every local project.",
      "blocks": [
          ("chart", _tests),

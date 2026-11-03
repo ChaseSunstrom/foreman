@@ -34,6 +34,6 @@ async function page(extra) {
   console.log(JSON.stringify({text: a.texts.includes(bad), markup: a.html.includes("onerror"),
     none: b.texts.concat(b.html.split("\n")).some(t => /not graded yet/i.test(t)),
     docs: a.docs,
-    long: says(l, /ahead/) && says(l, /foreman/) && says(l, /\$1\.50/) && says(l, /cost \?/) && says(l, /2 of 3/),
+    long: says(l, /ahead/) && says(l, /Sampo/) && says(l, /\$1\.50/) && says(l, /cost \?/) && says(l, /2 of 3/),
     longReason: says(r, /no common goals/) && !says(r, /ahead|behind/), longNone: says(n, /no long-horizon run yet/i)}));
 })();

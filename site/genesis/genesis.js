@@ -124,7 +124,7 @@
       [written + "/" + g.missions.length, "missions written"],
       [done + "/" + steps, "task steps done"],
       [tiered ? Math.round(100 * (c[3] + c[4]) / tiered) + "%" : "–", "of planned gaps tier 3–4"],
-      [D.exam.length, "exam results"],
+      [D.exam.length, "Louhi results"],
       [D.coverage.filled + "/" + D.coverage.cells, "coverage cells filled"],
       [D.not_yet, "not-yet ideas waiting"],
       [1, "message from you"]];
@@ -132,7 +132,7 @@
       (D.next ? '<dd class="rev">next: ' + esc(D.next.action) + "</dd>" : "") +
       '<dd class="rev">rev ' + esc(D.rev) + " · updated " + esc(ago(D.updated)) + "</dd>";
     $("gen-label").textContent = "generation " + g.n + " · live";
-    $("foot").textContent = "Exported by fm genesis export · " + D.rev;
+    $("foot").textContent = "Exported by sampo genesis export · " + D.rev;
   }
 
   /* A: the tower */
@@ -156,8 +156,8 @@
     var seed = "gen-" + g.n + "/seed.md";
     $("tower-body").className = "";
     $("tower-body").innerHTML = '<div class="tower">' + CRANE + '<div class="levels"><div class="loop" aria-hidden="true"><span>↻ rewrites the Seed every round</span></div>' +
-      '<button type="button" class="lvl l4" data-l4="1"><span class="flag">only better rewrites survive</span><span class="k">Level 4</span><h3>Exam &amp; critique</h3>' +
-      "<p>" + plural(D.exam.length, "exam result") + " · " + plural(g.critiques.length, "critique") + " · lineage " + (D.docs["lineage.md"] ? "kept" : "starts after gen 1") +
+      '<button type="button" class="lvl l4" data-l4="1"><span class="flag">only better rewrites survive</span><span class="k">Level 4</span><h3>Louhi &amp; critique</h3>' +
+      "<p>" + plural(D.exam.length, "Louhi result") + " · " + plural(g.critiques.length, "critique") + " · lineage " + (D.docs["lineage.md"] ? "kept" : "starts after gen 1") +
       " · drift " + esc(g.drift || "–") + " · sweep " + esc(g.sweep || "–") + "</p></button>" +
       '<div class="lvl l3"><span class="k">Level 3</span><h3>Tasks, built &amp; proved</h3><p>' + plural(ts.length, "task") + ", " + live + " open · red tests first, spikes and races in lanes</p>" + trows + "</div>" +
       '<div class="lvl l2"><span class="k">Level 2</span><h3>Missions, up to 8</h3><p>One prompt per gap cluster, each its own session. Hover one to see what it waits on.</p>' +
@@ -167,8 +167,8 @@
       "<p>Biggest gaps, lenses, order · " + plural(g.missions.length, "mission") + ", " + plural(g.rules.length, "standing rule") + "</p></button>" +
       '<button type="button" class="lvl l0" data-doc="gen-0.md"><span class="k">Level 0 · foundation</span><h3>Your message</h3><p>Goals, MUSTs, NEVERs. Sent once, never edited.' + (D.seal ? " Seal: " + esc(D.seal) + "." : "") + '</p></button>' +
       "</div></div>" +
-      '<div class="genesis-box"><code>fm genesis</code><p>' + (g.n < 2 ? "Gen 1's Seed was written by hand from your message. From gen 2 on, fm genesis writes every Seed (#13)."
-        : "Gen " + g.n + "'s Seed is written by fm genesis itself (#13).") + "</p></div>";
+      '<div class="genesis-box"><code>sampo genesis</code><p>' + (g.n < 2 ? "Gen 1's Seed was written by hand from your message. From gen 2 on, sampo genesis writes every Seed (#13)."
+        : "Gen " + g.n + "'s Seed is written by sampo genesis itself (#13).") + "</p></div>";
   }
   function highlight(on) {
     var box = $("tiles");
@@ -206,7 +206,7 @@
     var all = [].concat.apply([], Object.keys(D.gaps).map(function (k) { return D.gaps[k]; })), c = counts(all);
     var mg = [].concat.apply([], G.missions.map(function (m) { return m.gaps; })), p = counts(mg), tiered = p[1] + p[2] + p[3] + p[4];
     var share = tiered ? Math.round(100 * (p[3] + p[4]) / tiered) : 0;
-    var T = [[1, "Tweak", "wording, ms, a flag"], [2, "Feature", "a new verb or view"], [3, "Capability", "a new class of things it can do"], [4, "Paradigm", "changes what Foreman is"]];
+    var T = [[1, "Tweak", "wording, ms, a flag"], [2, "Feature", "a new verb or view"], [3, "Capability", "a new class of things it can do"], [4, "Paradigm", "changes what Sampo is"]];
     $("ambition").innerHTML = '<div class="scale">' + T.map(function (t) {
       return '<div class="tier' + (t[0] >= 3 ? " hi" : "") + '"><b>' + t[0] + " · " + t[1] + "</b><span>" + t[2] + "</span><strong>" + c[t[0]] +
         "</strong><small>open in the gap map · " + p[t[0]] + " planned in gen " + G.n + "</small></div>";
@@ -227,7 +227,7 @@
           "</td><td>" + (typeof e.cost === "number" && e.cost > 0 ? "$" + e.cost.toFixed(2) : "–") +
           "</td><td>" + esc(e.split || "all") + (e.author && e.author !== "self" ? " · by " + esc(e.author) : "") + (e.holdout && e.holdout.scenarios ? " · held out " + frac(e.holdout.found, e.holdout.keyed) + " found" : "") + (typeof e.errors === "number" && e.errors > 0 ? " · " + e.errors + " errored" : "") + "</td></tr>";
       }).join("") + "</tbody></table></div>"
-      : '<div class="rule"><b>No exam run yet.</b>Mission 1 (fm exam) is building it: throwaway repos in six languages with planted defects, vague, ambiguous and missing-tool requests, a held-out third, and plain Claude Code run beside Foreman on the same repos. Every result lands here.</div>';
+      : '<div class="rule"><b>No Louhi run yet.</b>Mission 1 (sampo exam) is building it: throwaway repos in six languages with planted defects, vague, ambiguous and missing-tool requests, a held-out third, and plain Claude Code run beside Sampo on the same repos. Every result lands here.</div>';
   }
 
   /* T-2154: the held-out scorecard, one row per capability; every cell is textContent, never markup */
@@ -252,7 +252,7 @@
     box.appendChild(wrap).appendChild(t);
   }
 
-  /* T-2263: the deciding long-horizon row, foreman vs plain on the common goals; textContent only, null shows as "?" */
+  /* T-2263: the deciding long-horizon row, Sampo vs plain on the common goals (the data keys are the export's own); textContent only, null shows as "?" */
   function longRow() {
     var box = $("long"), L = D.long, t = document.createElement("table"), wrap = document.createElement("div"), tr, p, q = function (v) { return v == null ? "?" : String(v); };
     box.textContent = "";
@@ -260,10 +260,10 @@
       p = box.appendChild(document.createElement("p")); p.className = "muted"; p.textContent = "No long-horizon run yet."; return;
     }
     p = box.appendChild(document.createElement("p"));
-    p.textContent = /^(ahead|level|behind)$/.test(L.state) ? "Foreman is " + L.state + " of plain on the " + L.goals + " goals both answered." : "No verdict: " + String(L.state);
+    p.textContent = /^(ahead|level|behind)$/.test(L.state) ? "Sampo is " + L.state + " of plain on the " + L.goals + " goals both answered." : "No verdict: " + String(L.state);
     if (!L.foreman || !L.plain) return;
     wrap.className = "tbl";
-    [["foreman", L.foreman], ["plain", L.plain]].forEach(function (s) {
+    [["Sampo", L.foreman], ["plain", L.plain]].forEach(function (s) {
       var x = s[1];
       tr = t.appendChild(document.createElement("tr"));
       [s[0], "true done " + q(x.true_done_same) + " of " + L.goals,
@@ -276,7 +276,7 @@
     box.appendChild(wrap).appendChild(t);
   }
 
-  /* T-2626: the moonshot campaign's catalogue: both tiers, domain, novelty, stage, what it unblocks, asked or not; textContent only */
+  /* T-2626: the Moons campaign's catalogue: both tiers, domain, novelty, stage, what it unblocks, asked or not; textContent only */
   function moonshotTable() {
     var box = $("moonshots"), M = D.moonshots, t, tr, p, wrap,
       rows = M && Array.isArray(M.rows) ? M.rows.filter(function (r) { return r && typeof r === "object"; }) : [];
@@ -314,7 +314,7 @@
   }
 
   /* E: rules */
-  var RUN = [["Held-out exam", "A third of the practice repos are never trained on. They decide \"done\"."], ["Subtract as you add", "Each round cuts as much as it adds. Hooks can't get slower."],
+  var RUN = [["Louhi holds out", "A third of the practice repos are never trained on. They decide \"done\"."], ["Subtract as you add", "Each round cuts as much as it adds. Hooks can't get slower."],
     ["Spikes, not vetoes", "\"Too ambitious\" is never a reason. A failed prototype is."], ["Two new tries, then move on", "Stuck tasks get two fresh angles, then a recorded diagnosis."],
     ["Everything finished", "Tests, docs, site, every surface. Nothing left half-built."], ["No outside sweeps", "Tokens go into building and proving, not reading other repos."]];
   function rules() {
@@ -406,7 +406,7 @@
     var k = counts(D.gaps[String(n)] || []);
     var meta = box("Open gaps", k[4] + " tier 4 · " + k[3] + " tier 3" + (k[2] + k[1] ? " · " + (k[2] + k[1]) + " smaller" : "")) +
       box("Missions", per ? "<ul>" + per + "</ul>" : "none yet") +
-      box("Exam", D.exam.length ? plural(D.exam.length, "result") + " in the exam log (section D)" : "no run yet: mission 1 builds the exam");
+      box("Louhi", D.exam.length ? plural(D.exam.length, "result") + " in Louhi's log (section D)" : "no run yet: mission 1 builds Louhi");
     show("capability #" + n, c.name, meta, "<h4>Your message, §2</h4>" + md(capSection(D.docs["gen-0.md"], n)) +
       (gap ? "<h4>Gap map</h4>" + md(gap.replace(/^## .*\n/, "")) : ""), "cap=" + n);
   }
@@ -418,12 +418,12 @@
       box("Progress", t.done + " of " + t.steps + " steps · " + esc(t.status) + bar(t)) +
       box("Now on", esc(t.current || (t.status === "done" ? "closed" : "–"))) +
       box("Mission", x.m ? '<button type="button" class="chip" data-mission="' + esc(x.m.name) + '">' + esc(x.m.name) + "</button>" : "the Seed itself"),
-      '<p class="empty">The brief lives in the project\'s Foreman state; every commit it makes names ' + esc(t.id) + ".</p>", "task=" + t.id);
+      '<p class="empty">The brief lives in the project\'s Sampo state; every commit it makes names ' + esc(t.id) + ".</p>", "task=" + t.id);
   }
   function openL4() {
     var g = G, crit = g.critiques.map(function (n) { return '<button type="button" class="doc" data-doc="gen-' + g.n + "/critique-" + esc(n) + '.md">critique-' + esc(n) + ".md</button>"; }).join("");
-    show("level 4", "Exam & critique · generation " + g.n,
-      box("Exam", plural(D.exam.length, "result") + " logged. A rewrite stays only if its generation closed more exam scenarios than its parent did; the held-out third only grades a capability as done.") +
+    show("level 4", "Louhi & critique · generation " + g.n,
+      box("Louhi", plural(D.exam.length, "result") + " logged. A rewrite stays only if its generation closed more Louhi scenarios than its parent did; the held-out third only grades a capability as done.") +
       box("Drift & sweep", ["drift", "sweep"].map(function (k) {
         var n = "gen-" + g.n + "/" + k + ".md";
         return D.docs[n] ? '<button type="button" class="doc" data-doc="' + n + '">' + k + ".md · " + esc(g[k] || "no verdict") + "</button>" : "";

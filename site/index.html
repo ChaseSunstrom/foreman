@@ -4,28 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>try { var t = localStorage.getItem("fm-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
-<title>Foreman — the discipline layer for coding agents</title>
-<meta name="description" content="Foreman is the discipline layer for coding agents (Claude Code, Codex, Gemini CLI, opencode, or fm code on any model): it plans before it edits, proves its work with commands it ran, stays on one task, and keeps going until the queue is done.">
-<meta property="og:title" content="Foreman — the discipline layer for coding agents">
+<title>Sampo — the discipline layer for coding agents</title>
+<meta name="description" content="Sampo is the discipline layer for coding agents (Claude Code, Codex, Gemini CLI, opencode, or sampo code on any model): it plans before it edits, proves its work with commands it ran, stays on one task, and keeps going until the queue is done.">
+<meta property="og:title" content="Sampo — the discipline layer for coding agents">
 <meta property="og:description" content="Plans before it edits. Proves its work with commands it ran. Stays on one task. Keeps going until the queue is done.">
 <meta property="og:image" content="https://chasesunstrom.github.io/foreman/assets/share.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#F4F6F9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0D1420" media="(prefers-color-scheme: dark)">
-<link rel="icon" href="assets/foreman.svg" type="image/svg+xml">
+<meta name="theme-color" content="#F6F0E4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121418" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="assets/sampo.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.ico" sizes="32x32">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="#"><img src="assets/foreman.svg" alt="" width="28" height="28">Foreman</a>
+    <a class="brand" href="#"><img src="assets/sampo.svg" alt="" width="28" height="28">Sampo</a>
     <nav class="nav" aria-label="Main">
       <a class="hide-sm" href="features/index.html">Features</a>
       <a class="hide-sm" href="features/benchmarks.html">Benchmarks</a>
-      <a class="hide-sm" href="genesis/index.html">Genesis</a>
+      <a class="hide-sm" href="genesis/index.html">Rune</a>
       <a class="hide-sm" href="#loop">How it works</a>
-      <a class="hide-sm" href="#guard">The guard</a>
+      <a class="hide-sm" href="#guard">The Ward</a>
       <a href="#install">Install</a>
       <a href="https://github.com/ChaseSunstrom/foreman">GitHub</a>
       <button class="theme" type="button" aria-label="Switch between light and dark" title="Light or dark">
@@ -37,8 +38,8 @@
 
 <main>
   <div class="wrap hero">
-    <h1>Your coding agent, with a <em>foreman</em> on the job.</h1>
-    <p class="lede">Foreman is the discipline layer for coding agents: Claude Code, Codex, Gemini CLI, opencode, or its own fm code on any model. It makes the agent plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until the work is done or needs you.</p>
+    <h1>Your coding agent, with a <em>smith</em> on the job.</h1>
+    <p class="lede">Sampo is the discipline layer for coding agents: Claude Code, Codex, Gemini CLI, opencode, or its own sampo code on any model. It makes the agent plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until the work is done or needs you.</p>
     <div class="install">
       <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/ChaseSunstrom/foreman/main/<wbr>install.sh | bash</code>
       <button class="copy" type="button" data-copy="cmd-install">Copy</button>
@@ -48,10 +49,10 @@
 
     <figure class="reel">
       <div class="window">
-        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>claude · ~/foreman</span></div>
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>claude · ~/sampo</span></div>
         <div class="session" id="session" role="group" aria-label="Example session">
           <div class="talk">
-            <p class="ln type" data-s="0" data-w="500"><span class="d" aria-hidden="true">❯</span> <span class="tx">FIX: fm edit's block form can't delete text</span></p>
+            <p class="ln type" data-s="0" data-w="500"><span class="d" aria-hidden="true">❯</span> <span class="tx">FIX: sampo edit's block form can't delete text</span></p>
             <p class="ln" data-s="0" data-w="1900">● Treating this as FIX, tier S.</p>
             <p class="ln sub" data-s="1"><span class="d" aria-hidden="true">⎿</span> <b>T-0001</b> · done when an empty new side deletes the block</p>
             <p class="ln" data-s="2" data-w="1000"><span class="b" aria-hidden="true">●</span> <b>foreman:fm-scout</b> <span class="d">Find the block parser</span></p>
@@ -60,21 +61,21 @@
             <p class="ln" data-s="4" data-w="900"><span class="g" aria-hidden="true">●</span> <b>Write</b> plugin/tests/test_batch_edit.py <span class="g">+4</span></p>
             <p class="ln sub" data-s="4" data-w="1200"><span class="d" aria-hidden="true">⎿</span> <span class="r">✗ 1 failed</span> test_block_with_empty_new_text_deletes</p>
             <p class="ln" data-s="4" data-w="1000"><span class="g" aria-hidden="true">●</span> <b>Update</b> plugin/lib/fmedit.py <span class="g">+1</span> <span class="r">−1</span></p>
-            <p class="ln" data-s="5" data-w="900"><span class="g" aria-hidden="true">●</span> <b>Run</b> fm task prove T-0001</p>
+            <p class="ln" data-s="5" data-w="900"><span class="g" aria-hidden="true">●</span> <b>Run</b> sampo task prove T-0001</p>
             <p class="ln sub" data-s="5" data-w="1400"><span class="d" aria-hidden="true">⎿</span> <span class="g">✓</span> fails without the change, passes with it</p>
-            <p class="ln" data-s="5" data-w="800"><span class="g" aria-hidden="true">●</span> <b>Run</b> fm check</p>
+            <p class="ln" data-s="5" data-w="800"><span class="g" aria-hidden="true">●</span> <b>Run</b> sampo check</p>
             <p class="ln sub" data-s="5" data-w="1600"><span class="d" aria-hidden="true">⎿</span> <span class="g">✓</span> {{tests}} tests · doctor · replay</p>
             <p class="ln" data-s="5" data-w="900"><span class="b" aria-hidden="true">●</span> <b>foreman:fm-reviewer</b> <span class="d">Audit the diff</span></p>
             <p class="ln sub" data-s="5" data-w="1400"><span class="d" aria-hidden="true">⎿</span> <span class="g">✓</span> five lenses, no findings</p>
             <p class="ln" data-s="6" data-w="900"><span class="y" aria-hidden="true">●</span> <b>Lesson</b> an empty side is a delete, not a parse error</p>
-            <p class="ln" data-s="7" data-w="900"><span class="g" aria-hidden="true">●</span> <b>Run</b> fm task finish T-0001 --commit</p>
+            <p class="ln" data-s="7" data-w="900"><span class="g" aria-hidden="true">●</span> <b>Run</b> sampo task finish T-0001 --commit</p>
             <p class="ln sub" data-s="7" data-w="1200"><span class="d" aria-hidden="true">⎿</span> <span class="g">✓</span> closed · changelog · committed 3f2a1c9</p>
             <p class="ln" data-s="8" data-w="1000">● Queue is empty. Nothing needs you.</p>
           </div>
           <div class="pane" aria-hidden="true">
-            <p><b class="y">Foreman</b> <span class="d">standard</span></p>
+            <p><b class="y">Sampo</b> <span class="d">standard</span></p>
             <p><b class="r">FIX</b> <b>T-0001</b> <span class="d">small</span></p>
-            <p class="d">fm edit block form: allow empty new text</p>
+            <p class="d">sampo edit block form: allow empty new text</p>
             <ol class="stage">
               <li class="done">capture</li><li class="done">expand</li><li class="done">ground</li><li class="done">plan</li>
               <li class="done">execute</li><li class="done">verify</li><li class="done">reflect</li><li class="done">record</li>
@@ -82,7 +83,7 @@
           </div>
         </div>
       </div>
-      <figcaption class="caption">A sketch of one task, start to finish, modelled on a real session: a scout subagent finds the parser, Claude writes the failing test and the fix, and <code>fm task prove</code> shows the test fails without the change before the task closes. The pane walks the eight stations below. <a href="demo/live.mp4">Watch the raw recording</a>.</figcaption>
+      <figcaption class="caption">A sketch of one task, start to finish, modelled on a real session: a scout subagent finds the parser, Claude writes the failing test and the fix, and <code>sampo task prove</code> shows the test fails without the change before the task closes. The pane walks the eight stations below. <a href="demo/live.mp4">Watch the raw recording</a>.</figcaption>
     </figure>
   </div>
 
@@ -109,12 +110,12 @@
     <div class="wrap">
       <div class="head">
         <h2>What it holds your agent to</h2>
-        <p class="prose">Left to itself, a coding agent edits before it understands, says tests pass without running them and chases every new idea halfway. Foreman's hooks make the right way the only way.</p>
+        <p class="prose">Left to itself, a coding agent edits before it understands, says tests pass without running them and chases every new idea halfway. Sampo's hooks make the right way the only way.</p>
       </div>
       <dl class="rules">
         <div><dt>Plans first</dt><dd>Every request becomes a brief before any edit: its type and size, what done means, the command that proves it, and the steps. An edit with no active task is refused.</dd></div>
-        <div><dt>Proves it</dt><dd>Evidence is a command Foreman ran and recorded, not a sentence. A fix needs a test that failed first. A reply claiming the tests pass is checked against the turn's own runs.</dd></div>
-        <div><dt>Guards bypass mode</dt><dd>A fail-closed guard reads every command before it runs. Destructive git commands get your uncommitted work snapshotted first.</dd></div>
+        <div><dt>Proves it</dt><dd>Evidence is a command Sampo ran and recorded, not a sentence. A fix needs a test that failed first. A reply claiming the tests pass is checked against the turn's own runs.</dd></div>
+        <div><dt>Wards bypass mode</dt><dd>A fail-closed Ward reads every command before it runs. Destructive git commands get your uncommitted work snapshotted first.</dd></div>
         <div><dt>Stays on task</dt><dd>One active task. New requests go to the inbox instead of being chased; <code>NOW:</code> switches on purpose.</dd></div>
         <div><dt>Never loses its place</dt><dd>State lives on disk, so after <code>/compact</code> or in a new session the agent resumes at the exact step.</dd></div>
         <div><dt>Keeps going</dt><dd>Drive mode works through the whole queue. In full auto it decides, records why, and saves what only you can approve for one summary at the end.</dd></div>
@@ -127,17 +128,17 @@
     <div class="wrap">
       <div class="head">
         <h2>Every part, in detail</h2>
-        <p class="prose">Each feature has its own page: what it does, how it works, the commands, and charts from Foreman's own record of building itself.</p>
+        <p class="prose">Each feature has its own page: what it does, how it works, the commands, and charts from Sampo's own record of building itself.</p>
       </div>
       <div class="fgrid">
         <a class="fcard" href="features/planning.html"><b>Planning</b><span>Every request becomes a brief with a type, a size and the commands that prove it.</span></a>
-        <a class="fcard" href="features/proof.html"><b>Proof</b><span>Evidence is a command Foreman ran; a fix needs a test that failed first.</span></a>
-        <a class="fcard" href="features/guard.html"><b>The guard</b><span>Every command and edit read before it runs, scripts included.</span></a>
+        <a class="fcard" href="features/proof.html"><b>Proof</b><span>Evidence is a command Sampo ran; a fix needs a test that failed first.</span></a>
+        <a class="fcard" href="features/guard.html"><b>The Ward</b><span>Every command and edit read before it runs, scripts included.</span></a>
         <a class="fcard" href="features/review.html"><b>Audits and review</b><span>Five lenses and reviewers that didn't write the code.</span></a>
         <a class="fcard" href="features/lanes.html"><b>Builder lanes</b><span>Parallel worktrees, each reviewed before it merges.</span></a>
-        <a class="fcard" href="features/code.html"><b>Foreman Code</b><span>The loop on any model or CLI, in progress.</span></a>
+        <a class="fcard" href="features/code.html"><b>Sampo Code</b><span>The loop on any model or CLI, in progress.</span></a>
         <a class="fcard" href="features/benchmarks.html"><b>Benchmarks</b><span>Against Claude Code: dangerous commands, and real tasks graded blind. Published whichever way they fall.</span></a>
-        <a class="fcard" href="genesis/index.html"><b>Genesis run, live</b><span>One message, a tower of prompts rewriting each other: every generation, mission and doc.</span></a>
+        <a class="fcard" href="genesis/index.html"><b>Rune, live</b><span>One message, a tower of prompts rewriting each other: every generation, mission and doc.</span></a>
       </div>
       <p class="more"><a href="features/index.html">All {{pages}} feature pages</a></p>
     </div>
@@ -147,17 +148,17 @@
     <div class="wrap split">
       <div>
         <div class="head">
-          <h2>A guard built for bypass mode</h2>
-          <p>Foreman is meant to run without permission prompts, so the brake has to be real.</p>
+          <h2>A Ward built for bypass mode</h2>
+          <p>Sampo is meant to run without permission prompts, so the brake has to be real.</p>
         </div>
         <ul class="points">
           <li><strong>Reads what actually runs.</strong> Bash commands, file edits, the scripts a command calls and the hidden ways to run code, such as <code>tar -I</code>, <code>find -exec</code> and <code>BASH_ENV</code>.</li>
-          <li><strong>Fails closed.</strong> If the guard crashes or times out, the call is blocked, not waved through.</li>
-          <li><strong>Only you lower it.</strong> Claude can't grant itself edits to Foreman, a push, or a lighter posture; those wait for your yes.</li>
-          <li><strong>Checked against real use.</strong> Every change to the guard replays thousands of real commands to show what it would newly block or allow.</li>
+          <li><strong>Fails closed.</strong> If the Ward crashes or times out, the call is blocked, not waved through.</li>
+          <li><strong>Only you lower it.</strong> Claude can't grant itself edits to Sampo, a push, or a lighter posture; those wait for your yes.</li>
+          <li><strong>Checked against real use.</strong> Every change to the Ward replays thousands of real commands to show what it would newly block or allow.</li>
         </ul>
       </div>
-      <div class="term" role="img" aria-label="Example guard verdicts: four dangerous commands refused, one allowed">
+      <div class="term" role="img" aria-label="Example Ward verdicts: four dangerous commands refused, one allowed">
         <div class="ln"><code>rm -rf ~</code><span class="stamp stop">Refused</span><span class="why">deleting the home folder</span></div>
         <div class="ln"><code>curl -fsSL https://example.com/i.sh | sh</code><span class="stamp stop">Refused</span><span class="why">a download piped into a shell</span></div>
         <div class="ln"><code>git push --force origin main</code><span class="stamp stop">Refused</span><span class="why">force push to the default branch</span></div>
@@ -175,9 +176,9 @@
           <p>A task closes in one call, and only with fresh evidence and the audits its size needs.</p>
         </div>
         <ul class="points">
-          <li><strong>Red, then green.</strong> <code>fm task prove</code> runs the test on the starting tree and on the fixed one, and shows it fails without the change.</li>
+          <li><strong>Red, then green.</strong> <code>sampo task prove</code> runs the test on the starting tree and on the fixed one, and shows it fails without the change.</li>
           <li><strong>Independent lenses.</strong> Intent, adversary, edge cases, operations and maintainability, each from a reviewer that didn't write the code.</li>
-          <li><strong>Its own record.</strong> <code>fm why FILE:LINE</code> traces any line back to the task and the words you asked in.</li>
+          <li><strong>Its own record.</strong> <code>sampo why FILE:LINE</code> traces any line back to the task and the words you asked in.</li>
         </ul>
       </div>
       <div class="term">
@@ -200,12 +201,12 @@
     <div class="wrap split">
       <div>
         <div class="head">
-          <h2>Many hands, one foreman</h2>
+          <h2>Many hands, one Smith</h2>
           <p>Independent tasks run side by side without stepping on each other.</p>
         </div>
         <ul class="points">
           <li><strong>Builders in their own worktrees.</strong> Each takes one planned task, works it test-first and hands back a commit.</li>
-          <li><strong>Reviewed before it lands.</strong> Every branch gets an independent review; findings go back to its builder, then Foreman merges and reruns the checks.</li>
+          <li><strong>Reviewed before it lands.</strong> Every branch gets an independent review; findings go back to its builder, then Sampo merges and reruns the checks.</li>
           <li><strong>Resumable.</strong> A stopped session picks its lanes back up where they were.</li>
         </ul>
       </div>
@@ -237,11 +238,11 @@
     <div class="wrap">
       <div class="head">
         <h2>Knows your stack, works with every agent</h2>
-        <p class="prose">{{cards}} stack cards give the exact commands that verify the work, a failing-test recipe and the mistakes models actually make, for {{areas}} areas from Python and Rust to infrastructure and games. They cost no context until a matching file is edited. The same guard, context and MCP server install into other agents with one command.</p>
+        <p class="prose">{{cards}} stack cards give the exact commands that verify the work, a failing-test recipe and the mistakes models actually make, for {{areas}} areas from Python and Rust to infrastructure and games. They cost no context until a matching file is edited. The same Ward, context and MCP server install into other agents with one command.</p>
       </div>
-      <p><code>fm agents install codex</code> <span class="muted">or</span> <code>gemini</code> <span class="muted">or</span> <code>opencode</code></p>
-      <div class="agents" aria-label="Supported agents"><span>Claude Code</span><span>Codex CLI</span><span>Gemini CLI</span><span>opencode</span><span>fm code</span></div>
-      <figure class="diagram"><img src="assets/diagrams/architecture.svg" width="880" height="410" loading="lazy" alt="How the pieces fit: Claude Code, other agents, fm code and headless runs call Foreman's hooks and the fm CLI, which keep state on disk; the foreman-ui pane, the status line, Foreman Desktop and MCP clients read fm's JSON"></figure>
+      <p><code>sampo agents install codex</code> <span class="muted">or</span> <code>gemini</code> <span class="muted">or</span> <code>opencode</code></p>
+      <div class="agents" aria-label="Supported agents"><span>Claude Code</span><span>Codex CLI</span><span>Gemini CLI</span><span>opencode</span><span>sampo code</span></div>
+      <figure class="diagram"><img src="assets/diagrams/architecture.svg" width="880" height="410" loading="lazy" alt="How the pieces fit: Claude Code, other agents, sampo code and headless runs call Sampo's hooks and the sampo CLI, which keep state on disk; the Sampo pane, the status line, Sampo Desktop and MCP clients read sampo's JSON"></figure>
     </div>
   </section>
 
@@ -260,12 +261,12 @@
     <div class="wrap">
       <div class="head">
         <h2>Built with itself</h2>
-        <p class="prose">Foreman is developed under Foreman: every change on this repo went through the stations above.</p>
+        <p class="prose">Sampo is developed under Sampo: every change on this repo went through the stations above.</p>
       </div>
       <div class="facts">
-        <p><strong>{{tasks}}</strong>tasks planned, proved and closed on Foreman's own code.</p>
+        <p><strong>{{tasks}}</strong>tasks planned, proved and closed on Sampo's own code.</p>
         <p><strong>{{tests}}</strong>tests in the gate that every release has to pass.</p>
-        <p><strong>{{replay}}</strong>real commands replayed against the guard whenever it changes.</p>
+        <p><strong>{{replay}}</strong>real commands replayed against the Ward whenever it changes.</p>
       </div>
     </div>
   </section>
@@ -275,9 +276,9 @@
       <div class="head"><h2>When not to use it</h2></div>
       <ul class="notfor">
         <li><strong>Quick one-off questions or scripts.</strong> Planning, evidence and audits are overhead for a five-minute job.</li>
-        <li><strong>Native Windows.</strong> Foreman needs Linux, macOS or WSL.</li>
-        <li><strong>Approving every command yourself.</strong> It is built for bypass mode with the guard as the brake; in the default mode its drive keeps stopping at prompts.</li>
-        <li><strong>Tight token budgets.</strong> Brainstorms, second plans and audits run extra model sessions, capped by <code>fm budget</code>.</li>
+        <li><strong>Native Windows.</strong> Sampo needs Linux, macOS or WSL.</li>
+        <li><strong>Approving every command yourself.</strong> It is built for bypass mode with the Ward as the brake; in the default mode its drive keeps stopping at prompts.</li>
+        <li><strong>Tight token budgets.</strong> Brainstorms, second plans and audits run extra model sessions, capped by <code>sampo budget</code>.</li>
       </ul>
     </div>
   </section>
@@ -289,7 +290,8 @@
           <h2>Install</h2>
           <p>One command, then ask your agent for something.</p>
         </div>
-        <p class="req">Needs Linux, macOS or WSL, <code>git</code> and Python 3.12.7 or newer, plus an agent: Claude Code, Codex, Gemini CLI or opencode, or a model for <code>fm code</code>. The installer asks before it changes your settings, and <code>fm demo</code> shows Foreman working on a seeded bug in a throwaway repo before you trust it with yours.</p>
+        <p class="req">Needs Linux, macOS or WSL, <code>git</code> and Python 3.12.7 or newer, plus an agent: Claude Code, Codex, Gemini CLI or opencode, or a model for <code>sampo code</code>. The installer asks before it changes your settings, and <code>sampo demo</code> shows Sampo working on a seeded bug in a throwaway repo before you trust it with yours.</p>
+        <p class="req">Sampo, formerly Foreman, keeps its old names as aliases: <code>fm</code> runs <code>sampo</code>, and the <code>/foreman:</code> commands and the <code>foreman@foreman</code> plugin id still work.</p>
       </div>
       <div class="steps">
         <div class="st">
@@ -317,7 +319,7 @@
 
 <footer>
   <div class="wrap">
-    <a class="brand" href="#"><img src="assets/foreman.svg" alt="" width="22" height="22">Foreman</a>
+    <a class="brand" href="#"><img src="assets/sampo.svg" alt="" width="22" height="22">Sampo</a>
     <nav aria-label="Links">
       <a href="https://github.com/ChaseSunstrom/foreman">Source</a>
       <a href="https://github.com/ChaseSunstrom/foreman/blob/main/README.md">Read me</a>

@@ -144,8 +144,9 @@ class Landing(unittest.TestCase):
         def v(rel):
             with open(os.path.join(ROOT, "site", rel), "rb") as f:
                 return hashlib.sha256(f.read()).hexdigest()[:8]
-        tags = (rf'<link rel="icon" href="(\.\./)?assets/foreman\.svg\?v={v("assets/foreman.svg")}"',
-                rf'<img src="(\.\./)?assets/foreman\.svg\?v={v("assets/foreman.svg")}"',
+        tags = (rf'<link rel="icon" href="(\.\./)?assets/sampo\.svg\?v={v("assets/sampo.svg")}"',
+                rf'<link rel="icon" href="(\.\./)?assets/favicon\.ico\?v={v("assets/favicon.ico")}"',
+                rf'<img src="(\.\./)?assets/sampo\.svg\?v={v("assets/sampo.svg")}"',
                 rf'<link rel="stylesheet" href="(\.\./)?style\.css\?v={v("style.css")}"',
                 rf'<script src="(\.\./)?site\.js\?v={v("site.js")}"')
         with tempfile.TemporaryDirectory() as tmp:
@@ -253,7 +254,7 @@ class ProductLines(unittest.TestCase):
                          "local Claude Code plugin", "`claude` (Claude Code) and"):
                 self.assertNotIn(line, text, path)
         self.assertIn("discipline layer for coding agents", read_text(os.path.join(ROOT, "README.md")))
-        self.assertIn("<span>fm code</span>", read_text(os.path.join(ROOT, "site", "index.html")))
+        self.assertIn("<span>sampo code</span>", read_text(os.path.join(ROOT, "site", "index.html")))
 
 
 class NoBareNulls(unittest.TestCase):
