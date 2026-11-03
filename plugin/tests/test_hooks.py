@@ -3161,6 +3161,24 @@ class Stop(HookCase):
                                                  "</task-notification>", "session_id": "sess-1"})
         self.assertEqual(hooks._running("sess-1"), ["bnpbatnnd"], "its notice ends it")
 
+    def test_an_agent_resumed_by_sendmessage_is_a_background_start(self):
+        # T-2848: a resume records no SubagentStart, so a designer sent a new round was invisible to drive's wait list
+        from sampo import hooks
+        self.fm("init")
+        self.hook("PostToolUse", {"tool_name": "SendMessage", "tool_input": {"to": "a42cb51b932d1111a"},
+                                  "session_id": "sess-1", "tool_response": {"success": True, "message": "Resuming agent "
+                                                                            "a42cb51", "resumedAgentId": "a42cb51b932d1111a"}})
+        self.hook("PostToolUse", {"tool_name": "SendMessage", "tool_input": {"to": "a7e54ff36c381475e"},
+                                  "session_id": "sess-1", "tool_response": {"success": True, "message": "Message queued "
+                                                                            "for delivery to a7e54ff36c381475e"}})
+        self.hook("PostToolUse", {"tool_name": "SendMessage", "tool_input": {"to": "b"}, "session_id": "sess-2",
+                                  "tool_response": json.dumps({"message": "Resuming agent b", "resumedAgentId": "b-1"})})
+        self.assertEqual(hooks._running("sess-2"), ["b-1"], "the result as JSON text")
+        self.assertEqual(hooks._running("sess-1"), ["a42cb51b932d1111a"], "a queued message: already counted")
+        self.hook("UserPromptSubmit", {"prompt": "<task-notification>\n<task-id>a42cb51b932d1111a</task-id>\n"
+                                                 "</task-notification>", "session_id": "sess-1"})
+        self.assertEqual(hooks._running("sess-1"), [], "its notice ends it")
+
     def test_no_active_task_a_background_job_names_the_next_task_once_per_running_set(self):
         # T-2790: five 'fm focus T-…' blocks in a row raced a queued close run's own fm focus calls
         self.fm("init")

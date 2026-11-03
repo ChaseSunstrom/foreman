@@ -3083,6 +3083,10 @@ def post_tool_use(pl, ok=True):
                       json.dumps(pl.get("tool_response")))
         if m:
             _event({"kind": "bg_start", "session_id": pl.get("session_id"), "id": m.group(1) or m.group(2)})
+    elif ok and tool == "SendMessage":  # T-2848: a resume records no SubagentStart; its notice's task-id is this id
+        m = re.search(r"resumedAgentId\W+([\w-]+)", json.dumps(pl.get("tool_response")))  # a dict or its JSON text
+        if m:
+            _event({"kind": "bg_start", "session_id": pl.get("session_id"), "id": m.group(1)})
     if ok and p and tool == "Bash":
         _grant_prompted(pl, p)
         note = _bash_touches(pl, p)
