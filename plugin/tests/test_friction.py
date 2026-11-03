@@ -53,6 +53,14 @@ class Friction(ForemanTestCase):
         self.assertIn("3× Read: File does not exist.", out)
         self.assertNotIn("wait on background work", out)
 
+    def test_failed_bash_calls_split_by_program_and_a_grep_no_match_isnt_friction(self):  # T-2733
+        for cmd in ("cd /x && fm tsk new a", "fm tsk new b", "python3 -c 'raise SystemExit(1)'", "grep -q foo bar.txt"):
+            self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": cmd}, "error": "Exit code 1"})
+        out = self.fm("friction").stdout
+        self.assertIn("2× Bash fm: Exit code 1", out)
+        self.assertIn("1× Bash python3: Exit code 1", out)
+        self.assertNotIn("grep -q foo", out)  # exit 1 is grep's 'no match', not a failure
+
     def test_digest_labels_downstream_project_friction(self):
         # T-0435: _ledgers read every project's ledger but dropped which one a line came from: JARVIS's steers and
         # corrections reached Foreman's pass unlabelled, and how much friction each project had wasn't visible

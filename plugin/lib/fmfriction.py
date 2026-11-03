@@ -142,6 +142,25 @@ def _mine(ledger, label):
             f"after {n} failed run(s): {', '.join(t[:5])}" for n, t in sorted(gave_up.items())][:MAX_LINES]}  # not a list: five names per row
 
 
+_ANSWERS_NO = {"grep", "egrep", "rg", "test", "[", "diff", "cmp"}  # T-2733: their exit 1 is a 'no', not a failure
+
+
+def _prog(e):
+    """The program a Bash call ran first, past any leading `cd DIR &&` and VAR=value words."""
+    cmd = re.sub(r"^(?:\s*cd\s+\S+\s*&&\s*)+", "", str(e.get("target") or ""))
+    m = re.match(r"\s*(?:\w+=\S*\s+)*([\w./\[-]+)", cmd)
+    return os.path.basename(m.group(1)) if m else ""
+
+
+def _tool(e):
+    """T-2733: 'Bash fm' rather than 'Bash', so fm's and python3's failures aren't one bucket with grep's no-match."""
+    return f"Bash {_prog(e)}".strip() if e.get("tool") == "Bash" else e.get("tool")
+
+
+def _a_no(e):
+    return e.get("tool") == "Bash" and _prog(e) in _ANSWERS_NO and str(e.get("error") or "").startswith("Exit code 1")
+
+
 def digest(p, recheck=True):
     """{section: [lines]} of what went wrong or slow since the last pass, newest kinds first, each line bounded, and the
     window's counts (kept at --mark for the next digest's trend)."""
@@ -171,8 +190,8 @@ def digest(p, recheck=True):
         out["guard rules by fire count (a rule that fires often on harmless work is the one to look at)"] = [
             f"{n}× {r}" for r, n in rules.most_common(MAX_LINES)]
 
-    failed = [e for e in events if e.get("kind") == "tool_fail"]  # T-0301: grouped by why, not by which file
-    why = lambda e: (e.get("tool"), c.fit(c.plain(str(e.get("error") or "no error recorded")), 90))
+    failed = [e for e in events if e.get("kind") == "tool_fail" and not _a_no(e)]  # T-0301: grouped by why
+    why = lambda e: (_tool(e), c.fit(c.plain(str(e.get("error") or "no error recorded")), 90))
     fails = collections.Counter(why(e) for e in failed)
     target = {why(e): c.fit(c.plain(str(e.get("target") or "")), 90) for e in failed}  # the newest example
     out["failed tool calls"] = [f"{n}× {k[0]}: {k[1]}" + (f" — e.g. {target[k]}" if target[k] else "")
