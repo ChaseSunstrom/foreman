@@ -1146,7 +1146,7 @@ export const register: Register = (on, options) => {
           </Text>
         ) : (
           <Text weight="bold" color={hex(C.accent)} wrap={cut}>
-            Foreman · nothing active
+            Sampo · nothing active
           </Text>
         )}
         {a && a.steps.length > 0 && (
@@ -1183,7 +1183,7 @@ export const register: Register = (on, options) => {
               </Box>
             ) : (
               <Text weight="bold" color={hex(C.accent)} wrap={cut}>
-                Foreman · nothing active
+                Sampo · nothing active
               </Text>
             )}
           </Box>

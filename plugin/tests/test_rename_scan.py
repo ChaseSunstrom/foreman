@@ -7,13 +7,17 @@ import subprocess
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BASELINE = 61  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry), 61 after MASTER.md (T-2810: MASTER's lines, and the lowercase-id forms KEPT now keeps on every surface); the goal is 0
+BASELINE = 42  # 2026-11-03: 876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry), 61 after MASTER.md (T-2810: MASTER's lines, and the lowercase-id forms KEPT now keeps on every surface), 42 after the mod (T-2807: the code-matched forms it keeps are listed in KEPT); the goal is 0
 SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", "plugin/skills/**/*.md",
             "plugin/commands/*.md", "plugin/agents/*.md", ".claude-plugin/marketplace.json",
             "plugin/.claude-plugin/plugin.json", "plugin/output-styles/*", "mods/foreman-ui/**", "plugin/rules/*.md")
 # names kept on purpose: old plugin ids, commands, agents, env, trailer and path, each an alias of its Sampo name, and
-# the one line that says what Sampo was called
-KEPT = re.compile(r"foreman(?:-ui)?@foreman|/foreman:|foreman:fm-|FOREMAN_|Foreman-Task|\.claude/foreman|"
+# the one line that says what Sampo was called. T-2807: also the strings code matches (the mod's pane id 'foreman', the
+# skill namespace foreman:next, the install folder /foreman/, the resume prompt the plugin and the mod both read, the
+# guard's refusal and ask prefixes); each moves in the task that changes its reader (T-2809 for the guard and prompt)
+KEPT = re.compile(r"foreman(?:-ui)?@foreman|foreman-ui|/foreman:|(?-i:foreman:(?=[a-z]))|foreman:fm-|FOREMAN_|Foreman-Task|"
+                  r"\.claude/foreman|(?-i:/foreman/)|'foreman'|(?-i:Continue the Foreman drive)|"
+                  r"(?-i:Foreman guard:|Foreman asks |Foreman\(\?: guard\)\?:)|"  # the last: register.tsx's guard regex source
                   r"formerly Foreman|was called Foreman|renamed from Foreman|"
                   r"chasesunstrom(?:\.github\.io)?/foreman|"  # the repo's address moves only when it is renamed
                   # T-2810: lowercase ids a page names as code (.foreman/, refs/foreman/, foreman-ui, foreman.md, a `foreman` arm,
@@ -67,6 +71,10 @@ class RenameScan(unittest.TestCase):
     def test_kept_forms_are_not_counted(self):
         self.assertFalse(re.search(r"\bforeman\b", KEPT.sub("", "enable foreman@foreman or run /foreman:next"), re.I))
         self.assertTrue(re.search(r"\bforeman\b", KEPT.sub("", "Foreman plans before it edits"), re.I))
+        self.assertFalse(re.search(r"\bforeman\b", KEPT.sub("", "pane 'foreman', skill foreman:next, /h/foreman/state"), re.I))
+        self.assertFalse(re.search(r"\bforeman\b", KEPT.sub("", "Continue the Foreman drive: x"), re.I))
+        self.assertFalse(re.search(r"\bforeman\b", KEPT.sub("", "Foreman guard: blocked core"), re.I))
+        self.assertTrue(re.search(r"\bforeman\b", KEPT.sub("", "Foreman: open the pane"), re.I))  # display, not a kept form
 
     def test_lowercase_ids_are_kept_but_prose_is_not(self):  # T-2810
         for kept in ("the `foreman` arm", "writes .foreman/ in the repo", "refs/foreman/shipped", "foreman-ui mod", "rules/foreman.md",

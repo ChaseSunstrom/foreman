@@ -48,17 +48,17 @@ def start(a, cmd=None):
     # T-1209: Claude Code drops to 256 colours inside tmux unless told the server passes true colour through
     env = ["-e", "COLORTERM=truecolor", "-e", "CLAUDE_CODE_TMUX_TRUECOLOR=1",
            "-e", f"FOREMAN_STATE={own}" if own else "FOREMAN_ONEOFF=1"]
-    # T-2055: settings = a JSON string for --settings (the demo recorder turns off every non-Foreman plugin with it)
+    # T-2055: settings = a JSON string for --settings (the demo recorder turns off every non-Sampo plugin with it)
     tmux("new-session", "-d", "-s", SESSION, "-x", str(a.cols), "-y", str(a.rows), "-c", os.path.abspath(a.dir), *env,
          cmd or f"claude --plugin-dir {MOD}" + (f" --model {a.model}" if getattr(a, "model", None) else "")
          + (f" --settings {shlex.quote(a.settings)}" if getattr(a, "settings", None) else ""))
     print(f"started {SESSION} ({a.cols}x{a.rows}) in {a.dir}")
     if cmd is None and answer_trust(a.dir):
-        print("answered Claude Code's folder-trust prompt (a folder Foreman made)")
+        print("answered Claude Code's folder-trust prompt (a folder Sampo made)")
 
 
 def _ours(path):
-    """T-1032: Foreman's own repo, or a scratch folder under the temp folder that carries no Claude Code project
+    """T-1032: Sampo's own repo, or a scratch folder under the temp folder that carries no Claude Code project
     config of its own (.claude/, .mcp.json, CLAUDE.md, here or above it up to the temp folder): trusting a folder is
     what lets its config run hooks and servers, so a repo cloned into /tmp with any of that is never answered for
     (review: all of /tmp was too broad)."""
@@ -79,7 +79,7 @@ def _ours(path):
 
 def answer_trust(path, wait=12):
     """T-1032: Claude Code asks whether to trust a folder it hasn't seen, and the harness stalled there on every new
-    folder (each demo recording). It picks "Yes, I trust this folder" itself, but only for a folder Foreman made:
+    folder (each demo recording). It picks "Yes, I trust this folder" itself, but only for a folder Sampo made:
     trusting a cloned repo would let that repo's own hooks run. True when it answered."""
     if not _ours(path):
         return False

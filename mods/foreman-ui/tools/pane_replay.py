@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""foreman-ui pane replay (T-1534): the Foreman pane drawn from a recorded view with no live session, through the mod's
+"""foreman-ui pane replay (T-1534): the Sampo pane drawn from a recorded view with no live session, through the mod's
 own test kit (claude plugin test) and its fakes, and a check that two runs of one fixture draw the same bytes.
 
   pane_replay.py render FIXTURE [--cols 80] [--rows 40] [--json]  the pane as text (--json: the drawn tree)
@@ -19,7 +19,7 @@ tests/fixtures/pane-busy.ts whose text after `export default` is that JSON (read
 holds synthetic ones only. Each run copies the mod into a temporary folder with tests/replay.test.tsx as its only test
 and its own tests/fixtures/replay.ts (the view, the size, print: true); that test fakes fm, the clock (frozen:
 mock.clock), the store and the environment, mounts the Pane and prints its drawn tree. The child gets TZ=UTC and the
-C.UTF-8 locale and none of this session's CLAUDE_*/FOREMAN_* (shot.CLEAN), so nothing reads or writes Foreman's state.
+C.UTF-8 locale and none of this session's CLAUDE_*/FOREMAN_* (shot.CLEAN), so nothing reads or writes Sampo's state.
 The pane takes time only from the engine's clock and draws no random numbers, so the frozen clock is its seed. The
 text is an approximate layout of the tree (columns stack, rows sit side by side, fixed heights clip); --json is the
 tree itself, less the engine's callback ids (press.handle), which count up per mount and draw nothing. Nothing from
