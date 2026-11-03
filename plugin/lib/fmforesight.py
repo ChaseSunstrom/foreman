@@ -194,7 +194,9 @@ def pile_lines(sd):
             if x["id"] in asks:
                 keys["wait on your yes to " + (c.plain(", ".join(map(str, asks[x["id"]])))[:40] or "a request") + ": fm ask list"] += 1  # not a list: one ask's categories, cut at 40 characters
             elif x.get("freed"):
-                keys["wait on tasks already closed: fm task unblock " + c.joinmore([y["id"] for y in blocked if y.get("freed")], 6, " ")] += 1
+                ids = [y["id"] for y in blocked if y.get("freed")]  # T-2738: the comma list fm task unblock takes
+                keys["wait on tasks already closed: fm task unblock " + ",".join(ids[:6])
+                     + (f" ({len(ids) - 6} more: fm state)" if len(ids) > 6 else "")] += 1
             elif x.get("waits_on"):
                 keys[f"wait on {c.plain(str(x['waits_on'][0]))[:12]} closing"] += 1
         top = keys.most_common(1)

@@ -171,7 +171,9 @@ class Foresight(ForemanTestCase):
         sd["blocked"] = [b("T-6", waits_on=["T-9"]), b("T-7", waits_on=["T-9"]), b("T-8")]
         self.assertIn("2 of them wait on T-9 closing", fs.pile_lines(sd)[0])
         sd["blocked"] = [b("T-6", freed=True), b("T-7", freed=True), b("T-8", waits_on=["T-9"])]
-        self.assertIn("2 of them wait on tasks already closed: fm task unblock T-6 T-7", fs.pile_lines(sd)[0])
+        self.assertIn("2 of them wait on tasks already closed: fm task unblock T-6,T-7 →", fs.pile_lines(sd)[0])
+        sd["blocked"] = [b(f"T-{i}", freed=True) for i in range(1, 9)]  # T-2738: a runnable command, the rest named after
+        self.assertIn("fm task unblock T-1,T-2,T-3,T-4,T-5,T-6 (2 more: fm state)", fs.pile_lines(sd)[0])
 
     def test_a_block_reason_naming_a_task_counts_as_its_wait(self):  # T-2683: real piles name waits in prose
         def b(tid, status, why=""):
