@@ -48,7 +48,7 @@ class Statusline(VisibilityCase):
         lines = self.statusline().stdout.rstrip("\n").split("\n")
         self.assertEqual(lines[0], "ORIGINAL-LINE")
         self.assertIn("T-0001 FIX 1/2", lines[-2])
-        self.assertIn("foreman", lines[-2])
+        self.assertIn("sampo", lines[-2])
         self.assertTrue(lines[-1].startswith("▸ T-0001"), "the progress line follows the Foreman line")
 
     def test_blank_or_failing_original_still_prints_foreman_line(self):
@@ -78,7 +78,7 @@ class Statusline(VisibilityCase):
         payload = dict(self.status_payload(), cwd=elsewhere)
         p = self.statusline(payload, env={"FOREMAN_HOME": os.path.join(self.tmp, "empty-home")})
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn("foreman", p.stdout)
+        self.assertIn("sampo", p.stdout)
 
 
 class SubagentStatusline(VisibilityCase):

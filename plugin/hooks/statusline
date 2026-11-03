@@ -99,7 +99,7 @@ def foreman_line(c, data):
     cwd = data.get("cwd") or (data.get("workspace") or {}).get("current_dir") or os.getcwd()
     p = c.find_project(cwd)
     if not p:
-        return "foreman · no project", None
+        return "sampo · no project", None
     try:
         with open(os.path.join(p.dir, "state.line")) as f:
             label = f.read().strip()
@@ -107,7 +107,7 @@ def foreman_line(c, data):
         label = c.state_line(c.state_dict(p))
     mode = "manual (sensitive)" if c.detect_sensitive(p.root) else user_mode()
     mode = {"bypassPermissions": "bypass"}.get(mode, mode)
-    return f"foreman · {label} · guard on · {mode}", p
+    return f"sampo · {label} · guard on · {mode}", p
 
 
 def progress(c, p):
@@ -267,7 +267,7 @@ def foreman_segs(st, mode):
         if need:
             segs += [sep, (f"audits {a['audits'][0]}/{need}", fg(OK if a["audits"][0] >= need else DIM))]
     else:
-        segs = [("▌", fg(ACCENT)), ("foreman", BOLD + fg(ACCENT)), sep, ("idle", fg(DIM))]
+        segs = [("▌", fg(ACCENT)), ("sampo", BOLD + fg(ACCENT)), sep, ("idle", fg(DIM))]
     g = st.get("genesis")
     if isinstance(g, dict):  # T-2118: the tower's health, amber when it can't go on by itself
         segs += [sep, (f"⌂ gen {g.get('gen')} · {g.get('stage')}", fg(WARN if g.get("kind") in ("blocked", "stopped", "fatal") else DIM))]
@@ -284,9 +284,9 @@ def foreman_segs(st, mode):
 def chip_segs(st):
     a = st.get("active") if st else None
     if not st:
-        return [("  ", ""), ("▌foreman", fg(ACCENT))]
+        return [("  ", ""), ("▌sampo", fg(ACCENT))]
     if not a:
-        return [("  ", ""), ("▌foreman idle", fg(ACCENT))]
+        return [("  ", ""), ("▌sampo idle", fg(ACCENT))]
     return [("  ", ""), (f"▌{a['id']} {a['done']}/{a['total']}", BOLD + fg(ACCENT))]
 
 
@@ -312,7 +312,7 @@ def default_layout(c, data):
     line1 = session_segs(data, cwd)
     if (settings.get("enabledPlugins") or {}).get("foreman-ui@foreman"):  # the band shows the rest above the prompt
         return [render(line1 + chip_segs(st), width)], p
-    line2 = foreman_segs(st, mode) if st else [("▌foreman", fg(ACCENT)), (" · no project here · guard on", fg(DIM))]
+    line2 = foreman_segs(st, mode) if st else [("▌sampo", fg(ACCENT)), (" · no project here · guard on", fg(DIM))]
     return [render(line1, width), render(line2, width)], p
 
 
@@ -322,7 +322,7 @@ def main():
         data = json.loads(raw) if raw.strip() else {}
     except ValueError:
         data = {}
-    lines, tail, extra, procs = [], "foreman", [], None
+    lines, tail, extra, procs = [], "sampo", [], None
     try:
         manifest = quick_manifest()
         if (manifest or {}).get("statusline_layout") != "stack":
