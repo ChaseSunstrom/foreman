@@ -92,6 +92,36 @@ class HookSlo(HookCase):
         self.assertNotIn("1.2.15", r.detail, "only the last 200 runs count")
 
 
+    def test_runs_taken_at_high_load_are_left_out_and_counted(self):  # T-2798
+        path = os.path.join(c.state_dir(), "events.jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        def put(rows):
+            with open(path, "w") as f:
+                for ms, load in rows:
+                    f.write(json.dumps({"ts": c.now(), "kind": "hook_ms", "event": "PreToolUse", "ms": ms, "rev": "1",
+                                        **({} if load is None else {"load": load})}) + "\n")
+        put([(40, 0.5)] * 30 + [(900, 3.0)] * 40)
+        r = doctor.check_hook_slo()
+        self.assertEqual(r.status, "PASS", r.detail)
+        self.assertIn("40 left out", r.detail)
+        put([(40, 0.5)] * 250 + [(900, 3.0)] * 10)  # more normal runs than the window: only the loaded ones are counted
+        self.assertIn("; 10 left out", doctor.check_hook_slo().detail)
+        put([(400, 0.5)] * 30 + [(40, 3.0)] * 40)
+        self.assertEqual(doctor.check_hook_slo().status, "WARN", "normal-load runs over the SLO still warn")
+        put([(400, None)] * 30)
+        self.assertEqual(doctor.check_hook_slo().status, "WARN", "events without a load count as normal load")
+        put([(900, 3.0)] * 40 + [(40, 0.5)] * 5)
+        self.assertEqual(doctor.check_hook_slo().status, "PASS", "under 20 normal-load runs: it doesn't judge")
+
+    def test_each_hook_ms_event_carries_the_load_per_cpu(self):  # T-2798
+        self.fm("init")
+        self.hook("PreToolUse", {"tool_name": "Read", "tool_input": {"file_path": os.path.join(self.repo, "README.md")}},
+                  env={"FOREMAN_HOST": "load=8,cpus=4"})
+        ms = [e for e in self.events() if e.get("kind") == "hook_ms"]
+        self.assertEqual(ms[-1].get("load"), 2.0)
+
+
 class DegradeOnPace(HookCase):
     def test_fm_next_drops_the_friction_pass_while_ahead_of_pace(self):
         self.fm("init")

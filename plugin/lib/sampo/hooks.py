@@ -160,7 +160,9 @@ def run(event, raw):
                                  f"(it runs again at {time.strftime('%H:%M', time.localtime(until))})")
     if event not in UNTIMED:
         ms = round((time.monotonic() - t0) * 1000, 1)
-        _event({"kind": "hook_ms", "event": event, "ms": ms, "rev": _rev()})  # T-0486: fm doctor's SLO by revision
+        hl = c.host_load()  # T-2798: load per CPU, so fm doctor's SLO leaves out runs on a busy machine
+        _event({"kind": "hook_ms", "event": event, "ms": ms, "rev": _rev(),  # T-0486: fm doctor's SLO by revision
+                **({"load": round(hl[0] / hl[1], 2)} if hl and hl[1] > 0 else {})})
     return code
 
 

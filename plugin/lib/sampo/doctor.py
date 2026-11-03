@@ -169,13 +169,17 @@ def check_hook_slo():
         slo = bench_hooks.BUDGET_MS["default"]
     except Exception:  # an install without the tests folder
         slo = 150
-    runs = [e for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 20000) if e.get("kind") == "hook_ms"
-            and e.get("event") == "PreToolUse" and isinstance(e.get("ms"), (int, float))][-SLO_RUNS:]
+    allruns = [e for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 20000) if e.get("kind") == "hook_ms"
+               and e.get("event") == "PreToolUse" and isinstance(e.get("ms"), (int, float))]
+    # T-2798: a run on a busy machine measures the machine; one with no load recorded (older) counts as normal
+    normal = [e for e in allruns if not (isinstance(e.get("load"), (int, float)) and e["load"] > c.LOAD_BAR)]
+    runs, left = normal[-SLO_RUNS:], len(allruns) - len(normal)  # left: the loaded runs, not the window's cut
+    out = f"; {left} left out at load over {c.LOAD_BAR:g} per CPU" if left else ""
     if len(runs) < 20:
-        return Result("hook SLO", "PASS", f"{len(runs)} PreToolUse run(s) recorded; it judges from 20")
+        return Result("hook SLO", "PASS", f"{len(runs)} normal-load PreToolUse run(s) recorded; it judges from 20{out}")
     p95 = _p95([e["ms"] for e in runs])
     if p95 <= slo:
-        return Result("hook SLO", "PASS", f"PreToolUse p95 {p95:.0f} ms over the last {len(runs)} runs (SLO {slo} ms)")
+        return Result("hook SLO", "PASS", f"PreToolUse p95 {p95:.0f} ms over the last {len(runs)} runs (SLO {slo} ms){out}")
     by = {}
     for e in runs:  # first-seen order
         by.setdefault(str(e.get("rev") or "?"), []).append(e["ms"])
@@ -184,7 +188,7 @@ def check_hook_slo():
     where = (f"it rose at {rose[0][0]} (p95 {rose[0][1]:.0f} ms; {rose[1][0]} before it: {rose[1][1]:.0f} ms)" if rose
              else f"over since {revs[0][0]} at least (the oldest revision in the window)")
     return Result("hook SLO", "WARN", f"PreToolUse p95 {p95:.0f} ms over the last {len(runs)} runs > the {slo} ms SLO "
-                                      f"(bench_hooks' budget); {where}")
+                                      f"(bench_hooks' budget); {where}{out}")
 
 
 def check_hook_exit_codes(bench):
