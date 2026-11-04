@@ -2136,7 +2136,8 @@ class SmithArm(ForemanTestCase):
         g = self.gen()
         ok = plan(dict(PLAN, criteria=[{"text": "it holds", "verify": "test -f fixed.txt"}]))  # fails until Smith writes it
         fix = [call("write", file="fixed.txt", content="x"), call("done", summary="wrote it")]
-        f = self.serve(ok, *fix, ok, *fix)
+        none = {"text": '{"findings": []}'}  # T-2931: the arm's one findings call after each run
+        f = self.serve(ok, *fix, none, ok, *fix, none)
         r = self.fm_json("exam", "run", g["run"], "--agent", "smith", "--model", "fake", "--limit", "2", timeout=240)
         self.assertEqual((r["scenarios"], r["errors"]), (2, 0), r)
         self.assertTrue(any(s["request"][:40] in f.said(0) for s in g["scenarios"]), "fm code got a scenario's request")

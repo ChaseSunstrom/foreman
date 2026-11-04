@@ -3314,7 +3314,8 @@ EVENTS_CAP = 2 << 20  # bytes of one scenario's event log kept
 def _smith_arm(base, key, work, model, request, events):
     """T-2908: fm code on a local model profile in a temp copy of the scenario (own Smith home, no user state, the
     smithbench isolation); the tree it leaves is copied to work, Smith's event stream to `events`. The answer has no
-    findings (Smith reports a summary): the grade reads the tree, as for a goal."""
+    findings of its own (Smith reports a summary), so _smith_findings asks the profile once for them from the end
+    text (T-2931); the grade also reads the tree, as for a goal."""
     from sampo import models as smodels, smithbench
     prof = smodels.resolve(model)
     host = urllib.parse.urlparse(str(prof.get("base_url") or "")).hostname
@@ -3345,15 +3346,43 @@ def _smith_arm(base, key, work, model, request, events):
             evs.append({"event": "timeout", "text": f"no end after {t} s"})
         shutil.copytree(wt, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
         _carry_runs(wt, work)
+    end = next((e for e in reversed(evs) if e.get("event") in ("closed", "blocked", "error", "answer")), {})
+    found = _smith_findings(prof, str(end.get("text") or ""), work, evs)
     log = "".join(c.redact(json.dumps(e)) + "\n" for e in evs)[:EVENTS_CAP]
     c.write_atomic(events, log)
-    end = next((e for e in reversed(evs) if e.get("event") in ("closed", "blocked", "error", "answer")), {})
     tokens = next((e.get("total_in", 0) + e.get("total_out", 0) for e in reversed(evs) if e.get("event") == "tokens"), 0)
     crashed = not evs and not late  # no event at all: fm code itself failed
-    return {"findings": [], "notes": [c.redact(str(end.get("text") or ""))[:400]] if end else [],
+    return {"findings": found, "notes": [c.redact(str(end.get("text") or ""))[:400]] if end else [],
             "done": end.get("event") == "closed", "cost": 0, "tokens": tokens,
             "error": "timeout" if late else c.redact(err.strip()[-300:] or "fm code gave no events") if crashed else None,
             "model": c.plain(model)[:60]}
+
+
+FINDINGS_TEXT, FINDINGS_FILES = 4000, 300  # chars of end text and repo paths sent to the findings call
+
+
+def _smith_findings(prof, text, work, evs):
+    """T-2931: one tool-less call on the arm's own profile turns fm code's end text into the findings object the session
+    arms answer with. It sees the end text and the repo's file list, never the key; a finding naming a file not in the
+    tree is dropped (the only guard on invention); the grade still decides credit and false alarms. No end text, no
+    call. The call goes in evs (the events log); a model error leaves the findings empty."""
+    from sampo import models as smodels
+    if not text.strip():
+        return []
+    files = sorted(os.path.relpath(os.path.join(d, f), work) for d, ds, fs in os.walk(work)
+                   for f in fs if not any(x in (".git", ".fm") for x in os.path.relpath(d, work).split(os.sep)))
+    ask = (f"A coding run ended with this report:\n\n{c.redact(text)[:FINDINGS_TEXT]}\n\nThe repo's files:\n"
+           + "\n".join(files[:FINDINGS_FILES]) + "\n\n" + AGAIN.replace("listing every defect you found or fixed here.",
+           "listing only the defects the report above names; invent none."))
+    try:
+        got = smodels.complete(prof, [{"role": "user", "content": ask}], max_tokens=1024, timeout=120)
+        reply = str(got.get("text") or "")
+    except (smodels.ModelError, OSError) as e:
+        evs.append({"event": "findings", "text": f"no findings: {c.redact(str(e))[:200]}"})
+        return []
+    out = [f for f in _reply(reply)["findings"] if os.path.normpath(str(f.get("file") or "")) in files]
+    evs.append({"event": "findings", "text": c.redact(reply)[:1000], "kept": len(out)})
+    return out
 
 
 def _end_text(text):
