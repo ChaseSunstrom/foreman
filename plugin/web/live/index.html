@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" data-link="connecting" data-motion="full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<title>Sampo · the live forge</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/live.css" nonce="__NONCE__">
+<script src="/static/live.js" nonce="__NONCE__" defer></script>
+</head>
+<body>
+<header class="bar">
+  <p class="brand"><span class="word">Sampo</span><span class="tag">the live forge</span></p>
+  <p class="where" id="project">waiting for the first snapshot</p>
+  <p class="link" id="link" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="link-label">Connecting</span></p>
+  <p class="clock"><span class="clock-k">as of</span> <time id="clock">--:--:--</time> <span class="clock-age" id="clock-age"></span></p>
+  <button class="motion" id="motion" type="button" aria-pressed="false" title="Hold the scene still: no sparks, changes shown by highlight">Still</button>
+</header>
+<main>
+  <section class="stage" aria-label="The forge: the session at the anvil, builders at their benches, jobs as furnaces, models as lanterns">
+    <canvas id="scene" role="img" aria-label="The forge scene; the panels below carry the same figures as text">The forge scene needs canvas support; every figure is in the panels below.</canvas>
+    <p class="drop" aria-hidden="true">The stream dropped · reconnecting</p>
+    <article class="focus" id="focus" aria-live="polite">
+      <p class="eyebrow">At the anvil</p>
+      <p class="fid"><span id="focus-id">—</span><span class="chip" id="focus-stage">idle</span><span class="fstep" id="focus-step"></span></p>
+      <h1 class="ftitle" id="focus-title">No task at the anvil</h1>
+      <ol class="pips" id="focus-pips" aria-hidden="true"></ol>
+    </article>
+    <ul class="kinds" aria-label="Spark colours by kind of call">
+      <li class="kd-write">write</li><li class="kd-judge">judge</li><li class="kd-embed">embed</li><li class="kd-train">train</li><li class="kd-plan">plan</li><li class="kd-act">act</li><li class="kd-review">review</li>
+    </ul>
+  </section>
+
+  <section class="ticker" id="ticker" aria-label="Events">
+    <p class="tk-h">Ledger</p>
+    <div class="tk-band" id="tk-band" tabindex="0" aria-label="Recent events; hover or focus to pause">
+      <ul class="tk-list" id="tk-list"></ul>
+      <p class="empty tk-empty" id="tk-empty">No events yet</p>
+    </div>
+  </section>
+
+  <section class="counters" id="counters" aria-label="Counters">
+    <div class="ctr"><p class="cl">Cards</p><p class="cv" id="c-general">—</p><p class="cs">general</p></div>
+    <div class="ctr"><p class="cl">UI cards</p><p class="cv" id="c-ui">—</p><p class="cs" id="c-cells">no grid yet</p><span class="meter" id="c-cellbar" aria-hidden="true"></span></div>
+    <div class="ctr ctr-moons"><p class="cl">Moons</p><p class="cv" id="c-moons">—</p><ol class="stages" id="c-stages" aria-label="Moons by funnel stage"></ol></div>
+    <div class="ctr"><p class="cl">Closed today</p><p class="cv" id="c-closed">—</p><p class="cs" id="c-closed-sub">tasks</p></div>
+    <div class="ctr"><p class="cl">Calls · 5 min</p><p class="cv" id="c-calls">—</p><p class="cs" id="c-calls-sub">across every model</p></div>
+    <div class="ctr"><p class="cl">At work</p><p class="cv" id="c-work">—</p><p class="cs" id="c-work-sub">builders and jobs</p></div>
+  </section>
+
+  <div class="deck">
+    <section class="panel p-gpu" id="gpu" aria-labelledby="gpu-h">
+      <header class="ph"><h2 id="gpu-h">GPU</h2><p class="sub" id="gpu-name">No GPU reading</p></header>
+      <div class="tankrow">
+        <div class="tank" aria-hidden="true"><div class="fill" id="tank-fill"></div><div class="glass"></div></div>
+        <div class="tank-side">
+          <p class="gpu-read" id="gpu-read">—</p>
+          <ul class="vram" id="gpu-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel p-jobs" id="jobs" aria-labelledby="jobs-h">
+      <header class="ph"><h2 id="jobs-h">Furnaces</h2><p class="sub" id="jobs-sub">jobs running</p></header>
+      <ul class="rows" id="jobs-list"></ul>
+      <p class="empty" id="jobs-empty">No jobs running<span>the furnaces are banked</span></p>
+    </section>
+
+    <section class="panel p-queue" id="queue" aria-labelledby="queue-h">
+      <header class="ph"><h2 id="queue-h">Queue</h2><p class="sub" id="queue-sub">next up</p></header>
+      <ul class="rows" id="queue-list"></ul>
+      <p class="empty" id="queue-empty">The queue is clear<span>nothing waits for the anvil</span></p>
+    </section>
+
+    <section class="panel p-closes" id="closes" aria-labelledby="closes-h">
+      <header class="ph"><h2 id="closes-h">Closed today</h2><p class="sub" id="closes-sub">struck and quenched</p></header>
+      <ul class="rows" id="closes-list"></ul>
+      <p class="empty" id="closes-empty">Nothing closed yet today<span>the first close lands here</span></p>
+    </section>
+
+    <section class="panel p-bench" id="bench" aria-labelledby="bench-h">
+      <header class="ph"><h2 id="bench-h">Bench</h2><p class="sub" id="bench-sub">model trials by use</p></header>
+      <table class="bench" id="bench-table">
+        <thead><tr><th scope="col">Use</th><th scope="col">Contestant</th><th scope="col">Accuracy</th><th scope="col">Cover</th></tr></thead>
+        <tbody id="bench-rows"></tbody>
+      </table>
+      <p class="empty" id="bench-empty">No bench rows yet<span>a bench run writes its trials here</span></p>
+    </section>
+  </div>
+</main>
+</body>
+</html>

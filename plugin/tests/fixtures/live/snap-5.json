@@ -1,0 +1,83 @@
+{
+ "at": "2026-11-04T18:30:08Z",
+ "project": {"slug": "foreman-4a056f", "drive": true, "autonomy": "standard"},
+ "focus": {"id": "T-2995", "title": "Exam keeps green Smith run journals and sampo exam models --traces exports them", "step": "3/3", "stage": "verifying"},
+ "queue": [
+  {"id": "T-2999", "title": "The live page: a forge-themed scene of the session, builders, jobs and models", "type": "FEATURE", "tier": "M", "status": "active"},
+  {"id": "T-2961", "title": "Bench the embed models on the UI card grid", "type": "PERF", "tier": "S", "status": "active"},
+  {"id": "T-2927", "title": "Baseline red: test_guard_fuzz times out under load", "type": "FIX", "tier": "S", "status": "open"},
+  {"id": "T-2954", "title": "Run the M-02 slice live and keep its journal", "type": "RESEARCH", "tier": "M", "status": "open"},
+  {"id": "T-2907", "title": "Read the hot files no session has read", "type": "CLEAN", "tier": "S", "status": "open"},
+  {"id": "T-2973", "title": "Distilled actor: export journals as training rows", "type": "FEATURE", "tier": "L", "status": "blocked"},
+  {"id": "T-2980", "title": "Redact tokens in the event ticker before they leave core", "type": "SECURITY", "tier": "S", "status": "open"}
+ ],
+ "closed_today": [
+  {"id": "T-2998", "title": "sampo live: the server, its collectors and the SSE stream", "at": "2026-11-04T18:30:03Z"},
+  {"id": "T-2992", "title": "Repeat-failure firewall", "at": "2026-11-04T18:12:40Z"},
+  {"id": "T-2994", "title": "UI cards at scale: a 3,840-cell grid for the small-model grower", "at": "2026-11-04T17:58:02Z"},
+  {"id": "T-2993", "title": "Funnel stages report kept, rejected and waiting", "at": "2026-11-04T17:20:11Z"},
+  {"id": "T-2990", "title": "Moons funnel: embed dedupe before the kill test", "at": "2026-11-04T16:44:57Z"},
+  {"id": "T-2989", "title": "Jeff serves adapters by name", "at": "2026-11-04T16:02:30Z"},
+  {"id": "T-2986", "title": "Exam run meta records progress", "at": "2026-11-04T15:31:08Z"},
+  {"id": "T-2985", "title": "Card coverage counts UI cells", "at": "2026-11-04T14:55:19Z"},
+  {"id": "T-2983", "title": "Bench keeps the latest row per use", "at": "2026-11-04T13:40:00Z"},
+  {"id": "T-2981", "title": "Ledger logs model, caller and kind per call", "at": "2026-11-04T12:18:44Z"}
+ ],
+ "lanes": [
+  {"task": "T-2999", "title": "The live page: the forge scene and panels", "model": "opus", "since": "2026-11-04T18:02:05Z"},
+  {"task": "T-2961", "title": "Bench the embed models on the UI card grid", "model": null, "since": null}
+ ],
+ "jobs": [
+  {"name": "moons funnel --batch 200 --stages kill,tier", "kind": "funnel", "pid": 41822, "since": "2026-11-04T16:50:00Z", "model": "qwen3:14b", "progress": null, "line": "tier: 430 kept, 790 waiting"},
+  {"name": "cards grow --ui --writer haiku", "kind": "grow", "pid": 42017, "since": "2026-11-04T17:10:00Z", "model": null, "progress": null, "line": ""},
+  {"name": "exam run --models jeff/exam-smith", "kind": "exam", "pid": 43001, "since": null, "model": "jeff/exam-smith", "progress": null, "line": "scenario 18: fix a failing doctest"},
+  {"name": "jeff train", "kind": "train", "pid": 39950, "since": "2026-11-04T15:05:00Z", "model": "jeff", "progress": null, "line": "step 396, loss 0.401"},
+  {"name": "bench embed --grid ui", "kind": "bench", "pid": 43420, "since": "2026-11-04T18:30:03Z", "model": "nomic-embed-text", "progress": null, "line": "embed bench: 9 of 12 pairs"}
+ ],
+ "models": [
+  {"name": "haiku", "family": "claude", "where": "cloud", "loaded": true, "vram_mb": null, "calls_5m": 38, "last_call": "2026-11-04T18:30:07Z"},
+  {"name": "sonnet", "family": "claude", "where": "cloud", "loaded": true, "vram_mb": null, "calls_5m": 10, "last_call": "2026-11-04T18:30:03Z"},
+  {"name": "opus", "family": "claude", "where": "cloud", "loaded": true, "vram_mb": null, "calls_5m": 8, "last_call": "2026-11-04T18:30:05Z"},
+  {"name": "claude", "family": "claude", "where": "cloud", "loaded": true, "vram_mb": null, "calls_5m": 3, "last_call": null},
+  {"name": "qwen3:14b", "family": "ollama", "where": "gpu", "loaded": true, "vram_mb": 9728, "calls_5m": 124, "last_call": "2026-11-04T18:30:08Z"},
+  {"name": "gemma3:4b", "family": "ollama", "where": "gpu", "loaded": false, "vram_mb": null, "calls_5m": 77, "last_call": "2026-11-04T18:30:03Z"},
+  {"name": "nomic-embed-text", "family": "embed", "where": "gpu", "loaded": true, "vram_mb": 620, "calls_5m": 280, "last_call": "2026-11-04T18:30:08Z"},
+  {"name": "jeff", "family": "jeff", "where": "remote", "loaded": true, "vram_mb": null, "calls_5m": 21, "last_call": "2026-11-04T18:30:07Z"},
+  {"name": "jeff/exam-smith", "family": "jeff", "where": "remote", "loaded": true, "vram_mb": null, "calls_5m": 26, "last_call": "2026-11-04T18:30:07Z"},
+  {"name": "jeff/ui-cards", "family": "jeff", "where": "remote", "loaded": true, "vram_mb": null, "calls_5m": 0, "last_call": null},
+  {"name": "gemma3:27b", "family": "ollama", "where": "remote", "loaded": true, "vram_mb": null, "calls_5m": 5, "last_call": "2026-11-04T18:30:03Z"}
+ ],
+ "gpu": {"name": "NVIDIA GeForce RTX 4090", "used_mb": 11020, "total_mb": 24564, "util_pct": 64},
+ "flows": [
+  {"from": "moon funnel", "to": "qwen3:14b", "kind": "judge", "at": "2026-11-04T18:30:08Z"},
+  {"from": "card grow", "to": "haiku", "kind": "write", "at": "2026-11-04T18:30:07Z"},
+  {"from": "session run", "to": "claude", "kind": "act", "at": "2026-11-04T18:30:07Z"},
+  {"from": "lane brief", "to": "claude", "kind": "plan", "at": "2026-11-04T18:30:07Z"},
+  {"from": "audit prep", "to": "claude", "kind": "review", "at": "2026-11-04T18:30:06Z"}
+ ],
+ "events": [
+  {"at": "2026-11-04T18:30:08Z", "kind": "moons_funnel", "text": "{\"stage\": \"tier\", \"kept\": 430, \"rejected\": 615, \"waiting\": 790, \"model\": \"qwen3:14b\"}"},
+  {"at": "2026-11-04T18:30:07Z", "kind": "cards_grow", "text": "{\"admitted\": 4, \"refused\": 1, \"writer\": \"haiku\", \"grid\": \"ui\"}"},
+  {"at": "2026-11-04T18:30:07Z", "kind": "run_session", "text": "{\"task\": \"T-2961\", \"turns\": 3, \"cost_usd\": 0.042}"},
+  {"at": "2026-11-04T18:30:06Z", "kind": "stage", "text": "T-2995 moved to verifying"},
+  {"at": "2026-11-04T18:30:05Z", "kind": "model", "text": "gemma3:4b unloaded: 4.2 GB of VRAM back"},
+  {"at": "2026-11-04T18:30:04Z", "kind": "exam", "text": "exam run: scenario 16 green (jeff/exam-smith, 5 turns)"},
+  {"at": "2026-11-04T18:30:03Z", "kind": "close", "text": "T-2998 closed: sampo live: the server, its collectors and the SSE stream"},
+  {"at": "2026-11-04T18:30:03Z", "kind": "lane", "text": "builder lane out for T-2961"},
+  {"at": "2026-11-04T18:30:02Z", "kind": "check", "text": "check --affected passed for T-2995 (59 tests)"},
+  {"at": "2026-11-04T18:29:59Z", "kind": "funnel", "text": "kill stage: 12 kept, 31 rejected in the last batch"},
+  {"at": "2026-11-04T18:28:12Z", "kind": "grow", "text": "card grow: 40 UI cards admitted, 6 refused"},
+  {"at": "2026-11-04T18:12:40Z", "kind": "close", "text": "T-2992 closed: Repeat-failure firewall"}
+ ],
+ "stats": {
+  "cards": {"general": 1894, "ui": 135, "ui_cells": 29, "grid_ui": 3840},
+  "moons": {"candidates": 10007, "stages": {
+   "exact": {"kept": 9420, "rejected": 587, "waiting": 0},
+   "embed": {"kept": 6120, "rejected": 3300, "waiting": 0},
+   "kill": {"kept": 1840, "rejected": 3022, "waiting": 1258},
+   "tier": {"kept": 430, "rejected": 615, "waiting": 790},
+   "novelty": {"kept": 99, "rejected": 126, "waiting": 205}}},
+  "bench": [],
+  "closed_today": 24
+ }
+}

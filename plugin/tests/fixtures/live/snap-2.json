@@ -1,0 +1,101 @@
+{
+ "at": "2026-11-04T18:30:02Z",
+ "project": {"slug": "foreman-4a056f", "drive": true, "autonomy": "standard"},
+ "focus": {"id": "T-2995", "title": "Exam keeps green Smith run journals and sampo exam models --traces exports them", "step": "3/3", "stage": "executing"},
+ "queue": [
+  {"id": "T-2999", "title": "The live page: a forge-themed scene of the session, builders, jobs and models", "type": "FEATURE", "tier": "M", "status": "active"},
+  {"id": "T-2998", "title": "sampo live: the server, its collectors and the SSE stream", "type": "FEATURE", "tier": "M", "status": "active"},
+  {"id": "T-2927", "title": "Baseline red: test_guard_fuzz times out under load", "type": "FIX", "tier": "S", "status": "open"},
+  {"id": "T-2954", "title": "Run the M-02 slice live and keep its journal", "type": "RESEARCH", "tier": "M", "status": "open"},
+  {"id": "T-2907", "title": "Read the hot files no session has read", "type": "CLEAN", "tier": "S", "status": "open"},
+  {"id": "T-2961", "title": "Bench the embed models on the UI card grid", "type": "PERF", "tier": "S", "status": "open"},
+  {"id": "T-2973", "title": "Distilled actor: export journals as training rows", "type": "FEATURE", "tier": "L", "status": "blocked"},
+  {"id": "T-2980", "title": "Redact tokens in the event ticker before they leave core", "type": "SECURITY", "tier": "S", "status": "open"}
+ ],
+ "closed_today": [
+  {"id": "T-2992", "title": "Repeat-failure firewall", "at": "2026-11-04T18:12:40Z"},
+  {"id": "T-2994", "title": "UI cards at scale: a 3,840-cell grid for the small-model grower", "at": "2026-11-04T17:58:02Z"},
+  {"id": "T-2993", "title": "Funnel stages report kept, rejected and waiting", "at": "2026-11-04T17:20:11Z"},
+  {"id": "T-2990", "title": "Moons funnel: embed dedupe before the kill test", "at": "2026-11-04T16:44:57Z"},
+  {"id": "T-2989", "title": "Jeff serves adapters by name", "at": "2026-11-04T16:02:30Z"},
+  {"id": "T-2986", "title": "Exam run meta records progress", "at": "2026-11-04T15:31:08Z"},
+  {"id": "T-2985", "title": "Card coverage counts UI cells", "at": "2026-11-04T14:55:19Z"},
+  {"id": "T-2983", "title": "Bench keeps the latest row per use", "at": "2026-11-04T13:40:00Z"},
+  {"id": "T-2981", "title": "Ledger logs model, caller and kind per call", "at": "2026-11-04T12:18:44Z"}
+ ],
+ "lanes": [
+  {"task": "T-2998", "title": "sampo live: the server and its collectors", "model": "sonnet", "since": "2026-11-04T18:02:00Z"},
+  {"task": "T-2999", "title": "The live page: the forge scene and panels", "model": "opus", "since": "2026-11-04T18:02:05Z"}
+ ],
+ "jobs": [
+  {"name": "moons funnel", "kind": "funnel", "pid": 41822, "since": "2026-11-04T16:50:00Z", "model": "qwen3:14b", "progress": {"done": 6188, "total": 10007}, "line": "kill: 1,822 kept, 1,348 waiting"},
+  {"name": "card grow", "kind": "grow", "pid": 42017, "since": "2026-11-04T17:10:00Z", "model": "gemma3:4b", "progress": {"done": 2224, "total": 3840}, "line": "ui grid: slider x web x keyboard"},
+  {"name": "exam run", "kind": "exam", "pid": 43001, "since": "2026-11-04T18:20:00Z", "model": "jeff/exam-smith", "progress": {"done": 15, "total": 40}, "line": "scenario 16: add a flag with a test"},
+  {"name": "jeff train", "kind": "train", "pid": 39950, "since": "2026-11-04T15:05:00Z", "model": "jeff", "progress": {"done": 384, "total": 1200}, "line": "step 384, loss 0.409"},
+  {"name": "check", "kind": "check", "pid": 43311, "since": "2026-11-04T18:29:40Z", "model": null, "progress": null, "line": "test_exam_models: 18 passed"}
+ ],
+ "models": [
+  {"name": "haiku", "family": "claude", "where": "cloud", "loaded": true, "vram_mb": 0, "calls_5m": 32, "last_call": "2026-11-04T18:30:01Z"},
+  {"name": "sonnet", "family": "claude", "where": "cloud", "loaded": true, "vram_mb": 0, "calls_5m": 9, "last_call": "2026-11-04T18:29:51Z"},
+  {"name": "opus", "family": "claude", "where": "cloud", "loaded": true, "vram_mb": 0, "calls_5m": 7, "last_call": "2026-11-04T18:30:01Z"},
+  {"name": "qwen3:14b", "family": "ollama", "where": "gpu", "loaded": true, "vram_mb": 9728, "calls_5m": 115, "last_call": "2026-11-04T18:30:01Z"},
+  {"name": "gemma3:4b", "family": "ollama", "where": "gpu", "loaded": true, "vram_mb": 4310, "calls_5m": 76, "last_call": "2026-11-04T18:30:01Z"},
+  {"name": "nomic-embed-text", "family": "embed", "where": "gpu", "loaded": true, "vram_mb": 620, "calls_5m": 246, "last_call": "2026-11-04T18:30:00Z"},
+  {"name": "jeff", "family": "jeff", "where": "gpu", "loaded": true, "vram_mb": 5120, "calls_5m": 18, "last_call": "2026-11-04T18:29:56Z"},
+  {"name": "jeff/exam-smith", "family": "jeff", "where": "gpu", "loaded": true, "vram_mb": 160, "calls_5m": 23, "last_call": "2026-11-04T18:30:02Z"},
+  {"name": "jeff/ui-cards", "family": "jeff", "where": "gpu", "loaded": true, "vram_mb": 160, "calls_5m": 0, "last_call": "2026-11-04T18:21:10Z"},
+  {"name": "jarvis/gemma3:27b", "family": "jarvis", "where": "remote", "loaded": true, "vram_mb": 17400, "calls_5m": 4, "last_call": "2026-11-04T18:29:20Z"}
+ ],
+ "gpu": {"name": "NVIDIA GeForce RTX 4090", "used_mb": 20610, "total_mb": 24564, "util_pct": 91},
+ "flows": [
+  {"from": "exam run", "to": "jeff/exam-smith", "kind": "act", "at": "2026-11-04T18:30:02Z"},
+  {"from": "moons funnel", "to": "qwen3:14b", "kind": "judge", "at": "2026-11-04T18:30:01Z"},
+  {"from": "card grow", "to": "gemma3:4b", "kind": "write", "at": "2026-11-04T18:30:01Z"},
+  {"from": "card grow", "to": "haiku", "kind": "judge", "at": "2026-11-04T18:30:01Z"},
+  {"from": "T-2999", "to": "opus", "kind": "review", "at": "2026-11-04T18:30:01Z"},
+  {"from": "moons funnel", "to": "nomic-embed-text", "kind": "embed", "at": "2026-11-04T18:30:00Z"},
+  {"from": "moons funnel", "to": "qwen3:14b", "kind": "judge", "at": "2026-11-04T18:29:59Z"},
+  {"from": "moons funnel", "to": "nomic-embed-text", "kind": "embed", "at": "2026-11-04T18:29:58Z"},
+  {"from": "card grow", "to": "gemma3:4b", "kind": "write", "at": "2026-11-04T18:29:57Z"},
+  {"from": "card grow", "to": "haiku", "kind": "judge", "at": "2026-11-04T18:29:58Z"},
+  {"from": "exam run", "to": "jeff/exam-smith", "kind": "act", "at": "2026-11-04T18:29:58Z"},
+  {"from": "jeff train", "to": "jeff", "kind": "train", "at": "2026-11-04T18:29:56Z"},
+  {"from": "session", "to": "opus", "kind": "plan", "at": "2026-11-04T18:29:55Z"},
+  {"from": "T-2998", "to": "sonnet", "kind": "act", "at": "2026-11-04T18:29:51Z"},
+  {"from": "T-2999", "to": "opus", "kind": "review", "at": "2026-11-04T18:29:54Z"},
+  {"from": "session", "to": "jarvis/gemma3:27b", "kind": "review", "at": "2026-11-04T18:29:20Z"},
+  {"from": "moons funnel", "to": "qwen3:14b", "kind": "judge", "at": "2026-11-04T18:29:41Z"},
+  {"from": "card grow", "to": "gemma3:4b", "kind": "write", "at": "2026-11-04T18:29:35Z"}
+ ],
+ "events": [
+  {"at": "2026-11-04T18:30:02Z", "kind": "exam", "text": "exam run: scenario 15 green (jeff/exam-smith, 4 turns)"},
+  {"at": "2026-11-04T18:30:01Z", "kind": "funnel", "text": "novelty stage: 2 kept, 3 rejected"},
+  {"at": "2026-11-04T18:29:59Z", "kind": "funnel", "text": "kill stage: 12 kept, 31 rejected in the last batch"},
+  {"at": "2026-11-04T18:29:58Z", "kind": "exam", "text": "exam run: scenario 14 green (jeff/exam-smith, 6 turns)"},
+  {"at": "2026-11-04T18:29:51Z", "kind": "lane", "text": "T-2998 recorded evidence for step 2"},
+  {"at": "2026-11-04T18:29:40Z", "kind": "check", "text": "check --affected started for T-2995"},
+  {"at": "2026-11-04T18:28:12Z", "kind": "grow", "text": "card grow: 40 UI cards admitted, 6 refused"},
+  {"at": "2026-11-04T18:26:30Z", "kind": "capture", "text": "captured T-3001: the bench table needs a coverage column"},
+  {"at": "2026-11-04T18:21:10Z", "kind": "model", "text": "jeff/ui-cards adapter idle, kept warm"},
+  {"at": "2026-11-04T18:12:40Z", "kind": "close", "text": "T-2992 closed: Repeat-failure firewall"},
+  {"at": "2026-11-04T18:02:05Z", "kind": "lane", "text": "builder lane out for T-2999 (opus)"},
+  {"at": "2026-11-04T18:02:00Z", "kind": "lane", "text": "builder lane out for T-2998 (sonnet)"}
+ ],
+ "stats": {
+  "cards": {"general": 1894, "ui": 127, "ui_cells": 28, "grid_ui": 3840},
+  "moons": {"candidates": 10007, "stages": {
+   "exact": {"kept": 9420, "rejected": 587, "waiting": 0},
+   "embed": {"kept": 6120, "rejected": 3300, "waiting": 0},
+   "kill": {"kept": 1822, "rejected": 2980, "waiting": 1318},
+   "tier": {"kept": 420, "rejected": 610, "waiting": 792},
+   "novelty": {"kept": 98, "rejected": 123, "waiting": 199}}},
+  "bench": [
+   {"use": "write", "contestant": "gemma3:4b", "accuracy": 0.82, "coverage": 0.97},
+   {"use": "judge", "contestant": "qwen3:14b", "accuracy": 0.91, "coverage": 0.99},
+   {"use": "embed", "contestant": "nomic-embed-text", "accuracy": 0.88, "coverage": 1.0},
+   {"use": "act", "contestant": "jeff/exam-smith", "accuracy": 0.64, "coverage": 0.85},
+   {"use": "review", "contestant": "jarvis/gemma3:27b", "accuracy": 0.86, "coverage": 0.92}
+  ],
+  "closed_today": 23
+ }
+}
