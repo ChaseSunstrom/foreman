@@ -412,10 +412,17 @@ class LocalOnly(ValueError):
 
 
 def night_ready(p):
-    """T-2916: whether the night may grow and funnel moons: a plain project, an answering own or loopback model, and the
-    store under TARGET."""
+    """T-2916: which of the night's free moons jobs may run ({"grow", "funnel"}, empty for none): a plain project and an
+    answering own or loopback model; grow while the store is under TARGET, funnel while a row waits on a stage (the
+    10k store sat at its target with 4,000 rows unjudged)."""
     sensitive = bool(c.read_meta(p).get("sensitive"))
-    return not sensitive and len(rows(p)) < TARGET and _local(sensitive) is not None
+    if sensitive or _local(sensitive) is None:
+        return set()
+    rs, f = rows(p), fate(p)
+    waits = any(not f.get(r.get("id")) or (f[r["id"]].get("verdict") == "kept" and f[r["id"]].get("stage") != "novelty")
+                for r in rs)
+    grow = len(rs) < TARGET
+    return ({"grow"} if grow else set()) | ({"funnel"} if waits or grow else set())  # grown rows funnel the same night
 
 
 def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
@@ -436,7 +443,7 @@ def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
             if "reasoning used the whole budget" in str(e):
                 with _lock:
                     _cuts[prof["name"]] += 1
-    if _LOCAL_ONLY and cheap:
+    if _LOCAL_ONLY:  # audit: cheap=False goes to the strongest review model, paid too
         raise LocalOnly("local-only: no local model answered (MOONS_LOCAL); nothing was sent to a paid model")
     if sensitive:
         raise ValueError("a sensitive project's records go to a local model only, and none answered (MOONS_LOCAL)")
@@ -738,13 +745,14 @@ def _at(rs, f, stages, verdicts=None):
 def _judge(p, r, cap, system, batch, keys, parse):
     """({n: answer}, model) for one batch, the call retried until it answers; None once the run must stop."""
     while True:
-        if cap is not None and r["calls"] >= cap:
-            r["stopped"] = "max_calls"
-        elif r["fails"] >= FAILS:
-            r["stopped"] = "failed"
-        if r["stopped"]:
-            return None
-        r["calls"] += 1
+        with _lock:  # T-2953: _kill runs batches at once
+            if cap is not None and r["calls"] >= cap:
+                r["stopped"] = "max_calls"
+            elif r["fails"] >= FAILS:
+                r["stopped"] = "failed"
+            if r["stopped"]:
+                return None
+            r["calls"] += 1
         try:
             text, model = _ask(p, system, _moons_prompt(batch, keys), paid=r["paid"], feature="moons-funnel")
         except budget.BudgetError as e:
@@ -754,14 +762,16 @@ def _judge(p, r, cap, system, batch, keys, parse):
             r["stopped"], r["error"] = "local", c.fit(_norm(e), 300)
             return None
         except (ValueError, OSError, models.ModelError) as e:
-            r["fails"], r["error"] = r["fails"] + 1, c.fit(_norm(e), 300)
+            with _lock:
+                r["fails"], r["error"] = r["fails"] + 1, c.fit(_norm(e), 300)
             continue
-        r["paid"] += model in ("haiku", rune.REVIEW_MODELS[-1])  # a local answer is free
         said = parse(text, len(batch))
-        if not said:
-            r["fails"], r["error"] = r["fails"] + 1, f"{model}: no answers in the reply"
-            continue
-        r["fails"], r["models"][model] = 0, r["models"].get(model, 0) + 1
+        with _lock:
+            r["paid"] += model in ("haiku", rune.REVIEW_MODELS[-1])  # a local answer is free
+            if not said:
+                r["fails"], r["error"] = r["fails"] + 1, f"{model}: no answers in the reply"
+                continue
+            r["fails"], r["models"][model] = 0, r["models"].get(model, 0) + 1
         return said, model
 
 
@@ -801,14 +811,21 @@ def _dedupe(p, r, rs, f, todo, cap):
 
 
 def _kill(p, r, rs, f, todo, cap):
-    for batch in _batches(todo):
-        got = _judge(p, r, cap, KILL_SYSTEM, batch, ("what", "kill"), _yesno)
-        if not got:
-            return
-        said, model = got
-        _log(p, [_event(x["id"], "kill", "kept", "", model) if said[n][0] else
-                 _event(x["id"], "kill", "rejected", f"kill: {said[n][1] or 'no reason given'}", model)
-                 for n, x in enumerate(batch, 1) if n in said], r, "kill")
+    """Each batch alone (no batch reads another's verdict), so T-2953 runs as many at once as the local profile has
+    slots; this thread alone writes. ponytail: a round waits for its slowest batch; a queue if rounds idle a slot."""
+    w = (_local(bool(c.read_meta(p).get("sensitive"))) or {}).get("slots", 1)
+    bs = list(_batches(todo))
+    with concurrent.futures.ThreadPoolExecutor(max(1, min(w, MAX_WORKERS))) as pool:
+        for k in range(0, len(bs), max(1, w)):
+            part = bs[k:k + max(1, w)]
+            for batch, got in zip(part, pool.map(
+                    lambda b: _judge(p, r, cap, KILL_SYSTEM, b, ("what", "kill"), _yesno), part)):
+                if not got:
+                    return
+                said, model = got
+                _log(p, [_event(x["id"], "kill", "kept", "", model) if said[n][0] else
+                         _event(x["id"], "kill", "rejected", f"kill: {said[n][1] or 'no reason given'}", model)
+                         for n, x in enumerate(batch, 1) if n in said], r, "kill")
 
 
 def _tier(p, r, rs, f, todo, cap):

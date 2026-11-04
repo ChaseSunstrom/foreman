@@ -321,7 +321,11 @@ class NightMoons(ForemanTestCase):  # T-2916: zero-dollar Moons jobs on the loca
             self.assertEqual(self.names(), {})
         with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}), \
                 mock.patch.object(self.ms, "rows", return_value=[{}] * self.ms.TARGET):
-            self.assertEqual(self.names(), {}, "the target is met: nothing to grow")
+            self.assertEqual(list(self.names()), ["moons funnel"], "the target is met: nothing to grow, rows to judge")
+        with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}), \
+                mock.patch.object(self.ms, "rows", return_value=[{"id": "C-1"}] * self.ms.TARGET), \
+                mock.patch.object(self.ms, "fate", return_value={"C-1": {"stage": "kill", "verdict": "rejected"}}):
+            self.assertEqual(self.names(), {}, "every row judged and the target met: nothing to do")
 
     def test_a_sensitive_project_lists_neither(self):
         self.fm("sensitive", "on")

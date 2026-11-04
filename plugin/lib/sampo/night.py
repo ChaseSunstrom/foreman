@@ -65,9 +65,11 @@ def jobs(p):
     if any(e.get("event") == "task_done" for e in c.ledger_tail(p, 5000)):  # T-0888: free: closed tasks' checks on HEAD
         out.append(("sentinel", ["sentinel", "--bisect"], 0.0))
     from sampo import moonscale
-    if moonscale.night_ready(p):  # T-2916: free: a local model answers and the catalogue is under its target; never Haiku
+    ready = moonscale.night_ready(p)  # T-2916: free: a local model answers; grow under the target, funnel while rows wait
+    if "grow" in ready:
         out.append(("moons grow", ["moons", "grow", "--target", str(moonscale.TARGET), "--max-calls", "250",
                                    "--local-only"], 0.0))
+    if "funnel" in ready:
         out.append(("moons funnel", ["moons", "funnel", "--max-calls", "400", "--local-only"], 0.0))
     smoke = meta.get("smoke") or {}
     if any(k != "off" for k in smoke) and "off" not in smoke:  # T-0743: a target is set; the crawl runs locally

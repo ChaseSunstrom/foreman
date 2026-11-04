@@ -181,6 +181,8 @@ class Route(_Moons):
                     mock.patch.object(models, "complete", side_effect=models.ModelError("down")):
                 with self.assertRaises(self.ms.LocalOnly):
                     self.ms._ask(self.p, "sys", "prompt")
+            with self.assertRaises(self.ms.LocalOnly):  # audit: cheap=False (promote's strongest model) is paid too
+                self.ms._ask(self.p, "sys", "prompt", cheap=False)
         child.assert_not_called()
 
     def test_grow_and_funnel_local_only_stop_with_the_reason_and_spend_nothing(self):  # T-2916
@@ -207,6 +209,10 @@ class Route(_Moons):
             self.assertTrue(self.ms.night_ready(self.p))
             with mock.patch.object(self.ms, "TARGET", 0):
                 self.assertFalse(self.ms.night_ready(self.p), "the target is met")
+                self.ms.add(self.p, [good()], {"problem": "x", "source": "pain", "kind": "bugs", "mechanism": "law",
+                                               "scale": "file", "surface": "terminal"}, "haiku", 1)
+                self.assertEqual(self.ms.night_ready(self.p), {"funnel"}, "at the target, unjudged rows still funnel")
+            self.assertEqual(self.ms.night_ready(self.p), {"grow", "funnel"})
             self.fm("sensitive", "on")
             self.assertFalse(self.ms.night_ready(self.p))
             self.fm("sensitive", "off")
@@ -567,6 +573,29 @@ class Embed(_Moons):
 
 
 class Funnel(_Funnel):
+    def test_kill_batches_run_at_once_up_to_the_local_slots(self):  # T-2953: 3 min a batch, one at a time
+        import threading
+        import time
+        ids = self.seed(*[moon(f"Moon {i} for case {chr(97 + i % 26)}{i}", f"do thing {i}.", f"do thing {i} today.")
+                          for i in range(2 * self.ms.JUDGE_BATCH + 1)])
+        judge, live, peak, lock = Judge(self.ms), [0], [0], threading.Lock()
+
+        def slow(*a, **kw):
+            with lock:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            time.sleep(0.2)
+            with lock:
+                live[0] -= 1
+            return judge(*a, **kw)
+        rs = self.ms.rows(self.p)
+        r = {"stages": {"kill": {}}, "calls": 0, "models": {}, "stopped": "", "error": "", "paid": 0, "fails": 0}
+        with mock.patch.object(self.ms, "_ask", side_effect=slow), \
+                mock.patch.object(self.ms, "_local", return_value={"name": "jarvis", "slots": 2}):
+            self.ms._kill(self.p, r, rs, self.ms.fate(self.p), rs, None)
+        self.assertEqual((peak[0], r["calls"]), (2, 3))
+        self.assertEqual({i: self.fates()[i][0] for i in ids}, {i: "kill" for i in ids})
+
     def test_each_candidate_gets_its_fate_and_reason_in_cost_order(self):
         ids = self.seed(FLAKY, DEPLOY, REVIEW, SECRET, NUDGE, FLAKY_SAME, FLAKY_ALSO, good(kill=""))
         judge = Judge(self.ms, kill={DEPLOY["title"]: "no | it needs live production traffic"},
