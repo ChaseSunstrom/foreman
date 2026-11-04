@@ -7906,6 +7906,8 @@ def _build_parser(only=None):
     s.add_argument("--verifier", action="store_true", help="models: train the close-holds head on the lake's outcome labels "
                    "with whole projects held out; per-project AUC and false-done caught at 10%% false alarms to bench.jsonl, "
                    "weights to this project's research/models/verifier.json (T-2977)")
+    s.add_argument("--traces", metavar="DIR", help="models: write the kept green Smith journals of every exam run as chat JSONL "
+                   "(traces.jsonl: messages and provenance, Claude runs refused, duplicates dropped) to DIR (T-2995)")
     s.add_argument("--jeff", metavar="DIR", help="models: write Jeff Examples (intake-type from user tags, intake-tier from the "
                    "scope size, close-holds from the outcome) to DIR as train/dev/temperature.jsonl, split by whole projects "
                    "with --holdout in none (T-2970)")

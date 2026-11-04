@@ -253,6 +253,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmtaste` (T-1537: `sampo looks`, the taste ledger in state/taste/looks.json… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmtidy` [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmtoolproof` (T-2372: a task that ran `sampo new tool` or `sampo mcp new`… [→ files-lib-3](docs/map/files-lib-3.md)
+- `fmtraces` (T-2995: green exam Smith runs as training data: the journal kept beside… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmtrials` (T-1059: a self-change as a pre-registered trial, graded by the… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmtriggers` (`sampo triggers [--days N] [--json]`, T-2276): capture events… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmverifier` (T-2977: the close-holds verifier, `sampo exam models --verifier`: a text-free logistic head on lake… [→ files-lib-3](docs/map/files-lib-3.md)

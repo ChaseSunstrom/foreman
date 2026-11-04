@@ -3688,6 +3688,19 @@ def _smith_arm(base, key, work, model, request, events, planner=None):
             evs.append({"event": "timeout", "text": f"no end after {t} s"})
         shutil.copytree(wt, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
         _carry_runs(wt, work)
+        evs_end = next((e for e in reversed(evs) if e.get("event") in ("closed", "blocked", "error", "answer", "timeout")), {})
+        verifies = [e for e in evs if e.get("event") == "verify" and e.get("label") == "verify"]
+        if evs_end.get("event") == "closed" and not (verifies and verifies[-1].get("exit")):  # T-2995: green runs only
+            from sampo import traces
+            try:
+                traces.keep(tmp, events[:-len(".events.jsonl")] + traces.SUFFIX if events.endswith(".events.jsonl")
+                            else events + traces.SUFFIX,
+                            {"scenario": key.get("id"), "language": key.get("lang"), "kind": key.get("kind"),
+                             "origin": key.get("origin") or "seeded", "model": c.plain(model)[:60],
+                             "planner": c.plain(planner)[:60] if planner else None},
+                            [prof, *([smodels.resolve(planner)] if planner else [])])
+            except (OSError, ValueError, smodels.ModelError):
+                pass  # no journal is no failure: the exam's grade never depends on it
     end = next((e for e in reversed(evs) if e.get("event") in ("closed", "blocked", "error", "answer")), {})
     found = _smith_findings(prof, str(end.get("text") or ""), work, evs)
     log = "".join(c.redact(json.dumps(e)) + "\n" for e in evs)[:EVENTS_CAP]
@@ -4229,6 +4242,12 @@ def cmd_exam(args):
                 return cli.out(args, man, f"lake {man['hash'][:12]}: {man['rows']} rows from {man['projects']} projects "
                                           f"(excluded {man['excluded']['sensitive']} sensitive, {man['excluded']['optout']} "
                                           f"opted out, {man['dupes']} dupes) in {os.path.abspath(args.export)}")
+            if getattr(args, "traces", None):  # T-2995: kept green Smith journals as chat JSONL
+                from sampo import traces
+                ans = [os.path.join(root(p), r, "answers", "smith") for r in sorted(os.listdir(root(p)))] if os.path.isdir(root(p)) else []
+                res = traces.export(ans, os.path.abspath(args.traces))
+                return cli.out(args, res, f"traces: {res['conversations']} conversations ({res['dupes']} dupes, "
+                                          f"{res['refused']} Claude runs refused) in {res['file']}")
             if getattr(args, "verifier", False):  # T-2977: the close-holds head, whole projects held out
                 from sampo import verifier
                 res = verifier.run(p)

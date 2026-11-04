@@ -44,8 +44,9 @@ def canon(text, mods=None):
     return re.sub(r"\b(?:Foreman|FOREMAN)\b", lambda m: "Sampo" if m.group(0)[1].islower() else "SAMPO", text)
 
 
-def clean(text, roots=(), names=(), mods=None, cap=CAP):
-    """Secrets redacted, the project's root and name and every absolute path stripped, names canonicalised, cut to CAP."""
+def clean(text, roots=(), names=(), mods=None, cap=CAP, raw=False):
+    """Secrets redacted, the project's root and name and every absolute path stripped, names canonicalised, cut to CAP.
+    raw (T-2995, a conversation's code): whitespace and names stay as written, only the cut applies."""
     text = c.redact(str(text or ""))
     for r in sorted({x for x in roots if x}, key=len, reverse=True):
         text = text.replace(r, "<path>")
@@ -53,7 +54,7 @@ def clean(text, roots=(), names=(), mods=None, cap=CAP):
     for n in names:
         if len(n) >= 3:
             text = re.sub(rf"(?i)(?<![\w-]){re.escape(n)}(?![\w-])", "<project>", text)
-    return c.fit(canon(" ".join(text.split()), mods), cap)
+    return text[:cap] if raw else c.fit(canon(" ".join(text.split()), mods), cap)
 
 
 def _section(b, name):
