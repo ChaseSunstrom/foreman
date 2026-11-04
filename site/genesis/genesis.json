@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-04T04:32:24Z",
- "rev": "3de9f340",
+ "updated": "2026-11-04T04:44:32Z",
+ "rev": "a8f5a791",
  "capabilities": [
   {
    "n": 1,
@@ -25420,7 +25420,7 @@
  },
  "not_yet": 8,
  "not_yet_open": 8,
- "unproven": 764,
+ "unproven": 765,
  "unproven_kinds": {
   "meaning": 598,
   "research-uncited": 30,
@@ -25432,7 +25432,7 @@
   "perf-noise": 1,
   "infra": 7,
   "ui-unshot": 15,
-  "data": 1
+  "data": 2
  },
  "next": {
   "stage": "mission",
@@ -26572,11 +26572,11 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 1668,
+   "generated": 1900,
    "write": {
-    "title": 26,
-    "line": 131,
-    "payoff": 1,
+    "title": 27,
+    "line": 163,
+    "payoff": 2,
     "kill test": 4
    },
    "dups": {
@@ -26591,7 +26591,7 @@
    },
    "merged": 0,
    "kept": 91,
-   "pending": 576
+   "pending": 774
   },
   "families": [
    {
