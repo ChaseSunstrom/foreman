@@ -1,6 +1,6 @@
 """T-2909: small-model cards, part 1. A card is a playbook rewritten for a 4B-27B model: when to use it, numbered steps
 each with an exact command, one worked example, a self-check and the traps small models fall into. The store is
-research/cards/cards.jsonl (append-only, admitted cards only); the grid is kind x stack x stage x surface, read thin
+<state>/cards/cards.jsonl (append-only, admitted cards only); the grid is kind x stack x stage x surface, read thin
 first; `sampo playbooks small grow|coverage|show` drives it. The model calls, workers, think switch, local-first then
 Haiku routing and JSON parsing are moonscale's (T-2868/T-2893), imported, not copied."""
 import collections
@@ -43,7 +43,8 @@ SYSTEM = ("You write cards for small language models (4B to 27B parameters): sho
 
 
 def home():
-    return os.environ.get("SAMPO_CARDS") or os.path.join(os.path.dirname(c.PLUGIN_ROOT), "research", "cards")
+    """Sampo's own state, shared by every project and never inside the plugin's install folder or its git tree."""
+    return os.environ.get("SAMPO_CARDS") or os.path.join(c.state_dir(), "cards")
 
 
 def _verbs():
