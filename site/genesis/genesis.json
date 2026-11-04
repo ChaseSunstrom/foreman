@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-04T08:44:40Z",
+ "updated": "2026-11-04T08:49:43Z",
  "rev": "0f49df30",
  "capabilities": [
   {
@@ -4031,8 +4031,8 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 1,
-       "current": "one helper reads MASTER.md plus docs/map/*.md; doctor, cli's file-map row check and demo's fences use it; tests first"
+       "done": 2,
+       "current": "move the File map and Operations bodies into shards under the size cap, reflow long bullets, write the index lines"
       }
      ]
     },
@@ -4254,8 +4254,8 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 1,
-       "current": "one helper reads MASTER.md plus docs/map/*.md; doctor, cli's file-map row check and demo's fences use it; tests first"
+       "done": 2,
+       "current": "move the File map and Operations bodies into shards under the size cap, reflow long bullets, write the index lines"
       }
      ]
     }
@@ -25916,6 +25916,564 @@
     "vuln"
    ],
    "author": "self"
+  },
+  {
+   "run": "s0-001",
+   "agent": "smith",
+   "keyed": 8,
+   "found": 0,
+   "false_alarms": 0,
+   "exam_defects": 0,
+   "fixable": 8,
+   "fixed": 3,
+   "tf_keyed": 4,
+   "tf_first": 0,
+   "readings_keyed": 2,
+   "readings_hit": 0,
+   "missing_keyed": 1,
+   "missing_hit": 1,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 10,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 10,
+   "conf_missing": 10,
+   "brier_sum": 2.5,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      1
+     ],
+     "js": [
+      0,
+      2
+     ],
+     "rust": [
+      0,
+      3
+     ],
+     "ruby": [
+      0,
+      1
+     ],
+     "python": [
+      0,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      1
+     ],
+     "vuln": [
+      0,
+      1
+     ],
+     "untested": [
+      0,
+      1
+     ],
+     "slow": [
+      0,
+      2
+     ],
+     "docs": [
+      0,
+      1
+     ],
+     "flaky": [
+      0,
+      1
+     ],
+     "dep": [
+      0,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 8,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 8,
+    "fixed": 3,
+    "tf_keyed": 4,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 10,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 10,
+    "conf_missing": 10,
+    "brier_sum": 2.5,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       1
+      ],
+      "js": [
+       0,
+       2
+      ],
+      "rust": [
+       0,
+       3
+      ],
+      "ruby": [
+       0,
+       1
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ],
+      "vuln": [
+       0,
+       1
+      ],
+      "untested": [
+       0,
+       1
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       1
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "brier": 0.25,
+    "closed_share": 0.1
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-rust-15f302"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "brier": 0.25,
+   "closed_share": 0.1,
+   "model": "gpu-gemma12-32k",
+   "at": "2026-11-04T08:46:19Z",
+   "gen": 4,
+   "split": "train",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s0-001",
+   "agent": "smith",
+   "keyed": 8,
+   "found": 0,
+   "false_alarms": 0,
+   "exam_defects": 0,
+   "fixable": 8,
+   "fixed": 3,
+   "tf_keyed": 4,
+   "tf_first": 0,
+   "readings_keyed": 2,
+   "readings_hit": 0,
+   "missing_keyed": 1,
+   "missing_hit": 1,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 10,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 10,
+   "conf_missing": 10,
+   "brier_sum": 2.5,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      1
+     ],
+     "js": [
+      0,
+      2
+     ],
+     "rust": [
+      0,
+      3
+     ],
+     "ruby": [
+      0,
+      1
+     ],
+     "python": [
+      0,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      1
+     ],
+     "vuln": [
+      0,
+      1
+     ],
+     "untested": [
+      0,
+      1
+     ],
+     "slow": [
+      0,
+      2
+     ],
+     "docs": [
+      0,
+      1
+     ],
+     "flaky": [
+      0,
+      1
+     ],
+     "dep": [
+      0,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 8,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 8,
+    "fixed": 3,
+    "tf_keyed": 4,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 10,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 10,
+    "conf_missing": 10,
+    "brier_sum": 2.5,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       1
+      ],
+      "js": [
+       0,
+       2
+      ],
+      "rust": [
+       0,
+       3
+      ],
+      "ruby": [
+       0,
+       1
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ],
+      "vuln": [
+       0,
+       1
+      ],
+      "untested": [
+       0,
+       1
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       1
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "brier": 0.25,
+    "closed_share": 0.1
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-rust-15f302"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "brier": 0.25,
+   "closed_share": 0.1,
+   "model": "gpu-gemma12-32k",
+   "at": "2026-11-04T08:46:24Z",
+   "gen": 4,
+   "split": "train",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
   }
  ],
  "coverage": {
@@ -29739,13 +30297,13 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 9831,
+   "generated": 10007,
    "write": {
     "title": 113,
-    "line": 1426,
+    "line": 1450,
     "payoff": 17,
     "kill test": 31,
-    "code": 2
+    "code": 3
    },
    "dups": {
     "exact": 0,
@@ -29759,7 +30317,7 @@
    },
    "merged": 3,
    "kept": 197,
-   "pending": 4073
+   "pending": 4224
   },
   "families": [
    {
