@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-04T08:28:27Z",
- "rev": "f0eaa1ad",
+ "updated": "2026-11-04T08:39:33Z",
+ "rev": "0f49df30",
  "capabilities": [
   {
    "n": 1,
@@ -4027,7 +4027,7 @@
       {
        "id": "T-2915",
        "title": "MASTER.md opens whole in one Read: each over-long section moves to docs/map shards, MASTER.md keeps a one-line-per-entry index with links, every line wrapped under Read's line cut, and every check that reads MASTER.md reads the shards too",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
@@ -4060,7 +4060,7 @@
       {
        "id": "T-2916",
        "title": "The night shift runs on the local models: sampo night adds zero-dollar moons grow and moons funnel jobs while an own or loopback model answers and the catalogue is under its 10,000 target, local only, never falling back to a paid model",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
@@ -4123,7 +4123,7 @@
       {
        "id": "T-2917",
        "title": "Small-model playbooks, kept on measured lift: sampo playbooks eval runs on a local profile, a local writer drafts a small-model variant of a playbook and its eval briefs, and a variant is kept only when it lifts that model at least as much as the original does",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
        "steps": 5,
@@ -4160,7 +4160,7 @@
       {
        "id": "T-2918",
        "title": "M-02 slice: sampo regen PATH deletes one of Sampo's own modules in a throwaway worktree and regrows it on the local 27B from its intent alone (its briefs, its map entry, its tests, the names its callers use), landing nothing, reporting each proof; run over every small leaf module, and the gen-4 ecology moons filed in the catalogue",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
@@ -4180,7 +4180,7 @@
       {
        "id": "T-2916",
        "title": "The night shift runs on the local models: sampo night adds zero-dollar moons grow and moons funnel jobs while an own or loopback model answers and the catalogue is under its 10,000 target, local only, never falling back to a paid model",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
@@ -4200,7 +4200,7 @@
       {
        "id": "T-2917",
        "title": "Small-model playbooks, kept on measured lift: sampo playbooks eval runs on a local profile, a local writer drafts a small-model variant of a playbook and its eval briefs, and a variant is kept only when it lifts that model at least as much as the original does",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
        "steps": 5,
@@ -4250,7 +4250,7 @@
       {
        "id": "T-2915",
        "title": "MASTER.md opens whole in one Read: each over-long section moves to docs/map shards, MASTER.md keeps a one-line-per-entry index with links, every line wrapped under Read's line cut, and every check that reads MASTER.md reads the shards too",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
@@ -25362,6 +25362,283 @@
     "vuln"
    ],
    "author": "self"
+  },
+  {
+   "run": "s0-001",
+   "agent": "smith",
+   "keyed": 8,
+   "found": 0,
+   "false_alarms": 0,
+   "exam_defects": 0,
+   "fixable": 8,
+   "fixed": 0,
+   "tf_keyed": 4,
+   "tf_first": 0,
+   "readings_keyed": 2,
+   "readings_hit": 0,
+   "missing_keyed": 1,
+   "missing_hit": 0,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 10,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 10,
+   "conf_missing": 10,
+   "brier_sum": 2.5,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      1
+     ],
+     "js": [
+      0,
+      2
+     ],
+     "rust": [
+      0,
+      3
+     ],
+     "ruby": [
+      0,
+      1
+     ],
+     "python": [
+      0,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      1
+     ],
+     "vuln": [
+      0,
+      1
+     ],
+     "untested": [
+      0,
+      1
+     ],
+     "slow": [
+      0,
+      2
+     ],
+     "docs": [
+      0,
+      1
+     ],
+     "flaky": [
+      0,
+      1
+     ],
+     "dep": [
+      0,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 8,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 8,
+    "fixed": 0,
+    "tf_keyed": 4,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 10,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 10,
+    "conf_missing": 10,
+    "brier_sum": 2.5,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       1
+      ],
+      "js": [
+       0,
+       2
+      ],
+      "rust": [
+       0,
+       3
+      ],
+      "ruby": [
+       0,
+       1
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ],
+      "vuln": [
+       0,
+       1
+      ],
+      "untested": [
+       0,
+       1
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       1
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "cost": 0,
+   "closed": {
+    "train": [],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "brier": 0.25,
+   "closed_share": 0.0,
+   "model": "gpu-gemma12-nothink",
+   "at": "2026-11-04T08:39:30Z",
+   "gen": 4,
+   "split": "train",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
   }
  ],
  "coverage": {
@@ -29139,12 +29416,12 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 9253,
+   "generated": 9646,
    "write": {
-    "title": 111,
-    "line": 1334,
+    "title": 112,
+    "line": 1392,
     "payoff": 17,
-    "kill test": 25,
+    "kill test": 31,
     "code": 2
    },
    "dups": {
@@ -29159,7 +29436,7 @@
    },
    "merged": 3,
    "kept": 197,
-   "pending": 3595
+   "pending": 3923
   },
   "families": [
    {
