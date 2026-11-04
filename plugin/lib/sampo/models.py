@@ -45,8 +45,10 @@ import json
 import os
 import re
 import shlex
+import shutil
 import socket
 import subprocess
+import tempfile
 import time
 import unicodedata
 import urllib.error
@@ -257,6 +259,10 @@ def _profile(name, d, where):
         if not (isinstance(d["embed_model"], str) and d["embed_model"]):
             bad("embed_model must be a model name")
         p["embed_model"] = d["embed_model"]
+    if "ctx_variant" in d:  # T-2938: opt in to a num_ctx variant (context_variant) when the server serves less
+        if not isinstance(d["ctx_variant"], bool):
+            bad("ctx_variant must be true or false")
+        p["ctx_variant"] = d["ctx_variant"]
     if "body" in d:  # T-2893: extras merged into the OpenAI request (never over its own keys)
         if not isinstance(d["body"], dict):
             bad("body must be an object")
@@ -403,6 +409,48 @@ def served_context(profile):
             if type(n) is int and 512 <= n <= 10_000_000:
                 return n
     return _local_context("ollama", root, model, {})
+
+
+def context_variant(profile):
+    """T-2938: (profile, note). For an openai-kind profile on a loopback Ollama that sets ctx_variant true and whose
+    served_context is under its context: the profile pointed at BASE-<n>k (qwen3.5:4b at 32768 gives qwen3.5-4b-32k),
+    reused when /api/tags lists it, else made by `ollama create NAME -f TEMPFILE` (FROM base, PARAMETER num_ctx).
+    Anything else comes back as (profile, None). ModelError, naming the manual command, when ollama is missing, the
+    create fails or times out, or the variant still serves less. ponytail: loopback only (the binary talks to the local
+    server); an own remote host would need OLLAMA_HOST, or POST /api/create."""
+    want = profile.get("context")
+    served = served_context(profile) if profile.get("ctx_variant") is True else None
+    if served is None or type(want) is not int or want < 1024 or served >= want:
+        return profile, None
+    base = profile["model"]
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}", base):
+        raise ModelError(f"{profile['name']}: model {base!r} is not a plain Ollama model name; no variant made")
+    name = f"{base.replace(':', '-').replace('/', '-')}-{want // 1024}k"
+    manual = f"printf 'FROM {base}\\nPARAMETER num_ctx {want}\\n' > Modelfile && ollama create {name} -f Modelfile"
+    root = str(profile["base_url"])
+    root = root[:-3] if root.endswith("/v1") else root
+    made = "reusing"
+    if not any(r["name"] in (name, name + ":latest") for r in _tags(root)):
+        exe = shutil.which("ollama")
+        if not exe:
+            raise ModelError(f"{profile['name']}: ollama is not on PATH, so no {want}-token variant of {base}: run {manual}")
+        with tempfile.TemporaryDirectory() as d:
+            mf = os.path.join(d, "Modelfile")
+            with open(mf, "w", encoding="utf-8") as f:
+                f.write(f"FROM {base}\nPARAMETER num_ctx {want}\n")
+            try:
+                r = subprocess.run([exe, "create", name, "-f", mf], capture_output=True, text=True, timeout=300)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                raise ModelError(f"{profile['name']}: ollama create {name} did not run ({e}): run {manual}") from None
+        if r.returncode:
+            raise ModelError(f"{profile['name']}: ollama create {name} failed ({(r.stderr or r.stdout).strip()[-200:]}): "
+                             f"run {manual}")
+        made = "made"
+    out = dict(profile, model=name)
+    got = served_context(out)
+    if got is None or got < want:
+        raise ModelError(f"{profile['name']}: variant {name} serves {got}, not {want}: check it with ollama show {name}")
+    return out, f"{profile['name']}: {made} {name} ({want} tokens of context) for {base}, which serves {served}"
 
 
 def _local(name=None):

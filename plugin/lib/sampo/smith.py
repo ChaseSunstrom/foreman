@@ -2678,11 +2678,15 @@ def cmd_code(args):
             if run.worker_timeout is not None and run.worker_timeout <= 0:
                 raise CodeError("--worker-timeout is a number of seconds above 0")
             run.worker_timeout = run.worker_timeout or WORKER_TIMEOUT
-        profile, served_note = None, None  # T-1214: a worker with --verify needs no model
+        profile, served_note, variant_note = None, None, None  # T-1214: a worker with --verify needs no model
         if not (run.worker and run.verify_cmd):
             profile = choose_profile(run, args.model)
             run.model_name = profile["name"]
             run.offsite_ok(p, profile)
+            try:  # T-2938: ctx_variant true: a num_ctx variant, made or reused, before the served check
+                profile, variant_note = m.context_variant(profile)
+            except m.ModelError as e:
+                raise CodeError(str(e))
             served = m.served_context(profile)  # T-2935: what the server serves, not what models.json says
             if served and served < profile.get("context", 0):
                 served_note = (f"{profile['name']}: profile says {profile['context']} tokens of context, server serves "
@@ -2699,6 +2703,8 @@ def cmd_code(args):
                  foreman={"root": core.PLUGIN_ROOT, "version": smithbench.version()}, containment=containment(root))
         if served_note:
             run.emit("note", served_note)
+        if variant_note:
+            run.emit("note", variant_note)
         warned = install_warning()  # T-1757
         if warned:
             run.emit("note", warned)
