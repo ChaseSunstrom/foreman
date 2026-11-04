@@ -362,7 +362,8 @@
     t = wrap.appendChild(document.createElement("table"));
     tr = t.appendChild(document.createElement("tr"));
     ["ID", "Moonshot", "Wild", "Tier (counted; author → reviewer)", "Stage", "Domain", "Novelty", "Unblocks", "Asked"].forEach(function (h) {
-      tr.appendChild(document.createElement("th")).textContent = h;
+      var th = tr.appendChild(document.createElement("th")); th.textContent = h.slice(0, 4) === "Tier" ? "Tier" : h;
+      if (h.slice(0, 4) === "Tier") th.title = h;   /* the short head keeps the column on one line; the title keeps the key */
     });
     rows.slice().sort(wildFirst).forEach(function (r) {
       tr = t.appendChild(document.createElement("tr"));

@@ -578,7 +578,7 @@ footer .brand { font-size: 1.3rem; }
 .ex header { padding: 16px 20px 0; }
 .ex-kind { font-weight: 650; color: var(--accent); }
 .ex-cmd { margin: 8px 0 0; background: var(--term); color: var(--term-ink); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
-.ex-cmd code { background: none; color: inherit; white-space: pre; }
+.ex-cmd code { background: none; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ex-body { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; padding: 16px 20px 20px; align-items: start; }
 .ex-shot { width: 100%; height: auto; border-radius: 8px; display: block; }
 .ex-facts p { margin: 0 0 6px; }
@@ -589,8 +589,8 @@ footer .brand { font-size: 1.3rem; }
 .ex-files code { display: inline; }
 .ex-checks small { color: var(--ink-2); }
 .chip { display: inline-block; font: 600 .75em/1.6 var(--mono); padding: 0 6px; border-radius: 4px; margin-right: 6px; color: var(--panel); }
-.chip.pass { background: var(--ok); } .chip.fail { background: var(--stop); } .chip.todo { background: var(--rule); color: var(--ink-2); }
-.plus { color: var(--ok); } .minus { color: var(--stop); }
+.chip.pass { background: color-mix(in srgb, var(--ok) 88%, black); } .chip.fail { background: var(--stop); } .chip.todo { background: var(--rule); color: var(--ink-2); }
+.plus { color: color-mix(in srgb, var(--ok) 88%, black); } /* --ok on the light card was 4.28:1; 88% of it is past 4.5 */ .minus { color: var(--stop); }
 .ex-end { margin-top: 10px !important; }
 .ex-meta { color: var(--ink-2); font-size: .9em; }
 .timeline { list-style: none; padding: 0; margin: 0; border-left: 2px solid var(--rule); }

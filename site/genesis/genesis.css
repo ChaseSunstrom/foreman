@@ -392,6 +392,12 @@ code .nw{white-space:nowrap}
 @media (max-width: 600px){.md .tagl{display:block}.md .tg{display:block;line-height:1.5}}
 .trows{padding-bottom:26px;scrollbar-width:thin;scrollbar-color:var(--rule-2) transparent;-webkit-mask-image:linear-gradient(black calc(100% - 26px),transparent);mask-image:linear-gradient(black calc(100% - 26px),transparent)}
 .rules{align-items:start}
+/* the tower also loads ../style.css, whose .rules/.rules>div (a title column and a 22px 0 pad at 820px+) would swallow the card */
+.rules{border-top:0;max-width:none}
+.rules>.rule{display:block;grid-template-columns:none;padding:14px 16px 15px;border-bottom:0}
+.rules>.rule.solos{display:flex;padding:11px 16px 12px}
+.top .wrap{width:auto;margin-inline:var(--gutter)}
+.tbl tr[class^="w"] td:nth-child(3){white-space:nowrap}
 .docs .first .doc + h3{margin-top:24px}
 .docs{display:block;columns:4 250px;column-gap:24px}  /* R-s: the groups pack into balanced columns, so no group sits alone on a row */
 .docs>div{break-inside:avoid;margin:0 0 28px}

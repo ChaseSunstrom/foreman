@@ -293,7 +293,7 @@ let k = 1, dpr = 1;
 const capDpr = (w, h) => Math.max(1, Math.min(devicePixelRatio || 1, 2, Math.sqrt(2.6e6 / (w * h))));
 /* the spark canvas covers only where sparks, flakes, the smear and the flash can be (scene x 340-1180, y 40-960), at 1.25x at most:
    a second full-size 2x canvas changing every frame was what cost the frame at 1440@2x */
-const FXB = [340, 40, 840, 920];
+const FXB = [340, -160, 840, 1120];
 function sizeFx() { const w = scene.clientWidth; dpr = Math.min(devicePixelRatio || 1, 1.25); k = w / 1200; fx.width = Math.round(FXB[2] * k * dpr); fx.height = Math.round(FXB[3] * k * dpr); }
 const HOT = [[120, 30, 16], [226, 72, 26], [255, 148, 64], [255, 194, 77], [255, 240, 200], [234, 242, 255]];
 const SALT = [null, [69, 224, 160], [188, 139, 255], [110, 155, 255]];

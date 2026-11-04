@@ -117,6 +117,25 @@ class Proof(unittest.TestCase):
 STATIONS = ["Capture", "Expand", "Ground", "Plan", "Execute", "Verify", "Reflect", "Record"]
 
 
+class Clash(unittest.TestCase):
+    """T-2964: site/style.css's generic .hero and .rules rules reach the forge's hero and the tower's rule cards; the
+    forge and genesis sheets must override them (the cold review shot the page 90px low and the cards title-only)."""
+
+    def test_the_forge_hero_drops_style_css_padding_and_the_eyebrow_holds_a_line(self):
+        css = read_text(os.path.join(ROOT, "site", "forge.css"))
+        self.assertRegex(css, r"\.forge \.hero\{padding:0\}")
+        self.assertIn(".forge .hero .eyebrow{white-space:nowrap}", css)
+
+    def test_the_towers_rule_cards_override_the_site_rules_grid(self):
+        css = read_text(os.path.join(ROOT, "site", "genesis", "genesis.css"))
+        self.assertIn(".rules>.rule{display:block;grid-template-columns:none;", css)
+
+    def test_the_hammer_smear_canvas_reaches_above_the_old_clip(self):
+        js, css = (read_text(os.path.join(ROOT, "site", n)) for n in ("forge.js", "forge.css"))
+        self.assertIn("const FXB = [340, -160, 840, 1120];", js)
+        self.assertIn("top:-16%;width:70%;height:112%", css)
+
+
 class Session(unittest.TestCase):
     """T-2040, T-2851: the Smith's session is text, so it is crisp at any size and follows the theme; the forge only
     dims the lines it hasn't struck yet, so no script and reduced motion still read the whole of it."""

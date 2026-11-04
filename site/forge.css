@@ -75,7 +75,7 @@ body.forge{margin:0;background:var(--f-night);color:var(--f-ink);font:400 17px/1
 .forge .lay>svg:not(.ov),.forge .lay>noscript>svg,.forge .lay>canvas{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 .forge .scene .ov{position:absolute;overflow:visible;pointer-events:none}
 .forge .lay>canvas.fire,.forge .lay>svg.flst{inset:auto;left:25%;top:0;width:66.667%;height:47%}
-.forge .lay>canvas.fx{inset:auto;left:28.333%;top:4%;width:70%;height:92%}
+.forge .lay>canvas.fx{inset:auto;left:28.333%;top:-16%;width:70%;height:112%} /* FXB in forge.js: reaches 200 units above the old top so the hammer's smear is not cut flat */
 .forge .fire,.forge .fx,.anim .forge .stat,.forge .bloom{display:none}
 .anim .forge .fire,.anim .forge .fx,.anim .forge .bloom{display:block}
 .forge .far .b3a{fill:var(--f-b3a)}
@@ -131,9 +131,12 @@ body.forge{margin:0;background:var(--f-night);color:var(--f-ink);font:400 17px/1
 .forge .hammer[data-hz="2"] .hh{filter:url(#hz2)}
 .forge .ovs{position:absolute;inset:0;pointer-events:none}
 .anim .forge .struck:not(.go),.anim .forge .struck:not(.go) .l{background-image:var(--f-engrave-dim)}
+@media (max-width: 700px){.forge .diagram{overflow-x:auto}.forge .diagram img{max-width:none;width:660px}} /* the pieces diagram keeps a readable size on a phone and scrolls */
 .forge .hero::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(90deg,var(--f-night) 0%,color-mix(in srgb,var(--f-night) 90%,transparent) max(26%,330px),color-mix(in srgb,var(--f-night) 50%,transparent) max(36%,462px),transparent max(46%,594px))}
 .forge .hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:90px;z-index:1;pointer-events:none;background:linear-gradient(transparent,var(--f-night))}
 .forge .hero-copy{position:relative;z-index:3;padding:40px 0 48px var(--f-gutter);max-width:700px}
+@media (min-width: 901px){.forge .hero{padding:0} /* style.css's .hero padding (96px 0 40px) pushed the forge 90px below the spec */
+.forge .hero .eyebrow{white-space:nowrap}}
 .forge .scene .rg{opacity:0}
 .forge .scene .rv{opacity:0}
 .forge .scene .barhot{opacity:.95}
@@ -481,6 +484,7 @@ body.forge{margin:0;background:var(--f-night);color:var(--f-ink);font:400 17px/1
 .forge .hero::after{display:none}
 .forge .sec,.forge .sec.flip{grid-template-columns:minmax(0,1fr)}
 .forge .sec.flip .text{order:0}
+.forge .sec .text{max-width:none}
 .forge .sec .side{position:relative;top:0;order:1}
 .forge #how{row-gap:0}
 .forge #how .text{display:contents}
