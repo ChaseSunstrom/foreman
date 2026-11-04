@@ -336,13 +336,46 @@ def _line(text):
     return " ".join(_items(text))
 
 
-PLAN_FIELDS = (("type", f"the task's type, one word of {', '.join(TYPES)}", _word),
+def _options(text):
+    """T-2936: 'kind | approach | fails if' lines; a line without both separators is left out, an unknown kind is kept
+    as written (check_plan quotes it back)."""
+    out = []
+    for x in _items(text):
+        kind, _, rest = x.partition("|")
+        ap, _, fails = rest.partition("|")
+        if rest and fails.strip() and ap.strip():
+            out.append({"kind": kind.strip().lower(), "text": ap.strip(), "fails_if": fails.strip()})
+    return out
+
+
+def _number(text):
+    m_ = re.search(r"\d+", text)
+    return int(m_.group()) if m_ else None
+
+
+_is_m = lambda v: v.get("tier") == "M"
+# a field is (key, question, parse[, asked-when(answers so far)]); each question carries a worked example (T-2936)
+PLAN_FIELDS = (("type", f"the task's type, one word of {', '.join(TYPES)} (for example: FIX)", _word),
                ("tier", "its tier, one letter: S for a small change in one or two files, M for several files or a "
-                        "design choice", _word),
-               ("title", "a one-line title of at most 120 characters", lambda s: (_items(s) or [""])[0]),
-               ("criteria", "its acceptance criteria, one a line, each written as: what is true when it is done :: a "
-                            "shell command that exits 0 only then", _criteria),
-               ("steps", "its steps in order, one short line each", _items))
+                        "design choice (for example: S)", _word),
+               ("title", "a one-line title of at most 120 characters (for example: Make calc.add return the sum)",
+                lambda s: (_items(s) or [""])[0]),
+               ("criteria", "its acceptance criteria, one a line, one for each thing the request asks for, each "
+                            "written as: what is true when it is done :: a shell command that exits 0 only then (for "
+                            "example: calc.add(2, 3) is 5 :: python3 test_calc.py)", _criteria),
+               ("steps", "its steps in order, one short line each (for example: 1. write the failing test)", _items),
+               ("readings", "two lines, each one different way to read the request (for example: the request means "
+                            "only calc.add is wrong / the request means every operator in calc.py is wrong)",
+                _items, _is_m),
+               ("options", "three or more approaches, one a line, written as: kind | approach | fails if. kind is "
+                           "build (new code), exists (reuse what the codebase has) or less (do less); give one of "
+                           "each (for example: exists | reuse the existing add helper | the helper is not what the "
+                           "tests import)", _options, _is_m),
+               ("choice", "the number of the approach you choose, a whole number (for example: 2)", _number, _is_m),
+               ("confidence", "how sure you are the choice meets the request, a whole percent from 0 to 100 (for "
+                              "example: 70)", _number, _is_m),
+               ("why", "why you chose it, one line (for example: it is the smallest change that makes the test "
+                       "pass)", _line, _is_m))
 CLOSE_FIELDS = (("intent", "the intent note (how the change meets the request), one line", _line),
                 ("adversary", "the adversary note (what input or case could still break it, and why it doesn't), one "
                               "line", _line),
@@ -394,7 +427,9 @@ def slot(run, profile, messages, check, what, fields=()):
     if fields:
         messages.pop()  # a field question takes the last repair's place
         v = {}
-        for key, question, parse in fields:
+        for key, question, parse, *when in fields:
+            if when and not when[0](v):  # T-2936: an M-only field waits on the tier answered above
+                continue
             messages.append({"role": "user", "content": f"Leave the JSON aside. In plain text, reply with only "
                                                         f"{question}."})
             r = _ask(run, profile, messages, what)
