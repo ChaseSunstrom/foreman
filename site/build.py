@@ -29,6 +29,7 @@ def _v(rel):  # T-2060, T-2063: browsers keep a file by its URL, so the URL carr
 # T-2753: assets/sampo.svg, favicon.ico and share.png are links into design/sampo/logo, so the Runestone files have one home
 ICON, FAVICON, CSS, JS = _v("assets/sampo.svg"), _v("assets/favicon.ico"), _v("style.css"), _v("site.js")
 MILL, STILL = _v("assets/mark-animated.svg"), _v("assets/mark.svg")  # T-2759: the hero's turning mill and its still
+SECTIONS = _v("sections.css")  # T-2852: the section pages' forge, loaded after style.css
 SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "__pycache__"}
 TOKENS = os.path.join(ROOT, "design", "sampo", "tokens.json")
 TOKENS_START = "/* tokens: python3 site/build.py --tokens writes this block from design/sampo/tokens.json; edit the json */"
@@ -195,7 +196,7 @@ def legend(keys):
 
 
 def figure(title, note, svg, data):
-    return (f'<figure class="chart"><figcaption><b>{esc(title)}</b>{f"<span>{esc(note)}</span>" if note else ""}'
+    return (f'<figure class="chart forged"><figcaption><b>{esc(title)}</b>{f"<span>{esc(note)}</span>" if note else ""}'
             f'</figcaption>{svg}{data}</figure>')
 
 
@@ -373,6 +374,7 @@ def layout(title, desc, body, pages, here, depth=1):
 <link rel="icon" href="{up}{ICON}" type="image/svg+xml">
 <link rel="icon" href="{up}{FAVICON}" sizes="32x32">
 <link rel="stylesheet" href="{up}{CSS}">
+<link rel="stylesheet" href="{up}{SECTIONS}">
 </head>
 <body>
 <header class="top">
@@ -501,7 +503,7 @@ def case_study_html(name, label, ex):
     timeline = "".join(f'<li class="{cls}"><span class="at">{w}</span> <b>{esc(k)}</b> {txt}</li>'
                        for w, k, txt, cls in rows)
     title = ex["plan"].get("title") or ex["request"]
-    return (f'<p class="kicker">Case study · {esc(label)}</p><h1>{esc(title)}</h1><p class="lede">{esc(ex["request"])}'
+    return (f'<p class="kicker eyebrow">Case study · {esc(label)}</p><h1 class="engraved">{esc(title)}</h1><p class="lede">{esc(ex["request"])}'
             f'</p>{example_html(name, label, ex)}<section><h2>The run, event by event</h2>'
             f'<ol class="timeline">{timeline}</ol></section>'
             '<p class="next"><a href="../features/code.html">Back to sampo code</a></p>')
@@ -515,14 +517,14 @@ def examples_html(folder=None):
 
 
 def render_page(p, stats, pages):
-    parts = [f'<p class="kicker">{esc(p["nav"])}</p><h1>{esc(p["title"])}</h1><p class="lede">{p["lede"]}</p>']
+    parts = [f'<p class="kicker eyebrow">{esc(p["nav"])}</p><h1 class="engraved">{esc(p["title"])}</h1><p class="lede">{p["lede"]}</p>']
     for block in p["blocks"]:
         kind = block[0]
         if kind == "text":  # T-1246: its body may be computed from the stats
             body = block[2](stats) if callable(block[2]) else block[2]
             parts.append(f"<section><h2>{esc(block[1])}</h2>{body}</section>")
         elif kind == "term":
-            parts.append(f'<div class="term"><pre>{block[1]}</pre></div>')
+            parts.append(f'<div class="term forged"><pre>{block[1]}</pre></div>')
         elif kind == "chart":
             parts.append(block[1](stats))
         elif kind == "raw":
@@ -538,10 +540,23 @@ def render_page(p, stats, pages):
 def render_index(pages):
     cards = "".join(f'<a class="fcard" href="{p["slug"]}.html"><b>{esc(p["nav"])}</b><span>{esc(p["desc"])}</span></a>'
                     for p in pages)
-    body = ('<p class="kicker">Features</p><h1>Everything Sampo does</h1><p class="lede">Each page shows what one part '
+    body = ('<p class="kicker eyebrow">Features</p><h1 class="engraved">Everything Sampo does</h1><p class="lede">Each page shows what one part '
             'of Sampo does, how it works, the commands, and charts from Sampo\'s own record of building itself.</p>'
             f'<div class="fgrid">{cards}</div>')
     return layout("Features", "Every part of Sampo, with charts from its own history.", body, pages, "index")
+
+
+def roles(v):
+    """T-2852: the records' words read a model by its role and the orchestrator as any agent: an endpoint's name
+    ("jarvis") becomes "a large local model" and a bare "Claude" doing the work "the agent". The hosts Sampo is
+    measured on and installs into (Claude Code, Claude Desktop) keep their names."""
+    if isinstance(v, str):
+        return re.sub(r"\bClaude\b(?! Code| Desktop)", "the agent", re.sub(r"(?i)[\w-]*jarvis[\w-]*", "a large local model", v))
+    if isinstance(v, list):
+        return [roles(x) for x in v]
+    if isinstance(v, dict):
+        return {roles(k): roles(x) for k, x in v.items()}
+    return v
 
 
 def build(out):
@@ -553,6 +568,7 @@ def build(out):
     if os.path.isfile(bench_path):  # T-1222: the safety benchmark (site/bench_safety.py)
         with open(bench_path, encoding="utf-8") as f:
             stats.update(json.load(f))
+    stats = roles(stats)
     with open(os.path.join(HERE, "style.css"), encoding="utf-8") as f:
         check_tokens(f.read())
     if os.path.isdir(out):

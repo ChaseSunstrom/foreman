@@ -329,6 +329,59 @@ class Built(unittest.TestCase):
         found = design.lint(list(self.paths.values()) + [os.path.join(self.out, "style.css")])
         self.assertEqual(found, [], found)
 
+    def test_every_section_page_speaks_the_forge(self):
+        """T-2852: every generated page (features, the features index, the case studies) carries 12's section
+        language: an engraved kicker, a Bodoni headline, a brass rule over each section and forged plates for charts
+        and terminals, from site/sections.css, hash-versioned and loaded after style.css. Its colours are the tokens'
+        (charts take the six fire series), with no hand-typed hex, easing, old face or endless loop."""
+        sheet = os.path.join(ROOT, "site", "sections.css")
+        css = read_text(sheet)
+        self.assertEqual(re.findall(r"[^\n]*#[0-9A-Fa-f]{3,8}\b[^\n]*", css), [], "colours live in tokens.json")
+        for banned in ("cubic-bezier(", "Barlow", "condensed", "infinite"):
+            self.assertNotIn(banned, css)
+        for part in (".eyebrow::before", ".engraved", ".feature > section::before", ".forged", "var(--font-display)"):
+            self.assertIn(part, css)
+        for n in range(1, 7):
+            self.assertIn(f"var(--s{n})", css, "the charts' series are tokens.json's fire")
+        self.assertEqual(design.lint([sheet]), [])
+        pages = [os.path.join(d, n) for d in (os.path.join(self.out, "features"), os.path.join(self.out, "stories"))
+                 for n in sorted(os.listdir(d)) if n.endswith(".html")]
+        self.assertGreater(len(pages), len(SLUGS) + 2)
+        charts = 0
+        for path in pages:
+            page = read_text(path)
+            with self.subTest(page=os.path.relpath(path, self.out)):
+                links = re.findall(r'<link rel="stylesheet" href="\.\./([^"]+)">', page)
+                self.assertEqual(len(links), 2, links)
+                self.assertRegex(links[0], r"^style\.css\?v=[0-9a-f]{8}$")
+                self.assertRegex(links[1], r"^sections\.css\?v=[0-9a-f]{8}$", "after style.css, so it wins")
+                self.assertEqual(page.count('<p class="kicker eyebrow">'), 1)
+                self.assertEqual(page.count('<h1 class="engraved">'), 1)
+                self.assertNotIn('<figure class="chart">', page)
+                self.assertNotIn('<div class="term">', page)
+                charts += page.count('<figure class="chart forged">')
+        self.assertTrue(charts, "the charts sit on forged plates")
+
+    def test_no_page_names_an_endpoint_or_claude_as_the_orchestrator(self):
+        """T-2852: a model shows by its role and the orchestrator as any agent: no generated page (nor the tower) says
+        "jarvis" (an endpoint's name) or a bare "Claude" doing the work. Claude Code and Claude Desktop, the hosts
+        Sampo is measured on and installs into, and the CLI worker's own facts ("Claude's spellings") stay."""
+        pages = [os.path.join(d, n) for d in (os.path.join(self.out, "features"), os.path.join(self.out, "stories"))
+                 for n in sorted(os.listdir(d)) if n.endswith(".html")]
+        pages.append(os.path.join(self.out, "genesis", "index.html"))
+        actor = re.compile(r"\bClaude\b(?! Code| Desktop|'s (?:spellings|read-only))")
+        for path in pages:
+            text = html.unescape(re.sub(r"<[^>]+>", " ", read_text(path)))
+            with self.subTest(page=os.path.relpath(path, self.out)):
+                self.assertNotRegex(text, r"(?i)jarvis")
+                self.assertEqual([text[max(m.start() - 40, 0):m.end() + 40] for m in actor.finditer(text)], [])
+        with tempfile.TemporaryDirectory() as tmp:  # the records' own words, too: the build reads them by role
+            r = build_copy(tmp, edit_stats=lambda s: s.update(
+                decisions=[dict(s["decisions"][0], text="Cause: hooks handed Claude a command on jarvis-big")]))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            page = read_text(os.path.join(tmp, "out", "features", "decisions.html"))
+            self.assertRegex(page, r"handed the agent a command on a large local model(?![\w-])")  # the whole name, suffix too
+
     def test_phone_width_and_contrast_in_both_themes(self):
         browser = headless_chrome()
         if not browser:

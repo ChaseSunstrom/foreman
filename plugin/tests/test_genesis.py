@@ -292,6 +292,28 @@ class GenesisExport(ForemanTestCase):
         self.assertIn("<td><b>2</b></td>", table)
         self.assertIn("<pre><code>&lt;script&gt;</code></pre>", code)
 
+    def test_the_moons_part_shows_the_funnel_and_its_families_as_text(self):
+        """T-2852: genesis.json's moons_scale on the page: the funnel's counts, each family's lead and its line, both
+        tiers, stage and evidence, built with textContent only; and a plain line when no funnel has run. An endpoint's
+        name in the data ("jarvis") shows as its role, a large local model."""
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("no node to run the page")
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        gdir = os.path.join(root, "site", "genesis")
+        self.assertIn('id="moons-scale"', read_text(os.path.join(gdir, "index.html")))
+        body = re.search(r"function moonsScale\(\)(.*?)\n  }\n", read_text(os.path.join(gdir, "genesis.js")), re.S)
+        self.assertTrue(body, "genesis.js has no moonsScale()")
+        self.assertIn("D.moons_scale", body.group(1))
+        self.assertNotIn("innerHTML", body.group(1))
+        out = subprocess.run([node, os.path.join(root, "plugin", "tests", "genesis_page.js"), gdir, "scale"],
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(json.loads(out.stdout or "{}"), {"text": True, "markup": False, "funnel": True, "lead": True,
+                                                         "tiers": True, "stage": True, "evidence": True, "more": True,
+                                                         "none": True, "jarvis": True}, out.stderr)
+
 
 LIVE_WAIT_FLOOR = 200  # seconds: well inside the 300 s window
 

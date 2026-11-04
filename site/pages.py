@@ -807,15 +807,15 @@ PAGES = [
           "against thousands of real commands to show what it would newly block or allow.</p>"),
          ("chart", lambda s: _latency(s, {"PreToolUse:Bash", "PreToolUse:Bash:block", "PreToolUse:Bash:script",
                                           "PreToolUse:Edit"}))]},
-    {"slug": "permissions", "nav": "Permissions", "title": "You decide what Claude may never grant itself",
+    {"slug": "permissions", "nav": "Permissions", "title": "You decide what the agent may never grant itself",
      "desc": "Grants, trust mode, sensitive repos and a daily risk budget keep the dangerous switches in your hands.",
-     "lede": "Some things only you can allow: editing Sampo, pushing, starting a server, installing plugins. Claude "
-             "asks once through Claude Code's own prompt, and your yes covers exactly that.",
+     "lede": "Some things only you can allow: editing Sampo, pushing, starting a server, installing plugins. The agent "
+             "asks once through its host's own prompt, and your yes covers exactly that.",
      "blocks": [
          ("text", "The switches", "<ul><li><strong>Grants per task.</strong> <code>core</code> (Sampo's own code), "
           "<code>publish</code> (a push or release), <code>remote</code> (serving a repo), <code>plugin</code> "
-          "(installs).</li><li><strong>Trust mode.</strong> <code>/fm-trust on</code> lets Claude edit the Ward and "
-          "Claude Code's settings; only you can type it.</li><li><strong>Sensitive repos.</strong> "
+          "(installs).</li><li><strong>Trust mode.</strong> <code>/fm-trust on</code> lets the agent edit the Ward and "
+          "its host's settings; only you can type it.</li><li><strong>Sensitive repos.</strong> "
           "<code>sampo sensitive on</code> keeps a repo's content from leaving the machine.</li><li><strong>A daily risk "
           "budget.</strong> Destructive blocks and failed closes spend points; past the cap, autonomy steps down a "
           "notch until tomorrow.</li></ul>"),
@@ -845,7 +845,7 @@ PAGES = [
           "branch.</li><li><strong>Resume.</strong> A stopped session picks its lanes back up.</li></ul>")]},
     {"slug": "drive", "nav": "Drive and headless", "title": "It keeps going until the queue is done",
      "desc": "Drive mode, full auto, sampo run and sampo serve keep work moving without you watching.",
-     "lede": "Drive mode works through the whole queue. In full auto Claude decides, records why, and saves what only "
+     "lede": "Drive mode works through the whole queue. In full auto the agent decides, records why, and saves what only "
              "you can approve for one summary at the end.",
      "blocks": [
          ("chart", _daily_types),
@@ -888,7 +888,7 @@ PAGES = [
           "<code>bench_hooks.py</code> on every release.</li><li><strong>Reused gate passes.</strong> "
           "<code>sampo check</code> skips a gate that passed on an identical tree.</li><li><strong>Cached verdicts.</strong> "
           "Scripts the Ward read are cached by content.</li><li><strong>Notes once.</strong> Context is injected only "
-          "when it changes what Claude should do next.</li></ul>"),
+          "when it changes what the agent should do next.</li></ul>"),
          ("chart", lambda s: tiles([("Gate runs", s["gate_seconds"]["runs"]),
                                     ("Median full gate run, s", s["gate_seconds"]["median"])]))]},
     {"slug": "learning", "nav": "Learning", "title": "It learns a fix once, and improves itself",

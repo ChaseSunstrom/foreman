@@ -4,10 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rune · Sampo</title>
-<meta name="description" content="Sampo's Rune, live: one message became a tower of prompts that write, test and rewrite each other. Every generation, mission, task and doc.">
+<meta name="description" content="Sampo's Rune, live: one message became a tower of prompts that write, test and rewrite each other, under a sky of moonshots. Every generation, mission, task, moon and doc.">
+<meta name="color-scheme" content="dark light">
 <link rel="icon" href="../assets/sampo.svg" type="image/svg+xml">
 <link rel="icon" href="../assets/favicon.ico" sizes="32x32">
-<script>try { var t = localStorage.getItem("fm-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
+<script>
+/* before first paint: the theme, and whether the tower will move */
+(function(){var d=document.documentElement;d.classList.add("js");try{var t=localStorage.getItem("fm-theme");if(t)d.setAttribute("data-theme",t)}catch(e){}
+if(!matchMedia("(prefers-reduced-motion: reduce)").matches)d.classList.add("anim")})();
+</script>
 <link rel="stylesheet" href="../style.css">
 <link rel="stylesheet" href="genesis.css">
 </head>
@@ -30,83 +35,144 @@
   </div>
 </header>
 
-<main class="wrap">
+<main id="main">
+<section class="thero" id="hero" aria-labelledby="h1">
+  <div class="tcopy">
+    <p class="eyebrow rise">Sampo · Rune · <span id="gen-label">live</span></p>
+    <h1 id="h1" class="struck"><span class="ln">One message in.</span><span class="ln"><em>A harness that builds itself.</em></span></h1>
+    <p class="lede rise" style="--d:.2s">One prompt starts a tower of prompts that write, test and rewrite each other, until Sampo can find, think
+      through, do and prove anything, in any repo, without being asked. Each generation is a course of the tower; each moonshot
+      is a moon above it. All of it is drawn from the tower's own export: open any course, moon or plate to read what it holds.</p>
+    <dl class="stats rise" id="stats" style="--d:.35s"><div><dt>loading the tower</dt><dd>…</dd></div></dl>
+  </div>
+  <div class="tscene" id="scene" style="--sh:1000">
+    <canvas id="stars" aria-hidden="true"></canvas>
+    <canvas id="vault" aria-hidden="true"></canvas>
+    <canvas id="vfx" aria-hidden="true"></canvas>
+    <ol class="moonkeys" id="moon-keys" aria-label="The moons, wildest first: arrow keys move, Enter opens"></ol>
+    <svg class="art" id="art" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMax meet" aria-labelledby="art-t">
+      <title id="art-t">The tower of Rune: a carved stone course for each generation on the foundation of your message, a fire on its crown, and a moon above it for each moonshot.</title>
+      <g id="arcs"></g>
+      <g id="still-moons" class="still-moons" aria-hidden="true"></g>
+      <g id="tower-art"></g>
+    </svg>
+    <canvas id="flame" aria-hidden="true"></canvas>
+    <div class="names" id="sky-names" aria-hidden="true"></div>
+    <div class="mtag" id="mtag" hidden></div>
+  </div>
+</section>
+
+<aside class="vkey" aria-labelledby="vk-h">
+  <div class="vk-head">
+    <p class="eyebrow" id="vk-h">How to read the sky</p>
+    <p class="vk-lede">One moon for every moonshot, lit by the forge on the tower.</p>
+  </div>
+  <ul class="vk">
+    <li><svg viewBox="0 0 74 30" aria-hidden="true"><g fill="#0E1232" stroke="#D2C0F4" stroke-opacity=".5"><circle cx="6" cy="17" r="4"/><circle cx="19" cy="17" r="5.5"/><circle cx="35" cy="17" r="7.5"/><circle cx="55" cy="16" r="11"/></g></svg>
+      <b>Size</b><span>the counted tier, from low to massive</span></li>
+    <li><svg viewBox="0 0 74 30" aria-hidden="true"><g><circle cx="7" cy="16" r="5" fill="#C8381E" opacity=".7"/><circle cx="21" cy="16" r="5" fill="#FF9440"/><circle cx="35" cy="16" r="5" fill="#FFC24D"/><circle cx="49" cy="16" r="5" fill="#D2C0F4"/><circle cx="64" cy="16" r="8" fill="#9FC0FF" opacity=".35"/><circle cx="64" cy="16" r="5" fill="#EAF2FF"/></g></svg>
+      <b>Colour and height</b><span>how wild, as a cold reviewer scored it: a dim ember at 1 rides lowest, a white-blue corona at 5 rides highest</span></li>
+    <li><svg viewBox="0 0 74 30" aria-hidden="true"><g fill="#0E1232" stroke="#D2C0F4" stroke-opacity=".45"><circle cx="8" cy="15" r="6"/><circle cx="24" cy="15" r="6"/><circle cx="40" cy="15" r="6"/><circle cx="56" cy="15" r="6"/></g>
+      <g fill="#F4ECFF"><path d="M8,9A6,6 0 0 1 8,21A4.3,6 0 0 0 8,9Z"/><path d="M24,9A6,6 0 0 1 24,21A2.2,6 0 0 0 24,9Z"/><path d="M40,9A6,6 0 0 1 40,21Z"/><circle cx="56" cy="15" r="6"/></g><circle cx="70" cy="15" r="3.6" fill="#2A0A06" stroke="#FF7A2A"/></svg>
+      <b>Phase</b><span>the stage: a sliver for an idea, a crescent at its kill test, half for a slice, full when built; eclipsed means not yet</span></li>
+    <li><svg viewBox="0 0 74 30" aria-hidden="true"><path d="M8 22L30 10L52 18L68 6" fill="none" stroke="#D4AE66" stroke-opacity=".6"/><g fill="#D2C0F4"><circle cx="8" cy="22" r="2.5"/><circle cx="30" cy="10" r="2.5"/><circle cx="52" cy="18" r="2.5"/><circle cx="68" cy="6" r="2.5"/></g></svg>
+      <b>Lines</b><span>what each moonshot unblocks</span></li>
+    <li><svg viewBox="0 0 74 30" aria-hidden="true"><path d="M14 4h46v6H14z" fill="#E2481A"/><path d="M14 10h46v6H14z" fill="#3B3A44"/><path d="M14 16h46v6H14z" fill="#2B2830"/><path d="M14 4h46" stroke="#FFF1C8"/><path d="M14 22h46v4H14z" fill="#4A70A8"/></svg>
+      <b>Courses</b><span>one per generation: cooled and engraved once its critiques are in, burning while it is forged</span></li>
+  </ul>
+  <a class="btn2" href="#moonshots"><b>◆</b>Every moon as text</a>
+</aside>
+
+<section class="gsec" id="tower" aria-labelledby="a-label" style="--accent:var(--orange)">
   <div class="ghead">
-    <div>
-      <p class="kicker"><span class="pulse" aria-hidden="true"></span>Sampo · Rune · <span id="gen-label">live</span></p>
-      <h1>One message in.<br> <em>A harness that builds itself.</em></h1>
-      <p class="lede">One prompt starts a tower of prompts that write, test and rewrite each other, until Sampo can find, think
-        through, do and prove anything, in any repo, without being asked. This page is drawn from the tower itself; click
-        any box to read what it holds.</p>
+    <p class="eyebrow">A · The prompt tower</p>
+    <h2 id="a-label">Five levels, <em>one generation at a time</em></h2>
+    <p class="intro">Pick a generation: its Seed, its missions, their tasks and the critique that decides whether its rewrite survives.</p>
+  </div>
+  <div class="gens" id="gens" role="group" aria-label="Generation"></div>
+  <div id="tower-body" class="loading">Loading genesis.json…</div>
+</section>
+
+<section class="gsec" id="caps" aria-labelledby="b-label" style="--accent:var(--gold)">
+  <div class="ghead">
+    <p class="eyebrow">B · What it must do on its own</p>
+    <h2 id="b-label">The abilities <em>it must pass</em></h2>
+    <p class="intro">Each is a rune in the foundation. Each opens its words in your message, its gaps, and the missions that took it on.</p>
+  </div>
+  <div id="caps-body"></div>
+</section>
+
+<section class="gsec" id="moons" aria-labelledby="c-label" style="--accent:var(--blue)">
+  <div class="ghead">
+    <p class="eyebrow">C · Ambition scale · every gap is rated</p>
+    <h2 id="c-label">Every gap rated, <em>every moon kill-tested</em></h2>
+    <p class="intro">Tweaks wait in the inbox; the build takes capabilities and paradigms. Above the scale sits the Moons campaign: every generation adds moonshots, a cold reviewer tiers them and scores how wild they are, the big ones get kill tests, and the tower climbs toward them.</p>
+  </div>
+  <div id="ambition"></div>
+  <h3 class="sc-h" id="moonshots-label">The moons, wildest first: the sky above as text</h3>
+  <div id="moonshots" role="region" aria-labelledby="moonshots-label"></div>
+  <h3 class="sc-h" id="moons-scale-label">The Moons at scale: every candidate through the funnel, then the families it left</h3>
+  <div id="moons-scale" role="region" aria-labelledby="moons-scale-label"></div>
+</section>
+
+<section class="gsec" id="louhi" aria-labelledby="e-label" style="--accent:var(--violet)">
+  <div class="ghead">
+    <p class="eyebrow">D · Louhi, the exam</p>
+    <h2 id="e-label">Held-out repos <em>decide “done”</em></h2>
+    <p class="intro"><code>sampo exam gen</code> plants defects in throwaway repos in six languages (Python, JS, TS, Ruby, Rust, C) and keeps the answer key outside each repo; a third of every kind is held out. Each agent's answers are graded against the keys: found, false alarms, fixed, tests written first. A model with no tools writes every kind of scenario itself (bugs, holes, slow code, missing packages, untested and clean code, false docs, flaky tests, vague, ambiguous and out-of-reach requests, asks for what already exists, three-part requests and scheduled work, and the README and request lines of the projects Rune itself is graded on), kept only when a check passes them, and only those decide the scorecard: Sampo's own templates never grade Sampo. The same agent, with and without Sampo, answers the same held-out repos, each score with its cost.</p>
+  </div>
+  <div id="exam"></div>
+  <h3 class="sc-h" id="long-label">Long horizon: Sampo vs the same agent plain, same goals</h3>
+  <div id="long" role="region" aria-labelledby="long-label"></div>
+  <h3 class="sc-h" id="steer-label">Steer expansion: the user's raw words in, a standing rule out, judged by a stronger model</h3>
+  <div id="steer" role="region" aria-labelledby="steer-label"></div>
+  <h3 class="sc-h" id="sc-label">Held-out scorecard, per capability</h3>
+  <div id="scorecard" role="region" aria-labelledby="sc-label"></div>
+</section>
+
+<div class="grid2">
+  <section class="gsec" aria-labelledby="d-label" style="--accent:var(--gold)">
+    <div class="ghead">
+      <p class="eyebrow">E · Rules of the run</p>
+      <h2 id="d-label">The rules <em>it runs by</em></h2>
     </div>
-    <dl class="stats" id="stats"><dt>loading the tower</dt><dd>…</dd></dl>
-  </div>
-
-  <div class="grid2">
-    <section id="tower" aria-labelledby="a-label">
-      <h2 class="label" id="a-label">A · The prompt tower</h2>
-      <div class="gens" id="gens" role="group" aria-label="Generation"></div>
-      <div id="tower-body" class="loading">Loading genesis.json…</div>
-    </section>
-    <section id="caps" aria-labelledby="b-label">
-      <h2 class="label" id="b-label">B · What it must do on its own</h2>
-      <div id="caps-body"></div>
-    </section>
-  </div>
-
-  <section aria-labelledby="c-label">
-    <h2 class="label" id="c-label">C · Ambition scale · every gap is rated</h2>
-    <div id="ambition"></div>
-    <h3 class="sc-h" id="moonshots-label">The Moons campaign: every generation adds, tiers, kill-tests and climbs</h3>
-    <div id="moonshots" role="region" aria-labelledby="moonshots-label"></div>
+    <div class="rules" id="rules"></div>
   </section>
-
-  <section aria-labelledby="e-label">
-    <h2 class="label" id="e-label">D · Louhi, the exam · held-out repos decide "done"</h2>
-    <p class="muted"><code>sampo exam gen</code> plants defects in throwaway repos in six languages (Python, JS, TS, Ruby, Rust, C) and keeps the answer key outside each repo; a third of every kind is held out. Each agent's answers are graded against the keys: found, false alarms, fixed, tests written first. A model with no tools writes every kind of scenario itself (bugs, holes, slow code, missing packages, untested and clean code, false docs, flaky tests, vague, ambiguous and out-of-reach requests, asks for what already exists, three-part requests and scheduled work, and the README and request lines of the projects Rune itself is graded on), kept only when a check passes them, and only those decide the scorecard: Sampo's own templates never grade Sampo. Claude with and without Sampo answer the same held-out repos, each score with its cost.</p>
-    <div id="exam"></div>
-    <h3 class="sc-h" id="long-label">Long horizon: Sampo vs plain Claude Code, same goals</h3>
-    <div id="long" role="region" aria-labelledby="long-label"></div>
-    <h3 class="sc-h" id="steer-label">Steer expansion: the user's raw words in, a standing rule out, judged by a stronger model</h3>
-    <div id="steer" role="region" aria-labelledby="steer-label"></div>
-    <h3 class="sc-h" id="sc-label">Held-out scorecard, per capability</h3>
-    <div id="scorecard" role="region" aria-labelledby="sc-label"></div>
+  <section class="gsec" aria-labelledby="w-label" style="--accent:var(--blue)">
+    <div class="ghead">
+      <p class="eyebrow">F · Waits for your yes</p>
+      <h2 id="w-label">What waits <em>for you</em></h2>
+    </div>
+    <div class="waits">
+      <p class="note">Built and tested first, then handed over in one final report.</p>
+      <ul>
+        <li>Pushes, PRs, deploys, messages</li>
+        <li>Merging Sampo changes</li>
+        <li>Ward, rules and protected core</li>
+        <li>Plugins, MCP servers, timers</li>
+        <li>Costly decisions (listed to undo)</li>
+        <li>Trust mode and the risk cap</li>
+      </ul>
+      <p class="free"><b>Everything else runs without asking.</b>Planning, building, testing, side branches, spikes and its own
+        decisions. Nothing stops mid-run to ask.</p>
+    </div>
   </section>
+</div>
 
-  <div class="grid2">
-    <section aria-labelledby="d-label">
-      <h2 class="label" id="d-label">E · Rules of the run</h2>
-      <div class="rules" id="rules"></div>
-    </section>
-    <section aria-labelledby="w-label">
-      <h2 class="label" id="w-label">F · Waits for your yes</h2>
-      <div class="waits">
-        <h3>Waits for your yes</h3>
-        <p class="note">Built and tested first, then handed over in one final report.</p>
-        <ul>
-          <li>Pushes, PRs, deploys, messages</li>
-          <li>Merging Sampo changes</li>
-          <li>Ward, rules and protected core</li>
-          <li>Plugins, MCP servers, timers</li>
-          <li>Costly decisions (listed to undo)</li>
-          <li>Trust mode and the risk cap</li>
-        </ul>
-        <p class="free"><b>Everything else runs without asking.</b>Planning, building, testing, side branches, spikes and its own
-          decisions. Nothing stops mid-run to ask.</p>
-      </div>
-    </section>
+<section class="gsec" id="docs" aria-labelledby="g-label" style="--accent:var(--green)">
+  <div class="ghead">
+    <p class="eyebrow">G · Every doc in the tower</p>
+    <h2 id="g-label">Every doc, <em>open to read</em></h2>
   </div>
-
-  <section id="docs" aria-labelledby="g-label">
-    <h2 class="label" id="g-label">G · Every doc in the tower</h2>
-    <div class="docs" id="docs-body"></div>
-  </section>
-
+  <div class="docs" id="docs-body"></div>
+</section>
 </main>
 
-<footer>
-  <div class="wrap">
-    <a class="brand" href="../index.html"><img src="../assets/sampo.svg" alt="" width="22" height="22">Sampo</a>
+<footer class="tfoot">
+  <svg class="footart" id="foot-art" viewBox="260 762 660 238" aria-hidden="true"></svg>
+  <div class="fcopy">
+    <a class="brand" href="../index.html"><img src="../assets/sampo.svg" alt="" width="34" height="34">Sampo</a>
+    <p class="fline">The foundation stays: every generation is built on your message.</p>
     <nav aria-label="Links">
       <a href="https://github.com/ChaseSunstrom/sampo">Source</a>
       <a href="https://github.com/ChaseSunstrom/sampo/blob/main/README.md">Read me</a>

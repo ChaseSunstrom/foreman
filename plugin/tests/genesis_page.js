@@ -21,7 +21,25 @@ async function page(extra) {
   await new Promise(r => setTimeout(r, 50));
   return {texts: texts.slice(), html: html.join("\n"), docs: !!(els["docs-body"] && els["docs-body"].innerHTML)};
 }
+// T-2852: `genesis_page.js DIR scale` prints what the Moons part did with moons_scale: a hostile family, then none
+async function scale() {
+  const bad = "<img src=x onerror=alert(1)>", says = (x, re) => x.texts.some(t => re.test(t));
+  const s = await page({moons_scale: {funnel: {generated: 10000, write: {schema: 3}, dups: {exact: 40, embed: 1200, shingle: 7},
+    rejected: {kill: 5000, tier: 2600, novelty: 900}, merged: 150, kept: 103, pending: 0},
+    families: [{id: "F-007", size: 12, lead: "Lead " + bad, today: "today it can't", with_this: "with this it can, on Jarvis-big",
+      tier: "massive", cold: "extreme", wild: 5, block: "M-61", stage: "kill", evidence: "ev " + bad, kinds: ["kill"]}],
+    families_total: 340}});
+  const n = await page({moons_scale: undefined});
+  console.log(JSON.stringify({text: s.texts.some(t => t.includes("Lead " + bad)), markup: s.html.includes("onerror"),
+    funnel: says(s, /10,000 generated/) && says(s, /40 exact/) && says(s, /1,200 by embedding/) && says(s, /5,000 at the kill test/)
+      && says(s, /150 merged/) && says(s, /103 kept/),
+    lead: says(s, /today it can't/) && says(s, /with this it can/), tiers: says(s, /massive.*extreme/), stage: says(s, /kill test/),
+    evidence: s.texts.some(t => t.includes("ev " + bad)), more: says(s, /1 of 340 families/), none: says(n, /no funnel run yet/i),
+    // the endpoint's name never shows: the data's "jarvis" reads as its role
+    jarvis: !s.texts.concat(s.html).some(t => /jarvis/i.test(t)) && says(s, /on a large local model(?![\w-])/)}));
+}
 (async () => {
+  if (process.argv[3] === "scale") return scale();
   const bad = "<img src=x onerror=alert(1)>";
   const a = await page({scorecard: [null, 7, {n: 1, name: "Initiative", state: "partial", closed: 2, graded: 4, why: bad}]});
   const b = await page({scorecard: undefined});

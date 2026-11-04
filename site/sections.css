@@ -1,0 +1,109 @@
+/* T-2852: the section pages (features, the features index, the case studies) in 12 · the illustrated forge.
+   build.py's layout() links this after style.css, so it wins there. Every colour is a role from the generated tokens
+   block at the top of style.css (tokens.json); nothing here is a hand-typed colour, easing or face. */
+
+/* the roles under the page's names, restated so these pages hold whichever names style.css keeps. Declared again on
+   the terminals, which take the dark roles in either theme, so the mixes resolve against those there. */
+:root, .install, .window, .term, .ex-cmd {
+  --paper: var(--surface); --panel: var(--raised); --ink: var(--text); --ink-2: var(--text-muted); --muted: var(--text-muted);
+  --rule: color-mix(in srgb, var(--bronze) 34%, var(--surface));
+  --rule-2: color-mix(in srgb, var(--bronze) 62%, var(--surface));
+  --signal: var(--bronze); --signal-ink: var(--bronze); --ok: var(--success); --stop: var(--error);
+  --term: var(--sunken); --term-ink: var(--text); --term-dim: var(--text-muted);
+  --term-rule: color-mix(in srgb, var(--text) 12%, transparent);
+  --grid: color-mix(in srgb, var(--border) 22%, var(--surface)); --axis: color-mix(in srgb, var(--border) 55%, var(--surface));
+  --sans: var(--font-text); --display: var(--font-display); --mono: var(--font-mono);
+  --plate-face: color-mix(in srgb, var(--raised) 55%, var(--surface));
+  --engraved: linear-gradient(180deg, color-mix(in srgb, var(--text) 82%, var(--bronze)) 0%, var(--text) 30%,
+    var(--bronze) 58%, color-mix(in srgb, var(--text) 70%, var(--bronze)) 100%);
+}
+
+body { margin: 0; background: var(--surface); color: var(--text); font: 400 1.0625rem/1.62 var(--font-text); overflow-x: clip; }
+.wrap { width: min(1120px, 100% - 32px); margin-inline: auto; }
+@media (min-width: 720px) { .wrap { width: min(1120px, 100% - 64px); } }
+
+/* the bar: 12's header, a solid night with a brass hairline under it */
+.top { position: sticky; top: 0; z-index: 10; background: var(--surface); border-bottom: 1px solid var(--rule); backdrop-filter: none; }
+.top .wrap { display: flex; align-items: center; gap: 20px; height: 60px; }
+.brand { display: flex; flex: none; align-items: center; gap: 10px; color: var(--text); text-decoration: none;
+  font: 500 1.6rem/1 var(--font-display); letter-spacing: .01em; }
+.nav { margin-left: auto; display: flex; align-items: center; gap: 22px; }
+.nav a { color: var(--text-muted); text-decoration: none; font: 500 .94rem/1 var(--font-text); padding: 6px 0;
+  background: linear-gradient(var(--s1), var(--s1)) no-repeat 0 100% / 0 1px;
+  transition: background-size var(--dur-move) var(--ease-enter), color var(--dur-small); }
+.nav a:hover { color: var(--text); background-size: 100% 1px; }
+.theme { appearance: none; display: grid; place-items: center; width: 38px; height: 38px; cursor: pointer; color: var(--text);
+  background: none; border: 1px solid var(--rule-2); border-radius: 2px;
+  transition: border-color var(--dur-small), background-color var(--dur-small); }
+.theme:hover { border-color: var(--bronze); background: var(--raised); }
+.theme:active { background: var(--sunken); }
+
+/* the side list of pages: a brass bar marks the one you are on */
+.side a { color: var(--text-muted); border-radius: 2px; transition: color var(--dur-small), background-color var(--dur-small); }
+.side a:hover { color: var(--text); background: var(--plate-face); }
+.side a[aria-current="page"] { color: var(--text); background: var(--plate-face); box-shadow: inset 2px 0 0 var(--s1); }
+
+/* the head of a page: an engraved kicker over a Bodoni headline */
+.feature .eyebrow { font: 500 12px/1.4 var(--font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 14px; }
+.feature .eyebrow::before { content: ""; display: inline-block; width: 7px; height: 7px; margin: 0 10px 1px 0; background: var(--s1);
+  transform: rotate(45deg); box-shadow: 0 0 10px var(--s1); }
+.feature h1.engraved, .engraved { font: 400 clamp(2.4rem, 4.6vw, 4rem)/1.04 var(--font-display); letter-spacing: -.01em;
+  color: var(--text); max-width: 18ch; text-wrap: balance; }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  /* the fill is the engraving; color stays the ink, so contrast reads it and a reader without the clip sees ink */
+  .engraved { background: var(--engraved); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+}
+.feature .lede { color: var(--text-muted); font-size: clamp(1.1rem, 1.6vw, 1.25rem); margin: 20px 0 8px; max-width: 62ch; }
+
+/* each section sits under 12's brass rule: a hairline with fine and coarse ticks */
+.feature > section { position: relative; margin-top: 52px; padding: 30px 0 0; }
+.feature > section::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 9px; border-top: 1px solid var(--rule-2);
+  background: repeating-linear-gradient(90deg, var(--rule) 0 1px, transparent 1px 12px) top / 100% 5px no-repeat,
+    repeating-linear-gradient(90deg, var(--rule-2) 0 1px, transparent 1px 60px) top / 100% 9px no-repeat; }
+.feature h2 { font: 400 clamp(1.8rem, 3.2vw, 2.6rem)/1.06 var(--font-display); letter-spacing: -.005em; margin: 0 0 14px; text-wrap: balance; }
+.feature h2 em { font-style: italic; color: var(--bronze); }
+.feature h3 { font: italic 500 1.35rem/1.15 var(--font-display); }
+.feature li { color: var(--text-muted); }
+.feature li strong, .feature p strong { color: var(--text); }
+.feature .next { margin-top: 64px; font: 500 12px/1.4 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
+.feature .next a { color: var(--bronze); text-decoration-color: var(--rule-2); transition: text-decoration-color var(--dur-small); }
+.feature .next a:hover { text-decoration-color: var(--bronze); }
+
+/* forged plates: charts, terminals, tiles and cards sit on a struck plate with a brass lower edge, square cut */
+.forged, .feature .tile, .fcard { background: var(--plate-face); border: 1px solid var(--rule); border-bottom-color: var(--rule-2);
+  border-radius: 2px; box-shadow: none; }
+.feature .chart.forged { margin: 36px 0 0; padding: 0 18px 14px; }
+.chart.forged figcaption { display: grid; gap: 4px; margin: 0 -18px 14px; padding: 12px 18px 10px; border-bottom: 1px solid var(--rule); }
+.chart.forged figcaption b { font: 500 12px/1.4 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--bronze); }
+.chart.forged figcaption span { color: var(--text-muted); font-size: .95rem; }
+.term.forged { background: var(--sunken); color: var(--text); padding: 20px 20px 22px; overflow-x: auto; }
+.feature .tile strong, .fcard b { font-family: var(--font-display); font-weight: 500; }
+.fcard { transition: border-color var(--dur-enter) var(--ease-enter), background-color var(--dur-enter) var(--ease-enter); }
+.fcard:hover, .fcard:focus-visible { border-color: var(--bronze); background: var(--raised); transform: none; }
+
+/* the charts' six series: tokens.json's fire, gold first */
+.viz .lab, .viz .tick, .viz .val { font-family: var(--font-mono); font-size: 11.5px; }
+.viz .lab { fill: var(--text-muted); } .viz .tick { fill: var(--text-muted); } .viz .val { fill: var(--text); }
+.viz .budget { stroke: var(--bronze); }
+.viz .ln { stroke: var(--s1); } .viz .dot { fill: var(--s1); stroke: var(--plate-face); }
+.viz .s1 { fill: var(--s1); } .viz .s2 { fill: var(--s2); } .viz .s3 { fill: var(--s3); }
+.viz .s4 { fill: var(--s4); } .viz .s5 { fill: var(--s5); } .viz .s6 { fill: var(--s6); }
+.sw.s1 { background: var(--s1); } .sw.s2 { background: var(--s2); } .sw.s3 { background: var(--s3); }
+.sw.s4 { background: var(--s4); } .sw.s5 { background: var(--s5); } .sw.s6 { background: var(--s6); }
+.legend { color: var(--text-muted); font: 500 12px/1.5 var(--font-mono); letter-spacing: .04em; }
+.legend .sw { border-radius: 0; transform: rotate(45deg) scale(.8); }
+.data { color: var(--text-muted); }
+.data summary { font: 500 12px/1.6 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--bronze); }
+.data th, .data td { border-bottom-color: var(--rule); }
+
+/* the foot: the same rule closes the page */
+footer { position: relative; border-top: 0; color: var(--text-muted); }
+footer::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 9px; border-top: 1px solid var(--rule-2);
+  background: repeating-linear-gradient(90deg, var(--rule) 0 1px, transparent 1px 12px) top / 100% 5px no-repeat; }
+footer .brand { font-size: 1.3rem; }
+footer .fine { font: 500 11.5px/1.6 var(--font-mono); letter-spacing: .06em; }
+
+@media (max-width: 419px) { .top .wrap { gap: 10px; } .nav { gap: 14px; } .brand { font-size: 1.3rem; gap: 8px; } }
+@media (prefers-reduced-motion: reduce) {
+  .nav a, .theme, .side a, .fcard, .feature .next a { transition: none; }
+}
