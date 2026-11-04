@@ -7869,6 +7869,8 @@ def _build_parser(only=None):
                                          "(default 6, at most 50)")
     s.add_argument("--from-repo", dest="from_repo", metavar="PATH", help="gen: mint scenarios from this git repo's HEAD, one "
                                                                          "mutation each, kept only when its own tests go red (T-2978)")
+    s.add_argument("--only", metavar="GLOB", help="gen --from-repo: mutate only files matching GLOB (fnmatch on the "
+                   "repo-relative path): one module of a big repo, with --test-cmd its own tests (T-2987)")
     s.add_argument("--test-cmd", dest="test_cmd", metavar="CMD", help="gen --from-repo: the test command to mint "
                    "against instead of the repo's detected gate: a fast subset makes a slow suite mintable (T-2987)")
     s.add_argument("--seed", type=int, default=0)

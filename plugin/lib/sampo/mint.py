@@ -4,6 +4,7 @@ in a throwaway copy, and keeps it only when the repo's own test command goes red
 passes twice. A mutant the tests miss is dropped and counted. A kept mutant is Louhi's seeded shape (repo/, key.json,
 hidden/clean) with origin "minted", so `sampo exam run` grades it by the planted file and symbol."""
 import ast
+import fnmatch
 import json
 import os
 import random
@@ -213,7 +214,7 @@ def _scenario(p, run, i, x, clean, cmd, src, head, env=None):
             "repo": os.path.join(base, "repo"), "request": REQUEST}
 
 
-def gen(p, repo, n=6, seed=0, test_cmd=None):
+def gen(p, repo, n=6, seed=0, test_cmd=None, only=None):
     """Mint up to n scenarios from repo's HEAD into a new run under exam's root, against test_cmd or the repo's
     detected gate. Returns the run's meta."""
     from sampo import louhi, map as mapmod
@@ -252,6 +253,8 @@ def gen(p, repo, n=6, seed=0, test_cmd=None):
         else:
             cands, seen = [], set()
             for rel in files:
+                if only and not fnmatch.fnmatch(rel, only):  # T-2987: one module of a big repo
+                    continue
                 if os.path.splitext(rel)[1] not in LANG or TEST_PATH.search(rel) or \
                         os.path.getsize(os.path.join(clean, rel)) > MAX_BYTES:
                     continue

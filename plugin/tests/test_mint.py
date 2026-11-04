@@ -184,6 +184,15 @@ class MintWithUntrackedDeps(MintFromRepo):  # T-2987: real projects keep their d
         self.assertEqual(r["minted"]["command"], "python3 -B tests/run.py")
         self.assertGreaterEqual(r["minted"]["kept"], 1, r["minted"])
 
+    def test_only_limits_the_mutated_files(self):  # a big repo mints from one module and the tests that cover it
+        self.write("other.py", "def twice(x):\n    if x > 0:\n        return x * 2\n    return 0\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "an uncovered module")
+        r = self.mint("--only", "other.py")
+        self.assertEqual(r["minted"]["kept"], 0)  # its mutants exist, but no test covers other.py
+        self.assertGreaterEqual(r["minted"]["missed"], 1)
+        self.assertTrue(all(m.startswith("other.py:") for m in r["minted"]["mutations"]))
+
     def test_a_runner_wrapper_is_unwrapped(self):
         from sampo import mint
         self.assertEqual(mint._unwrap("uv run pytest -q"), "pytest -q")
