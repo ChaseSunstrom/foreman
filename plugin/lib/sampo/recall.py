@@ -745,7 +745,7 @@ def cmd_clauses(args):
     c.update_meta(p, clauses={"at": c.now(), "open": loose})
     return cli.out(args, {"clauses": [{"clause": x, "task": t} for x, t in rows], "open": loose}, "\n".join(
         f"- {c.fit(x, 100)} → {t}" if t else f"- {c.fit(x, 100)} → unaccounted" for x, t in rows)
-        + (f"\n{len(loose)} unaccounted: capture each, answer it, or fm clauses --note N \"<why>\"." if loose else ""))
+        + (f"\n{len(loose)} unaccounted: capture each, answer it, or sampo clauses --note N \"<why>\"." if loose else ""))
 
 
 def log_shown(p, hits, task):

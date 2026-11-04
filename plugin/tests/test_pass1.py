@@ -60,7 +60,7 @@ class Outgrown(ForemanTestCase):
                                                                         "content": "x"}, "tool_response": {}})
         out = self.fm("next").stdout
         self.assertIn("outgrown", out)
-        self.assertIn(f"fm task set {tid} tier=M", out)
+        self.assertIn(f"sampo task set {tid} tier=M", out)
 
 
 class Prefix(ForemanTestCase):

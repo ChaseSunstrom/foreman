@@ -19,6 +19,7 @@ EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status
             "confidence", "cost_cap", "predict_minutes", "predict_attempts"}
 CLEARABLE = {"confidence", "cost_cap", "predict_minutes", "predict_attempts"}  # T-1126: k= removes them
 LIST_FIELDS = {"scope", "depends_on"}
+_BLAST_LINE = re.compile(r"Blast radius \((?:fm|sampo) graph blast\)")  # graph.py writes it; old briefs hold the fm form
 SETTABLE_STATUS = {"captured", "planned", "active", "verifying", "blocked", "deferred"}
 
 
@@ -66,9 +67,9 @@ def resolve(args, create=True):
     if not p and os.environ.get("FOREMAN_PROJECT"):
         p = c.project_by_slug(os.environ["FOREMAN_PROJECT"])
     if not p and os.environ.get("FOREMAN_WORKER_OF"):  # T-1438: fm init is refused inside a worker
-        raise UsageError("not in a Sampo project, and a worker of an fm code run can't run `fm init`; pass -p SLUG")
+        raise UsageError("not in a Sampo project, and a worker of a sampo code run can't run `sampo init`; pass -p SLUG")
     if not p:
-        raise UsageError("not in a Sampo project; run `fm init` here or pass -p SLUG")
+        raise UsageError("not in a Sampo project; run `sampo init` here or pass -p SLUG")
     return p
 
 
@@ -112,7 +113,7 @@ def cmd_init(args):
     out(args, {"project": p.slug, "root": root}, p.slug)
     if not args.json:  # T-0847: stdout stays the bare slug (scripts read it); the newcomer reads this
         print(f"Registered {root} as {p.slug}; its state lives in {p.dir}.\n"
-              f"Next: fm capture \"<request>\" (or just give Claude a request); fm --help for the everyday commands.",
+              f"Next: sampo capture \"<request>\" (or just give Claude a request); fm --help for the everyday commands.",
               file=sys.stderr)
 
 
@@ -125,7 +126,7 @@ def cmd_state(args):
             print(c.rewind_note(hit) + "\n")
     sd = c.state_dict(p)
     if args.cmd == "status" and not (args.line or args.json) and not c.load_briefs(p):  # T-0847: nothing yet
-        return print(f"{p.slug}: no tasks yet. Start with fm capture \"<request>\" or fm task new \"<title>\" --type FIX "
+        return print(f"{p.slug}: no tasks yet. Start with sampo capture \"<request>\" or sampo task new \"<title>\" --type FIX "
                      f"--tier S --focus (or just give Claude a request).")
     if not args.line:  # T-2273: reads closed briefs and the ledger, so never on a status bar's poll
         try:
@@ -154,7 +155,7 @@ def cmd_state(args):
             n = triggers.noisiest(p)
             if n:
                 print(f"Noisiest trigger: {n['trigger']} ({n['dropped']} of {n['done'] + n['dropped']} closed dropped); "
-                      f"it files at low priority (fm triggers)")
+                      f"it files at low priority (sampo triggers)")
 
 
 def cmd_proof(args):
@@ -295,7 +296,7 @@ def cmd_capture(args):
         text = text or first
         raw = (args.text + "\n\n" if args.text else "") + attached
     if not text:
-        raise UsageError("fm capture \"<request>\" [--from-file PATH|-]: say what to do, or attach a file that does")
+        raise UsageError("sampo capture \"<request>\" [--from-file PATH|-]: say what to do, or attach a file that does")
     near = near or _near(p, args, text, type_)  # titled from the attachment: only now known
     if near[0] is not None:
         return near[0]
@@ -339,14 +340,14 @@ def _near(p, args, text, type_):
         mutate(p, asleep.id, wake, "task_woken", {"by": "capture"})
         out(args, {"woke": asleep.id, "title": asleep.title},
             f"woke deferred {asleep.id} ({c.fit(c.plain(asleep.title), 80)}): your words are on its log and it's due back "
-            f"today (fm next names it)")
+            f"today (sampo next names it)")
         return 0, None
     if same:  # T-2488: the rule's dedupe call, for the model's shadow pass (refused: same; kept with --anyway: different)
         from sampo import models
         models.shadow(p, "dedupe", f"{_title(text)} || {same[1]}", "different" if args.anyway else "same")
     if same and not args.anyway:
         print(f"fm: near-duplicate of open {same[0]} ({c.fit(c.plain(same[1]), 80)}): add --anyway to keep both, or "
-              f"fm task log {same[0]} '<note>' to add to it", file=sys.stderr)
+              f"sampo task log {same[0]} '<note>' to add to it", file=sys.stderr)
         if getattr(args, "json", False):
             out(args, {"refused": "near-duplicate", "of": same[0], "title": same[1]}, None)
         return REFUSED_NEAR, None
@@ -357,7 +358,7 @@ def _near(p, args, text, type_):
             f"\nSimilar open {other[0]} [{other[2]}] ({c.fit(c.plain(other[1]), 80)}): another type, so kept."
             if other else "",
             f"\nClose to done work: {done[0]} ({c.fit(c.plain(done[1]), 80)}). If it already does this, drop this: "
-            f"fm task drop {tid} \"done in {done[0]}\"." if done else ""])
+            f"sampo task drop {tid} \"done in {done[0]}\"." if done else ""])
     return None, note
 
 
@@ -430,7 +431,7 @@ def _reask_note(p, tid, text):
             [f"Vetoed: \"{v['said']}\"" for v in c.veto_hits(p, text)][:2]
     except Exception:  # a note; capture never fails over it
         return ""
-    return ("\n" + "; ".join(notes) + f". If that still holds, drop this: fm task drop {tid} \"<why>\".") if notes else ""
+    return ("\n" + "; ".join(notes) + f". If that still holds, drop this: sampo task drop {tid} \"<why>\".") if notes else ""
 
 
 def _covered_note(p, tid, text):
@@ -443,7 +444,7 @@ def _covered_note(p, tid, text):
     if not hits:
         return ""
     return ("\nAlready covered? " + "; ".join(f"fm {name} — {help_}" for name, help_ in hits)
-            + f". If it is, use it and drop this: fm task drop {tid} \"covered by fm {hits[0][0]}\".")
+            + f". If it is, use it and drop this: sampo task drop {tid} \"covered by fm {hits[0][0]}\".")
 
 
 HYPO_STATUS = {"ruled-out": "ruled out", "confirmed": "confirmed", "open": "open"}
@@ -476,7 +477,7 @@ def task_hypo(p, args):
         return out(args, {"task": b.id, "path": path, "ruled_out": [
             {"task": t, "n": n, "claim": claim, "why": why, "age_days": age} for t, n, claim, why, age in rows]}, text)
     if len(args.args) != 2 or not args.args[0].isdigit() or args.args[1] not in HYPO_STATUS:
-        raise UsageError("fm task hypo ID mark N ruled-out|confirmed|open [--run CMD] [--why REASON]")
+        raise UsageError("sampo task hypo ID mark N ruled-out|confirmed|open [--run CMD] [--why REASON]")
     n, status = int(args.args[0]), HYPO_STATUS[args.args[1]]
     if n not in {h[0] for h in need_brief(p, args.id).hypotheses()}:
         raise UsageError(f"{args.id} has no H{n}")
@@ -522,7 +523,7 @@ def _assume_source(p, src):
         path = os.path.join(p.dir, "research", m.group(1) + ".md")
         text = open(path, encoding="utf-8", errors="replace").read(8000) if os.path.isfile(path) else ""
         if not text.strip():
-            raise UsageError(f"no research note {src} (or it's empty): fm research add {m.group(1)}")
+            raise UsageError(f"no research note {src} (or it's empty): sampo research add {m.group(1)}")
         return f"from {src}", f"Research note {src}:\n{text}"
     if re.fullmatch(r"T-\d+", src):
         sp = c.find_brief(p, src)
@@ -530,7 +531,7 @@ def _assume_source(p, src):
             raise UsageError(f"spike {src} isn't closed (an open spike proves nothing): finish it, then verify from it")
         body = "\n".join(sp.section(x) for x in ("Insight", "Verification evidence"))[:8000]
         return f"from spike {src}", f"Spike {src}, {sp.title}:\n{body}"
-    raise UsageError("--from takes research/NAME (a note from fm research) or T-NNNN (a closed spike)")
+    raise UsageError("--from takes research/NAME (a note from sampo research) or T-NNNN (a closed spike)")
 
 
 def _cold_read(p, assumption, proof):
@@ -573,10 +574,10 @@ def task_assume(p, args):
         text = fact + (f" — check: `{check}`" if check else "") + (f" — kill: {c.plain(kill)}" if kill else "")
         b, n = mutate(p, args.id, lambda b: b.add_assumption(text), "assumption", {"text": c.redact(fact)[:200]})
         return out(args, dict(c.brief_summary(b), n=n), f"{b.id}: assumption {n} added [assumed]"
-                   + ("; fm sentinel re-runs its check." if check else "."))
+                   + ("; sampo sentinel re-runs its check." if check else "."))
     src = getattr(args, "from_", None)
     if len(args.args) != 1 or not args.args[0].isdigit() or sum(x is not None for x in (args.run, args.evidence, src)) != 1:
-        raise UsageError("fm task assume ID verify N --run CMD | --from research/NAME|T-NNNN | --evidence \"<how it was checked>\"")
+        raise UsageError("sampo task assume ID verify N --run CMD | --from research/NAME|T-NNNN | --evidence \"<how it was checked>\"")
     n = int(args.args[0])
     cur = need_brief(p, args.id)
     this = next((a for a in cur.assumptions() if a[0] == n), None)
@@ -615,7 +616,7 @@ def task_assume(p, args):
             f"; step {', '.join(map(str, cite))} cite{'s' if len(cite) == 1 else ''} it" if cite else ""))
     return out(args, dict(c.brief_summary(b), status=status), (shown + "\n" if shown else "") + (
         f"{b.id}: assumption {n} verified." if status == "verified" else
-        f"{b.id}: assumption {n} is false — re-check the plan, and log it: fm surprise \"<expected> → <observed>\"."))
+        f"{b.id}: assumption {n} is false — re-check the plan, and log it: sampo surprise \"<expected> → <observed>\"."))
 
 
 def cmd_vetoes(args):
@@ -623,9 +624,9 @@ def cmd_vetoes(args):
     p = resolve(args)
     if args.action == "rm":
         if args.n is None or not c.drop_veto(p, args.n):
-            raise UsageError("fm vetoes rm N (N from fm vetoes)")
+            raise UsageError("sampo vetoes rm N (N from sampo vetoes)")
         return out(args, {"removed": args.n}, f"Veto {args.n} removed.")
-    v = [dict(x, retract=f"fm vetoes rm {i}") for i, x in enumerate(c.vetoes(p), 1)]  # T-1410: N counts oldest first
+    v = [dict(x, retract=f"sampo vetoes rm {i}") for i, x in enumerate(c.vetoes(p), 1)]  # T-1410: N counts oldest first
     out(args, v, "\n".join(f"{i}. {x.get('said', '')} — key words: {' '.join(x['words'])} ({str(x.get('at', ''))[:10]})"
                            f" — retract: {x['retract']}" for i, x in enumerate(v, 1)) or "No vetoes recorded.")
 
@@ -637,21 +638,21 @@ def cmd_rule(args):
     if args.action == "rm":
         n = int(args.arg) if str(args.arg or "").isdigit() else None
         if n is None or not c.drop_rule(p, n):
-            raise UsageError("fm rule rm N (N from fm rule list)")
+            raise UsageError("sampo rule rm N (N from sampo rule list)")
         return out(args, {"removed": n}, f"Rule {n} removed.")
     if args.action == "add":
         pattern, why = args.arg, args.why
         if args.from_veto is not None:
             v = c.vetoes(p)
             if not 1 <= args.from_veto <= len(v):
-                raise UsageError("fm rule add --from-veto N (N from fm vetoes)")
+                raise UsageError("sampo rule add --from-veto N (N from sampo vetoes)")
             veto = v[args.from_veto - 1]  # its key words, each starting a word, in any order (as veto_hits reads)
             pattern = "(?i)^" + "".join(rf"(?=[\s\S]*\b{re.escape(str(w))})" for w in veto["words"])
             why = why or veto.get("said")
         try:
             rec = c.add_rule(p, pattern, args.on, "warn" if args.warn else "block", why)
         except ValueError as e:
-            raise UsageError(f"fm rule add: {e}")
+            raise UsageError(f"sampo rule add: {e}")
         n = len(c.rules(p))
         if args.moves:  # T-1059: a pre-registered trial, graded in fm digest
             from sampo import trials
@@ -668,14 +669,14 @@ def cmd_surprise(args):
     p = resolve(args)
     text = c.redact(c.plain(" ".join(args.text))).strip()
     if not text:
-        raise UsageError('fm surprise "<expected> → <observed>"')
+        raise UsageError('sampo surprise "<expected> → <observed>"')
     task = need_brief(p, args.task).id if args.task else getattr(c.active_brief(c.load_briefs(p), p.lane), "id", None)
     rec = {"at": c.now(), "task": task, "text": text[:500]}
     with c.lock(p.dir):
         c.append_line(os.path.join(p.dir, "surprises.jsonl"), json.dumps(rec) + "\n")
     c.log_event(p, "surprise", task=task, data={"text": text[:300]})
     flag_replan(p, task, "surprise: " + c.fit(text, 160))
-    return out(args, rec, f"Surprise logged{f' on {task}' if task else ''}: fm friction and fm recall will bring it back.")
+    return out(args, rec, f"Surprise logged{f' on {task}' if task else ''}: sampo friction and sampo recall will bring it back.")
 
 
 def cmd_task(args):
@@ -684,8 +685,8 @@ def cmd_task(args):
     if sub in ("done", "finish", "audit", "drop") and getattr(p, "lane", None) and getattr(args, "id", None):
         own = c.find_brief(p, args.id)  # T-0234 review: a builder hands back a commit; the main thread closes the task
         if own and own.meta.get("builder"):
-            raise c.PolicyError(f"{own.id} is a builder's task: the main thread reviews, merges and closes it (fm lane "
-                                f"rm {own.id}, then fm task {sub} from the main checkout); report back instead")
+            raise c.PolicyError(f"{own.id} is a builder's task: the main thread reviews, merges and closes it (sampo lane "
+                                f"rm {own.id}, then sampo task {sub} from the main checkout); report back instead")
     if sub == "new":
         return task_new(p, args)
     if sub == "packet":
@@ -719,7 +720,7 @@ def cmd_task(args):
     if sub == "card":  # T-1541: a proved task's title card
         b = need_brief(p, args.id)
         if not b.red_green():
-            raise UsageError(f"{b.id} has no proof (a command fm ran that failed, then passed): a title card is for a "
+            raise UsageError(f"{b.id} has no proof (a command sampo ran that failed, then passed): a title card is for a "
                              "task proved red then green")
         path = write_card(p, b, os.path.abspath(args.out) if args.out else None)
         return out(args, {"id": b.id, "card": path}, f"{b.id}: title card {path}")
@@ -810,7 +811,7 @@ def cmd_task(args):
             if getattr(args, "expect_fail", False) and args.step is None:
                 raise UsageError("--expect-fail is for a step's red run (--step N); a criterion only takes a passing run")
             pre = need_brief(p, args.id)
-            c.wait_for_load("fm task evidence")  # T-2797
+            c.wait_for_load("sampo task evidence")  # T-2797
             code, output, timing = _repeat_runs(p.root, args.run, args.repeat,
                                                 c.load_scaled(args.timeout if args.timeout > 0 else None))
             cmd, result, shown = args.run, c.run_result(code, output, args.run), "\n".join(output.rstrip().splitlines()[-20:])
@@ -832,7 +833,7 @@ def cmd_task(args):
                 result, code = f"red as expected (exit {code}) · " + result.split(" · ", 1)[-1], 0
             result, tried = _step_checks(pre, args.step, args.run, code, output, result)
         elif args.cmd is None or args.result is None:
-            raise UsageError("fm task evidence needs --run CMD (preferred) or CMD RESULT")
+            raise UsageError("sampo task evidence needs --run CMD (preferred) or CMD RESULT")
         else:
             cmd, result = args.cmd, args.result
         tree = c.worktree_id(p.root)
@@ -876,7 +877,7 @@ def cmd_task(args):
         pre = need_brief(p, args.id)
         tree = c.audit_tree_past_merges(p, pre, tree)  # T-2784: other lanes' merges alone don't stale audits
         if pre.status == "dropped":  # T-0679 chaos test: a dropped task isn't finished by closing it again
-            raise c.PolicyError(f"{pre.id} is dropped: reopen it first (fm task set {pre.id} status=planned)")
+            raise c.PolicyError(f"{pre.id} is dropped: reopen it first (sampo task set {pre.id} status=planned)")
         drift, notes = sdocs.task_docs(p.root, pre.section("Docs impact")) if pre.tier in ("M", "L") else ([], [])
 
         lesson = c.plain(args.lesson or "").strip()
@@ -887,7 +888,7 @@ def cmd_task(args):
             reasons = [r + _adversary_ask(risky) if r.startswith("audit missing: adversary")
                        else r for r in b.done_blockers(since, tree, ("adversary",) if risky else ())] + drift
             from sampo import split  # T-0709: a parent closes after its children
-            reasons += [f"child {k.id} is {k.status}: finish it first (fm task capsule {k.id} shows what it returned)"
+            reasons += [f"child {k.id} is {k.status}: finish it first (sampo task capsule {k.id} shows what it returned)"
                         for k in split.open_children(p, b)]
             outside = c.scope_drift(b, files)
             if outside and not c.scope_reason_covers(b, touches, outside):
@@ -895,18 +896,18 @@ def cmd_task(args):
                 shown, left = c.more(outside, 8)
                 reasons.append(f"edited outside scope [{', '.join(b.meta.get('scope') or [])}]: "
                                f"{', '.join(shown + [left] if left else shown)}"
-                               f"; widen it (fm task set {b.id} scope=…) or say why after your last edit of {latest} "
-                               f"(fm task log {b.id} \"scope: <why>\"; a reason logged before an edit doesn't cover it)")
+                               f"; widen it (sampo task set {b.id} scope=…) or say why after your last edit of {latest} "
+                               f"(sampo task log {b.id} \"scope: <why>\"; a reason logged before an edit doesn't cover it)")
             if b.type == "CLEAN" and first_edit and not b.section("Behaviour lock").strip() and not any(
                     ts <= first_edit for ts in b.ran_times()):
-                reasons.append(f"no behaviour lock: a CLEAN change needs the tests run before its first edit (fm check "
-                               f"--evidence {b.id} --step 1), or fm task set {b.id} --section \"Behaviour lock\" --text "
+                reasons.append(f"no behaviour lock: a CLEAN change needs the tests run before its first edit (sampo check "
+                               f"--evidence {b.id} --step 1), or sampo task set {b.id} --section \"Behaviour lock\" --text "
                                f"\"none: <why>\"")
             if b.type == "RESEARCH" and not b.section("Decision").strip():  # T-0896 (was a warning, T-0599)
-                reasons.append(f"no Decision: research ends in a choice: fm task set {b.id} --section Decision --text "
+                reasons.append(f"no Decision: research ends in a choice: sampo task set {b.id} --section Decision --text "
                                f"\"Recommendation: …; would change if: …\" (or \"none: <why>\")")
             if b.tier in ("M", "L") and not lesson and not b.section("Lessons").strip():
-                reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
+                reasons.append(f"lesson missing: sampo task done {b.id} --lesson \"<what the next similar task should "
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
             from sampo import miss  # T-2369: fm task done is no way round finish's refusal
             from sampo import toolproof  # T-2372: nor round a tool's proof
@@ -916,7 +917,7 @@ def cmd_task(args):
                 + grants.safe_secret_gaps(p, b)
             if reasons:
                 lead = "" if hasattr(args, "audit") else (  # T-0849: fm task done, not finish's own close
-                    f" — one call settles most of it: fm task finish {b.id} --run \"<test cmd>\" --audit \"<how>\""
+                    f" — one call settles most of it: sampo task finish {b.id} --run \"<test cmd>\" --audit \"<how>\""
                     + (" --lens \"<lens>: <result>\" … --docs \"<…>\" --lesson \"<…>\"" if b.tier in ("M", "L") else ""))
                 raise c.PolicyError(f"{b.id} can't be marked done{lead}:\n  - " + "\n  - ".join(reasons))
             if lesson:
@@ -1021,17 +1022,17 @@ def cmd_task(args):
             + (f"\n  … and {len(by_hand) - 5} more" if len(by_hand) > 5 else "")
             if by_hand else "\nNothing needed from you: each criterion was proved by its own check."
             if not guessed and b.acceptance() else "") + (
-            f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
+            f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, sampo task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
             if guessed else "") + "".join(f"\n{x}" for x in (assumed, doors) if x) + (
-            "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(c.more(notes, 10)[0])
-            + (f"\n  … {c.more(notes, 10, 'fm docs')[1]}" if len(notes) > 10 else "") if notes else ""))
+            "\nDoc drift elsewhere (sampo docs; not from this task):\n  - " + "\n  - ".join(c.more(notes, 10)[0])
+            + (f"\n  … {c.more(notes, 10, 'sampo docs')[1]}" if len(notes) > 10 else "") if notes else ""))
     if sub == "prove":
         return task_prove(p, args)
     if sub == "finish":
         return task_finish(p, args)
     if sub == "drop" and not args.reason and not getattr(args, "done_in", None):
-        raise UsageError("fm task drop needs a reason (or --done-in ID when another task did the work)")
+        raise UsageError("sampo task drop needs a reason (or --done-in ID when another task did the work)")
     if sub in ("drop", "defer", "unblock") and _TASK_IDS.match(args.id) and not _TASK_ID.match(args.id):  # T-1877
         return _task_each(args, task_ids(p, args.id))
     if sub == "drop" and getattr(args, "done_in", None):
@@ -1092,11 +1093,11 @@ def cmd_task(args):
             # T-1879: a repeat with nothing new is a no-op
             return out(args, c.brief_summary(cur), f"{cur.id} is already {status}.")
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
-            raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
+            raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (sampo task set {cur.id} status=planned)")
         saved = []
         if status == "dropped" and cur.status in ("active", "verifying"):  # T-0895: its half-done work outlives a checkout
             try:
-                saved = c.snapshot(p.root, f"fm task drop {cur.id}", timeout=30)
+                saved = c.snapshot(p.root, f"sampo task drop {cur.id}", timeout=30)
             except RuntimeError as e:
                 print(f"fm: warning: {cur.id}'s work wasn't saved before the drop ({e})", file=sys.stderr)
         if saved:
@@ -1156,7 +1157,7 @@ def task_packet(p, args):
     repro = _repro(b)
     if args.check:  # T-0704: a handoff is trusted only while the failure it hands over still happens
         if not repro:
-            raise UsageError(f"{b.id} has no failing run recorded to reproduce (fm task evidence {b.id} --run \"<cmd>\")")
+            raise UsageError(f"{b.id} has no failing run recorded to reproduce (sampo task evidence {b.id} --run \"<cmd>\")")
         guard_stored(p, b, repro)  # T-0901 review: a recorded command, rerun
         code, output = c.run_command(p.root, repro, args.timeout)
         if code:
@@ -1175,7 +1176,7 @@ def task_packet(p, args):
              "## What it is", (b.section("Interpretation").strip() or re.sub(r"(?m)^> ?", "", b.section(
                  "Raw request")).strip() or b.title),
              "## Done when", "\n".join(f"- [{'x' if a.checked else ' '}] {a.text}" for a in b.acceptance()) or "(none)",
-             "## Reproduce", f"`{repro}` (failed when packed; fm task packet {b.id} --check reruns it)" if repro
+             "## Reproduce", f"`{repro}` (failed when packed; sampo task packet {b.id} --check reruns it)" if repro
              else "(no failing run recorded)",
              "## Steps", b.section("Steps").strip() or "(none)",
              "## Evidence so far", "\n".join(b.evidence()) or "(none)",
@@ -1198,7 +1199,7 @@ def _refuse_unrunnable(p, cmds):
         why = c.unrunnable(cmd, p.root, notes)
         for note in notes:  # T-1145: a test named before it is written is the test-first flow: keep it, say so
             print(f"fm: note: {note}: write it before the step runs, or fix the name "
-                  f"(fm task ac ID edit N --verify …)", file=sys.stderr)
+                  f"(sampo task ac ID edit N --verify …)", file=sys.stderr)
         if why:
             raise UsageError(f"verify `{cmd}` can't run: {why}. Fix it before adding it: a criterion with evidence "
                              f"can't be edited later")
@@ -1207,8 +1208,8 @@ def _refuse_unrunnable(p, cmds):
 def _lint_verify(p, cmds):
     for cmd in filter(None, cmds):
         if cmd.lstrip().startswith("typed:"):  # T-0333: fm task finish runs a verify; a typed check is evidence
-            print(f"fm: warning: verify `{cmd}` is a typed check, not a command, and fm task finish would run it: "
-                  f"leave --verify off and record it with fm task evidence ID --ac N CMD RESULT", file=sys.stderr)
+            print(f"fm: warning: verify `{cmd}` is a typed check, not a command, and sampo task finish would run it: "
+                  f"leave --verify off and record it with sampo task evidence ID --ac N CMD RESULT", file=sys.stderr)
             continue
         problems = c.lint_verify(cmd, p.root)
         if problems:
@@ -1230,7 +1231,7 @@ def guard_stored(p, b, cmd):
                       standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()))
     block = fmguard.check("Bash", {"command": cmd}, ctx)
     if block:
-        raise c.PolicyError(f"fm won't run the stored command `{c.fit(cmd, 100)}`: {fmguard.message(block, ctx)}")
+        raise c.PolicyError(f"sampo won't run the stored command `{c.fit(cmd, 100)}`: {fmguard.message(block, ctx)}")
 
 
 ABLATE_BUDGET = 600  # seconds for the whole ablation (T-1067)
@@ -1281,20 +1282,20 @@ def task_finish(p, args):
     b = need_brief(p, args.id)
     claims = parse_claims(getattr(args, "claim", None))  # a bad tag stops it before anything runs
     if b.status == "dropped":  # T-0679 chaos test
-        raise c.PolicyError(f"{b.id} is dropped: reopen it first (fm task set {b.id} status=planned)")
+        raise c.PolicyError(f"{b.id} is dropped: reopen it first (sampo task set {b.id} status=planned)")
     if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
         _commit_task(p, b, args.commit, stack=args.stack, check=args.stack_check, with_=args.with_)
         if not getattr(args, "json", False):
             print(_landed(p, b))
         return 0
     if not args.audit:
-        raise UsageError("fm task finish needs --audit \"<how the audits were done>\"")
+        raise UsageError("sampo task finish needs --audit \"<how the audits were done>\"")
     red = _red_full_check(p)
     if red:  # T-2526: T-2334 closed and committed right after its full gate failed on the same tree
-        raise c.PolicyError(f"{b.id}: the newest full fm check on this tree failed ({c.fit(c.plain(red[0]), 80)}"
+        raise c.PolicyError(f"{b.id}: the newest full sampo check on this tree failed ({c.fit(c.plain(red[0]), 80)}"
                             + (f": {', '.join(c.plain(t) for t in c.more(red[1], 5)[0])}"
                                f"{', ' + c.more(red[1], 5)[1] if len(red[1]) > 5 else ''}" if red[1] else "")
-                            + "): fix it and run fm check again before closing")
+                            + "): fix it and run sampo check again before closing")
     lenses = []
     for spec in args.lens or []:
         lens, sep, result = spec.partition(":")
@@ -1314,7 +1315,7 @@ def task_finish(p, args):
         if cmd not in runs:
             guard_stored(p, b, cmd)  # T-0901
             if not args.timings:  # T-2797: the first run waits for the load to fall; every run's limit scales with it
-                c.wait_for_load(f"fm task finish {b.id}")
+                c.wait_for_load(f"sampo task finish {b.id}")
             t0 = time.monotonic()
             runs[cmd] = c.run_command(p.root, cmd, c.load_scaled(args.timeout))
             args.timings.append((cmd, time.monotonic() - t0))
@@ -1339,7 +1340,7 @@ def task_finish(p, args):
     # T-1272: a step that has a run (a failed one, else it would have closed) is told so, not that it has no evidence
     red = [n for kind, n, cmd in todo if cmd is None and kind == "step" and b.has_evidence(step=n)]
     missing = [named(kind, n) for kind, n, cmd in todo if cmd is None and not (kind == "step" and n in red)]
-    gaps = [f"{named('step', n)}: its last run failed; record a passing run (fm task evidence {b.id} --step {n} --run CMD, or finish with --run CMD)"
+    gaps = [f"{named('step', n)}: its last run failed; record a passing run (sampo task evidence {b.id} --step {n} --run CMD, or finish with --run CMD)"
             for n in red] + ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
                               f"evidence of its own"] if missing else []) + _finish_gaps(b, args, lenses, p) + _self_docs_gaps(p, b) \
         + _file_map_gaps(p, b) + [g for g in [b.proof_gap(then=[cmd for _, _, cmd in todo] + [args.run])] if g] \
@@ -1471,7 +1472,7 @@ def task_finish(p, args):
         from sampo import eco
         src = done and done.status == "done" and eco.closing_sha(done) and eco.ticket_source(done)
         if src:  # T-1870: outward, so named here and never done unasked
-            print(f"Post it back (outward, only when wanted, once pushed): fm inbox ticket --post {b.id} — one "
+            print(f"Post it back (outward, only when wanted, once pushed): sampo inbox ticket --post {b.id} — one "
                   f"comment on {src[0]} {src[1]}")
         print(_landed(p, b))  # T-0956: the close's last line
     return rc
@@ -1531,7 +1532,7 @@ def _blueprint(b, files, measured, strip):
             f'<line x1="{bx}" y1="{by + 32}" x2="{bx + 320}" y2="{by + 32}" stroke="{ink}"/>',
             f'<text x="{bx + 12}" y="{by + 22}" font-size="13" fill="{ink}">{esc(b.type)} {esc(b.tier)} · '
             f'{esc(b.status)}</text>',
-            f'<text x="{bx + 12}" y="{by + 56}" font-size="12" fill="{faint}">drawn by fm task receipt --svg</text>',
+            f'<text x="{bx + 12}" y="{by + 56}" font-size="12" fill="{faint}">drawn by sampo task receipt --svg</text>',
             f'<text x="{bx + 12}" y="{by + 80}" font-size="12" fill="{faint}">{esc(str(b.meta.get("updated") or "")[:10])}'
             f'</text></svg>']
     return "\n".join(out) + "\n"
@@ -1657,7 +1658,7 @@ def _close_affected(p, b, runs, args):
                {"cmd": c.fit(cmd, 200), "waived": c.fit(waive, 200)})
         return
     guard_stored(p, b, cmd)
-    c.wait_for_load(f"fm task finish {b.id}")  # T-2797
+    c.wait_for_load(f"sampo task finish {b.id}")  # T-2797
     env, timeout = _skip_env(skip), c.load_scaled(args.timeout if args.timeout > 0 else None)
     t0 = time.monotonic()
     code, output = c.run_command(p.root, cmd, timeout, env=env)
@@ -1693,7 +1694,7 @@ def _close_affected(p, b, runs, args):
     raise c.PolicyError(f"{b.id} not finished: the tests linked to its changes fail"
                         + (f" ({', '.join(n6 + [left6] if left6 else n6)})" if names else " (the runner names no test)")
                         + f": {cmd} → {c.run_result(code, output)}. Fix them; if they were red before this task, a "
-                        "full fm check records that and the close goes through; or waive on the record: "
+                        "full sampo check records that and the close goes through; or waive on the record: "
                         "--skip-affected \"<why>\"")
 
 
@@ -2107,7 +2108,7 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
     files = [f for f in files if f not in users]
     if users and not dry:
         print(f"{b.id}: left out {len(users)} file(s) that were already uncommitted when the task was focused: "
-              f"{', '.join(users[:8])} (fm task finish {b.id} --commit ... --with FILE commits one)")
+              f"{', '.join(users[:8])} (sampo task finish {b.id} --commit ... --with FILE commits one)")
     # T-1235: uncommitted files this task never changed (edited before its focus, often under another task) were left
     # out without a word; they're named now, and --with FILE commits one
     st = c._git(p.root, "status", "--porcelain", "-z", "-uall", "--no-renames", timeout=30)
@@ -2117,7 +2118,7 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
     rest = [f for f in rest if f not in wanted]
     if rest and not dry:
         print(f"{b.id}: left out {len(rest)} uncommitted file(s) it didn't change: {', '.join(rest[:8])}"
-              f"{' …' if len(rest) > 8 else ''} (fm task finish {b.id} --commit ... --with FILE commits one)")
+              f"{' …' if len(rest) > 8 else ''} (sampo task finish {b.id} --commit ... --with FILE commits one)")
     files += [".foreman"] if mirror else []
     elsewhere = {}  # T-0360: edits in another checkout are that repo's to commit, so say where they are
     for e in c.ledger_tail(p, c.TASK_WINDOW):
@@ -2180,7 +2181,7 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
                              f"printed): " + ", ".join(f"{f}:{n} ({k})" for f, n, k in leaks[:10])
                              + f". Remove it (and rotate a real one), or mark a test fixture's line "
                                f"`{secrets.ALLOW}`, then commit"
-                             + ("." if dry else f" (fm task finish {b.id} --commit \"<message>\" retries it)."))
+                             + ("." if dry else f" (sampo task finish {b.id} --commit \"<message>\" retries it)."))
     if dry:
         return
     if add.returncode == 0 and not subprocess.run([*git, "diff", "--cached", "--quiet", "--", *files]).returncode:
@@ -2300,7 +2301,7 @@ def task_prove_hunks(p, b, args):
             args, args.hunks_result, f"{b.id}: no code hunks to prove (tests and docs aren't mutated)")
     shown = hunks[:args.max]
     commit = c._git(p.root, "-c", "user.name=Sampo", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
-                    "commit-tree", "--no-gpg-sign", tree, "-m", "fm prove --hunks", timeout=60).strip()
+                    "commit-tree", "--no-gpg-sign", tree, "-m", "sampo prove --hunks", timeout=60).strip()
     if not commit:
         raise UsageError("git commit-tree of the current tree failed: prove --hunks needs a scratch commit of it")
     unproven, skipped, tick, unreached = [], [], [time.time() + 2], 0
@@ -2330,7 +2331,7 @@ def task_prove_hunks(p, b, args):
             # the task's base, or a crashing mutation runs the unmutated code and passes (the scratch commit stays in
             # the index and the files)
             base_commit = c._git(p.root, "-c", "user.name=Sampo", "-c", "user.email=foreman@localhost",
-                                 "commit-tree", "--no-gpg-sign", f"{base}^{{tree}}", "-m", "fm prove --hunks base",
+                                 "commit-tree", "--no-gpg-sign", f"{base}^{{tree}}", "-m", "sampo prove --hunks base",
                                  timeout=60).strip()
             if not base_commit or c._git(wt, "reset", "-q", "--soft", base_commit, fail=None, timeout=60) is None:
                 raise UsageError("couldn't point the scratch worktree's HEAD at the task's base")
@@ -2374,7 +2375,7 @@ def task_prove_hunks(p, b, args):
     detail = "; unproven: " + "; ".join(f"{u['file']} {u['at']}" for u in unproven) if unproven else ""
     quiet = getattr(args, "quiet", False)  # T-1067: at close the finish output carries it; no evidence line
     if not quiet:
-        mutate(p, b.id, lambda x: x.add_evidence(f"fm task prove --hunks: {args.run}",
+        mutate(p, b.id, lambda x: x.add_evidence(f"sampo task prove --hunks: {args.run}",
                                                  ("exit 0 · " if complete else "") + summary + detail,
                                                  step=args.step, ac=args.ac, tree=c.worktree_id(p.root), ran=True,
                                                  inconclusive=not complete),
@@ -2404,7 +2405,7 @@ def task_prove(p, args):
     if getattr(args, "same", None):
         return task_prove_same(p, b, args)
     if not args.run:
-        raise UsageError("fm task prove ID --run CMD (or --hunks, --vacuous, --same CMD)")
+        raise UsageError("sampo task prove ID --run CMD (or --hunks, --vacuous, --same CMD)")
     base = b.meta.get("base")
     if not base:
         raise UsageError(f"{b.id} has no start commit on record: prove needs the tree the task started from")
@@ -2467,7 +2468,7 @@ def _run_at(p, rev, cmd, timeout):
     import tempfile
     guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd)  # T-0901 review: --vacuous runs stored verifies
     if c._git(p.root, "cat-file", "-t", rev, timeout=10).strip() == "tree":
-        rev = c._git(p.root, "commit-tree", "--no-gpg-sign", rev, "-m", "fm scratch", timeout=60).strip()
+        rev = c._git(p.root, "commit-tree", "--no-gpg-sign", rev, "-m", "sampo scratch", timeout=60).strip()
     if not rev:
         raise UsageError("git couldn't make a scratch commit of the start tree")
     with tempfile.TemporaryDirectory(prefix="fm-at-") as t:
@@ -2489,7 +2490,7 @@ def cmd_at(args):
     p = resolve(args)
     words = args.words[1:] if args.words[:1] == ["--"] else args.words
     if not words:
-        raise UsageError("fm at TARGET -- <command> (TARGET: a task id, or a commit, branch or tag)")
+        raise UsageError("sampo at TARGET -- <command> (TARGET: a task id, or a commit, branch or tag)")
     if re.fullmatch(r"T-\d+", args.target):
         rev = c.task_base(p.root, need_brief(p, args.target))
         if not rev:
@@ -2609,7 +2610,7 @@ def task_done_in(p, args):
         b, h = need_brief(p, args.id), need_brief(p, host)
         if b.status not in ("captured", "planned") or b.evidence():
             raise c.PolicyError(f"{b.id} was started ({b.status}, {len(b.evidence())} evidence line(s)): finish it "
-                                f"through its own gates (fm task done) rather than --done-in")
+                                f"through its own gates (sampo task done) rather than --done-in")
         if h.status in ("captured", "dropped") or not h.evidence():
             raise c.PolicyError(f"{h.id} hasn't done any work yet ({h.status}, no evidence): --done-in points at the "
                                 f"task that really did it")
@@ -2682,14 +2683,14 @@ def _close_warnings_of(p, b, files):
     from sampo import second
     still = second.open_dissent(b)  # T-0642: an objection nobody answered is worth one line at the close
     dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
-               + f" — answer or note each: fm task dissent {b.id} resolve N \"<how>\"") if still else None
+               + f" — answer or note each: sampo task dissent {b.id} resolve N \"<how>\"") if still else None
     honest = _honest(p, b)  # T-0661
     steers = [t[6:].strip() for e in c.ledger_tail(p, 3000) if e.get("event") == "note" and e.get("task") == b.id
               and (t := str((e.get("data") or {}).get("text") or "")).startswith("steer:")]
     standing = [x for x in steers if c.STANDING_STEER.search(x)]
     if standing:  # T-0601: a steer meant to last should outlive this task
         honest.append("Standing steer(s) on this task, rule candidates: " + "; ".join(f"\"{c.fit(x, 90)}\"" for x in
-                      standing[:3]) + " — a 'no' is now a proposed veto (fm taste; adopted only on the user's yes), "
+                      standing[:3]) + " — a 'no' is now a proposed veto (sampo taste; adopted only on the user's yes), "
                       "anything else a line for the project's CLAUDE.md or memory, asked first")
     honest += [f"stale evidence: {path} changed after step {n}'s check last ran (`{c.fit(cmd, 60)}`): run it again"
                for n, path, cmd in _stale_evidence(p, b)[:3]]  # T-0634
@@ -2716,12 +2717,12 @@ def _close_warnings_of(p, b, files):
     unexplained = [f for f in gone if f not in why]
     if unexplained:  # T-0600: a Chesterton check — say why a thing existed before it goes
         shown, left = c.more(unexplained, 6)
-        honest.append(f"deleted without saying why it existed: {', '.join(shown + [left] if left else shown)} — fm why <file>, then fm task "
+        honest.append(f"deleted without saying why it existed: {', '.join(shown + [left] if left else shown)} — sampo why <file>, then sampo task "
                       f"set {b.id} --section Origins --text \"- <file>: <why it was there>\"")
     if b.tier == "L" and not b.section("Risks and rollback").strip():  # T-0626
         honest.append("an L task closed with no Risks and rollback section: what undoes it if it goes wrong?")
     if b.meta.get("replan"):  # T-0603: a surprise the plan never answered
-        honest.append(f"closed with a replan never answered ({c.fit(b.meta['replan'], 100)}): fm task log {b.id} "
+        honest.append(f"closed with a replan never answered ({c.fit(b.meta['replan'], 100)}): sampo task log {b.id} "
                       f"\"replan: <what changed, or why nothing had to>\"")
     return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else []) + honest
 
@@ -2830,7 +2831,7 @@ def _bench(p, b, cmd, n, timeout, under=None):
     import tempfile
     base = b.meta.get("base")
     if not base:
-        raise UsageError(f"{b.id} has no start commit on record: --bench needs the tree the task started from (fm focus it first)")
+        raise UsageError(f"{b.id} has no start commit on record: --bench needs the tree the task started from (sampo focus it first)")
     start = time.monotonic()
 
     import shlex
@@ -2935,7 +2936,7 @@ def _evidence_notes(b, step, result, tried):
                      f"step done")
     if tried:
         notes.append(f"this exact command has now failed {tried} times on step {step}: change something first (a "
-                     f"hypothesis with its probe, fm task hypo {b.id} add …, or a smaller step)")
+                     f"hypothesis with its probe, sampo task hypo {b.id} add …, or a smaller step)")
     return notes
 
 
@@ -3006,7 +3007,7 @@ def _preflight(p, b):
                 and not any(r.get("exit") for r in (e.get("data") or {}).get("results") or [])
                 for e in c.ledger_tail(p, 3000))
     notes.append("gates ran green on this tree (baseline cached)" if green else
-                 "no fm check on this tree yet: fm check now gives a baseline to compare against")
+                 "no sampo check on this tree yet: sampo check now gives a baseline to compare against")
     return "Preflight: " + "; ".join(notes)
 
 
@@ -3110,8 +3111,8 @@ def spike_note(b):
     focus, not a gate, and none once a step spikes, probes or prototypes."""
     if b.type != "FEATURE" or b.tier != "L" or any(re.search(r"(?i)\b(spike|probe|prototyp)", s.text) for s in b.steps()):
         return ""
-    return (f"Spike first: an L feature's riskiest unknown is cheapest to find in a throwaway lane (fm lane new {b.id} "
-            f"--spike) before step 1; then fm task step {b.id} add 'spike: <the unknown>' so the brief records it.")
+    return (f"Spike first: an L feature's riskiest unknown is cheapest to find in a throwaway lane (sampo lane new {b.id} "
+            f"--spike) before step 1; then sampo task step {b.id} add 'spike: <the unknown>' so the brief records it.")
 
 
 def step_order(b):
@@ -3162,7 +3163,7 @@ def _not_verified(p, b, files):
             and not any(fnmatch.fnmatch(f, g) for globs in gates for g in globs)
             and not any(t in files or t in ran for t in smap.tests_for(m, [f]))]
     return (f"not verified: {', '.join(bare[:8])}{' …' if len(bare) > 8 else ''} — no linked test changed or ran "
-            f"(fm task prove {b.id} --hunks names the hunks no check notices)") if bare else None
+            f"(sampo task prove {b.id} --hunks names the hunks no check notices)") if bare else None
 
 
 def _tier_drift(p, b, files):
@@ -3202,7 +3203,7 @@ def cmd_batch(args):
         groups = c.related_groups(c.load_briefs(p))
         if not args.apply:
             return out(args, {"groups": [[x.id for x in g] for g in groups]}, "\n".join(
-                f"fm batch {' '.join(x.id for x in g)}  # {c.fit(g[0].title, 60)}" for g in groups)
+                f"sampo batch {' '.join(x.id for x in g)}  # {c.fit(g[0].title, 60)}" for g in groups)
                 or "nothing related enough to batch")
         made = [_make_batch(p, [x.id for x in g], None) for g in groups]
         return out(args, {"batches": [dict(c.brief_summary(h), members=m) for h, m in made]}, "\n".join(
@@ -3212,7 +3213,7 @@ def cmd_batch(args):
         raise UsageError("--apply goes with --suggest")
     h, ids = _make_batch(p, args.ids, args.title)
     out(args, dict(c.brief_summary(h), members=ids),
-        f"{h.id} [{h.type} {h.tier}] {h.title} — batch of {', '.join(ids)} (plan its verify commands, then fm focus "
+        f"{h.id} [{h.type} {h.tier}] {h.title} — batch of {', '.join(ids)} (plan its verify commands, then sampo focus "
         f"{h.id}; each member closes done in {h.id})")
 
 
@@ -3381,7 +3382,7 @@ def task_set(p, args):
     for cat in args.allow or []:
         if cat in fmguard.USER_ONLY:
             raise c.PolicyError(f"{cat} can't be granted from the command line (whoever runs it); request it with "
-                                f"`fm ask ID {cat} --why \"…\"` and the user's yes grants it")
+                                f"`sampo ask ID {cat} --why \"…\"` and the user's yes grants it")
         if cat not in fmguard.CATEGORIES or cat in fmguard.NOT_AUTHORIZABLE:
             raise UsageError(f"can't allow {cat!r}; authorizable: " + ", ".join(
                 x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE | fmguard.USER_ONLY))
@@ -3397,14 +3398,14 @@ def task_set(p, args):
                              + (f"; {sec} is a brief section: --section {sec!r} --text \"…\"" if sec else ""))
         if v == "" and k in CLEARABLE:  # T-1126: an empty value clears an optional field
             if k.startswith("predict_") and need_brief(p, args.id).meta.get("plan0_at"):
-                raise UsageError(f"{k} is fixed once work has started (fm focus); the close scores it as planned")
+                raise UsageError(f"{k} is fixed once work has started (sampo focus); the close scores it as planned")
             if k == "confidence" and need_brief(p, args.id).meta.get("plan0_at") and \
                     need_brief(p, args.id).meta.get("confidence"):  # T-2337: a stated number is a write-once bet
-                raise UsageError("confidence is a bet in the calibration ledger once stated after fm focus: it can't be cleared")
+                raise UsageError("confidence is a bet in the calibration ledger once stated after sampo focus: it can't be cleared")
             changes[k] = None
             continue
         if k == "status" and v not in SETTABLE_STATUS:
-            raise UsageError(f"status {v!r} not settable here (use fm task done/drop, or one of {sorted(SETTABLE_STATUS)})")
+            raise UsageError(f"status {v!r} not settable here (use sampo task done/drop, or one of {sorted(SETTABLE_STATUS)})")
         if k == "type":
             v = c.WORK_TAGS.get(v.upper(), v.upper())
             if v not in c.TYPES:
@@ -3415,20 +3416,20 @@ def task_set(p, args):
             b = need_brief(p, args.id)
             if b.type == "FEATURE" and b.tier == "L" and not b.section("Build vs reuse").strip() and \
                     not any(sec == "Build vs reuse" and txt.strip() for sec, txt in _section_pairs(args)):
-                raise UsageError(f"{b.id} is a FEATURE L: before it's approved, say what it builds on — fm task set "
-                                 f"{b.id} --section \"Build vs reuse\" --text \"<the fm command, module or library it "
-                                 f"reuses, or why nothing fits (fm recall, fm map)>\"")
+                raise UsageError(f"{b.id} is a FEATURE L: before it's approved, say what it builds on — sampo task set "
+                                 f"{b.id} --section \"Build vs reuse\" --text \"<the sampo command, module or library it "
+                                 f"reuses, or why nothing fits (sampo recall, sampo map)>\"")
         if k == "confidence" and not (v.isdecimal() and 0 <= int(v) <= 100):  # T-0619
             raise UsageError("confidence is a whole percent, 0-100: how likely the task holds on its first finish")
         if k == "confidence":  # T-2337: once stated after work began, it's a bet in the calibration ledger: write-once
             cb = need_brief(p, args.id)
             if cb.meta.get("plan0_at") and cb.meta.get("confidence") and str(cb.meta["confidence"]) != v:
                 raise UsageError(f"confidence {cb.meta['confidence']} is a bet in the calibration ledger: a stated value "
-                                 f"can't be edited after fm focus")
+                                 f"can't be edited after sampo focus")
         if k == "cost_cap":  # T-1083: tokens, like fm cost; stored as the count
             from sampo import cost
             if (n := cost.parse_tokens(v)) is None:
-                raise UsageError("cost_cap is input-equivalent tokens, fm cost's unit: 200k, 2M or 150000 "
+                raise UsageError("cost_cap is input-equivalent tokens, sampo cost's unit: 200k, 2M or 150000 "
                                  "(empty or 0 removes it)")
             if n == 0:
                 changes[k] = None
@@ -3439,7 +3440,7 @@ def task_set(p, args):
             if not (v.isdecimal() and 0 < int(v) <= cap):
                 raise UsageError(f"{k} is a whole number from 1 to {cap}: the plan's guess, compared at the close")
             if need_brief(p, args.id).meta.get("plan0_at"):
-                raise UsageError(f"{k} is fixed once work has started (fm focus); the close scores it as planned")
+                raise UsageError(f"{k} is fixed once work has started (sampo focus); the close scores it as planned")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
         changes[k] = _list_value(v) if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
@@ -3447,7 +3448,7 @@ def task_set(p, args):
 
     def apply(b):
         if changes.get("status") in ("active", "verifying") and b.status not in ("active", "verifying"):
-            raise c.PolicyError(f"{b.id}: start a task with fm focus {b.id}, which keeps one active task per checkout "
+            raise c.PolicyError(f"{b.id}: start a task with sampo focus {b.id}, which keeps one active task per checkout "
                                 f"(T-0134 review)")
         tiers = "SML"
         if "tier" in changes and changes["tier"] in tiers and b.tier in tiers and \
@@ -3544,7 +3545,7 @@ def task_step(p, args):
         raise UsageError(f"step number expected, got {args.arg!r}")
     if args.action in ("edit", "rm"):  # T-1959
         if args.action == "edit" and not (args.text or "").strip():
-            raise UsageError("fm task step ID edit N needs the new text: fm task step ID edit N \"<text>\"")
+            raise UsageError("sampo task step ID edit N needs the new text: sampo task step ID edit N \"<text>\"")
         try:
             b, _ = mutate(p, args.id, lambda b: b.edit_step(n, args.text) if args.action == "edit" else b.remove_step(n),
                           "step_reword" if args.action == "edit" else "step_remove", {"step": n, "text": args.text})  # step_edit: a file edit
@@ -3588,7 +3589,7 @@ def task_ac(p, args):
         raise UsageError(f"criterion number expected, got {args.arg!r}")
     if args.action == "edit":
         if args.verify is None and not args.text:
-            raise UsageError("fm task ac ID edit N needs --verify CMD and/or --text TEXT")
+            raise UsageError("sampo task ac ID edit N needs --verify CMD and/or --text TEXT")
         text, verify = args.text, args.verify
         if text:  # T-2786: 'TEXT :: CMD' or 'TEXT — verify with `CMD`' carries the verify; --verify wins
             text, found = c.split_verify(text)
@@ -3618,7 +3619,7 @@ def cmd_focus(args):
     peek = None
     try:
         peek = need_brief(p, args.id)
-        if peek.tier in ("M", "L") and "Blast radius (fm graph blast)" not in peek.section("Risks and rollback"):
+        if peek.tier in ("M", "L") and not _BLAST_LINE.search(peek.section("Risks and rollback")):
             from sampo import graph
             blast = graph.blast_line(p, peek.meta.get("scope"), text="\n".join(
                 peek.section(s) for s in ("Interpretation", "Approach (options → choice → why)", "Steps")))  # T-2336
@@ -3634,17 +3635,17 @@ def cmd_focus(args):
         if target.meta.get("lane_only") and not p.lane and not target.meta.get("lane"):
             # T-2355: a queue- or lane-routed trigger's work lands on a branch; once briefed, main focuses it to close
             raise c.PolicyError(f"{target.id} came from a trigger routed to the queue or a lane: it starts in a lane, "
-                                f"never on main: fm lane brief {target.id}")
+                                f"never on main: sampo lane brief {target.id}")
         stage_before = c.stage(target)  # T-1137: focus saves outside mutate, so it logs its own stage move
         gaps = [] if target.status in ("active", "verifying") else \
             c.plan_gaps(target, c.effective_autonomy(p))
         if gaps:
             raise c.PolicyError(f"{target.id} isn't planned enough to start: missing {', '.join(gaps)} "
-                                f"(fm task set/ac/step, or /foreman:intake; fm next says what's next)")
+                                f"(sampo task set/ac/step, or /foreman:intake; sampo next says what's next)")
         if c.held_elsewhere(target, p.lane):  # T-0134: one checkout works a task at a time
             where = target.meta.get("lane") or "the main checkout"
             raise c.PolicyError(f"{target.id} is held by {'lane ' if target.meta.get('lane') else ''}{where}: work on it "
-                                f"there (fm lane list), or fm lane rm it first")
+                                f"there (sampo lane list), or sampo lane rm it first")
         if target.meta.get("lane") != p.lane:  # moving between checkouts: its start point is taken here, afresh
             for k in ("base", "base_tree", "paused_tree"):
                 target.meta.pop(k, None)
@@ -3705,7 +3706,7 @@ def cmd_focus(args):
         if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since (kept for fresh sessions)
             related = (related + "\n" if related else "") + moved
             target.set_section("Preflight", moved + "\n")
-        if blast and "Blast radius (fm graph blast)" not in target.section("Risks and rollback"):
+        if blast and not _BLAST_LINE.search(target.section("Risks and rollback")):
             old = target.section("Risks and rollback").strip()  # T-2277: written once into the plan
             target.set_section("Risks and rollback", (old + "\n" if old else "") + blast)
         if not target.meta.get("plan0_at"):  # T-1061: the plan at first focus, which the close is scored against
@@ -3753,7 +3754,7 @@ def cmd_focus(args):
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
         + (f"\nStale since it started (gone from the repo now): {', '.join(stale)} — re-check the brief." if stale else "")
         + (f"\n{related}" if related else "") + (f"\n{record}" if record else "")
-        + f"\nDone needs: {', '.join(g for g, _ in gates(target.type, target.tier))} (fm gates {target.id})")
+        + f"\nDone needs: {', '.join(g for g, _ in gates(target.type, target.tier))} (sampo gates {target.id})")
 
 
 def _ready_stdin():
@@ -3776,7 +3777,7 @@ def cmd_quiet(args):
     import time
     words = args.words[1:] if args.words[:1] == ["--"] else args.words
     if not words:
-        raise UsageError("fm quiet -- <command>")
+        raise UsageError("sampo quiet -- <command>")
     t0 = time.monotonic()
     import shlex  # one word is a shell string ("pytest | tail"); several are argv, quoted as given
     code, output = c.run_command(os.getcwd(), words[0] if len(words) == 1 else shlex.join(words), args.timeout,
@@ -3795,21 +3796,21 @@ def cmd_quiet(args):
 def gates(type_, tier):
     """What fm task done checks for this type and tier: [(short, how)]."""
     audits = " + ".join(" or ".join(sorted(g)) for g in c.REQUIRED_AUDITS[tier])
-    need = [("evidence", "every step and criterion has a check fm ran (--run) or a typed one for what can't run here"),
-            ("audits", f"{audits}, recorded after the last change (fm audit prep ID); adversary as well when the "
+    need = [("evidence", "every step and criterion has a check sampo ran (--run) or a typed one for what can't run here"),
+            ("audits", f"{audits}, recorded after the last change (sampo audit prep ID); adversary as well when the "
                        f"change touches auth, crypto, secrets, exec or deserialization")]
     if tier in ("M", "L"):
         need += [("docs impact", "--section \"Docs impact\" (updated docs, or none: why)"),
-                 ("lesson", "fm task done ID --lesson \"…\"")]
+                 ("lesson", "sampo task done ID --lesson \"…\"")]
         if type_ == "FIX":  # T-1977: fm task finish refuses an M/L fix without it (_close_gaps)
-            need.append(("why-not-caught", "fm task finish --why-not-caught \"<the test, gate or guard that would have "
+            need.append(("why-not-caught", "sampo task finish --why-not-caught \"<the test, gate or guard that would have "
                                            "caught it>\" (or none: why)"))
-    need += {"FIX": [("red→green", "fm task prove ID --run \"<test>\" (or --section \"Regression test\" none: why)")],
-             "PERFORMANCE": [("numbers", "fm task finish --numbers (or --section \"Measurements\"): <metric> before → after")],
-             "CLEAN": [("behaviour lock", "tests run (fm check --evidence ID --step 1) before the first project-file "
+    need += {"FIX": [("red→green", "sampo task prove ID --run \"<test>\" (or --section \"Regression test\" none: why)")],
+             "PERFORMANCE": [("numbers", "sampo task finish --numbers (or --section \"Measurements\"): <metric> before → after")],
+             "CLEAN": [("behaviour lock", "tests run (sampo check --evidence ID --step 1) before the first project-file "
                                           "edit; none when it edits no project file (a ship task; T-1982)")]
              }.get(type_, [])
-    need.append(("scope", "a reason for edits outside the scope globs (fm task log ID \"scope: …\")"))
+    need.append(("scope", "a reason for edits outside the scope globs (sampo task log ID \"scope: …\")"))
     return need
 
 
@@ -3818,14 +3819,14 @@ def cmd_gates(args):
     if args.type and re.fullmatch(r"T-\d+", args.type):  # T-1955: fm gates ID, as fm focus's "Done needs" line invites
         act, args.type = need_brief(p, args.type), None
     elif args.type and args.type not in c.TYPES:
-        raise UsageError(f"fm gates: {args.type!r} is neither a task id nor a type ({', '.join(c.TYPES)})")
+        raise UsageError(f"sampo gates: {args.type!r} is neither a task id nor a type ({', '.join(c.TYPES)})")
     else:
         act = c.active_brief(c.load_briefs(p), p.lane)
     type_, tier = args.type or (act.type if act else "FEATURE"), args.tier or (act.tier if act else "S")
     need = gates(type_, tier)
     out(args, {"type": type_, "tier": tier, "gates": [{"gate": g, "how": h} for g, h in need]},
-        f"fm task done needs ({type_} {tier}):\n" + "\n".join(f"- {g}: {h}" for g, h in need)
-        + ("\nS shortcut: fm task finish ID --run \"<check>\" --audit \"<how>\"" if tier == "S" else ""))
+        f"sampo task done needs ({type_} {tier}):\n" + "\n".join(f"- {g}: {h}" for g, h in need)
+        + ("\nS shortcut: sampo task finish ID --run \"<check>\" --audit \"<how>\"" if tier == "S" else ""))
 
 
 def _moved_since_planned(p, b):
@@ -3858,7 +3859,7 @@ def cmd_resume(args):
         goal = None  # a goal that can't be read never stops a resume
     r["resume"] = "\n".join(l for l in (r.get("resume") or "").splitlines() if not l.startswith("- Goal: "))  # stale
     if not r["id"]:
-        shown, left = c.more([q["id"] for q in c.state_dict(p)["queue"]], 3, "fm queue")
+        shown, left = c.more([q["id"] for q in c.state_dict(p)["queue"]], 3, "sampo queue")
         nxt = ", ".join(shown + [left] if left else shown) or "none"
         return out(args, r, f"No active task. Next in queue: {nxt}" + (f"\n{goal}" if goal else ""))
     step = f"step {r['step']['n']}/{r['step']['of']}: {r['step']['text']}" if r["step"] else f"{r['steps_done']}/{r['steps_total']} steps done"
@@ -3982,7 +3983,7 @@ def cmd_sensitive(args):
         hits = sensitive_signals(root)
         return out(args, {"root": root, "signals": hits},
                    "\n".join([f"Signals that {root} is sensitive:"] + [f"  {c.plain(h)}" for h in hits[:40]]
-                             + ["fm sensitive on would mark it; nothing was changed."]) if hits else
+                             + ["sampo sensitive on would mark it; nothing was changed."]) if hits else
                    f"No signals in {root} (.env*, *.pem, secret or prod in a path); nothing was changed.")
     if args.path:
         root = c.git_root(args.path) or os.path.abspath(args.path)
@@ -4071,12 +4072,12 @@ def cmd_ask(args):
         raise UsageError(f"can't ask for {', '.join(bad)}; askable: {', '.join(ok)}")
     why = c.redact(args.why)
     if args.standing and cats != ["core"]:
-        raise UsageError("--standing is for core alone: fm ask ID core --standing --why \"…\"")
+        raise UsageError("--standing is for core alone: sampo ask ID core --standing --why \"…\"")
     if args.pin:
         from sampo import plugins
         if "plugin" not in cats or plugins.content_hash(args.pin) is None:
             raise UsageError(f"--pin names a plugin to install or enable with the plugin category; {args.pin!r} "
-                             f"isn't in the known marketplaces or installed (fm plugins find <need>)")
+                             f"isn't in the known marketplaces or installed (sampo plugins find <need>)")
     if args.needs_env and not args.later:
         raise UsageError("--needs-env names a secret on a queued request: add --later")
     if args.later:  # T-2374: a request only the user can answer, on the task; nothing here can grant it
@@ -4093,7 +4094,7 @@ def cmd_ask(args):
         state, d = grants.queue(p, b.id, cats, why, pin=args.pin, fallback=args.fallback, session=session(),
                                   env=args.needs_env)
         what = f"{', '.join(cats)}{' ' + args.pin if args.pin else ''}"
-        msg = {"queued": f"Queued for the user: {what} on {b.id}. It grants nothing and never expires; fm todo lists it. "
+        msg = {"queued": f"Queued for the user: {what} on {b.id}. It grants nothing and never expires; sampo todo lists it. "
                          f"Carry on with the steps that don't need it.",
                "dedupe": f"{what} is already queued on {b.id}: nothing added.",
                "refused": f"The user said no to {what} earlier: it is not requested again. Use the fallback."}[state]
@@ -4110,9 +4111,9 @@ def cmd_ask(args):
         seen = _take_seen_ask(p, b.id, cats)
         sid = seen and seen.get("session")
         if not sid:
-            raise UsageError("fm ask must run as its own Bash command in the Claude Code session that asks: the hook "
+            raise UsageError("sampo ask must run as its own Bash command in the Claude Code session that asks: the hook "
                              "ties the request to that session (it saw no matching call, so nothing was recorded). "
-                             "If it was its own command, state was busy: run the same fm ask again")
+                             "If it was its own command, state was busy: run the same sampo ask again")
         meta = c.read_meta(p)
         pend = [a for a in meta.get("pending_approvals") or [] if a.get("task") != b.id]
         pend.append(dict({"task": b.id, "allow": cats, "why": why, "session": sid, "at": c.now(),
@@ -4132,7 +4133,7 @@ def cmd_ask(args):
         if seen.get("dialog") else ""
     n, cat = max((mine[x], x) for x in cats)
     tired = (f" Approval fatigue: {cat} asked {n} times this session; batch the rest of the work already in the "
-             "plan into one ask" + (" (fm ask ID core --standing covers every task)" if cat == "core" else "")
+             "plan into one ask" + (" (sampo ask ID core --standing covers every task)" if cat == "core" else "")
              + " rather than one per step.") if n >= FATIGUE_ASKS else ""
     out(args, {"task": b.id, "allow": cats, "why": why, "asked_this_session": n},
         f"Pending: {b.id} {', '.join(cats)} ({why}).{reload} Ask the user one yes/no question for it now; their next "
@@ -4160,17 +4161,17 @@ def cmd_todo(args):
             fresh = bool(at) and time.time() - at.timestamp() < c.APPROVAL_TTL  # the hook's own rule (fmhooks)
             todo.append({"kind": "ask", "task": a.get("task"), "text": f"{cats}: {a.get('why') or 'no reason given'}",
                          "command": (f"reply \"yes\" in the session that asked (grants {cats} for {a.get('task')}); anything "
-                                     f"else cancels") if fresh else "expired: ask again (fm ask)"})
+                                     f"else cancels") if fresh else "expired: ask again (sampo ask)"})
     for tid in unanswered_asks(p):  # T-0622: requests the last session missed
         todo.append({"kind": "unanswered", "task": tid, "text": "a request the last session didn't answer",
-                     "command": f"fm task show {tid}; answer it or fm task drop {tid} \"reason\""})
+                     "command": f"sampo task show {tid}; answer it or sampo task drop {tid} \"reason\""})
     for b in briefs:
         if b.status == "blocked":
             why = next((l.split("blocked:", 1)[1].strip() for l in reversed(b.section("Log").splitlines())
                         if "blocked:" in l), "")
             if _USER_BLOCK.search(why):
                 todo.append({"kind": "block", "task": b.id, "text": why,
-                             "command": f"do it, then fm task set {b.id} status=planned"})
+                             "command": f"do it, then sampo task set {b.id} status=planned"})
     # a decision can't be completed by the user, so only the last 7 days are listed and older ones counted
     rows, older, cut = c._decision_rows(p), 0, (c.datetime.date.today() - c.datetime.timedelta(days=7)).isoformat()
     for i, (date, tags, text) in enumerate(rows):
@@ -4180,14 +4181,14 @@ def cmd_todo(args):
                 older += 1
             else:
                 todo.append({"kind": "decision", "task": None, "text": f"[{kind.group(1)}] {text}",
-                             "command": "fm decide --review; fm decide \"<new>\" --reverses \"<words of it>\" to undo"})
+                             "command": "sampo decide --review; sampo decide \"<new>\" --reverses \"<words of it>\" to undo"})
     shown = todo[:20]
     lines = [f"- {e['task'] + ' ' if e['task'] else ''}{e['kind']}: {e['text']}"
              + (f"\n    unblocks: {e['unblocks']}" if e.get("unblocks") else "") + f"\n    → {e['command']}" for e in shown]
     if len(todo) > len(shown):
-        lines.append(f"{len(todo) - len(shown)} more (fm todo --json)")
+        lines.append(f"{len(todo) - len(shown)} more (sampo todo --json)")
     if older:
-        lines.append(f"{older} older: fm decide --review")
+        lines.append(f"{older} older: sampo decide --review")
     out(args, {"todo": todo, "older_decisions": older}, "\n".join(lines) or "Nothing waits on you.")
 
 
@@ -4211,7 +4212,7 @@ def cmd_trust(args):
                 c.log_event(p, "trust_on", data={"at": rec.get("at")}, session=session())
     return out(args, {"trust": bool(rec)},
                "Trust on: Claude may edit the guard and Claude Code settings (Sampo state only through fm); "
-               "/fm-trust off or fm trust off ends it." if rec else
+               "/fm-trust off or sampo trust off ends it." if rec else
                "Trust off: the guard and Claude Code settings need your yes per task (/fm-trust on, typed by you).")
 
 
@@ -4230,7 +4231,7 @@ def cmd_standing(args):
         return out(args, {"standing": {}}, "Standing yeses off: Sampo's core asks per task again." if had
                    else "No standing yes to turn off.")
     return out(args, {"standing": had}, "\n".join(f"Standing yes: {k} since {v.get('at')} ({v.get('why') or 'no reason'}); "
-                                                 f"fm standing off revokes it" for k, v in had.items())
+                                                 f"sampo standing off revokes it" for k, v in had.items())
                or "No standing yes: Sampo's core asks per task.")
 
 
@@ -4332,7 +4333,7 @@ def cmd_decide(args):
         print(f"fm: warning: --cites {c.plain(cites)[:60]!r} doesn't read as a user steer ('user steer …' or "
               "\"the user's steer …\"), so no check is asked of this rule", file=sys.stderr)
     elif cites and c.STEER.search("cites: " + cites) and not getattr(args, "check", None):  # T-2465: said now, not later
-        print("fm: warning: a rule from a user steer was recorded with no --check, so fm doctor and the sweep will "
+        print("fm: warning: a rule from a user steer was recorded with no --check, so sampo doctor and the sweep will "
               "flag it: record it again with --check CMD --revisited '<words from this rule>'", file=sys.stderr)
     conf = getattr(args, "confidence", None)
     if conf is not None and not (str(conf).isdecimal() and 0 <= int(conf) <= 100):  # T-2337
@@ -4399,7 +4400,7 @@ def _guard_named(text):
     words |= {w.rstrip("s") for w in words} | {p for w in words for p in w.split("-")}  # plugins, force-push
     named = [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE and x in words]
     named += [cat for cat, syn in _GUARD_WORDS.items() if words & syn and cat not in named]  # T-0671 review
-    return named + (["fm ask"] if re.search(r"(?i)\b(?:fm|sampo)\s+ask\b", text) else [])
+    return named + (["sampo ask"] if re.search(r"(?i)\b(?:fm|sampo)\s+ask\b", text) else [])
 
 
 # ponytail: words, not meaning ("Remove the alias?" isn't one, "Delete …" is); a miss is still refused by the guard
@@ -4415,10 +4416,10 @@ def _decide_ask(p, args):
     q, options = c.plain(args.ask).strip(), [c.plain(o).strip() for o in args.options or [] if o.strip()]
     named = _guard_named(" ".join([q, *options, args.default or ""]))
     if named:
-        raise UsageError(f"this ask names {', '.join(named)}: guard categories are the user's alone (fm ask ID "
+        raise UsageError(f"this ask names {', '.join(named)}: guard categories are the user's alone (sampo ask ID "
                          f"<category> --why \"…\"); the taste record and the ask digest never pre-answer them")
     if not q or not (args.default or options):
-        raise UsageError("fm decide --ask \"<question>\" needs --default ANSWER or --options A B … (the taste record picks)")
+        raise UsageError("sampo decide --ask \"<question>\" needs --default ANSWER or --options A B … (the taste record picks)")
     if args.default:
         answer, why = c.plain(args.default).strip(), "the given default"
     else:
@@ -4429,7 +4430,7 @@ def _decide_ask(p, args):
     data = {"q": q, "default": answer, "why": why, "options": options}
     if args.urgent:
         return out(args, dict(data, urgent=True), f"Urgent: ask the user now, one AskUserQuestion with \"{answer}\" "
-                   f"first ({why}); record the answer: fm decide \"{q} → <answer>\".")
+                   f"first ({why}); record the answer: sampo decide \"{q} → <answer>\".")
     if autonomy == "full":
         _write_decision(p, f"{q} → {answer}", f"full autonomy: the default ({why})", rejected, task=args.task)
         return out(args, dict(data, answer=answer, applied=True), f"Decided (full autonomy): {q} → {answer} ({why}).")
@@ -4456,7 +4457,7 @@ def _decide_ask(p, args):
                    f"{why}: {q} → {answer}. It stays in the digest as ask {n}; the user's answer there overrules it.")
     return out(args, dict(data, queued=n, deadline=d["deadline"]),
                f"Ask {n} waits in the digest ({len(d['asks'])}; unanswered, each takes its default at {d['deadline']}). "
-               f"Keep working; before you end the turn put the digest to the user (fm decide --digest).")
+               f"Keep working; before you end the turn put the digest to the user (sampo decide --digest).")
 
 
 DIGEST_HOURS = 8  # T-0461: how long a non-urgent ask waits for the user before its default applies
@@ -4491,20 +4492,20 @@ def _digest(p, args, applied):
         lines += [f"  {a['n']}. {a['q']} — default: {a['default']}"
                   + (f" (of: {', '.join(a['options'])})" if a.get("options") else "") for a in asks]
         lines += ["Put them to the user in one AskUserQuestion, each default first; record each answer: "
-                  "fm decide \"<answer>\" --answer N."]
+                  "sampo decide \"<answer>\" --answer N."]
     return out(args, {"asks": asks, "applied": applied, "deadline": d.get("deadline")},
                "\n".join(lines) or "The ask digest is empty.")
 
 
 def _answer(p, args):
     if not args.decision:
-        raise UsageError("fm decide \"<the user's answer>\" --answer N (N from fm decide --digest)")
+        raise UsageError("sampo decide \"<the user's answer>\" --answer N (N from sampo decide --digest)")
     with c.lock(p.dir):
         meta = c.read_meta(p)
         d = meta.get("ask_digest") or {}
         a = next((x for x in d.get("asks") or [] if x.get("n") == args.answer), None)
         if not a:
-            raise UsageError(f"no ask {args.answer} waits in the digest; fm decide --digest lists them")
+            raise UsageError(f"no ask {args.answer} waits in the digest; sampo decide --digest lists them")
         _write_decision(p, f"{a['q']} → {args.decision}", args.why or "the user's answer (ask digest)",
                         args.rejected or ", ".join(o for o in a.get("options") or [] if o != args.decision),
                         task=a.get("task") or args.task, locked=True)
@@ -4632,13 +4633,13 @@ def capture_friction(p, text, sid=None):
     """T-1332: the user's friction with an area queues a brainstorm-and-improve RESEARCH task for it, once per open
     area; another complaint within 7 days of the last makes it urgent. Returns (area, id, urgent)."""
     area = c.friction_area(text)
-    title = _title(f"Improve {area}: fm mission + fm ideas from the user's friction")
+    title = _title(f"Improve {area}: sampo mission + sampo ideas from the user's friction")
     with c.lock(p.dir, timeout=1):  # the prompt hook: a busy lock loses this capture, not the turn
         b = next((b for b in c.load_briefs(p) if b.status not in c.CLOSED and b.title.lower() == title.lower()), None)
         if b is None:
             b = _create(p, title, "RESEARCH", "M", "captured", source="self",
                         raw=f"{c.fit(c.plain(c.redact(text)).strip(), 300)}\n(the user's friction with {area}: run fm "
-                            f"mission --request on it, then fm ideas, then a build round)")
+                            f"mission --request on it, then sampo ideas, then a build round)")
             c.log_event(p, "capture", task=b.id, data={"source": "friction", "area": area}, session=sid)
         else:
             age = c.age_days(b.meta.get("friction_at") or b.meta.get("created"))
@@ -4745,18 +4746,18 @@ def cmd_pause(args):
     either way it's no consent to guard."""
     on = args.state == "on"
     if args.now and not on:
-        raise UsageError("--now goes with fm pause on: fm pause off lifts both")
+        raise UsageError("--now goes with sampo pause on: sampo pause off lifts both")
     c.set_panic(on, hard=args.now)
     if on and args.now:  # T-1821
         from sampo import serve
         r = serve.panic_stop()
         return out(args, {"paused": True, "hard": True, **r},
-                   f"Stopped now: {len(r['sessions'])} fm session(s), {len(r['serve'])} fm serve unit(s), "
-                   f"{r['leases']} lease(s) freed; a running fm run or night stops its session within 2 s. Interactive "
-                   "Claude Code sessions and subagents finish their turn. Record: state/stops.jsonl. fm pause off lifts it."
+                   f"Stopped now: {len(r['sessions'])} sampo session(s), {len(r['serve'])} sampo serve unit(s), "
+                   f"{r['leases']} lease(s) freed; a running sampo run or night stops its session within 2 s. Interactive "
+                   "Claude Code sessions and subagents finish their turn. Record: state/stops.jsonl. sampo pause off lifts it."
                    + "".join(f"\n  ✗ {e}" for e in r.get("errors", [])))
-    out(args, {"paused": on}, "Paused everywhere: no drive, fm run, serve, night or lane launches, and autonomy reads "
-        "standard; a session already running finishes its turn. fm pause off lifts it." if on else
+    out(args, {"paused": on}, "Paused everywhere: no drive, sampo run, serve, night or lane launches, and autonomy reads "
+        "standard; a session already running finishes its turn. sampo pause off lifts it." if on else
         "Pause lifted: the drive and the launchers run again, under each project's own autonomy.")
 
 
@@ -4792,7 +4793,7 @@ def cmd_check(args):
             wait = 900.0
         started = False
         try:
-            with c.gate_lock("fm check", say=lambda m: print(m, file=sys.stderr), timeout=wait):
+            with c.gate_lock("sampo check", say=lambda m: print(m, file=sys.stderr), timeout=wait):
                 started = True
                 return _cmd_check(args)
         except c.LockTimeout:
@@ -4810,13 +4811,13 @@ def _cmd_check(args):
             checks = list(meta.get("checks") or [])
             if args.action == "add":
                 if not args.words:
-                    raise UsageError("fm check add needs a command")
+                    raise UsageError("sampo check add needs a command")
                 checks.append(" ".join(args.words))
             else:
                 try:
                     gone = checks.pop(int(args.words[0]) - 1)
                 except (IndexError, ValueError):
-                    raise UsageError(f"no check {' '.join(args.words)!r}; fm check list numbers them")
+                    raise UsageError(f"no check {' '.join(args.words)!r}; sampo check list numbers them")
                 (meta.get("check_paths") or {}).pop(gone, None)
             meta["checks"] = checks
             c.write_meta(p, meta)
@@ -4829,7 +4830,7 @@ def _cmd_check(args):
             passed = sum(1 for _ in range(n) if not c.run_command(p.root, cmd, args.timeout)[0])
             rows.append({"cmd": cmd, "passed": passed, "runs": n})
         out(args, {"repeat": rows}, "\n".join(f"{'✓' if r['passed'] == n else '✗'} {r['passed']}/{n}  {r['cmd']}"
-                                              for r in rows) or "no checks (fm check add '<cmd>')")
+                                              for r in rows) or "no checks (sampo check add '<cmd>')")
         return 0 if all(r["passed"] == n for r in rows) else 1
     if args.action == "playbooks":  # T-1505: the playbook library's lint and reach report
         from sampo import playbooks
@@ -4839,7 +4840,7 @@ def _cmd_check(args):
             from sampo import ambient
             return ambient.run(p) or 0
         if args.words[:1] not in (["on"], ["off"]):
-            raise UsageError("fm check ambient on|off")
+            raise UsageError("sampo check ambient on|off")
         with c.lock(p.dir):
             meta = c.read_meta(p)
             meta["ambient"] = args.words[0] == "on"
@@ -4850,7 +4851,7 @@ def _cmd_check(args):
     if args.action == "onwrite":  # T-0947: a validator the write hook runs on matching files; a failure blocks
         glob_, cmd = (args.words[:1] or [None])[0], " ".join(args.words[1:])
         if cmd and "{file}" not in cmd:
-            raise UsageError("fm check onwrite GLOB 'CMD {file}': the command needs {file}, the path just written")
+            raise UsageError("sampo check onwrite GLOB 'CMD {file}': the command needs {file}, the path just written")
         if cmd:
             guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd.replace("{file}", "file"))
         with c.lock(p.dir):
@@ -4861,7 +4862,7 @@ def _cmd_check(args):
                 meta["onwrite"] = rules
                 c.write_meta(p, meta)
         return out(args, {"onwrite": rules}, "\n".join(f"{g}: {x}" for g, x in rules.items())
-                   or "No onwrite validators: fm check onwrite GLOB 'CMD {file}'.")
+                   or "No onwrite validators: sampo check onwrite GLOB 'CMD {file}'.")
     if args.action == "affected":
         with c.lock(p.dir):
             meta = c.read_meta(p)
@@ -4876,7 +4877,7 @@ def _cmd_check(args):
             c.write_meta(p, meta)
         by = meta.get("affected_by") or {}
         return out(args, {"affected": meta.get("affected", ""), "affected_by": by},
-                   f"fm check --affected runs: {meta.get('affected') or '(unset)'}"
+                   f"sampo check --affected runs: {meta.get('affected') or '(unset)'}"
                    + "".join(f"\n  {e}: {t}" for e, t in by.items()))
     if args.action == "paths":  # T-0126: the files a gate covers; it is skipped while none of them changed
         with c.lock(p.dir):
@@ -4885,13 +4886,13 @@ def _cmd_check(args):
             try:
                 cmd = checks[int(args.words[0]) - 1]
             except (IndexError, ValueError):
-                raise UsageError("fm check paths N GLOB…: N as fm check list numbers it (no globs: it runs every time)")
+                raise UsageError("sampo check paths N GLOB…: N as sampo check list numbers it (no globs: it runs every time)")
             paths, globs = dict(meta.get("check_paths") or {}), args.words[1:]
             paths.pop(cmd, None) if not globs else paths.update({cmd: globs})
             meta["check_paths"] = paths
             c.write_meta(p, meta)
         return out(args, {"cmd": cmd, "paths": globs},
-                   f"{cmd}: " + (f"runs when {', '.join(globs)} changed (fm check --fresh runs it anyway)" if globs
+                   f"{cmd}: " + (f"runs when {', '.join(globs)} changed (sampo check --fresh runs it anyway)" if globs
                                  else "runs every time"))
     if args.affected:
         return _check_affected(p, args)
@@ -4900,23 +4901,23 @@ def _cmd_check(args):
     if args.action == "list":
         return out(args, {"checks": checks, "paths": check_paths},
                    "\n".join(f"{i}. {x}" + (f"  [paths: {', '.join(check_paths[x])}]" if x in check_paths else "")
-                             for i, x in enumerate(checks, 1)) or "No checks yet: fm check add '<cmd>'.")
+                             for i, x in enumerate(checks, 1)) or "No checks yet: sampo check add '<cmd>'.")
     if not checks:
         hint = ""
         try:  # R3 bootstrap: what the project itself says it runs
             from sampo import map as smap
             m = smap.load(p) if c.git_root(p.root) else {}
             found = (m.get("gates") or []) + (m.get("ci") or [])[:4]
-            hint = (f"; this project's tests look like: fm check add '{found[0]}'"  # T-0850: the line, ready to run
+            hint = (f"; this project's tests look like: sampo check add '{found[0]}'"  # T-0850: the line, ready to run
                     + (f" (also found: {'; '.join(found[1:])})" if found[1:] else "")) if found else ""
         except Exception:
             pass
-        raise UsageError(f"no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…){hint}")
+        raise UsageError(f"no checks configured for this project: sampo check add '<cmd>' (tests, lint, sampo doctor…){hint}")
     import time
     # T-1971: never two full suites on one tree; its pass is reused when nothing changed
-    c.wait_while(lambda: c.gates_live(p, here=True), "another fm check on this tree", "fm check")
+    c.wait_while(lambda: c.gates_live(p, here=True), "another sampo check on this tree", "sampo check")
     if (c.gates_live(p, key="ship_testing") or {}).get("root", p.root) != p.root:  # T-1978: not the ship's own check
-        c.wait_while(lambda: c.gates_live(p, key="ship_testing"), "fm ship's test run", "fm check")
+        c.wait_while(lambda: c.gates_live(p, key="ship_testing"), "sampo ship's test run", "sampo check")
     act = c.active_brief(c.load_briefs(p), p.lane)
     tree = c.worktree_id(p.root)
     skip = red_first_tests(p, act, checks)  # T-1101
@@ -4926,13 +4927,13 @@ def _cmd_check(args):
         results, notes = [(cmd, 0, f"cached pass ({cached})", 0.0) for cmd in checks], {}
         if args.evidence:
             mutate(p, args.evidence, lambda b: b.add_evidence(
-                "fm check: " + "; ".join(checks),
+                "sampo check: " + "; ".join(checks),
                 f"exit 0 · {len(checks)} passed on this tree ({cached}){'; ' + left_out if left_out else ''}"[:600],
                 step=args.step, ac=args.ac, tree=tree, ran=True),
                 "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check", "result": "cached pass"})
         out(args, {"results": [{"cmd": x, "exit": 0, "cached": cached} for x in checks], "failed": 0,
                    "skipped_tests": skip},
-            f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (fm check --fresh reruns)"
+            f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (sampo check --fresh reruns)"
             + (f"\n! {left_out}" if left_out else ""))
         return 0
     marked = args.evidence or not getattr(args, "affected", False)  # T-1963: a full run, for the edit hook's note too
@@ -4940,8 +4941,8 @@ def _cmd_check(args):
         c.update_meta(p, gates_running={"task": args.evidence, "pid": os.getpid(), "at": c.now(), "root": p.root})
     from sampo import ambient
     # T-1964: never two suites at once; edits meanwhile start none (gates_running is set)
-    c.wait_while(lambda: ambient.running(p), "the ambient test run", "fm check", limit=300)
-    c.wait_for_load("fm check")  # T-2797: gates that can only time out wait; the run limit then scales with the load
+    c.wait_while(lambda: ambient.running(p), "the ambient test run", "sampo check", limit=300)
+    c.wait_for_load("sampo check")  # T-2797: gates that can only time out wait; the run limit then scales with the load
     gate_timeout = c.load_scaled(args.timeout if args.timeout > 0 else None)
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
@@ -5022,7 +5023,7 @@ def _cmd_check(args):
                   f"exit 0 · {len(results)} passed: ") + (f"({left_out}) " if left_out else "") + "; ".join(
             f"{cmd} → {c.run_result(code, output)}" + (f" ({notes[cmd]})" if cmd in notes else "")
             for cmd, code, output, _ in shown)
-        mutate(p, args.evidence, lambda b: b.add_evidence("fm check: " + "; ".join(checks), result[:600],
+        mutate(p, args.evidence, lambda b: b.add_evidence("sampo check: " + "; ".join(checks), result[:600],
                                                           step=args.step, ac=args.ac, tree=tree, ran=True),
                "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check", "result": result[:300]})
     lines = []
@@ -5085,7 +5086,7 @@ def _baseline(p, results):
     lines, open_ = [], [b for b in c.load_briefs(p) if b.meta.get("baseline") and b.status not in c.CLOSED]
     for cmd, code, output, _ in results:
         if not code:
-            lines += [f"baseline is green again: {b.id} (fm task finish {b.id} once its criterion runs green)"
+            lines += [f"baseline is green again: {b.id} (sampo task finish {b.id} once its criterion runs green)"
                       for b in open_ if f"`{cmd}`" in b.section("Raw request")]
             continue
         names = c.failing_tests(output)
@@ -5093,7 +5094,7 @@ def _baseline(p, results):
             continue
         names = [c.fit(c.plain(n), 200) for n in names]  # T-2255: names are the run's output, untrusted
         head = f"Baseline red: `{cmd}` fails {', '.join(names[:6])}{' …' if len(names) > 6 else ''}."
-        text = head + " Captured by fm check: the gates are red, so fix this before new work (it may not be this task's doing)."
+        text = head + " Captured by sampo check: the gates are red, so fix this before new work (it may not be this task's doing)."
         same = next((b for b in open_ if head in b.section("Raw request")), None)
         b, new = (same, False) if same else eco.capture_once(p, text, "FIX", "baseline")
         if new:
@@ -5284,17 +5285,17 @@ def cmd_oops(args):
     if not args.apply:
         return out(args, {"snapshot": r, "applied": False},
                    f"{head}\n  restore: {r['restore']}\nfm oops --apply runs it: files in the snapshot are overwritten (the "
-                   f"current ones are saved as a snapshot first, so a second fm oops --apply undoes it); files it "
+                   f"current ones are saved as a snapshot first, so a second sampo oops --apply undoes it); files it "
                    f"doesn't have are left alone.")
     try:
-        saved = c.snapshot(r["top"], f"fm oops --apply {r['sha']}", timeout=30)
+        saved = c.snapshot(r["top"], f"sampo oops --apply {r['sha']}", timeout=30)
     except RuntimeError as e:  # fail closed: nothing is restored over files that couldn't be saved first
         raise UsageError(f"couldn't save the current files first, so nothing was restored: {e}")
     run = c._git(r["top"], *shlex.split(r["restore"])[3:], timeout=120, proc=True)  # git -C TOP …: fmcore's runner
     if run.returncode:
         raise UsageError(f"{r['restore']} failed: {(run.stderr or run.stdout).strip()[-300:]}")
     return out(args, {"snapshot": r, "applied": True, "saved_first": saved},
-               f"{head}: restored." + (f" The files as they were are snapshot {saved[0]} (fm snapshots)." if saved else ""))
+               f"{head}: restored." + (f" The files as they were are snapshot {saved[0]} (sampo snapshots)." if saved else ""))
 
 
 def cmd_round(args):
@@ -5303,7 +5304,7 @@ def cmd_round(args):
     p = resolve(args)
     top = c.git_root(p.root)
     if not top or not c.git_head(top):
-        raise UsageError("fm round close needs a git repo with a commit")
+        raise UsageError("sampo round close needs a git repo with a commit")
     nums = [int(t[6:]) for t in c._git(top, "tag", "--list", "round-*", timeout=10).split() if t[6:].isdigit()]
     prev = f"round-{max(nums)}" if nums else None
     tag = f"round-{max(nums, default=0) + 1}"
@@ -5352,7 +5353,7 @@ def cmd_bisect(args):
     act = c.active_brief(c.load_briefs(p), p.lane)
     good = args.good or (act.meta.get("base") if act else None)
     if not good:
-        raise UsageError("fm bisect --run CMD --good REF (no active task with a start commit to default to)")
+        raise UsageError("sampo bisect --run CMD --good REF (no active task with a start commit to default to)")
     good = c._git(p.root, "rev-parse", "--verify", "-q", f"{good}^{{commit}}", timeout=10).strip()
     head = c._git(p.root, "rev-parse", "HEAD", timeout=10).strip()
     if not good:
@@ -5616,7 +5617,7 @@ def affected(p, b=None, skipped=None, since=None):
     template = meta.get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     by = meta.get("affected_by") or {}  # T-1135: extension -> its own runner's template
     if not template and not by:
-        raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
+        raise UsageError("no affected-tests command: sampo check affected '<cmd with {tests} or {names}>'")
     broke = {t for f in changed for t in (m.get("broke") or {}).get(f, [])}  # T-2148: tests a file once turned red
     # T-2307: a hook-path module's import budget is tested in test_core (LaterImports), which no map link names
     budget = {HOOK_BUDGET[1]} if changed & set(HOOK_BUDGET[0]) and os.path.isfile(os.path.join(p.root, HOOK_BUDGET[1])) else set()
@@ -5661,9 +5662,9 @@ def _check_affected(p, args):
     if not tests:
         return out(args, {"tests": [], "changed": sorted(changed), "unrunnable": odd, "skipped_tests": skip},
                    (f"all {len(skip)} linked test module(s) skipped (other lanes' red-first tests); run the full "
-                    f"gates: fm check\n! {_left_out(skip)}" if skip else
-                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") + note) or 0
-    c.wait_for_load("fm check --affected")  # T-2797
+                    f"gates: sampo check\n! {_left_out(skip)}" if skip else
+                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: sampo check") + note) or 0
+    c.wait_for_load("sampo check --affected")  # T-2797
     code, output = c.run_command(p.root, cmd, c.load_scaled(args.timeout if args.timeout > 0 else None),
                                  env=_skip_env(skip))
     if args.evidence:  # T-1747: recorded as what it is, never as the full gates (close still needs fm check)
@@ -5675,7 +5676,7 @@ def _check_affected(p, args):
     out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip, "unrunnable": odd},
         f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → {c.run_result(code, output)}"
         + (f"\n! {_left_out(skip)}" if skip else "") + note
-        + "\n(the full gates still decide before commit and done: fm check)")
+        + "\n(the full gates still decide before commit and done: sampo check)")
     return 1 if code else 0
 
 
@@ -5735,7 +5736,7 @@ def _audit_scan(p, args):
     needed; base defaults to where the branch left main. Exit 1 when it finds something."""
     from sampo import map as smap
     if not c.git_root(p.root):
-        raise UsageError("fm audit scan needs a git repository")
+        raise UsageError("sampo audit scan needs a git repository")
     base = args.base or next((b for ref in ("origin/HEAD", "origin/main", "main", "origin/master", "master")
                               if (b := c._git(p.root, "merge-base", "HEAD", ref, timeout=10).strip())), "HEAD")
     diff = c._git(p.root, "diff", base, timeout=120)
@@ -5820,21 +5821,21 @@ def cmd_audit(args):
         return _audit_scan(p, args)
     if args.action == "run":  # T-1186
         if not args.id:
-            raise UsageError("fm audit run needs a task id")
+            raise UsageError("sampo audit run needs a task id")
         from sampo import auditrun
         return auditrun.run(p, args)
     if not args.id:
-        raise UsageError("fm audit prep needs a task id")
+        raise UsageError("sampo audit prep needs a task id")
     b = need_brief(p, args.id)
     if getattr(args, "forge", False):  # T-0652: try to break the checks before trusting them
         return _forge_brief(p, b, args)
     base = args.base or c.task_base(p.root, b)
     if not base:
-        raise UsageError(f"{b.id} has no start commit on record (focused before fm kept one): "
-                         f"fm audit prep {b.id} --base <rev>")
+        raise UsageError(f"{b.id} has no start commit on record (focused before sampo kept one): "
+                         f"sampo audit prep {b.id} --base <rev>")
     tree = c.worktree_tree(p.root)
     if not tree:
-        raise UsageError("fm audit prep needs a git repository")
+        raise UsageError("sampo audit prep needs a git repository")
     branch, upto = b.meta.get("lane_branch"), "working tree, untracked files included"
     if branch and not args.base and c._git(p.root, "rev-parse", "--verify", "-q", f"refs/heads/{branch}", fail=None):
         # T-0718: a builder's work is on its branch: from where it left main, not main's own commits since
@@ -5983,14 +5984,14 @@ def cmd_audit(args):
     brief = briefs[0]
     big = b.tier == "L" and len(groups) == 1 and r.stdout.count("\n") > SPLIT_SUGGEST
     how = (f"Run {len(briefs)} foreman:fm-reviewer subagents in parallel, one per brief, each with the prompt \"Read "
-           f"<brief> and do the review it describes.\": {', '.join(briefs)}; save each reply with fm research add "
-           f"{b.id}-review-N --from-agent <its output file>; record each lens with fm task audit {b.id} <lens> …"
+           f"<brief> and do the review it describes.\": {', '.join(briefs)}; save each reply with sampo research add "
+           f"{b.id}-review-N --from-agent <its output file>; record each lens with sampo task audit {b.id} <lens> …"
            if len(briefs) > 1 else
            f"Run one foreman:fm-reviewer subagent with the prompt \"Read {brief} and do the review it describes.\"; "
-           f"save its reply with fm research add {b.id}-review --from-agent <its output file>; record each lens with "
-           f"fm task audit {b.id} <lens> …" + (f" (a {r.stdout.count(chr(10))}-line L diff: fm audit prep {b.id} --split "
+           f"save its reply with sampo research add {b.id}-review --from-agent <its output file>; record each lens with "
+           f"sampo task audit {b.id} <lens> …" + (f" (a {r.stdout.count(chr(10))}-line L diff: sampo audit prep {b.id} --split "
                                                f"gives each lens group a fresh reviewer, in parallel)" if big else "")
-           if sections else f"Record it with fm task audit {b.id} self …")
+           if sections else f"Record it with sampo task audit {b.id} self …")
     if sections:  # T-0780: verified findings reach the host's review UI before they become lenses
         how += "\nReport the verified findings with ReportFindings (empty list if none) before recording lenses."
     try:  # T-0276: installed review skills that fit a lens; their findings count as that lens
@@ -6000,7 +6001,7 @@ def cmd_audit(args):
         fit = {}
     if fit and not args.print:
         how += ("\nInstalled review skills that fit a lens (run one on the diff and record what it finds as that lens):"
-                + "".join(f"\n  {lens}: {', '.join(names)} — fm task audit {b.id} {lens} \"{names[0]}\" \"<result>\""
+                + "".join(f"\n  {lens}: {', '.join(names)} — sampo task audit {b.id} {lens} \"{names[0]}\" \"<result>\""
                           for lens, names in fit.items()))
     # the brief goes to a file: printed, it would be paid for twice (here and in the reviewer's prompt)
     out(args, {"diff": path, "base": base, "lenses": lenses, "brief": brief, "briefs": briefs, "pre_audit": found,
@@ -6058,10 +6059,10 @@ def cmd_next(args):
                     c.save_brief(p, fresh, touch=False)
     meta = c.read_meta(p)
     loose = (meta.get("clauses") or {}).get("open") or []
-    over += (f" · {len(loose)} clause(s) of the last request unaccounted: capture, answer, or fm clauses --note N "
-             f"\"<why>\" (fm clauses --show)") if loose else ""
+    over += (f" · {len(loose)} clause(s) of the last request unaccounted: capture, answer, or sampo clauses --note N "
+             f"\"<why>\" (sampo clauses --show)") if loose else ""
     asks = unanswered_asks(p)
-    over += (f" · {len(asks)} unanswered ask(s) from your last session wait for the user's yes (✋ in fm state; put "
+    over += (f" · {len(asks)} unanswered ask(s) from your last session wait for the user's yes (✋ in sampo state; put "
              f"them to the user at the end, never act on them first; deferred after {ASK_DAYS} days)") if asks else ""
     from sampo import contract
     over += contract.line(p)  # T-1158
@@ -6092,7 +6093,7 @@ def cmd_autonomy(args):
         eff = c.effective_autonomy(p)  # T-1061, T-1080
         from sampo import risk
         risky = risk.slowed(p)
-        why = risky if risky else "recent closes missed their plan, M needs approval; fm digest"
+        why = risky if risky else "recent closes missed their plan, M needs approval; sampo digest"
         return out(args, {"autonomy": level, "effective": eff, "slow": eff == "slow", "risk": risky},
                    f"{p.slug}: autonomy {level}" + (f" (now {eff}: {why})" if eff != level else "") + ".")
     c.update_meta(p, autonomy=args.level)
@@ -6124,7 +6125,7 @@ def _no_ids(text):
 
 
 # T-2641: (verb, removed flag or verb) -> what replaced it and the task that removed it; read only on the parser's error path
-TOMBSTONES = {("night", "--print-timer"): "removed in T-2475; fm night --stage queues the timers for one yes, fm night --install installs them"}
+TOMBSTONES = {("night", "--print-timer"): "removed in T-2475; sampo night --stage queues the timers for one yes, sampo night --install installs them"}
 
 
 class _Parser(argparse.ArgumentParser):
@@ -6192,7 +6193,7 @@ def cmd_help(args):
         from sampo import recall
         q = " ".join(args.words)
         if args.all:
-            raise UsageError("fm help --all lists every command and fm help WORDS answers a question: one or the other")
+            raise UsageError("sampo help --all lists every command and sampo help WORDS answers a question: one or the other")
         named = build_parser()
         for w in args.words:  # T-1909: words that are a command's name ("task", "task drop") print its -h
             sub = next((a for a in named._actions if isinstance(a, argparse._SubParsersAction)), None)
@@ -6205,13 +6206,13 @@ def cmd_help(args):
             return 0
         if not recall.asked(q):
             raise UsageError(f"nothing to look up in {q!r}, only words like can, do and it: name the thing, e.g. "
-                             "fm help scaffold an mcp server")
+                             "sampo help scaffold an mcp server")
         hits = recall.can(q)
         line = lambda n, h, w: f"  fm {n:<{w}}{recall.gist(h, q, 95 - w)}"  # noqa: E731 ≤ 100 columns, match kept
         out(args, {"question": q, "commands": [{"command": n, "help": h} for n, h in hits]},
             "Closest by their help:\n" + "\n".join(line(n, h, max(15, len(n) + 1)) for n, h in hits)
-            + "\nfm <command> -h for its options." if hits else "No fm command's help says so; fm help --all lists "
-            "every command.\nWorth building? fm capture \"<what you need>\".")
+            + "\nfm <command> -h for its options." if hits else "No sampo command's help says so; sampo help --all lists "
+            "every command.\nWorth building? sampo capture \"<what you need>\".")
         return 0 if hits else 1
     sub = next(a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction))
     helps = {a.dest: _no_ids(" ".join((a.help or "").split())) for a in sub._choices_actions}
@@ -6227,28 +6228,28 @@ def cmd_help(args):
 START_HERE = """usage: fm [-p PROJECT] <command> [options]
 
 Sampo state CLI (the only writer of Sampo state). Start here:
-  fm demo                  watch Sampo fix a seeded bug in a throwaway repo (no model calls)
-  fm init                  register this repo (once; most commands do it for you)
-  fm capture "<request>"   put a request in the inbox
-  fm task new "<title>" --type FIX --tier S --ac "<done when> :: <cmd>" --step "<step>" --focus
+  sampo demo                  watch Sampo fix a seeded bug in a throwaway repo (no model calls)
+  sampo init                  register this repo (once; most commands do it for you)
+  sampo capture "<request>"   put a request in the inbox
+  sampo task new "<title>" --type FIX --tier S --ac "<done when> :: <cmd>" --step "<step>" --focus
                            plan a task (or a capture of the same title) and work on it
-  fm next                  the one next required action
-  fm status                where things stand
-  fm focus ID              work on a planned task
-  fm check                 run the gates (tests, lint)
-  fm task finish ID --run "<cmd>" --audit "<how>"
+  sampo next                  the one next required action
+  sampo status                where things stand
+  sampo focus ID              work on a planned task
+  sampo check                 run the gates (tests, lint)
+  sampo task finish ID --run "<cmd>" --audit "<how>"
                            close a task in one call
-  fm queue                 what's planned, in order
-  fm inbox                 captured requests waiting
-  fm doctor                is Sampo healthy here?
+  sampo queue                 what's planned, in order
+  sampo inbox                 captured requests waiting
+  sampo doctor                is Sampo healthy here?
 
-fm help --all lists every command; fm <command> -h for its options; -p SLUG picks a project from elsewhere.
+sampo help --all lists every command; fm <command> -h for its options; -p SLUG picks a project from elsewhere.
 """
 
 
 _BASH_HOOK = """_fm() {
   local IFS=$'\\n'
-  COMPREPLY=($(fm complete -- "${COMP_WORDS[@]:1:COMP_CWORD}" 2>/dev/null))
+  COMPREPLY=($(sampo complete -- "${COMP_WORDS[@]:1:COMP_CWORD}" 2>/dev/null))
 }
 complete -F _fm fm sampo
 """
@@ -6283,7 +6284,7 @@ class _OutputFormat(argparse.Action):
 
     def __call__(self, parser, ns, value, option_string=None):
         if value != "json":
-            parser.error(f"--output-format {value}: fm code takes only json, the same as --json (fm code's own "
+            parser.error(f"--output-format {value}: sampo code takes only json, the same as --json (sampo code's own "
                          "events, not claude's stream-json); --plain prints one line per event")
         ns.json = True
 
@@ -6361,8 +6362,8 @@ def _build_parser(only=None):
     s.add_argument("--all", action="store_true", help="the same: every command (fm --help: the everyday ones)")
     s.add_argument("words", nargs="*", help="a question in plain words: the commands whose help answers it")
     s = add("dev", lazy("sampo.new", "cmd_dev"), tier=("Every task", 99), help="the contributor's loop: when a tracked file "
-            "changes, fm check --affected runs the tests linked to it; --once runs it now (T-1554)")
-    s.add_argument("--once", action="store_true", help="run fm check --affected once and exit with its code")
+            "changes, sampo check --affected runs the tests linked to it; --once runs it now (T-1554)")
+    s.add_argument("--once", action="store_true", help="run sampo check --affected once and exit with its code")
     s.add_argument("--interval", type=float, help="seconds between looks at the files (default 1)")
     s = add("codemod", lazy("sampo.smithmod", "cmd_codemod"), tier=("Every task", 160), help="rename OLD NEW or sub PATTERN "
             "REPL across the repo's tracked text files: a diff first, --apply writes it (T-1554)")
@@ -6376,16 +6377,16 @@ def _build_parser(only=None):
     s.add_argument("--stroke", type=float, help="icons, empty: the stroke width in grid units (default 2)")
     s.add_argument("--subset", metavar="FONT", help="fonts: a subset of this font file for self-hosting (fontTools)")
     s.add_argument("--text", help="fonts --subset: the characters to keep")
-    s = add("extras", lazy("sampo.extras", "cmd_extras"), tier=("Every task", 166), help="playful extras from an fm code "
+    s = add("extras", lazy("sampo.extras", "cmd_extras"), tier=("Every task", 166), help="playful extras from a sampo code "
             "run: a printable zine, a vase to 3D-print, a cursor for demos (T-1556)")
     s.add_argument("words", nargs="*", metavar="zine|vase|cursor X,Y X,Y …")
-    s.add_argument("--events", metavar="FILE", help="zine, vase: the run (fm code … --json > FILE records one); "
+    s.add_argument("--events", metavar="FILE", help="zine, vase: the run (sampo code … --json > FILE records one); "
                    "default: the sample run")
     s.add_argument("--out", help="the file to write (default zine.svg, vase.stl, cursor.svg)")
     s = add("new", lazy("sampo.new", "cmd_new"), tier=("Finding your way", 385), help="strict-by-default templates: a web "
-            "page, a 3D scene, an fm code panel (list; NAME [DIR] copies one; check PATH holds a copy to its rules)")
+            "page, a 3D scene, a sampo code panel (list; NAME [DIR] copies one; check PATH holds a copy to its rules)")
     s.add_argument("words", nargs="*", metavar="list|NAME [DIR]|check PATH", help="web, scene or panel; a panel lands "
-                   "in fm code's tui/ folder unless DIR is given. check runs the file for a panel (.py): one fm code "
+                   "in sampo code's tui/ folder unless DIR is given. check runs the file for a panel (.py): one sampo code "
                    "would load, in a child with limits and a timeout")
     s.add_argument("--force", action="store_true", help="replace the file the copy lands on (a symlink there is "
                    "replaced itself, never written through)")
@@ -6395,7 +6396,7 @@ def _build_parser(only=None):
     s.add_argument("path", nargs="?")
     s.add_argument("--sensitive", action="store_true")
 
-    s = add("state", cmd_state, tier=("Every task", 150), help="print STATE (also fm status: the word /foreman:status uses, T-0393)",
+    s = add("state", cmd_state, tier=("Every task", 150), help="print STATE (also sampo status: the word /foreman:status uses, T-0393)",
             aliases=["status"])
     tiered.append((160, "Every task", "status"))
     s.add_argument("--brief", action="store_true")
@@ -6417,14 +6418,14 @@ def _build_parser(only=None):
     s.add_argument("--scope", action="append")
     s.add_argument("--urgent", action="store_true")
     s.add_argument("--anyway", action="store_true", help="keep a request whose title is close to an open task's of the same type: "
-                                                         "without it fm capture refuses it, exit 5, naming the task "
-                                                         "(only fm capture checks; fm intake, fm task new and fm "
+                                                         "without it sampo capture refuses it, exit 5, naming the task "
+                                                         "(only sampo capture checks; sampo intake, sampo task new and fm "
                                                          "research --from-agent don't)")
     s.add_argument("--self", dest="self_", action="store_true", help="capture into Sampo's own project (self-improvement)")
-    s.add_argument("--incident", nargs="+", metavar="WORDS", help="live harm (T-2388; fm incident until T-2461): "
+    s.add_argument("--incident", nargs="+", metavar="WORDS", help="live harm (T-2388; sampo incident until T-2461): "
                    "'<impact>' --signal CMD opens an urgent FIX on a signal red now; log '<action>' --expect "
                    "'<effect>'; follow-up '<what stops this recurring>'; closes on the signal green twice plus one "
-                   "follow-up, and fm sentinel keeps rerunning it")
+                   "follow-up, and sampo sentinel keeps rerunning it")
     s.add_argument("--signal", help="--incident: the harm signal, one command, exit 0 healthy, 1..125 harmed")
     s.add_argument("--expect", help="--incident log: the effect the action should have")
     s.add_argument("--id", help="--incident log/follow-up: the incident (default: the open one)")
@@ -6435,19 +6436,19 @@ def _build_parser(only=None):
     s.add_argument("--why", default="")
     s.add_argument("--pin", help="plugin id: the plugin yes holds only for installing or enabling it, as it is now")
     s.add_argument("--standing", action="store_true",
-                   help="core only: the yes covers every later task in this project until fm standing off")
+                   help="core only: the yes covers every later task in this project until sampo standing off")
     s.add_argument("--later", action="store_true",
-                   help="queue the request on the task for the user (never expires, grants nothing; fm todo lists it): "
+                   help="queue the request on the task for the user (never expires, grants nothing; sampo todo lists it): "
                         "no dialog, so it works headless and in full autonomy")
     s.add_argument("--fallback", default="", help="with --later: what the work does meanwhile")
     s.add_argument("--needs-env", action="append", default=[], metavar="VAR",
                    help="with --later: a secret the tool needs, by variable name only; the user sets the value outside "
-                        "the session, and fm task finish refuses while this session's transcript holds it (T-2383)")
+                        "the session, and sampo task finish refuses while this session's transcript holds it (T-2383)")
 
     s = add("trust", cmd_trust, tier=("Project and settings", 740), help="whether Claude may edit the guard and Claude Code settings (on: /fm-trust, typed)")
     s.add_argument("state", nargs="?", choices=["off"])
 
-    s = add("standing", cmd_standing, tier=("Project and settings", 750), help="the project's standing yeses (fm ask … core --standing); off revokes them")
+    s = add("standing", cmd_standing, tier=("Project and settings", 750), help="the project's standing yeses (sampo ask … core --standing); off revokes them")
     s.add_argument("state", nargs="?", choices=["off"])
 
     add("todo", cmd_todo, tier=("Finding your way", 306), help="what only the user can do now (asks, user blocks, costly or outward decisions), each with what to type")
@@ -6457,18 +6458,18 @@ def _build_parser(only=None):
     s.add_argument("--rejected", default="")
     s.add_argument("--task")
     s.add_argument("--kind", choices=["reversible", "costly", "outward"], default="reversible",
-                   help="costly/outward: listed for the user's review (fm decide --review)")
+                   help="costly/outward: listed for the user's review (sampo decide --review)")
     s.add_argument("--reverses", help="words from the earlier decision this one undoes")
     s.add_argument("--confidence", metavar="N", help="whole percent, 0-100: how likely the decision isn't reversed; "
                                                      "a bet in the calibration ledger (T-2337)")
     s.add_argument("--cites", metavar="REF", help="what it rests on: the user's message, a veto or a decision (T-0654)")
-    s.add_argument("--check", metavar="CMD", help="what proves a standing rule holds: fm genesis check, fm exam "
-                                                  "scorecard, fm outcomes --questions --none [--since TS] or python3 "
-                                                  "plugin/tests/run.py test_…; fm genesis sweep "
+    s.add_argument("--check", metavar="CMD", help="what proves a standing rule holds: sampo genesis check, sampo exam "
+                                                  "scorecard, sampo outcomes --questions --none [--since TS] or python3 "
+                                                  "plugin/tests/run.py test_…; sampo genesis sweep "
                                                   "runs it (T-2167)")
     s.add_argument("--revisit", metavar="TRIGGER",
-                   help='"after YYYY-MM-DD" or "when PATH changes": fm next brings the decision back then')
-    s.add_argument("--sunset", metavar="YYYY-MM-DD", help="the decision expires then: fm tidy lists it as expired (T-1084)")
+                   help='"after YYYY-MM-DD" or "when PATH changes": sampo next brings the decision back then')
+    s.add_argument("--sunset", metavar="YYYY-MM-DD", help="the decision expires then: sampo tidy lists it as expired (T-1084)")
     s.add_argument("--revisited", metavar="WORDS", help="words from an earlier decision whose trigger fired: it still holds")
     s.add_argument("--ask", metavar="QUESTION", help="a question for the user, with --default or --options (the taste "
                                                      "record picks): urgent → ask now; full autonomy → decided now; "
@@ -6549,7 +6550,7 @@ def _build_parser(only=None):
     t = tadd("split")  # T-0709
     t.add_argument("id")
     t.add_argument("--parts", type=int, help="how many children (default: about 4 files each, 2–4)")
-    t.add_argument("--files", nargs="+", help="the files to split (default: its scope, else fm graph pack's read-set)")
+    t.add_argument("--files", nargs="+", help="the files to split (default: its scope, else sampo graph pack's read-set)")
     t.add_argument("--dry-run", action="store_true", help="show the partition only")
     t = tadd("capsule")  # T-0709
     t.add_argument("id")
@@ -6567,7 +6568,7 @@ def _build_parser(only=None):
                    help="rerun the failing command the packet hands over: accepted while it still fails (T-0704)")
     t.add_argument("--timeout", type=int, default=300)
     t = tadd("new")  # T-0846: its values and one worked example in -h
-    t.epilog = ('example:\n  fm task new "Add login timeout" --type FIX --tier S --ac "times out after 30s :: pytest -k '
+    t.epilog = ('example:\n  sampo task new "Add login timeout" --type FIX --tier S --ac "times out after 30s :: pytest -k '
                 'timeout" --step "failing test" --focus')
     t.formatter_class = argparse.RawDescriptionHelpFormatter
     t.add_argument("title")
@@ -6591,20 +6592,20 @@ def _build_parser(only=None):
     t.add_argument("--harness-plan", metavar="WHO", help="Sampo's own harness (code, hook) wrote this plan: the M/L plan "
                                                          "gate skips its readings and options (not for hand-written plans)")
     t.add_argument("--focus", action="store_true", help="focus it right away (the plan gate still applies)")
-    t.add_argument("--goal", metavar="ITEM", help="it builds item ITEM of the standing goal (fm goal show)")
+    t.add_argument("--goal", metavar="ITEM", help="it builds item ITEM of the standing goal (sampo goal show)")
     t = tadd("show")
     t.add_argument("id")
     t.add_argument("--story", action="store_true", help="the ledger as chapters (plan, steps, evidence, reviews, "
                                                         "close) with their times")
     t = tadd("card")  # T-1541
     t.description = ("A proved task's title card: an SVG with its title hand-lettered, its type, size and day, and the "
-                     "command that failed before the work and passed after (written by fm task finish too).")
+                     "command that failed before the work and passed after (written by sampo task finish too).")
     t.add_argument("id")
     t.add_argument("--out", help="the SVG to write (default: the project's cards/<id>.svg)")
     t = tadd("receipt")  # T-1518
     t.description = ("The task's changed files in reading order (the code they build on, styles, components, entry "
                      "points, tests, docs; UI files marked), then its before/after: the task's own Measurements "
-                     "section and the medians of its fm task evidence --repeat runs.")
+                     "section and the medians of its sampo task evidence --repeat runs.")
     t.add_argument("id")
     t.add_argument("--svg", metavar="FILE", help="also draw it as a blueprint sheet (T-1547)")
     t.add_argument("--sign", metavar="KEY", help="sign it with this SSH key (ssh-keygen -Y sign); prints the "
@@ -6667,7 +6668,7 @@ def _build_parser(only=None):
     t.add_argument("--docs", help="Docs impact: the docs updated, or none: why")
     t.add_argument("--numbers", help="PERFORMANCE: the Measurements, '<metric>: <before> → <after> (<how measured>)' (T-1956)")
     t.add_argument("--skip-affected", metavar="WHY", help="T-1117: close without the linked tests' verdict (a runner "
-                                                         "fm can't read, a known-red suite), logged with WHY")
+                                                         "sampo can't read, a known-red suite), logged with WHY")
     t.add_argument("--lesson")
     t.add_argument("--ablate", action="store_true", help="T-1067: revert each hunk alone against the linked tests and "
                                                          "report the ones no test notices (slow)")
@@ -6680,7 +6681,7 @@ def _build_parser(only=None):
     t.add_argument("--insight", help="one line: what this task taught that wasn't obvious (the digest lists them)")
     t.add_argument("--differently", metavar="TEXT", help="one line: what you would do differently next time (T-0641)")
     t.add_argument("--claim", action="append", metavar="'TAG: CLAIM [:: EVIDENCE]'",
-                   help="a typed claim for the close and fm pr; TAG is checked, inferred or unchecked (T-0614)")
+                   help="a typed claim for the close and sampo pr; TAG is checked, inferred or unchecked (T-0614)")
     t.add_argument("--why-not-caught", metavar="TEXT", help="FIX: the test, gate or guard that would have caught it "
                                                              "earlier (captured as a follow-up), or 'none: why' (T-0598)")
     t.add_argument("--stack", action="store_true", help="with --commit: one commit per step (per member of a batch), "
@@ -6725,9 +6726,9 @@ def _build_parser(only=None):
     g = t.add_mutually_exclusive_group()
     g.add_argument("--run", metavar="CMD", help="verify: run CMD; exit 0 marks it verified, anything else false")
     g.add_argument("--evidence", metavar="HOW", help="verify: how it was checked, when it can't run (file:line read…)")
-    g.add_argument("--from", dest="from_", metavar="SRC", help="verify: from research/NAME (fm research) or T-NNNN (a closed "
+    g.add_argument("--from", dest="from_", metavar="SRC", help="verify: from research/NAME (sampo research) or T-NNNN (a closed "
                                                                "spike); under the research bar a cold reader must agree")
-    t.add_argument("--kill", metavar="TEXT", help="add: what would show it false (fm next lists it until verified)")
+    t.add_argument("--kill", metavar="TEXT", help="add: what would show it false (sampo next lists it until verified)")
     t.add_argument("--check", metavar="CMD", help="add: a command that stays true while the assumption holds; fm "
                                                   "sentinel re-runs it after the task is done (T-0489)")
     t.add_argument("--timeout", type=float, default=600)
@@ -6737,7 +6738,7 @@ def _build_parser(only=None):
     t = tadd("block")
     t.add_argument("id")
     t.add_argument("reason")
-    t.add_argument("--until", help="YYYY-MM-DD, \"when PATH changes\", \"installed NAME\" or \"exists PATH\": fm next "
+    t.add_argument("--until", help="YYYY-MM-DD, \"when PATH changes\", \"installed NAME\" or \"exists PATH\": sampo next "
                                    "names it again once that holds (T-1183)")
     some = "an id, a range T-3..T-7 (or T-3..7) or a list T-3,T-9; one failure doesn't stop the rest (T-1877)"
     t = tadd("drop")
@@ -6750,7 +6751,7 @@ def _build_parser(only=None):
     t = tadd("defer")
     t.add_argument("id", help=some)
     t.add_argument("reason", nargs="?")
-    t.add_argument("--until", help="YYYY-MM-DD[THH:MM]: fm next names it again from that day or local minute (T-0450); "
+    t.add_argument("--until", help="YYYY-MM-DD[THH:MM]: sampo next names it again from that day or local minute (T-0450); "
                                    "reset: the weekly usage reset (T-1802); \"when PATH changes\": once that file "
                                    "changes (T-0958); \"installed NAME\" / \"exists PATH\" (T-1183)")
 
@@ -6775,7 +6776,7 @@ def _build_parser(only=None):
     s.add_argument("--name", help="source add: the source's short name (default: the repo's)")
     s.add_argument("--dry", action="store_true", help="source defaults: list them with depth and licence class; add none")
     s = add("playbooks", lazy("sampo.playbooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
-            "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
+            "as the skill loads it, {{fact}}s (test, language, entry…) filled in from sampo map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
     s.add_argument("action", choices=["show", "eval", "route", "blame", "preview", "coverage", "draft", "mine",
                                       "counter", "score", "kata", "lesson"], help="eval NAME: "
@@ -6807,10 +6808,10 @@ def _build_parser(only=None):
             "marketplace plugins; each hit with its source and any grant it needs (T-1699, T-2371)")
     s.add_argument("task", nargs="*", help="the work, e.g. make a 3D hero with motion")
     s.add_argument("--instruments", action="store_true", help="instead: the zero-token instruments, typed tools with "
-                   "input schemas and line caps (sym, fail, logs, data, trace; fm instruments until T-2461)")
+                   "input schemas and line caps (sym, fail, logs, data, trace; sampo instruments until T-2461)")
     s = add("scout", lazy("sampo.scout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
-    s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
+    s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (sampo night's)")
     s.add_argument("--dry", action="store_true", help="list what it would capture; capture nothing")
     s = add("impact", lazy("sampo.map", "cmd_impact"), tier=("Finding your way", 360), help="likely tests and dependents of a path")
     s.add_argument("path")
@@ -6828,7 +6829,7 @@ def _build_parser(only=None):
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
     s.add_argument("--calibration", action="store_true", help="per tier: median actual/predicted minutes (T-2290)")
     s.add_argument("--judgment", action="store_true", help="the confidence ledger: stated bets scored by outcomes, "
-                   "Brier beside the base rate, the bars (T-2337; fm calibration until T-2461)")
+                   "Brier beside the base rate, the bars (T-2337; sampo calibration until T-2461)")
     s.add_argument("--predictions", action="store_true", help="each prediction kind's hit rate beside its naive "
                                                               "baseline, and the ones muted for trailing it (T-2406)")
     s.add_argument("--unmute", metavar="KIND", help="--predictions: let a muted kind count again from now")
@@ -6899,7 +6900,7 @@ def _build_parser(only=None):
     s = add("fix", lazy("sampo.fixes", "cmd_fix"), tier=("Finding your way", 240), help="known fixes: what got past an obstacle, offered the next time any "
                                                      "session meets it (list, add, rm)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "add", "rm", "trust"])
-    s.add_argument("text", nargs="?", help="add: the error text; rm/trust: the number fm fix list shows (trust: adopt "
+    s.add_argument("text", nargs="?", help="add: the error text; rm/trust: the number sampo fix list shows (trust: adopt "
                                           "a fix that came with the repo, so it is offered as one, not as a hint)")
     s.add_argument("--do", help="add: what gets past it")
     s.add_argument("--run", help="add: the command that does")
@@ -6918,7 +6919,7 @@ def _build_parser(only=None):
     s.add_argument("cmd", nargs="?")
     s.add_argument("--timeout", type=int, default=300)
     s.add_argument("--suspects", nargs="?", const="", metavar="FILE", help="instead: files ranked for a failure from "
-                   "its output (FILE or stdin): stack, task change, test links, recency (fm suspects until T-2461)")
+                   "its output (FILE or stdin): stack, task change, test links, recency (sampo suspects until T-2461)")
     s.add_argument("--top", type=int, default=5, help="--suspects: how many files")
     s = add("record", lazy("sampo.debug", "cmd_record"), tier=("Finding your way", 610), help="rerun a Python command and show the locals where its "
                                                            "exceptions unwound (T-0706)")
@@ -6938,14 +6939,14 @@ def _build_parser(only=None):
     s = add("burden", lazy("sampo.cost", "cmd_burden"), tier=("Reports", 1000), help="Sampo's own cost on real sessions per version: bookkeeping "
                                                           "turns, refusals, injected context (T-0712)")
     s.add_argument("--days", type=float, default=14)
-    s.add_argument("--by-verb", action="store_true", help="the fm verbs no session called in the window (T-0959)")
+    s.add_argument("--by-verb", action="store_true", help="the sampo verbs no session called in the window (T-0959)")
     s.add_argument("--by-source", action="store_true", help="injected chars per turn by hook source, biggest first (T-2667)")
-    s = add("usage", lazy("sampo.cost", "cmd_usage"), tier=("Reports", 1020), help="skills, playbooks and fm commands used (and never used)")
+    s = add("usage", lazy("sampo.cost", "cmd_usage"), tier=("Reports", 1020), help="skills, playbooks and sampo commands used (and never used)")
     s.add_argument("--days", type=float, default=30)
     s.add_argument("--prune", action="store_true",
-                   help="fm commands no session ran in the window, in any project (T-0468; nothing is removed)")
+                   help="sampo commands no session ran in the window, in any project (T-0468; nothing is removed)")
     s.add_argument("--agents", action="store_true", help="a scorecard per agent type: spawns, tokens, lanes kept (T-0647)")
-    s.add_argument("--lesions", action="store_true", help="what each fm evolve --drop ablation found (T-0664)")
+    s.add_argument("--lesions", action="store_true", help="what each sampo evolve --drop ablation found (T-0664)")
     s = add("at", cmd_at, tier=("Finding your way", 340), help="run a command as of a task's start or a commit, in a throwaway worktree")
     s.add_argument("target", help="a task id (its start) or a commit, branch or tag")
     s.add_argument("--timeout", type=float, default=600)
@@ -6958,12 +6959,12 @@ def _build_parser(only=None):
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)
     s.add_argument("words", nargs=argparse.REMAINDER)
-    s = add("gates", cmd_gates, tier=("Every task", 100), help="what fm task done will require for a type and tier, or a task id (default: the active task)")
+    s = add("gates", cmd_gates, tier=("Every task", 100), help="what sampo task done will require for a type and tier, or a task id (default: the active task)")
     s.add_argument("type", nargs="?", type=str.upper, help=f"{', '.join(c.TYPES)}, or a task id")
     s.add_argument("tier", nargs="?", type=str.upper, choices=["S", "M", "L"])
     s = add("pr", lazy("sampo.cost", "cmd_pr"), tier=("Finding your way", 500), help="a pull-request description from a task's brief, with its proof "
                                                   "(red→green, lens verdicts, assumptions, bench replays; printed only); "
-                                                  "fm pr threads ID: review comments to steps; fm pr train: merge in order")
+                                                  "sampo pr threads ID: review comments to steps; sampo pr train: merge in order")
     s.add_argument("id", help="a task id, or threads / train")
     s.add_argument("more", nargs="*", help="threads: the task id")
     s.add_argument("--pr", type=int, help="threads, --post: the PR number (default: the PR of branch foreman/ID; "
@@ -7036,7 +7037,7 @@ def _build_parser(only=None):
     s.add_argument("--type", help="add: the captured task's type (default FEATURE)")
     s = add("night", lazy("sampo.night", "cmd_night"), tier=("Running elsewhere", 1190),
             help="budgeted background work while you're away (landscape when due, the daily second read, the court); "
-                 "refused at high usage; fm digest reports it")
+                 "refused at high usage; sampo digest reports it")
     s.add_argument("--dry-run", action="store_true", help="list tonight's jobs and estimates; run nothing")
     s.add_argument("--stage", action="store_true",
                    help="write the nightly and hourly timer units into state and queue one install request for your yes "
@@ -7087,7 +7088,7 @@ def _build_parser(only=None):
     s.add_argument("what", choices=["agents", "cursor", "gemini"])
     s.add_argument("--out", metavar="PATH",
                    help="where to write it (default: AGENTS.md, .cursor/rules/foreman.mdc or GEMINI.md at the project root)")
-    s.add_argument("--force", action="store_true", help="replace a file fm export didn't write")
+    s.add_argument("--force", action="store_true", help="replace a file sampo export didn't write")
     s = add("why", lazy("sampo.map", "cmd_why"), tier=("Finding your way", 310), help="the commits and Sampo tasks behind FILE[:LINE], with their lessons")
     s.add_argument("target")
     add("snapshots", cmd_snapshots, tier=("Finding your way", 320), help="uncommitted work Sampo saved before a command discarded it, and how to "
@@ -7108,8 +7109,8 @@ def _build_parser(only=None):
     s.add_argument("--resume", action="store_true", help="continue from the first unfinished step")
     s.add_argument("--canary-status", action="store_true", help="print the last canary run's report (T-1362)")
     s.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
-    s.add_argument("--no-check", action="store_true", help="skip fm check, fm release-check and the canary (recorded as skipped; such a release can't --push)")
-    s.add_argument("--stale-ok", metavar="REASON", help="--push even though the guard corpus replay (fm replay --cases) "
+    s.add_argument("--no-check", action="store_true", help="skip sampo check, sampo release-check and the canary (recorded as skipped; such a release can't --push)")
+    s.add_argument("--stale-ok", metavar="REASON", help="--push even though the guard corpus replay (sampo replay --cases) "
                                                         "is red or over 7 days old; the waiver is logged (T-1401)")
     s = add("ship", lazy("sampo.release", "cmd_ship"), tier=("Project and settings", 907),
             help="land HEAD's unpushed commits (or the named ones) on the remote's main: cherry-picked onto the fetched "
@@ -7118,16 +7119,16 @@ def _build_parser(only=None):
     s.add_argument("commits", nargs="*", metavar="COMMIT", help="default: HEAD's commits main lacks (git cherry), or the branch's "
                    "own steps since the last ship while main still matches it")
     s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
-    s.add_argument("--test", metavar="CMD", help="the check to run in the scratch tree (default: the last --test given here, else fm check)")
+    s.add_argument("--test", metavar="CMD", help="the check to run in the scratch tree (default: the last --test given here, else sampo check)")
     s.add_argument("--watch", action="store_true", help="then watch CI on the pushed commit and exit with its result (T-1946)")
     s.add_argument("--chance", metavar="N", help="your chance, 0-100, that CI's blocking jobs pass on the pushed commit: "
-                                               "a write-once ship bet fm ci-watch settles (T-2496)")
+                                               "a write-once ship bet sampo ci-watch settles (T-2496)")
     s.add_argument("--task", metavar="ID", help="ship on this task's publish grant (closed or active) instead of the "
                                                 "active task's, and spend it (T-2007)")
     s.add_argument("--check", action="store_true", help="push nothing: exit 0 when the remote's main has these commits' "
                                                         "changes (by patch), 1 naming the ones it lacks; no grant needed (T-1960)")
     add("release-check", lazy("sampo.demo", "cmd_release_check"), tier=("Project and settings", 910),
-        help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
+        help="sampo doctor and sampo demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
     s = add("secrets", lazy("sampo.secrets", "cmd_secrets"), tier=("Finding your way", 400), help="credentials in the working tree, Claude config and "
                                                              "(--history) git history, by place and kind, never printed")
     s.add_argument("--history", action="store_true", help="also every commit on every branch")
@@ -7135,7 +7136,7 @@ def _build_parser(only=None):
                                                            "it now blocks or lets through compared with the accepted run")
     s.add_argument("--days", type=int, default=14, help="how far back the session logs are read (default 14)")
     s.add_argument("--accept", action="store_true", help="take this run's verdicts as the baseline")
-    s.add_argument("--cases", action="store_true", help="the labelled cases fm guard wrong stored, against the guard (T-1162)")
+    s.add_argument("--cases", action="store_true", help="the labelled cases sampo guard wrong stored, against the guard (T-1162)")
     s.add_argument("--capture", action="store_true", help="with --cases: one FIX per drifted case, once")
     s.add_argument("--oracle", action="store_true", help="run each labelled case in a throwaway bwrap sandbox that records "
                                                          "what the shell would start: a part the guard refuses alone "
@@ -7179,14 +7180,14 @@ def _build_parser(only=None):
     s.add_argument("n", nargs="?", type=int)
     s = add("rule", cmd_rule, tier=("Finding your way", 300), help="the user's regex rules on Bash commands or edited paths that warn or block")
     s.add_argument("action", nargs="?", choices=["list", "add", "rm"], default="list")
-    s.add_argument("arg", nargs="?", help="add: the pattern (a Python regex, searched for); rm: N from fm rule list")
+    s.add_argument("arg", nargs="?", help="add: the pattern (a Python regex, searched for); rm: N from sampo rule list")
     s.add_argument("--on", choices=["bash", "path"], default="bash", help="a Bash command, or an edited file's path")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--block", action="store_true", help="deny a matching call with the why (the default)")
     g.add_argument("--warn", action="store_true", help="a note on a matching call, which still runs")
     s.add_argument("--why", help="what the refusal or note says")
-    s.add_argument("--from-veto", type=int, metavar="N", help="the rule from veto N (fm vetoes): its key words")
-    s.add_argument("--moves", metavar="METRIC", help="the ledger metric this should lower (e.g. corrections): a trial fm digest grades")
+    s.add_argument("--from-veto", type=int, metavar="N", help="the rule from veto N (sampo vetoes): its key words")
+    s.add_argument("--moves", metavar="METRIC", help="the ledger metric this should lower (e.g. corrections): a trial sampo digest grades")
     s.add_argument("--by", type=int, default=30, metavar="DAYS", help="days until the trial is graded (default 30)")
     s = add("trial", lazy("sampo.trials", "cmd_trial"), tier=("Reports", 1110), help="self-changes registered with --moves, graded once due (T-1059)")
     s = add("surprise", cmd_surprise, tier=("Finding your way", 280), help="log where the model of the code was wrong: \"<expected> → <observed>\"")
@@ -7210,9 +7211,9 @@ def _build_parser(only=None):
     s.add_argument("--export-rules", action="store_true", help="write the live lessons to .claude/rules/"
                                                                "foreman-lessons/, one file per task, paths: its files (T-0958)")
     s.add_argument("--repos", action="store_true", help="prior art: the text's identifiers in other projects that opted "
-                                                        "in with fm share on (never sensitive ones), file:line (T-0618)")
+                                                        "in with sampo share on (never sensitive ones), file:line (T-0618)")
     s.add_argument("--others", action="store_true", help="a similar fixed failure or lesson in other projects that opted "
-                                                         "in with fm share on; text is a failure, or use --task (T-1073)")
+                                                         "in with sampo share on; text is a failure, or use --task (T-1073)")
     s.add_argument("--explain", metavar="QUESTION", help="where the identifiers a question names are defined and used, "
                                                          "cited file:line (T-0659)")
     s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
@@ -7229,7 +7230,7 @@ def _build_parser(only=None):
     s.add_argument("--auto", action="store_true")
 
     s = add("clauses", lazy("sampo.recall", "cmd_clauses"), tier=("Every task", 30), help="split a multi-part request into clauses and match each to "
-                                                              "a task; fm next names the unaccounted ones (T-0595)")
+                                                              "a task; sampo next names the unaccounted ones (T-0595)")
     s.add_argument("text", nargs="*", help="the user's message (or, with --note, why the clause needs no task)")
     s.add_argument("--note", type=int, metavar="N", help="mark unaccounted clause N as handled (answered, or no task)")
     s.add_argument("--show", action="store_true", help="the unaccounted clauses of the last request")
@@ -7274,7 +7275,7 @@ def _build_parser(only=None):
     s.add_argument("action", nargs="?", choices=["status", "on", "off", "round", "yield"])
     s.add_argument("n", nargs="?", type=int, help="yield: how many grounded ideas this round queued")
     s.add_argument("--next", action="store_true", help="round: end the open round (its yield is the tasks it made "
-                   "unless fm loop yield recorded one) and start the next; without it an open round is shown again")
+                   "unless sampo loop yield recorded one) and start the next; without it an open round is shown again")
 
     s = add("posture", cmd_posture, tier=("Project and settings", 710), help="lite: only the guard's hook runs in this project; full: every hook (T-0963)")
     s.add_argument("state", nargs="?", choices=["lite", "full"])
@@ -7283,9 +7284,9 @@ def _build_parser(only=None):
                                                        "that only read (yours to turn on; T-0974)")
     s.add_argument("state", nargs="?", choices=["on", "off"])
 
-    s = add("pause", cmd_pause, tier=("Project and settings", 720), help="stop everything Sampo runs unattended, in every project (fm pause off lifts it)")
+    s = add("pause", cmd_pause, tier=("Project and settings", 720), help="stop everything Sampo runs unattended, in every project (sampo pause off lifts it)")
     s.add_argument("state", nargs="?", choices=["on", "off"], default="on")
-    s.add_argument("--now", action="store_true", help="also stop what runs now: fm sessions, serve units, fm run's "
+    s.add_argument("--now", action="store_true", help="also stop what runs now: sampo sessions, serve units, sampo run's "
                    "session, leases (T-1821)")
 
     add("next", cmd_next, tier=("Every task", 10), help="the one next required action (derived from the briefs)")
@@ -7300,7 +7301,7 @@ def _build_parser(only=None):
     s = add("check", cmd_check, tier=("Every task", 80), help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
     s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected",
                                                                           "ambient", "onwrite", "playbooks", "office"])
-    s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
+    s.add_argument("words", nargs="*", help="add: the command; rm: its number (sampo check list); paths: its number, then "
                                             "the globs it covers (none: always run); affected: a command with {tests} "
                                             "(paths) or {names} (file names without extension); onwrite: GLOB and a "
                                             "command with {file}, run on each matching write (5 s; a failure blocks; "
@@ -7324,7 +7325,7 @@ def _build_parser(only=None):
                                                        "intermittent failure; nothing is recorded; T-0475)")
     s.add_argument("--fail-fast", action="store_true", help="stop at the first failing gate (while iterating)")
     s.add_argument("--affected", action="store_true", help="only the tests linked to files changed since the task "
-                                                           "started (fm map); the full gates still decide at the end")
+                                                           "started (sampo map); the full gates still decide at the end")
     s.add_argument("--evidence", metavar="ID", help="record each result as evidence on this task")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--step", type=int)
@@ -7335,7 +7336,7 @@ def _build_parser(only=None):
     g = s.add_mutually_exclusive_group()
     g.add_argument("--brief", action="store_true", help="write a self-contained brief for one read-only subagent")
     g.add_argument("--mark", action="store_true", help="record a finished pass: the next digest starts after it")
-    g.add_argument("--every", type=int, help="fm next calls for a pass every N closed tasks (0: off)")
+    g.add_argument("--every", type=int, help="sampo next calls for a pass every N closed tasks (0: off)")
     g.add_argument("--reject", metavar="TEXT", help="a dead end: later digests skip lines with TEXT (T-0471)")
     g.add_argument("--minutes", action="store_true", help="minutes lost in the last week, by kind (T-0959)")
     s.add_argument("--why", help="--reject: why it's a dead end")
@@ -7354,7 +7355,7 @@ def _build_parser(only=None):
     s = add("repeats", lazy("sampo.repeats", "cmd_repeats"), tier=("Reports", 1030),
             help="commands and procedures this project keeps repeating, and what project tool each could become")
     s.add_argument("action", nargs="?", default="list", choices=["list", "dismiss"])
-    s.add_argument("words", nargs="*", help="dismiss: the shape or step as fm repeats prints it")
+    s.add_argument("words", nargs="*", help="dismiss: the shape or step as sampo repeats prints it")
     s.add_argument("--forge", action="store_true", help="draft a script or skill for each repeat in research/ and "
                                                         "capture a task to adopt it (T-1070)")
     s.add_argument("--draft", action="store_true", help="write a playbook draft from steps 3+ finished tasks took in "
@@ -7388,7 +7389,7 @@ def _build_parser(only=None):
     s = add("tidy", lazy("sampo.tidy", "cmd_tidy"), tier=("Project and settings", 940), help="hygiene (dry-run by default)")
     s.add_argument("--apply", action="store_true")
     s.add_argument("--all", action="store_true")
-    s.add_argument("--lanes-only", action="store_true", help="only worktrees and branches of closed tasks (what fm night runs)")
+    s.add_argument("--lanes-only", action="store_true", help="only worktrees and branches of closed tasks (what sampo night runs)")
     s.add_argument("--plugins", action="store_true", help="also report plugin footprint (slow: runs claude plugin details)")
 
     s = add("rollback", lazy("sampo.rollback", "cmd_rollback"), tier=("Project and settings", 950), help="restore the state as the snapshot taken at the last "
@@ -7424,20 +7425,20 @@ def _build_parser(only=None):
     s.add_argument("--dry-run", action="store_true", help="show the steps; change nothing")
     s = add("drill", lazy("sampo.drill", "cmd_drill"), tier=("Project and settings", 873), help="a scripted day in a temp "
             "home with faults planted mid-day (torn ledger and journal, stale lock, broken lane, corrupt state file, "
-            "unreadable file); passes only when fm fsck or fm verify-ledger finds each or the day heals it, and "
+            "unreadable file); passes only when sampo fsck or sampo verify-ledger finds each or the day heals it, and "
             "nothing crashed. Your own home is never touched (T-1669)")
     s.add_argument("--seed", type=int, help="replay this plan (default: from the clock; the report names it)")
     s.add_argument("--faults", type=int, default=3, help="how many kinds to plant at once, 3 to 7 (default 3)")
     s.add_argument("--restore", nargs="?", const="", metavar="NAME",
-                   help="instead: lay an upgrade snapshot (default the newest; fm rollback --list names them) into a temp "
-                        "home and prove each project's record reads back: ledger chain, fsck, fm state and fm outcomes "
+                   help="instead: lay an upgrade snapshot (default the newest; sampo rollback --list names them) into a temp "
+                        "home and prove each project's record reads back: ledger chain, fsck, sampo state and sampo outcomes "
                         "(T-2652)")
 
     s = add("adopt", lazy("sampo.eco", "cmd_adopt"), tier=("Project and settings", 660), help="take in an existing repo: map, gates (a flake rerun), secrets, "
                                                        "dependencies once; a baseline note and CLEAN/RESEARCH work queued")
     s.add_argument("--history", action="store_true", help="only mine git history (reverts, fix: commits) into a lesson "
                                                           "note and known fixes")
-    s = add("inbox", lazy("sampo.eco", "cmd_inbox"), tier=("Project and settings", 670), help="captured requests waiting; fm inbox gh reads the repo's open "
+    s = add("inbox", lazy("sampo.eco", "cmd_inbox"), tier=("Project and settings", 670), help="captured requests waiting; sampo inbox gh reads the repo's open "
                                                        "issues (read-only) into briefs, their text kept as untrusted data")
     s.add_argument("source", nargs="?", choices=["gh", "spec", "first", "swipe", "pick", "prefer", "ticket"],
                    help="a source to capture from (spec FILE: each unchecked `- [ ]` item, once; ticket FILE|-|KEY: a "
@@ -7465,11 +7466,11 @@ def _build_parser(only=None):
     s.add_argument("--serve", action="store_true", default=None, help="the deferred pile as a page in the browser")
     s = add("ci-watch", lazy("sampo.ci", "cmd_ci_watch"), tier=("Project and settings", 930), help="after a push, poll the branch's latest CI run through gh (or a public repo's API without it); a "
                                                            "failure's log tail becomes a FIX brief (data), up to --max-retries; it can run "
-                                                           "max-polls x interval: use run_in_background, or let fm next or a Monitor wake you")
+                                                           "max-polls x interval: use run_in_background, or let sampo next or a Monitor wake you")
     s.add_argument("--branch", help="default: the branch gh finds here")
     w = s.add_mutually_exclusive_group()
     w.add_argument("--commit", metavar="SHA", help="the commit to watch (default: git HEAD, followed as fixes are pushed)")
-    w.add_argument("--last-ship", action="store_true", help="the main commit the newest fm ship pushed (T-2527)")
+    w.add_argument("--last-ship", action="store_true", help="the main commit the newest sampo ship pushed (T-2527)")
     s.add_argument("--max-retries", type=int, default=3)
     s.add_argument("--interval", type=float, default=30, help="seconds between polls")
     s.add_argument("--max-polls", type=int, default=120)
@@ -7479,10 +7480,10 @@ def _build_parser(only=None):
     s.add_argument("--day", type=float, help="set: the daily cap in points (the user's to set)")
     s.add_argument("--because", help="set: why (logged)")
     s = add("canary", lazy("sampo.eco", "cmd_canary"), tier=("Project and settings", 920), help="Claude Code's version against the last seen; on a change the "
-                                                         "hook fixtures, a hook smoke and fm replay run, a failure is a brief")
+                                                         "hook fixtures, a hook smoke and sampo replay run, a failure is a brief")
     s.add_argument("--if-changed", action="store_true", help="only when the version changed (each session start)")
     s = add("machine", lazy("sampo.eco", "cmd_machine"), tier=("Running elsewhere", 1270), help="this machine's identity: a stable id and a name (shown in "
-                                                           "fm projects and, once named, in brief logs fm sync carries)")
+                                                           "sampo projects and, once named, in brief logs sampo sync carries)")
     s.add_argument("--name", help="name this machine")
 
     s = add("bench", lazy("sampo.bench", "cmd_bench"), tier=("Reports", 1090), help="Sampo's benchmark from finished tasks: build cases, replay "
@@ -7513,7 +7514,7 @@ def _build_parser(only=None):
     b = bsp.add_parser("scorecard", help="each saved run's pass rate on the train and holdout splits (T-0734)")
     b.add_argument("--json", action="store_true")
     b.add_argument("-p", "--project", default=argparse.SUPPRESS)
-    b = bsp.add_parser("repro", help="rerun one duel row on both sides with its saved model and settings: fm bench "
+    b = bsp.add_parser("repro", help="rerun one duel row on both sides with its saved model and settings: sampo bench "
                                      "repro LABEL CASE, as the benchmarks page's Where Sampo loses names it (T-1261)")
     b.add_argument("--json", action="store_true")
     b.add_argument("-p", "--project", default=argparse.SUPPRESS)
@@ -7533,14 +7534,14 @@ def _build_parser(only=None):
             b.add_argument("--ids", nargs="+", help="only these task ids")
         if name in ("list", "run"):
             b.add_argument("--split", choices=["train", "holdout"], help="only that split (a stable 1 in 5 is "
-                                                                          "held out from fm evolve; T-0734)")
+                                                                          "held out from sampo evolve; T-0734)")
         if name == "models":
             b.add_argument("--models", default="haiku,sonnet", help="comma-separated models to compare")
             b.add_argument("--max", type=int, default=3)
             b.add_argument("--runs", type=int, default=1)
             b.add_argument("--budget", type=float, default=3.0)
             b.add_argument("--timeout", type=int, default=30)
-            b.add_argument("--save", action="store_true", help="keep the recommendation for fm run --models")
+            b.add_argument("--save", action="store_true", help="keep the recommendation for sampo run --models")
         if name == "build":
             b.add_argument("--last", type=int, default=30, help="finished tasks to consider, newest first")
             b.add_argument("--commits", metavar="RANGE", help="cases from this git range's commits instead of briefs "
@@ -7635,20 +7636,20 @@ def _build_parser(only=None):
     s.add_argument("--apply", action="store_true", help="with --suggest: make those batches")
 
     s = add("contract", lazy("sampo.contract", "cmd_contract"), tier=("Project and settings", 771),
-            help="bound an unattended run by time and spend: the drive, the loop and fm run stop there, with a receipt (T-1158)")
+            help="bound an unattended run by time and spend: the drive, the loop and sampo run stop there, with a receipt (T-1158)")
     s.add_argument("action", nargs="?", default="show", choices=["show", "off", "receipt"])
     s.add_argument("--until", help="stop at HH:MM local time (today, or tomorrow if past)")
     s.add_argument("--usd", type=float, help="stop after this much USD since the contract began: counts headless runs "
-                   "(fm run, the subagent ledger), not an interactive session")
+                   "(sampo run, the subagent ledger), not an interactive session")
     s.add_argument("--tokens", help="stop after this many tokens (500k, 2M) used by this project's sessions since it began")
 
     s = add("mandate", lazy("sampo.mandate", "cmd_mandate"), tier=("Project and settings", 772),
-            help="a sweeping request kept as one standing record with an end date: fm scout and fm night read it; "
+            help="a sweeping request kept as one standing record with an end date: sampo scout and sampo night read it; "
                  "once it ends, one decision and nothing more captured under it (T-1400)")
     s.add_argument("action", nargs="?", default="show", choices=["show", "set", "off"])
     s.add_argument("text", nargs="*", help="set: the request, in the user's words")
     s.add_argument("--until", metavar="YYYY-MM-DD", help="set: the last day it stands")
-    s.add_argument("--usd", type=float, help="set: a spend bound recorded with it (fm contract enforces spend)")
+    s.add_argument("--usd", type=float, help="set: a spend bound recorded with it (sampo contract enforces spend)")
 
     s = add("goal", lazy("sampo.mandate", "cmd_goal"), tier=("Project and settings", 773),
             help="the standing goal: the mandate with a contents list, each item a done-when check and the tasks that "
@@ -7669,14 +7670,14 @@ def _build_parser(only=None):
     s = add("budget", lazy("sampo.budget", "cmd_budget"), tier=("Project and settings", 770), help="spend on child runs and subagents today, and the caps that "
                                                             "bound it (T-0227)")
     s.add_argument("action", nargs="?", default="show", choices=["show", "set"])
-    s.add_argument("--day", type=float, help="set: USD per day for everything fm spawns")
+    s.add_argument("--day", type=float, help="set: USD per day for everything sampo spawns")
     s.add_argument("--run", type=float, help="set: USD per command")
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
     s = add("settings", lambda a: (lazy("sampo.settingsserve", "cmd_serve") if a.action == "serve" else  # T-1659
                                    lazy("sampo.settings", "cmd_settings"))(a), tier=("Project and settings", 775),
-            help="the fm code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496); "
+            help="the sampo code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496); "
                  "serve: the same as a page on 127.0.0.1, token-locked, changes through set")
     s.add_argument("action", nargs="?", default="list", choices=["list", "get", "set", "diff", "export", "import", "undo",
                                                                  "bisect", "profile", "chords", "serve", "check",
@@ -7685,7 +7686,7 @@ def _build_parser(only=None):
     # T-1549 changed [SNAPSHOT]; T-1658 log [KEY], macro [NAME], duel A B, replay, words TEXT
     # T-1543 bisect, T-1656 profile, T-1660 chords, T-1659 serve
     s.add_argument("key", nargs="?", help="get/set: a setting's name (motion, colors.ok, keys.q, mascot, …); import: the "
-                                          "share code fm settings export printed (T-1510; tui.toml's [profile] tables "
+                                          "share code sampo settings export printed (T-1510; tui.toml's [profile] tables "
                                           "aren't in it); list: a group alone (look, colors, layout, keys, pane; "
                                           "T-1511)")
     s.add_argument("value", nargs="?", help="set: the new value")
@@ -7694,9 +7695,9 @@ def _build_parser(only=None):
                    "(tui.toml, the default) or for this project alone, under the repo's policy pins (T-1611)")
     s.add_argument("--set", dest="pairs", action="append", metavar="KEY=VALUE", help="macro NAME: what it sets (saved, "
                    "not run); replay: draw the runs with it set, nothing written, to see what it breaks (T-1658)")
-    s.add_argument("--events", action="append", metavar="FILE", help="replay: an fm code .events.jsonl to play too; "
+    s.add_argument("--events", action="append", metavar="FILE", help="replay: a sampo code .events.jsonl to play too; "
                    "duel: the run to draw (default: the sample run)")
-    s.add_argument("--runs", type=int, default=5, help="replay: this project's last N fm code runs (default 5)")
+    s.add_argument("--runs", type=int, default=5, help="replay: this project's last N sampo code runs (default 5)")
     s.add_argument("--apply", action="store_true", help="words: set what it proposes (one undo puts it back)")
     s.add_argument("--model", default="haiku", help="words, newcomer --real: the model (default haiku)")
     s.add_argument("--goals", metavar="FILE", help="newcomer: the goals to play (default plugin/evals/settings/"
@@ -7706,7 +7707,7 @@ def _build_parser(only=None):
             help="export: Sampo's state as one tarball, secrets redacted and credential files left out; import FILE: "
                  "into an empty home, every member's path and hash checked first")
     s.add_argument("action", choices=["export", "import"])
-    s.add_argument("file", nargs="?", help="import: the tarball fm home export wrote")
+    s.add_argument("file", nargs="?", help="import: the tarball sampo home export wrote")
     s.add_argument("--out", metavar="FILE", help="export: where to write it (default: foreman-home-DATE.tar.gz here)")
 
     s = add("evolve", lazy("sampo.evolve", "cmd_evolve"), tier=("Reports", 1100), help="one bench-gated generation: revise (or --drop) one Sampo "
@@ -7723,7 +7724,7 @@ def _build_parser(only=None):
     s.add_argument("--live", help="reuse these earlier live results instead of replaying live again")
     s.add_argument("--budget", type=float, default=3.0)
     s.add_argument("--timeout", type=int, default=30)
-    s.add_argument("--moves", metavar="METRIC", help="the ledger metric a kept change should lower: a trial fm digest grades (T-1059)")
+    s.add_argument("--moves", metavar="METRIC", help="the ledger metric a kept change should lower: a trial sampo digest grades (T-1059)")
     s.add_argument("--by", type=int, default=30, metavar="DAYS", help="days until the trial is graded (default 30)")
 
     s = add("oracle", lazy("sampo.ideas", "cmd_oracle"), tier=("Finding your way", 490), help="behaviour examples and ambiguities from the task's spec alone, "
@@ -7750,7 +7751,7 @@ def _build_parser(only=None):
     s.add_argument("--file", help="init/put/draft: read the text from this file (- is stdin)")
     s.add_argument("--per-kind", type=int, help="spec/exam: exam scenarios per kind (default 9); a third is held out")
     s.add_argument("--arm", choices=("genesis", "plain", "oracle", "empty"), default="genesis",
-                   help="exam: who drafts (genesis: fm genesis draft; plain: a model with the format only; oracle/empty: "
+                   help="exam: who drafts (genesis: sampo genesis draft; plain: a model with the format only; oracle/empty: "
                         "the scoring's own bounds)")
     s.add_argument("--split", choices=("holdout", "train", "all"), default="holdout", help="exam: which scenarios")
     s.add_argument("--seed", type=int, default=0, help="exam: the scenario draw")
@@ -7775,17 +7776,17 @@ def _build_parser(only=None):
     s.add_argument("--blindspots", action="store_true", help="instead: closed FIXes whose changed lines no finder flagged "
                    "(with --capture 1: file one 'add a rule, tool or check' task a day; T-2241)")
     s.add_argument("--ladder", action="store_true", help="also run each stack's own analyzer (ruff, go vet, gosec) from "
-                   "Sampo's registry, only in a tree you said yes to (fm prove --yes-run); its findings are tool:NAME (T-2239)")
+                   "Sampo's registry, only in a tree you said yes to (sampo prove --yes-run); its findings are tool:NAME (T-2239)")
     s.add_argument("--hotspots", action="store_true", help="instead: tracked files by how many fix commits touched them "
                    "in the last 500 non-merge commits, counting those whose subject has a fix word (git only, no repo code; not with "
                    "--rank or --capture; T-2238)")
-    s = add("prove", lazy("sampo.prove", "cmd_prove"), tier=("Finding your way", 458), help="fm find's candidates as proof "
+    s = add("prove", lazy("sampo.prove", "cmd_prove"), tier=("Finding your way", 458), help="sampo find's candidates as proof "
             "tickets or leads: an untested function stubbed on a throwaway copy while the suite stays green, docs/dep/secret "
             "re-found cold; runs the tree's tests, so only in a tree you commit to (T-2122); exit 1 when one is proven")
     s.add_argument("path", nargs="?", default=".", help="the tree to prove in (default: here)")
     s.add_argument("--limit", type=int, default=10, help="prove the best N candidates (default 10)")
     s.add_argument("--rollup", action="store_true", help="instead: done tasks no run here proved, by kind (typed, red, "
-                   "inconclusive, UI unshot, docs, perf, meaning; T-2273, folded in from fm proof by T-2461)")
+                   "inconclusive, UI unshot, docs, perf, meaning; T-2273, folded in from sampo proof by T-2461)")
     s.add_argument("--days", type=int, default=30, help="--rollup: how far back closed tasks are read (default 30)")
     s.add_argument("files", nargs="*", help="--docs: the docs files to check (default: all the repo's markdown)")
     s.add_argument("--steer", action="store_true", help="instead: run each unsettled user-steer rule's [check:] on the "
@@ -7815,10 +7816,10 @@ def _build_parser(only=None):
                    "shellcheck, systemd-analyze verify) on a throwaway copy, offline; a missing tool leaves the file "
                    "unproven and names it, nothing is installed; exit 0 none failed, 1 a failure, 2 nothing checked (T-2385)")
     s.add_argument("--bugs", type=int, default=None, metavar="N", help="turns the bug rung on: ask a cheap child for bug "
-                   "candidates in the N hottest files (N is required, at most 10; try 3), as in fm prove --bugs 3 PATH; "
+                   "candidates in the N hottest files (N is required, at most 10; try 3), as in sampo prove --bugs 3 PATH; "
                    "each is proven by a model-written red test or stays a lead; trusted trees only (T-2242)")
-    s.add_argument("--capture", type=int, metavar="N", help="file up to N proven findings as planned tasks fm run works, "
-                   "each red until fixed (its criterion is fm prove --only ID); nothing proven writes "
+    s.add_argument("--capture", type=int, metavar="N", help="file up to N proven findings as planned tasks sampo run works, "
+                   "each red until fixed (its criterion is sampo prove --only ID); nothing proven writes "
                    "research/prove-receipt.md (T-2123)")
     s.add_argument("--only", metavar="ID", help="prove only the finding with this id (a task's criterion); exit 0 once it "
                    "is gone or no longer proven. bug-ID (a --bugs finding) reruns its saved test: red is still open "
@@ -7827,11 +7828,11 @@ def _build_parser(only=None):
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
     s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard", "long", "runs", "steer"),
                    help="scorecard: each gen-0 §2 capability's held-out pass rate from graded runs; exit 1 unless all "
-                        "pass (T-2097); long: replayed past changes, fm exam long gen [--from PATH] [--n N] | run RUN | "
+                        "pass (T-2097); long: replayed past changes, sampo exam long gen [--from PATH] [--n N] | run RUN | "
                         "grade RUN (--agent oracle|empty; T-2258); steer: raw words expanded into standing rules, graded by a "
-                        "stronger judge, fm exam steer [status] | cases [--from FILE] | run [--split S] [--model M] | "
+                        "stronger judge, sampo exam steer [status] | cases [--from FILE] | run [--split S] [--model M] | "
                         "expand SESSION | live on|off (T-2625)")
-    s.add_argument("run", nargs="?", help="run/grade/check: the run id fm exam gen printed; long: gen|run|grade")
+    s.add_argument("run", nargs="?", help="run/grade/check: the run id sampo exam gen printed; long: gen|run|grade")
     s.add_argument("rest", nargs="*", help="long run|grade: the run id")
     s.add_argument("--from", dest="from_", metavar="PATH", help="long gen: the local git repo to replay (default Sampo's own)")
     s.add_argument("--n", type=int, help="long gen: goals to make (default 6, at most 20)")
@@ -7845,7 +7846,7 @@ def _build_parser(only=None):
     s.add_argument("--bar", type=float, default=0.8, help="scorecard: the held-out rate a capability needs to pass")
     s.add_argument("--author", choices=("self", "child"), default="self",
                    help="gen: child = a tool-less model writes the bug, vuln, slow, dep, none and rank plants and the goal "
-                        "and resume keys (kept only when fm exam check passes); only these decide fm exam scorecard")
+                        "and resume keys (kept only when sampo exam check passes); only these decide sampo exam scorecard")
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
     s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
     s.add_argument("--jobs", type=int, help="run, long run: session scenarios at once (default 1, T-2292); steer run: "
@@ -7874,13 +7875,13 @@ def _build_parser(only=None):
                    help="run: crawl under a hostile profile instead (repeatable; all for every one): "
                         + "; ".join(f"{k}: {v}" for k, v in smoke.PROFILES.items()))
     s.add_argument("--strict", action="store_true", help="run: fail on the frame matrix's and the profiles' findings "
-                                                         "too (fm smoke set strict on makes it the default)")
+                                                         "too (sampo smoke set strict on makes it the default)")
     from sampo import design  # T-1506: stdlib only and small; its rule list is the help's epilog
     s = add("design", lazy("sampo.design", "cmd_design"), tier=("Every task", 92), epilog=design.rules_help(),
             formatter_class=argparse.RawDescriptionHelpFormatter, help="design lint PATHS: generic-design tells and "
             "craft slips in .css/.scss/.html/.jsx/.tsx/.vue/.svelte (exit 1 on findings); extract PATHS: the :root "
             "tokens into DESIGN.md; palette SEED: light/dark roles from one colour; contrast FILE [PAIRS]: WCAG proofs; "
-            "tokens DESIGN.md --to css|app|pane|brand|md: its Tokens table as CSS variables, an fm code theme, the "
+            "tokens DESIGN.md --to css|app|pane|brand|md: its Tokens table as CSS variables, a sampo code theme, the "
             "pane's palette, a favicon and social card (--out DIR) or a ## Tokens section (a DTCG or Figma variables "
             ".json reads too); infer PATHS: the repeated literal colours, durations and radii as proposed tokens; "
             "xray PAGE: each element outlined on- or off-token in a shot (exit 1 on any off); "
@@ -7909,11 +7910,11 @@ def _build_parser(only=None):
                                                  "card.svg; tokens --to md: the file to write ## Tokens into (default "
                                                  "prints); xray: the outlined shot's PNG")
     s.add_argument("--to", choices=["css", "app", "pane", "brand", "md"], default="css", help="tokens: CSS custom "
-                   "properties (dark under prefers-color-scheme), a tui.toml [colors] table fm settings accepts, the "
+                   "properties (dark under prefers-color-scheme), a tui.toml [colors] table sampo settings accepts, the "
                    "pane's palette JSON (T-1651), favicon.svg and a 1200x630 card.svg in the accent, bg and text "
                    "roles, or a ## Tokens section (T-1652)")
     s.add_argument("--tokens", metavar="FILE", help="xray: the DESIGN.md (or tokens .json) whose colours count as "
-                   "on-token (default: the one fm motion finds); lint: the one whose ## Tokens it names when no "
+                   "on-token (default: the one sampo motion finds); lint: the one whose ## Tokens it names when no "
                    "linted file uses them (default: the repo's DESIGN.md; T-1874)")
     s.add_argument("--light", action="store_true", help="tokens --to app|pane|brand: the light values (app: on the "
                    "paper theme)")
@@ -7938,7 +7939,7 @@ def _build_parser(only=None):
     s.add_argument("targets", nargs="+", metavar="URL|FILE")
     s.add_argument("--frames", type=int, default=5, help="frames to take (0 to 60; default 5)")
     s.add_argument("--every", type=int, default=250, metavar="MS", help="ms between frames (10 to 10000; default 250)")
-    s.add_argument("--frozen", action="store_true", help="fm smoke's frozen profile first: the clock fixed, CSS "
+    s.add_argument("--frozen", action="store_true", help="sampo smoke's frozen profile first: the clock fixed, CSS "
                    "animations and transitions paused")
     s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="shoot at a surface's width, height and scale")
     s.add_argument("--reduced-motion", action="store_true", help="emulate prefers-reduced-motion: reduce")
@@ -7948,7 +7949,7 @@ def _build_parser(only=None):
                    "each view light then dark, into PAGE[-W]-SCHEME/")
     s.add_argument("--out", metavar="DIR", help="write into this folder (never a link) instead")
     s.add_argument("--diff", metavar="BASE", help="compare each viewport shot with BASE/<page>/viewport.png (an earlier "
-                   "fm shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
+                   "sampo shot --out BASE): exit 1 over the baseline's noise floor (the most its own frames differ) or "
                    "when a font fell back (T-1637)")
     s = add("critique", lazy("sampo.critique", "cmd_critique"), tier=("Every task", 94), help="URL|FILE: a computed-style "
             "census of the page (colours, fonts, sizes, radii, shadows, spacing, with counts; or a census .json) "
@@ -7973,7 +7974,7 @@ def _build_parser(only=None):
     s.add_argument("--any-url", action="store_true", help="open any http(s) page, not only localhost, 127.0.0.1, "
                    "[::1] and files")
     s = add("flow", lazy("sampo.flow", "cmd_flow"), tier=("Every task", 97), help="FILE: a user journey, one step a line "
-            "(goto URL|FILE, click SEL, type SEL TEXT, expect SEL [TEXT], wait MS), in the headless Chromium fm shot "
+            "(goto URL|FILE, click SEL, type SEL TEXT, expect SEL [TEXT], wait MS), in the headless Chromium sampo shot "
             "finds, as a verify command: exit 1 names the step that failed, 2 with no browser (never a pass) (T-1639)")
     s.add_argument("file", metavar="FILE")
     s.add_argument("--timeout", type=float, default=10, metavar="S",
@@ -7981,8 +7982,8 @@ def _build_parser(only=None):
     s.add_argument("--any-url", action="store_true", help="goto may open any http(s) page, not only localhost, "
                    "127.0.0.1, [::1] and files")
     s = add("stories", lazy("sampo.stories", "cmd_stories"), tier=("Every task", 96), help="CHART: a component's state "
-            "matrix, one page with a cell per state the JSON chart lists, each reached by fm flow steps and shot in "
-            "the headless Chromium fm shot finds; no browser: the states listed, why, and exit 2 (never a pass) (T-1640)")
+            "matrix, one page with a cell per state the JSON chart lists, each reached by sampo flow steps and shot in "
+            "the headless Chromium sampo shot finds; no browser: the states listed, why, and exit 2 (never a pass) (T-1640)")
     s.add_argument("chart", metavar="CHART")
     s.add_argument("--profile", choices=["tv", "eink", "car", "wrist"], help="shoot every state at a surface's width, height and scale")
     s.add_argument("--reduced-motion", action="store_true", help="emulate prefers-reduced-motion: reduce")
@@ -7993,7 +7994,7 @@ def _build_parser(only=None):
             "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three|lab: a clean "
             "score as CSS custom properties and @keyframes, WAAPI options or three.js tween parameters, the same "
             "durations and easings in each, reduced forms included (T-1625); verify [PATH] [--samples FILE]: the page at "
-            "fm smoke's web URL sampled under its frozen profile (or a samples file), each value held to the score's "
+            "sampo smoke's web URL sampled under its frozen profile (or a samples file), each value held to the score's "
             "duration and curve within tolerance, every drift named; no browser: says so and checks the score (T-1627)")
     s.add_argument("action", choices=["check", "compile", "verify"])
     s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
@@ -8017,7 +8018,7 @@ def _build_parser(only=None):
                    "carry named (T-1847); metaballs: a seeded blob scene, made by marching tetrahedra, printed or "
                    "--out, no FILE (T-1848); terrain: the repo's churn per busiest top-level path as ridges over "
                    "--days, printed or --out, no FILE (T-1851); airlock: what the guard held and let through over "
-                   "--days as boxes either side of a gate, no FILE (T-1849); bench: fm code bench's last 12 runs, a "
+                   "--days as boxes either side of a gate, no FILE (T-1849); bench: sampo code bench's last 12 runs, a "
                    "box per seed, no FILE (T-1850); lookbook: the look cards hung in a gallery, best ranked first, "
                    "--count of them, no FILE (T-1852); shade: a fragment shader (a card, a .frag) run per pixel on the "
                    "CPU, a GLSL ES subset, written as a PNG to --out (T-1846); gallery: every built-in scene drawn "
@@ -8071,7 +8072,7 @@ def _build_parser(only=None):
     s.add_argument("--cards", action="store_true", help="looks: the look cards as trading cards on a print sheet "
                    "(63 x 88 mm, nine to an A4 page) instead of the gallery")
     s.add_argument("--cells", action="store_true", help="graph: print it in the terminal as 24-bit half blocks "
-                   "(fm scene cells) with a key of status counts, writing no page; needs a truecolor terminal (T-1655)")
+                   "(sampo scene cells) with a key of status counts, writing no page; needs a truecolor terminal (T-1655)")
     s.add_argument("--cols", type=int, default=64, help="--cells: how many columns wide, 2-400")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
@@ -8084,7 +8085,7 @@ def _build_parser(only=None):
     s = add("code", lazy("sampo.smith", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Sampo Code: run a request through Sampo's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
-                 "closes. fm code models lists the profiles (T-1212); on a terminal a request runs in the app, as fm code tui [REQUEST] does (--plain, --json or piped: lines; T-1283, T-1343); fm code bench grades a model or worker on seeded tasks (T-1215); fm code runners lists every coding CLI and model it can use (T-1328); claude's -p, -c and "
+                 "closes. sampo code models lists the profiles (T-1212); on a terminal a request runs in the app, as sampo code tui [REQUEST] does (--plain, --json or piped: lines; T-1283, T-1343); sampo code bench grades a model or worker on seeded tasks (T-1215); sampo code runners lists every coding CLI and model it can use (T-1328); claude's -p, -c and "
                  "--output-format json work too (T-1399)",
             conflict_handler="resolve")  # T-1399: -p after the verb is claude's --print; the project is --project
     s.add_argument("request", nargs="*", help="what to do (or: models, runners, config, why, bench, tui)")
@@ -8093,7 +8094,7 @@ def _build_parser(only=None):
     s.add_argument("-c", "--continue", dest="resume", action="store_const", const="", help="claude's -c: the same "
                    "as --resume with no ID (the newest unfinished run)")
     s.add_argument("--output-format", action=_OutputFormat, metavar="json", help="claude's --output-format json: "
-                   "the same as --json (fm code's own events; text and stream-json are refused)")
+                   "the same as --json (sampo code's own events; text and stream-json are refused)")
     s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
     s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
     s.add_argument("--max-steps", type=int, help="model turns for the whole run (default 40; a resume keeps the "
@@ -8119,51 +8120,51 @@ def _build_parser(only=None):
                                                    "the harness reverts what the guard refuses and its verify decides "
                                                    "(T-1214)")
     s.add_argument("--worker-timeout", type=int, metavar="SECONDS", help="each worker turn's limit (default 1200)")
-    s.add_argument("--use", metavar="NAME", help="fm code runners: make NAME the default runner (code.toml's runner = "
+    s.add_argument("--use", metavar="NAME", help="sampo code runners: make NAME the default runner (code.toml's runner = "
                                                 "NAME; with --here, this project's only, by name; T-1328)")
-    s.add_argument("--here", action="store_true", help="fm code runners --use: for this project only")
-    s.add_argument("--check", action="store_true", help="fm code runners: run each installed CLI's --version; flag a "
+    s.add_argument("--here", action="store_true", help="sampo code runners --use: for this project only")
+    s.add_argument("--check", action="store_true", help="sampo code runners: run each installed CLI's --version; flag a "
                    "configured model the provider has retired, or retires within 60 days (retiring soon)")
-    s.add_argument("--explain", metavar="KEY", help="fm code config: what one setting does, its value and source now, "
+    s.add_argument("--explain", metavar="KEY", help="sampo code config: what one setting does, its value and source now, "
                    "and how to change it")
-    s.add_argument("--ping", nargs="?", const="", metavar="NAME", help="fm code runners: ask each installed runner "
+    s.add_argument("--ping", nargs="?", const="", metavar="NAME", help="sampo code runners: ask each installed runner "
                    "(or NAME) one tiny question through its read-only plan command and say how it answered (ok, not "
                    "logged in, usage limit, flag refused, endpoint down, no answer), how fast, and its version; spends "
                    "a few tokens a runner")
     s.add_argument("--verify", metavar="CMD", help="the plan without a model: one S task done when CMD passes "
                                                    "(it must fail now)")
     s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes
-    s.add_argument("--seeds", metavar="A,B", help="fm code bench: only these seeds (default: all)")
-    s.add_argument("--variants", metavar="A,B", help="fm code bench: run the seeds once per prompt variant (base, "
+    s.add_argument("--seeds", metavar="A,B", help="sampo code bench: only these seeds (default: all)")
+    s.add_argument("--variants", metavar="A,B", help="sampo code bench: run the seeds once per prompt variant (base, "
                                                      "evidence) and report each one's closed count (T-1403)")
-    s.add_argument("--probe", metavar="MODEL", help="fm code runners: score a model profile 0-10 on ten small graded "
+    s.add_argument("--probe", metavar="MODEL", help="sampo code runners: score a model profile 0-10 on ten small graded "
                                                     "prompts: JSON only, data stays data, unknown over invented "
                                                     "(T-1403)")
-    s.add_argument("--seed-timeout", type=int, metavar="SECONDS", help="fm code bench: each seed's limit (default 600)")
+    s.add_argument("--seed-timeout", type=int, metavar="SECONDS", help="sampo code bench: each seed's limit (default 600)")
     s.add_argument("--plain", action="store_true", help="one line per event, no screen, even on a terminal (T-1283, T-1343)")
-    s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG "
+    s.add_argument("--snapshot", metavar="SVG", help="sampo code tui: draw the screen after --events FILE's run to SVG "
                                                      "(FILE.png: a PNG, with rsvg-convert; T-1546)")
-    s.add_argument("--chaos", type=float, metavar="SECONDS", help="fm code tui: the chaos twin: hostile events, keys "
+    s.add_argument("--chaos", type=float, metavar="SECONDS", help="sampo code tui: the chaos twin: hostile events, keys "
                    "and resizes at a headless app for SECONDS; exit 1 on a crash, with the seed to replay (T-1546)")
-    s.add_argument("--seed", type=int, help="fm code tui --chaos: replay a run")
-    s.add_argument("--events", metavar="FILE", help="fm code tui --snapshot: a run's events (fm code … --json > FILE)")
-    s.add_argument("--size", metavar="WxH", help="fm code tui --snapshot: the screen's columns x rows (default 120x34)")
-    s.add_argument("--record", metavar="VIDEO", help="fm code tui: play --events FILE's run into an mp4 or gif (needs "
+    s.add_argument("--seed", type=int, help="sampo code tui --chaos: replay a run")
+    s.add_argument("--events", metavar="FILE", help="sampo code tui --snapshot: a run's events (sampo code … --json > FILE)")
+    s.add_argument("--size", metavar="WxH", help="sampo code tui --snapshot: the screen's columns x rows (default 120x34)")
+    s.add_argument("--record", metavar="VIDEO", help="sampo code tui: play --events FILE's run into an mp4 or gif (needs "
                                                      "ffmpeg and rsvg-convert; T-1300)")
-    s.add_argument("--print-config", action="store_true", help="fm code tui: print its settings as tui.toml (the "
+    s.add_argument("--print-config", action="store_true", help="sampo code tui: print its settings as tui.toml (the "
                                                                "defaults with yours over them)")
-    s.add_argument("--themes", action="store_true", help="fm code tui: every theme side by side on a sample run "
-                                                         "(T-1311); choose one with fm settings set theme NAME")
-    s.add_argument("--recheck", metavar="ID", help="fm code: run task ID's checks again, each through Sampo's guard "
+    s.add_argument("--themes", action="store_true", help="sampo code tui: every theme side by side on a sample run "
+                                                         "(T-1311); choose one with sampo settings set theme NAME")
+    s.add_argument("--recheck", metavar="ID", help="sampo code: run task ID's checks again, each through Sampo's guard "
                                                    "and recorded, after a person worked it (the app's x; T-1341)")
-    s.add_argument("--tour", action="store_true", help="fm code tui: a 30-second guided run, a caption naming each "
+    s.add_argument("--tour", action="store_true", help="sampo code tui: a 30-second guided run, a caption naming each "
                                                        "panel; --snapshot FILE.svg writes it as one animated SVG, "
                                                        "--plain as lines (T-1309)")
     s = add("serve", lazy("sampo.serve", "cmd_serve"), tier=("Running elsewhere", 1140),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
-    s.add_argument("--all", action="store_true", help="with stop: every fm serve unit")
+    s.add_argument("--all", action="store_true", help="with stop: every sampo serve unit")
 
     s = add("taste", lazy("sampo.ideas", "cmd_taste"), tier=("Reports", 1050), help="what your choices say you want: kept, dropped (and why), "
                                                          "steered, corrected, vetoes to propose; brainstorms use it")
@@ -8181,7 +8182,7 @@ def _build_parser(only=None):
     s.add_argument("action", nargs="?", metavar="rank|keep|revert|not|calibrate|learn|tournament|opposite|book|roll|"
                    "bisect|seance|history",  # T-1672: roll the look of the day, where taste turned, the departed,
                    # kept/reverted from DESIGN.md's git history (fm looks history [PATH])
-                   help="checked by fm looks itself, so a look named here gets the fix (fm looks keep LOOK)")
+                   help="checked by sampo looks itself, so a look named here gets the fix (sampo looks keep LOOK)")
     s.add_argument("words", nargs="*", metavar="LOOK|PATH")
     s.add_argument("--why", help="keep/revert/not: the user's words")
     s.add_argument("--answers", help="calibrate: 12 answers, a, b or n (neither), comma-separated, in pair order")
@@ -8208,7 +8209,7 @@ def _build_parser(only=None):
     s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
     s.add_argument("--confidence", metavar="N", help="race: whole percent, 0-100, that the original side wins; a bet in "
                                                      "the calibration ledger (T-2337)")
-    s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
+    s.add_argument("--spike", action="store_true", help="new: a throwaway lane sampo lane merge refuses (T-0732)")
     s.add_argument("--force", metavar="REASON", help="resume: although the builder isn't known to be stopped or ignored "
                                                      "files would go (T-1028); the reason is logged")
     s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "
@@ -8217,7 +8218,7 @@ def _build_parser(only=None):
     s.add_argument("--revert-route", metavar="DATE", help="brief, no id: put back the dearer picks the probe-down route "
                                                           "promoted since DATE (YYYY-MM-DD), probing paused 20 lanes (T-2353)")
     s.add_argument("--why", metavar="REASON", help="rm: drop the builder's work (its branch is kept, a locked worktree "
-                                                   "goes); the next fm lane brief starts from this (T-1823)")
+                                                   "goes); the next sampo lane brief starts from this (T-1823)")
     s = add("session", lazy("sampo.session", "cmd_session"), tier=("Running elsewhere", 1160), help="agent sessions on this device (claude, codex, gemini, "
                                                                 "opencode), detached: start MESSAGE, list, tail ID, "
                                                                 "send ID MESSAGE, stop ID, rm ID, agents")
@@ -8245,7 +8246,7 @@ def _build_parser(only=None):
     s.add_argument("rest", nargs="*", help="the session id, then a ref, path or message")
     s.add_argument("--all", action="store_true", help="list: headless (SDK, claude -p) sessions too")
     s.add_argument("--limit", type=int, default=150, help="list --all: at most this many headless ones, newest first")
-    s.add_argument("--agent", help="show/image: a subagent's transcript (its id from fm claude agents)")
+    s.add_argument("--agent", help="show/image: a subagent's transcript (its id from sampo claude agents)")
     s.add_argument("--from", dest="from_line", type=int, default=0, help="show: from this transcript line")
     s.add_argument("--follow", action="store_true", help="list/show: keep printing as sessions change")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
@@ -8270,19 +8271,19 @@ def _build_parser(only=None):
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
     s.add_argument("--sandbox", action="store_true", help="each session under Claude Code's sandbox: Bash writes only "
                                                           "its checkout, fm's state and the git dir; no sandbox, no "
-                                                          "session (T-0975); or fm sandbox on")
+                                                          "session (T-0975); or sampo sandbox on")
     s.add_argument("--no-sandbox", action="store_true", help="run sessions without Claude Code's sandbox")
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
-    s.add_argument("--runner", metavar="NAME", help="work each task with fm code --task on this runner (fm code "
+    s.add_argument("--runner", metavar="NAME", help="work each task with sampo code --task on this runner (sampo code "
                                                    "runners lists them) instead of a claude -p session")
     s.add_argument("--all-projects", action="store_true", help="work every Sampo project's queue in turn with "
                    "these options (each with its own run lock); a project with nothing queued is skipped")
     s.add_argument("--save", action="store_true", help="keep --models for later runs")
-    s = add("sandbox", lazy("sampo.serve", "cmd_sandbox"), tier=("Project and settings", 900), help="fm run's sandbox as a project setting: on, off, allow "
+    s = add("sandbox", lazy("sampo.serve", "cmd_sandbox"), tier=("Project and settings", 900), help="sampo run's sandbox as a project setting: on, off, allow "
                                                            "DOMAIN, show (T-1086)")
     s.add_argument("action", nargs="?", default="show", choices=["on", "off", "allow", "show"])
     s.add_argument("domains", nargs="*")
-    s = add("notify", lazy("sampo.serve", "cmd_notify"), tier=("Project and settings", 810), help="command fm run uses to tell you a task finished or blocked")
+    s = add("notify", lazy("sampo.serve", "cmd_notify"), tier=("Project and settings", 810), help="command sampo run uses to tell you a task finished or blocked")
     s.add_argument("command", nargs="*", help="gets the message as $1, e.g. notify-send Sampo \"$1\"")
     s.add_argument("--off", action="store_true")
     s.add_argument("--test", action="store_true")
@@ -8309,7 +8310,7 @@ def _build_parser(only=None):
     s.add_argument("--next", action="store_true", help="one ranked list of every project's next action")
     s.add_argument("--sweep", metavar="FIX", help="instead: ask every other project about a fix (the brief's first "
                    "line): where a pattern is (or what recall relates), a brief in its inbox; edits nothing there "
-                   "(fm sweep until T-2461)")
+                   "(sampo sweep until T-2461)")
     s.add_argument("--grep", metavar="TEXT", help="--sweep: the sibling pattern (a fixed string, git grep in each project)")
     s.add_argument("--type", default="FIX", help="--sweep: the brief's type")
     s.add_argument("--dry-run", action="store_true", help="--sweep: say where it would ask; capture nothing")
@@ -8325,7 +8326,7 @@ def _build_parser(only=None):
     s = add("compact-output", lazy("sampo.setup", "cmd_compact_output"), tier=("Project and settings", 820),
             help="shorten big Bash outputs for the model (head, failure lines, tail; full text in a file)")
     s.add_argument("state", nargs="?", choices=["on", "off", "shadow", "status"],
-                   help="shadow: record what it would cut (fm compact-output shows the total), never shorten")
+                   help="shadow: record what it would cut (sampo compact-output shows the total), never shorten")
     s = add("uninstall-user", lazy("sampo.setup", "cmd_uninstall"), tier=("Internal (hooks and installer)", 1340), help="undo install-user from the manifest")
     s.add_argument("--dry-run", action="store_true")
     by_title = {}
@@ -8562,7 +8563,7 @@ def _now_sampo():
             f.write(today + "\n")
     except OSError:  # unwritable: say nothing rather than every time
         return
-    print("fm is now sampo: `sampo <command>` runs the same commands (fm stays as its alias)", file=sys.stderr)
+    print("sampo is now sampo: `sampo <command>` runs the same commands (sampo stays as its alias)", file=sys.stderr)
 
 
 def main(argv=None):
@@ -8578,12 +8579,12 @@ def main(argv=None):
     _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag
     if not argv and c.find_project(os.getcwd()):  # T-0917: bare fm in a project answers "what now?"
         main(["state", "--line"])
-        print("fm help: every command")
+        print("sampo help: every command")
         return main(["next"])
     args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm elsewhere: the tiers, not a usage error
     if os.environ.get("FOREMAN_WORKER_OF") and not _worker_may(args):
-        print(f"fm: refused: this is a worker of an fm code run ({os.environ['FOREMAN_WORKER_OF']}), which only reads "
-              f"Sampo's state; `fm {' '.join(argv[:2])}` would change it, and that is the user's to do (or fm code's "  # not a list: the verb words
+        print(f"fm: refused: this is a worker of a sampo code run ({os.environ['FOREMAN_WORKER_OF']}), which only reads "
+              f"Sampo's state; `fm {' '.join(argv[:2])}` would change it, and that is the user's to do (or sampo code's "  # not a list: the verb words
               "own harness's)", file=sys.stderr)
         return 2
     if args.cmd != "complete":  # a TAB press reads the briefs, never syncs or locks (round-7 review)
@@ -8594,11 +8595,11 @@ def main(argv=None):
         return rc if isinstance(rc, int) else 0  # evidence --run / check pass on the command's exit code
     except c.PolicyError as e:
         print(f"fm: refused: {e}", file=sys.stderr)
-        print("Next: fm next", file=sys.stderr)  # T-2653: the one required action, which names what the refusal waits on
+        print("Next: sampo next", file=sys.stderr)  # T-2653: the one required action, which names what the refusal waits on
         return 2
     except c.LockTimeout as e:
         import shlex
-        print(f"fm: {e} (another fm or hook is writing; retry)", file=sys.stderr)
+        print(f"fm: {e} (another sampo or hook is writing; retry)", file=sys.stderr)
         print(f"Next: fm {shlex.join(argv)}", file=sys.stderr)  # T-2653: the same command again
         return 3
     except (UsageError, KeyError) as e:
@@ -8610,20 +8611,20 @@ def main(argv=None):
         if not any(a == e.filename or a.endswith(f"={e.filename}") for a in argv):  # T-1189: only a file named on
             # the command line (--file X or --file=X) is the caller's mistake; any other is a real error
             if isinstance(e, PermissionError) and e.filename and c.in_state(e.filename):  # T-1669: a state file's mode, not a bug: named
-                print(f"fm: can't open {e.filename}: permission denied; restore its permissions (fm fsck lists "
+                print(f"fm: can't open {e.filename}: permission denied; restore its permissions (sampo fsck lists "
                       "unreadable state)", file=sys.stderr)
-                print("Next: fm fsck", file=sys.stderr)  # T-2653
+                print("Next: sampo fsck", file=sys.stderr)  # T-2653
                 return 4
             raise
         print(f"fm: can't read {e.filename}: {e.strerror.lower()}", file=sys.stderr)
         return 1
     except c.CorruptState as e:
         print(f"fm: {e}", file=sys.stderr)
-        print("Next: fm fsck", file=sys.stderr)  # T-2653
+        print("Next: sampo fsck", file=sys.stderr)  # T-2653
         return 4
     except ValueError as e:
-        print(f"fm: state looks corrupt: {e} (fm fsck names corrupt state files)", file=sys.stderr)
-        print("Next: fm fsck", file=sys.stderr)  # T-2653
+        print(f"fm: state looks corrupt: {e} (sampo fsck names corrupt state files)", file=sys.stderr)
+        print("Next: sampo fsck", file=sys.stderr)  # T-2653
         return 4
     finally:
         if stop:

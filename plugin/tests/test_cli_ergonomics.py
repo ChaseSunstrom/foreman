@@ -28,7 +28,7 @@ class CliErgonomics(ForemanTestCase):
         self.assertIn("(PERFORMANCE S)", r.stdout)
         self.assertIn("numbers", r.stdout)
         r = self.fm("focus", tid)
-        self.assertIn(f"(fm gates {tid})", r.stdout, "T-1961: focus names the id fm gates takes")
+        self.assertIn(f"(sampo gates {tid})", r.stdout, "T-1961: focus names the id sampo gates takes")
         r = self.fm("gates", "BOGUS", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("BOGUS", r.stderr)

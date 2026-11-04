@@ -48,7 +48,7 @@ class Race(Base):  # T-2271 (Mission 5, #2): stuck with a runner-up approach on 
         return self.fm("next").stdout
 
     def test_three_failed_runs_with_an_alternative_race_the_runner_up(self):
-        self.assertRegex(self.brief(), r"stuck, rung 3.*fm lane race T-0001")
+        self.assertRegex(self.brief(), r"stuck, rung 3.*sampo lane race T-0001")
 
     def test_one_approach_keeps_the_hypothesis_rung(self):
         out = self.brief(approach="a regex scan")
@@ -83,11 +83,11 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
 
     def test_an_s_choice_under_the_race_bar_with_a_runner_up_names_the_race_before_any_edit(self):
         self.task("S")
-        self.assertRegex(self.nxt(), r"confidence 40%.*fm lane race T-0001")
+        self.assertRegex(self.nxt(), r"confidence 40%.*sampo lane race T-0001")
 
     def test_an_m_choice_under_the_race_bar_with_a_runner_up_names_the_race_before_any_edit(self):
         self.task("M")
-        self.assertRegex(self.nxt(), r"confidence 40%.*fm lane race T-0001")
+        self.assertRegex(self.nxt(), r"confidence 40%.*sampo lane race T-0001")
 
     def test_a_confident_choice_is_not_raced(self):
         self.task(choice="Choice 1 (90%): smaller")
@@ -99,7 +99,7 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
 
     def test_a_task_with_work_on_it_is_not_asked(self):
         tid = self.task()
-        self.assertIn("fm lane race", self.nxt())
+        self.assertIn("sampo lane race", self.nxt())
         self.fm("task", "evidence", tid, "--step", "1", "--run", "ls")
         self.assertNotIn("confidence 40%", self.nxt())
 
@@ -133,17 +133,17 @@ class Confidence(Base):  # T-2338 (Mission 5, #8): a choice under the race bar, 
 
     def test_a_ready_task_is_raced_before_it_is_focused(self):
         self.task(focus=False)
-        self.assertRegex(self.nxt(), r"fm lane race T-0001")
+        self.assertRegex(self.nxt(), r"sampo lane race T-0001")
 
     def test_an_l_task_names_the_design_race(self):
         self.task("L")
-        self.assertRegex(self.nxt(), r"design race.*fm second plan T-0001")
-        self.assertIn("fm lane race T-0001 (one throwaway spike per option", self.nxt())  # T-2340
+        self.assertRegex(self.nxt(), r"design race.*sampo second plan T-0001")
+        self.assertIn("sampo lane race T-0001 (one throwaway spike per option", self.nxt())  # T-2340
 
     def test_the_stuck_rung_names_what_race_line_builds(self):
         tid = self.task(choice="Choice 1 (90%): smaller")
         line = c.race_line(c.find_brief(self.p, tid))
-        self.assertIn("fm lane race T-0001", line)
+        self.assertIn("sampo lane race T-0001", line)
         self.fail_runs(tid, "KeyError col", "KeyError col", "KeyError col")
         self.assertIn(line, self.nxt())
 

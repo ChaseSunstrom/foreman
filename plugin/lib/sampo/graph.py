@@ -218,8 +218,8 @@ def blast_line(p, scope, budget=BLAST_BUDGET, text=""):
     if r["fixes"]:
         bits.append("past FIXes " + ", ".join(f["id"] for f in r["fixes"][:5]))  # not a list: a sentence in a plan note
     if not bits:  # a graph that was read and found nothing says so, so the plan shows the check ran
-        return f"Blast radius (fm graph blast): unknown, no co-change history for {c.joinmore(paths, 5)}."
-    return "Blast radius (fm graph blast): " + "; ".join(bits) + "."
+        return f"Blast radius (sampo graph blast): unknown, no co-change history for {c.joinmore(paths, 5)}."
+    return "Blast radius (sampo graph blast): " + "; ".join(bits) + "."
 
 
 def blast(p, paths, as_of=None, con=None):

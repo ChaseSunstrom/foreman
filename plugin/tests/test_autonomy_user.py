@@ -75,7 +75,7 @@ class TasteVetoes(_Base):
         for q in ("May I push to the remote?", "Edit Foreman's core now?", "Can I fm ask for plugin access?"):
             r = self.fm("decide", "--ask", q, "--options", "yes", "no", check=False)
             self.assertEqual(r.returncode, 1, q)
-            self.assertIn("fm ask", r.stderr)
+            self.assertIn("sampo ask", r.stderr)
         self.assertEqual(self.decisions(), [])
         self.assertFalse(c.read_meta(self.p).get("pending_approvals"))
         self.assertEqual(c.find_brief(self.p, self.tid).meta.get("allow"), [])
@@ -126,7 +126,7 @@ class AskDigest(_Base):
         meta = c.read_meta(self.p)
         meta["ask_digest"]["deadline"] = "2020-01-01T00:00:00Z"
         c.write_meta(self.p, meta)
-        self.assertIn("fm decide --digest", self.fm("next").stdout)
+        self.assertIn("sampo decide --digest", self.fm("next").stdout)
         d = self.fm_json("decide", "--digest")
         self.assertEqual([x["answer"] for x in d["applied"]], ["from-file", "yes"])
         self.assertEqual(d["asks"], [])

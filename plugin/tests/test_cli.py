@@ -85,7 +85,7 @@ class Init(ForemanTestCase):
         self.assertEqual(self.fm_json("state", cwd=elsewhere, env={"FOREMAN_PROJECT": slug})["project"], slug)
         p = self.fm("state", cwd=elsewhere, check=False)
         self.assertEqual(p.returncode, 1)
-        self.assertIn("fm init", p.stderr)
+        self.assertIn("sampo init", p.stderr)
 
 
 class ShadowRows(ForemanTestCase):  # T-2488: each model use logs the path's own decision, no model called
@@ -154,7 +154,7 @@ class ParserOnce(unittest.TestCase):
             part = subs(cli._build_parser(only=name)).choices
             self.assertEqual(set(part), {name, *(k for k, v in full.items() if v is full[name])}, name)
             self.assertEqual(shape(part[name]), shape(full[name]), name)
-        self.assertEqual(cli.HELP_TIERS, tiers, "fm help's tiers stay whole")
+        self.assertEqual(cli.HELP_TIERS, tiers, "sampo help's tiers stay whole")
         from unittest import mock
         with mock.patch.object(cli, "_PARSER", None), mock.patch.dict(cli._PARTS, clear=True):
             self.assertEqual(len(subs(cli._parser_for(["-p", "x", "next"])).choices), 1)
@@ -505,7 +505,7 @@ class TaskLifecycle(ForemanTestCase):
     def test_remote_is_granted_only_through_fm_ask(self):
         p = self.fm("task", "set", "T-0001", "--allow", "remote", check=False)
         self.assertEqual(p.returncode, 2)
-        self.assertIn("fm ask", p.stderr)
+        self.assertIn("sampo ask", p.stderr)
         self.fm_ask("T-0001", "remote")
         self.assertEqual(c.read_meta(self.p)["pending_approvals"][0]["allow"], ["remote"])
 
@@ -669,7 +669,7 @@ class TaskLifecycle(ForemanTestCase):
         for cat in ("core", "state-direct", "self-authorize", "bogus"):
             p = self.fm("task", "set", "T-0001", "--allow", cat, check=False)
             self.assertNotEqual(p.returncode, 0, cat)
-            self.assertIn("fm ask", p.stderr + p.stdout if cat == "core" else "fm ask")
+            self.assertIn("sampo ask", p.stderr + p.stdout if cat == "core" else "sampo ask")
         self.assertEqual(self.brief().meta.get("allow") or [], [])
 
     def test_abbreviated_options_are_rejected(self):
@@ -823,7 +823,7 @@ class LogNamespace(ForemanTestCase):  # T-2244: fm log can't write a Foreman eve
         self.assertEqual((e["event"], e["data"]["event"]), ("log", "check_run"))
         self.assertFalse(any(x["event"] == "check_run" for x in c.ledger_tail(p, 3000)))
         note = cli._preflight(p, argparse.Namespace(meta={}))
-        self.assertIn("no fm check on this tree yet", note)
+        self.assertIn("no sampo check on this tree yet", note)
 
 
 class SensitiveAndDrive(ForemanTestCase):
@@ -1347,7 +1347,7 @@ class NextAction(ForemanTestCase):
         self.assertIn("missing acceptance criterion, step", self.fm("next").stdout)
         self.fm("task", "ac", "T-0001", "add", "works", "--verify", "pytest")
         self.fm("task", "step", "T-0001", "add", "reproduce")
-        self.assertIn("fm focus T-0001", self.fm("next").stdout)
+        self.assertIn("sampo focus T-0001", self.fm("next").stdout)
         res = self.fm_json("next")
         self.assertEqual((res["task"], res["stage"]), ("T-0001", "ready"))
 
@@ -1570,7 +1570,7 @@ class BareFm(ForemanTestCase):
         out = self.fm().stdout
         self.assertIn("Next:", out)
         self.assertRegex(out, r"in1\b")  # the status line
-        self.assertIn("fm help", out)
+        self.assertIn("sampo help", out)
 
     def test_bare_fm_outside_a_project_is_the_help(self):
         import tempfile
@@ -1597,7 +1597,7 @@ class Completion(ForemanTestCase):
     def test_prints_a_hook_for_bash_and_zsh(self):
         bash = self.fm("complete", "--shell", "bash").stdout
         self.assertIn("complete -F _fm fm", bash)
-        self.assertIn("fm complete --", bash)
+        self.assertIn("sampo complete --", bash)
         self.assertIn("bashcompinit", self.fm("complete", "--shell", "zsh").stdout)
         r = subprocess.run(["bash", "-n"], input=bash, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)

@@ -82,7 +82,7 @@ class Ambient(HookCase):
         p = self.project()
         c.update_meta(p, gates_running={"task": None, "pid": busy.pid, "at": c.now(), "root": p.root})
         r = self.fm("check")
-        self.assertIn("waiting for another fm check", r.stderr)
+        self.assertIn("waiting for another sampo check", r.stderr)
         self.assertIsNotNone(busy.poll(), "it ran only after the other check ended")
 
     def test_a_full_check_waits_for_fm_ships_test_run_but_not_inside_it(self):
@@ -100,7 +100,7 @@ class Ambient(HookCase):
         busy = subprocess.Popen(["sleep", "2"])
         threading.Thread(target=busy.wait, daemon=True).start()
         c.update_meta(p, ship_testing={"pid": busy.pid, "at": c.now(), "root": "/elsewhere/ship"})
-        self.assertIn("waiting for fm ship's test run", self.fm("check", "--fresh").stderr)
+        self.assertIn("waiting for sampo ship's test run", self.fm("check", "--fresh").stderr)
         self.assertIsNotNone(busy.poll(), "it ran only after the ship's test run ended")
 
     def test_a_check_whose_tree_changed_mid_run_starts_an_ambient_run(self):

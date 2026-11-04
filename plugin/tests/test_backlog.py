@@ -30,7 +30,7 @@ class Capture(ForemanTestCase):
         r = self.fm("capture", "export weekly reports as a CSV", check=False)
         self.assertEqual(r.returncode, cli.REFUSED_NEAR, "its own code, not a usage error's 1 or a lock's 3")
         self.assertIn("T-0001", r.stderr)
-        self.assertIn("add --anyway to keep both, or fm task log T-0001", r.stderr)
+        self.assertIn("add --anyway to keep both, or sampo task log T-0001", r.stderr)
         self.assertNotIn("…", r.stderr)
         self.assertIsNone(c.find_brief(self.p, "T-0002"), "a refused capture makes no brief")
         r = self.fm("capture", "export weekly reports as a CSV", "--json", check=False)

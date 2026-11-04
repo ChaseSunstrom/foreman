@@ -109,7 +109,7 @@ class Batch(ForemanTestCase):
     def test_next_suggests_a_batch_of_small_ones(self):
         for tid in self.ids:
             self.fm("task", "set", tid, "tier=S")
-        self.assertIn(f"fm batch {' '.join(self.ids)}", self.fm("next").stdout)
+        self.assertIn(f"sampo batch {' '.join(self.ids)}", self.fm("next").stdout)
 
 
 class Related(ForemanTestCase):
@@ -126,11 +126,11 @@ class Related(ForemanTestCase):
 
     def test_suggest_groups_related_items_only(self):
         out = self.fm("batch", "--suggest").stdout
-        self.assertIn(f"fm batch {' '.join(self.guard)}", out)
+        self.assertIn(f"sampo batch {' '.join(self.guard)}", out)
         self.assertNotIn(self.other, out)
 
     def test_next_offers_the_related_group_for_any_tier(self):
-        self.assertIn(f"fm batch {' '.join(self.guard)}", self.fm("next").stdout)
+        self.assertIn(f"sampo batch {' '.join(self.guard)}", self.fm("next").stdout)
 
     def test_apply_creates_the_batches_and_their_brief_says_verify_once(self):
         res = self.fm("batch", "--suggest", "--apply").stdout

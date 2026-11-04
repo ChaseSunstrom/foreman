@@ -179,7 +179,7 @@ def _last(out):
 
 
 TRUST = "prove-trusted.json"  # T-2202: trees the user ran fm prove --yes-run in (state: never written but by fm)
-NO_RUN = "running this tree's tests needs the user's yes, once per tree: fm prove PATH --yes-run"
+NO_RUN = "running this tree's tests needs the user's yes, once per tree: sampo prove PATH --yes-run"
 
 
 def _trusted():

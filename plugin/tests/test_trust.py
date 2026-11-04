@@ -53,7 +53,7 @@ class ExplainBlock(TrustCase):
         self.assertIn("guard block", out.lower())
         self.assertRegex(out, r"publish:[a-z-]+")  # the rule that fired
         self.assertIn("npm publish --tag next", out)  # its input: the command as the guard saw it
-        self.assertIn(f"fm task set {tid} --allow publish", out)  # the rule in the guard's own words
+        self.assertIn(f"sampo task set {tid} --allow publish", out)  # the rule in the guard's own words
         self.assertIn(f"focus {tid}", out)  # the ledger events behind it
         self.assertIn("no grant", out.lower())
         data = self.fm_json("explain", "block")

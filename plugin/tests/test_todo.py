@@ -51,7 +51,7 @@ class Todo(ForemanTestCase):
         out = json.loads(self.fm("todo", "--json").stdout)["todo"]
         self.assertEqual([e["kind"] for e in out], ["decision"])
         self.assertIn("publish the beta", out[0]["text"])
-        self.assertIn("fm decide --review", out[0]["command"])
+        self.assertIn("sampo decide --review", out[0]["command"])
 
     def test_reversed_decision_not_listed(self):
         self.fm("decide", "publish the beta", "--why", "w", "--kind", "outward")
@@ -65,7 +65,7 @@ class Todo(ForemanTestCase):
         open(path, "w").write(re.sub(r"\| \d{4}-\d\d-\d\d \|", "| 2000-01-01 |", s))
         out = self.fm("todo").stdout
         self.assertNotIn("publish the beta", out)
-        self.assertIn("1 older: fm decide --review", out)
+        self.assertIn("1 older: sampo decide --review", out)
 
     def test_expired_ask_says_ask_again(self):
         self.pend([{"task": "T-0001", "allow": ["publish"], "why": "w", "session": "s", "at": "2000-01-01T00:00:00Z"}])

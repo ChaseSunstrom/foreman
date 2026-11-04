@@ -19,7 +19,7 @@ class Tombstones(ForemanTestCase):
         p = self.fm("night", "--print-timer", check=False)
         self.assertEqual(p.returncode, 2)
         self.assertIn("T-2475", p.stderr)
-        self.assertIn("fm night --stage", p.stderr)
+        self.assertIn("sampo night --stage", p.stderr)
         self.assertNotIn("did you mean", p.stderr)
         self.assertFalse([e for e in self.events() if e.get("word") == "--print-timer"])  # a known removal isn't a vote
 

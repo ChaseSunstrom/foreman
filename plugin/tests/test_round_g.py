@@ -63,10 +63,10 @@ class RoundG(ForemanTestCase):
 
         def read():
             return self.hook("PostToolUse", {"tool_name": "Read", "tool_input": {"file_path": big}}).stdout
-        self.assertIn("fm outline", read())
+        self.assertIn("sampo outline", read())
         self.assertEqual(read(), "")
         self.hook("SessionStart", {"source": "compact"})
-        self.assertIn("fm outline", read())
+        self.assertIn("sampo outline", read())
 
     def test_an_edit_that_breaks_syntax_is_said_at_once(self):
         path = self.write("broken.py", "def f(:\n    pass\n")
@@ -83,7 +83,7 @@ class RoundG(ForemanTestCase):
     def test_check_suggests_gates_and_stops_early_when_asked(self):
         self.write("package.json", json.dumps({"scripts": {"test": "jest"}}))
         self.commit()
-        self.assertIn("fm check add 'npm run test'", self.fm("check", check=False).stderr)  # T-0850 wording
+        self.assertIn("sampo check add 'npm run test'", self.fm("check", check=False).stderr)  # T-0850 wording
         self.fm("check", "add", "false")
         self.fm("check", "add", "true")
         data = self.fm_json("check", "--fail-fast", check=False)

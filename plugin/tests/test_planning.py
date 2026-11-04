@@ -184,7 +184,7 @@ class CalibrationLedger(Base):
         for _ in range(5):
             self.close(1)
         self.assertIsNone(serve._next_runnable(self.p, set(), set()))
-        self.assertIn("fm task set", " ".join(c.plan_gaps(c.find_brief(self.p, m), "slow")))
+        self.assertIn("sampo task set", " ".join(c.plan_gaps(c.find_brief(self.p, m), "slow")))
         self.assertIn("slow", self.fm("autonomy").stdout)
 
     def test_misses_after_three_of_five_and_not_after_one(self):

@@ -196,7 +196,7 @@ class ReviewNits(ForemanTestCase):
     def test_resolve_inside_a_worker_says_it_cant_run_fm_init(self):
         folder = git_repo(self.tmp, "other")
         r = self.fm("state", cwd=folder, check=False, env={"FOREMAN_WORKER_OF": "fm-code-T-0001"})
-        self.assertIn("worker of an fm code run can't run `fm init`", r.stderr)
+        self.assertIn("worker of a sampo code run can't run `sampo init`", r.stderr)
         self.assertNotIn("run `fm init` here", r.stderr)
 
 

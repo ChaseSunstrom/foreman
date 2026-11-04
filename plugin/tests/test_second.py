@@ -141,8 +141,8 @@ class Rival(_RivalBase):
     def test_focus_waits_for_an_unstarted_L_plan_until_the_rival_is_read_and_answered(self):
         tid = self.new()
         said = self.focus(tid, False)
-        self.assertIn(f"fm second rival {tid}", said)
-        self.assertIn(f"fm second rival {tid}", self.fm("next", env=self.env).stdout)
+        self.assertIn(f"sampo second rival {tid}", said)
+        self.assertIn(f"sampo second rival {tid}", self.fm("next", env=self.env).stdout)
         self.fm("second", "rival", tid, env=self.env)
         self.assertIn("open", self.focus(tid, False).lower())  # the rival-only lines are still open
         for n in (2, 1):
@@ -155,11 +155,11 @@ class Rival(_RivalBase):
 
     def test_M_under_the_race_bar_or_with_one_reading_waits_and_others_never_do(self):
         low = self.new("M", approach=self.SURE % 60)
-        self.assertIn(f"fm second rival {low}", self.focus(low, False))
+        self.assertIn(f"sampo second rival {low}", self.focus(low, False))
         self.fm("task", "drop", low, "not needed")
         one = self.new("M", interp="There is one honest reading: keep tokens in memory. Ruled out: sharing them through "
                                    "redis, because nothing else reads them.")
-        self.assertIn(f"fm second rival {one}", self.focus(one, False))
+        self.assertIn(f"sampo second rival {one}", self.focus(one, False))
         self.fm("task", "drop", one, "not needed")
         sure = self.new("M")  # 90%, two readings
         self.focus(sure, True)
@@ -172,7 +172,7 @@ class Rival(_RivalBase):
 
     def test_a_one_way_step_needs_it_even_on_an_S_brief(self):
         tid = self.new("S", step="publish the release notes")
-        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+        self.assertIn(f"sampo second rival {tid}", self.focus(tid, False))
         self.fm("task", "drop", tid, "not needed")
         self.focus(self.new("S", step="rename the cache key"), True)
 
@@ -187,11 +187,11 @@ class Rival(_RivalBase):
     def test_a_hand_typed_section_or_an_empty_reply_does_not_clear_the_gate(self):
         tid = self.new()
         self.fm("task", "set", tid, "--section", "Rival plan", "--text", "nothing to see")
-        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+        self.assertIn(f"sampo second rival {tid}", self.focus(tid, False))
         self.say("no bullets here\n")
         p = self.fm("second", "rival", tid, env=self.env)
         self.assertIn("no rival read", p.stdout)
-        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+        self.assertIn(f"sampo second rival {tid}", self.focus(tid, False))
 
     def test_each_list_keeps_four_items(self):
         self.say("## Readings\n" + "".join(f"- read file_{i}.py aloud\n" for i in range(7)))
@@ -203,7 +203,7 @@ class Rival(_RivalBase):
     def test_gate_on_an_ordinary_S_M_and_L_plan_reach_ready_after_the_rival_read(self):
         for tier, kw in (("S", dict(step="deploy the cache")), ("M", dict(approach=self.SURE % 60)), ("L", {})):
             tid = self.new(tier, **kw)
-            self.assertIn(f"fm second rival {tid}", self.fm("next", env=self.env).stdout)
+            self.assertIn(f"sampo second rival {tid}", self.fm("next", env=self.env).stdout)
             self.fm("second", "rival", tid, env=self.env)
             n = len(re.findall(r"- \[ \] rival", self.fm("task", "show", tid).stdout))
             for i in range(n, 0, -1):
@@ -254,9 +254,9 @@ class RivalSplit(_RivalBase):
 
     def test_FOREMAN_NO_RIVAL_zero_leaves_the_gate_on(self):
         tid = self.new()
-        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+        self.assertIn(f"sampo second rival {tid}", self.focus(tid, False))
         self.env["FOREMAN_NO_RIVAL"] = "0"
-        self.assertIn(f"fm second rival {tid}", self.focus(tid, False))
+        self.assertIn(f"sampo second rival {tid}", self.focus(tid, False))
         self.env["FOREMAN_NO_RIVAL"] = "1"
         self.focus(tid, True)
 
@@ -438,7 +438,7 @@ class LensSkills(ForemanTestCase):
             f.write("x = 1\n")
         out = self.fm("audit", "prep", tid, env={"CLAUDE_CONFIG_DIR": cc}).stdout
         self.assertIn("adversary: /sec:sec-scan, /security-review", out)
-        self.assertIn(f"fm task audit {tid} adversary", out)
+        self.assertIn(f"sampo task audit {tid} adversary", out)
         data = json.loads(self.fm("audit", "prep", tid, "--json", env={"CLAUDE_CONFIG_DIR": cc}).stdout)
         self.assertEqual(data["lens_skills"]["adversary"][0], "/sec:sec-scan")
 

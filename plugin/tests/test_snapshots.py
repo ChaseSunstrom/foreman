@@ -33,7 +33,7 @@ class Snapshots(ForemanTestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(len(self.refs()), 1, "one snapshot for one command")
         note = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("fm snapshots", note)
+        self.assertIn("sampo snapshots", note)
         listed = self.fm("snapshots").stdout
         self.assertIn("git checkout -- .", listed)
         restore = next(ln.split("restore: ", 1)[1] for ln in listed.splitlines() if "restore: " in ln)

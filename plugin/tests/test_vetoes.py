@@ -35,7 +35,7 @@ class RecordedVetoes(ForemanTestCase):
         self.c.add_veto(self.p, "never push to main")
         self.c.add_veto(self.p, "don't release on Fridays")
         listed = json.loads(self.fm("vetoes", "--json").stdout)
-        self.assertEqual([v["retract"] for v in listed], ["fm vetoes rm 1", "fm vetoes rm 2"])
+        self.assertEqual([v["retract"] for v in listed], ["sampo vetoes rm 1", "sampo vetoes rm 2"])
         text = self.fm("vetoes").stdout
         for v in listed:
             self.assertIn(v["retract"], text)

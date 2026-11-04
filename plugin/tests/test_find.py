@@ -575,7 +575,7 @@ class FindProve(ForemanTestCase):
         self.assertEqual(r.returncode, 0, r.stderr)  # still runs, proves nothing that needs the tree's code ...
         t = next(t for t in json.loads(r.stdout)["tickets"] if t["symbol"] == "unused")
         self.assertEqual(t["verdict"], "lead")
-        self.assertIn("fm prove PATH --yes-run", t["evidence"])
+        self.assertIn("sampo prove PATH --yes-run", t["evidence"])
         self.assertFalse(os.path.exists(ran))  # ... and none of it ran
         self.assertEqual(self.fm("prove", root, "--yes-run", check=False, env={"HOME": home}).returncode, 1)
         os.remove(ran)

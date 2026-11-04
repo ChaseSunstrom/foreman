@@ -384,7 +384,7 @@ class MissNote(CodeCase):
                        call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
         r = self.code("fix add", "--model", "fake", check=False)
         self.assertIn("`nosuchtool-q7` is missing", f.said(2))
-        self.assertIn('Find it: fm which', f.said(2))
+        self.assertIn('Find it: sampo which', f.said(2))
         from sampo import core
         p = core.find_project(self.repo)
         misses = [e for e in core.ledger_events(p, ("capability_miss",))

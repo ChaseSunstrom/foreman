@@ -59,4 +59,4 @@ class Panel(Base):
         for sec in ("Interpretation", "Approach (options → choice → why)", "Build vs reuse", "Risks and rollback"):
             self.fm("task", "set", "T-0002", "--section", sec, "--text", "Reading 1: a. Reading 2: b. 1) a; fails if: x 2) use what exists: b; fails if: y 3) do less: c; fails if: z Choice 1 (80%): a")
         self.fm("task", "drop", "T-0001", "not needed")
-        self.assertIn("fm second plan T-0002", self.fm("next").stdout)
+        self.assertIn("sampo second plan T-0002", self.fm("next").stdout)

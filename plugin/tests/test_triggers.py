@@ -215,7 +215,7 @@ class TriggerTable(ForemanTestCase):
         self.assertFalse(triggers.lane_only(self.p, "scout", "S", "SECURITY"))  # so does SECURITY
         r = self.fm("focus", b.id, check=False)  # on main: refused, it starts in a lane
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn(f"fm lane brief {b.id}", r.stderr)
+        self.assertIn(f"sampo lane brief {b.id}", r.stderr)
         b = next(x for x in c.load_briefs(self.p) if x.id == b.id)
         b.meta["lane"] = os.path.join(self.repo, "lane")  # after fm lane brief: main focuses it to merge and close
         c.save_brief(self.p, b, touch=False)

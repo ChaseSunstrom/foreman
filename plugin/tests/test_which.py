@@ -153,7 +153,7 @@ class Which(ForemanTestCase):
             out = self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": sid}).stdout
             return json.loads(out).get("hookSpecificOutput", {}).get("additionalContext", "") if out.strip() else ""
         first = ctx("add a --verbose flag to the parser")
-        self.assertIn('fm which "', first)
+        self.assertIn('sampo which "', first)
         self.assertLessEqual(len(first), 400)
         self.assertNotIn("fm which", ctx("add a --quiet flag to the parser"), "once a session")
         self.assertNotIn("fm which", ctx("add a --quiet flag via /foreman:intake", "sess-2"), "a skill named already")

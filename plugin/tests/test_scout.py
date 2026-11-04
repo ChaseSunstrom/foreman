@@ -408,7 +408,7 @@ class ScoutDrive(ForemanTestCase):
         self.assertIn(work.id, first)
         self.assertIn("Plan it and work it", first)
         self.assertNotIn(wait.id, first)
-        self.assertIn(f"fm ask {wait.id} confirm", second)
+        self.assertIn(f"sampo ask {wait.id} confirm", second)
         self.assertNotIn("work it", second)
         self.assertNotIn("\n", hooks._scout_note(p, [work.id]))
         self.assertNotIn("Plan it", hooks._scout_note(p, [wait.id]))
@@ -423,7 +423,7 @@ class ScoutDrive(ForemanTestCase):
         self.hook("Stop", {"session_id": "s1", "last_assistant_message": "working"}, env=env)
         self.fm("task", "drop", "T-0001", "done in the test")
         out = json.loads(self.hook("Stop", {"session_id": "s1", "last_assistant_message": "done"}, env=env).stdout or "{}")
-        self.assertIn("fm scout --slow", out.get("reason", ""))
+        self.assertIn("sampo scout --slow", out.get("reason", ""))
 
     def test_night_runs_scout_first(self):
         from sampo import night

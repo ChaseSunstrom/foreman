@@ -68,7 +68,7 @@ class Preflight(Base):
         out = self.fm("focus", "T-0001").stdout
         self.assertIn("Preflight", out)
         self.assertIn("lib/missing.py doesn't exist", out)
-        self.assertIn("no fm check on this tree", out)
+        self.assertIn("no sampo check on this tree", out)
 
 
 class ResumeCheck(Base):
@@ -149,7 +149,7 @@ class BoardClose(Base):
                                                                "PROJ-12 0123456789ab, fetched by fm inbox ticket"), "t")
         self.write("x.py", "A = 2\n")
         out = self.finish("--commit", "Parser").stdout.strip().splitlines()
-        self.assertEqual((out[-2], out[-1][:18]), ("Post it back (outward, only when wanted, once pushed): fm inbox ticket --post "
+        self.assertEqual((out[-2], out[-1][:18]), ("Post it back (outward, only when wanted, once pushed): sampo inbox ticket --post "
                                                    "T-0001 — one comment on jira PROJ-12", "Landed: committed "))
 
     def test_finish_ends_with_a_landed_line(self):

@@ -31,7 +31,7 @@ class Hypotheses(ForemanTestCase):
         self.assertIn("- H1 [open] the cache is shared across threads — probe: `grep -n cache x.py`", sec)
         self.assertIn("- H2 [open] the input file is truncated", sec)
         self.assertIn("H1", self.next_line(), "the first open hypothesis comes before the step")
-        self.assertIn("fm task hypo", self.next_line())
+        self.assertIn("sampo task hypo", self.next_line())
         res = self.fm("task", "hypo", self.tid, "mark", "1", "ruled-out", "--run", "echo no shared cache; false",
                       check=False)
         self.assertEqual(res.returncode, 0, "a probe that fails is a result, not an error")

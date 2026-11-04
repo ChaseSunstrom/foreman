@@ -309,7 +309,7 @@ def cmd(args):
     if not any(got.values()):
         cli.out(args, data, f"Nothing matches {c.fit(c.plain(task), 60)!r}: no past fix, project tool, MCP server, "
                   "binary, skill, playbook, fm command, stack card or plugin holds enough of its words.\n"
-                  "fm help --all lists every command; say what the work is in other words, or build it: fm new tool NAME."
+                  "sampo help --all lists every command; say what the work is in other words, or build it: sampo new tool NAME."
                   + ("\n" + skipped_note(failed) if failed else ""))
         return 1
     lines = []

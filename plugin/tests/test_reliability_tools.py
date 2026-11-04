@@ -262,7 +262,7 @@ class GateLock(ForemanTestCase):
             took.append(label)
             yield
         with mock.patch.object(c, "gate_lock", lock), mock.patch.object(cli, "_cmd_check", return_value=0):
-            for affected, repeat, want in ((True, 0, []), (False, 3, []), (False, 0, ["fm check"])):
+            for affected, repeat, want in ((True, 0, []), (False, 3, []), (False, 0, ["sampo check"])):
                 took.clear()
                 cli.cmd_check(argparse.Namespace(action="run", affected=affected, repeat=repeat))
                 self.assertEqual(took, want, (affected, repeat))

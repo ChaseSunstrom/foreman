@@ -1036,7 +1036,7 @@ class GenesisStep(ForemanTestCase):
         self.assertIn("→ fm genesis put gen-1/seed.md", out)
         self.assertEqual(self.fm_json("genesis", "step")["stage"], "seed")
         self.assertIn("next: write gen-1/seed.md", self.fm("genesis").stdout)
-        self.assertIn("fm genesis step", self.fm("next").stdout)
+        self.assertIn("sampo genesis step", self.fm("next").stdout)
         res = self.fm_json("genesis", "export", os.path.join(self.tmp, "site"))
         with open(res["path"]) as f:
             self.assertEqual(json.load(f)["next"]["stage"], "seed")

@@ -45,32 +45,32 @@ VERB_TWINS = {"rune": "genesis", "louhi": "exam", "ward": "guard", "smith": "cod
 # fm subcommands that undo or grant what only the user decides: sub -> (the word that makes it so, why, what they type).
 # One table, so the next one isn't forgotten.
 USER_ONLY_FM = {
-    "posture": ("lite", "fm posture lite turns Foreman's hooks off but the guard's: the user decides that",
-                "fm posture lite"),  # T-0963
-    "pause": ("off", "fm pause off is the user's to run: they paused everything Foreman runs unattended, so only they "
-                     "lift it", "fm pause off"),  # T-0591
-    "approve-reads": ("on", "fm approve-reads on lets Foreman answer Claude Code's permission dialogs for reads: the "
-                            "user turns it on", "fm approve-reads on"),  # T-0974
-    "rule": ("rm", "fm rule rm is the user's to run: their rule stops what they said to stop, so only they lift it",
-             "fm rule rm N"),  # T-0971; `add rm` is a rare miss
-    "vetoes": ("rm", "fm vetoes rm is the user's to run: their veto keeps an idea out of the plan, so only they lift it",
-               "fm vetoes rm N"),  # T-1413
-    "taste": ("--block", "fm taste compile N --block makes a rule that stops a command outright, and only the user lifts it "
-                         "(fm rule rm): they decide what blocks", "fm taste compile N --block"),  # T-1063
-    "rollback": ("--yes", "fm rollback --yes is the user's to run: it puts back an older state, with consent they "
-                          "may have revoked since", "fm rollback --yes"),  # T-1085
-    "decide": ("--answer", "fm decide ANSWER --answer N records the user's answer to an ask, and answers become "
-                           "precedent for proxy answers: only the user records them", "fm decide ANSWER --answer N"),  # T-1064
-    "risk": ("set", "fm risk set moves the daily risk budget that slows Claude's autonomy: the brake is the user's to "
-                    "move", "fm risk set --day N --because \"<why>\""),  # T-1080
-    "home": ("import", "fm home import is the user's to run: it writes a whole Foreman state, settings included, from "
-                       "a file", "fm home import FILE"),  # T-1665
-    "prove": ("--yes-run", "fm prove --yes-run is the user's to run: it says yes to running this tree's tests, as "
-                           "them, with the network, now and from then on", "fm prove PATH --yes-run"),  # T-2122, T-2202
-    "mandate": (("set", "off"), "fm mandate set and fm mandate off are the user's to run: they end, overwrite or renew "
-                                "the standing mandate they gave", "fm mandate set \"<text>\""),  # T-2252
-    "triggers": ("set", "fm triggers set is the user's to run: a queue or lane route starts work no one asked for, and "
-                        "a mute or budget silences a signal", "fm triggers set NAME --route inbox"),  # T-2355
+    "posture": ("lite", "sampo posture lite turns Foreman's hooks off but the guard's: the user decides that",
+                "sampo posture lite"),  # T-0963
+    "pause": ("off", "sampo pause off is the user's to run: they paused everything Foreman runs unattended, so only they "
+                     "lift it", "sampo pause off"),  # T-0591
+    "approve-reads": ("on", "sampo approve-reads on lets Foreman answer Claude Code's permission dialogs for reads: the "
+                            "user turns it on", "sampo approve-reads on"),  # T-0974
+    "rule": ("rm", "sampo rule rm is the user's to run: their rule stops what they said to stop, so only they lift it",
+             "sampo rule rm N"),  # T-0971; `add rm` is a rare miss
+    "vetoes": ("rm", "sampo vetoes rm is the user's to run: their veto keeps an idea out of the plan, so only they lift it",
+               "sampo vetoes rm N"),  # T-1413
+    "taste": ("--block", "sampo taste compile N --block makes a rule that stops a command outright, and only the user lifts it "
+                         "(sampo rule rm): they decide what blocks", "sampo taste compile N --block"),  # T-1063
+    "rollback": ("--yes", "sampo rollback --yes is the user's to run: it puts back an older state, with consent they "
+                          "may have revoked since", "sampo rollback --yes"),  # T-1085
+    "decide": ("--answer", "sampo decide ANSWER --answer N records the user's answer to an ask, and answers become "
+                           "precedent for proxy answers: only the user records them", "sampo decide ANSWER --answer N"),  # T-1064
+    "risk": ("set", "sampo risk set moves the daily risk budget that slows Claude's autonomy: the brake is the user's to "
+                    "move", "sampo risk set --day N --because \"<why>\""),  # T-1080
+    "home": ("import", "sampo home import is the user's to run: it writes a whole Foreman state, settings included, from "
+                       "a file", "sampo home import FILE"),  # T-1665
+    "prove": ("--yes-run", "sampo prove --yes-run is the user's to run: it says yes to running this tree's tests, as "
+                           "them, with the network, now and from then on", "sampo prove PATH --yes-run"),  # T-2122, T-2202
+    "mandate": (("set", "off"), "sampo mandate set and sampo mandate off are the user's to run: they end, overwrite or renew "
+                                "the standing mandate they gave", "sampo mandate set \"<text>\""),  # T-2252
+    "triggers": ("set", "sampo triggers set is the user's to run: a queue or lane route starts work no one asked for, and "
+                        "a mute or budget silences a signal", "sampo triggers set NAME --route inbox"),  # T-2355
 }
 def _user_only_hit(word, arg):
     """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value.
@@ -142,6 +142,7 @@ def rule_id(category, detail):
     paths, quoted text, numbers and filler words taken out (rm -rf ~ and rm -rf /x are one rule)."""
     # T-1897: a quote opens and closes outside a word, so command's and hasn't are not one quoted span
     words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|(?<!\w)'[^']*'(?!\w)|\"[^\"]*\"", " ", detail.lower())
+    words = re.sub(r"\bsampo\b", "fm", words)  # T-2847: a respelled message keeps the id its counts are filed under
     ext = os.path.splitext(detail.split()[0])[1].lstrip(".").lower() if "/" in detail else ""  # T-0894: kinds apart
     path = ("path-" + ext if ext.isalnum() else "path") if "/" in detail else "other"
     return f"{category}:{'-'.join([w for w in re.findall(r'[a-z]+', words) if w not in _FILLER][:4]) or path}"  # not a list: a path or word fragment, not a list
@@ -180,7 +181,7 @@ def check(tool_name, tool_input, ctx, found=None):
         plug = [_UPDATE]
     if len(plug) > 1:  # a plugin yes is used up by one change (fmhooks)
         return Block("plugin", "more than one plugin change in one command; one yes covers one change: run each as "
-                               "its own command, after its own fm ask")
+                               "its own command, after its own sampo ask")
     return None
 
 
@@ -190,10 +191,10 @@ def _is_allow(arg):
     return len(flag) > 3 and "--allow".startswith(flag)
 
 
-_ASK = "fm ask {id} {cat} --why \"<what and why>\", then ask the user one yes/no question; their yes grants it"
+_ASK = "sampo ask {id} {cat} --why \"<what and why>\", then ask the user one yes/no question; their yes grants it"
 
 
-_FOCUS_LATE = " (this command's own fm focus hasn't run yet: the guard reads the whole command first)"
+_FOCUS_LATE = " (this command's own sampo focus hasn't run yet: the guard reads the whole command first)"
 
 
 def _focuses(cmd):
@@ -207,7 +208,7 @@ def _focuses(cmd):
 def _hint(detail, cat=""):
     """T-0185: when the guard couldn't pin the target down, the rewrite that lets it (a false block cost a guess)."""
     research = (" If it is a download or notes for the project's research, write it to the scratchpad and file it with "
-                "fm research add NAME --file PATH (it replaces an existing NAME; add --append to keep it).") if cat == "state-direct" else ""  # T-0814
+                "sampo research add NAME --file PATH (it replaces an existing NAME; add --append to keep it).") if cat == "state-direct" else ""  # T-0814
     if "(not known before it runs" in detail:
         return (" If the target is elsewhere, name it literally or set its variable once before any loop, pipe or "
                 "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes." + research)
@@ -235,19 +236,19 @@ def _hint(detail, cat=""):
     if detail.startswith("IFS") and "can't read" in detail:
         return " Leave IFS at its default on a line that splits words, or set it inside a script file the guard reads."
     if cat == "brief" and os.path.basename(detail).lower() == "changelog.md":  # T-1452
-        return (" A changelog line belongs to the task it describes: add it before fm task finish. Once that task is "
-                "done, add the line in the next task and say why there (fm task log ID \"scope: …\").")  # T-1767
+        return (" A changelog line belongs to the task it describes: add it before sampo task finish. Once that task is "
+                "done, add the line in the next task and say why there (sampo task log ID \"scope: …\").")  # T-1767
     if detail.endswith(_FOCUS_LATE):
-        return " Run the fm focus (or fm task new … --focus) as its own command, then this one."
+        return " Run the sampo focus (or sampo task new … --focus) as its own command, then this one."
     if detail.endswith("; git merge)"):
-        return (" On Foreman's own repo, land a reviewed builder branch with fm lane merge ID: it merges --no-ff and "
+        return (" On Foreman's own repo, land a reviewed builder branch with sampo lane merge ID: it merges --no-ff and "
                 "checks each file it changes as that task's write.")
     if cat == "core" and detail.endswith("(a tree write over it)"):  # T-1897: 21 in a week, none with a hint
         return (" Run git checkout, reset, cherry-pick or rebase in a scratch worktree (git worktree add <scratch>/x, "
-                "then cd <scratch>/x && git …). Foreman's own tree changes through a task: fm edit or the Edit tool per "
-                "file (with a standing core yes: fm ask ID core --standing), fm task finish to commit.")
+                "then cd <scratch>/x && git …). Foreman's own tree changes through a task: sampo edit or the Edit tool per "
+                "file (with a standing core yes: sampo ask ID core --standing), sampo task finish to commit.")
     if detail.startswith("interpreter code driving Foreman's modules"):  # review of T-1897: 17 in a week, no hint
-        return " A draft that only names them goes through the Write tool, then fm edit < draft as the next command."
+        return " A draft that only names them goes through the Write tool, then sampo edit < draft as the next command."
     if detail.endswith("(written from interpreter code)"):
         return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
                 "re, json, textwrap or sys, so only those count, or use the Edit tool.") + research
@@ -302,20 +303,20 @@ def _message(block, ctx):
                 f"writes only there (and in scratch); report what needs changing elsewhere to the main thread.")
     if cat == "brief":
         return (f"Foreman: no active task in this project, so {detail} can't be edited yet. One command starts a small "
-                f"task: fm task new \"<title>\" --type FIX --tier S --ac \"<done when>\" --step \"<step>\" --focus "
-                f"(bigger work: /foreman:intake; fm next says what's next).")
+                f"task: sampo task new \"<title>\" --type FIX --tier S --ac \"<done when>\" --step \"<step>\" --focus "
+                f"(bigger work: /foreman:intake; sampo next says what's next).")
     if cat == "state-direct":
         diff = re.search(r"/audits/(T-\d+)\.diff$", str(detail))  # T-0413
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
-                f"(fm task …, fm capture, fm checkpoint{f'; fm audit prep {diff[1]} rewrites it' if diff else ''}); "
+                f"(sampo task …, sampo capture, sampo checkpoint{f'; sampo audit prep {diff[1]} rewrites it' if diff else ''}); "
                 f"direct writes are never authorized.")
     if unliftable(cat, detail):  # T-1298, T-1929, T-1932: the way through is text the guard reads (the hint)
         return f"Foreman guard: blocked {cat}: {detail}; no grant lifts this."
     if ctx.task_id:
-        how = f"fm task set {ctx.task_id} --allow {cat} (records it in the brief), then retry"
+        how = f"sampo task set {ctx.task_id} --allow {cat} (records it in the brief), then retry"
     else:
-        how = (f"create or focus a task first (fm task new \"…\" --type T --tier S, or fm focus ID), "
-               f"then fm task set <ID> --allow {cat}, then retry")
+        how = (f"create or focus a task first (sampo task new \"…\" --type T --tier S, or sampo focus ID), "
+               f"then sampo task set <ID> --allow {cat}, then retry")
     if cat in USER_ONLY:  # rules/foreman.md, README and MASTER name these categories too
         what = f"{detail} is protected core" if cat == "core" else detail
         return f"Foreman guard: blocked {cat}: {what}. To authorize: " + _ASK.format(id=tid, cat=cat) + "."
@@ -3743,17 +3744,17 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
             if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable", "add-marketplace"):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
-                found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
+                found.append(("plugin", f"sampo plugins {rest[0]} changes Claude Code's plugins{target}"))
             if sub == "night" and any(_user_only_hit("--install", a) for a in rest):  # T-2357: plugin is the user's yes
-                found.append(("plugin", "fm night --install puts timers on this machine that run Foreman unattended "
-                                        "(fm night --stage queues the request for the user)"))
+                found.append(("plugin", "sampo night --install puts timers on this machine that run Foreman unattended "
+                                        "(sampo night --stage queues the request for the user)"))
             if sub in USER_ONLY_FM and any(_user_only_hit(USER_ONLY_FM[sub][0], a) for a in rest):  # flag order is free
                 word, why, typed = USER_ONLY_FM[sub]
                 found.append(("self-authorize", f"{why} (they can type ! {typed})"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
-                found.append(("core", "fm agents uninstall removes Foreman's guard from another coding agent"))
+                found.append(("core", "sampo agents uninstall removes Foreman's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
-                found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
+                found.append(("remote", "sampo serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
         if name in _AWKS:
             found += _check_awk(args, ctx, depth, cwd, cmd)
@@ -3775,7 +3776,7 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                 if any(_system_path(v, ctx) for q in cands for v in _variants(q)):  # a link into /etc counts
                     found.append(("system", f"{p} ({name} in a system folder)"))
         if _unconfines(c.argv):
-            found.append(("self-authorize", "it sets FOREMAN_CONFINE, the user's switch for running fm code workers "
+            found.append(("self-authorize", "it sets FOREMAN_CONFINE, the user's switch for running sampo code workers "
                                             "without Landlock confinement; only the user sets it, in their own shell"))
         if _hides_claude(c.argv):
             found.append(("self-authorize", "it unsets or overrides CLAUDECODE or CLAUDE_CODE_ENTRYPOINT, which fm "
@@ -4410,7 +4411,7 @@ def _literal_scan(text, ctx=None):
     text, nums = _scan_units(text)
     at = lambda pos: nums[min(text.count("\n", 0, pos), len(nums) - 1)]  # noqa: E731  original line of a position
     for hit, why in ((_rm_hit(text), "rm -r of ~, / or $HOME"), (_pipe_sh_hit(text), "a download piped into a shell"),
-                     (_fm_hit(text), "an fm command only the user may run")):
+                     (_fm_hit(text), "an sampo command only the user may run")):
         if hit:
             out.append((at(hit[0]), hit[1].strip()[:120], why))
     # a write into Foreman's state: find the path as a plain substring (a regex over the whole text was 30 ms), then
@@ -5435,5 +5436,5 @@ def _check_publish(name, args):
     if name == "claude" and pos[:2] == ["plugin", "tag"] and "--push" in args:
         return [("publish", "claude plugin tag --push")]
     if name == "fm" and "inbox" in pos and "ticket" in pos and any(a == "--post" or a.startswith("--post=") for a in args):
-        return [("publish", "fm inbox ticket --post")]  # T-1881: posted on the user's ask, not the agent's
+        return [("publish", "sampo inbox ticket --post")]  # T-1881: posted on the user's ask, not the agent's
     return []

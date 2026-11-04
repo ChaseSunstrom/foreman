@@ -35,7 +35,7 @@ class ExitNext(unittest.TestCase):
         self.assertEqual(rc, code)
         nexts = [l for l in err.splitlines() if l.startswith("Next: ")]
         self.assertEqual(len(nexts), 1, err)
-        self.assertRegex(nexts[0], r"^Next: (fm |retry)")
+        self.assertRegex(nexts[0], r"^Next: (fm |sampo |retry)")
 
     def test_policy(self):
         self.check(c.PolicyError("no"), 2)

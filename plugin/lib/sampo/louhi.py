@@ -2852,8 +2852,8 @@ def _lean_summary(p, run, agent, rows):
 # T-2363 (#12): planted growth the self-change gate must refuse, and controls it must pass, each on a temp copy of
 # plugin/: (name, the metric its refusal names (None: a control), the check whose removal must let it through, edits);
 # an edit is (path, old text, new text): old "" appends, None writes the file whole
-_POSTURE = ('    "posture": ("lite", "fm posture lite turns Foreman\'s hooks off but the guard\'s: the user decides that",\n'
-            '                "fm posture lite"),  # T-0963\n')
+_POSTURE = ('    "posture": ("lite", "sampo posture lite turns Foreman\'s hooks off but the guard\'s: the user decides that",\n'
+            '                "sampo posture lite"),  # T-0963\n')
 _RUN_OUT = "            out = handler(payload) if handler else None\n"
 GATE_MUTATIONS = (
     ("rules", "rules chars", "footprint", [("plugin/rules/foreman.md", "", "\n" + "- Keep each planted note short. " * 12)]),

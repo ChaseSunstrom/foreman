@@ -543,7 +543,7 @@ class Stages(unittest.TestCase):
             self.assertEqual(c.plan_gaps(b, "full"), [])
             b.set_section(AP, "Retry with backoff vs longer timeout → retry. Choice: retry. In 2 steps, 3 files.")
             self.assertIn("3+ options", gaps(b))
-            self.assertIn("fm task set", gaps(b))  # the gap names its fix
+            self.assertIn("sampo task set", gaps(b))  # the gap names its fix
             a, b2, c3 = "reuse existing code; fails if: x", "do less, skip it; fails if: y", "a queue; breaks z"  # T-2335
             for text in (f"1. {a}\n2. {b2}\n3. {c3}\nChosen: a (80%)", f"- {a}\n- {b2}\n- {c3}\nchose a (80%)",
                          f"Option A: {a}\nOption B: {b2}\nOption C: {c3}\nChoice: B (80%)"):
@@ -670,13 +670,13 @@ class Stages(unittest.TestCase):
     def test_stage_and_next_action_follow_the_brief(self):
         b = self.brief("M", status="captured")
         self.assertEqual(c.stage(b), "captured")
-        self.assertIn("fm task new", c.next_action(b))
+        self.assertIn("sampo task new", c.next_action(b))
         b.meta["status"] = "planned"
         self.assertEqual(c.stage(b), "planning")
         self.assertIn("Interpretation", c.next_action(b))
         self.plan(b)
         self.assertEqual(c.stage(b), "ready")
-        self.assertIn("fm focus T-0001", c.next_action(b))
+        self.assertIn("sampo focus T-0001", c.next_action(b))
         b.meta["status"] = "active"
         self.assertEqual(c.stage(b), "executing")
         nxt = c.next_action(b)
@@ -686,7 +686,7 @@ class Stages(unittest.TestCase):
         b.add_evidence("pytest -k slow", "1 failed as expected", step=1, ts="2026-01-01T10:00:00Z")
         b.mark_step(1)
         self.assertEqual(c.stage(b), "verifying")
-        self.assertIn("fm task finish T-0001", c.next_action(b), "finish runs the criterion's own check")
+        self.assertIn("sampo task finish T-0001", c.next_action(b), "finish runs the criterion's own check")
         b.add_evidence("pytest -k slow", "1 passed", ac=1)
         b.check_ac(1)
         self.assertEqual(c.stage(b), "documenting")
@@ -697,7 +697,7 @@ class Stages(unittest.TestCase):
         b.add_audit("intent", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
         b.add_audit("edge", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
         self.assertEqual(c.stage(b), "closing")
-        self.assertIn("fm task done T-0001", c.next_action(b))
+        self.assertIn("sampo task done T-0001", c.next_action(b))
 
     def test_every_skill_a_hint_loads_exists_and_the_model_may_load_it(self):
         # T-1701: FIX and RESEARCH name the job skills; a hint naming a missing or user-only skill sends Claude nowhere
@@ -720,9 +720,9 @@ class Stages(unittest.TestCase):
         b.add_evidence("pytest -k slow", "✗ exit 1", step=1)
         nxt = c.next_action(b)
         self.assertIn("step 2/2", nxt)
-        self.assertIn("fm task evidence T-0001 --step 2 --run", nxt)
+        self.assertIn("sampo task evidence T-0001 --step 2 --run", nxt)
         b.add_evidence("pytest -k slow", "exit 0", step=2)
-        self.assertIn("fm task finish T-0001", c.next_action(b))
+        self.assertIn("sampo task finish T-0001", c.next_action(b))
 
 
 class PlanContent(unittest.TestCase):
@@ -761,7 +761,7 @@ class PlanContent(unittest.TestCase):
         for tier in ("M", "L"):
             g = self.gaps(self.brief(tier, interp="The gate counts options."))
             self.assertIn("1 distinct reading", g)
-            self.assertIn("fm task set T-0001", g)  # the gap names its fix
+            self.assertIn("sampo task set T-0001", g)  # the gap names its fix
             ok = self.brief(tier, interp="The gate counts options. Ruled out: a skill nudge, because 0 of 29 briefs follow prose.")
             self.assertEqual(c.plan_gaps(ok, "full"), [], tier)
 
@@ -776,7 +776,7 @@ class PlanContent(unittest.TestCase):
         g = self.gaps(self.brief(ap=ap))
         self.assertIn("option 2", g)
         self.assertNotIn("option 1", g)
-        self.assertIn("fm task set T-0001", g)
+        self.assertIn("sampo task set T-0001", g)
 
     def test_no_use_what_exists_or_do_less_option_is_refused(self):
         ap = ("1) add `--strict`; fails if: old flags. 2) a new `gate` verb; breaks the CLI surface. "
@@ -835,7 +835,7 @@ class PlanContent(unittest.TestCase):
               "3) a queue; breaks on a slow call. Choice 1 (80%): smallest.")
         g = self.gaps(self.brief(ap=ap))
         self.assertIn("different options", g)
-        self.assertIn("fm task set T-0001", g)
+        self.assertIn("sampo task set T-0001", g)
 
     def test_a_ruled_out_reading_needs_its_reason(self):
         for text in ("The gate counts options. Ruled out.", "No other reading.", "One reading; the other is rejected."):
@@ -1275,8 +1275,8 @@ class WaitWhile(unittest.TestCase):
         def busy():
             left[0] -= 1
             return left[0] >= 0
-        self.assertTrue(c.wait_while(busy, "a running fm check", "fm t", limit=30, out=out, step=0.01))
-        self.assertIn("fm t: waiting for a running fm check to finish first (at most 30 seconds)", out.getvalue())
+        self.assertTrue(c.wait_while(busy, "a running sampo check", "fm t", limit=30, out=out, step=0.01))
+        self.assertIn("fm t: waiting for a running sampo check to finish first (at most 30 seconds)", out.getvalue())
         self.assertNotIn("going ahead", out.getvalue())
         out = io.StringIO()
         t0 = time.time()
@@ -1567,7 +1567,7 @@ class ConfidenceRoutes(ForemanTestCase):  # T-2338 (Mission 5, #8): one stated n
 
     def test_an_assumption_under_the_bar_is_refused_until_a_verified_check_a_cold_reader_agrees_with(self):
         tid = self.task(assume=["the API is paged (50%)", "the repo is small (85%)"])
-        self.refused(self.focus(), "assumption 1", "fm task assume")
+        self.refused(self.focus(), "assumption 1", "sampo task assume")
         self.assertNotIn("assumption 2", self.focus().stderr)  # 85% is over the bar
         self.fm("task", "assume", tid, "verify", "1", "--run", self.CHECK, env=stub_claude(self.tmp, "DOES NOT HOLD: no."))
         self.refused(self.focus(), "assumption 1")  # a disagreement keeps it open
@@ -1645,7 +1645,7 @@ class ConfidenceRoutes(ForemanTestCase):  # T-2338 (Mission 5, #8): one stated n
     def test_each_gap_names_its_fix(self):
         self.task(assume=["the API is paged (50%)"])
         err = self.focus().stderr
-        for fix in ("fm research", "--from", "--run"):
+        for fix in ("sampo research", "--from", "--run"):
             self.assertIn(fix, err)
 
     def test_the_stated_numbers_reach_the_ledger_once_at_first_focus(self):

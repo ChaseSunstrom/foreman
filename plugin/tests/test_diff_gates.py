@@ -219,7 +219,7 @@ class DiffGates(ForemanTestCase):
             r = self.hook("PostToolUse", {"tool_name": "Read", "tool_input": dict(file_path=big, **extra)})
             return json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"] if r.stdout.strip() else ""
         self.assertEqual(read(offset=1, limit=50), "")
-        self.assertIn("fm outline", read())
+        self.assertIn("sampo outline", read())
         self.assertEqual(read(), "", "once per session")
 
 

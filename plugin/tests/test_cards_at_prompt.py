@@ -19,7 +19,7 @@ class CardsAtPrompt(HookCase):
 
     def test_named_libraries_get_their_cards_once_per_session(self):
         note = self.ask("fix the react hook that re-runs the postgres query on every render")
-        self.assertIn("fm lib show", note)
+        self.assertIn("sampo lib show", note)
         self.assertIn("react", note)
         self.assertIn("postgres", note)
         self.assertNotIn("stack cards", self.ask("the react page still re-renders").lower())  # once per session

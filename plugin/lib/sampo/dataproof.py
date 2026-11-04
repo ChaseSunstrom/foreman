@@ -182,7 +182,7 @@ def for_task(p, b, say=print):
         return None
     if not (sprove.trusted(p.root) or sprove._lane_trusted(p, p.root)):
         say("data: this task has invariants; proving them runs its data command, so it needs your yes once per tree: "
-            "fm prove PATH --yes-run")
+            "sampo prove PATH --yes-run")
         return None
     r = prove(p.root, inv[0], inv[1], True, limit=FINISH_T)
     if r["verdict"] in ("pass", "fail"):

@@ -47,7 +47,7 @@ class Demo(ForemanTestCase):
         self.assertEqual(os.listdir(self.tmpdir), [])
 
     def test_listed_where_a_newcomer_starts(self):
-        self.assertIn("fm demo", self.fm("--help").stdout)
+        self.assertIn("sampo demo", self.fm("--help").stdout)
         self.assertIn("demo", self.fm("help", "--all").stdout)
         self.assertIn("sampo demo", read_text(os.path.join(os.path.dirname(demo.__file__), "..", "..", "..", "README.md")))
 

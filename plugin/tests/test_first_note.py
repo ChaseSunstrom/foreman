@@ -35,7 +35,7 @@ class TestFirstNote(HookCase):
         self.assertEqual(self.edit("tests/test_app.py"), "", "a test-file edit gets none")
         note = self.edit("app.py")
         self.assertIn("failing test", note)
-        self.assertIn(f"fm task evidence {tid}", note)
+        self.assertIn(f"sampo task evidence {tid}", note)
         self.assertLessEqual(len(note), 300)
         self.assertEqual(self.edit("other.py"), "", "a second edit in the same task gets none")
         self.assertEqual(self.edit("app.py", tool="Write"), "")
@@ -51,7 +51,7 @@ class TestFirstNote(HookCase):
                 env=headless)
             note = self.ctx_of(proc)
             self.assertIn("failing test", note, type_)
-            self.assertEqual(f"fm task evidence {tid}" in note, recorded, type_)
+            self.assertEqual(f"sampo task evidence {tid}" in note, recorded, type_)
 
     def test_a_feature_task_gets_it_and_a_new_task_gets_it_again(self):
         self.task(type_="FEATURE")

@@ -218,7 +218,7 @@ class StepCompact(HookCase):
         self.fm("task", "evidence", tid, "--step", "1", "pytest", "red as expected")
         reason = self.stop()
         self.assertIn("step boundary", reason)
-        self.assertIn("fm checkpoint", reason)
+        self.assertIn("sampo checkpoint", reason)
         self.assertIn("Resume here", reason)
         self.assertIn("/compact", reason)
         self.assertNotIn("step boundary", self.stop(), "said once per step boundary")

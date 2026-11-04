@@ -65,7 +65,7 @@ class RoundF(ForemanTestCase):
         c.update_meta(self.p, gates_running={"task": None, "pid": os.getpid(), "at": c.now(), "root": self.tmp})
         self.assertNotIn("fm check is running", edit(), "a check in another tree (fm ship's scratch one)")
         c.update_meta(self.p, gates_running={"task": None, "pid": os.getpid(), "at": c.now(), "root": self.p.root})
-        self.assertIn("fm check is running", edit())
+        self.assertIn("sampo check is running", edit())
         self.assertNotIn("fm check is running", edit(os.path.join(self.tmp, "notes.txt")), "outside the tree")
 
     def test_a_check_that_changes_nothing_warns_of_nothing(self):

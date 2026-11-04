@@ -333,7 +333,7 @@ class Reopen(Base):
         self.fm("task", "drop", "T-0001", "done elsewhere")
         time.sleep(1.1)
         self.commit("shim fixed upstream", "lib/shim.py", "X = 2\n")  # T-1106: a real change, not a new mtime
-        self.assertRegex(self.fm("next").stdout, r"2 blocked task\(s\) waited on changed.*fm tidy --apply")
+        self.assertRegex(self.fm("next").stdout, r"2 blocked task\(s\) waited on changed.*sampo tidy --apply")
         self.fm("tidy", "--apply")
         self.assertEqual(c.find_brief(self.p, "T-0002").status, "planned")
         self.assertEqual(c.find_brief(self.p, "T-0003").status, "planned")

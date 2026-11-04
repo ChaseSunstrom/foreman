@@ -54,7 +54,7 @@ class Robustness(ForemanTestCase):
             with open(meta, "wb") as f:
                 f.write(data)
             self.no_traceback()
-            self.assertIn("fm fsck", self.fm("status", check=False).stderr)
+            self.assertIn("sampo fsck", self.fm("status", check=False).stderr)
 
     def snapshot(self):
         """Every brief, view and meta file; when tidy last ran is a record of the run, not state it changed."""

@@ -106,7 +106,7 @@ class StateErrors(ForemanTestCase):
         p = self.fm("status", check=False)
         self.assertEqual(p.returncode, 4, p.stderr)
         self.assertIn(meta, p.stderr)
-        self.assertIn("fm fsck", p.stderr)
+        self.assertIn("sampo fsck", p.stderr)
         self.assertNotIn("Traceback", p.stderr)
         out = self.hook("UserPromptSubmit", {"prompt": "fix the thing"}).stdout
         ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]

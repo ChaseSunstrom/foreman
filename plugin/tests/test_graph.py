@@ -84,11 +84,19 @@ class BlastInPlan(Base):
         self.assertIn("app/auth.py", line)
         self.fm("focus", tid)
         r = self.risks()
-        self.assertIn("Blast radius (fm graph blast):", r)
+        self.assertIn("Blast radius (sampo graph blast):", r)
         self.assertIn("app/auth.py", r)
         self.assertIn("T-0001", r)
         self.fm("focus", tid)
         self.assertEqual(self.risks().count("Blast radius"), 1)
+
+    def test_a_brief_holding_the_old_fm_line_is_not_annotated_again(self):  # T-2847
+        tid = self.plan("Touch the session", "app/session.py")
+        self.fm("graph", "build")
+        self.fm("task", "set", tid, "--section", "Risks and rollback", "--text", "Blast radius (fm graph blast): old line.")
+        self.fm("focus", tid)
+        self.assertEqual(self.risks().count("Blast radius"), 1)
+        self.assertNotIn("sampo graph blast", self.risks())
 
     def test_empty_scope_glob_or_unbuilt_graph_skips(self):
         tid = self.plan("Touch the session", "app/*.py")
@@ -123,7 +131,7 @@ class BlastReach(BlastInPlan):
         self.fm("graph", "build")
         self.fm("focus", tid)
         r = self.risks()
-        self.assertIn("Blast radius (fm graph blast): co-changes app/auth.py", r)
+        self.assertIn("Blast radius (sampo graph blast): co-changes app/auth.py", r)
         self.fm("focus", tid)
         self.assertEqual(self.risks().count("Blast radius"), 1)
 
@@ -159,7 +167,7 @@ class BlastReach(BlastInPlan):
         self.commit("lonely", "2026-04-01T10:00:00Z")
         self.fm("graph", "build")
         self.assertEqual(self.line("only app/lonely.py"),
-                         "Blast radius (fm graph blast): unknown, no co-change history for app/lonely.py.")
+                         "Blast radius (sampo graph blast): unknown, no co-change history for app/lonely.py.")
 
 
 class BlastBuild(Base):

@@ -9,9 +9,10 @@ class FirstRun(ForemanTestCase):
         out = self.fm("--help").stdout
         self.assertLess(len(out.splitlines()), 30, out)
         self.assertNotIn("{help,init", out)
-        for verb in ("fm init", "fm capture", "fm task new", "fm next", "fm status", "fm check", "fm task finish"):
+        for verb in ("sampo init", "sampo capture", "sampo task new", "sampo next", "sampo status", "sampo check",
+                     "sampo task finish"):
             self.assertIn(verb, out)
-        self.assertIn("fm help --all", out)
+        self.assertIn("sampo help --all", out)
         self.assertIn("Every task", self.fm("help", "--all").stdout)
 
     def test_task_new_help_lists_values_and_an_example(self):  # T-0846
@@ -20,7 +21,7 @@ class FirstRun(ForemanTestCase):
             self.assertIn(v, out)
         self.assertRegex(out, r"\{S,M,L\}")
         last = out.strip().splitlines()[-1]
-        self.assertIn('fm task new "Add login timeout" --type FIX --tier S', last)
+        self.assertIn('sampo task new "Add login timeout" --type FIX --tier S', last)
         self.assertIn("--focus", last)
         self.fm("task", "new", "an alias", "--type", "bug", "--tier", "S")  # aliases and lowercase still work
         self.fm("task", "new", "lowercase", "--type", "fix", "--tier", "S")
@@ -30,10 +31,10 @@ class FirstRun(ForemanTestCase):
         said = p.stdout + p.stderr
         self.assertIn(self.repo, said)
         self.assertIn(self.home, said)  # where state lives
-        self.assertIn("fm capture", said)
+        self.assertIn("sampo capture", said)
         status = self.fm("status").stdout
         self.assertEqual(len(status.strip().splitlines()), 1, status)
-        self.assertIn("fm capture", status)
+        self.assertIn("sampo capture", status)
         self.fm("capture", "add a hello command")
         self.assertGreater(len(self.fm("status").stdout.strip().splitlines()), 1)
 
@@ -51,7 +52,7 @@ class FirstRun(ForemanTestCase):
         p = self.fm("task", "done", tid, check=False)
         self.assertEqual(p.returncode, 2, p.stderr)
         first = p.stderr.strip().splitlines()[0]
-        self.assertIn(f"fm task finish {tid} --run", first)
+        self.assertIn(f"sampo task finish {tid} --run", first)
         self.assertIn("--audit", first)
 
 

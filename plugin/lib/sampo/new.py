@@ -241,7 +241,7 @@ def cmd_dev(args):
     if getattr(args, "once", False):
         return check()
     last = stamps()
-    print(f"fm dev: watching {len(last)} tracked files in {root}; a change runs fm check --affected. Ctrl-C ends it.",
+    print(f"sampo dev: watching {len(last)} tracked files in {root}; a change runs sampo check --affected. Ctrl-C ends it.",
           flush=True)
     try:
         while True:
@@ -249,7 +249,7 @@ def cmd_dev(args):
             now = stamps()
             moved = sorted(k for k in now if now[k] != last.get(k))
             if moved:
-                print(f"fm dev: {', '.join(moved[:3])}{' …' if len(moved) > 3 else ''} changed: fm check --affected",
+                print(f"sampo dev: {', '.join(moved[:3])}{' …' if len(moved) > 3 else ''} changed: sampo check --affected",
                       flush=True)
                 check()
                 now = stamps()
@@ -401,7 +401,7 @@ def cmd_new(args):
         cli.out(args, {"templates": rows}, "Templates, strict by default (fm new NAME [DIR]; fm new check PATH):\n"
                   + "\n".join(f"  {r['name']:<6} {r['file']:<11} {r['what']}" for r in rows)
                   + "".join(f"\n  {k:<6} {'NAME':<11} {v[2]}" for k, v in SCAFFOLDS.items())
-                  + "\n  (fm new tool|skill NAME [DIR] never overwrites; a panel lands in fm code's tui/ folder in Sampo's home unless DIR is given)")
+                  + "\n  (sampo new tool|skill NAME [DIR] never overwrites; a panel lands in sampo code's tui/ folder in Sampo's home unless DIR is given)")
         return 0
     if words[0] == "check":
         if len(words) < 2:

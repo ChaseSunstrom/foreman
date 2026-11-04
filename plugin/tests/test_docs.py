@@ -958,7 +958,7 @@ class HelpAnswers(unittest.TestCase):
             self.assertIn("fm notify", p.stdout)
             p = _fm_temp(tmp, "help", "bake", "a", "cake")
             self.assertEqual(p.returncode, 1)
-            self.assertIn("fm help --all", p.stdout)
+            self.assertIn("sampo help --all", p.stdout)
             p = _fm_temp(tmp, "help", "can", "foreman", "scaffold", "an", "mcp", "server")
             self.assertTrue(all(len(ln) <= 100 for ln in p.stdout.splitlines()), p.stdout)
             self.assertIn("scaffold", next(ln for ln in p.stdout.splitlines() if "fm mcp" in ln), "the matched words")

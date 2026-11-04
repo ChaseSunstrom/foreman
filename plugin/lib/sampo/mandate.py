@@ -65,7 +65,7 @@ def lapse_finding(m):
     from sampo import scout
     return scout.Finding(f"mandate:{m.get('set_at')}", f"Mandate ended: {c.fit(m['text'], 90)}", "RESEARCH", "S",
                            f"the standing mandate set {day(m.get('set_at'))} ended {day(m.get('until'))}; "
-                           "nothing more is captured under it. Decide: renew it (fm mandate set \"<text>\" --until "
+                           "nothing more is captured under it. Decide: renew it (sampo mandate set \"<text>\" --until "
                            "YYYY-MM-DD) or let it lapse (fm mandate off).")
 
 
@@ -113,7 +113,7 @@ def standing(p):
         raise cli.UsageError('no goal stands: fm goal set "<the request>" [--until YYYY-MM-DD] [--usd N] sets one')
     if m["expired"]:
         raise cli.UsageError(f"the goal ended {day(m.get('until'))}; renewing or replacing it is the user's "
-                               "call (T-2186): they run fm mandate set \"<text>\" --until YYYY-MM-DD, or fm mandate off")
+                               "call (T-2186): they run sampo mandate set \"<text>\" --until YYYY-MM-DD, or sampo mandate off")
     return m
 
 

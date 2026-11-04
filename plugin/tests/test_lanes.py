@@ -55,7 +55,7 @@ class Lanes(ForemanTestCase):
         for out in (self.fm("status").stdout, self.fm("next").stdout,
                     self.hook("UserPromptSubmit", {"prompt": "carry on", "session_id": "s1"}).stdout):
             self.assertIn(tid, out)
-            self.assertIn(f"fm lane rm {tid}", out)
+            self.assertIn(f"sampo lane rm {tid}", out)
 
     def test_the_edit_gate_in_a_lane_needs_that_lanes_task(self):
         self.new("Main work", self.repo)
@@ -395,7 +395,7 @@ class Lanes(ForemanTestCase):
         tid = self.new("Main work", self.repo, focus=False)
         p = self.fm("task", "set", tid, "status=active", check=False)
         self.assertNotEqual(p.returncode, 0)
-        self.assertIn("fm focus", p.stderr)
+        self.assertIn("sampo focus", p.stderr)
 
     def test_the_brief_agent_line_names_effort_by_tier(self):
         # T-0779: S builders run at medium effort, M at high, beside the model
@@ -516,7 +516,7 @@ class Lanes(ForemanTestCase):
     def test_a_finished_lane_asks_for_a_merge_not_a_resume(self):
         tid, path = self.finished_builder()
         out = self.fm("next").stdout
-        self.assertIn(f"fm lane merge {tid}", out)
+        self.assertIn(f"sampo lane merge {tid}", out)
         self.assertNotIn(f"fm lane recover {tid}", out, "a finished lane is merged, not recovered")
         self.assertEqual(c.finished_lanes(c.find_project(self.repo), c.load_briefs(c.find_project(self.repo))), [tid])
 
@@ -525,7 +525,7 @@ class Lanes(ForemanTestCase):
         stop = lambda: self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting.",
                                           "session_id": "sess-1"}).stdout
         first = stop()
-        self.assertIn(f"finished and wait on a merge: fm lane merge {tid}", first)
+        self.assertIn(f"finished and wait on a merge: sampo lane merge {tid}", first)
         self.assertNotIn(f"fm lane merge {tid}", stop(), "said once, not on every Stop")
 
     def test_a_dirty_or_fresh_lane_is_not_finished(self):
@@ -1697,7 +1697,7 @@ class DesignRace(RaceBase):
         self.assertIn("race-a", self.git(self.repo, "branch", "--list", "race-a"))
 
     def test_the_ask_line_for_an_l_names_the_spike_race_too(self):
-        self.assertIn("fm lane race T-1", c.race_line(c.Brief.parse("---\nid: T-1\ntier: L\n---\n# x\n")))
+        self.assertIn("sampo lane race T-1", c.race_line(c.Brief.parse("---\nid: T-1\ntier: L\n---\n# x\n")))
 
 
 class SelfChangeGate(ForemanTestCase):

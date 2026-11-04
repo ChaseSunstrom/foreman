@@ -822,13 +822,13 @@ def post_ticket(p, tid):
            "no commit closed it" if not sha else f"commit {sha} is on no remote branch yet: push it first"
            if not c._git(p.root, "branch", "-r", "--contains", sha, timeout=30).strip() else None)
     if why:
-        raise cli.UsageError(f"fm inbox ticket --post {b.id}: nothing posted: {why}")
+        raise cli.UsageError(f"sampo inbox ticket --post {b.id}: nothing posted: {why}")
     (svc, key), body = src, f"Closed in commit {sha} (Sampo {b.id})."
 
     def claim(x):  # under the lock: two runs at once post once
         marks = _POSTED.findall(x.section("Log"))
         if marks and marks[-1] != "the post failed":
-            raise cli.UsageError(f"fm inbox ticket --post {b.id}: nothing posted: already posted")
+            raise cli.UsageError(f"sampo inbox ticket --post {b.id}: nothing posted: already posted")
         x.append_log(f"posting the close to {svc} {key}")
     cli.mutate(p, b.id, claim, "ticket_post", {"to": key})
     try:

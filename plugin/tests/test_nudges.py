@@ -96,7 +96,7 @@ class QuietHints(ForemanTestCase):
         for _ in range(self.c.QUIET_AFTER):
             self._turn()
         quiet = self.c.next_for(self.p)[2]
-        self.assertIn("fm batch", quiet)
+        self.assertIn("sampo batch", quiet)
         self.assertNotIn("one plan, gate run, review and commit", quiet)
         self.fm("check", "add", "false")
         self.fm("check", check=False)

@@ -222,8 +222,8 @@ class Hint(ForemanTestCase):
         self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a", "--focus")
         path = os.path.join(self.repo, "a.py")
         notes = [self.hook("PostToolUse", {"tool_name": "Edit", "tool_input": {"file_path": path}}).stdout for _ in range(5)]
-        self.assertEqual(sum("fm edit" in n for n in notes), 1, notes)
-        self.assertIn("fm edit", notes[2])
+        self.assertEqual(sum("sampo edit" in n for n in notes), 1, notes)
+        self.assertIn("sampo edit", notes[2])
 
     def test_a_subagents_edits_get_no_batch_hint(self):
         # T-1104: a builder's edits raised the hint in the main thread's context

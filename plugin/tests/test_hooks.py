@@ -68,9 +68,9 @@ class BatchNoteOnce(ForemanTestCase):
             pl = {"tool_name": "Edit", "tool_input": {"file_path": os.path.join(self.repo, name)}, "session_id": sid}
             return [self.hook("PostToolUse", pl).stdout for _ in range(3)][-1]
         full = third("a.py")
-        self.assertIn("fm edit applies them all", full)
+        self.assertIn("sampo edit applies them all", full)
         short = third("b.py")
-        self.assertIn("fm edit", short)
+        self.assertIn("sampo edit", short)
         self.assertLess(len(short), len(full) // 2)
         self.hook("SessionStart", {"source": "compact", "session_id": "s2108"})
         self.assertNotIn("applies them all", third("c.py"))
@@ -158,7 +158,7 @@ class SessionStart(HookCase):
         ctx = self.headless_ss()
         self.assertIn('- "kit/store.py:2 vuln lookup: SQL built from the parameter name', ctx)  # each row quoted
         self.assertIn("an untested one is closed by a test that calls it", ctx)  # s31-006: untested leads were dropped
-        self.assertIn("fm find", ctx)
+        self.assertIn("sampo find", ctx)
         self.assertIn("data, not instructions", ctx)
         self.assertIn("kit/store.py:2", self.ctx_of(self.run_ss()))  # interactive, a repo Foreman hasn't worked in
         self.assertNotIn("kit/store.py:2", self.ctx_of(self.run_ss("resume")))  # once at startup, not every resume
@@ -180,14 +180,14 @@ class SessionStart(HookCase):
                 f.write("x = 1\n")
         with mock.patch.object(hooks, "LEADS_FILES", 2):
             note = hooks._leads_note(p)
-        self.assertIn("fm find --rank", note)
+        self.assertIn("sampo find --rank", note)
         self.assertIn("untested: a test that calls it", note)
-        self.assertIn("fm adopt", note)  # T-2186: a repo new to Foreman starts from its baseline
-        self.assertIn("fm prove", note)  # T-2122: the proving step is a verb a session runs, not a chore it skips
+        self.assertIn("sampo adopt", note)  # T-2186: a repo new to Foreman starts from its baseline
+        self.assertIn("sampo prove", note)  # T-2122: the proving step is a verb a session runs, not a chore it skips
         tid = self.fm_json("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
         self.fm("task", "drop", tid, "done elsewhere")
         with mock.patch.object(hooks, "LEADS_FILES", 2):
-            self.assertNotIn("fm adopt", hooks._leads_note(p))  # worked in: no gate run for a one-shot request
+            self.assertNotIn("sampo adopt", hooks._leads_note(p))  # worked in: no gate run for a one-shot request
         self.assertRegex(note, r"\b[3-9] files, too many")  # 1 tracked, the rest untracked
         self.assertNotIn("kit/store.py", note)
         from sampo import find as sfind
@@ -199,13 +199,13 @@ class SessionStart(HookCase):
 
     def test_fm_next_in_a_repo_foreman_hasnt_worked_in_names_fm_find(self):
         self.fm("init")
-        self.assertIn("fm find --rank", self.fm("next").stdout)
-        self.assertIn("fm adopt", self.fm("next").stdout)  # T-2186: the baseline a lead's failing test is read against
+        self.assertIn("sampo find --rank", self.fm("next").stdout)
+        self.assertIn("sampo adopt", self.fm("next").stdout)  # T-2186: the baseline a lead's failing test is read against
         tid = self.fm_json("task", "new", "x", "--type", "FIX", "--tier", "S", "--step", "x")["id"]
         self.fm("task", "drop", tid, "done elsewhere")
         out = self.fm("next").stdout
         self.assertIn("queue is empty", out)
-        self.assertNotIn("fm find --rank", out)
+        self.assertNotIn("sampo find --rank", out)
 
     def test_session_start_shows_a_standing_mandate(self):
         # T-2186: fm mandate keeps a sweeping request standing, but only fm scout and fm night read it; no session saw it
@@ -216,15 +216,15 @@ class SessionStart(HookCase):
                 time.strftime("%Y-%m-%d", time.localtime(time.time() + 3 * 86400)))
         ctx = self.ctx_of(self.run_ss())
         self.assertIn('"cover the CSV importer\'s edge cases"', ctx)  # quoted: the user's words, as data
-        self.assertIn("fm mandate", ctx)
+        self.assertIn("sampo mandate", ctx)
         p = c.find_project(self.repo)
         c.update_meta(p, mandate=dict(c.read_meta(p)["mandate"], until=c.iso(time.time() - 60)))
         ctx = self.ctx_of(self.run_ss("resume"))
         self.assertNotIn("CSV importer", ctx)  # ended: renew it or let it lapse, not work under it
-        self.assertIn("fm mandate off", ctx)
+        self.assertIn("sampo mandate off", ctx)
         self.assertIn("the user's call, never yours", ctx)  # a session never renews its own authority
         self.fm("mandate", "off")
-        self.assertNotIn("fm mandate", self.ctx_of(self.run_ss()))
+        self.assertNotIn("sampo mandate", self.ctx_of(self.run_ss()))
 
     def test_session_start_carries_the_goal_line_instead_of_the_mandate_text(self):
         # T-2139: a goal with items stands across days: one line, not the line plus the mandate text again
@@ -318,7 +318,7 @@ class SessionStart(HookCase):
             if os.path.exists(path):
                 break
             time.sleep(0.1)
-        self.assertTrue(os.path.exists(path), "a background fm map was started")
+        self.assertTrue(os.path.exists(path), "a background sampo map was started")
         ctx = self.ctx_of(self.run_ss())
         self.assertIn("Map (", ctx)
         line = next(x for x in ctx.splitlines() if x.startswith("Map ("))
@@ -370,12 +370,12 @@ class SessionStart(HookCase):
         ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"},
                                     env={"CLAUDE_ENV_FILE": self.env_file, "HOME": home}))
         self.assertIn(os.path.join("rules", "foreman.md"), ctx)
-        self.assertIn("fm install-user", ctx)
+        self.assertIn("sampo install-user", ctx)
         os.makedirs(os.path.join(home, ".claude", "rules"))
         open(os.path.join(home, ".claude", "rules", "foreman.md"), "w").close()  # wired: nothing to say
         ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"},
                                     env={"CLAUDE_ENV_FILE": self.env_file, "HOME": home}))
-        self.assertNotIn("fm install-user", ctx)
+        self.assertNotIn("sampo install-user", ctx)
 
     def test_non_git_unregistered_dir_gets_nothing(self):
         plain = os.path.join(self.tmp, "plain")
@@ -460,7 +460,7 @@ class UserPromptSubmit(HookCase):
         self.assertIn("fix the cause", ctx)
         [b] = friction()
         self.assertEqual((b.title, b.type, b.meta.get("source"), b.priority),
-                         ("Improve fm code: fm mission + fm ideas from the user's friction", "RESEARCH", "self", "normal"))
+                         ("Improve fm code: sampo mission + sampo ideas from the user's friction", "RESEARCH", "self", "normal"))
         self.assertIn(b.id, ctx)
         self.hook("UserPromptSubmit", {"prompt": "fm code just isn't doing anything"})
         [b] = friction()
@@ -502,7 +502,7 @@ class UserPromptSubmit(HookCase):
         ups = lambda prompt, sid="sess-1": self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": sid}))
         fix = self.task(tier="M")
         ctx = ups("carry on")
-        hint = "(load: Skill foreman:debug-test; fm playbooks show tdd-workflow)"  # T-1701: the job skill
+        hint = "(load: Skill foreman:debug-test; sampo playbooks show tdd-workflow)"  # T-1701: the job skill
         self.assertIn(hint, ctx, "named whole, worded as the call to make")
         self.assertGreater(ctx.index(hint), ctx.index("Next: "), "on the Next line")
         self.assertLessEqual(len(ctx), 400)
@@ -512,10 +512,10 @@ class UserPromptSubmit(HookCase):
         self.assertNotIn("foreman:debug-test", ctx, "the same stage: named once")
         feat = self.task("Add export", type_="FEATURE", tier="M")
         self.assertIn("(load: Skill foreman:intake, then its references/execute.md", ups("go on"))
-        self.assertEqual(json.loads(self.fm("next", "--json").stdout)["skill"], c.SKILL_FOR["FEATURE"], "fm next: always")
+        self.assertEqual(json.loads(self.fm("next", "--json").stdout)["skill"], c.SKILL_FOR["FEATURE"], "sampo next: always")
         for n in ("1", "2"):
             self.fm("task", "step", feat, "done", n, "--evidence", "true", "ok")
-        self.assertIn("fm playbooks show verification-loop", ups("go on"))
+        self.assertIn("sampo playbooks show verification-loop", ups("go on"))
         start = self.ctx_of(self.hook("SessionStart", {"source": "compact"}, env={"CLAUDE_ENV_FILE": self.env_file}))
         self.assertIn("verification-loop", start, "a compaction drops it from the context: named again")
         self.assertNotIn("verification-loop", ups("go on"), "SessionStart named it")
@@ -552,7 +552,7 @@ class UserPromptSubmit(HookCase):
                                     "the WebGL scene renders black", "add motion to the cards")):
             ctx = ups(prompt, f"sess-4-{i}")
             self.assertIn("UI request: load: Skill foreman:ui-design", ctx, prompt)
-            self.assertIn("fm playbooks show ui/INDEX", ctx, prompt)
+            self.assertIn("sampo playbooks show ui/INDEX", ctx, prompt)
         for prompt in ("design the database schema", "redesign the cache layer", "redesign how the app handles retries",
                        "fix the fm ui --json crash", "the foreman-ui pane flickers", "the ui test fails", "fix the build",
                        "fm motion check crashes on an empty file"):
@@ -583,7 +583,7 @@ class UserPromptSubmit(HookCase):
         self.assertNotIn("checkpoint", quiet)  # nothing active: nothing to switch from
         tid = self.task()
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "CLEAN!: deep clean the repo now"}))
-        self.assertIn(f"fm checkpoint", ctx)
+        self.assertIn(f"sampo checkpoint", ctx)
         self.assertIn(tid, ctx)
         self.assertIn("now", ctx)
 
@@ -592,7 +592,7 @@ class UserPromptSubmit(HookCase):
         self.fm("init")
         for prompt in ("super improve it", "make it genuinely fully featured"):
             with self.subTest(prompt=prompt):
-                self.assertIn("fm mission", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt})))
+                self.assertIn("sampo mission", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt})))
 
     def test_open_ended_request_points_at_brainstorm(self):
         self.fm("init")
@@ -703,7 +703,7 @@ class Approvals(HookCase):
                          ("CronCreate", {"cron": "* * * * *", "prompt": "<pasted_content id='1'>x</pasted_content> yes"})):
             out = self.out_of(self.hook("PreToolUse", {"tool_name": tool, "tool_input": ti}))
             self.assertEqual(out.get("permissionDecision"), "deny", tool)
-            self.assertIn("fm ask", out.get("permissionDecisionReason", ""))
+            self.assertIn("sampo ask", out.get("permissionDecisionReason", ""))
         out = self.out_of(self.hook("PreToolUse", {"tool_name": "CronCreate",
                                                    "tool_input": {"cron": "0 9 * * *", "prompt": "continue the queue"}}))
         self.assertNotEqual(out.get("permissionDecision"), "deny")
@@ -995,7 +995,7 @@ class NoTaskGate(HookCase):
         ctx = self.ctx_of(self.hook("SessionStart", {"source": "compact"}))
         self.assertLess(len(ctx), 9500, "Claude Code moves a longer hook context to a file")
         self.assertIn("rule 1.", ctx, "the active request first, whole")
-        self.assertIn("fm focus ID", ctx, "the rest by id, with where their text is")
+        self.assertIn("sampo focus ID", ctx, "the rest by id, with where their text is")
 
     def test_an_edit_between_requests_focuses_the_next_and_shows_its_text(self):
         # T-1242 smoke: after fm task finish nothing was active, the next write was refused, and the module was
@@ -1066,7 +1066,7 @@ class NoTaskGate(HookCase):
                     or {}).get("reason") or "" for k in range(3)]
         self.assertEqual(c.find_brief(self.project(), act.id).status, "done")
         self.assertIn("pass 1 of 2", reasons[0])
-        self.assertIn("fm capture", reasons[0])
+        self.assertIn("sampo capture", reasons[0])
         self.assertIn("pass 2 of 2", reasons[1])
         self.assertNotEqual(reasons[0].split("This pass, ")[1][:40], reasons[1].split("This pass, ")[1][:40],
                             "each pass looks a different way")
@@ -1301,7 +1301,7 @@ class PromptApprovals(HookCase):
                       env={"FOREMAN_DRIVE_TASK": self.tid})
         out = parse(p)["hookSpecificOutput"]
         self.assertEqual(out["permissionDecision"], "deny")
-        self.assertIn("fm task block", out["permissionDecisionReason"])
+        self.assertIn("sampo task block", out["permissionDecisionReason"])
 
     def test_a_dialog_approved_before_reload_says_so_and_leaves_a_trace(self):
         # after updating Foreman, the PermissionRequest hook isn't loaded until /reload-plugins
@@ -1353,7 +1353,7 @@ class PromptApprovals(HookCase):
         out = self.standing_yes()
         self.assertEqual(out["permissionDecision"], "ask")
         self.assertIn("every later task", out["permissionDecisionReason"])
-        self.assertIn("fm standing off", out["permissionDecisionReason"])
+        self.assertIn("sampo standing off", out["permissionDecisionReason"])
         self.task("Another change")  # a later task: no yes of its own
         self.assertEqual(self.write(lib).returncode, 0)
         self.assertEqual(self.write(os.path.join(self.home, "plugin", "rules", "foreman.md")).returncode, 0)
@@ -1422,8 +1422,8 @@ class Trust(HookCase):
         for cmd in (f"echo '{{\"on\": true}}' > {self.trust_file()}", f"tee {self.trust_file()} < /dev/null",
                     f"cp /tmp/x {self.trust_file()}"):
             self.assertEqual(self.bash(cmd).returncode, 2, cmd)
-        self.assertEqual(self.bash("fm trust off").returncode, 0, "turning it off is always fine")
-        self.assertEqual(self.bash("fm trust").returncode, 0)
+        self.assertEqual(self.bash("sampo trust off").returncode, 0, "turning it off is always fine")
+        self.assertEqual(self.bash("sampo trust").returncode, 0)
 
     def test_trusted_the_guard_and_settings_are_editable_and_state_never(self):
         guard = os.path.join(self.home, "plugin", "lib", "fmguard.py")
@@ -1489,7 +1489,7 @@ class PluginPins(HookCase):
         self.assertEqual(p.returncode, 2)
         self.assertIn("a@m", p.stderr)
         self.assertIn("plugin", self.brief().meta.get("allow"), "a refused call doesn't spend the yes")
-        self.assertEqual(self.pre("fm plugins install a@m").returncode, 0)
+        self.assertEqual(self.pre("sampo plugins install a@m").returncode, 0)
         self.assertNotIn("plugin", self.brief().meta.get("allow") or [])
         self.assertNotIn("plugin_pin", self.brief().meta)
 
@@ -1498,7 +1498,7 @@ class PluginPins(HookCase):
         p = self.pre("claude plugin update a@m")
         self.assertEqual(p.returncode, 2)
         self.assertIn("update", p.stderr)
-        self.assertIn(f"fm ask {self.tid} plugin", p.stderr)
+        self.assertIn(f"sampo ask {self.tid} plugin", p.stderr)
         self.assertIn("never covered by a pin", p.stderr)
         self.assertIn("plugin", self.brief().meta.get("allow"), "a refused call doesn't spend the yes")
 
@@ -1599,7 +1599,7 @@ class PluginPins(HookCase):
         self.fm("ask", self.tid, "plugin", "--pin", "a@m", "--why", "rust support")
         call("PostToolUse")
         self.assertEqual(self.brief().meta.get("plugin_pin", [])[:1], ["a@m"])
-        self.assertEqual(self.pre("fm plugins install a@m").returncode, 0)
+        self.assertEqual(self.pre("sampo plugins install a@m").returncode, 0)
 
 
 class AutoEvidence(HookCase):
@@ -1658,11 +1658,11 @@ class CapabilityMiss(HookCase):
     def test_a_miss_notes_once_per_session_and_a_second_session_captures_one_task(self):
         self.fm("init")
         note = self.miss("Exit code 127\nbash: jq: command not found")
-        self.assertIn('fm which "jq"', note)  # T-2371: one find across every shelf, plugins last
-        self.assertIn("fm ask", note)
-        self.assertIn("or build it: fm new tool jq", note)  # T-2278
+        self.assertIn('sampo which "jq"', note)  # T-2371: one find across every shelf, plugins last
+        self.assertIn("sampo ask", note)
+        self.assertIn("or build it: sampo new tool jq", note)  # T-2278
         self.assertLessEqual(len(note), 300)
-        self.assertNotIn('fm which "jq"', self.miss("Exit code 127\nbash: jq: command not found"))
+        self.assertNotIn('sampo which "jq"', self.miss("Exit code 127\nbash: jq: command not found"))
         self.assertEqual(self.tasks(), [])
         self.miss("zsh: command not found: jq", sid="s2")
         self.miss("zsh: command not found: jq", sid="s3")
@@ -1676,7 +1676,7 @@ class CapabilityMiss(HookCase):
         self.fm("fix", "add", "jq: command not found", "--do", "apt install jq")
         note = self.miss("bash: jq: command not found")
         self.assertIn("apt install jq", note)
-        self.assertIn('fm which "jq"', note)
+        self.assertIn('sampo which "jq"', note)
         self.assertLessEqual(len(note), 400)
         os.makedirs(os.path.join(self.repo, "tools"))
         with open(os.path.join(self.repo, "tools", "sheetsplit.py"), "w") as f:
@@ -1737,9 +1737,9 @@ class CapabilityMiss(HookCase):
         self.fm("init")
         err = "This tool cannot read binary files. The file appears to be a binary .xlsb file."
         read = lambda path, sid="s1", e=err, **x: self.tool_fail("Read", e, sid, tool_input={"file_path": path}, **x)
-        self.assertIn('fm which "xlsb"', read("/w/Book.XLSB"))
+        self.assertIn('sampo which "xlsb"', read("/w/Book.XLSB"))
         self.assertEqual(read("/w/other.xlsb"), "", "once per session")
-        self.assertIn('fm which "xlsb"', read("/w/Book.xlsb", sid="s2"))
+        self.assertIn('sampo which "xlsb"', read("/w/Book.xlsb", sid="s2"))
         for path in ("/w/noext", "/w/a.b$c", "/w/a." + "x" * 65):
             self.assertEqual(read(path, sid="s7"), "", path)
         self.assertEqual(read("/w/a.zzz", sid="s8", e="File does not exist."), "", "not a type problem")
@@ -1750,9 +1750,9 @@ class CapabilityMiss(HookCase):
 
     def test_an_unknown_tool_or_mcp_server_names_fm_which_the_name(self):
         self.fm("init")
-        self.assertIn('fm which "Frobnicate"', self.tool_fail("Frobnicate", "Error: No such tool available: Frobnicate"))
+        self.assertIn('sampo which "Frobnicate"', self.tool_fail("Frobnicate", "Error: No such tool available: Frobnicate"))
         self.assertEqual(self.tool_fail("Frobnicate", "Error: No such tool available: Frobnicate"), "")
-        self.assertIn('fm which "mcp__acme__lookup"',
+        self.assertIn('sampo which "mcp__acme__lookup"',
                       self.tool_fail("mcp__acme__lookup", "No such tool available: mcp__acme__lookup"))
         for name in ("a;rm", "$(x)", "n" * 65):
             self.assertEqual(self.tool_fail("Odd", f"No such tool available: {name}", sid="s7"), "", name)
@@ -1803,7 +1803,7 @@ class PreToolUse(HookCase):
         self.assertEqual(cur(), 3)
         notes = [edit("other.py") for _ in range(9)]
         self.assertEqual([i for i, n in enumerate(notes) if n], [6])  # the 8th edit on step 3, once
-        self.assertIn(f"fm task step {tid} current N", notes[6])
+        self.assertIn(f"sampo task step {tid} current N", notes[6])
 
     def test_a_short_file_name_inside_a_longer_one_moves_nothing(self):
         # T-0759 review: "a.py" is a substring of "data.py" in a later step's text
@@ -1842,7 +1842,7 @@ class PreToolUse(HookCase):
         for tool, ti in outward:
             p = self.pre(tool, ti)
             self.assertTrue(denied(p), tool)
-            self.assertIn("fm sensitive off", p.stdout)
+            self.assertIn("sampo sensitive off", p.stdout)
         for tool, ti in (("ArtifactData", {"action": "list", "url": "u"}), ("Artifact", {"action": "read", "url": "u"}),
                          ("mcp__claude_ai_Claude_Docs__query", {})):
             self.assertFalse(denied(self.pre(tool, ti)), f"{tool} only reads")
@@ -1927,7 +1927,7 @@ class PreToolUse(HookCase):
         import types
         import fmguard as g
         ctx = types.SimpleNamespace(task_id="T-0007", confine=("/lane", "/main"))
-        fixes = ("fm ask", "--allow", "fm task new", "fm task", "fm focus", "report what needs changing")
+        fixes = ("sampo ask", "--allow", "sampo task new", "sampo task", "sampo focus", "report what needs changing")
         for cat in g.CATEGORIES:
             with self.subTest(cat=cat):
                 text = g.message(g.Block(cat, "/x/y"), ctx)
@@ -1953,7 +1953,7 @@ class PreToolUse(HookCase):
         text = [self.pre("Bash", cmd).stdout for _ in range(3)][2]
         self.assertIn("Stop retrying", text)
         self.assertIn("do what the refusal says", text)
-        self.assertNotIn("fm ask", text)
+        self.assertNotIn("sampo ask", text)
 
     def test_brief_refusal_names_the_task_to_resume(self):
         # T-0409 (JARVIS): after closing a lane task it edited docs before refocusing T-0278; the refusal offered
@@ -1962,7 +1962,7 @@ class PreToolUse(HookCase):
         tid = self.task("Work in progress", focus=False)
         r = self.pre("Write", {"file_path": os.path.join(self.repo, "notes.md"), "content": "x"})
         self.assertEqual(r.returncode, 2)
-        self.assertIn(f"fm focus {tid}", r.stderr)
+        self.assertIn(f"sampo focus {tid}", r.stderr)
 
     def test_interpreter_writes_to_secret_templates(self):
         # T-0390 (JARVIS T-0274, 01:57 UTC, on 1.2.4): this exact command was refused as credentials
@@ -2140,7 +2140,7 @@ class PreToolUse(HookCase):
         self.assertEqual(p.returncode, 2)
         out = parse(p)["hookSpecificOutput"]
         self.assertEqual(out["permissionDecision"], "deny")
-        self.assertIn(f"fm task set {tid} --allow publish", out["permissionDecisionReason"])
+        self.assertIn(f"sampo task set {tid} --allow publish", out["permissionDecisionReason"])
         self.assertIn("guard_block", [e["kind"] for e in self.events()])
 
     def test_block_event_keeps_the_tripping_part(self):
@@ -2409,7 +2409,7 @@ class Stop(HookCase):
         self.ran_a_tool("s6")
         out = self.stop("Which one should I fix first, the first or the second?", session="s6")
         if self.decision(out):
-            self.assertNotIn("fm find leads shown", parse(out)["reason"])
+            self.assertNotIn("sampo find leads shown", parse(out)["reason"])
         self.assertEqual(self.decision(self.stop("Fixed it.", session="s6")), "block")  # hold unspent
 
     def test_a_lead_is_named_by_a_whole_word_basename_line_or_a_dotted_last_segment(self):
@@ -2565,7 +2565,7 @@ class Stop(HookCase):
         self.assertIsNone(self.decision(self.proof_stop("It is not 3x faster yet; I'll measure it.", sid="pc-3")))
         self.assertIsNone(self.decision(self.proof_stop("If it ends up 3x faster we keep it.", sid="pc-4")))
         p = self.proof_stop("The docs are now accurate.", sid="pc-5")
-        self.assertIn("fm prove --docs", parse(p)["reason"])
+        self.assertIn("sampo prove --docs", parse(p)["reason"])
         self.assertIsNone(self.decision(self.proof_stop("The docs are now accurate, unproven: not checked.", sid="pc-6")))
 
     def test_proof_claim_kept_after_its_hold_is_labelled_for_the_user_and_recorded_on_the_task(self):  # T-2392
@@ -2929,7 +2929,7 @@ class Stop(HookCase):
         self.assertIsNone(self.decision(p))
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Step done.",
                                "session_id": "sess-1"}, env={"FOREMAN_DRIVE_TASK": tid})
-        self.assertEqual(self.decision(p), "block", "fm run's session still drives its task")
+        self.assertEqual(self.decision(p), "block", "sampo run's session still drives its task")
         # T-0995: an interactive session marked one-off (the UI harness) is the same: it planned three tasks and took
         # the working session's focus when the drive pushed it after its one prompt
         harness = {"FOREMAN_ONEOFF": "1", "CLAUDE_ENV_FILE": self.env_file}
@@ -2984,11 +2984,11 @@ class Stop(HookCase):
             p = self.stop("Waiting for the review; nothing else to do.")
             self.assertEqual(self.decision(p), "block")
             reason = parse(p)["reason"]
-            self.assertIn("fm task block", reason)  # a task that can't move is blocked, not used as a reason to idle
+            self.assertIn("sampo task block", reason)  # a task that can't move is blocked, not used as a reason to idle
             seen.append(next(t for t in (lane, plan) if t in reason))
             self.assertNotIn(after, reason)  # it waits on the active task: no use now
         self.assertEqual(sorted(seen), sorted([lane, plan]), "each Stop offers the next candidate")
-        self.assertIn(f"fm lane brief {lane}", self.offer_for(lane))
+        self.assertIn(f"sampo lane brief {lane}", self.offer_for(lane))
         done = parse(self.stop("Still waiting on the review."))
         self.assertIsNone(done.get("decision"), "candidates used up: now it may wait")
         self.assertIn("a1", done.get("systemMessage", ""))
@@ -3011,7 +3011,7 @@ class Stop(HookCase):
         reasons = [parse(self.stop("Waiting on the builders.")).get("reason", "") for _ in range(3)]
         self.assertFalse(any(reviewed in r for r in reasons), "a reviewed L task has nothing left to do from here")
         offered = next(r for r in reasons if small in r)
-        self.assertNotIn("fm lane brief", offered, "both builder slots are taken")
+        self.assertNotIn("sampo lane brief", offered, "both builder slots are taken")
 
     def test_long_jobs_and_an_empty_queue_never_idle(self):
         # T-0415 (JARVIS 2026-10-09, the user: "it has been sitting idle still again"): a workflow and a shell that ran
@@ -3026,7 +3026,7 @@ class Stop(HookCase):
                                             "session_id": "sess-1", "background_tasks": list(jobs)}))
         r = stop(ci)
         self.assertEqual(r.get("decision"), "block", "no active task: the jobs don't hold the next one back")
-        self.assertIn(f"fm focus {queued}", r["reason"])
+        self.assertIn(f"sampo focus {queued}", r["reason"])
         self.fm("focus", queued)
         r = stop(ci)
         self.assertIn("nothing else is queued", r["reason"])  # full autonomy: find the next work, don't wait
@@ -3082,8 +3082,8 @@ class Stop(HookCase):
         r = parse(self.stop("All done."))
         self.assertEqual(r.get("decision"), "block")
         self.assertIn("queue is empty", r["reason"])
-        self.assertIn("fm capture", r["reason"])
-        self.assertNotIn("fm smoke", r["reason"])
+        self.assertIn("sampo capture", r["reason"])
+        self.assertNotIn("sampo smoke", r["reason"])
         self.assertIsNone(self.decision(self.stop("Checked: everything holds.")), "once per drain")
         tid = self.task("Found a defect")
         self.fm("task", "drop", tid, "test")
@@ -3342,7 +3342,7 @@ class Stop(HookCase):
         self.task(tier="L")
         p = self.stop("Should I use the existing logger or add a new one?")
         self.assertEqual(self.decision(p), "block")
-        self.assertIn("fm decide", parse(p)["reason"])
+        self.assertIn("sampo decide", parse(p)["reason"])
 
     def test_full_autonomy_skips_work_waiting_on_the_user_and_stops_when_only_that_is_left(self):
         self.fm("init")
@@ -3380,7 +3380,7 @@ class DoorPark(HookCase):  # T-2342: a reply that asks the user is sorted by the
         self.fm("init")
         self.task()
         reason = parse(self.stop("Which parser should I keep, the old or the new one?"))["reason"]
-        self.assertIn("two-way: decide it and record it (fm decide … --confidence N)", reason)
+        self.assertIn("two-way: decide it and record it (sampo decide … --confidence N)", reason)
         self.assertIn("AskUserQuestion", reason, "a fork with no cheap default can still become a prompt")
         self.assertNotIn("otherwise ask", reason, "one sentence, not the two-way clause beside the older one")
         self.assertEqual(reason.count("decide it and record it"), 1)

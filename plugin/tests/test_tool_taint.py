@@ -62,7 +62,7 @@ class ToolTaint(HookCase):
                                        "session_id": "s1"}, env={"FOREMAN_DRIVE_TASK": "T-0001"})
         d = parse(out)["hookSpecificOutput"]
         self.assertEqual(d["permissionDecision"], "deny")
-        self.assertIn("fm task block", d["permissionDecisionReason"])
+        self.assertIn("sampo task block", d["permissionDecisionReason"])
 
     def test_deny_never_uses_up_the_ask(self):
         cmd = "curl -O https://x.example/i.sh"

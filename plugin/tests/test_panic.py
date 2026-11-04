@@ -37,7 +37,7 @@ class Panic(ServeCase):
         for args in (["run"], ["serve"], ["night"], ["lane", "new", "T-0001"]):
             r = self.fm(*args, check=False, env=self.env())
             self.assertNotEqual(r.returncode, 0, args)
-            self.assertIn("fm pause off", r.stderr, args)
+            self.assertIn("sampo pause off", r.stderr, args)
         self.assertEqual(self.called(), "")  # no claude, no systemctl
         self.assertFalse(os.path.exists(self.unit))
         self.serve("stop")  # stopping still works: pause only tightens
@@ -55,7 +55,7 @@ class Panic(ServeCase):
                      ["bench", "run"], ["relate"], ["oracle", "will it work?"]):
             r = self.fm(*args, check=False, env=self.env())
             self.assertNotEqual(r.returncode, 0, args)
-            self.assertIn("fm pause off", r.stderr, args)
+            self.assertIn("sampo pause off", r.stderr, args)
         self.assertEqual(self.called(), "")
         with mock.patch.dict(os.environ, {"FOREMAN_NO_BACKGROUND": ""}), mock.patch("subprocess.Popen") as popen:
             relate.spawn(c.find_project(self.repo))  # the SessionStart path: skipped, never raised
@@ -70,7 +70,7 @@ class Panic(ServeCase):
         r = self.fm("run", check=False, env=self.env())
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(self.claude_runs(), 1, "the second task never starts")
-        self.assertIn("fm pause off", r.stderr)
+        self.assertIn("sampo pause off", r.stderr)
 
     def test_pause_now_stops_what_runs_frees_leases_and_writes_a_record(self):
         # T-1821: fm pause only stopped new starts; --now stops a running fm session's group and frees every lease
@@ -97,8 +97,8 @@ class Panic(ServeCase):
             rec = json.loads(f.read().splitlines()[-1])
         self.assertEqual((rec["sessions"], rec["serve"], rec["leases"]), ([sid], [self.slug], 1))
         self.assertNotIn("errors", rec)
-        self.assertIn("1 fm session", out)
-        self.assertIn("1 fm serve unit", out)
+        self.assertIn("1 sampo session", out)
+        self.assertIn("1 sampo serve unit", out)
         self.assertIn("finish their turn", out)
         self.fm("pause")  # a plain pause after it stays soft
         self.assertFalse(c.panicked(hard=True))

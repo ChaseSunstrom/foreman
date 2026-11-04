@@ -407,7 +407,7 @@ def cmd_home(args):
               f"the home-wide state (registry, events, budgets, trust); import rebuilds the registry.")
         return 0
     if not args.file:
-        raise cli.UsageError("fm home import FILE: the tarball fm home export wrote")
+        raise cli.UsageError("sampo home import FILE: the tarball sampo home export wrote")
     try:
         moved, total, notes = import_(args.file)
     except Refused as e:

@@ -61,7 +61,7 @@ class EditCards(_CardCase):
         self.fm("task", "new", "Second", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
         pointer = self.edit("app.py")
         self.assertNotIn("Mutable default arguments", pointer, "a new task in the same session gets only a pointer")
-        self.assertTrue(pointer.startswith("Sampo: stack card python") and "fm lib show python Sampo: " in pointer + " Sampo: ", pointer)
+        self.assertTrue(pointer.startswith("Sampo: stack card python") and "sampo lib show python Sampo: " in pointer + " Sampo: ", pointer)
         self.assertNotIn("\n- ", pointer, "one line, not the bullets")
         self.assertEqual(self.edit("app.py"), "", "the pointer comes once per card per task")
         self.fm("task", "new", "Third", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")

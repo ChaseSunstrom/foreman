@@ -66,7 +66,7 @@ class Confirm(ForemanTestCase):
         self.assertNotEqual(p2.returncode, 0)
         self.assertIn("waits for the user", p2.stderr)
         self.assertNotIn(b.id, self.fm("next").stdout)
-        self.assertIn(f"fm ask {b.id} confirm", " ".join(c.plan_gaps(c.find_brief(p, b.id), "full")))
+        self.assertIn(f"sampo ask {b.id} confirm", " ".join(c.plan_gaps(c.find_brief(p, b.id), "full")))
         self.fm_ask(b.id, "confirm", why="a child found it in an old session")  # the one way: the user's own yes
         self.hook("UserPromptSubmit", {"prompt": "yes"})
         self.assertFalse(c.needs_approval(c.find_brief(p, b.id), "full"))

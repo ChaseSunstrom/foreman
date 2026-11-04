@@ -31,7 +31,7 @@ class FirstCheck(ForemanTestCase):
         subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "app"], check=True)
         r = self.fm("check", check=False)
-        self.assertIn("fm check add 'python3 -m unittest discover -q'", r.stderr + r.stdout)
+        self.assertIn("sampo check add 'python3 -m unittest discover -q'", r.stderr + r.stdout)
 
 
 class Digest(ForemanTestCase):

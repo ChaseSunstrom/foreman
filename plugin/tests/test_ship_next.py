@@ -39,14 +39,14 @@ class ShipNext(ForemanTestCase):
         self.commit("b.txt")
         out = self.nxt()
         self.assertIn("2 commit(s) main lacks", out)
-        self.assertIn("fm ship", out)
+        self.assertIn("sampo ship", out)
 
     def test_with_the_grant_ship_is_the_action(self):
         self.commit("a.txt")
         self.grant()
         out = self.nxt()
         self.assertIn("ship 1 commit(s) main lacks under the user's standing push grant", out)
-        self.assertIn("fm task set ID --allow publish, fm ship", out)  # fm ship needs the active task's grant
+        self.assertIn("sampo task set ID --allow publish, sampo ship", out)  # sampo ship needs the active task's grant
 
     def test_an_open_genesis_tower_does_not_hide_the_ship_step(self):  # T-2722: the tower's stage is never idle
         self.fm("genesis", "init", "--file", "-",
@@ -61,7 +61,7 @@ class ShipNext(ForemanTestCase):
         self.commit("a.txt")
         self.grant()
         self.fm("decide", "never push to main again: the user holds pushes", "--cites", "user steer: hold pushes")
-        self.assertIn("1 commit(s) main lacks: fm ship (needs a publish grant)", self.nxt())
+        self.assertIn("1 commit(s) main lacks: sampo ship (needs a publish grant)", self.nxt())
 
     def test_since_the_last_ship_only_new_commits_wait_though_main_took_other_pushes(self):
         self.commit("a.txt")

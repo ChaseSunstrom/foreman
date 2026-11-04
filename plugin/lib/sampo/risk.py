@@ -155,7 +155,7 @@ def cmd_risk(args):
     p = cli.resolve(args)
     if args.action == "set":
         if args.day is None or not (math.isfinite(args.day) and args.day >= 0):
-            raise cli.UsageError("fm risk set --day N --because \"<why>\" (N ≥ 0 points a day)")
+            raise cli.UsageError("sampo risk set --day N --because \"<why>\" (N ≥ 0 points a day)")
         if not args.because:
             raise cli.UsageError("fm risk set needs --because \"<why>\" (it is logged)")
         old = cap(p)

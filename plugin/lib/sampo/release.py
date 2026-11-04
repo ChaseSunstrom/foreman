@@ -688,7 +688,7 @@ def run_any(p, args, root, state, state_path):
         if r.returncode:
             _err(f"fm prove --release {'failed' if r.returncode == 1 else 'is unproven or refused'} (exit {r.returncode}): "
                  "a release closes on its artifact working; nothing was committed" + (
-                     "" if r.returncode == 1 else " (an untrusted tree needs the user's fm prove PATH --yes-run once)"))
+                     "" if r.returncode == 1 else " (an untrusted tree needs the user's sampo prove PATH --yes-run once)"))
 
     def commit():
         if _git(root, "log", "-1", "--format=%s").strip() != f"Release {v}":

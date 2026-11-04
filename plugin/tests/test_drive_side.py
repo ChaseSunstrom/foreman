@@ -126,4 +126,4 @@ class EconomyOffer(HookCase):  # T-2495: past 80% weekly (economy mode) a side t
         side = self.task("Fix the parser", focus=False)
         self.task("Current work")
         self.usage(40)
-        self.assertIn(f"fm lane brief {side}", self.offered())
+        self.assertIn(f"sampo lane brief {side}", self.offered())

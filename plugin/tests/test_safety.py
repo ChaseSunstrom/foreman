@@ -169,16 +169,16 @@ class RuleIds(Base):
     def test_a_tree_write_over_foreman_points_at_a_task_or_a_scratch_worktree(self):
         # T-1897: 21 such blocks in a week came with no hint
         hint = g._hint("/home/u/.claude/foreman (a tree write over it)", "core")
-        self.assertIn("fm edit", hint)
+        self.assertIn("sampo edit", hint)
         self.assertTrue(hint.strip().startswith("Run git checkout"), "review: the worktree route is the common case")
-        self.assertIn("fm ask ID core --standing", hint)  # review: Edit on Foreman's tree is core without it
+        self.assertIn("sampo ask ID core --standing", hint)  # review: Edit on Foreman's tree is core without it
         self.assertNotIn("git worktree add", g._hint("/x (a tree write over it; git merge)", "core"))  # fm lane merge
 
     def test_interpreter_code_driving_foreman_says_where_a_draft_goes(self):
         # review of T-1897: 17 blocks in a week, no hint
         hint = g._hint("interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
                        "whose text names its modules, use the Edit or Write tool)", "core")
-        self.assertIn("fm edit <", hint)
+        self.assertIn("sampo edit <", hint)
         self.assertIn("Write tool", hint)
 
     def test_a_state_write_is_pointed_at_fm_research_not_at_naming_it(self):
@@ -191,7 +191,7 @@ class RuleIds(Base):
         b = g.check("Bash", {"command": "D=$(pwd); curl -sfL https://x.example/a.md -o $D/a.md"}, ctx)
         self.assertEqual(b.category, "state-direct", b.detail)
         text = g.message(b, ctx)
-        self.assertIn("fm research add", text)
+        self.assertIn("sampo research add", text)
         self.assertIn("--append", text)  # T-1288: following the hint on an existing file must not replace it
 
     def test_guard_block_events_carry_it_and_friction_counts_it(self):

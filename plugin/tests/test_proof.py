@@ -97,8 +97,8 @@ class Proof(ForemanTestCase):
         self.assertEqual(self.fm_json("prove", "--rollup", "--days", "100000")["count"], 1)
         self.assertEqual(self.fm("prove", "--rollup").stdout.count(t), 0)
         t2 = self.task(evidence=[("--step", "1", "pytest", "ok")])
-        self.assertIn("unproven: 1 (fm prove --rollup)", self.fm("status").stdout)
-        self.assertIn("unproven: 1 (fm prove --rollup)", self.fm("digest").stdout)
+        self.assertIn("unproven: 1 (sampo prove --rollup)", self.fm("status").stdout)
+        self.assertIn("unproven: 1 (sampo prove --rollup)", self.fm("digest").stdout)
         self.assertEqual(self.fm_json("status", "--json")["unproven"], 1)
         self.assertIn(t2, self.fm("prove", "--rollup").stdout)
         self.assertEqual(json.loads(self.fm("prove", "--rollup", "--json").stdout)["count"], 1)
@@ -145,7 +145,7 @@ class Proof(ForemanTestCase):
         t = self.task("data/users.csv")
         out = self.fm("prove", "--rollup").stdout
         self.assertIn(t, out)
-        self.assertIn(f"fm task evidence {t} --run", out, "each row prints its upgrade command")
+        self.assertIn(f"sampo task evidence {t} --run", out, "each row prints its upgrade command")
 
     def _doc_task(self, text):
         base = c._git(self.repo, "rev-parse", "HEAD").strip()
@@ -162,7 +162,7 @@ class Proof(ForemanTestCase):
         got = self.listed()
         self.assertEqual(got[claim], ["docs"])
         self.assertNotIn(prose, got, "a prose-only edit never counts")
-        self.assertIn("fm prove --docs", self.needs(claim)["docs"]["upgrade"])
+        self.assertIn("sampo prove --docs", self.needs(claim)["docs"]["upgrade"])
 
     def test_proof_kind_docs_reads_only_the_lines_the_task_itself_landed(self):  # T-2616
         def commit(msg, text):
@@ -207,8 +207,8 @@ class Proof(ForemanTestCase):
         got = self.listed()
         self.assertEqual((got[infra], got[mig], got[data]), (["infra"], ["migration"], ["data"]))
         self.assertNotIn(code, got)
-        self.assertIn("fm prove --infra", self.needs(infra)["infra"]["upgrade"])
-        self.assertIn("fm prove --migration", self.needs(mig)["migration"]["upgrade"])
+        self.assertIn("sampo prove --infra", self.needs(infra)["infra"]["upgrade"])
+        self.assertIn("sampo prove --migration", self.needs(mig)["migration"]["upgrade"])
         cleared = self.task("Dockerfile", "data/users.csv", evidence=run,
                             lines=[(1, "fm prove --infra", self.GREEN), (1, "dbt test", self.GREEN)])
         self.assertNotIn(cleared, self.listed(), "the green run that clears a kind removes it")
@@ -247,7 +247,7 @@ class Proof(ForemanTestCase):
         self.assertEqual(got[bare], ["research-uncited"])
         self.assertEqual(got[weak], ["research-uncited"], "a note with no verified claim isn't a citation")
         self.assertNotIn(cited, got)
-        self.assertIn("fm ask", self.needs(bare)["research-uncited"]["upgrade"])
+        self.assertIn("sampo ask", self.needs(bare)["research-uncited"]["upgrade"])
 
     def test_proof_kind_hollow_is_a_criterion_the_newest_vacuous_run_found_passing_on_the_start_tree(self):
         run = [("--step", "1", "--run", "true")]
@@ -259,8 +259,8 @@ class Proof(ForemanTestCase):
         self.assertIn("--vacuous", self.needs(hollow)["hollow"]["upgrade"])
 
     def test_unproven_line_is_one_function_the_four_renderers_call(self):
-        self.assertEqual(c.unproven_line(3), "unproven: 3 (fm prove --rollup)")
-        self.assertEqual(c.unproven_line(3, {"docs": 2, "typed": 1}), "unproven: 3 (fm prove --rollup) · typed 1, docs 2")
+        self.assertEqual(c.unproven_line(3), "unproven: 3 (sampo prove --rollup)")
+        self.assertEqual(c.unproven_line(3, {"docs": 2, "typed": 1}), "unproven: 3 (sampo prove --rollup) · typed 1, docs 2")
         self.assertEqual(c.unproven_line(0), "")
         self.task(evidence=[("--step", "1", "pytest", "ok")])
         for verb in ("status", "digest"):  # one function's text, with the kind counts
@@ -307,7 +307,7 @@ class Proof(ForemanTestCase):
         out = self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check").stdout
         block = out.split("Not verified", 1)[1]
         self.assertIn("data", block)
-        self.assertIn("fm task evidence T-0001 --run", block)
+        self.assertIn("sampo task evidence T-0001 --run", block)
 
     def test_proof_kind_next_names_the_newest_unproven_row_that_can_run_here(self):
         from unittest import mock
@@ -320,7 +320,7 @@ class Proof(ForemanTestCase):
             nxt = c.next_for(self.p)[2]
         self.assertIn(old, nxt, "the newer row waits on an install, so the older runnable one is named")
         self.assertNotIn(wait, nxt)
-        self.assertIn(f"fm task evidence {old} --run", nxt)
+        self.assertIn(f"sampo task evidence {old} --run", nxt)
 
     def test_proof_kind_next_is_silent_with_a_queue_and_when_nothing_can_run(self):
         from unittest import mock
@@ -403,7 +403,7 @@ class Proof(ForemanTestCase):
         t = self.task("docs/guide.md", lines=[(1, "true", self.GREEN)])  # T-2525: no fm evidence writer, so no late start
         need = self.needs(t)["docs"]
         self.assertIn("unknown", need["why"])
-        self.assertIn("fm prove --docs", need["upgrade"])
+        self.assertIn("sampo prove --docs", need["upgrade"])
 
     def test_review_perf_noise_reads_a_zero_median(self):
         zero = self.task(type="PERFORMANCE", lines=[(1, "fast", "fast: 0.000s → 0.000s (5 runs each)")])
