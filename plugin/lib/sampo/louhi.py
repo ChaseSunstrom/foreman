@@ -3523,7 +3523,7 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
     if agent in SESSIONS + LOCAL:  # T-2158: which model answered, so a Haiku smoke line never decides (steer 1)
         c.write_atomic(os.path.join(_answers(p, run, agent), "model"), c.plain(model or "default")[:60])  # not a list: a name cut at 60 characters
     if planner:  # T-2945: the split run's planner, beside its model
-        c.write_atomic(os.path.join(_answers(p, run, agent), "planner"), c.plain(planner)[:60])
+        c.write_atomic(os.path.join(_answers(p, run, agent), "planner"), c.plain(planner)[:60])  # not a list: a name cut at 60 characters
 
     def one(s):
         base, key = os.path.join(root(p), run, s["id"]), _key(p, run, s["id"])
