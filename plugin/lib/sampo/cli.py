@@ -1412,6 +1412,9 @@ def task_finish(p, args):
         _ablate(p, need_brief(p, b.id), args)
     if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted
         _commit_task(p, need_brief(p, b.id), args.commit, dry=True, with_=args.with_)
+    from sampo import verifier  # T-2977: shadow score (a close_score event); an ask only when models.live names it
+    if low := verifier.close_score(p, need_brief(p, b.id)):
+        raise c.PolicyError(low)
     args.task_cmd = "done"
     args.not_verified = ([f"affected tests skipped: {c.fit(args.waived_affected, 90)}"]  # T-1159
                          if getattr(args, "waived_affected", None) else []) + [
@@ -7892,6 +7895,9 @@ def _build_parser(only=None):
     s.add_argument("--export", metavar="DIR", help="models: write the training lake to DIR (rows.jsonl, manifest.json) and its "
                    "manifest to this project's research/models/lake-manifest.json: finished tasks of every project here, "
                    "outcome-labelled, names and paths stripped, sensitive and lake_optout projects left out (T-2974)")
+    s.add_argument("--verifier", action="store_true", help="models: train the close-holds head on the lake's outcome labels "
+                   "with whole projects held out; per-project AUC and false-done caught at 10%% false alarms to bench.jsonl, "
+                   "weights to this project's research/models/verifier.json (T-2977)")
     s.add_argument("--loo", action="store_true", help="models: leave-one-project-out over the lake's projects: each held out "
                    "whole, per-project and pooled rows (coverage at each abstain threshold, Wilson bound, bootstrap lower bound "
                    "of the gain over today's path), a flip report against the last --loo run; --limit caps held-out rows (T-2976)")

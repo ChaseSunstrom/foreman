@@ -81,6 +81,7 @@ def _label(o):
 
 def _project_rows(p, real, with_agent, names):
     from sampo import outcomes
+    from sampo import verifier
     roots = {real, os.path.realpath(p.root), p.root}
     mods = _modules()
     tools = {}
@@ -101,7 +102,8 @@ def _project_rows(p, real, with_agent, names):
             body = _request(b) if key == "request" else _section(b, head).strip()
             fields[key] = {"author": author, "text": clean(body, roots, names, mods) or None}
         row = {"prov": {"project": proj, "task": _h(proj + b.id), "source": "brief", "day": str(b.meta.get("created") or "")[:10] or None},
-               "label": _label(o), "type": b.type or None, "tier": b.tier or None, "fields": fields}
+               "label": _label(o), "type": b.type or None, "tier": b.tier or None, "fields": fields,
+               "features": verifier.features(b)}  # T-2977: counts and parsed test totals, no text
         if tools.get(b.id):
             row["tool_text"] = {"author": "tool", "quarantined": True,  # the first three results; later ones are left out
                                 "text": clean(" | ".join(tools[b.id][:3]), roots, names, mods, TOOL_CAP)}

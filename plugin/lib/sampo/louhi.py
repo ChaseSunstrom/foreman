@@ -1459,7 +1459,7 @@ def bench_show(p, limit=40):
     try:
         with open(os.path.join(p.root, BENCH), encoding="utf-8") as f:
             allr = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict) and r.get("run")
-                    and r.get("arm") != "loo"]  # T-2976: the loo rows have their own report (flip_report)
+                    and r.get("arm") not in ("loo", "verifier")]  # T-2976/T-2977: those rows have their own reports
     except (OSError, ValueError):
         allr = []
     if not allr:
@@ -4218,6 +4218,13 @@ def cmd_exam(args):
                 return cli.out(args, man, f"lake {man['hash'][:12]}: {man['rows']} rows from {man['projects']} projects "
                                           f"(excluded {man['excluded']['sensitive']} sensitive, {man['excluded']['optout']} "
                                           f"opted out, {man['dupes']} dupes) in {os.path.abspath(args.export)}")
+            if getattr(args, "verifier", False):  # T-2977: the close-holds head, whole projects held out
+                from sampo import verifier
+                res = verifier.run(p)
+                pl = res["pooled"]
+                return cli.out(args, res, f"verifier: {res['rows']} closes, pooled held-out AUC {pl['auc']}, false-done caught at "
+                                          f"10% false alarms {pl['caught_at_10pct_false_alarms']} (today lets {res['today']} by); "
+                                          f"weights {'written' if res['weights'] else 'not written (a class is missing)'}")
             if getattr(args, "loo", False):  # T-2976: whole projects held out; --adopt writes model-live / model-shadow
                 from sampo import models
                 try:
