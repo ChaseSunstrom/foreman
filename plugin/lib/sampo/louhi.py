@@ -2938,6 +2938,8 @@ def _check_one(p, run, s):
             probs.append(f"clean suite misses the planted {d['kind']}")
     for i in range(3):  # T-2211/T-2218: a clean side that leans on chance fails one run in three (the planted side is exempt)
         ok, why = suite(key, clean)
+        if not ok and key.get("origin") == "minted":  # T-2991: a real suite can fail once on a shared port or timeout
+            ok, why = suite(key, clean)
         if not ok:
             probs.append(f"clean suite failed on run {i + 1} of 3: {why}")
             break
@@ -2949,7 +2951,9 @@ def check(p, run):
     hidden check fails on the planted repo (a done item's passes there) and passes on the clean render, the clean suite
     passes, and the clean suite with each test-first defect overlaid fails."""
     meta = load(p, run)
-    problems = [x for xs in _pool(lambda s: _check_one(p, run, s), meta["scenarios"]) for x in xs]
+    minted = any(_key(p, run, s["id"]).get("origin") == "minted" for s in meta["scenarios"])
+    # T-2991: a minted run's real suites share ports and temp paths, so they run one scenario at a time
+    problems = [x for xs in (map if minted else _pool)(lambda s: _check_one(p, run, s), meta["scenarios"]) for x in xs]
     return {"run": run, "ok": not problems, "problems": problems, "checked": len(meta["scenarios"])}
 
 

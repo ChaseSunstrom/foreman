@@ -251,6 +251,40 @@ class ExamGen(ForemanTestCase):
             louhi.suite = orig
         self.assertEqual(len(calls), 1 + 3)  # the planted suite once, the clean side three times
 
+    def test_a_minted_run_checks_one_scenario_at_a_time_and_retries_a_lone_clean_failure(self):  # T-2991
+        from sampo import louhi
+
+        class P:
+            dir = os.path.join(self.tmp, "proj")
+        for i in (1, 2):
+            base = os.path.join(P.dir, "exam", "run-m", f"clean-{i}")
+            os.makedirs(os.path.join(base, "hidden", "clean"))
+            with open(os.path.join(base, "key.json"), "w") as f:
+                json.dump({"defects": [], "origin": "minted"}, f)
+        meta = {"scenarios": [{"id": f"clean-{i}", "kind": "clean", "repo": "r"} for i in (1, 2)]}
+        calls = []
+
+        def fake(key, target, overlay=None, slow=False):
+            if not target.endswith("clean"):
+                return False, ""  # the planted suite fails, as a minted bug must
+            calls.append(target)
+            return len(calls) != 2, "exit 1: port taken"  # one lone failure, then green
+        pooled = []
+        saved = louhi.suite, louhi._pool, louhi.load
+        louhi.suite, louhi.load = fake, lambda p, run: meta
+        louhi._pool = lambda fn, items: pooled.append(1) or list(map(fn, items))
+        try:
+            got = louhi.check(P, "run-m")
+            self.assertEqual(pooled, [], "a minted run is never pooled")
+            self.assertTrue(got["ok"], got["problems"])
+            self.assertEqual(len(calls), 2 * 3 + 1)  # the retry is one extra run
+            calls[:] = []
+            louhi.suite = lambda key, target, overlay=None, slow=False: (False, "exit 1") if target.endswith("clean") else (False, "")
+            got = louhi.check(P, "run-m")  # failing twice in a row is still called out
+            self.assertEqual(len(got["problems"]), 2)
+        finally:
+            louhi.suite, louhi._pool, louhi.load = saved
+
     def test_the_clean_app_keeps_the_edge_contract_and_its_suite_proves_it(self):
         from sampo import louhi  # T-2120: page n or size < 1 is empty, lo wins in clamp, label keeps a long s, total of none is 0
         s = self.gen("--seed", "1", "--per-kind", "1", "--lang", "python", "--kind", "bug")["scenarios"][0]
