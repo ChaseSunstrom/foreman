@@ -349,6 +349,9 @@ def session_start(pl):
             bus.record_pid(sid)
         except Exception:
             log_error("SessionStart", _tb())
+        if pl.get("source") == "resume":  # T-2900: a new process; the old one's agents and shells died with it
+            for key in _running(sid):
+                _event({"kind": "bg_done", "session_id": sid, "id": key})
     reaped = 0
     if not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-1044: the claude -p helpers a dead run left behind
         try:

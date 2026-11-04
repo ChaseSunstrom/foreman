@@ -3286,6 +3286,19 @@ class Stop(HookCase):
             f.write(json.dumps({"ts": old, "kind": "bg_start", "session_id": "sess-1", "id": "bold"}) + "\n")
         self.assertEqual(self.decision(self.stop("Next: the queue.")), "block")
 
+    def test_a_resumed_session_closes_what_its_dead_process_left_running(self):
+        # T-2900: the terminal closed; the resumed session's drive waited on a builder that had died with it
+        from sampo import hooks
+        self.fm("init")
+        with open(os.path.join(self.home, "state", "events.jsonl"), "a", encoding="utf-8") as f:
+            for r in ({"kind": "bg_start", "session_id": "sess-1", "id": "bdead"},
+                      {"kind": "subagent_start", "session_id": "sess-1", "agent_id": "adead"}):
+                f.write(json.dumps(dict({"ts": c.now()}, **r)) + "\n")
+        self.hook("SessionStart", {"session_id": "sess-1", "source": "compact"})
+        self.assertEqual(sorted(hooks._running("sess-1")), ["adead", "bdead"], "a compaction keeps the same process")
+        self.hook("SessionStart", {"session_id": "sess-1", "source": "resume"})
+        self.assertEqual(hooks._running("sess-1"), [], "a resume is a new process: the old one's work is gone")
+
     def test_running_decodes_only_this_sessions_lines(self):
         # T-2033: Stop json-loaded all 1,500 tail lines to find this session's few
         from sampo import hooks
