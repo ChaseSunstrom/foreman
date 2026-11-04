@@ -320,7 +320,7 @@ def _foreman_text():
         import glob
         top = os.path.dirname(c.PLUGIN_ROOT)
         parts = []
-        for pat in ("README.md", "MASTER.md", "CHANGELOG.md", "plugin/rules/*.md", "plugin/skills/*/SKILL.md",
+        for pat in ("README.md", "MASTER.md", "docs/map/*.md", "CHANGELOG.md", "plugin/rules/*.md", "plugin/skills/*/SKILL.md",
                     "plugin/lib/*.py", "plugin/lib/sampo/*.py", "plugin/hooks/*"):
             for f in sorted(glob.glob(os.path.join(top, pat))):
                 try:

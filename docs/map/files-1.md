@@ -1,0 +1,110 @@
+# Sampo map: File map (part files-1)
+
+Full entries for [MASTER.md](../../MASTER.md) section 3 (File map); MASTER.md keeps one index line for each, linking here. A new entry goes here in full and gets one index line there.
+
+### Top level
+
+<details>
+<summary>paths</summary>
+
+| Path | Purpose | Owner | Loaded | Budget |
+|---|---|---|---|---|
+| `BUILD_PROMPT.md` | origin spec | user | on demand | — |
+| `MASTER.md` | this map | Claude (via tasks) | on demand | — |
+| `README.md` | repo overview, install | Claude | on demand | — |
+| `CHANGELOG.md` | per-version changes | Claude | on demand | — |
+| `install.sh` | one-line bootstrap: clone, plugins, marketplace + plugin, bypass, wiring | user/Claude | run by user | — |
+| `setup-plugins.sh` | curated plugin setup, `--dry-run` | user/Claude | run by user | — |
+| `configure-repo.sh` | point install at a GitHub repo (one-time) | user | run by user | — |
+| `reset-claude.sh` | optional behavior-layer reset before installing | user | run by user | — |
+| `.claude-plugin/marketplace.json` | local marketplace `foreman` → `./plugin` | Claude | by Claude Code | — |
+
+</details>
+
+### plugin/
+
+<details>
+<summary>paths</summary>
+
+| Path | Purpose | Owner | Loaded | Budget |
+|---|---|---|---|---|
+| `plugin/.claude-plugin/plugin.json` | plugin manifest (name, version) | Claude | by Claude Code | — |
+| `plugin/settings.json` | plugin default `subagentStatusLine` | Claude | by Claude Code | only `agent`/`subagentStatusLine` honored |
+| `plugin/bin/fm` | CLI entry (on the Bash tool PATH; protected) | Claude | on call | — |
+| `plugin/lib/` | the Python modules, one line each under "plugin/lib modules" below the table (T-1713) |
+| `plugin/hooks/hooks.json` | one handler per event (13 events), exec form (protected) | Claude | by Claude Code | p95 ≤ 150 ms |
+| `plugin/defaults.json` | every setting's default as the last release shipped it: sampo release names each one it changes in the notes and rewrites it; sampo settings changed compares with it (T-1549) | sampo release | read at release and by sampo settings changed | — |
+| `plugin/protocols.json` | how much deliberation each tier gets: S no panel, M a cold `sampo second rival` only under the race bar or with one honest reading (T-2341), L `sampo second plan` before approval (T-0662) | Claude | read by sampo second plan and sampo next | data |
+| `plugin/hooks/hook` | dispatcher `hook <Event>`, and `hook --agent codex|gemini|opencode <Event>` for other agents (their payload read into Claude Code's shape, answered in their format); guard fails closed (protected); a working copy that fails to import runs every event from the committed library, logged to hooks.log with its event (T-2532) | Claude, Codex, Gemini CLI, opencode | per event | — |
+| `plugin/integrations/opencode/foreman.ts` | opencode plugin `sampo agents install opencode` copies in: the guard in `tool.execute.before` (throws to refuse, fails closed), auto-evidence after, Sampo's context in the system prompt | opencode | per tool call / prompt | — |
+| `plugin/hooks/statusline` | statusLine: one true-color session line + Sampo line with `step N/M` (a chip when foreman-ui is on), from `status.json`, plain under `NO_COLOR` (T-0962); `statusline_layout: "stack"` restores original + claude-hud + Sampo lines; session snapshots (protected) | Claude | per statusline refresh | < 100 ms own work |
+| `plugin/monitors/monitors.json` | plugin monitor `foreman-mail`: `sampo bus watch` for the whole session, one line per new bus message for it (or all), nothing otherwise, so an idle session wakes without tmux; it never marks mail read, beats `state/bus/watch-<sid>` every 2 s poll, finds its session from `CLAUDE_CODE_SESSION_ID` or the parent processes SessionStart records in `state/sessions/by-pid/`, and exits with its session (T-0777) | Claude Code (interactive) | session-long | 2 s size poll, stdlib |
+| `plugin/hooks/subagent-statusline` | per-subagent rows (task, tokens vs window, elapsed) (protected) | Claude | per refresh | — |
+| `plugin/rules/foreman.md` | always-on operating rules (protected; symlinked into `~/.claude/rules/`) | Claude | every session | ≤ 80 lines, 6400 chars (46, 6.3k) |
+| `plugin/output-styles/foreman.md` | the Sampo reply format (task/stage header, `✓ cmd → result` lines, `Changed:`, `Next:`, `⚠ Needs you:`); optional: the same format is the rules' "Replies" section (T-1279), so `sampo install-user` no longer selects the style (its per-turn reminder was 2.7% of the context) and removes it where an older install set it | Claude Code | system prompt, every turn | < 260 words |
+| `plugin/skills/` | intake (+ references: planning, execute, audit lenses, delegate, ported superpowers procedures), brainstorm (+ `references/ideas-prompt.md` for `sampo ideas`), directions (six style directions from one sentence, the pick saved as DESIGN.md; + `references/cards.md`: card format, set rules, generic defaults, preview recipe, worked example), ui-design (T-1700: one path for page, component, motion and 3D work: direction, tokens, build, motion, 3D, visual QA; routes to the ui playbooks, directions and sampo design/scene/motion/looks/page/img/smoke), design-extract (user-only, T-1507: DESIGN.md's token table, contrast proofs and a seed palette through `sampo design extract|contrast|palette`), next, resume, status, capture, tidy and doctor (user-only, T-1705), reflect, improve, debug-test, release and research (T-1701: job skills on task words, a failing test, shipping, finding out first; each wraps existing playbooks and sampo verbs, which test_docs checks exist; the FIX and RESEARCH hints load them; T-2072: refactor, performance, security-audit and write-docs (named apart from their playbooks, T-2266), picked from the ledger's CLEAN, PERF and SECURITY stages and the docs playbook, each loaded by its stage hint (SKILL_FOR) and the rules' plain-word line), playbooks (ported ECC and Sampo's own references, a stage may keep its own `INDEX.md`; `sampo check playbooks` lints them: every file indexed, no duplicate, a Use-when line, a numbered procedure, real card names, python blocks (continued below) | Claude | descriptions always-on; bodies on invoke | SKILL.md < 500 lines |
+| `plugin/agents/` | (T-0768: `effort`, `maxTurns`, and `omitClaudeMd` on the read-only scout, recon and debugger, checked by sampo doctor) `fm-recon`, `fm-reviewer` (Sonnet), `fm-scout` (Haiku: cheap file:line lookups), `fm-debugger` (Sonnet: fresh-eyes ranked root-cause hypotheses with discriminating probes, as `sampo task hypo` lines) — all read-only tool allowlists, except `fm-builder` (T-0234: Edit/Write/Bash, launched only with Agent isolation "worktree" from `sampo lane brief ID`; works one S/M task test-first in its own worktree and commits on its branch; never pushes, merges or closes — the guard's `confine` category and fm's refusals enforce it); the reviewer runs one audit lens per brief (and a performance lens for PERFORMANCE work); `fm-reproducer` (Sonnet, T-0608: Edit/Write/Bash like the builder, worktree-bound from `sampo lane brief ID`; commits only the failing test or repro on its branch and hands back the command for `sampo task prove`, never fixes or merges). Every agent ends with `Noticed:` lines, which `sampo research add --from-agent` turns into discovered captures (T-0629; a line that only says there's nothing, such as `None (…)`, `None observed` or `Nothing else to report`, is no item, while `None of the callers …`, `Nothing validates X` and `None, but X` are, T-2190); a builder blocked on a decision writes `ANDON.md` in its lane and proceeds on its stated assumption, shown by `sampo lane list` and `sampo next` (T-0648); `sampo usage --agents` is the per-type scorecard (T-0647) and `sampo bench seed-review` benches the reviewer on planted bugs (T-0646). No tool-less agent: Claude Code gives an empty `tools:` list every tool | Claude | on delegation | output ≤ 400 words |
+| `plugin/commands/build.md` | `/foreman:build` (the bootstrap) | Claude | on invoke | — |
+| `plugin/commands/backlog.md` | `/foreman:backlog` (T-1664: `sampo inbox first`, `swipe`, `pick`/`prefer` and `ticket` asked through AskUserQuestion) | Claude | on invoke | — |
+| `plugin/workflows/` | `/foreman:review` and `/foreman:ideas` multi-agent workflows (T-0787) | Claude | on invoke | — |
+| `plugin/templates/` | `brief.md` template; `mcp-server/` (sampo mcp new); `web/index.html` and `tui/panel.py` (sampo new, T-1519) and `tui/cost_meter.py` (a sample sampo smith extension) | Claude | by fm | — |
+| `plugin/themes/` | optional Sampo color theme (`/theme`) | Claude | on selection | — |
+| `plugin/observability/` | telegraf OTel input, Grafana dashboard, setup notes | Claude | manual | — |
+| `plugin/evals/` | `claude plugin eval` cases with the rules embedded (protected) | Claude | `claude plugin eval` | `--max-cost-usd` |
+| `plugin/tests/` | unit/behaviour tests, fixtures, hook bench, `e2e/` (live scenarios, install round trip, eval sync) | Claude | on demand | — |
+| `plugin/uninstall.sh` | remove wiring, plugin and marketplace; keeps state unless `--purge-state` | Claude | run by user | — |
+| `plugin/README.md` | plugin overview | Claude | on demand | — |
+| `plugin/THIRD_PARTY_LICENSES.md` | MIT licenses of ported ECC and superpowers material | Claude | on demand | — |
+
+`plugin/skills/` (continued): that run unless marked no-run (trusted like the repo's tests), none well past its size in `ratchet.json` (`sampo check playbooks ratchet` records growth and shrinkage), and names those no session read in 60 days; T-1621: `sampo playbooks show PATH` loads one with its `{{fact}}`s from sampo map — test, gates, language, entry, ci, layout, hot, cards; `sampo playbooks eval PATH [--real] [--ablate]` scores its held-out briefs (--ablate: each section's share of the lift) (plugin/evals/playbooks/) with and without it into playbook-evals.jsonl (T-1618); T-1622: `sampo playbooks route STAGE` names a stage's playbooks from `fmcore.SKILL_FOR` (T-1833: `route TEXT|--task ID [-k N]` ranks the library by relevance, bm25 over an FTS5 index in the state folder `playbooks/`, one stat per book to refresh; without FTS5 a title/use-line scan; `plugin/tests/bench_playbooks.py` times it at 20k; a route TEXT records the paths it named, a Bash `route STAGE` credits the stage's books only when the stage is the whole argument; T-1838: tuned on 24 labelled real titles, verbatim, in test_playbook_route: the use line weighs as much as the title, body 0.25, the first 8 query words (a task's title comes first), a task's type prefers its folder's books 1.5x (`route --task`); 17 of 24 in the top 3, 9 at the top, from 15 and 7 (the 8 held out: 4 and 1, from 3 and 0; sampo which past 2000 books queries the same first 8 words); the per-turn hint still names no routed book: 22-33
+ms to load for a top 1 right 9 times in 24; T-1834: a close records the books it loaded and the share followed, `coverage --unused [--days N]` names unread, unrouted books and near-duplicate pairs (never deletes), `draft` refuses a near-duplicate of a book without --force, the skill list is capped; T-1885: six books mined from finished tasks whose kind routed to no book (command guard, CLI errors, benchmark statistics, ship to main, regex backtracking, surface parity), held-out real titles of each kind route their book in the top 3 (`test_mined_books_route_their_kind`); perf and security keep an `INDEX.md`), `blame PATH` maps each line to the task id in its commit's summary (else a Task: trailer, else the body; no textconv, not for workers), `preview PATH` lists its runnable python blocks and quoted `… :: CMD` verify commands; unknown stays `{{fact?}}` — and the project's `.claude/playbooks/<stage>/<name>.md` (writable by a session, shared through git) under "This project" as a blockquote below a provenance line, marked (uncommitted) when it differs from HEAD, a plain file only, 16 KB, its `{{…}}` untouched), library (stack cards in `cards/<area>/<name>.md`: Verify, Test first, Do, Avoid, Review; `sampo lib` suggests by manifests and files, searches them with installed plugins' skills, shows whole cards or `--section`s, lints them with `sampo lib check`; never loaded until read; T-1519: an optional `verified: YYYY-MM-DD`, set only by someone who ran the card's Verify commands that day, must be a real, past date (a day of slack for time zones), is noted after 365 days and is said under `sampo lib show`)
+
+</details>
+
+### mods/, site/ and demo/
+
+<details>
+<summary>paths</summary>
+
+| Path | Purpose | Owner | Loaded | Budget |
+|---|---|---|---|---|
+| `demo/` | the README's recordings. `live.*` (T-0903): Claude Code with the foreman-ui mod fixing a seeded bug, made by `record_live.py` (in true color: shot.py sets `CLAUDE_CODE_TMUX_TRUECOLOR=1`, without which Claude Code drops to 256 colours inside tmux, T-1209): a throwaway repo and `FOREMAN_STATE` under `/tmp/fm-live-*`, Claude Code (Sonnet, auto-updater off) in `shot.py`'s tmux harness (its own server; this session's `CLAUDE_*`/`FOREMAN_*` never passed on), the request typed, the coloured screen captured until T-0001 is done, home/user/account names scrubbed, waits squeezed to 1.2 s; `live.cast`, `live.svg` (svg-term-cli), `live.mp4` (`shot.render` at a fixed 170x46 + ffmpeg); `--from-cast` re-renders without a new session. `demo.*` (T-0902): `sampo demo --pace 1` recorded through a pseudo-terminal by `record.py` (`--mp4` via headless Chromium) | Claude | when the demo changes | — |
+| `site/` | the GitHub Pages site (T-1206, T-1220): the hand-built landing `index.html`, shared `style.css` (tokens, light and dark, chart palette) and `site.js`, `assets/` (favicon robot, poster frame from `demo/live.mp4`); `build.py` (stdlib) renders one page per feature from `pages.py` (content as data) with inline SVG charts from `data/stats.json`, which `stats.py` makes from this machine's Sampo state and git (counts only, never task text or paths; rerun it before a release; it also reads the newest `sampo bench duel --vs none` pair). T-1609, T-2040: the landing hero shows `proof()`, the four totals (tasks done, evidence, proofs, commits) as a ledger filled at the index's proof mark, beside `#session`, a condensed task drawn as text in the site's palette that `site.js` replays line by line while its pane walks the eight stations (no JS or reduced motion: the whole transcript; the raw `demo/live.mp4` stays linked). T-1222: the Benchmarks page shows `data/bench.json` from `bench_safety.py` (24 dangerous and 25 everyday commands through `fmguard.check`, each Sampo's verdict beside what Claude Code does alone in bypass mode) and the duel, with its verdict written from the numbers whichever way they fall. T-2060, T-2063: `build.py`'s `_v` gives the icon, `style.css` and `site.js` URLs on every built page and the landing a `?v=` suffix of 8 hex of the file's sha256, so a browser fetches the new file after a push. `.github/workflows/pages.yml` runs `build.py _site` on pushes to main that touch the site; Pages must be set to deploy from GitHub Actions once | Claude | on push to main | — |
+| `mods/foreman-ui/` | the UI mod (function-hook plugin `foreman-ui@foreman`): `hooks/register.tsx` (band card with a mini stage rail; the pane top-down by urgency (T-0909): Needs you and waiting plans, the hero (task, stage rail, steps bar, current step, time against the usual), Now (running calls), subagents, shells, Plan (steps with a done glow, criteria with their checks, audits), Pulse (swim lanes of the session's tool calls, 14-day closes, context/spend/hooks/guard gauges), Queue, Inbox (one Up next card when both are empty), then gates, brainstorm, files, fleet (2+ sessions), spend, bench, research, Activity newest first, controls; the quieter cards fold to their head (▾/▸, kept in the mod's store, T-0914); a closing task's done card tops the pane for 6 s (T-0913); a Motion setting full/calm/off (T-0912); moving rasters repaint by `$.ui.blit` at ~30 fps while work is live; `/fm`, toasts, animated running tool/subagent rows, spinner step, turn summary line; renders `sampo ui --json`, buttons run `sampo`), `hooks/kit.ts` (palette, true-color Raster bars and text twins, pulse, fade, sparkline, churn bar, stage rail, swim lanes, day bars, eta bar, tool faces), `hooks/rows.tsx` (rows and chart elements), `hooks/state.ts` (shared constants, the live tool-call timeline), `sounds/` (chimes), `types/index.d.ts` (the view-model contract), `tests/` (`claude plugin test`), `tools/pane_replay.py` (T-1670: `svg FIXTURE --out FILE` writes the text frame as a monospace SVG, or a PNG through rsvg-convert; (continued below) | Claude | by Claude Code when the build has mods | no rules or gates of its own |
+
+`mods/foreman-ui/` (continued): `golden [--update]` draws `tests/fixtures/pane-busy.ts` at 80x40 against the committed `tests/fixtures/golden.ts`, which `replay.test.tsx` also checks in the plugin test gate, so a pane change that draws differently fails until `golden --update` rewrites it. T-1534: the pane drawn from a recorded `sampo ui --json` view with no live session through `tests/replay.test.tsx` and the kit's fakes, frozen clock, UTC and C.UTF-8; `render` as text or `--json`, `twin` diffs two runs, each its own process, `--matrix` a third in UTC+14 and a German locale; synthetic fixtures only in `tests/fixtures/`)
+
+</details>
+
+### Runtime: local/, backups/, state/ and ~/.claude
+
+<details>
+<summary>paths</summary>
+
+| Path | Purpose | Owner | Loaded | Budget |
+|---|---|---|---|---|
+| `local/recon.md` | Phase 0 recon (machine-specific, runtime, gitignored) | Claude | on demand | — |
+| `local/PLAN.md` | build plan, deltas, decisions (runtime, gitignored) | Claude | on demand | — |
+| `local/verification.md` | Phase 7 results (runtime, gitignored) | Claude | on demand | — |
+| `backups/` | `~/.claude` tarballs and settings.json backups (runtime, gitignored) | fm/install.sh | restore only | — |
+| `state/registry.md` | project index, generated from meta.json (runtime) | fm | on demand | — |
+| `state/install-manifest.json` | every change outside the repo, with originals (runtime) | fm | by uninstall | — |
+| `state/events.jsonl` | hook/tool timeline for `sampo watch` (runtime; rotated by tidy) | hooks | by sampo watch | rotate > 5 MB |
+| `state/sessions/<id>.json` | statusline snapshots (runtime; cleaned after 7 days) | statusline | by sampo watch | — |
+| `state/logs/hooks.log` | hook errors (runtime; rotated by tidy) | hooks | by sampo doctor | rotate > 1 MB |
+| `state/projects/<slug>/meta.json` | project metadata: path, sensitive, drive, paused, autonomy, pending approvals, session, last tidy (runtime) | fm, UserPromptSubmit | by hooks | — |
+| `state/projects/<slug>/STATE.md` | focus + queue + inbox, generated from briefs (runtime) | fm | summary injected at SessionStart | ≤ 60 lines |
+| `state/projects/<slug>/INBOX.md` | captured items, generated (runtime) | fm | count + titles injected | — |
+| `state/projects/<slug>/tasks/T-NNNN-*.md` | briefs: spec, steps, evidence, log (runtime) | fm | on demand | S ≤ 10 content lines |
+| `state/projects/<slug>/decisions.md` | decisions: date, tags (`[cites: …]`, `[check: CMD]` T-2167, …), what, why, rejected (runtime) | fm (`sampo decide`) | on demand | — |
+| `state/projects/<slug>/research/` | saved recon/research summaries (runtime) | fm (`sampo research add`, `sampo research ask`) | on demand | — |
+| `state/projects/<slug>/ledger.jsonl` | append-only event log (runtime; rolled monthly by tidy); each line carries `prev`, the hash of the line before it (T-1065: `sampo verify-ledger [--head H]` walks the archives then the live file and names the first edited, removed or cut line; `sampo task finish` prints the head) | fm, hooks | never wholesale | roll > 1 MB |
+| `state/projects/<slug>/archive/` | archived briefs, ledgers, memory copies (runtime) | sampo tidy | on demand | — |
+| `state/archive/projects/<slug>/` | a project's whole state once its root folder under a temp dir is gone (T-2091; a root elsewhere is only reported, as it may be unplugged) | sampo tidy --apply | on demand | — |
+| `state/projects/<slug>/gate.json` | Stop-gate/drive bookkeeping; with `state.line`, `badge.txt` caches (runtime) | hooks, fm | per hook | — |
+| `~/.claude/rules/foreman.md` | symlink to `plugin/rules/foreman.md` (runtime, created by `sampo install-user`) | fm | every session | — |
+| `~/.claude/CLAUDE.md` | your preferences + a 4-line Sampo block between markers (runtime) | you (+ sampo block) | every session | ≤ 50 lines |
+| `~/.claude/settings.json` | statusLine wrapper, deny rules, drive env, bypass default, `worktree.baseRef: head` so builder lanes start from your branch (T-0803; runtime; originals in the manifest) | you / sampo install-user | every session | — |
+| `~/.claude/projects/<encoded path>/memory/` | native auto memory: durable learnings (runtime) | Claude | MEMORY.md at startup (200 lines / 25 KB) | tidy checks it |
+
+</details>

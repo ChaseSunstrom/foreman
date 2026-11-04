@@ -8,7 +8,7 @@ import sys
 import threading
 import unittest
 
-from helpers import PLUGIN
+from helpers import PLUGIN, read_doc
 
 from sampo import shot
 
@@ -127,8 +127,7 @@ class LacksPage(unittest.TestCase):  # T-2378: #5 on the site, its figures from 
         self.assertIn('class="tiles"', build.render_page(page, {}, pages.PAGES))  # no data yet: zeros, still a figure
         root = os.path.dirname(SITE)
         for name in ("README.md", "MASTER.md", "CHANGELOG.md"):  # each surface named where a reader looks
-            with open(os.path.join(root, name), encoding="utf-8") as f:
-                doc = f.read()
+            doc = read_doc(os.path.join(root, name))
             for word in ("`grants`", "PostToolUseFailure"):
                 self.assertIn(word, doc, f"{name}: {word}")
             self.assertRegex(doc, r"\b(?:sampo|fm) which\b", name)  # either name while the docs move to Sampo
@@ -211,8 +210,7 @@ class SelfRunningPage(unittest.TestCase):  # T-2364: Mission 8 on the site, its 
         self.assertIn('class="tiles"', build.render_page(page, {}, pages.PAGES))
         root = os.path.dirname(SITE)
         for name in ("README.md", "MASTER.md", "CHANGELOG.md"):
-            with open(os.path.join(root, name), encoding="utf-8") as f:
-                self.assertIn("Self-running", f.read(), name)
+            self.assertIn("Self-running", read_doc(os.path.join(root, name)), name)
 
 
 class JudgmentPage(unittest.TestCase):  # T-2344: #2 and #8 on the site, its figures from fm outcomes --judgment --json
@@ -276,5 +274,4 @@ class ModelLayerPage(unittest.TestCase):  # T-2489: the gen-2 model layer on the
         self.assertEqual(stats.models(tempfile.gettempdir() + "/no-such-state-T2489"), {})
         root = os.path.dirname(SITE)
         for name in ("README.md", "MASTER.md", "CHANGELOG.md"):
-            with open(os.path.join(root, name), encoding="utf-8") as f:
-                self.assertIn("Model layer", f.read(), name)
+            self.assertIn("Model layer", read_doc(os.path.join(root, name)), name)

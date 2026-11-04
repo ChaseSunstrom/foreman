@@ -4,15 +4,16 @@ import json
 import os
 import subprocess
 
-from helpers import PLUGIN, ForemanTestCase, read_text
+from helpers import PLUGIN, ForemanTestCase, read_doc, read_text
 
 MASTER = os.path.join(os.path.dirname(PLUGIN), "MASTER.md")
 
 
 class Docs(ForemanTestCase):
     def test_master_matches_the_code(self):
-        lines = read_text(MASTER).splitlines()
-        cli = next(ln for ln in lines if ln.startswith("CLI (on the Bash tool PATH)"))
+        lines = read_doc(MASTER).splitlines()
+        at = next(i for i, ln in enumerate(lines) if ln.startswith("CLI (on the Bash tool PATH)"))
+        cli = " ".join(lines[at:next(i for i in range(at, len(lines)) if not lines[i].strip())])  # T-2915: wrapped
         for word in ("landscape", "deps", "replay [", "--cmd TEXT", "duel", "versions", "court", "soak"):
             self.assertIn(word, cli)
         hunks = next(ln for ln in lines if ln.startswith("- Hunk mutation proof (T-0271"))

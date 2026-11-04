@@ -260,10 +260,7 @@ def cmd_regen(args):
     local = args.model or (moonscale._local(sensitive) or {}).get("name")
     if not local:
         raise SystemExit("regen: no local model answered; name one: --model PROFILE")
-    try:
-        master = open(os.path.join(p.root, "MASTER.md"), encoding="utf-8").read()
-    except OSError:
-        master = ""
+    master = c.master_text(p.root) or ""  # T-2915: MASTER.md and its docs/map shards
 
     def attempt(mod, prof):
         return regen(p.root, mod, make_ask(p, prof, sensitive),

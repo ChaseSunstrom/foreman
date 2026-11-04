@@ -828,6 +828,33 @@ def result_exit(result):
     return int(m.group(1)) if m else None
 
 
+def map_shards(root, kind=""):
+    """T-2915: the docs/map shards (files-*.md, ops-*.md) that hold the File map and Operations entries MASTER.md indexes;
+    kind narrows to one family ("files" or "ops")."""
+    d = os.path.join(root, "docs", "map")
+    try:
+        return [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith(".md") and f.startswith(kind)]
+    except OSError:
+        return []
+
+
+def master_text(root, kind=None):
+    """T-2915: MASTER.md plus its shards (or only the `kind` shards), so a check reads every line it read when the map was
+    one file. None when MASTER.md is missing."""
+    try:
+        with open(os.path.join(root, "MASTER.md"), encoding="utf-8", errors="replace") as f:
+            parts = [f.read()]
+    except OSError:
+        return None
+    for path in map_shards(root, kind or ""):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                parts.append(f.read())
+        except OSError:
+            continue
+    return "\n".join(parts)
+
+
 def git_root(path):
     d = os.path.realpath(path)
     while True:

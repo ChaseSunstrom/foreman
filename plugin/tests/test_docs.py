@@ -4,7 +4,7 @@ import os
 import re
 import unittest
 
-from helpers import PLUGIN, read_text, read_json
+from helpers import PLUGIN, read_text, read_json, read_doc
 
 SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm",
           "directions", "design-extract", "ui-design", "genesis", "initiative"]
@@ -68,7 +68,7 @@ class Judgment(unittest.TestCase):  # T-2344: #2 and #8 described where a reader
     def test_judgment_master_readme_and_changelog_describe_the_plan_shape_races_doors_and_calibration(self):
         root = os.path.dirname(PLUGIN)
         for name in ("MASTER.md", "README.md", "CHANGELOG.md"):
-            text = read_text(os.path.join(root, name))
+            text = read_doc(os.path.join(root, name))
             for word in ("Choice N (NN%)", "fm lane race", "one-way", "fm outcomes --judgment"):
                 with self.subTest(doc=name, word=word):  # README speaks Sampo's `sampo` (T-2760); the rest still `fm`
                     self.assertTrue(word in text or word.replace("fm ", "sampo ") in text)
@@ -801,7 +801,8 @@ class Fences(unittest.TestCase):
     def test_the_documented_runnable_fences_run_green_in_a_temp_home(self):
         from sampo import demo
         found = demo.fences()
-        self.assertEqual({w.split(":")[0] for w, _ in found}, {"README.md", "MASTER.md"}, "each doc marks one")
+        docs = {w.split(":")[0] for w, _ in found}  # T-2915: MASTER.md's runnable fence lives in a docs/map shard
+        self.assertTrue("README.md" in docs and any(d == "MASTER.md" or d.startswith("docs/map/") for d in docs), docs)
         self.assertEqual(demo.run_fences(), [])
 
     def test_a_failing_fence_is_named_and_runs_away_from_the_real_home(self):
@@ -1098,6 +1099,52 @@ class MasterShape(unittest.TestCase):  # T-2053
         text = read_text(os.path.join(self.root, "INSTALL.md"))
         flags = set(re.findall(r"(?m)^\s*\| `(--[a-z-]+)", text))
         self.assertTrue({"--no-plugins", "--no-mod", "--no-wiring", "--bypass", "--no-bypass"} <= flags, flags)
+
+
+class MapShards(unittest.TestCase):  # T-2915: MASTER.md opens whole in one Read; its File map and Operations live in shards
+    root = os.path.dirname(PLUGIN)
+
+    def files(self):
+        from sampo import core
+        return [os.path.join(self.root, "MASTER.md")] + core.map_shards(self.root)
+
+    def test_master_and_each_shard_fit_one_read_and_no_line_is_cut(self):
+        shards = self.files()
+        self.assertGreater(len(shards), 4, "the File map and Operations moved into docs/map shards")
+        for path in shards:
+            text = read_text(path)
+            with self.subTest(path=os.path.relpath(path, self.root)):
+                self.assertLessEqual(len(text.encode("utf-8")), 90000, "split this file")
+                self.assertEqual([n for n, ln in enumerate(text.splitlines(), 1) if len(ln) > 2000], [], "Read cuts these lines")
+
+    def test_master_indexes_every_module_and_links_every_shard(self):
+        text = read_text(os.path.join(self.root, "MASTER.md"))
+        links = set(re.findall(r"\]\((docs/map/[\w.-]+\.md)\)", text))
+        self.assertEqual(links, {os.path.relpath(p, self.root) for p in self.files()[1:]}, "an index link per shard")
+        mods = [f[:-3] for f in os.listdir(os.path.join(PLUGIN, "lib")) if f.endswith(".py")]  # the fmX names
+        self.assertEqual([m for m in sorted(mods) if not re.search(rf"\b{m}\b", text)], [], "MASTER.md itself names each module")
+
+    def test_the_union_reader_gives_a_check_every_line_it_read_before(self):
+        from sampo import core
+        union = core.master_text(self.root)
+        self.assertTrue(union.startswith(read_text(os.path.join(self.root, "MASTER.md"))))
+        for path in self.files()[1:]:
+            self.assertIn(read_text(path), union)
+        self.assertIn("```bash runnable", core.master_text(self.root, "ops"))
+
+    def test_doctor_names_a_map_file_over_the_read_limits(self):
+        import tempfile
+        from sampo import doctor
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "docs", "map"))
+            with open(os.path.join(tmp, "MASTER.md"), "w") as f:
+                f.write("# m\n[gone](docs/map/files-9.md)\n" + "x" * 2001 + "\n")
+            with open(os.path.join(tmp, "docs", "map", "ops-1.md"), "w") as f:
+                f.write("short\n")
+            bad = " ".join(doctor.map_shape(tmp))
+            for want in ("MASTER.md:3", "files-9.md", "ops-1.md"):
+                self.assertIn(want, bad)
+        self.assertEqual(doctor.map_shape(self.root), [])
 
 
 if __name__ == "__main__":

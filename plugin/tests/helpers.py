@@ -87,6 +87,14 @@ def read_text(path, encoding="utf-8", limit=-1):
         return f.read(limit)
 
 
+def read_doc(path):
+    """T-2915: a doc's text; MASTER.md comes with its docs/map shards (the File map and Operations entries live there)."""
+    if os.path.basename(path) == "MASTER.md":
+        from sampo import core
+        return core.master_text(os.path.dirname(path))
+    return read_text(path)
+
+
 def read_json(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)

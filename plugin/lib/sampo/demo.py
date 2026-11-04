@@ -158,9 +158,10 @@ def fences(root=None):
     """[(doc:line, body)] for each shell fence README.md and MASTER.md mark runnable: ```bash runnable."""
     from sampo import playbooks
     out = []
-    for doc in DOCS:
+    top = root or os.path.dirname(PLUGIN)
+    for doc in DOCS + tuple(os.path.relpath(s, top) for s in c.map_shards(top)):  # T-2915: MASTER.md's shards
         try:
-            with open(os.path.join(root or os.path.dirname(PLUGIN), doc), encoding="utf-8", errors="replace") as f:
+            with open(os.path.join(top, doc), encoding="utf-8", errors="replace") as f:
                 blocks, _ = playbooks._blocks(f.read())
         except OSError:
             continue

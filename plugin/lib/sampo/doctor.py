@@ -528,6 +528,34 @@ def check_briefs(p):
     return Result("briefs", "PASS", f"{p.slug}: {len(briefs)} brief(s) parse; STATE matches")
 
 
+MAP_FILE_BYTES, MAP_LINE_CHARS = 90000, 2000  # T-2915: one Read opens a file under the first and shows a line under the second
+
+
+def map_shape(home):
+    """T-2915: why MASTER.md or a docs/map shard wouldn't open whole in one Read: too many bytes, a line Read cuts, an index
+    link to no shard, a shard no link reaches."""
+    master = os.path.join(home, "MASTER.md")
+    shards = c.map_shards(home)
+    bad, linked = [], set()
+    for path in [master] + shards:
+        rel = os.path.relpath(path, home)
+        text = _read(path)
+        if text is None:
+            continue
+        if len(text.encode("utf-8")) > MAP_FILE_BYTES:
+            bad.append(f"{rel} is over {MAP_FILE_BYTES} bytes")
+        long = [n for n, ln in enumerate(text.splitlines(), 1) if len(ln) > MAP_LINE_CHARS]
+        if long:
+            bad.append(f"{rel}:{long[0]} is over {MAP_LINE_CHARS} characters" + (f" (+{len(long) - 1} more)" if len(long) > 1 else ""))
+        if path == master:
+            for link in re.findall(r"\]\((docs/map/[^)\s#]+)", text):
+                linked.add(link)
+                if not os.path.isfile(os.path.join(home, link)):
+                    bad.append(f"MASTER.md links {link}, which isn't a file")
+    bad += [f"{os.path.relpath(s, home)} has no index link in MASTER.md" for s in shards if os.path.relpath(s, home) not in linked]
+    return bad
+
+
 def check_file_map(home, master_path):
     text = _read(master_path)
     if text is None:
@@ -535,8 +563,9 @@ def check_file_map(home, master_path):
     m = re.search(r"(?ms)^##[^\n]*File map[^\n]*\n(.*?)(?=^## |\Z)", text)
     if not m:
         return Result("file map", "FAIL", "MASTER.md has no 'File map' section")
+    shards = "\n".join(_read(s) or "" for s in c.map_shards(os.path.dirname(os.path.abspath(master_path)), "files"))  # T-2915
     listed, missing = [], []
-    for row in m.group(1).splitlines():
+    for row in (m.group(1) + "\n" + shards).splitlines():
         if not row.lstrip().startswith("|"):
             continue
         cells = row.split("|")
@@ -1416,8 +1445,8 @@ def check_self_docs(home=None, plugin=PLUGIN):
     agent, and README's install flags match install.sh --help."""
     home = home or os.path.dirname(os.path.abspath(plugin))
     cmds, bad = _fm_commands(), []
-    master = _read(os.path.join(home, "MASTER.md")) or ""
-    docs = [os.path.join(home, f) for f in ("README.md", "MASTER.md")] + [os.path.join(plugin, "rules", "foreman.md")]
+    master = c.master_text(home) or ""  # T-2915: MASTER.md and its docs/map shards
+    docs = [os.path.join(home, f) for f in ("README.md", "MASTER.md")] + c.map_shards(home) + [os.path.join(plugin, "rules", "foreman.md")]
     for d, _, files in os.walk(os.path.join(plugin, "skills")):
         if "playbooks" not in d:  # ported third-party procedures don't talk about fm
             docs += [os.path.join(d, f) for f in files if f.endswith(".md")]
@@ -1442,6 +1471,7 @@ def check_self_docs(home=None, plugin=PLUGIN):
     missing = [n for n in sorted(cmds) if n not in listed]
     if missing:
         bad.append("MASTER.md lacks fm " + ", ".join(missing))
+    bad += map_shape(home)  # T-2915
     from sampo import cli  # T-1011: fm help's tiers name every command once (a new verb with none passed every check but the suite)
     tiered = [w for _, names in cli.HELP_TIERS for w in names.split()]
     if [n for n in sorted(cmds) if n not in tiered]:
@@ -1475,7 +1505,7 @@ def check_self_docs(home=None, plugin=PLUGIN):
 def missing_modules(home, master=None):
     """T-0491, T-2782: plugin/lib/sampo/*.py modules (and fmguard, the one real fm*.py left; the rest are shims)
     MASTER.md never names, as fmX, sampo/X or sampo.X, so its module map keeps up with the code."""
-    master = master if master is not None else (_read(os.path.join(home, "MASTER.md")) or "")
+    master = master if master is not None else (c.master_text(home) or "")
     lib = os.path.join(home, "plugin", "lib")
     sub = os.path.join(lib, "sampo")
     names = sorted(f[:-3] for f in (os.listdir(sub) if os.path.isdir(sub) else []) if re.fullmatch(r"[a-z]\w*\.py", f))
