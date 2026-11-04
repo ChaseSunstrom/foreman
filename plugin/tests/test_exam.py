@@ -2079,3 +2079,83 @@ class ModelRunEnv(ForemanTestCase):
             self.assertFalse(set(leak) & set(env), sorted(set(leak) & set(env)))
             self.assertEqual(env["FOREMAN_LOAD_GATE"], "0")
             self.assertEqual(env["PATH"], os.environ["PATH"])
+
+
+class SmithArm(ForemanTestCase):
+    """T-2908: the smith arm runs fm code on a local model profile in each scenario's copy, graded like the others;
+    sampo exam taxonomy counts the failure classes in Smith's own event logs."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.fakes = []
+
+    def tearDown(self):
+        for f in self.fakes:
+            f.close()
+        super().tearDown()
+
+    def serve(self, *script, name="fake"):
+        from test_code import Fake
+        f = Fake("openai", script)
+        self.fakes.append(f)
+        path = os.path.join(self.home, "models.json")
+        with open(path, "w") as fh:
+            json.dump({"profiles": {name: {"kind": "openai", "base_url": f.url, "model": "m1", "tools": True}}}, fh)
+        return f
+
+    def gen(self):
+        return self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")
+
+    def test_the_smith_arm_answers_each_scenario_through_fm_code_and_is_graded(self):
+        from test_code import PLAN, call, plan
+        g = self.gen()
+        ok = plan(dict(PLAN, criteria=[{"text": "it holds", "verify": "test -f fixed.txt"}]))  # fails until Smith writes it
+        fix = [call("write", file="fixed.txt", content="x"), call("done", summary="wrote it")]
+        f = self.serve(ok, *fix, ok, *fix)
+        r = self.fm_json("exam", "run", g["run"], "--agent", "smith", "--model", "fake", "--limit", "2", timeout=240)
+        self.assertEqual((r["scenarios"], r["errors"]), (2, 0), r)
+        self.assertTrue(any(s["request"][:40] in f.said(0) for s in g["scenarios"]), "fm code got a scenario's request")
+        answers = os.path.join(os.path.dirname(os.path.dirname(self.fm_json("genesis")["dir"])), "exam", g["run"], "answers", "smith")
+        self.assertEqual(read_text(os.path.join(answers, "model")), "fake")
+        self.assertEqual(len([x for x in os.listdir(answers) if x.endswith(".events.jsonl")]), 2,
+                         "Smith's event stream is kept for the taxonomy")
+        self.assertEqual(self.fm_json("exam", "taxonomy", g["run"], "--agent", "smith")["scenarios"], 2)
+        done = [json.loads(read_text(os.path.join(answers, x)))["done"] for x in os.listdir(answers)
+                if x.endswith(".json") and not x.endswith(".events.jsonl")]
+        self.assertEqual(done, [True, True], "both runs closed through fm code")
+        self.assertNotEqual(self.fm("exam", "run", g["run"], "--agent", "smith", check=False).returncode, 0,
+                            "a local model needs --model")
+
+    def test_the_taxonomy_counts_each_class_from_events(self):
+        from sampo import louhi
+        act = lambda r, d="", a="read", t="x": {"event": "action", "action": a, "target": t, "result": r, "detail": d}
+        cases = {
+            "malformed": [{"event": "error", "text": "fm code: the model gave no valid plan after 2 repairs"}],
+            "wrong_tool": [act("error", "error: no action 'fly'; the actions are read")],
+            "loop": [act("ok")] * 3,
+            "false_done": [{"event": "verify", "label": "verify", "exit": 1}],
+            "timeout": [{"event": "timeout", "text": "no end after 5 s"}],
+            "refused": [act("refused", "refused: nope"), {"event": "revert", "file": "a"}],
+        }
+        for name, evs in cases.items():
+            got = louhi.failure_classes(evs)
+            self.assertGreaterEqual(got.get(name, 0), 1, (name, got))
+            self.assertEqual(set(got) - {name}, set(), (name, got))
+        self.assertEqual(louhi.failure_classes(cases["refused"])["refused"], 2)
+        self.assertEqual(louhi.failure_classes([act("ok", a="read", t="a"), act("ok", a="read", t="b"), act("ok")]), {})
+        self.assertEqual(set(louhi.FAILURE_CLASSES), set(cases))
+
+    def test_the_taxonomy_reports_each_class_as_a_share_of_scenarios(self):
+        from test_code import PLAN, call, plan
+        g = self.gen()
+        ok = plan(dict(PLAN, criteria=[{"text": "it holds", "verify": "test -f fixed.txt"}]))
+        self.serve(ok, call("fly"), call("write", file="fixed.txt", content="x"), call("done", summary="x"),
+                   *[{"text": "Sure! Here you go."}] * 12)
+        self.fm_json("exam", "run", g["run"], "--agent", "smith", "--model", "fake", "--limit", "2", timeout=240)
+        tax = self.fm_json("exam", "taxonomy", g["run"], "--agent", "smith")
+        cl = tax["classes"]
+        self.assertEqual((cl["wrong_tool"]["scenarios"], cl["malformed"]["scenarios"]), (1, 1), cl)
+        self.assertEqual(cl["wrong_tool"]["rate"], 0.5)
+        self.assertEqual(set(cl), set(__import__("sampo.louhi", fromlist=["x"]).FAILURE_CLASSES))
+        self.assertNotEqual(self.fm("exam", "taxonomy", "nope", check=False).returncode, 0)

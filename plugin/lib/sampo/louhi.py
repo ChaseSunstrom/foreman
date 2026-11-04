@@ -3266,6 +3266,123 @@ def _session_arm(agent, base, key, work, model, budget, timeout, request=None):
                 **({"installs": installs[0], "tampered": installs[1]} if installs else {}))  # the harness's, not the model's
 
 
+LOCAL = ("smith",)  # T-2908: fm code on a local model profile; not in SESSIONS (long.py and rune read those as Claude sessions)
+SMITH_T, SMITH_LOAD, SMITH_STEPS = 900, 300, 40  # T-2908: a scenario's seconds, extra for a remote endpoint's model load, turns
+FAILURE_CLASSES = ("malformed", "wrong_tool", "loop", "false_done", "timeout", "refused")
+_MALFORMED = re.compile(r"no valid|field by field|weren't a JSON object|needs \w+ as ")
+EVENTS_CAP = 2 << 20  # bytes of one scenario's event log kept
+
+
+def _smith_arm(base, key, work, model, request, events):
+    """T-2908: fm code on a local model profile in a temp copy of the scenario (own Smith home, no user state, the
+    smithbench isolation); the tree it leaves is copied to work, Smith's event stream to `events`. The answer has no
+    findings (Smith reports a summary): the grade reads the tree, as for a goal."""
+    from sampo import models as smodels, smithbench
+    prof = smodels.resolve(model)
+    host = urllib.parse.urlparse(str(prof.get("base_url") or "")).hostname
+    t = max(prof.get("timeout") or 0, SMITH_T) + (0 if host in (None, "127.0.0.1", "localhost", "::1") else SMITH_LOAD)
+    with tempfile.TemporaryDirectory(prefix="fm-exam-") as tmp:
+        env, _ = smithbench.box(tmp)
+        wt = os.path.join(tmp, "repo")
+        shutil.copytree(os.path.join(base, "repo"), wt, symlinks=True)
+        if not os.path.isdir(os.path.join(wt, ".git")):
+            for a in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "base"]):
+                subprocess.run(["git", "-c", "user.name=exam", "-c", "user.email=exam@localhost", *a], cwd=wt, env=env,
+                               capture_output=True, timeout=60)
+        argv = [sys.executable, smithbench.FM, "code", request or key["request"], "--json", "--max-steps", str(SMITH_STEPS), "--model", model,
+                "--stale-ok", "exam scenario: a throwaway copy in its own Smith home (T-2908)"]
+        proc = subprocess.Popen(argv, cwd=wt, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            out, err = proc.communicate(timeout=t)
+            late = False
+        except subprocess.TimeoutExpired:
+            c.kill_group(proc)
+            out, err = proc.communicate()
+            late = True
+        finally:
+            smithbench.kill_marked(tmp)  # a check fm code started outlives it
+        evs = list(smithbench._events(out))
+        if late:
+            evs.append({"event": "timeout", "text": f"no end after {t} s"})
+        shutil.copytree(wt, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
+        _carry_runs(wt, work)
+    log = "".join(c.redact(json.dumps(e)) + "\n" for e in evs)[:EVENTS_CAP]
+    c.write_atomic(events, log)
+    end = next((e for e in reversed(evs) if e.get("event") in ("closed", "blocked", "error", "answer")), {})
+    tokens = next((e.get("total_in", 0) + e.get("total_out", 0) for e in reversed(evs) if e.get("event") == "tokens"), 0)
+    crashed = not evs and not late  # no event at all: fm code itself failed
+    return {"findings": [], "notes": [c.redact(str(end.get("text") or ""))[:400]] if end else [],
+            "done": end.get("event") == "closed", "cost": 0, "tokens": tokens,
+            "error": "timeout" if late else c.redact(err.strip()[-300:] or "fm code gave no events") if crashed else None,
+            "model": c.plain(model)[:60]}
+
+
+def failure_classes(events):
+    """T-2908: {class: count} of what went wrong in one Smith event stream (only the nonzero classes). malformed: a
+    reply fm code couldn't read or an action whose arguments were wrong; wrong_tool: an action Smith doesn't have; loop:
+    the same action on the same target three times, or the turn limit; false_done: said done and the verify failed;
+    timeout: no end in time; refused: a guard or Smith's own refusal, or a write put back."""
+    n = dict.fromkeys(FAILURE_CLASSES, 0)
+    seen = {}
+    for e in events:
+        kind, text = e.get("event"), str(e.get("text") or "") + str(e.get("detail") or "")
+        if kind in ("error", "blocked") and _MALFORMED.search(text):
+            n["malformed"] += 1
+        elif kind == "note" and "field by field" in text:
+            n["malformed"] += 1
+        if kind in ("error", "blocked") and re.search(r"used all \d+ turns", text):
+            n["loop"] += 1
+        if kind == "timeout":
+            n["timeout"] += 1
+        if kind == "verify" and e.get("label") == "verify" and e.get("exit"):
+            n["false_done"] += 1
+        if kind == "revert":
+            n["refused"] += 1
+        if kind == "action":
+            k = (e.get("action"), e.get("target"))
+            seen[k] = seen.get(k, 0) + 1
+            n["loop"] += seen[k] == 3  # once per repeated call, not for each time after
+            if e.get("result") == "refused":
+                n["refused"] += 1
+            elif e.get("result") == "error":
+                if str(e.get("detail") or "").startswith("error: no action"):
+                    n["wrong_tool"] += 1
+                elif _MALFORMED.search(str(e.get("detail") or "")):
+                    n["malformed"] += 1
+    return {k: v for k, v in n.items() if v}
+
+
+def taxonomy(p, run, agent="smith"):
+    """T-2908: the failure classes over a run's answered scenarios: {run, agent, model, scenarios, classes: {class:
+    {count, scenarios, rate}}} with every class listed, most common first. rate: the share of scenarios it hit."""
+    load(p, run)
+    answers, per = _answers(p, run, agent), []
+    for name in sorted(os.listdir(answers)) if os.path.isdir(answers) else ():
+        if name.endswith(".events.jsonl"):
+            with open(os.path.join(answers, name), encoding="utf-8", errors="replace") as f:
+                per.append(failure_classes([e for e in (_json_line(ln) for ln in f) if e]))
+    if not per:
+        raise ValueError(f"no Smith event logs from {agent!r} in {run} (fm exam run {run} --agent smith --model PROFILE)")
+    classes = {k: {"count": sum(x.get(k, 0) for x in per), "scenarios": sum(k in x for x in per),
+                   "rate": sum(k in x for x in per) / len(per)} for k in FAILURE_CLASSES}
+    try:
+        with open(os.path.join(answers, "model"), encoding="utf-8") as f:
+            model = f.read().strip()
+    except OSError:
+        model = None
+    return {"run": run, "agent": agent, "model": model, "scenarios": len(per),
+            "classes": dict(sorted(classes.items(), key=lambda kv: -kv[1]["rate"]))}
+
+
+def _json_line(ln):
+    try:
+        v = json.loads(ln)
+    except ValueError:
+        return None
+    return v if isinstance(v, dict) else None
+
+
 def _jobs(n):
     """--jobs: how many session scenarios run at once; under 1 is refused before any session starts."""
     n = 1 if n is None else n
@@ -3284,8 +3401,13 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
     turns, so a short sample still spans them."""
     _known(agent)
     jobs = _jobs(jobs)
-    if request and agent not in SESSIONS:
-        raise ValueError(f"--request goes with a session agent ({', '.join(SESSIONS)}); {agent} answers from the key")
+    if request and agent not in SESSIONS + LOCAL:
+        raise ValueError(f"--request goes with a session agent ({', '.join(SESSIONS + LOCAL)}); {agent} answers from the key")
+    if agent in LOCAL:  # T-2908: a profile to run, and it must exist before any scenario starts
+        if not model:
+            raise ValueError(f"--agent {agent} needs --model PROFILE (sampo models list)")
+        from sampo import models as smodels
+        smodels.resolve(model)
     request = request or ("make this great" if agent == "genesis" else None)  # recorded, so the row says what was asked
     seen = {}
 
@@ -3293,7 +3415,7 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
         seen[s["kind"]] = seen.get(s["kind"], 0) + 1
         return seen[s["kind"]]
     picked = sorted((s for s in load(p, run)["scenarios"] if split == "all" or s["split"] == split), key=turn)
-    picked = picked[:limit or (3 if agent in SESSIONS else None)]
+    picked = picked[:limit or (3 if agent in SESSIONS + LOCAL else None)]
     if not picked:
         raise ValueError(f"no {split} scenarios in {run}")
     if agent in SESSIONS:
@@ -3306,9 +3428,9 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
         pass
     from sampo import rune  # the generation that answers, so a later regrade still files it under that generation
     c.write_atomic(os.path.join(_answers(p, run, agent), "gen"), str(rune.current(p)))
-    if request and agent in SESSIONS:  # --request: the user's words replace each scenario's own
+    if request and agent in SESSIONS + LOCAL:  # --request: the user's words replace each scenario's own
         c.write_atomic(os.path.join(_answers(p, run, agent), "request"), request)
-    if agent in SESSIONS:  # T-2158: which model answered, so a Haiku smoke line never decides (steer 1)
+    if agent in SESSIONS + LOCAL:  # T-2158: which model answered, so a Haiku smoke line never decides (steer 1)
         c.write_atomic(os.path.join(_answers(p, run, agent), "model"), c.plain(model or "default")[:60])  # not a list: a name cut at 60 characters
 
     def one(s):
@@ -3320,13 +3442,16 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
             with sbudget.reserve("exam-arm", sbudget.estimate("exam-arm", 1, min(budget or 0.5, 0.5)), "a smaller --limit"):
                 answer = _session_arm(agent, base, key, work, model, budget, timeout, request)
                 sbudget.record("exam-arm", answer["cost"], project=p.slug, detail=f"{agent} {s['id']}")
+        elif agent in LOCAL:  # no Claude spend: a local model
+            answer = _smith_arm(base, key, work, model, request,
+                                os.path.join(_answers(p, run, agent), f"{s['id']}.events.jsonl"))
         else:
             answer, src = AGENTS[agent](base, key)
             shutil.copytree(src, work, ignore=shutil.ignore_patterns(".git"))
             _carry_runs(src, work)
         c.write_atomic(os.path.join(_answers(p, run, agent), f"{s['id']}.json"), json.dumps(answer, indent=1))
 
-    if agent in SESSIONS:  # T-2292: up to `jobs` sessions at once, each in its own temp copy; answers are per-scenario files
+    if agent in SESSIONS + LOCAL:  # T-2292: up to `jobs` sessions at once, each in its own temp copy; answers are per-scenario files
         with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
             list(pool.map(one, picked))
     else:
@@ -3356,8 +3481,8 @@ def _in_order(found, key):
 
 
 def _known(agent):
-    if agent not in AGENTS and agent not in SESSIONS:
-        raise ValueError(f"unknown agent {agent!r} ({', '.join([*AGENTS, *SESSIONS])})")
+    if agent not in AGENTS and agent not in SESSIONS + LOCAL:
+        raise ValueError(f"unknown agent {agent!r} ({', '.join([*AGENTS, *SESSIONS, *LOCAL])})")
 
 
 def _closed(n):
@@ -3687,11 +3812,15 @@ def cmd_exam(args):
                             request=args.request, jobs=1 if args.jobs is None else args.jobs)
             cli.out(args, res, summary(res))
             return 1 if res.get("ungraded") else 0
+        if action == "taxonomy":  # T-2908: Smith's failure classes from a run's event logs
+            res = taxonomy(p, args.run, args.agent or "smith")
+            return cli.out(args, res, f"{res['run']} {res['agent']} {res['model'] or ''}: {res['scenarios']} scenarios\n" + "\n".join(
+                f"  {k:<10} {v['count']:>3} in {v['scenarios']} scenarios ({v['rate']:.0%})" for k, v in res["classes"].items()))
         if action == "grade":
             if args.model:  # T-2158: answers from before the stamp, or stamped "default", name their model here
                 who = args.agent or "oracle"
-                if who not in SESSIONS:
-                    raise ValueError(f"--model goes with a session arm ({', '.join(SESSIONS)}); {who} runs no session")
+                if who not in SESSIONS + LOCAL:
+                    raise ValueError(f"--model goes with a session arm ({', '.join(SESSIONS + LOCAL)}); {who} runs no session")
                 f, new = os.path.join(_answers(p, args.run, who), "model"), c.plain(args.model)[:60]
                 try:
                     with open(f, encoding="utf-8") as fh:

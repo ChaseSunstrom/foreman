@@ -91,12 +91,13 @@ def kill_marked(tmp):
             pass
 
 
-def _run_in(tmp, seed, model, worker, timeout, max_steps, t0):
-    repo, home, fhome = (os.path.join(tmp, d) for d in ("repo", "home", "foreman"))
-    for d in (repo, home, fhome):
-        os.makedirs(d)
-    _write(home, {".gitconfig": GITCONFIG, "keep.txt": "keep\n", ".cache/build/old.bin": "stale\n"})
-    _write(repo, seed["files"])
+def box(tmp, model=True):
+    """T-2908: the isolation a run of fm code gets in tmp: its own Smith home (with the user's models.json) and, for a
+    model, its own home folder. Returns (env, home); the caller makes the repo."""
+    home, fhome = os.path.join(tmp, "home"), os.path.join(tmp, "foreman")
+    for d in (home, fhome):
+        os.makedirs(d, exist_ok=True)
+    _write(home, {".gitconfig": GITCONFIG})
     env = core.sandbox_env(os.environ, drop=("FOREMAN_STATE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PROJECT_DIR"))  # T-2822
     env.update(FOREMAN_HOME=fhome, FOREMAN_INHIBITED="1", GIT_CONFIG_GLOBAL=os.path.join(home, ".gitconfig"),
                FM_BENCH_SEED=tmp)
@@ -105,7 +106,16 @@ def _run_in(tmp, seed, model, worker, timeout, max_steps, t0):
     models = os.path.join(core.foreman_home(), "models.json")
     if os.path.isfile(models):
         shutil.copy(models, fhome)
-    git = lambda *a: subprocess.run(["git", *a], cwd=repo, env=env, capture_output=True, timeout=30)
+    return env, home
+
+
+def _run_in(tmp, seed, model, worker, timeout, max_steps, t0):
+    repo = os.path.join(tmp, "repo")
+    os.makedirs(repo)
+    env, home = box(tmp, model)
+    _write(home, {"keep.txt": "keep\n", ".cache/build/old.bin": "stale\n"})
+    _write(repo, seed["files"])
+    git =lambda *a: subprocess.run(["git", *a], cwd=repo, env=env, capture_output=True, timeout=30)
     git("init", "-q")
     git("add", ".")
     git("commit", "-qm", "the seed")
