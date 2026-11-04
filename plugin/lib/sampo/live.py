@@ -1,7 +1,7 @@
 """T-2998: sampo watch --web: everything Sampo is doing, as a read-only page on 127.0.0.1 (T-2997).
 
 The server is settingsserve's: the one-time token swapped for an HttpOnly SameSite=Strict cookie, the Host check against
-DNS rebinding, a CSP with nonces (its Handler, subclassed, not copied). It never changes state and never stops on idle:
+DNS rebinding, a CSP with nonces (its Handler, subclassed, not copied). Its one write is POST /api/act (T-3026, below); it never stops on idle:
 it runs until Ctrl-C or SIGTERM. Its URL is written to the project's state (live.url, mode 0600); a spent token is
 replaced at once, so `sampo watch --web --url` always prints a URL that still works.
 
@@ -9,17 +9,21 @@ GET /            the page: plugin/web/live/index.html (its __NONCE__ becomes the
 GET /static/NAME a file of plugin/web/live/ (live.css, live.js)
 GET /api/state   one snapshot (the contract: research live-schema)
 GET /api/stream  Server-Sent Events: a `state` event with the snapshot every 2 s
+POST /api/act    {action, project?, session?, text?, confirmed?}: one of ACTIONS as a sampo child process (or a bus note); needs
+                 Content-Type application/json, the server's own Origin and an X-Sampo-Nonce minted for a page load
 
 Each collector is cheap (no model call, nothing beyond 127.0.0.1: Ollama's /api/ps, the Jeff server's /v1/models,
 nvidia-smi, /proc) and fails soft: its field is empty, never a 500. The whole snapshot is cached CACHE_S seconds, so any
 number of pages cost one build. Model calls come from what the code already logs: the ledger's cards_grow, moons_grow,
 moons_funnel, run_session, genesis_confirm and genesis_review events (each names its models) and state/spend.jsonl."""
+import hmac
 import json
 import os
 import re
 import secrets
 import signal
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -366,6 +370,81 @@ PLACEHOLDER = ('<!doctype html><html lang="en"><head><meta charset="utf-8"><titl
                '<h1>Sampo live</h1><p>The page files (plugin/web/live) are not here; /api/state has the data.</p></body></html>')
 
 
+ACT_MAX, ACT_TIMEOUT, NOTE_MAX = 4096, 30, 2000
+SLOW_ACT_TIMEOUT = 150  # sampo resume re-runs the last green check (up to 120 s)
+
+
+def act_token(server):
+    """T-3026: stateless, so no number of page loads evicts it; derived from the server's secret, put in the page's HTML
+    only (a cross-origin page can't read it)."""
+    return hmac.new(server.session.encode(), b"sampo-live-act", "sha256").hexdigest()
+ACTIONS = {  # T-3026: action -> (needs a project, the sampo argv); nothing else runs, and no shell
+    "drive_on": (True, ["drive", "on"]), "drive_off": (True, ["drive", "off"]), "checkpoint": (True, ["checkpoint"]),
+    "resume": (True, ["resume"]), "pause_now": (False, ["pause", "on", "--now"]), "pause_off": (False, ["pause", "off"]),
+    "note": (False, None)}
+
+
+def _run(argv, p):
+    """The exit code of `sampo ARGV` as a child process (no shell, no stdin, a timeout; 124 on it, 127 if it can't start)."""
+    try:  # its own process group, so a timeout kills what the verb started too
+        child = subprocess.Popen([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "sampo"), *argv], cwd=p.root,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+    except OSError:
+        return 127
+    try:
+        return child.wait(timeout=SLOW_ACT_TIMEOUT if argv[0] == "resume" else ACT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        child.wait()
+        return 124
+
+
+def act(default, body):
+    """T-3026: (status, JSON) for a checked POST body {action, project?, session?, text?, confirmed?}. 400 for anything not
+    in ACTIONS, an unknown or hidden (sensitive) project or session, a bad note or an unconfirmed pause now; each act that
+    ran is a `live_act` ledger row of action, project and exit (a note: its length, never the text)."""
+    if not isinstance(body, dict) or not isinstance(body.get("action"), str) or body["action"] not in ACTIONS:
+        return 400, {"ok": False, "error": "unknown action"}
+    name = body["action"]
+    needs, argv = ACTIONS[name]
+    if name == "pause_now" and body.get("confirmed") is not True:
+        return 400, {"ok": False, "error": "pause now needs confirmed: true"}
+    p, data = default, {"action": name}
+    if needs:
+        slug = body.get("project")
+        p = resolve(default, slug) if isinstance(slug, str) and slug else None
+        if p is None:
+            return 400, {"ok": False, "error": "unknown project"}
+    if name == "note":
+        from sampo import bus
+        text, sid = body.get("text"), body.get("session")
+        if not isinstance(text, str) or not text.strip() or len(text) > NOTE_MAX or not isinstance(sid, str) or not sid:
+            return 400, {"ok": False, "error": "a note needs a session and 1-2000 characters"}
+        try:
+            hit = [s for s in bus.live() if str(s.get("session_id", "")).startswith(sid)]
+        except Exception:
+            hit = []
+        hidden = {q.slug for q, meta in c.all_projects() if meta.get("sensitive")}
+        if len(hit) != 1 or not hit[0].get("project") or hit[0]["project"] in hidden:
+            return 400, {"ok": False, "error": "unknown session"}
+        try:
+            bus.send(hit[0]["session_id"], text, kind="note", sender="live")
+            code = 0
+        except Exception:
+            code = 1
+        data.update(len=len(text), session=str(hit[0]["session_id"])[:8])
+    else:
+        code = _run(argv + (["-p", p.slug] if needs else []), p)
+        data.update(project=p.slug if needs else None)
+    data["exit"] = code
+    c.log_event(p, "live_act", data=data)
+    return 200, {"ok": code == 0, "exit": code, "action": name}
+
+
 class Handler(settingsserve.Handler):
     CMD, PATHS = "sampo watch --web --url", ()  # the 403 names the command that prints a fresh link
 
@@ -379,6 +458,8 @@ class Handler(settingsserve.Handler):
                 body = f.read().replace("__NONCE__", nonce)
         except OSError:
             body = PLACEHOLDER
+        meta = f'<meta name="sampo-act" content="{act_token(self.server)}">'  # T-3026: the page sends it as X-Sampo-Nonce
+        body = body.replace("</head>", meta + "</head>", 1) if "</head>" in body else meta + body
         self._send(200, body, nonce, csp=(f"default-src 'none'; script-src 'self' 'nonce-{nonce}'; style-src 'self' "
                                           f"'nonce-{nonce}'; img-src 'self' data:; font-src 'self'; connect-src 'self'; "
                                           "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"))
@@ -428,10 +509,49 @@ class Handler(settingsserve.Handler):
                 return urllib.parse.urlsplit(self.path).path
         return super()._allowed()
 
+    def _bad(self, status, why):
+        self._send(status, json.dumps({"ok": False, "error": why}), ctype="application/json; charset=utf-8")
+
+    def do_POST(self):
+        """T-3026: POST /api/act. The browser's own uid passes _allowed, so these checks, in this order, are the whole CSRF
+        defence: JSON only (a cross-site form can't send it without a preflight, which is never answered), Origin the
+        server's own, the act token only this page's HTML carries. Nothing runs before all pass.
+
+        Limit: a forwarder the user runs (ssh -L, a VS Code port forward, socat) makes its remote clients look like the
+        user's uid, so they pass _allowed; they still need the token, which only a page they can already load holds."""
+        path = self._allowed()
+        if path is None:
+            return
+        if path != "/api/act":
+            return self._send(404, "not found")
+        if self.headers.get("Sec-Fetch-Site", "same-origin") != "same-origin":  # a browser says cross-site when it is
+            return self._bad(403, "refused: cross-site")
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            return self._bad(403, "refused: JSON only")
+        if (self.headers.get("Origin") or "").lower() not in [f"http://{h}" for h in self._mine()]:
+            return self._bad(403, "refused: not posted from this page")
+        if not hmac.compare_digest((self.headers.get("X-Sampo-Nonce") or "").encode("utf-8", "replace"),
+                                   act_token(self.server).encode()):
+            return self._bad(403, "refused: reload the page")
+        size = self.headers.get("Content-Length") or ""
+        if self.headers.get("Transfer-Encoding") or not (size.isascii() and size.isdigit()):
+            return self._bad(411, "a Content-Length is required")
+        if int(size) > ACT_MAX:
+            return self._bad(413, f"over {ACT_MAX} bytes")
+        try:
+            body = json.loads(self.rfile.read(int(size)).decode("utf-8"))
+        except (ValueError, RecursionError):
+            return self._bad(400, "not JSON")
+        status, out = act(self.server.project, body)
+        self._send(status, json.dumps(out, ensure_ascii=False), ctype="application/json; charset=utf-8")
+
     def do_GET(self):
         path = self._allowed()
         if path is None:
             return
+        if path == "/api/act":
+            return self._bad(405, "POST only")
         if path == "/":
             return self._page()
         if path in ("/api/state", "/api/stream", "/api/machine"):

@@ -386,3 +386,161 @@ class Url(ForemanTestCase):
         out = self.fm("watch", "--web", "--url")
         self.assertEqual(out.stdout.strip(), "http://127.0.0.1:1/?t=abc")
         self.assertEqual(os.stat(os.path.join(p.dir, "live.url")).st_mode & 0o777, 0o600)
+
+
+class Act(ForemanTestCase):  # T-3026: POST /api/act, with the same-uid peer the browser is: only the refusals stand between it and a verb
+    def setUp(self):
+        super().setUp()
+        self.fm("task", "new", "Steer it", "--type", "FEATURE", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
+        live._CACHE.clear()
+        self.p = c.find_project(self.repo)
+        peer = mock.patch.object(live, "peer_uid", return_value=os.getuid())
+        peer.start()
+        self.addCleanup(peer.stop)
+        self.server, _ = live.make(self.p)
+        self.port = self.server.server_address[1]
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=live.serve, args=(self.server, self.stop), daemon=True)
+        self.thread.start()
+        self.addCleanup(self.thread.join, 5)
+        self.addCleanup(self.stop.set)
+        self.nonce = self.page_nonce()
+        self.origin = f"http://127.0.0.1:{self.port}"
+
+    def call(self, method, path, body=None, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request(method, path, body=body, headers={"Host": f"127.0.0.1:{self.port}", **(headers or {})})
+        r = conn.getresponse()
+        out = r.status, r.read().decode()
+        conn.close()
+        return out
+
+    def page_nonce(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/", headers={"Host": f"127.0.0.1:{self.port}"})
+        html = conn.getresponse().read().decode()
+        conn.close()
+        return html.split('<meta name="sampo-act" content="')[1].split('"')[0]  # the act token, in the page's HTML
+
+    def act(self, body, **over):
+        h = {"Content-Type": "application/json", "Origin": self.origin, "X-Sampo-Nonce": self.nonce, **over}
+        h = {k: v for k, v in h.items() if v is not None}
+        return self.call("POST", "/api/act", body if isinstance(body, str) else json.dumps(body), h)
+
+    def rows(self):
+        return c.ledger_events(self.p, ["live_act"])
+
+    def test_each_action_runs_its_verb_and_is_logged(self):
+        slug = self.p.slug
+        cases = [({"action": "drive_on", "project": slug}, ["drive", "on", "-p", slug]),
+                 ({"action": "drive_off", "project": slug}, ["drive", "off", "-p", slug]),
+                 ({"action": "checkpoint", "project": slug}, ["checkpoint", "-p", slug]),
+                 ({"action": "resume", "project": slug}, ["resume", "-p", slug]),
+                 ({"action": "pause_now", "confirmed": True}, ["pause", "on", "--now"]),
+                 ({"action": "pause_off"}, ["pause", "off"])]
+        for body, argv in cases:
+            with mock.patch.object(live, "_run", return_value=0) as run:
+                st, out = self.act(body)
+            self.assertEqual((st, json.loads(out)["exit"]), (200, 0), body)
+            run.assert_called_once_with(argv, self.p)
+        self.assertEqual([r["data"]["action"] for r in self.rows()], [b["action"] for b, _ in cases])
+        self.assertEqual(self.rows()[0]["data"], {"action": "drive_on", "project": slug, "exit": 0})
+
+    def test_a_real_drive_off_changes_the_project(self):
+        with mock.patch.dict(os.environ, {"FOREMAN_HOME": self.home}):
+            st, out = self.act({"action": "drive_off", "project": self.p.slug})
+        self.assertEqual((st, json.loads(out)["exit"]), (200, 0), out)
+        self.assertIs(c.read_meta(self.p).get("drive"), False)
+
+    def test_a_failing_verb_is_reported_and_logged(self):
+        with mock.patch.object(live, "_run", return_value=3):
+            st, out = self.act({"action": "resume", "project": self.p.slug})
+        self.assertEqual((st, json.loads(out)["exit"]), (200, 3))
+        self.assertEqual(self.rows()[0]["data"]["exit"], 3)
+
+    def test_pause_now_needs_confirmed_true(self):
+        with mock.patch.object(live, "_run") as run:
+            for body in ({"action": "pause_now"}, {"action": "pause_now", "confirmed": "yes"}, {"action": "pause_now", "confirmed": False}):
+                self.assertEqual(self.act(body)[0], 400)
+        run.assert_not_called()
+
+    def test_a_note_goes_through_the_bus_and_the_ledger_keeps_only_its_length(self):
+        live_ = [{"session_id": "abcdef0123456789", "project": self.p.slug}]
+        with mock.patch("sampo.bus.live", return_value=live_), mock.patch("sampo.bus.send") as send:
+            st, _ = self.act({"action": "note", "session": "abcdef01", "text": "hello there"})
+        self.assertEqual(st, 200)
+        send.assert_called_once_with("abcdef0123456789", "hello there", kind="note", sender="live")
+        d = self.rows()[0]["data"]
+        self.assertEqual((d["action"], d["len"], d["session"]), ("note", 11, "abcdef01"))
+        self.assertNotIn("hello", json.dumps(self.rows()))
+
+    def test_a_note_to_a_session_with_no_project_is_refused(self):
+        with mock.patch("sampo.bus.live", return_value=[{"session_id": "abcdef0123456789"}]), mock.patch("sampo.bus.send") as send:
+            self.assertEqual(self.act({"action": "note", "session": "abcdef01", "text": "x"})[0], 400)
+        send.assert_not_called()
+
+    def test_unknown_things_are_a_400_and_run_nothing(self):
+        os.makedirs(os.path.join(self.tmp, "hush"))
+        sp = c.init_project(os.path.join(self.tmp, "hush"), sensitive=True)
+        bad = [{"action": "rm_rf"}, {"action": 5}, {}, [1], {"action": "drive_on"}, {"action": "drive_on", "project": "nope"},
+               {"action": "drive_on", "project": sp.slug}, {"action": "note", "session": "zzz", "text": "x"},
+               {"action": "note", "session": "abcdef01", "text": "x"},  # a sensitive project's session
+               {"action": "note", "session": "abcdef01", "text": ""}, {"action": "note", "session": "abcdef01", "text": "x" * 2500}]
+        with mock.patch.object(live, "_run") as run, mock.patch("sampo.bus.send") as send, \
+                mock.patch("sampo.bus.live", return_value=[{"session_id": "abcdef0123456789", "project": sp.slug}]):
+            for b in bad:
+                self.assertIn(self.act(b)[0], (400, 404), b)
+            self.assertEqual(self.act("{not json")[0], 400)
+        run.assert_not_called()
+        send.assert_not_called()
+        self.assertEqual(self.rows(), [])
+
+    def test_every_refusal_runs_nothing_even_from_the_servers_own_uid(self):
+        ok = {"action": "drive_off", "project": self.p.slug}
+        form = {"Content-Type": "application/x-www-form-urlencoded"}
+        with mock.patch.object(live, "_run") as run:
+            self.assertEqual(self.call("GET", "/api/act")[0], 405)
+            self.assertEqual(self.call("PUT", "/api/act", json.dumps(ok), {"Content-Type": "application/json"})[0], 405)
+            for over in (form, {"Content-Type": "text/plain"}, {"Content-Type": None},
+                         {"Origin": None}, {"Origin": "http://evil.example"}, {"Origin": "null"},
+                         {"Origin": f"http://127.0.0.1:{self.port + 1}"}, {"Origin": f"https://127.0.0.1:{self.port}"},
+                         {"X-Sampo-Nonce": None}, {"X-Sampo-Nonce": "guess"}):
+                self.assertEqual(self.act(ok, **over)[0], 403, over)
+            self.assertEqual(self.act("action=drive_off&project=" + self.p.slug, **form)[0], 403)
+        run.assert_not_called()
+        self.assertEqual(self.rows(), [])
+        with mock.patch.object(live, "_run", return_value=0):  # the same request, whole: accepted (the refusals are the only gate)
+            self.assertEqual(self.act(ok, Origin=f"http://localhost:{self.port}")[0], 200)
+            self.assertEqual(self.act(ok, **{"Content-Type": "application/json; charset=utf-8"})[0], 200)
+
+    def test_page_loads_cannot_evict_the_token(self):  # a cross-site page can GET / as often as it likes
+        with mock.patch.object(live, "_run", return_value=0):
+            for _ in range(100):
+                self.assertEqual(self.page_nonce(), self.nonce)
+            self.assertEqual(self.act({"action": "pause_off"})[0], 200)
+
+    def test_a_cross_site_fetch_is_refused_by_sec_fetch_site(self):
+        with mock.patch.object(live, "_run", return_value=0) as run:
+            for v in ("cross-site", "same-site", "none", ""):
+                self.assertEqual(self.act({"action": "pause_off"}, **{"Sec-Fetch-Site": v})[0], 403, v)
+            run.assert_not_called()
+            self.assertEqual(self.act({"action": "pause_off"}, **{"Sec-Fetch-Site": "same-origin"})[0], 200)
+
+    def test_deeply_nested_json_is_a_400(self):
+        with mock.patch.object(live, "_run") as run:
+            self.assertEqual(self.act("[" * 2000 + "]" * 2000)[0], 400)
+        run.assert_not_called()
+
+    def test_a_timeout_kills_the_whole_process_group(self):
+        child = mock.Mock(pid=4242)
+        child.wait.side_effect = [live.subprocess.TimeoutExpired("x", 1), 0]
+        with mock.patch.object(live.subprocess, "Popen", return_value=child) as popen, mock.patch.object(live.os, "killpg") as kill:
+            self.assertEqual(live._run(["resume", "-p", "x"], self.p), 124)
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        kill.assert_called_once_with(4242, live.signal.SIGKILL)
+        self.assertEqual(child.wait.call_args_list[0].kwargs["timeout"], live.SLOW_ACT_TIMEOUT)
+
+    def test_a_body_over_the_cap_is_refused(self):
+        with mock.patch.object(live, "_run") as run:
+            self.assertEqual(self.act(json.dumps({"action": "note", "text": "x" * 20000}))[0], 413)
+        run.assert_not_called()
