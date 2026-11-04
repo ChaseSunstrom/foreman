@@ -3267,6 +3267,17 @@ class Stop(HookCase):
                                "session_id": "sess-1", "background_tasks": [shell]})
         self.assertIsNone(self.decision(p), "then it holds drive")
 
+    def test_the_still_running_line_says_how_many_it_left_out(self):
+        # T-2883: running[:3] cut a fourth builder silently, and the reader took it for dropped
+        self.fm("init")
+        self.task()
+        shells = [{"id": f"bz{i}", "type": "shell", "status": "running", "description": "Run", "command": "sleep 9"}
+                  for i in range(5)]
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on the tests.",
+                               "session_id": "sess-1", "background_tasks": shells})
+        reason = parse(p)["reason"]
+        self.assertIn("bz0, bz1, bz2, 2 left out", reason)
+
     def test_a_start_older_than_two_hours_no_longer_holds_drive(self):
         self.fm("init")
         self.task()

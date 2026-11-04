@@ -3875,7 +3875,7 @@ def _headless_wait(pl):
     if not running:
         return None
     return (f"Sampo: this is a headless run (claude -p): it ends with this turn, so the background work still running "
-            f"({', '.join(running[:3])}) never reports back. Wait for it now (read its output until it finishes, or "  # not a list: text for a model, not a screen
+            f"({c.joinmore(running, 3)}) never reports back. Wait for it now (read its output until it finishes, or "
             f"rerun it in the foreground), then finish with its result.")
 
 
@@ -4271,7 +4271,7 @@ def _drive(p, sd, briefs, pl, g):
             how = _start_how(offer, lanes_free(briefs, p), _economy())
             _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
                     "offer": offer["id"], "how": how})
-            return (f"Sampo drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "  # not a list: text for a model, not a screen
+            return (f"Sampo drive: background work is still running ({c.joinmore(running, 3)}); don't idle on it. "
                     f"Start {offer['id']} ({offer['tier']} {offer['type']}: {c.fit(offer['title'], 80)}) now: {how}. "
                     f"A queued task that can't move now (it needs a device, a person, another task): sampo task block ID "
                     f"\"why\", and take the next. The drive offers another when you stop; its notification still "
@@ -4285,12 +4285,12 @@ def _drive(p, sd, briefs, pl, g):
         if not more and full and d.get("drained") != len(briefs) and not c._round_first(p):  # T-0415: nothing queued: find
             # the next (T-2466: not while fm drive --round-first holds new work for the Genesis round)
             d["drained"] = len(briefs)  # work rather than wait; once per drain, as below, not once per set of jobs
-            return (f"Sampo drive: background work is still running ({', '.join(running[:3])}) and nothing else is "
+            return (f"Sampo drive: background work is still running ({c.joinmore(running, 3)}) and nothing else is "
                     f"queued; don't wait on it. Check the product end to end as its user uses it (every screen at "
                     f"desktop and phone width, or every command; the main flows; the service logs), sampo capture each "
                     f"defect or gap you find, then plan and work the first. Its notification still wakes you for "
                     f"{work['id']}.")
-        return (f"Sampo drive: background work is still running ({', '.join(running[:3])}); its notification wakes "  # not a list: text for a model, not a screen
+        return (f"Sampo drive: background work is still running ({c.joinmore(running, 3)}); its notification wakes "
                 f"you, so don't sleep or poll. Meanwhile do what doesn't need its result: the next step's test, the "
                 f"audit lenses on the current diff (sampo audit prep), docs, "
                 + (f"grounding and planning {', '.join(more)}, or an independent S/M task in a builder lane "
