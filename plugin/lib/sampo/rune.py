@@ -4043,7 +4043,11 @@ def cmd_genesis(args):
                                                     + (f", unblocks {x['unblocks']}" if x["unblocks"] else "") + f"): "
                                                     + x["title"] for x in r) or "Nothing to climb yet.")
             if verb != "status":
-                raise scli.UsageError("fm genesis moonshot [status|rate|order]")
+                if verb == "check":  # T-2858: the catalogue's problems alone, exit 1 on any
+                    bad = moons.check(p)
+                    scli.out(args, {"problems": bad}, "\n".join(bad) or "Moonshot catalogue: no problems.")
+                    return 1 if bad else 0
+                raise scli.UsageError("fm genesis moonshot [status|rate|order|check]")
             s = moons.summary(p)
             return scli.out(args, s, "\n".join(moons.seed_lines(p, current(p) or 1)))  # this generation's work
         if action == "novelty":

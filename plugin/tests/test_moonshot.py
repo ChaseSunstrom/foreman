@@ -87,6 +87,11 @@ class Shape(_Tower):
         from sampo import rune
         self.catalogue(moon("M-01", "Immune memory for the guard", "extreme").replace("- Novelty: 4\n", ""))
         self.assertTrue(any("Novelty" in x for x in rune.moonshot_check(self.p)["problems"]))
+        r = self.fm("genesis", "moonshot", "check", check=False)  # T-2858: the catalogue's own check, alone
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Novelty", r.stdout)
+        self.catalogue(moon("M-01", "Immune memory for the guard", "extreme"))
+        self.assertEqual(self.fm("genesis", "moonshot", "check", check=False).returncode, 0)
 
 
 class Rate(_Tower):
@@ -99,7 +104,7 @@ class Rate(_Tower):
 
         def child(feature, system, prompt, model, timeout, **kw):
             calls.append((model, prompt))
-            return "1: high | an existing loop with a new signal\n2: extreme | no harness prices work\n9: low | none"
+            return "1: high | wild 2 | an existing loop with a new signal\n2: extreme | wild 4 | no harness prices work\n9: low | none"
         with mock.patch("sampo.ideas.run_child", child):
             r = moons.rate(self.p)
         self.assertEqual(calls[0][0], rune.REVIEW_MODELS[-1])
@@ -121,6 +126,80 @@ class Rate(_Tower):
     def read_events(self):
         from sampo import core as c
         return c.ledger_events(self.p, kinds=["genesis_moonshot_rate"])
+
+
+class Wild(_Tower):  # T-2858: "the moons you had come up with aren't even that moon-y ... I want wild" (2026-11-03)
+    def test_the_reviewer_scores_wildness_and_a_tame_big_one_counts_as_xhigh(self):
+        from sampo import moons
+        self.assertIn("wild", moons.RATE_SYSTEM.lower())
+        self.catalogue(moon("M-01", "Kelly-size each stake in a queue auction", "massive"),
+                       moon("M-02", "Grow an immune system that breeds antibodies", "extreme"),
+                       moon("M-03", "Fork tomorrow's codebase tonight", "massive"))
+
+        def child(feature, system, prompt, model, timeout, **kw):
+            return ("1: massive | wild 2 | a pricing mechanism a PM could spec\n2: extreme | wild 5 | science fiction\n"
+                    "3: massive | an old-format line: no wild score")
+        with mock.patch("sampo.ideas.run_child", child):
+            moons.rate(self.p)
+        got = {r["id"]: (moons._tier(r), r.get("wild")) for r in moons.rows(self.p)}
+        self.assertEqual(got["M-01"], ("xhigh", 2), "tame for its tier: counted as xhigh")
+        self.assertEqual(got["M-02"], ("extreme", 5))
+        self.assertEqual(got["M-03"], ("massive", None), "no score: the tier stands until it is scored")
+
+    def test_a_rating_from_before_the_wild_score_is_rated_once_more_for_it(self):
+        from sampo import moons
+        self.catalogue(moon("M-01", "Auction the queue among lanes", "extreme"))
+        self.rated(**{"M-01": "extreme"})  # rated before T-2858: no wild key
+        seen = []
+
+        def child(feature, system, prompt, model, timeout, **kw):
+            seen.append(prompt)
+            return "1: xhigh | wild 1 | a market mechanism"
+        with mock.patch("sampo.ideas.run_child", child):
+            self.assertEqual(moons.rate(self.p)["rated"], 1)
+            self.assertEqual(moons.rate(self.p)["rated"], 0, "scored once: not again")
+        self.assertEqual(len(seen), 1)
+        (r,) = moons.rows(self.p)
+        self.assertEqual((r["reviewer"], r["wild"]), ("xhigh", 1))
+
+    def test_a_missed_or_odd_wild_score_is_retried_once_and_left_counts_the_unscored(self):  # T-2858 review
+        from sampo import moons
+        self.catalogue(*[moon(f"M-{i:02d}", f"Idea number {i} about thing {i}", "extreme") for i in range(1, 4)])
+        replies = iter(["1: extreme | wild: 4 | odd punctuation\n2: extreme | no score given\n",
+                        "1: extreme | still no score\n2: high | wild 2 | fine\n", ""])
+
+        def child(feature, system, prompt, model, timeout, **kw):
+            return next(replies)
+        with mock.patch("sampo.ideas.run_child", child), mock.patch.object(moons, "BATCH", 2):
+            first = moons.rate(self.p)
+            self.assertEqual(first["left"], 2, "M-02 unscored and M-03 unread still count")
+            moons.rate(self.p)
+        got = {r["id"]: r["wild"] for r in moons.rows(self.p)}
+        self.assertEqual(got["M-01"], 4, "'wild: 4' is read")
+        self.assertIsNone(got["M-02"], "two misses: settled unscored, not retried forever")
+        self.assertEqual(got["M-03"], 2)
+        with mock.patch("sampo.ideas.run_child", child):
+            self.assertEqual(moons.rate(self.p)["rated"], 0)
+
+    def test_a_tame_big_one_neither_meets_the_floor_nor_overflows_the_xhigh_mix(self):  # T-2858 review
+        from sampo import moons
+        self.catalogue(*[moon(f"M-{i:02d}", f"Queue mechanism variant {i} for lanes", "xhigh") for i in range(1, 21)],
+                       moon("M-21", "Price each stake by auction", "extreme"))
+        store = {f"M-{i:02d}": {"tier": "xhigh", "wild": 2} for i in range(1, 21)}
+        store["M-21"] = {"tier": "extreme", "wild": 2}
+        with open(os.path.join(self.p.dir, moons.STORE), "w") as f:
+            json.dump(store, f)
+        self.assertFalse([x for x in self.problems() if "over the campaign's mix" in x],
+                         "a wild demotion is reported as tame, not as an xhigh overflow")
+        tame = {r["id"]: r for r in moons.rows(self.p)}["M-21"]
+        self.assertFalse(moons._big(tame), "the floor counts the counted tier")
+
+    def test_the_generation_line_names_the_wild_lenses_and_the_bar(self):
+        from sampo import moons
+        text = "\n".join(moons.seed_lines(self.p, 3)).lower()
+        for want in ("living software", "physics and time", "civilization", "2040", "impossible", "mind and senses",
+                     "is that even possible", "pricing", "tame engine", "anchors"):
+            self.assertIn(want, text)
 
 
 class Climb(_Tower):
@@ -221,6 +300,8 @@ class Page(_Tower):
         r = {x["id"]: x for x in got["rows"]}
         self.assertEqual((r["M-01"]["author"], r["M-01"]["reviewer"], r["M-01"]["unblocks"]), ("massive", "extreme", ["M-02"]))
         self.assertEqual(r["M-01"]["asked"], "no")
+        self.assertEqual((r["M-01"]["tier"], r["M-01"]["wild"]), ("extreme", None))  # T-2858: the sky's inputs
+        self.assertIn("what", r["M-01"])
         self.assertEqual(got["total"], 2)
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         js = read_text(os.path.join(root, "site", "genesis", "genesis.js"))
