@@ -589,12 +589,14 @@ class Funnel(_Funnel):
                 live[0] -= 1
             return judge(*a, **kw)
         rs = self.ms.rows(self.p)
-        r = {"stages": {"kill": {}}, "calls": 0, "models": {}, "stopped": "", "error": "", "paid": 0, "fails": 0}
-        with mock.patch.object(self.ms, "_ask", side_effect=slow), \
-                mock.patch.object(self.ms, "_local", return_value={"name": "jarvis", "slots": 2}):
-            self.ms._kill(self.p, r, rs, self.ms.fate(self.p), rs, None)
-        self.assertEqual((peak[0], r["calls"]), (2, 3))
-        self.assertEqual({i: self.fates()[i][0] for i in ids}, {i: "kill" for i in ids})
+        for stage, run in (("kill", self.ms._kill), ("tier", self.ms._tier)):  # T-2959: the tier stage too
+            r = {"stages": {stage: {}}, "calls": 0, "models": {}, "stopped": "", "error": "", "paid": 0, "fails": 0}
+            peak[0] = 0
+            with mock.patch.object(self.ms, "_ask", side_effect=slow), \
+                    mock.patch.object(self.ms, "_local", return_value={"name": "jarvis", "slots": 2}):
+                run(self.p, r, rs, self.ms.fate(self.p), rs, None)
+            self.assertEqual((stage, peak[0], r["calls"]), (stage, 2, 3))
+            self.assertEqual({i: self.fates()[i][0] for i in ids}, {i: stage for i in ids})
 
     def test_each_candidate_gets_its_fate_and_reason_in_cost_order(self):
         ids = self.seed(FLAKY, DEPLOY, REVIEW, SECRET, NUDGE, FLAKY_SAME, FLAKY_ALSO, good(kill=""))

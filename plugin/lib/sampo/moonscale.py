@@ -810,28 +810,31 @@ def _dedupe(p, r, rs, f, todo, cap):
     _log(p, evs, r, "embed")
 
 
-def _kill(p, r, rs, f, todo, cap):
-    """Each batch alone (no batch reads another's verdict), so T-2953 runs as many at once as the local profile has
-    slots; this thread alone writes. ponytail: a round waits for its slowest batch; a queue if rounds idle a slot."""
-    w = (_local(bool(c.read_meta(p).get("sensitive"))) or {}).get("slots", 1)
+def _judged(p, r, cap, system, todo, keys, parse):
+    """(batch, answer) in batch order, as many judged at once as the local profile has slots (T-2953, T-2959): a
+    judge call never reads another batch's verdict, so only the caller, applying them in order, sees the order.
+    ponytail: a round waits for its slowest batch; a queue if rounds idle a slot."""
+    w = max(1, min((_local(bool(c.read_meta(p).get("sensitive"))) or {}).get("slots", 1), MAX_WORKERS))
     bs = list(_batches(todo))
-    with concurrent.futures.ThreadPoolExecutor(max(1, min(w, MAX_WORKERS))) as pool:
-        for k in range(0, len(bs), max(1, w)):
-            part = bs[k:k + max(1, w)]
-            for batch, got in zip(part, pool.map(
-                    lambda b: _judge(p, r, cap, KILL_SYSTEM, b, ("what", "kill"), _yesno), part)):
-                if not got:
-                    return
-                said, model = got
-                _log(p, [_event(x["id"], "kill", "kept", "", model) if said[n][0] else
-                         _event(x["id"], "kill", "rejected", f"kill: {said[n][1] or 'no reason given'}", model)
-                         for n, x in enumerate(batch, 1) if n in said], r, "kill")
+    with concurrent.futures.ThreadPoolExecutor(w) as pool:
+        for k in range(0, len(bs), w):
+            part = bs[k:k + w]
+            yield from zip(part, pool.map(lambda b: _judge(p, r, cap, system, b, keys, parse), part))
+
+
+def _kill(p, r, rs, f, todo, cap):
+    for batch, got in _judged(p, r, cap, KILL_SYSTEM, todo, ("what", "kill"), _yesno):
+        if not got:
+            return
+        said, model = got
+        _log(p, [_event(x["id"], "kill", "kept", "", model) if said[n][0] else
+                 _event(x["id"], "kill", "rejected", f"kill: {said[n][1] or 'no reason given'}", model)
+                 for n, x in enumerate(batch, 1) if n in said], r, "kill")
 
 
 def _tier(p, r, rs, f, todo, cap):
     kept = _at(rs, f, ("tier", "novelty"), ("kept",))
-    for batch in _batches(todo):
-        got = _judge(p, r, cap, moons.RATE_SYSTEM, batch, ("today", "with_this", "what", "prior_art"), _rated)
+    for batch, got in _judged(p, r, cap, moons.RATE_SYSTEM, todo, ("today", "with_this", "what", "prior_art"), _rated):
         if not got:
             return
         (said, model), evs, low = got, [], []
