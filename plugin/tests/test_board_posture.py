@@ -53,6 +53,13 @@ class BoardPosture(ForemanTestCase):
         self.assertTrue(c.lint_verify("grep done .foreman/tasks/T-0001.md", self.repo))
         self.assertFalse(c.lint_verify("python3 -m pytest tests/state/tasks", self.repo), "a repo's own state/tasks folder")
 
+    def test_lint_flags_a_repo_relative_state_path_a_lane_never_has(self):  # T-2988: T-2974, T-2975 refused on it
+        rel = "test -s state/projects/x/research/models/lake-manifest.json"
+        self.assertTrue(any("lane" in w for w in c.lint_verify(rel, self.repo)), c.lint_verify(rel, self.repo))
+        absolute = "test -s /home/u/.claude/foreman/state/projects/x/research/models/lake-manifest.json"
+        self.assertFalse(any("lane" in w for w in c.lint_verify(absolute, self.repo)))
+        self.assertFalse(any("lane" in w for w in c.lint_verify("python3 -m pytest tests/state", self.repo)))
+
     def test_compact_output_shadow_records_savings_and_never_rewrites(self):
         home = os.path.join(self.tmp, "userhome")
         os.makedirs(os.path.join(home, ".claude"))

@@ -5398,6 +5398,9 @@ def lint_verify(cmd, root):
                         f"--ac N CMD RESULT), or point it at a sandbox")
     if _STATE_READ.search(cmd or ""):  # T-0963: it passes when the records say so, not when the code works
         problems.append("it reads Sampo's state (.foreman, state/tasks or briefs), not the code: check the behaviour")
+    if re.search(r"(?<![\w/.~-])state/projects/", cmd or ""):  # T-2988: state is git-ignored, so no lane holds it
+        problems.append("it names state/projects/ relative to the repo: a builder lane has no state, so fm lane merge "
+                        "reads it red; give the absolute path")
     return problems
 
 
