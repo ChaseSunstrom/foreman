@@ -12,6 +12,7 @@ import threading
 import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 from helpers import PLUGIN, headless_chrome
 
@@ -92,7 +93,7 @@ class Files(unittest.TestCase):
 
     def test_scrolling_lists_take_the_keyboard(self):  # T-2999 review: keyboard users could not scroll long lists
         html = text("index.html")
-        for i in ("jobs-list", "queue-list", "closes-list"):
+        for i in ("jobs-list", "queue-list", "closes-list", "sessions-list", "projects-list"):
             self.assertRegex(html, rf'id="{i}" tabindex="0" aria-label="[^"]+"')
 
     def test_reduced_motion_is_honoured_by_the_style_and_the_script(self):
@@ -140,6 +141,27 @@ class Stand(BaseHTTPRequestHandler):
                 return self.send(404, b"", "text/plain")
             with open(full, "rb") as f:
                 return self.send(200, f.read(), TYPES.get(os.path.splitext(full)[1], "application/octet-stream"))
+        srv.log.append(self.path)
+        slug = (parse_qs(urlparse(self.path).query).get("project") or [""])[0]
+        if path == "/api/machine":
+            return self.send(200, json.dumps(srv.machine).encode(), TYPES[".json"])
+        if slug and slug != srv.snaps[0]["project"]["slug"] and (path in ("/api/state", "/api/stream")):
+            if slug != srv.other["project"]["slug"]:
+                return self.send(404, b"", "text/plain")
+            if path == "/api/state":
+                return self.send(200, json.dumps(srv.other).encode(), TYPES[".json"])
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            try:
+                for _ in range(30):
+                    self.wfile.write(b"event: state\ndata: " + json.dumps(srv.other).encode() + b"\n\n")
+                    self.wfile.flush()
+                    if srv.stop.wait(0.7):
+                        return
+            except OSError:
+                pass
+            return
         if path == "/api/state":
             return self.send(200, json.dumps(srv.snaps[0]).encode(), TYPES[".json"])
         if path == "/api/stream":
@@ -170,6 +192,12 @@ def serve():
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Stand)
     srv.daemon_threads = True
     srv.snaps, srv.streams, srv.lock, srv.stop = snaps(), 0, threading.Lock(), threading.Event()
+    srv.log = []
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "live", "machine.json"), encoding="utf-8") as f:
+        srv.machine = json.load(f)
+    srv.other = json.loads(json.dumps(srv.snaps[-1]))  # another project: its own slug and task at the anvil
+    srv.other["project"] = {"slug": "other-1b2c3d", "drive": False, "autonomy": "standard"}
+    srv.other["focus"] = {"id": "T-9001", "title": "The other project's task", "step": "1/2", "stage": "building"}
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
@@ -190,6 +218,8 @@ PROBE = """(() => { const $ = id => document.getElementById(id), n = (id, sel) =
     bench: n("bench", "tbody tr"), ticker: n("ticker", "li"),
     nodes: +(c && c.dataset.nodes || 0), sparks: +(c && c.dataset.sparks || 0), flown: +(c && c.dataset.flown || 0),
     lit: +(c && c.dataset.lit || 0), scene: [Math.round(r.width), Math.round(r.height)], canvas: c ? [c.width, c.height] : [0, 0],
+    hash: location.hash, sessions: n("sessions-list", "li"), projects: n("projects-list", "li"),
+    picks: n("rail", "button[data-project]"), rail: $("rail") ? $("rail").textContent : "",
     wide: document.documentElement.scrollWidth}; })()""" % json.dumps(list(PANELS))
 
 
@@ -203,8 +233,9 @@ class Page(unittest.TestCase):
         sys.path.insert(0, os.path.join(PLUGIN, "lib"))
         self.last = snaps()[-1]
 
-    def watch(self, size, reduced, done, within=45):
-        """Load the page at size, poll PROBE until done(got) or `within` s; (got, errors).
+    def watch(self, size, reduced, done, within=45, step=None):
+        """Load the page at size, poll PROBE until done(got) or `within` s; (got, errors). step(b, got), if given, runs
+        on every poll (it clicks, reloads); got["reqs"] lists the requests the server saw.
         A green run returns in about 8 s; the long ceiling is for a loaded machine (the gates run 16 at a time)."""
         from sampo import shot
         srv, errs = serve(), []
@@ -222,6 +253,9 @@ class Page(unittest.TestCase):
             deadline = time.monotonic() + within
             while True:
                 got = b.call("Runtime.evaluate", b.sid, expression=PROBE, returnByValue=True)["result"].get("value") or {}
+                got["reqs"] = list(srv.log)
+                if step and not done(got):
+                    step(b, got)
                 if done(got) or time.monotonic() > deadline:
                     return got, errs
                 b.wait("live-test.never", 0.3)  # events (console, log) are read meanwhile
@@ -267,6 +301,38 @@ class Page(unittest.TestCase):
             links = got["links"]
             self.assertEqual(links[-1], "live", links)
             self.assertIn("reconnecting", links, "a dropped stream is shown")
+
+    def test_the_rail_and_strip_show_the_machine_and_a_pick_switches_the_scene(self):
+        pick = "document.querySelector('#projects-list button[data-project=\"other-1b2c3d\"]').click()"
+        for size in ((1920, 1080), (390, 844)):
+            ctx = {"stage": 0}
+
+            def step(b, got):
+                ev = lambda js: b.call("Runtime.evaluate", b.sid, expression=js, returnByValue=True)
+                if ctx["stage"] == 0 and got.get("picks", 0) >= 3:  # the machine arrived: pick the other project
+                    ev(pick)
+                    ctx["stage"] = 1
+                elif ctx["stage"] == 1 and "T-9001" in got.get("focus", "") and got.get("hash") == "#project=other-1b2c3d":
+                    ctx["seen"] = dict(got)
+                    b.call("Page.reload", b.sid)  # the pick survives a reload through the hash
+                    ctx["stage"] = 2
+                elif ctx["stage"] == 2 and "T-9001" in got.get("focus", "") and got.get("picks", 0) >= 3:
+                    ctx["stage"] = 3
+                    ev("history.back()")  # back goes to the default project: the hash is the one source of truth
+            got, errs = self.watch(size, False, lambda g: ctx["stage"] == 3 and "T-2995" in g.get("focus", "")
+                                   and g.get("hash", "x") == "", step=step, within=60)
+            self.assertEqual(errs, [], f"console at {size}")
+            self.assertEqual(ctx["stage"], 3, f"the pick, the reload and back all happened at {size}")
+            seen = ctx["seen"]
+            self.assertEqual((seen["sessions"], seen["projects"]), (3, 4), size)
+            for word in (".config", "vault", "T-9001", "claude-opus-4-6", "41%", "verifying", "7"):
+                self.assertIn(word, seen["rail"], word)
+            self.assertLessEqual(seen["wide"], size[0], f"no sideways scroll at {size}")
+            self.assertLessEqual(got["wide"], size[0], f"no sideways scroll at {size}")
+            reqs = got["reqs"]
+            self.assertTrue([r for r in reqs if r.startswith("/api/state?project=other-1b2c3d")], reqs)
+            self.assertTrue([r for r in reqs if r.startswith("/api/stream?project=other-1b2c3d")], reqs)
+            self.assertTrue([r for r in reqs if r.startswith("/api/machine")], reqs)
 
     def test_reduced_motion_lights_changes_and_sends_no_sparks(self):
         got, errs = self.watch((1920, 1080), True, lambda g: self.back(g) and g.get("lit", 0) > 0)

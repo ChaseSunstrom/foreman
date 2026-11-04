@@ -1412,6 +1412,98 @@ function take(s) {
   sceneTake(s, first);
 }
 
+// ---------- the machine: sessions, projects, and the pick (kept in #project=SLUG) ----------
+const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+function fromHash() {
+  const m = /^#project=([^&]*)/.exec(location.hash);
+  let v = "";
+  try { v = m ? decodeURIComponent(m[1]) : ""; } catch (err) { v = ""; }
+  return SLUG.test(v) ? v : "";
+}
+let currentProject = fromHash(), loadId = 0, machine = null, machineGone = false, machineTimer = 0;
+const qs = () => currentProject ? "?project=" + encodeURIComponent(currentProject) : "";
+const rail = $("rail"), topRow = rail ? rail.parentElement : null;
+const picked = () => currentProject || str(obj(snap && snap.project).slug);
+
+function seenAgo(v) {
+  const t = typeof v === "number" ? (v < 1e12 ? v * 1000 : v) : Date.parse(str(v));
+  return Number.isFinite(t) ? span(Date.now() - t) + " ago" : "—";
+}
+function markCurrent() {
+  if (!rail) return;
+  for (const b of rail.querySelectorAll("button[data-project]")) {
+    if (b.dataset.project === picked()) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+  }
+}
+function pickRow(el, slug, label, live, kids) {
+  el.className = "";
+  let b = el.firstElementChild;  // kept between polls, so a focused row stays focused
+  if (!b || b.tagName !== "BUTTON" || b.dataset.project !== slug) {
+    b = h("button", "pick"); b.type = "button"; b.dataset.project = slug;
+    el.replaceChildren(b);
+  }
+  b.className = "pick" + (live ? " live" : "");
+  b.setAttribute("aria-label", label + ". Show this project.");
+  b.title = label;
+  b.replaceChildren(...kids);
+}
+function renderMachine(m) {
+  if (!m || typeof m !== "object" || Array.isArray(m)) return;
+  const first = machine === null;
+  machine = m;
+  const projects = arr(m.projects).map(obj).filter(p => SLUG.test(str(p.slug))).slice(0, 80);
+  const names = new Map(projects.map(p => [str(p.slug), str(p.name) || str(p.slug)]));
+  const sessions = arr(m.sessions).map(obj).filter(s => str(s.id)).slice(0, 40);
+  sync($("sessions-list"), sessions, s => str(s.id), (el, s) => {
+    const slug = str(s.project), name = names.get(slug) || slug || "unknown", task = str(s.task), model = str(s.model);
+    const pct = num(s.context_pct), ago = seenAgo(s.seen), quiet = projects.some(p => str(p.slug) === slug && p.sensitive === true);
+    const bar = h("span", "tankbar" + (pct != null && pct >= 80 ? " hot" : ""));
+    bar.style.setProperty("--f", clamp(pct || 0, 0, 100) + "%");
+    const line = [model, pct != null ? Math.round(pct) + "%" : "", ago].filter(Boolean).join(" · ");
+    const kids = [h("span", "ember"), h("span", "rn", name), h("span", "rt", task), h("p", "rm", line), bar];
+    const label = "Live session in " + name + (task ? ", task " + task : "") + (model ? ", " + model : "") +
+      (pct != null ? ", context " + Math.round(pct) + "%" : "") + ", seen " + ago;
+    if (quiet || !SLUG.test(slug)) { el.className = "plate private"; el.replaceChildren(...kids); return; }
+    pickRow(el, slug, label, true, kids);
+  }, first);
+  sync($("projects-list"), projects, p => str(p.slug), (el, p) => {
+    const slug = str(p.slug), name = str(p.name) || slug;
+    if (p.sensitive === true) {
+      el.className = "plate private";
+      el.replaceChildren(h("span", "ember"), h("span", "rn", name), h("span", "rt", "private"));
+      return;
+    }
+    const q = num(p.queue), task = str(p.task), stage = str(p.stage);
+    const line = [task ? task + (stage ? " · " + stage : "") : "idle", p.drive === undefined ? "" : "drive " + (p.drive ? "on" : "off")]
+      .filter(Boolean).join(" · ");
+    const kids = [h("span", "ember"), h("span", "rn", name), h("span", "rt", q != null ? q + " queued" : ""), h("p", "rm", line)];
+    pickRow(el, slug, name + (task ? ", task " + task + (stage ? " " + stage : "") : ", no task") + (q != null ? ", " + q + " queued" : ""),
+      false, kids);
+  }, first);
+  $("sessions-empty").hidden = sessions.length > 0;
+  $("projects-empty").hidden = projects.length > 0;
+  setText($("sessions-n"), sessions.length ? String(sessions.length) : "");
+  setText($("projects-n"), projects.length ? String(projects.length) : "");
+  markCurrent();
+}
+function pollMachine() {
+  clearTimeout(machineTimer);
+  fetch("/api/machine", {cache: "no-store"})
+    .then(r => { if (r.status === 404) { machineGone = true; setText($("projects-empty"), "This server has no machine view"); } return r.ok ? r.json() : null; })
+    .then(renderMachine).catch(() => {})
+    .then(() => { if (!machineGone) machineTimer = setTimeout(pollMachine, 5000); });  // the server caches it for a few seconds
+}
+if (rail) {
+  rail.addEventListener("click", ev => {
+    const b = ev.target.closest ? ev.target.closest("button[data-project]") : null;
+    if (b && b.dataset.project !== picked()) location.hash = "project=" + encodeURIComponent(b.dataset.project);
+  });
+  window.addEventListener("hashchange", () => {  // the one way in: a click, the back button and a typed link all arrive here
+    const p = fromHash();
+    if (p !== currentProject) { currentProject = p; load(); }
+  });
+}
+
 // ---------- the link ----------
 const LINK = {connecting: "Connecting", live: "Live", reconnecting: "Reconnecting"};
 function setLink(v) {
@@ -1424,7 +1516,7 @@ function parse(d) { try { return JSON.parse(d); } catch (err) { return null; } }
 function connect() {
   clearTimeout(retry);
   if (!window.EventSource) return;
-  es = new EventSource("/api/stream");
+  es = new EventSource("/api/stream" + qs());
   es.addEventListener("open", () => { backoff = 1; snapAt = -Infinity; setLink("live"); });  // a restarted server's clock may be behind
   const on = ev => { const s = parse(ev.data); if (s) { setLink("live"); take(s); } };
   es.addEventListener("state", on);
@@ -1479,6 +1571,20 @@ cnt.nodes = nodes.size;
 publish();
 applyMode();
 setInterval(age, 1000);
-fetch("/api/state", {cache: "no-store"}).then(r => r.ok ? r.json() : null).then(take).catch(() => {});
-connect();
+// (re)load the scene for currentProject: fetch its state, reopen its stream; a late answer for a project we left is dropped
+function load() {
+  const id = ++loadId;
+  if (es) { es.close(); es = null; }
+  clearTimeout(retry);
+  backoff = 1; snapAt = -Infinity; firstRender = true;
+  if (topRow) topRow.setAttribute("data-swap", "");
+  markCurrent();
+  fetch("/api/state" + qs(), {cache: "no-store"}).then(r => r.ok ? r.json() : null).then(s => {
+    if (id !== loadId) return;
+    if (s) take(s); else setText($("project"), "no project " + (currentProject || "") + " here");
+  }).catch(() => {}).then(() => { if (id === loadId && topRow) topRow.removeAttribute("data-swap"); });
+  connect();
+}
+load();
+pollMachine();
 })();

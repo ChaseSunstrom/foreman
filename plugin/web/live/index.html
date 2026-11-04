@@ -19,7 +19,8 @@
   <button class="motion" id="motion" type="button" aria-pressed="false" title="Hold the scene still: no sparks, changes shown by highlight">Still</button>
 </header>
 <main>
-  <section class="stage" aria-label="The forge: the session at the anvil, builders at their benches, jobs as furnaces, models as lanterns">
+  <div class="top">
+  <section class="stage" id="stage" aria-label="The forge: the session at the anvil, builders at their benches, jobs as furnaces, models as lanterns">
     <canvas id="scene" role="img" aria-label="The forge scene; the panels below carry the same figures as text">The forge scene needs canvas support; every figure is in the panels below.</canvas>
     <p class="drop" aria-hidden="true">The stream dropped · reconnecting</p>
     <article class="focus" id="focus" aria-live="polite">
@@ -32,6 +33,20 @@
       <li class="kd-write">write</li><li class="kd-judge">judge</li><li class="kd-embed">embed</li><li class="kd-train">train</li><li class="kd-plan">plan</li><li class="kd-act">act</li><li class="kd-review">review</li>
     </ul>
   </section>
+
+  <aside class="rail" id="rail" aria-label="The machine: live sessions and every project">
+    <section class="rail-s" aria-labelledby="sessions-h">
+      <h2 class="rail-h" id="sessions-h">Sessions <span class="rail-n" id="sessions-n"></span></h2>
+      <ul class="rail-list" id="sessions-list" tabindex="0" aria-label="Live sessions"></ul>
+      <p class="rail-empty" id="sessions-empty">No live sessions</p>
+    </section>
+    <section class="rail-s" aria-labelledby="projects-h">
+      <h2 class="rail-h" id="projects-h">Projects <span class="rail-n" id="projects-n"></span></h2>
+      <ul class="rail-list" id="projects-list" tabindex="0" aria-label="Every project on this machine"></ul>
+      <p class="rail-empty" id="projects-empty">Waiting for the machine</p>
+    </section>
+  </aside>
+  </div>
 
   <section class="ticker" id="ticker" aria-label="Events">
     <p class="tk-h">Ledger</p>
