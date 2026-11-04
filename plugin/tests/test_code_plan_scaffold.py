@@ -37,6 +37,12 @@ class Ladder(CodeCase):
             self.assertIn("for example", q, key)
         self.assertTrue(all(t in smith.PLAN_FIELDS[0][1] for t in smith.TYPES))
 
+    def test_a_sentence_answer_still_gives_the_type_and_tier(self):  # audit: the first word was "THE"
+        from sampo import smith
+        self.assertEqual(smith._word("The task is a FIX."), "FIX")
+        self.assertEqual(smith._word("tier: M, several files"), "M")
+        self.assertEqual(smith._word("feature"), "FEATURE")
+
     def test_an_s_answer_asks_no_m_fields(self):
         f = self.run_ladder(("FIX", "S", "Make calc.add add", "calc.add adds :: python3 test_calc.py", "1. edit"))
         r = self.code("fix add", "--model", "fake", "--dry-plan")
