@@ -6808,7 +6808,9 @@ def _build_parser(only=None):
     s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
     s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
                    "the playbook literally")
-    s.add_argument("--model", default="haiku", help="eval --real: the model")
+    s.add_argument("--model", help="eval --real: the model (default haiku; an own or local profile answers through "
+                   "models.complete); show NAME: the kept small-model variant for that profile; small variant NAME: "
+                   "the profile to write for (T-2917)")
     s.add_argument("--ablate", action="store_true", help="eval: each ## section's share of the lift, dropped one at "
                    "a time; zero share is a cut candidate (T-1619)")
     s = add("which", lazy("sampo.which", "cmd"), tier=("Finding your way", 205), help="a need in plain words → every shelf: past fixes, "

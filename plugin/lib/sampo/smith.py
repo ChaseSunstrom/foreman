@@ -820,6 +820,15 @@ class Run:
         return (f"timed out after {RUN_TIMEOUT} s" if code is None else f"exit {code}") + (f"\n{out}" if out else "") \
             + (f"\n{note}" if note else "")
 
+    def small_playbook(self, profile):
+        """T-2917: for an own or loopback profile, the kept small-model variant of the playbook routed for the task's
+        type, cut to the profile's context; "" for a cloud profile, no plan yet or no kept variant."""
+        try:
+            from sampo import smallcards
+            return smallcards.phase_note(profile, (self.plan or {}).get("type"))
+        except (ImportError, OSError, ValueError):  # a note, never a reason for the run to stop
+            return ""
+
     # -- the stations
     def phase(self, name, profile, prompt):
         """One step's conversation: actions until done. A journaled one carries on where it stopped."""
@@ -827,7 +836,7 @@ class Run:
             return
         if name not in self.msgs:
             self.add(name, {"role": "system", "content": ACT_PROMPT + (f"\n{variant_note()}" if variant_note() else "")
-                            + ("" if profile.get("tools") else TEXT_ACTIONS)})
+                            + ("" if profile.get("tools") else TEXT_ACTIONS) + self.small_playbook(profile)})
             self.add(name, {"role": "user", "content": prompt})
         msgs = self.msgs[name]
         lost = self.fence("not run (interrupted): the harness stopped before this action's result was recorded; it may "

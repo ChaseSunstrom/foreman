@@ -1237,6 +1237,11 @@ def cmd_show(args):
         print(f"fm playbooks: .foreman/playbooks/ isn't read; overlays live in {OVERLAYS}/<stage>/<name>.md",
               file=sys.stderr)
     text = load(hits[0], ROOT, p)
+    if getattr(args, "model", None):  # T-2917: the kept small-model variant for that profile, else the original
+        from sampo import smallcards
+        kept = smallcards.variant_for(hits[0], args.model)
+        if kept:
+            return cli.out(args, {"playbook": hits[0], "text": kept, "variant": args.model}, kept) or 0
     first = look_first(text, c.active_brief_fast(p) if p else None)  # T-1523
     if first:
         text = ("Look here first: this task's failed runs share words with these steps\n"
@@ -1265,8 +1270,16 @@ def cmd(args, out):
         + f"{'✗' if found else '✓'} playbooks: {n} checked, {len(found)} problem(s)\n"
         + f"  unread in {window}: {len(r['unread'])} of {n}"
         + (": " + ", ".join(x[len('references/'):-3] for x in r["unread"][:12])
-           + (f" and {len(r['unread']) - 12} more" if len(r["unread"]) > 12 else "") if r["unread"] else ""))
+           + (f" and {len(r['unread']) - 12} more" if len(r["unread"]) > 12 else "") if r["unread"] else "")
+        + variant_line())
     return 1 if found else 0
+
+
+def variant_line():
+    """T-2917: the small-model variants kept, by profile: the corpus's coverage ("" when there are none)."""
+    from sampo import smallcards
+    v = smallcards.coverage()["variants"]
+    return ("\n  small-model variants kept: " + ", ".join(f"{k} {n}" for k, n in sorted(v.items()))) if v else ""
 
 
 # T-1618: held-out briefs per playbook, scored with and without it loaded; the lift is the pass rate with minus without
@@ -1348,14 +1361,36 @@ def literal(task, book):
 literal.name = "literal"
 
 
+def local_profile(name):
+    """T-2917: the own or loopback generative profile called `name` (an own one only for a non-sensitive project), else
+    None: a cloud model name keeps the claude -p path."""
+    from sampo import models, moonscale
+    try:
+        want = models.resolve(name).get("name")
+        p = c.find_project(os.getcwd())
+        return next((x for x in moonscale._generative(bool(p and c.read_meta(p).get("sensitive")))
+                     if x.get("name") == want), None)
+    except (models.ModelError, OSError, ValueError):
+        return None
+
+
 def real_model(model):
-    """claude -p, tool-less, each call checked against and recorded in fm budget (fmideas.run_child)."""
-    from sampo import ideas
+    """claude -p, tool-less, each call checked against and recorded in fm budget (fmideas.run_child); an own or
+    loopback profile (T-2917) answers through models.complete instead, reasoning off so it can't eat the answer."""
+    from sampo import ideas, models
+    prof = local_profile(model)
 
     def ask(task, book):
         system = SYSTEM + (f"\n\nFollow this playbook:\n\n{book}" if book else "")
-        return ideas.run_child("playbook-eval", system, task, model, 300, detail="fm playbooks eval")
-    ask.name = model
+        if prof is None:
+            return ideas.run_child("playbook-eval", system, task, model, 300, detail="fm playbooks eval")
+        try:
+            r = models.complete(prof, [{"role": "system", "content": system}, {"role": "user", "content": task}],
+                                max_tokens=min(prof.get("max_out", 2048), 2048), timeout=300, think=False)
+        except (models.ModelError, *models._TRANSPORT) as e:
+            raise ValueError(f"{prof['name']}: {e}")
+        return r.get("text") or ""
+    ask.name = prof["name"] if prof else model
     return ask
 
 
@@ -1424,9 +1459,10 @@ def cmd_eval(args):
                                '({"briefs": [{"task": …, "checks": [{"has": …}]}]}) or pass --briefs FILE')
     try:
         briefs = load_briefs(path)
-        if args.real:
+        mname = args.model or "haiku"
+        if args.real and not local_profile(mname):  # a local profile costs no budget
             preflight_real(briefs, 2 + (len(sections(book)) if args.ablate else 0))
-        model = real_model(args.model) if args.real else literal
+        model = real_model(mname) if args.real else literal
         r = evaluate(book, briefs, model)
         cuts = ablate(book, briefs, model, r) if args.ablate else None
     except ValueError as e:

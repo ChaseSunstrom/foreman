@@ -215,6 +215,33 @@ class EndToEnd(CodeCase):
         self.assertIn("calc.py", self.status())
 
 
+class SmallPlaybook(CodeCase):
+    """T-2917: a loopback profile's phase prompt carries the kept small-model variant of the routed playbook."""
+    def run_with(self, row):
+        cards = os.path.join(self.home, "state", "cards")
+        os.makedirs(cards)
+        with open(os.path.join(cards, "cards.jsonl"), "w") as f:
+            f.write(json.dumps(row) + "\n" if row else "")
+        f = self.serve("openai", plan(), call("read", path="calc.py"),
+                       call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="adds now"))
+        self.code("make calc.add add instead of subtract", "--model", "fake")
+        return f
+
+    def test_the_kept_variant_for_the_routed_playbook_reaches_the_phase_prompt_cut_to_context(self):
+        row = {"id": "K-000001", "playbook": "references/verify/tdd-workflow.md", "profile": "fake", "lift": 0.5,
+               "orig_lift": 0.25, "title": "Test first always", "when": "You fix a bug with a test.",
+               "steps": [{"do": "Write the failing test first.", "cmd": ""}], "example": "x", "check": "y", "traps": ["z" * 5000]}
+        f = self.run_with(row)
+        self.assertNotIn("A short playbook", f.said(0), "the planner's prompt is unchanged")
+        self.assertIn("A short playbook for this kind of task", f.said(1))
+        self.assertIn("Write the failing test first", f.said(1))
+        self.assertNotIn("z" * 3400, f.said(1), "cut to a tenth of the profile's context")
+
+    def test_no_kept_variant_leaves_the_prompt_unchanged(self):
+        f = self.run_with(None)
+        self.assertNotIn("A short playbook", "".join(f.said(i) for i in range(len(f.seen))))
+
+
 class Repairs(CodeCase):
     def test_malformed_plan_is_repaired_and_dry_plan_changes_nothing(self):
         bad = dict(PLAN, type="BUGFIX", criteria=[{"text": "adds"}])
