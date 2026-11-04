@@ -3154,6 +3154,18 @@ def rival_gap(b):
             f"'rejected: why')"] if n else []
 
 
+def _users_words(b):
+    """T-2951: whether a brief's Raw is the user's own words: not a provenance line Sampo wrote into it, and not a
+    brief a Genesis mission filed (as _need_meaning tells them apart)."""
+    if _NOTE_RAW.search(b.section("Raw request")):
+        return False
+    if not getattr(b, "path", None):
+        return True
+    import types
+    from sampo import foresight
+    return b.id not in foresight._tower_ids(types.SimpleNamespace(dir=os.path.dirname(os.path.dirname(b.path))))
+
+
 def plan_gaps(b, autonomy="standard"):
     """What a brief still needs before work may start (fm focus refuses until this is empty)."""
     gaps = []
@@ -3165,11 +3177,13 @@ def plan_gaps(b, autonomy="standard"):
                                          ("Approach", "Approach (options → choice → why)")) if not b.section(sec).strip()]
     if not _started(b) and not own:  # a task already started (even if paused back to planned) isn't re-gated
         gaps += _content_gaps(b)
-        if b.tier in ("M", "L") and b.meta.get("source") == "user" and not b.meta.get("batch"):
+        if b.tier in ("M", "L") and b.meta.get("source") == "user" and not b.meta.get("batch") and _users_words(b):
             # T-2914: meaning is planned, not labelled after (a batch host's members were each planned already)
             from sampo import recall
-            gaps += [f"a criterion for \"{fit(plain(cl), 70)}\" (sampo task ac {b.id} add \"<what it means> :: <a check "
-                     f"that can fail>\", or name it under Non-goals)" for cl in recall.unchecked_clauses(b)]
+            cls = [f'"{fit(plain(cl), 70)}"' for cl in recall.unchecked_clauses(b)]
+            if cls:  # T-2951: one line, three named, however long the request
+                gaps.append(f"a criterion for {joinmore(cls, 3)} (sampo task ac {b.id} add \"<what it means> :: <a check "
+                            f"that can fail>\", or name it under Non-goals)")
     acs = b.acceptance()
     if not acs:
         gaps.append("acceptance criterion")
@@ -4966,7 +4980,9 @@ def _need_meaning(x):
     left = recall.meaning_unproven(x["b"])
     b, raw = x["b"], x["b"].section("Raw request")
     from sampo import foresight  # T-2914: whose words are the clauses: the user's, or Sampo's own notes
-    tower = x["shared"].setdefault("tower", foresight._tower_ids(x["p"]))
+    if "tower" not in x["shared"]:  # T-2951: setdefault read the tower on every call
+        x["shared"]["tower"] = foresight._tower_ids(x["p"])
+    tower = x["shared"]["tower"]
     mine = b.meta.get("source") == "user" and b.id not in tower and not _NOTE_RAW.search(raw)
     return {"whose": "user" if mine else "notes", "why": joinmore([f"meaning unproven: {fit(plain(cl), 70)} ({why})" for cl, why in left], 3, "; "),
             "fmt": {"cmd": f'sampo task ac {x["b"].id} add "<what {fit(plain(left[0][0]), 40)} means> :: <a check that can fail>"'}} \

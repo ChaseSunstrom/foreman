@@ -138,6 +138,24 @@ class ClauseGaps(Base):  # T-2914: a user's M or L plan names each clause of the
             c.save_brief(self.p, b)
         self.assertEqual(self.gaps(t), "")
 
+    def test_a_brief_whose_raw_sampo_wrote_is_not_held_to_the_users_words(self):  # T-2951
+        t = self.mk()
+        with c.lock(self.p.dir):
+            b = c.find_brief(self.p, t)
+            b.set_section("Raw request", "> " + self.RAW.replace("\n", "\n> ") + "\n> (noticed by an agent while on T-0001)\n")
+            c.save_brief(self.p, b)
+        self.assertEqual(self.gaps(t), "")
+
+    def test_many_unbound_clauses_fold_into_one_gap(self):  # T-2951
+        raw = ("Email the weekly digest to every admin on Mondays.\nArchive the stale invoices older than a year.\n"
+               "Rotate the backup encryption keys monthly.\nCompress the nightly log bundles with zstd.\n"
+               "Notify the oncall channel when imports fail.")
+        t = self.fm_json("task", "new", "Ops chores", "--type", "FEATURE", "--tier", "M", "--raw", raw, "--ac",
+                         "nothing yet :: true", "--step", "s")["id"]
+        lines = [g for g in c.plan_gaps(c.find_brief(self.p, t)) if "sampo task ac" in g]
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("2 left out", lines[0])  # joinmore's count of the rest
+
     def test_s_hook_sampo_and_started_briefs_are_not_gated(self):
         self.assertEqual(self.gaps(self.mk("S")), "")
         self.assertEqual(self.gaps(self.mk(harness_plan="hook")), "")
