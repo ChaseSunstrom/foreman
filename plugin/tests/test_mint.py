@@ -96,6 +96,9 @@ class MintFromRepo(ForemanTestCase):
             self.assertEqual(s["kind"], "bug")
             self.assertEqual(key["origin"], "minted")
             self.assertEqual(key["exec_t"], 120)  # mint's CAP_S: grading gives the real suite the cap minting gave it
+            # T-3004: a bug report names what went red; without it a model hunts the wrong suite in a big repo
+            self.assertIn(key["commands"]["exec"], key["request"])
+            self.assertIn(key["commands"]["exec"], s["request"])
             self.assertEqual(len(key["defects"]), 1)
             d = key["defects"][0]
             self.assertEqual(d["files"], ["calc.py"])

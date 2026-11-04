@@ -32,7 +32,8 @@ CMP = {"<": ("<=", ">"), "<=": ("<", ">="), ">": (">=", "<"), ">=": (">", "<="),
 TOK_CMP = re.compile(r"(?<=\s)(===|!==|<=|>=|==|!=|<|>)(?=\s)")  # spaced on both sides: no generics, no arrows
 DIGIT = re.compile(r"(?<![\w.])(\d)(?![\w.])")
 BOUND_LINE = re.compile(r"\b(for|while|until|range|len|length|size|if|elif|unless)\b")
-REQUEST = ("The project's own tests went red after a recent change. Find what broke them and fix it; "
+# T-3004: a bug report names what went red: without the command a model hunts the wrong suite in a big repo
+REQUEST = ("The project's own tests went red after a recent change: `{cmd}` fails. Find what broke them and fix it; "
            "keep the tests as they are.")
 
 
@@ -200,7 +201,7 @@ def _scenario(p, run, i, x, clean, cmd, src, head, env=None):
     shutil.copytree(clean, os.path.join(base, "hidden", "clean"), symlinks=True)
     split = "holdout" if louhi.holdout(sid) else "train"
     key = {"id": sid, "kind": "bug", "lang": LANG[os.path.splitext(x["rel"])[1]], "split": split, "origin": "minted",
-           "author": "self", "request": REQUEST, "names": {}, "readings": [], "missing": [], "example": "",
+           "author": "self", "request": REQUEST.format(cmd=cmd), "names": {}, "readings": [], "missing": [], "example": "",
            "done_ok": True, "claims": [], "rank": [], "commands": {"exec": cmd, "suite": ""},  # no @F@: no file to name
            "exec_t": CAP_S,  # grading gives the real suite the cap minting gave it (louhi's EXEC_T is for toy repos)
            "env": env or {},  # T-2987: the linked deps' PATH, PYTHONPATH and cargo target, as minting ran them
@@ -211,7 +212,7 @@ def _scenario(p, run, i, x, clean, cmd, src, head, env=None):
                         "source": src, "head": head}}
     c.write_atomic(os.path.join(base, "key.json"), json.dumps(key, indent=1))
     return {"id": sid, "kind": "bug", "lang": key["lang"], "split": split, "author": "self", "origin": "minted",
-            "repo": os.path.join(base, "repo"), "request": REQUEST}
+            "repo": os.path.join(base, "repo"), "request": REQUEST.format(cmd=cmd)}
 
 
 def gen(p, repo, n=6, seed=0, test_cmd=None, only=None):
