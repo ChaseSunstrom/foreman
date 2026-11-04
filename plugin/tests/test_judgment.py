@@ -25,7 +25,7 @@ class Base(ForemanTestCase):
 
 class DoorBase(Base):  # T-2342: doors come from the guard's parser and git; a verb only gates which untracked paths count
     def brief(self, *steps, raw="Tidy the repo", tier="S", verify="true", interp=None):
-        a = ["task", "new", "Tidy data", "--type", "FEATURE", "--tier", tier, "--raw", raw, "--ac", f"ok :: {verify}"]
+        a = ["task", "new", "Tidy data", "--type", "FEATURE", "--tier", tier, "--raw", raw, "--ac", f"{raw} :: {verify}"]
         for s in steps:
             a += ["--step", s]
         if tier == "M":

@@ -19,7 +19,7 @@ class Recall(ForemanTestCase):
         self.other = self.new("Export the report as CSV", "FEATURE", "M")
 
     def new(self, title, type_, tier):
-        tid = json.loads(self.fm("task", "new", title, "--type", type_, "--tier", tier, "--ac", "works :: true",
+        tid = json.loads(self.fm("task", "new", title, "--type", type_, "--tier", tier, "--ac", f"{title} works :: true",
                                  "--step", "do it", "--json").stdout)["id"]
         if tier != "S":
             for sec in ("Interpretation", "Approach (options → choice → why)", "Risks and rollback"):

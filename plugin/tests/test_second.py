@@ -98,7 +98,7 @@ class _RivalBase(_Stubbed):  # T-2341 (Mission 5, #2): a cold read of the reques
                    "Reading 1."):
         approach = approach or self.SURE % 90
         args = ["task", "new", "Cache the session token", "--type", "FEATURE", "--tier", tier, "--ac",
-                "tokens are cached :: true", "--step", step, "--raw", raw, "--json"]
+                "cache the session token so logins are fast :: true", "--step", step, "--raw", raw, "--json"]
         if tier != "S":
             args += ["--interpretation", interp, "--approach", approach]
         tid = json.loads(self.fm(*args, env=self.env).stdout)["id"]

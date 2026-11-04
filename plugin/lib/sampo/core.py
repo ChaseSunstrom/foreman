@@ -3138,6 +3138,11 @@ def plan_gaps(b, autonomy="standard"):
                                          ("Approach", "Approach (options → choice → why)")) if not b.section(sec).strip()]
     if not _started(b) and not own:  # a task already started (even if paused back to planned) isn't re-gated
         gaps += _content_gaps(b)
+        if b.tier in ("M", "L") and b.meta.get("source") == "user" and not b.meta.get("batch"):
+            # T-2914: meaning is planned, not labelled after (a batch host's members were each planned already)
+            from sampo import recall
+            gaps += [f"a criterion for \"{fit(plain(cl), 70)}\" (sampo task ac {b.id} add \"<what it means> :: <a check "
+                     f"that can fail>\", or name it under Non-goals)" for cl in recall.unchecked_clauses(b)]
     acs = b.acceptance()
     if not acs:
         gaps.append("acceptance criterion")
@@ -4925,11 +4930,18 @@ def _need_claimed(x):
 PROOF_KINDS["claimed"] = _kind(_need_claimed, "{cmd}")
 
 
+_NOTE_RAW = lazy(r"\(noticed by an agent|Captured by (?:fm|sampo) check", re.I)  # provenance lines Sampo wrote into a Raw request
+
+
 def _need_meaning(x):
     """T-2393: a clause of the request no green, failable criterion checks (fmrecall.bind); a label, never a block."""
     from sampo import recall
     left = recall.meaning_unproven(x["b"])
-    return {"why": joinmore([f"meaning unproven: {fit(plain(cl), 70)} ({why})" for cl, why in left], 3, "; "),
+    b, raw = x["b"], x["b"].section("Raw request")
+    from sampo import foresight  # T-2914: whose words are the clauses: the user's, or Sampo's own notes
+    tower = x["shared"].setdefault("tower", foresight._tower_ids(x["p"]))
+    mine = b.meta.get("source") == "user" and b.id not in tower and not _NOTE_RAW.search(raw)
+    return {"whose": "user" if mine else "notes", "why": joinmore([f"meaning unproven: {fit(plain(cl), 70)} ({why})" for cl, why in left], 3, "; "),
             "fmt": {"cmd": f'sampo task ac {x["b"].id} add "<what {fit(plain(left[0][0]), 40)} means> :: <a check that can fail>"'}} \
         if left else None
 
@@ -4968,7 +4980,7 @@ def _done_briefs(p, seen):
     return sig, files
 
 
-ROLLUP_RULES = 3  # T-2616: bump when a proof kind's rule changes, so the cached rollup is computed again
+ROLLUP_RULES = 4 # T-2616: bump when a proof kind's rule changes, so the cached rollup is computed again
 
 
 def unproven_summary(p, days=30, budget=DOCS_DIFF_MAX):
@@ -5016,8 +5028,9 @@ def unproven_cached(p, days=30):
 
 
 def proof_counts(rows):
-    """{kind: tasks needing it}: one task counts once in each kind it needs."""
-    return dict(Counter(k for r in rows for k in r["kinds"]))
+    """{kind: tasks needing it}: one task counts once in each kind it needs. T-2914: meaning is two counts that add up,
+    meaning-user (the user's own words) and meaning-notes (Sampo's captures and provenance lines)."""
+    return dict(Counter(n["kind"] + "-" + n["whose"] if n.get("whose") else n["kind"] for r in rows for n in r["needs"]))
 
 
 def unproven_line(n, counts=None, lead=""):
@@ -5027,7 +5040,9 @@ def unproven_line(n, counts=None, lead=""):
         return ""
     order = list(PROOF_KINDS)
     kinds = ", ".join(f"{k} {v}" for k, v in sorted((counts or {}).items(),
-                                                    key=lambda kv: (order.index(kv[0]) if kv[0] in order else 99, kv[0])))
+                                                    key=lambda kv: (order.index(kv[0].replace("-user", "").replace("-notes", ""))
+                                                                    if kv[0].replace("-user", "").replace("-notes", "") in order
+                                                                    else 99, kv[0])))
     return f"{lead}unproven: {n} (sampo prove --rollup)" + (f" · {kinds}" if kinds else "")
 
 
@@ -5085,7 +5100,7 @@ def proof_needs(p, b, files, shared=None, live=False):
             continue  # a green run of the proof, from its first words, after the files it covers were last edited
         fmt = {"id": b.id, "cmd": "", "file": "", "q": "", **got.get("fmt", {})}
         out.append({"kind": kind, "why": got["why"], "upgrade": row["upgrade"].format_map(fmt), "trust": row["trust"],
-                    "tools": got.get("tools", []), "blocked": got.get("blocked", ""),
+                    "whose": got.get("whose", ""), "tools": got.get("tools", []), "blocked": got.get("blocked", ""),
                     "tries": got.get("tries", sum(1 for r in reds if row["clear"] and _clears(row["clear"], r)))})
     return out
 

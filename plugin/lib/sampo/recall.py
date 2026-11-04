@@ -720,6 +720,15 @@ def meaning_unproven(b):
     return [(part, why) for part, _, why in bind(b) if why]
 
 
+def unchecked_clauses(b):
+    """T-2914: [clause] of bind(b) that no criterion checks at all (not "no green run yet": nothing has run at plan time)
+    and that no Non-goals line echoes (2+ shared words): the clauses a plan names before work starts."""
+    title = set(_tokens(b.title))  # a clause that only restates the title is the task's summary, not a separate ask
+    out = [part for part, n, _ in bind(b) if n is None and not set(_tokens(part)) <= title]
+    skips = [set(_tokens(x)) for x in b.section("Non-goals").splitlines()]
+    return [x for x in out if not any(len(set(_tokens(x)) & s) >= 2 for s in skips)]
+
+
 def unaccounted(p, loose):
     """T-2146: the clauses no task covers now (the hook records a request's clauses before its tasks exist)."""
     return [x for x, t in account(p, loose) if not t]

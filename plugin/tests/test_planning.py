@@ -109,6 +109,42 @@ class PlanRigour(Base):
         self.fm("task", "set", t, "approved=true")
 
 
+class ClauseGaps(Base):  # T-2914: a user's M or L plan names each clause of the request no criterion checks
+    RAW = "Add a CSV export button to the report page.\nAlso email the weekly digest to every admin on Mondays."
+
+    def mk(self, tier="M", **meta):
+        t = self.fm_json("task", "new", "CSV export", "--type", "FEATURE", "--tier", tier, "--raw", self.RAW, "--ac",
+                         "the report page offers a CSV export button :: true", "--step", "s")["id"]
+        with c.lock(self.p.dir):
+            b = c.find_brief(self.p, t)
+            b.meta.update(meta)
+            c.save_brief(self.p, b)
+        return t
+
+    def gaps(self, t):
+        return " | ".join(g for g in c.plan_gaps(c.find_brief(self.p, t)) if "weekly digest" in g or "sampo task ac" in g)
+
+    def test_an_unbound_clause_gaps_a_user_m_plan_with_the_line_that_closes_it(self):
+        g = self.gaps(self.mk())
+        self.assertIn("email the weekly digest", g)
+        self.assertIn("sampo task ac", g)
+        self.assertNotIn("CSV export button to the report", g)  # bound to criterion 1
+
+    def test_a_clause_echoed_in_non_goals_is_accounted(self):
+        t = self.mk()
+        with c.lock(self.p.dir):
+            b = c.find_brief(self.p, t)
+            b.set_section("Non-goals", "- No email of the weekly digest to every admin\n")
+            c.save_brief(self.p, b)
+        self.assertEqual(self.gaps(t), "")
+
+    def test_s_hook_sampo_and_started_briefs_are_not_gated(self):
+        self.assertEqual(self.gaps(self.mk("S")), "")
+        self.assertEqual(self.gaps(self.mk(harness_plan="hook")), "")
+        self.assertEqual(self.gaps(self.mk(source="discovered")), "")
+        self.assertEqual(self.gaps(self.mk(plan0_at=c.now())), "")
+
+
 class SelfDocsModules(Base):
     def test_master_names_every_module(self):
         from sampo import doctor

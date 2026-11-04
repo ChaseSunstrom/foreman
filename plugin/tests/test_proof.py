@@ -464,6 +464,20 @@ class Meaning(ForemanTestCase):  # T-2393 (Mission 7, #6): each clause of the re
         need = next(n for r in c.unproven(self.p) if r["id"] == tid for n in r["needs"] if n["kind"] == "meaning")
         self.assertIn("email the weekly digest", need["why"])
 
+    def test_meaning_rollup_splits_the_user_s_words_from_sampo_s_own_notes_and_the_two_add_up(self):  # T-2914
+        mine = self.new()
+        out = self.fm("task", "new", "CSV export", "--type", "FEATURE", "--tier", "S", "--raw", self.RAW, "--source",
+                      "discovered", "--ac", "the report page offers a CSV export button :: true", "--step", "s",
+                      "--json").stdout
+        theirs = json.JSONDecoder().raw_decode(out)[0]["id"]
+        for t in (mine, theirs):
+            self.fm("focus", t)
+            self.fm("task", "finish", t, "--audit", "self", "--run", "true")
+        counts = c.unproven_summary(self.p)["counts"]
+        self.assertEqual((counts.get("meaning-user"), counts.get("meaning-notes")), (1, 1))
+        self.assertNotIn("meaning", counts)
+        self.assertIn("meaning-user 1", c.unproven_line(2, counts))
+
     def test_meaning_hollow_a_clause_bound_only_to_a_vacuous_check_counts_as_unbound(self):
         from sampo import recall
         tid = self.new()
