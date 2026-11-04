@@ -190,7 +190,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _send(self, status, body="", nonce="", extra=(), ctype="text/html; charset=utf-8", csp=None):
         """ctype and csp (T-2998: sampo watch --web's JSON, script and style) default to this page's own."""
-        data = body.encode("utf-8")
+        data = body if isinstance(body, bytes) else body.encode("utf-8")  # T-3014: fonts are bytes
         self.send_response(status)
         for k, v in extra:
             self.send_header(k, v)
