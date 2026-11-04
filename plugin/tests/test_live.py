@@ -341,21 +341,30 @@ class PeerUid(ForemanTestCase):  # T-3023: /proc/net/tcp as a fake root
 
     def test_ipv4_ipv6_and_mapped_rows_the_client_side_socket_gives_the_uid(self):
         v4 = self.row("0100007F", 40000, "0100007F", 8000, 1000) + self.row("0100007F", 8000, "0100007F", 40000, 0)
-        self.assertEqual(live.peer_uid(40000, 8000, self.root(v4)), 1000)  # not the server-side row (uid 0)
-        self.assertEqual(live.peer_uid(40001, 8000, self.root(v4, "")), None)
+        self.assertEqual(live.peer_uid("127.0.0.1", 40000, 8000, self.root(v4)), 1000)  # not the server-side row (uid 0)
+        self.assertEqual(live.peer_uid("127.0.0.1", 40001, 8000, self.root(v4, "")), None)
         m = self.row("0000000000000000FFFF00000100007F", 41000, "0000000000000000FFFF00000100007F", 8000, 1234)
-        self.assertEqual(live.peer_uid(41000, 8000, self.root("", m)), 1234)
+        self.assertEqual(live.peer_uid("127.0.0.1", 41000, 8000, self.root("", m)), 1234)
         six = self.row("00000000000000000000000001000000", 42000, "00000000000000000000000001000000", 8000, 77)
-        self.assertEqual(live.peer_uid(42000, 8000, self.root("", six)), 77)
+        self.assertEqual(live.peer_uid("::1", 42000, 8000, self.root("", six), saddr="::1"), 77)
 
     def test_another_uid_is_reported_and_unparseable_or_missing_rows_are_none(self):
         other = self.row("0100007F", 40000, "0100007F", 8000, 4242)
-        self.assertEqual(live.peer_uid(40000, 8000, self.root(other)), 4242)
+        self.assertEqual(live.peer_uid("127.0.0.1", 40000, 8000, self.root(other)), 4242)
         junk = "garbage\n   0: zz:yy 1:2 01\n   1: 0100007F:9C40 0100007F:1F40 01 a b c d notauid 0 1\n"
-        self.assertIsNone(live.peer_uid(40000, 8000, self.root(junk)))
-        self.assertIsNone(live.peer_uid(40000, 8000, os.path.join(self.tmp, "nowhere")))
+        self.assertIsNone(live.peer_uid("127.0.0.1", 40000, 8000, self.root(junk)))
+        self.assertIsNone(live.peer_uid("127.0.0.1", 40000, 8000, os.path.join(self.tmp, "nowhere")))
         foreign = self.row("0A00000A", 40000, "0A00000A", 8000, 5)  # not a loopback address
-        self.assertIsNone(live.peer_uid(40000, 8000, self.root(foreign)))
+        self.assertIsNone(live.peer_uid("127.0.0.1", 40000, 8000, self.root(foreign)))
+
+    def test_another_address_with_the_users_port_number_never_inherits_the_users_uid(self):  # T-3027 review: HIGH
+        user = self.row("0100007F", 40000, "0100007F", 8000, 1000)
+        attacker = self.row("0200007F", 40000, "0100007F", 8000, 4242)  # 127.0.0.2:40000 -> the server
+        self.assertEqual(live.peer_uid("127.0.0.2", 40000, 8000, self.root(user + attacker)), None)
+        self.assertEqual(live.peer_uid("127.0.0.1", 40000, 8000, self.root(user + attacker)), 1000)
+        self.assertIsNone(live.peer_uid("127.0.0.1", 40000, 8000, self.root(user + user)), "two rows: ambiguous")
+        to_other = self.row("0100007F", 40000, "0100007F", 9000, 1000)  # the user's socket to another server
+        self.assertIsNone(live.peer_uid("127.0.0.1", 40000, 8000, self.root(to_other)))
 
 
 class Url(ForemanTestCase):

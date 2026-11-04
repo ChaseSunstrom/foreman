@@ -329,10 +329,18 @@ def resolve(default, slug):
     return None if asked else default  # a busiest session's project that is gone or hidden: the server's own
 
 
-def peer_uid(cport, sport, root="/proc"):
-    """T-3023: the uid owning the client-side socket of a loopback connection (local port cport, remote port sport), from
-    root/net/tcp and tcp6 (IPv4-mapped rows too); None when no such row or it can't be read."""
-    loop = ("0100007F", "00000000000000000000000001000000", "0000000000000000FFFF00000100007F")
+_LOOP = {"127.0.0.1": ("0100007F", "0000000000000000FFFF00000100007F"), "::1": ("00000000000000000000000001000000",)}
+
+
+def peer_uid(caddr, cport, sport, root="/proc", saddr="127.0.0.1"):
+    """T-3023: the uid owning the client-side socket of a loopback connection, from root/net/tcp and tcp6 (IPv4-mapped
+    rows too). T-3027: the row's local address must be the client's own (caddr:cport) and its remote end the server
+    (saddr:sport): matching ports alone let another uid connect from 127.0.0.2 with the user's port number and inherit
+    the user's uid. Exactly one such row, else None (the cookie path answers)."""
+    mine, server = _LOOP.get(caddr), _LOOP.get(saddr)
+    if not mine or not server:
+        return None
+    hits = []
     for name in ("tcp", "tcp6"):
         try:
             with open(os.path.join(root, "net", name), encoding="ascii", errors="replace") as f:
@@ -342,12 +350,12 @@ def peer_uid(cport, sport, root="/proc"):
         for line in lines:
             f = line.split()
             try:
-                (la, lp), (_, rp) = f[1].split(":"), f[2].split(":")
-                if la.upper() in loop and int(lp, 16) == cport and int(rp, 16) == sport:
-                    return int(f[7])
+                (la, lp), (ra, rp) = f[1].split(":"), f[2].split(":")
+                if la.upper() in mine and int(lp, 16) == cport and ra.upper() in server and int(rp, 16) == sport:
+                    hits.append(int(f[7]))
             except (ValueError, IndexError):
                 continue
-    return None
+    return hits[0] if len(hits) == 1 else None
 
 
 # ---------------------------------------------------------------- the server
@@ -414,7 +422,7 @@ class Handler(settingsserve.Handler):
         or none found, takes the token and cookie path."""
         if (self.headers.get("Host") or "").lower() in self._mine():
             me = self.server.server_address[1]
-            if peer_uid(self.client_address[1], me) == os.getuid():
+            if peer_uid(self.client_address[0], self.client_address[1], me, saddr=self.server.server_address[0]) == os.getuid():
                 return urllib.parse.urlsplit(self.path).path
         return super()._allowed()
 
