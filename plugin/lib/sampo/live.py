@@ -281,7 +281,7 @@ PLACEHOLDER = ('<!doctype html><html lang="en"><head><meta charset="utf-8"><titl
 
 
 class Handler(settingsserve.Handler):
-    CMD, PATHS = "sampo watch --web", ()
+    CMD, PATHS = "sampo watch --web --url", ()  # the 403 names the command that prints a fresh link
 
     def _json(self, obj):
         self._send(200, json.dumps(obj, ensure_ascii=False), ctype="application/json; charset=utf-8")
@@ -348,10 +348,30 @@ class Handler(settingsserve.Handler):
         self._send(404, "not found")
 
 
+def _session(p):
+    """T-3021: the cookie's secret outlives a restart (a deploy, the systemd unit): an open tab keeps working. Kept 0600
+    in the project's state; the URL's token still works once per start."""
+    path = os.path.join(p.dir, "live.session")
+    try:
+        with open(path, encoding="utf-8") as f:
+            s = f.read().strip()
+        if len(s) >= 40:
+            os.chmod(path, 0o600)
+            return s
+    except OSError:
+        pass
+    s = secrets.token_urlsafe(32)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(s)
+    os.chmod(path, 0o600)
+    return s
+
+
 def make(p, port=0):
     """A server bound to 127.0.0.1 (port 0: a random one), not yet serving: (server, the URL's one-time token)."""
     server = settingsserve.Server(("127.0.0.1", port), Handler)
-    server.token, server.session = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    server.token, server.session = secrets.token_urlsafe(32), _session(p)
     server.once, server.project, server.last = threading.Lock(), p, time.monotonic()
     server.stop, server.streams = threading.Event(), 0
     return server, server.token

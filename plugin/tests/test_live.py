@@ -229,6 +229,18 @@ class Serve(ForemanTestCase):
             conn.close()
             self.assertEqual(self.req("/static/..%2FA-normal.woff2")[0], 404)
 
+    def test_a_restart_keeps_an_open_tabs_cookie(self):  # T-3021 live: each restart 403'd the user's tab
+        self.login()
+        again, _ = live.make(self.p)
+        try:
+            self.assertEqual(again.session, self.server.session)
+        finally:
+            again.server_close()
+        self.assertEqual(os.stat(os.path.join(self.p.dir, "live.session")).st_mode & 0o777, 0o600)
+        st, body, _ = self.req("/api/state", cookie=False)
+        self.assertEqual(st, 403)
+        self.assertIn("sampo watch --web --url", body)
+
     def test_the_stream_sends_state_events(self):
         self.login()
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
