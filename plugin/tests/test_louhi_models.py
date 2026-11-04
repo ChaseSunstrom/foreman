@@ -126,6 +126,25 @@ class LouhiModels(ForemanTestCase):
         for crit in self.srv.crits:
             self.assertTrue(all(v != k and len(v) > 12 for k, v in crit.items()), crit)
 
+    def test_retrieval_rows_vote_from_the_nearest_train_requests_and_abstain_when_split(self):
+        self.run_bench()
+        by = {(r["backend"], r["use"]): r for r in self.rows()}
+        for name in ("bm25", "retrieval:nomic"):
+            r = by[(name, "intake-type")]
+            self.assertEqual((r["arm"], r["n"]), ("retrieval", len(self.held)))
+            self.assertEqual(r["answered"] + r["abstained"], r["n"])
+            self.assertEqual(r["coverage"], round(r["answered"] / r["n"], 3))
+            self.assertLessEqual(r["accuracy_all"], r["coverage"])
+            if name == "bm25":  # the two kinds of request share no words (the fake embedder's letter counts blur them)
+                self.assertEqual((r["accuracy"], r["accuracy_all"]), (1.0, r["coverage"]))
+            self.assertIn((name, "intake-tier"), by)
+        self.assertEqual(louhi._vote(["FIX"] * 4 + ["FEATURE"] * 3), "FIX")
+        self.assertIsNone(louhi._vote(["FIX"] * 3 + ["FEATURE"] * 3))  # split: abstain
+        self.run_bench()  # a second run embeds nothing new: the vectors are cached by model and text hash
+        with open(os.path.join(self.p.root, louhi.RETRIEVAL_VECTORS)) as f:
+            ids = [(json.loads(x)["id"]) for x in f]
+        self.assertEqual(len(ids), len(set(ids)))
+
     def test_a_busy_529_is_retried_then_counted(self):
         self.srv.busy = 4  # models._post retries 3 times; the bench retries after it
         louhi.BUSY_WAIT, was = 0, models._sleep

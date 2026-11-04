@@ -3,6 +3,7 @@ untested, slow, docs, flaky, dep) or poses a request shape (vague, ambiguous, mi
 small app rendered from one spec. The answer key, the hidden checks and the clean render sit beside the repo, never in it; a
 third of each kind is held out by a hash of its id. Agents answer, the grader reads only key.json, scores go to the
 Genesis tower's exam.jsonl."""
+import collections
 import concurrent.futures
 import contextlib
 import datetime
@@ -11,6 +12,7 @@ import errno
 import glob
 import hashlib
 import json
+import math
 import os
 import random
 import re
@@ -937,6 +939,103 @@ def _bench_data(p, cap):
         if b.title and text:
             pairs.append((t, b.title, text))
     out["title-to-brief"] = (pairs[:cap], len(pairs))
+    out["train-raw"] = [(_raw(b), b.type, b.tier) for b in done if not holdout(b.id) and _raw(b)][-RETRIEVAL_TRAIN:]
+    return out
+
+
+RETRIEVAL_K, RETRIEVAL_NEED, RETRIEVAL_TRAIN = 7, 4, 3000  # neighbours asked, votes to answer, newest train briefs embedded
+RETRIEVAL_VECTORS = os.path.join("research", "models", "vectors.jsonl")  # {id: sha1 of the text, model, vec}, embedded once
+
+
+def _vote(labels):
+    """The label with RETRIEVAL_NEED of the neighbours' votes, else None (abstain)."""
+    top = collections.Counter(labels).most_common(1)
+    return top[0][0] if top and top[0][1] >= RETRIEVAL_NEED else None
+
+
+def _retrieval_vectors(p, prof, texts, timeout):
+    """{text: unit vector}, cached by (model, sha1 of the text) in RETRIEVAL_VECTORS as moonscale's vectors are."""
+    from sampo import models
+    model, path = prof.get("embed_model") or prof.get("model") or "", os.path.join(p.root, RETRIEVAL_VECTORS)
+    key = lambda t: hashlib.sha1(t.encode()).hexdigest()  # noqa: E731
+    have = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for x in f:
+                try:
+                    e = json.loads(x)
+                except ValueError:
+                    continue
+                if isinstance(e, dict) and e.get("model") == model and isinstance(e.get("vec"), list) and e["vec"] \
+                        and all(type(v) in (int, float) for v in e["vec"]):
+                    have[e.get("id")] = e["vec"]
+    except OSError:
+        pass
+    todo = sorted({t for t in texts if key(t) not in have})
+    for i in range(0, len(todo), 16):
+        part = todo[i:i + 16]
+        got = [[round(float(v), 4) for v in vec] for vec in models.embed(prof, part, timeout=timeout)]
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        c.append_line(path, "".join(json.dumps({"id": key(t), "model": model, "vec": v}) + "\n" for t, v in zip(part, got)))
+        have.update((key(t), v) for t, v in zip(part, got))
+    unit = lambda v: [x / (math.hypot(*v) or 1) for x in v]  # noqa: E731
+    return {t: unit(have[key(t)]) for t in texts}
+
+
+def _retrieval_rows(base, name, held, train, near, note):
+    """One row per use: `near(raw)` the indexes of the train briefs nearest the request, their labels vote."""
+    rows = []
+    for j, use in enumerate(BENCH_USES, 1):
+        votes = [(r[2], _vote([train[i][j] for i in near(r[1])])) for r in held[use]]
+        ans = [(t, v) for t, v in votes if v is not None]
+        n, hit = len(votes), sum(t == v for t, v in ans)
+        rows.append({**base, "use": use, "backend": name, "n": n, "answered": len(ans), "abstained": n - len(ans),
+                     "coverage": round(len(ans) / n, 3) if n else None, "accuracy": round(hit / len(ans), 3) if ans else None,
+                     "accuracy_all": round(hit / n, 3) if n else None, "note": note})
+    return rows
+
+
+def _bench_retrieval(p, data, stamp, profiles, timeout_of):
+    """T-2975: k-NN vote (RETRIEVAL_K, abstain under RETRIEVAL_NEED) from the train split's raw requests: BM25 (recall's
+    tokens and formula) and, per embedder, cosine over its vectors. accuracy is on answered rows, accuracy_all counts an
+    abstain wrong."""
+    from sampo import models, recall
+    train, held = data["train-raw"], {u: data[u][0] for u in BENCH_USES}
+    base = {**stamp, "arm": "retrieval", "brier": None, "p50_ms": None, "p95_ms": None, "errors": 0}
+    base_for = lambda u: {**base, "held": data[u][1]}  # noqa: E731
+    docs = [recall._tokens(t[0]) for t in train]
+    avg, df = (sum(map(len, docs)) / len(docs) if docs else 1) or 1, collections.Counter(w for d in docs for w in set(d))
+
+    def bm25(raw):
+        q, sc = set(recall._tokens(raw)), []
+        for i, d in enumerate(docs):
+            tf = collections.Counter(w for w in d if w in q)
+            s = sum(math.log(1 + (len(docs) - df[w] + 0.5) / (df[w] + 0.5)) * f * 2.2 / (f + 1.2 * (0.25 + 0.75 * len(d) / avg))
+                    for w, f in tf.items())
+            if s > 0:
+                sc.append((s, i))
+        return [i for _, i in sorted(sc, key=lambda x: -x[0])[:RETRIEVAL_K]]
+
+    out = []
+    for use, r in zip(BENCH_USES, _retrieval_rows(base, "bm25", held, train, bm25, f"BM25 over {len(train)} train requests")):
+        out.append({**r, "held": data[use][1]})
+    for prof in profiles:
+        try:
+            texts = [t[0] for t in train] + [r[1] for u in BENCH_USES for r in held[u]]
+            vec = _retrieval_vectors(p, prof, texts, timeout_of(prof))
+        except (models.ModelError, ValueError, *models._TRANSPORT) as e:
+            out += [{**base_for(u), "use": u, "backend": f"retrieval:{prof['name']}", "n": 0, "errors": 1,
+                     "note": c.fit(str(e), 160)} for u in BENCH_USES]
+            continue
+        tv = [vec[t[0]] for t in train]
+
+        def knn(raw):
+            q = vec[raw]
+            return [i for _, i in sorted(((sum(a * b for a, b in zip(q, v)), i) for i, v in enumerate(tv)),
+                                         key=lambda x: -x[0])[:RETRIEVAL_K]]
+        for use, r in zip(BENCH_USES, _retrieval_rows(base, f"retrieval:{prof['name']}", held, train, knn,
+                                                      f"cosine k-NN over {len(train)} train requests")):
+            out.append({**r, "held": data[use][1]})
     return out
 
 
@@ -1122,6 +1221,9 @@ def bench_models(p, decision=None, embedders=None, cap=BENCH_CAP, serving=None, 
             got, held = data["title-to-brief"]
             rows.append({**stamp, "arm": arm, "use": "title-to-brief", "backend": prof["name"], "held": held,
                          **_bench_embed(prof, got, timeout)})
+    rows += _bench_retrieval(p, data, stamp, [x for x in embedders if not sensitive or models.is_loopback(
+        urllib.parse.urlsplit(x["base_url"]).hostname or "")], lambda x: 120 if models.is_loopback(
+        urllib.parse.urlsplit(x["base_url"]).hostname or "") else 300)
     gens = [x for x in generators if not sensitive or models.is_loopback(urllib.parse.urlsplit(x["base_url"]).hostname or "")]
     if gens:
         rows += bench_generation(p, gens, k, grow_fn=grow_fn, funnel_fn=funnel_fn, smith_fn=smith_fn, stamp=stamp)
@@ -1146,7 +1248,8 @@ def bench_show(p, limit=40):
     lines = [f"model bench {rows[0]['run']} ({len(rows)} rows, held out by task-id hash)",
              f"{'backend':<28}{'use':<16}{'acc/r@1':>8}{'brier/r@10':>11}{'p50ms':>7}{'p95ms':>7}{'n':>5}{'err':>5}"]
     for r in rows[:limit]:
-        a, b = {"decision": (r.get("accuracy"), r.get("brier")), "embedding": (r.get("recall_at_1"), r.get("recall_at_10")),
+        a, b = {"decision": (r.get("accuracy"), r.get("brier")), "retrieval": (r.get("accuracy"), r.get("coverage")),
+"embedding": (r.get("recall_at_1"), r.get("recall_at_10")),
                 "generation": (r.get("pass_rate", r.get("moons_per_min")), r.get("tier_kept"))}[r["arm"]]
         out = (r.get("held") or 0) - r["n"] - r["errors"]
         lines.append(f"{str(r['backend'])[:27]:<28}{r['use']:<16}{f(a):>8}{f(b):>11}{f(r.get('p50_ms')):>7}"
