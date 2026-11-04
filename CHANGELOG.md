@@ -3,7 +3,7 @@
 ## Unreleased
 
 - The pane and band wear the forge palette: fire-gold for what runs, the blue flame for reading, the site's status colours (T-2853).
-- The moonshot reviewer scores each moon's wildness (1-5); an extreme or massive moon below 4 counts as xhigh, the generation brief carries six wild lenses and the reviewer's anti-patterns, and 30 wild moons (M-21..M-50) join the catalogue, from regrowing half a codebase to an app that compiles itself from traffic (T-2858).
+- The moonshot reviewer scores each moon's wildness (1-5); an extreme or massive moon below 4 counts as xhigh, the generation brief carries six wild lenses and the reviewer's anti-patterns, and 38 new moons (M-21..M-58) join the catalogue, 19 of them at wild 4+: regrow half a codebase, boot an app that traffic compiles into existence, turn a live Python server into Rust mid-session (T-2858). `sampo moons check` runs the catalogue's checks alone.
 - `sampo outcomes --questions [--since TS] [--none]` counts AskUserQuestion calls by outcome; with `--none` it fails when any was asked, and a steer rule may use that read-only form as its `--check` (T-2840).
 - An agent resumed with SendMessage counts as running background work, so drive waits for its round instead of pushing the next task (T-2848).
 - Every reader of typed commands and goals (cost, repeats, friction, bench, long runs, mandate, Rune, fixes, the CLI, the Smith TUI, Louhi) counts `sampo` as it counts `fm`; the rename scan covers every module and judges each pattern by what it matches (T-2845).
