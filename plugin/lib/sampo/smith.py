@@ -552,7 +552,7 @@ class Run:
         self.json = getattr(args, "json", False)
         self.tid = self.plan = self.request = self.journal = None
         self.done, self.msgs, self.turns, self.tokens = set(), {}, 0, [0, 0]
-        self.baseline = self.model_name = self.close_notes = self.plan_msgs = None
+        self.baseline = self.model_name = self.close_notes = self.gap_notes = self.plan_msgs = None
         self.sensitive, self.escalate, self.cap = False, getattr(args, "escalate", None), CAP
         self.planner = getattr(args, "planner", None)  # T-2945: the profile for the plan and close notes
         self.no_commit, self.max_steps = bool(getattr(args, "no_commit", False)), getattr(args, "max_steps", None)
@@ -3407,8 +3407,10 @@ def _finish(run, profile):
     # T-2937: asked for any tier; a close key already given isn't asked again; a modelless run (--worker --verify) has
     # nobody to ask, so finish refuses with its own reason
     if profile is not None and (need := _gaps_needed(run)):
-        got = _gap_slot(run, run.planner or profile, need)
-        run.log(kind="gap_notes", notes=got)
+        got = run.gap_notes  # T-2948: a resumed run's answer, not asked twice
+        if got is None or any(k not in got for k in need):
+            got = _gap_slot(run, run.planner or profile, need)
+            run.log(kind="gap_notes", notes=got)
         for key, section in (("decision", "Decision"), ("regression", "Regression test")):
             if key in need:
                 code, out = run.fm("task", "set", run.tid, "--section", section, "--text", got[key])
@@ -3532,7 +3534,7 @@ def _load(run, tid, ended=False):
                         f"nothing to resume{' for ' + tid if tid else ''}: no unfinished fm code journal in {run.jdir}")
     start = recs[0]
     run.journal, run.tid, run.plan, run.request = path, start["task"], start["plan"], start["request"]
-    run.model_name, run.close_notes = start.get("model"), None
+    run.model_name, run.close_notes, run.gap_notes = start.get("model"), None, None
     opts = start.get("options") or {}
     run.no_commit = run.no_commit or bool(opts.get("no_commit"))
     run.escalate = run.args.escalate or opts.get("escalate")
@@ -3555,6 +3557,8 @@ def _load(run, tid, ended=False):
             run.baseline = r["text"]
         elif k == "close_notes":
             run.close_notes = r["notes"]
+        elif k == "gap_notes" and isinstance(r.get("notes"), dict):
+            run.gap_notes = r["notes"]
         elif k in ("route", "failover") and isinstance(r.get("worker"), str) and not run.args_worker:  # T-1358, T-1356
             run.worker = r["worker"]
         elif k == "spend" and type(r.get("usd")) in (int, float):  # T-1357: the cap counts the whole run

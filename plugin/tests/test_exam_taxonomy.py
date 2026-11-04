@@ -19,6 +19,7 @@ ENDS = {
     "finish_refused": [E("verify", "verify 1 pass", label="verify", exit=0),
                        E("blocked", "T-0001 blocked: fm code: fm task finish refused: fm: refused: T-0001 can't be marked done: - no Decision: research")],
     "finish_refused_proof": [E("blocked", "T-0001 blocked: fm code: fm task finish refused: fm: T-0001 not finished, nothing ran: - no red→green proof")],
+    "finish_refused_set": [E("blocked", "T-0001 blocked: fm code: fm task set Regression test refused: fm: bad")],  # T-2948
     "timeout": [E("timeout", "no end after 900 s")],
     "closed": [E("action", "edit ok", action="edit", target="a", result="ok"), E("closed", "T-0001 closed")],
     "other": [E("answer", "I could not do it")],
@@ -28,7 +29,7 @@ ENDS = {
 class Taxonomy(unittest.TestCase):
     def test_each_end_is_one_named_class(self):
         for name, evs in ENDS.items():
-            want = name.split("_new")[0].replace("_proof", "")
+            want = name.split("_new")[0].replace("_proof", "").replace("_set", "")
             self.assertEqual(louhi.end_class(evs), want, name)
             if want in louhi.FAILURE_CLASSES and want != "loop":
                 self.assertGreaterEqual(louhi.failure_classes(evs).get(want, 0), 1, name)

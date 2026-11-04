@@ -1,6 +1,7 @@
 """T-2937: a verified task isn't refused at finish for a Decision, Measurements or Regression test the model never
 wrote: the close asks for each missing one in its own slot, with a worked example (fakes only)."""
 import json
+import os
 import unittest
 
 from test_code import CLOSE, M_PLAN, PLAN, CodeCase, call, plan
@@ -47,6 +48,18 @@ class CloseGaps(CodeCase):
     def test_a_fix_with_a_red_run_asks_nothing_more(self):
         f = self.closes(PLAN)
         self.assertEqual(len(f.seen), 3)
+
+    def test_a_resumed_run_restores_its_gap_notes_and_does_not_ask_again(self):  # T-2948, like close_notes
+        from test_code import Resume
+        Resume.kill_mid_run(self, dict(PLAN, type="RESEARCH"))
+        jr = os.path.join(os.path.dirname(os.path.dirname(self.task()["path"])), "code", "T-0001.jsonl")
+        with open(jr, "a") as f:
+            f.write(json.dumps({"kind": "gap_notes", "notes": {"decision": GAPS["decision"]}}) + "\n")
+        f = self.serve("openai", *EDIT)  # no gap reply scripted: asking again would find the script empty
+        r = self.code("--resume", "--model", "fake")
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertIn("would change if: callers", read_text(self.task()["path"]))
+        self.assertEqual(len(f.seen), 2)
 
     def test_the_prompt_carries_a_worked_example_for_each_key(self):
         from sampo import smith

@@ -3306,7 +3306,7 @@ _MALFORMED = re.compile(r"field by field|weren't a JSON object|needs \w+ as ")
 _ENDS = (("budget", re.compile(r"reasoning used the whole budget")),
          ("plan_refused", re.compile(r"fm (?:task new|focus) refused the plan")),
          ("no_plan", re.compile(r"gave no valid plan")),
-         ("finish_refused", re.compile(r"fm task finish refused")),
+         ("finish_refused", re.compile(r"fm task (?:finish|set [\w ]+) refused")),  # T-2948: smith's _finish also ends on a refused set
          ("loop", re.compile(r"used all \d+ turns")))
 EVENTS_CAP = 2 << 20  # bytes of one scenario's event log kept
 
@@ -3446,7 +3446,8 @@ def taxonomy(p, run, agent="smith"):
             with open(os.path.join(answers, name), encoding="utf-8", errors="replace") as f:
                 evs = [e for e in (_json_line(ln) for ln in f) if e]
                 per.append(failure_classes(evs))
-                ends[end_class(evs)] = ends.get(end_class(evs), 0) + 1
+                end = end_class(evs)
+                ends[end] = ends.get(end, 0) + 1
     if not per:
         raise ValueError(f"no Smith event logs from {agent!r} in {run} (fm exam run {run} --agent smith --model PROFILE)")
     classes = {k: {"count": sum(x.get(k, 0) for x in per), "scenarios": sum(k in x for x in per),

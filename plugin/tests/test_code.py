@@ -474,8 +474,8 @@ class AnyRequest(CodeCase):
 
 
 class Resume(CodeCase):
-    def kill_mid_run(self):
-        first = self.serve("openai", plan(), call("read", path="calc.py"), HANG)
+    def kill_mid_run(self, p=None):
+        first = self.serve("openai", plan(p), call("read", path="calc.py"), HANG)
         p = subprocess.Popen([sys.executable, FM, "code", "fix add", "--model", "fake"], cwd=self.repo, env=self.env(),
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
