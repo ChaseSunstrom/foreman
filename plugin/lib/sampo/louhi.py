@@ -2629,6 +2629,9 @@ def _static(target, chk):
     return all(re.search(r, text) for r in chk["must"]) and not any(re.search(r, text) for r in chk["never"])
 
 
+GUARD_CHECKS = ("intact", "unchanged", "testfiles")  # T-2995 review: hold for a run that did nothing at all
+
+
 def passes(base, key, d, target):
     """A defect's hidden check on target: True when the defect is gone."""
     chk = d["check"]
@@ -3704,9 +3707,12 @@ def _smith_arm(base, key, work, model, request, events, planner=None, reason=Non
         _carry_runs(wt, work)
         evs_end = next((e for e in reversed(evs) if e.get("event") in ("closed", "blocked", "error", "answer", "timeout")), {})
         verifies = [e for e in evs if e.get("event") == "verify" and e.get("label") == "verify"]
-        green = evs_end.get("event") == "closed" and not (verifies and verifies[-1].get("exit"))
+        # T-2995 review: green needs a verify that passed, not only a close; a run the grader calls fixed counts only
+        # when some defect has a real check (intact, unchanged and testfiles pass for a run that did nothing)
+        green = evs_end.get("event") == "closed" and bool(verifies) and not verifies[-1].get("exit")
+        real = [d for d in key.get("defects") or [] if (d.get("check") or {}).get("type") not in GUARD_CHECKS]
         try:  # T-2995 live: the grader's hidden check on the final tree is the stronger proof than the run's own close
-            fixed = bool(key.get("defects")) and all(passes(base, key, d, work) for d in key["defects"])
+            fixed = not green and bool(real) and all(passes(base, key, d, work) for d in key["defects"])
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
             fixed = False
         if green or fixed:  # T-2995: verified runs only
@@ -3716,7 +3722,8 @@ def _smith_arm(base, key, work, model, request, events, planner=None, reason=Non
                             else events + traces.SUFFIX,
                             {"scenario": key.get("id"), "language": key.get("lang"), "kind": key.get("kind"),
                              "origin": key.get("origin") or "seeded", "model": c.plain(model)[:60],
-                             "planner": c.plain(planner)[:60] if planner else None},
+                             "planner": c.plain(planner)[:60] if planner else None,
+                             "outcome": "green" if green else "fixed"},
                             [prof, *([smodels.resolve(planner)] if planner else [])])
             except (OSError, ValueError, smodels.ModelError):
                 pass  # no journal is no failure: the exam's grade never depends on it
@@ -4273,6 +4280,8 @@ def cmd_exam(args):
             from sampo import long
             return long.cmd(p, args)
         if action == "models":  # T-2887: sampo louhi models run|show, the decision and embedding arms
+            if getattr(args, "export", None) and getattr(args, "traces", None):
+                raise cli.UsageError("--export and --traces are separate runs")
             if getattr(args, "export", None):  # T-2974: the training lake
                 from sampo import lake
                 man = lake.write(os.path.abspath(args.export), bool(getattr(args, "with_agent", False)))
@@ -4283,6 +4292,13 @@ def cmd_exam(args):
                                           f"opted out, {man['dupes']} dupes) in {os.path.abspath(args.export)}")
             if getattr(args, "traces", None):  # T-2995: kept green Smith journals as chat JSONL
                 from sampo import traces
+                try:
+                    pm = c.read_meta(p)
+                except (c.CorruptState, OSError):
+                    pm = {"sensitive": True}  # unreadable: judged sensitive, as the lake does
+                if pm.get("sensitive") or pm.get("lake_optout") or c.detect_sensitive(pm.get("path") or ""):
+                    raise cli.UsageError("this project is sensitive or opted out of the lake: its runs are never "
+                                         "exported as traces (T-2995)")
                 ans = [os.path.join(root(p), r, "answers", "smith") for r in sorted(os.listdir(root(p)))] if os.path.isdir(root(p)) else []
                 res = traces.export(ans, os.path.abspath(args.traces))
                 return cli.out(args, res, f"traces: {res['conversations']} conversations ({res['dupes']} dupes, "

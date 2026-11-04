@@ -215,6 +215,16 @@ def _scenario(p, run, i, x, clean, cmd, src, head, env=None):
             "repo": os.path.join(base, "repo"), "request": REQUEST.format(cmd=cmd)}
 
 
+def _sensitive(src):
+    if c.detect_sensitive(src):
+        return True
+    pr = c.find_project(src)
+    try:
+        return bool(pr and c.read_meta(pr).get("sensitive"))
+    except (c.CorruptState, OSError):
+        return bool(pr)  # unreadable: judged sensitive, as the lake does
+
+
 def gen(p, repo, n=6, seed=0, test_cmd=None, only=None):
     """Mint up to n scenarios from repo's HEAD into a new run under exam's root, against test_cmd or the repo's
     detected gate. Returns the run's meta."""
@@ -224,6 +234,8 @@ def gen(p, repo, n=6, seed=0, test_cmd=None, only=None):
     src = os.path.realpath(repo)
     if not os.path.isdir(src):
         raise ValueError(f"no repo at {repo}")
+    if _sensitive(src):  # T-2995 review: a minted run's journal becomes training data; a sensitive repo never does
+        raise ValueError(f"{repo} is a sensitive project; Sampo doesn't mint exam scenarios from it")
     head = _git(src, "rev-parse", "--verify", "HEAD").strip()
     with c.lock(p.dir):  # the run id is claimed under the lock, as in louhi.gen
         k = max([int(louhi.RUN_ID.fullmatch(r).group(1)) for r in louhi.runs(p)] or [0]) + 1

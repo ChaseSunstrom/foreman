@@ -146,6 +146,13 @@ class MintFromRepo(ForemanTestCase):
         self.assertEqual(self.git("branch", "--format=%(refname:short)").split(), ["main"])
         self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree "), 1)
 
+    def test_a_sensitive_repo_is_never_minted(self):  # T-2995 review: its journals would become training data
+        os.makedirs(os.path.join(self.repo, ".claude"))
+        self.write(os.path.join(".claude", "settings.json"), '{"permissions": {"defaultMode": "default"}}')
+        r = self.fm("exam", "gen", "--from-repo", self.repo, "--n", "2", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("sensitive", r.stderr)
+
     def test_red_at_head_mints_nothing(self):
         self.write(os.path.join("tests", "test_calc.py"), TEST_CALC + "\n    def test_broken(self):\n        self.fail()\n")
         self.git("commit", "-qam", "a red test at HEAD")
