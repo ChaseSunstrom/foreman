@@ -93,8 +93,9 @@ def app_schema():
     from sampo import smithtui as T
     D = T.DEFAULTS
     app = lambda *a, **k: _entry("app", *a, effect="next run", **k)
-    out = [app("theme", "choice", D["preset"], "the app's colours (signal: night with palette cb; riso: risograph "
-                                               "inks on paper stock)", "look",
+    out = [app("theme", "choice", D["preset"], "the app's colours (night and paper: the forge; signal: the old "
+                                               "night with palette cb; riso: risograph inks on paper stock; classic: "
+                                               "the look before the forge)", "look",
                choices=T.PRESETS),
            app("motion", "choice", D["motion"], SHARED["motion"]["help"], "look", choices=SHARED["motion"]["choices"],
                aliases=SHARED["motion"]["aliases"]),

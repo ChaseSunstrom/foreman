@@ -158,7 +158,7 @@ export function rail(ui: UI, e: ResolveInput, stages: readonly string[], current
     )
   const { Raster } = ui
   if (f !== null) motion?.set('stage-rail', { columns: width, rows: 1, draw: t => stageCells(stages.length, current, width, t) })
-  const color: Record<LabelRun['kind'], number> = { gap: C.dim, done: mix(C.ok, C.dim, 0.35), current: C.accent, todo: C.dim }
+  const color: Record<LabelRun['kind'], number> = { gap: C.dim, done: mix(C.steel, C.dim, 0.35), current: C.hot, todo: C.dim } // T-2876: heat
   return (
     <Box key="stage" flexDirection="column">
       <Raster key="stage-rail" columns={width} rows={1} cells={stageCells(stages.length, current, width, f)} />
@@ -313,7 +313,7 @@ export function shellRow(ui: UI, e: ToolUseRender) {
   const commit = o.gitOperation?.commit
   const color = bad ? C.err : stopped ? C.warn : C.accent2
   const { head, rest } = sectionHead(ui, e, {
-    key: 'fm-shell', color, mark, markColor: mark === '✗' ? C.err : mark === '✓' ? C.ok : mark === '◷' ? C.accent2 : C.warn,
+    key: 'fm-shell', color, mark, markColor: mark === '✗' ? C.err : mark === '✓' ? C.steel : mark === '◷' ? C.accent2 : C.warn,
     label: `❯ ${stopped ? 'Stopped' : bg ? 'Started' : bad ? 'Failed' : 'Ran'}`, subject: desc || lines[0] || '',
     meta: meta.length ? [{ text: meta.join(' · ') }] : [],
   })
@@ -401,7 +401,7 @@ export function editRow(ui: UI, e: ToolUseRender) {
   const face = toolFace(e.props.tool, e.props.input, cfg.root)
   const { Box, Text } = ui
   const { head, rest } = sectionHead(ui, e, {
-    key: 'fm-edit', color: C.edit, mark: '✓', markColor: C.ok, label: `${face.icon} ${e.props.tool === 'Write' ? 'Wrote' : 'Edited'}`,
+    key: 'fm-edit', color: C.edit, mark: '✓', markColor: C.steel, label: `${face.icon} ${e.props.tool === 'Write' ? 'Wrote' : 'Edited'}`,
     subject: face.target,
     meta: [{ text: `+${add}`, color: C.ok }, ...(del ? [{ text: ` −${del}`, color: C.err }] : []),
       ...(created ? [{ text: ' · new file' }] : []), ...(c.userModified ? [{ text: ' · you changed it' }] : [])],
@@ -439,7 +439,7 @@ export function agentRow(ui: UI, e: ToolUseRender) {
     : [`${n} tool${n === 1 ? '' : 's'}`, elapsed(Number(o.totalDurationMs) || 0), `${Math.round((Number(o.totalTokens) || 0) / 1000)}k tokens`].join(' · ')
   const { Box, Text } = ui
   const { head, rest } = sectionHead(ui, e, {
-    key: 'fm-agent', color: C.agent, mark: bg ? '◷' : '✓', markColor: bg ? C.accent2 : C.ok, label: `◆ ${type}`,
+    key: 'fm-agent', color: C.agent, mark: bg ? '◷' : '✓', markColor: bg ? C.accent2 : C.steel, label: `◆ ${type}`,
     subject: clean(String(input.description ?? '')), meta: [{ text: meta }],
   })
   return (
@@ -507,7 +507,7 @@ export function toolRow(ui: UI, e: ToolUseRender) {
   const all = e.props.tool === 'Skill' ? [] : shortResult(e.props.output) ?? [] // a skill's head says it; a long result keeps the engine's block
   const ms = took.get(e.props.tool_use_id)
   const { head, rest } = sectionHead(ui, e, {
-    key: 'fm-done', color, mark: '✓', markColor: C.ok, label: `${face.icon} ${face.verb}`, subject: face.target,
+    key: 'fm-done', color, mark: '✓', markColor: C.steel, label: `${face.icon} ${face.verb}`, subject: face.target,
     meta: ms !== undefined ? [{ text: elapsed(ms) }] : [],
   })
   return (
@@ -536,7 +536,7 @@ export function findingsRow(ui: UI, e: ToolUseRender) {
     return n
   }, {})).map(([k, n]) => `${n} ${k}`).join(' · ')
   const { head } = sectionHead(ui, e, {
-    key: 'fm-review', color: C.warn, mark: '✓', markColor: C.ok, label: '◇ Review',
+    key: 'fm-review', color: C.warn, mark: '✓', markColor: C.steel, label: '◇ Review',
     subject: fs.length ? `${fs.length} finding${fs.length === 1 ? '' : 's'}${typeof input.level === 'string' ? ` at ${clean(input.level)}` : ''}` : 'nothing found',
     meta: tally ? [{ text: tally }] : [],
   })
@@ -635,7 +635,7 @@ export function liveTree(ui: UI, e: ResolveInput, t: TreeIn): RenderElement[] {
     return (
       <Box key={key} flexDirection="row" gap={1} height={1} overflow="hidden">
         <Box flexShrink={0}><Text color={hex(lines)}>{prefix}</Text></Box>
-        <Box flexShrink={0}><Text color={hex(!done ? x.color : x.ok === false ? C.err : C.ok)}>{mark}</Text></Box>
+        <Box flexShrink={0}><Text color={hex(!done ? x.color : x.ok === false ? C.err : C.steel)}>{mark}</Text></Box>
         <Box flexShrink={0}><Text weight="bold" color={hex(x.color)}>{`${x.icon} ${done ? PAST[x.verb] ?? x.verb : x.verb}`}</Text></Box>
         <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end" color={hex(0xd0d5dd)}>{clean(x.target)}</Text></Box>
         {bar(key, { start: x.at, end: x.end ?? null, marks: [], color: x.color }, !done)}

@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, customColors, elapsed, PALETTES, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
+import { activityCells, agentColor, barCells, bucketize, C, mix, changedLines, clawd, diffRows, clean, customColors, elapsed, PALETTES, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
 import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts, usable } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
@@ -324,6 +324,19 @@ test('band is a card: type chip, title, gradient progress (text twin off the ter
     expect(calls).not.toContainEqual(['fm', 'task', 'set', 'T-0009', 'approved=true'])
     await ui.unmount()
   }
+})
+
+test("palette 'cb' draws the band's step bar in its own ok, as before the forge (T-2876 audit)", { options: { palette: 'cb' } }, async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  const bar = decode(String((await ui.findAll({ type: 'Raster' })).find(r => r.key === 'fm-band-bar')!.props.cells))
+  const far = (x: number, y: number) => Math.hypot((x >> 16) - (y >> 16), ((x >> 8) & 255) - ((y >> 8) & 255), (x & 255) - (y & 255))
+  const at = bar[0]!.fg // the gradient's start (with the band's glow on it): cb's ok, not its accent or the forge's steel
+  const cb = { ok: 0x56b4e9, accent: 0x5fd7d7, accent2: 0x87afff }, steel = 0xc8d8ec // the mod's C is its own copy
+  expect(far(at, mix(cb.ok, cb.accent2, 0.6))).toBeLessThan(far(at, mix(cb.accent, cb.accent2, 0.6)))
+  expect(far(at, mix(cb.ok, cb.accent2, 0.6))).toBeLessThan(far(at, mix(steel, cb.accent2, 0.6)))
+  await ui.unmount()
 })
 
 test('while a turn runs the band animates; when it ends the clock stops', async ($, on) => {
@@ -1757,10 +1770,10 @@ test('what is done and what is left: a bar of the work under the head, a segment
     expect(await ui.find({ type: 'Text', text })).toBeDefined()
   const rasters = await ui.findAll({ type: 'Raster' })
   const work = decode(String(rasters.find(r => r.key === 'work-bar')!.props.cells))
-  expect(work.filter(c => c.fg === C.ok).length).toBeGreaterThan(work.length / 3) // 3 of the 8 are done
+  expect(work.filter(c => c.fg === C.steel).length).toBeGreaterThan(work.length / 3) // 3 of the 8 are done: steel (T-2876)
   const steps = decode(String(rasters.find(r => r.key === 'task-steps')!.props.cells))
-  expect(steps[0]!.fg).toBe(C.ok) // step 1 done
-  expect(steps.at(-1)!.fg).not.toBe(C.ok) // step 2 not yet
+  expect(steps[0]!.fg).toBe(C.steel) // step 1 done: cooled
+  expect(steps.at(-1)!.fg).not.toBe(C.steel) // step 2 not yet
   await ui.unmount()
 })
 
@@ -1788,7 +1801,8 @@ test('stackCells: a share each, at least a cell for any non-zero part, the track
   const seg = decode(stepCells([{ done: true, current: false }, { done: false, current: true }, { done: false, current: false }], 14, null))
   expect(seg.length).toBe(14)
   expect(seg.filter(c => c.ch === ' ').length).toBe(2) // a gap between steps
-  expect([seg[0]!.fg, seg.at(-1)!.fg]).toEqual([C.ok, C.track])
+  expect([seg[0]!.fg, seg.at(-1)!.fg]).toEqual([C.steel, C.todo]) // T-2876: a done step has cooled to steel, one to come reads
+  expect(seg.some(c => c.fg === C.hot)).toBe(true) // the current one glows
 })
 
 test('chat rows read like the pane: a bold label, a rule fading in the row colour, no box (T-1031)', async ($, on) => {

@@ -114,7 +114,7 @@ class Core(unittest.TestCase):
             app.feed(e)
         cv = tui().render(app.state, 110, 32, tui().DEFAULTS, app)
         self.assertEqual(cv.text().splitlines()[2].count("✓"), 5, "plan, both steps, the checks and the close: done")
-        self.assertEqual(cv.style_of(" ✓ "), "chip_ok")
+        self.assertEqual(cv.style_of(" ✓ "), "chip_steel")  # T-2876: a done station has cooled
         self.assertEqual(cv.style_of("PASS"), "chip_ok")
         self.assertIn("▆▆", cv.text(), "the changed file's lines as a bar")
         self.assertNotIn("Reading calc.py first.", cv.text(), "the model's own words wait behind t")
@@ -290,6 +290,99 @@ class Themes(unittest.TestCase):
         plain = tui().gallery(130, 18, depth=0)
         self.assertNotIn("\x1b[", plain)
         self.assertTrue(all(len(line) <= 130 for line in plain.splitlines()), "fits the width it was given")
+
+
+class Forge(unittest.TestCase):
+    """T-2876: the TUI wears the illustrated forge (design/sampo/tokens.json's night and light themes): night and paper
+    read their colours from the tokens, running work glows hot and finished work cools to steel, the banner says SAMPO
+    CODE; signal, riso and the cb/riso inks stay exactly as they were (the baseline), and classic is the old night."""
+    BASE = os.path.join(PLUGIN, "tests", "fixtures", "tui-baseline.json")
+    TOKENS = os.path.join(os.path.dirname(PLUGIN), "design", "sampo", "tokens.json")
+
+    def base(self):
+        with open(self.BASE, encoding="utf-8") as f:
+            return json.load(f)
+
+    def tokens(self, theme):
+        with open(self.TOKENS, encoding="utf-8") as f:
+            return {k: v["$value"].upper() for k, v in json.load(f)[theme]["color"].items() if isinstance(v, dict)}
+
+    def test_signal_riso_and_the_inks_are_the_baseline(self):
+        b, t = self.base(), tui()
+        self.assertEqual(t.PALETTES["signal"], b["signal"])
+        self.assertEqual(t.PALETTES["riso"], b["riso"])
+        self.assertEqual((t.CB, t.RISO), (b["cb_inks"], b["riso_inks"]))
+
+    def test_classic_is_the_old_night_and_a_preset(self):
+        t = tui()
+        self.assertEqual(t.PALETTES["classic"], self.base()["classic"])
+        self.assertIn("classic", t.PRESETS)
+
+    def test_night_and_paper_read_the_forge_tokens(self):
+        t, night, day = tui(), self.tokens("dark"), self.tokens("light")
+        n, p = t.PALETTES["night"], t.PALETTES["paper"]
+        self.assertEqual((n["bg"], n["ink"], n["dim"], n["accent"], n["ok"], n["bad"], n["warn"]),
+                         (night["surface"], night["text"], night["text-muted"], night["glow"], night["success"],
+                          night["error"], night["warning"]))
+        self.assertEqual((p["bg"], p["ink"], p["dim"]), (day["surface"], day["text"], day["text-muted"]))
+
+    def test_running_is_hot_and_done_is_steel_and_they_part_on_256_colours(self):
+        t = tui()
+        n = t.PALETTES["night"]
+        self.assertEqual(t.NODE["now"][1], "hot")
+        self.assertEqual((t.NODE["done"][1], t.LINK["done"][1]), ("steel", "steel"))
+        hot, steel = t._theme(n)["hot"]["fg"], t._theme(n)["steel"]["fg"]
+        self.assertNotEqual(t.to_256(hot), t.to_256(steel))
+        lum = lambda h: 0.2126 * int(h[1:3], 16) + 0.7152 * int(h[3:5], 16) + 0.0722 * int(h[5:7], 16)
+        self.assertGreaterEqual(abs(lum(hot) - lum(steel)), 20, (hot, steel))
+        for name in ("night", "paper"):  # what's still to come reads as a graphic (3:1), on both grounds
+            pal = t.PALETTES[name]
+            self.assertGreaterEqual(t.contrast(t._theme(pal)["todo"]["fg"], pal["bg"]), 3, name)
+
+    def load(self, text):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        path = os.path.join(d, "tui.toml")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return tui().load_config(path, env={}, profile=False)
+
+    def test_an_ink_over_night_or_paper_is_the_look_it_was(self):  # T-2876 audit: exactly as before, ground and all
+        t, b = tui(), self.base()
+        self.assertEqual(t.preset_theme("night", "cb"), t._theme(dict(b["classic"], **b["cb_inks"]["night"])))
+        self.assertEqual(t.preset_theme("paper", "riso"), t._theme(dict(b["classic_paper"], **b["riso_inks"]["paper"])))
+        self.assertIn("classic_paper", t.PRESETS)
+
+    def test_a_saved_accent_or_ok_reaches_running_and_finished_marks(self):  # T-2876 audit
+        cfg, errors = self.load('theme = "classic"\n[colors]\naccent = "#FFAA00"\nok = "#33CC66"\n')
+        self.assertEqual(errors, [])
+        th = cfg["theme"]
+        self.assertEqual((th["hot"]["fg"], th["steel"]["fg"], th["chip_steel"]["bg"]), ("#FFAA00", "#33CC66", "#33CC66"))
+        cfg, _ = self.load('theme = "night"\n[colors]\nok = "#33CC66"\n')  # the forge's own steel stays its own
+        self.assertEqual(cfg["theme"]["steel"]["fg"], tui().PALETTES["night"]["steel"])
+
+    def test_the_banner_says_sampo_code(self):
+        src = open(os.path.join(PLUGIN, "lib", "sampo", "smithtui.py"), encoding="utf-8").read()
+        self.assertIn("SAMPO CODE", src)
+        self.assertNotIn("FOREMAN CODE", src)
+
+    def test_no_string_a_user_sees_says_foreman(self):
+        """The TUI's and statusline's string literals (docstrings too), and the mod's quoted strings, say Sampo. Env
+        names (FOREMAN_*) and the regexes that still accept the old name from older hooks stay."""
+        import ast
+        import re
+        for path in (os.path.join(PLUGIN, "lib", "sampo", "smithtui.py"), os.path.join(PLUGIN, "hooks", "statusline")):
+            with open(path, encoding="utf-8") as f:
+                tree = ast.parse(f.read())
+            said = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+            self.assertEqual([s for s in said if re.search(r"\bForeman\b|FOREMAN CODE", s)], [], path)
+        mod = os.path.join(os.path.dirname(PLUGIN), "mods", "foreman-ui", "hooks")
+        for name in sorted(os.listdir(mod)):
+            with open(os.path.join(mod, name), encoding="utf-8") as f:
+                for n, line in enumerate(f, 1):
+                    code = line.split("//")[0] if "://" not in line else line
+                    for lit in re.findall(r"'[^']*'|\"[^\"]*\"|`[^`]*`", code):
+                        self.assertNotRegex(lit, r"\bForeman\b", f"{name}:{n}")
 
 
 class Navigation(unittest.TestCase):
@@ -3038,7 +3131,7 @@ class SettingsScreen(unittest.TestCase):
         for w in (60, 80, 140):
             lines = self.text(app, w, 30).splitlines()
             head = next(line for line in lines if "VALUE" in line and "DEFAULT" in line)
-            for key, value, default in (("motion", "off", "full"), ("colors.ok", "#4DA3FF", "#47C98B")):
+            for key, value, default in (("motion", "off", "full"), ("colors.ok", "#4DA3FF", tui().PALETTES["night"]["ok"])):
                 line = next(line for line in lines if f" {key} " in line)
                 self.assertEqual(line.index(value, line.index(key) + len(key)), head.index("VALUE")
                                  + (3 if key.startswith("colors") else 0), (w, key, "the value under VALUE (a swatch "
@@ -3150,10 +3243,11 @@ class SettingsPreview(unittest.TestCase):
 
     def test_a_theme_change_repaints_behind_the_overlay_before_it_is_kept(self):
         app = self.app()
-        self.assertNotIn('fill="#c9d1dd"', self.svg(app))
+        shade = f'fill="{tui().PALETTES["paper"]["shade"].lower()}"'  # T-2876: the palette's, not a copy of it
+        self.assertNotIn(shade, self.svg(app))
         self.set(app, "set theme paper")
         self.assertEqual(app.cfg["preset"], "paper")
-        self.assertIn('fill="#c9d1dd"', self.svg(app), "paper's shade: the screen behind repainted")
+        self.assertIn(shade, self.svg(app), "paper's shade: the screen behind repainted")
         self.assertEqual(self.file(), self.MINE, "a preview writes nothing")
         text = self.text(app)
         self.assertIn(" any key  keeps it", text)
@@ -3170,7 +3264,7 @@ class SettingsPreview(unittest.TestCase):
         self.now += 0.5
         app.poll()  # the screen's loop polls at least once a second
         self.assertEqual(app.cfg, night, "the screen as it was")
-        self.assertIn('fill="#2a3650"', self.svg(app))
+        self.assertIn(f'fill="{tui().PALETTES["night"]["shade"].lower()}"', self.svg(app))
         self.assertEqual(self.file(), self.MINE, "the file as it was")
         self.assertIn("not kept", self.text(app))
         app.key("j")
@@ -3653,7 +3747,7 @@ class MotionVisuals(unittest.TestCase):
                 self.assertEqual((errors, cfg["preset"]), ([], preset))
                 th = cfg["theme"]
                 for name, spec in th.items():  # the app's own floor for a [colors] style, on the screen and a panel
-                    if name not in ("screen", "panel", "border", "track", "shade", "glow"):
+                    if name not in ("screen", "panel", "border", "track", "shade", "glow", "todo"):  # todo: ○ and ─, a graphic
                         self.assertIsNone(T._faint(spec, th), name)
                         self.assertIsNone(T._faint(dict(spec, bg=spec.get("bg") or th["panel"]["bg"]), th), name)
                 T.render(T.State(), 100, 30, cfg)

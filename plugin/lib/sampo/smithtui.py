@@ -33,11 +33,25 @@ FM = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(os.path.dirnam
 # Themes come from a palette of a few colours. A colour is "#rrggbb" or a 0-255 index; the driver maps hex to the
 # terminal's 256 colours (8 on a small terminal), NO_COLOR drops them, and the SVG snapshot uses them as they are.
 PALETTES = {
-    "night": {"bg": "#0D1420", "bar": "#1B2638", "head": "#131C2B", "ink": "#E7ECF4", "dim": "#8A98AE",
+    # T-2876: the illustrated forge (design/sampo/tokens.json's dark and light roles, pinned by test_code_tui.Forge;
+    # design/ isn't shipped with the plugin, so the values live here): the night the forge burns in, its gold (accent:
+    # what runs), the ember (hot: the live point), and steel for finished work; paper is the daylight sheet in bronze
+    "night": {"bg": "#060819", "bar": "#2A2C33", "head": "#0B1030", "ink": "#EEF0FA", "dim": "#9097BC",
+              "said": "#9097BC", "accent": "#FFC24D", "ok": "#6FD8A0", "bad": "#FF85BC", "warn": "#C8DC5A",
+              "edge": "#5C6390", "track": "#2A2C33", "shade": "#22253A", "barink": "#EEF0FA",
+              "accent2": "#6E9BFF", "ok2": "#A8D5A2", "bad2": "#FF9440", "glow": "#FFFFFF", "panel": "#0B1030",
+              "hot": "#FF6A4A", "steel": "#C8D8EC", "todo": "#5C6390"},
+    "paper": {"bg": "#EEF0F6", "bar": "#D6DBEA", "head": "#E2E6F1", "ink": "#12163A", "dim": "#555B80",
+              "said": "#555B80", "accent": "#7A5A26", "ok": "#1F7A45", "bad": "#B0186E", "warn": "#5F6A0A",
+              "edge": "#7C819F", "track": "#C9CEDD", "shade": "#B9BFD2", "barink": "#12163A", "paint": True,
+              "accent2": "#2448B8", "ok2": "#4E9F1D", "bad2": "#C2571A", "glow": "#FFFFFF", "panel": "#FFFFFF",
+              "hot": "#E0461A", "steel": "#555B80", "todo": "#7C819F"},
+    # the look before the forge (T-2876): kept as the classic preset, and under signal and riso as they were
+    "classic": {"bg": "#0D1420", "bar": "#1B2638", "head": "#131C2B", "ink": "#E7ECF4", "dim": "#8A98AE",
               "said": "#9AA8BC", "accent": "#86A8FF", "ok": "#47C98B", "bad": "#FF6B6B", "warn": "#FFC83D",
               "edge": "#33445F", "track": "#2E3D58", "shade": "#2A3650", "barink": "#C9D3E3",
               "accent2": "#C792FF", "ok2": "#B8F26B", "bad2": "#FFA26B", "glow": "#FFFFFF", "panel": "#111B2B"},
-    "paper": {"bg": "#F6F7F9", "bar": "#E1E6EE", "head": "#E9EDF3", "ink": "#1B2330", "dim": "#5E6B7E",
+    "classic_paper": {"bg": "#F6F7F9", "bar": "#E1E6EE", "head": "#E9EDF3", "ink": "#1B2330", "dim": "#5E6B7E",
               "said": "#4F5B6C", "accent": "#2F54C9", "ok": "#12805C", "bad": "#C42B2B", "warn": "#9A6200",
               "edge": "#C3CCD9", "track": "#CDD5E1", "shade": "#C9D1DD", "barink": "#2B3442", "paint": True,
               "accent2": "#8B3FD1", "ok2": "#4E9F1D", "bad2": "#C2571A", "glow": "#FFFFFF", "panel": "#FFFFFF"},
@@ -47,14 +61,14 @@ PALETTES = {
 CB = {"night": dict(ok="#4DA3FF", ok2="#9AD4FF", bad="#FF8A1F", bad2="#FFC46B", warn="#F2D544", accent="#C4A8FF",
                     accent2="#FF8FD8"),
       "paper": dict(ok="#1D5FB8", ok2="#3B7DD8", bad="#B34D00", bad2="#C2571A", accent="#7B3FC9", accent2="#B0308F")}
-PALETTES["signal"] = dict(PALETTES["night"], **CB["night"])
+PALETTES["signal"] = dict(PALETTES["classic"], **CB["night"])  # T-2876: as it was before the forge
 # palette = "riso" (T-1512, the pane's word too): risograph inks (green, fluorescent pink, yellow, cornflower; deeper
 # cuts of them on a light theme) over a theme's own colours; the riso theme is them on an uncoated paper stock
 RISO = {"night": dict(ok="#00A95C", ok2="#5EC8E5", bad="#FF48B0", bad2="#FF7477", warn="#FFE800", accent="#62A8E5",
                       accent2="#FFB511"),
         "paper": dict(ok="#00784A", ok2="#14935A", bad="#C4126C", bad2="#E2457A", warn="#835300", accent="#0062A0",
                       accent2="#B0420F")}
-PALETTES["riso"] = dict(PALETTES["paper"], bg="#F2EDE1", bar="#E3DAC6", head="#EAE3D2", panel="#F8F4EB", ink="#1E2235",
+PALETTES["riso"] = dict(PALETTES["classic_paper"], bg="#F2EDE1", bar="#E3DAC6", head="#EAE3D2", panel="#F8F4EB", ink="#1E2235",
                         dim="#655D4E", said="#5A5242", barink="#2B2A33", edge="#C8BDA6", track="#D3C8B1",
                         shade="#D8CEBA", **RISO["paper"])
 INKS = {"cb": CB, "riso": RISO}  # a palette's colours for a dark theme (night) and a light one (paper)
@@ -76,7 +90,11 @@ def _theme(p):
             "input": {"fg": p["ink"], "bg": p["bar"], "bold": True}, "chip_ok": chip(p["ok"]),
             "chip_bad": chip(p["bad"]), "chip_warn": chip(p["warn"]), "chip_accent": chip(p["accent"]),
             "chip_todo": {"fg": p["dim"], "bg": p["bar"]}, "accent2": {"fg": p["accent2"]}, "ok2": {"fg": p["ok2"]},
-            "bad2": {"fg": p["bad2"]}, "glow": {"fg": p["glow"]}, "panel": {"bg": p["panel"]}}
+            "bad2": {"fg": p["bad2"]}, "glow": {"fg": p["glow"]}, "panel": {"bg": p["panel"]},
+            # T-2876: the heat language: what runs glows hot, what is finished cools to steel (a palette without them,
+            # classic, signal, riso or an ink overlay, keeps its accent and ok, so nothing it showed changes)
+            "hot": {"fg": p.get("hot", p["accent"]), "bold": True}, "steel": {"fg": p.get("steel", p["ok"])},
+            "chip_steel": chip(p.get("steel", p["ok"])), "todo": {"fg": p.get("todo", p["track"])}}
 
 
 def _mono():
@@ -87,7 +105,9 @@ def _mono():
 
 
 PRESETS = {"night": lambda: _theme(PALETTES["night"]), "paper": lambda: _theme(PALETTES["paper"]),
-           "signal": lambda: _theme(PALETTES["signal"]), "riso": lambda: _theme(PALETTES["riso"]), "mono": _mono}
+           "signal": lambda: _theme(PALETTES["signal"]), "riso": lambda: _theme(PALETTES["riso"]), "mono": _mono,
+           "classic": lambda: _theme(PALETTES["classic"]),  # T-2876: the look before the forge, dark and light
+           "classic_paper": lambda: _theme(PALETTES["classic_paper"])}
 THEME = PRESETS["night"]()
 BORDERS = {"rounded": "╭╮╰╯─│", "square": "┌┐└┘─│", "heavy": "┏┓┗┛━┃", "double": "╔╗╚╝═║", "ascii": "++++-|"}
 DEFAULTS = {
@@ -108,10 +128,10 @@ DEFAULTS = {
 }
 HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
          ("q", "quit")]
-CHIP = {"done": (" ✓ ", "chip_ok"), "now": (" ● ", "chip_accent"), "todo": ("   ", "chip_todo"),
+CHIP = {"done": (" ✓ ", "chip_steel"), "now": (" ● ", "chip_accent"), "todo": ("   ", "chip_todo"),
         "fail": (" ✖ ", "chip_bad")}
-NODE = {"done": ("●", "ok"), "now": ("◉", "accent"), "todo": ("○", "track"), "fail": ("✖", "bad")}
-LINK = {"done": ("━", "ok"), "now": ("━", "accent"), "fail": ("━", "bad"), "todo": ("─", "track")}
+NODE = {"done": ("●", "steel"), "now": ("◉", "hot"), "todo": ("○", "todo"), "fail": ("✖", "bad")}  # T-2876: heat
+LINK = {"done": ("━", "steel"), "now": ("━", "hot"), "fail": ("━", "bad"), "todo": ("─", "todo")}
 BLOCKS = "▁▂▃▄▅▆▇█"
 RAIL = "▀"  # T-1512: the 3D track's built rail: its lit top in the link's colour, its side in shadow under it
 PROBE = RAIL  # the glyphs whose width the app asks the terminal at start (East Asian ambiguous: 1 or 2 columns)
@@ -862,6 +882,7 @@ def _track(st, w, h, app):
     xs = [round(i * (w - cw) / (n - 1)) for i in range(n)]
     rows = [[(" ", "text")] * w for _ in range(3)]
     ok, ok2, accent, glow, track = fx.c("ok"), fx.c("ok2"), fx.c("accent"), fx.c("glow"), fx.c("track")
+    steel = fx.c("steel")
     rail = app is not None and app.glyphs.get(RAIL) == 1 and accent is not None  # T-1512: measured, and in colour
     for i, (_, _, state) in enumerate(nodes):
         glyph, style = marks[state]
@@ -877,8 +898,8 @@ def _track(st, w, h, app):
             into = nodes[i + 1][2]
             for j, x in enumerate(span):
                 ch, style = LINK[into]
-                if into == "done":
-                    style = rgb(fg=mix(ok, ok2, (x / max(1, w - 1))))
+                if into == "done":  # T-2876: built track has cooled to steel (a palette without steel: its ok, as before)
+                    style = rgb(fg=steel if steel != ok else mix(ok, ok2, (x / max(1, w - 1))))
                 elif into == "now" and fx.moving:  # a light running toward the station being worked
                     d = (fx.t * 22) % (len(span) + 10) - j
                     style = rgb(fg=mix(mix(track, accent, 0.6), glow, (1 - d / 8) if 0 <= d < 8 else 0), bold=True)
@@ -979,8 +1000,9 @@ def _tokens(st, w, h, app):
     fx = current()
     tall = min(10, max(3, (h or 5) - 1))
     vals = [fx.ease(f"col:{i}", v, 0.9) for i, v in enumerate(st.calls)]
-    accent, accent2 = fx.c("chart") or fx.c("accent"), fx.c("accent2")
-    lines = [[(row, rgb(fg=mix(accent, accent2, (tall - 1 - r) / max(1, tall - 1))))]
+    accent, accent2, hot = fx.c("chart") or fx.c("accent"), fx.c("accent2"), fx.c("hot")
+    top = hot if hot and hot != fx.c("accent") else accent2  # T-2876: the forge heats gold to ember; others as before
+    lines = [[(row, rgb(fg=mix(accent, top, (tall - 1 - r) / max(1, tall - 1))))]
              for r, row in enumerate(columns(vals, w, tall))]
     roll = lambda key, v: human(round(fx.ease(key, v))).rjust(len(human(v)))  # rolls in place: labels stay put
     lines.append([(roll("tok:in", st.tokens[0]), "strong"), (" in   ", "dim"), (roll("tok:out", st.tokens[1]), "strong"),
@@ -1010,7 +1032,7 @@ def _time(st, w, h, app):
     total = max(1, sp[-1][2])
     dw = max(len(duration(e - s)) for _, s, e in sp) + 2
     bw = max(4, w - 8 - dw)
-    ok, ok2, accent, glow, bad = fx.c("ok"), fx.c("ok2"), fx.c("accent"), fx.c("glow"), fx.c("bad")
+    ok, ok2, accent, glow, bad, steel = fx.c("ok"), fx.c("ok2"), fx.c("accent"), fx.c("glow"), fx.c("bad"), fx.c("steel")
     out = []
     for i, (label, s, e) in enumerate(sp):
         a = max(0, min(bw - 1, int(s * bw / total)))  # T-1922: a phase stamped before the run padded gigabytes
@@ -1018,8 +1040,8 @@ def _time(st, w, h, app):
         live = i == len(sp) - 1 and st.status not in ("closed", "answered")
         cells = []
         for x in range(a, b):
-            if not live:
-                c = mix(ok, ok2, x / max(1, bw - 1))
+            if not live:  # T-2876: a finished phase has cooled to steel (no steel in the palette: its ok, as before)
+                c = steel if steel != ok else mix(ok, ok2, x / max(1, bw - 1))
             elif st.status in ("blocked", "error", "stopped"):
                 c = bad
             else:
@@ -1049,7 +1071,7 @@ def entry_segments(e, w, thoughts=True):
             return [("  ⊘ ", "bad"), (f"{e.get('action') or '':<7}", "dim"), (str(e.get("target") or ""), "bad"),
                     ("  ", "text"), (" GUARD ", "chip_bad")]
         bad = e.get("result") == "error"
-        return [(f"  {'!' if bad else '✓'} ", "warn" if bad else "ok"), (f"{e.get('action') or '':<7}", "dim"),
+        return [(f"  {'!' if bad else '✓'} ", "warn" if bad else "steel"), (f"{e.get('action') or '':<7}", "dim"),
                 (str(e.get("target") or ""), "warn" if bad else "text")]
     if k == "revert":
         return [("  ↺ ", "warn"), (f"{'revert':<7}", "dim"), (str(e.get("file")), "warn"), ("  ", "text"),
@@ -1078,7 +1100,7 @@ def entry_segments(e, w, thoughts=True):
     if k == "stalled":
         return [("  ⚠ ", "warn"), (e["text"].strip(), "warn")]
     if k == "closed":
-        return [(" DONE ", "chip_ok"), ("  " + e["text"], "ok")]
+        return [(" DONE ", "chip_steel"), ("  " + e["text"], "steel")]
     if k == "answer":
         return [("  ", "text"), (e.get("text", ""), "text")]
     if k == "aside":  # T-1770
@@ -1212,8 +1234,8 @@ def human(n):
     return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.1f}k" if n >= 1e3 else str(n)
 
 
-STATUS_CHIP = {"running": "chip_accent", "planning": "chip_warn", "fixing": "chip_warn", "closed": "chip_ok",
-               "answered": "chip_ok",
+STATUS_CHIP = {"running": "chip_accent", "planning": "chip_warn", "fixing": "chip_warn", "closed": "chip_steel",
+               "answered": "chip_steel",
                "blocked": "chip_bad", "error": "chip_bad", "stopped": "chip_bad"}
 
 
@@ -1226,7 +1248,7 @@ def elapsed(st, app):
 
 def _header(cv, st, app):
     cv.fill(0, "header")
-    fx, brand = current(), " ◆ FOREMAN CODE "
+    fx, brand = current(), " ⊖ SAMPO CODE "  # T-2876: the anvil-stone mark
     a, b, glow, ink = fx.c("accent"), fx.c("accent2"), fx.c("glow"), col(fx.cfg, "brand")
     sweep = (fx.t % 7) / 1.4 * (len(brand) + 8) - 4 if fx.moving else -99  # a glint crosses the name now and then
     for i, ch in enumerate(brand):
@@ -1715,13 +1737,13 @@ def _card_lines(p):
 def _card_track(a):
     """T-1345: the active task's stations (plan, work, checks, close) as a mini track, the one it's at lit."""
     if not a:
-        return [("○──○──○──○", "track")]
+        return [("○──○──○──○", "todo")]
     at, names = DECK_STAGE.get(a.get("stage"), 1), ("plan", "work", "checks", "close")
     segs = []
     for i in range(4):
-        segs.append(("●", "ok") if i < at else ("◉", "accent") if i == at else ("○", "track"))
+        segs.append(("●", "steel") if i < at else ("◉", "hot") if i == at else ("○", "todo"))  # T-2876: heat
         if i < 3:
-            segs.append(("━━", "ok") if i < at else ("──", "track"))
+            segs.append(("━━", "steel") if i < at else ("──", "todo"))
     done, total = a.get("steps_done"), a.get("steps_total")
     steps = f" {done}/{total}" if at == 1 and isinstance(total, int) and total else ""
     return segs + [(f"  {names[at]}{steps}", "dim")]
@@ -1816,7 +1838,8 @@ PREVIEW_KEYS, PREVIEW_SECONDS = ("theme", "palette", "motion"), 10  # T-1573: sh
 def preset_theme(preset, palette="default"):
     """The styles a theme gives before any [colors] change: a palette's inks over its colours (mono has none)."""
     base = PALETTES.get(preset)
-    if palette in INKS and base:
+    if palette in INKS and base:  # T-2876: an ink is the look it was, its ground and all: over the night and paper before the forge
+        base = PALETTES[{"night": "classic", "paper": "classic_paper"}.get(preset, preset)]
         return _theme(dict(base, **INKS[palette]["paper" if base.get("paint") else "night"]))
     return PRESETS.get(preset, PRESETS["night"])()
 
@@ -4420,6 +4443,7 @@ def _apply(cfg, user, bad):
                         except settings.SettingError as x:
                             bad(str(x))
         elif key == "colors":
+            was = {k: dict(cfg["theme"].get(k) or {}) for k in ("accent", "ok", "hot", "steel")}
             for name, spec in val.items():
                 msg = _style_error(name, spec, cfg["theme"])
                 if not msg and name not in ("screen", "panel", "border", "track", "shade"):  # text has to be read
@@ -4428,6 +4452,15 @@ def _apply(cfg, user, bad):
                     bad(f"colors.{name}: {msg}")
                 else:
                     cfg["theme"][name] = spec if isinstance(spec, dict) else {"fg": spec}
+            # T-2876: where hot and steel only stood in for accent and ok (a palette without heat), a saved accent or ok
+            # recolours running and finished marks too, as before; the forge's own hot and steel stay its own
+            th = cfg["theme"]
+            for src, dst in (("accent", "hot"), ("ok", "steel")):
+                if src in val and dst not in val and th.get(src, {}).get("fg") and \
+                        was[dst].get("fg") == was[src].get("fg"):
+                    th[dst] = dict(th.get(dst) or {}, fg=th[src]["fg"])
+                    if dst == "steel" and "chip_steel" not in val:
+                        th["chip_steel"] = dict(th.get("chip_steel") or {}, bg=th[src]["fg"])
         elif key == "layout":
             for k, v in val.items():
                 msg = _layout_error(k, v, val, cfg)

@@ -38,6 +38,7 @@ import {
   miniClawd,
   mix,
   outputSummary,
+  paneMark,
   progressCells,
   pulse,
   shortPath,
@@ -334,7 +335,7 @@ async function pollOptions($: EngineInterface) {
   for (const k of Object.keys(OPTION_OK)) if (OPTION_OK[k]!(out[k])) goodOptions[k] = out[k]
   await $.store.set('goodOptions', goodOptions).catch(() => undefined)
   const show = (v: unknown) => clean(typeof v === 'string' ? `'${v}'` : JSON.stringify(v) ?? '').slice(0, 40)
-  if (kept.length) $.ui.toast(`⚠ foreman-ui: ${kept.map(k => `${k} ${show(now[k] ?? startOptions[k])} isn't a value it can use; kept ${clean(String(out[k] ?? 'the default'))}`).join('; ')} (fm settings list shows the choices)`)
+  if (kept.length) $.ui.toast(`⚠ Sampo: ${kept.map(k => `${k} ${show(now[k] ?? startOptions[k])} isn't a value it can use; kept ${clean(String(out[k] ?? 'the default'))}`).join('; ')} (fm settings list shows the choices)`)
   if (cfg.motion === 'off') sleep() // T-0912: off means no clocks, even mid-work
   else if (cfg.motion === 'reduced') { // the 8 fps frame clock only: the 30 fps blit stops now
     motionClock?.cancel()
@@ -1152,7 +1153,7 @@ export const register: Register = (on, options) => {
         {a && a.steps.length > 0 && (
           <Box flexDirection="row" gap={1}>
             {working && <Text color={hex(C.accent)}>{spin(f ?? 0)}</Text>}
-            {meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
+            {meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.steel, f)}
             <Text wrap={cut}>
               {/* T-1154: the current step's own number ('1/3' beside step 2's text read as step 1) */}
               <Text weight="bold">{`step ${Math.min(a.steps.length, done + 1)}/${a.steps.length}`}</Text>{' '}
@@ -1204,7 +1205,7 @@ export const register: Register = (on, options) => {
             {/* T-0909: a mini stage rail, the pane's in small */}
             {miniRail($.ui.resolve(e), e, a.stages.length, a.stages.indexOf(a.stage), working ? f : null)}
             <Text color={hex(C.dim)}>{a.stage}</Text>
-            {a.steps.length > 0 && meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
+            {a.steps.length > 0 && meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.steel, f)}
             {a.steps.length > 0 && <Text weight="bold">{`step ${Math.min(a.steps.length, done + 1)}/${a.steps.length}`}</Text>}
             {cur && <Text wrap={cut}>{cur.text}</Text>}
             {a.audits.need > 0 && (
@@ -1634,7 +1635,7 @@ export const register: Register = (on, options) => {
           c.minutes !== null ? elapsed(c.minutes * 60000) : '',
           c.usual !== undefined ? `usually ${about(c.usual)}` : '',
         ].filter(Boolean)
-        return row(C.ok, `✔ ${c.id} done${closeCard(c)}${facts.length ? ` · ${facts.join(' · ')}` : ''}${c.title ? ` · ${c.title}` : ''}`,
+        return row(C.steel, `✔ ${c.id} done${closeCard(c)}${facts.length ? ` · ${facts.join(' · ')}` : ''}${c.title ? ` · ${c.title}` : ''}`,
           <Box key="attention-sweep" flexShrink={0}>{meter(ui, e, 'closed-sweep', 8, cfg.motion === 'off' ? 1 : sweep(clockNow), C.ok, null)}</Box>)
       }
       if (failing) return row(C.err, `✗ gates failing: ${checks!.results.filter(r => r.exit).map(r => r.cmd).join(', ')}`)
@@ -1642,7 +1643,7 @@ export const register: Register = (on, options) => {
       if (caps) return row(C.warn, `◐ spend caps halved: ${caps}${v.budget?.subagents_paused ? ', subagents wait' : ''}`)
       const rv = (v.revisit ?? [])[0]
       if (rv) return row(C.warn, `◆ revisit: ${rv.decision} (${rv.why})`)
-      if (doneSince.length) return row(C.ok, `✔ since your last message: ${doneSince.length} done (${doneSince.slice(-6).join(' ')})`)
+      if (doneSince.length) return row(C.steel, `✔ since your last message: ${doneSince.length} done (${doneSince.slice(-6).join(' ')})`)
       const sl = signalLine(v) // T-0472: usage ahead of pace, tasks blocked …: the band's glyph, here while the pane is open
       if (sl) return row(sl.level === 'red' ? C.err : C.warn, `${sl.level === 'red' ? '●' : '◐'} ${sl.text}`)
       if (v.genesis && v.genesis.kind !== 'done') return row(C.dim, `⌂ genesis gen ${v.genesis.gen} · ${v.genesis.stage}: ${v.genesis.action}`) // T-2118
@@ -1661,7 +1662,7 @@ export const register: Register = (on, options) => {
       : []
     // T-1026 ('doesn't show how many things have been complete and how many are left'): the work as one bar
     const work = [
-      { n: v.today_done ?? 0, word: 'done today', color: C.ok },
+      { n: v.today_done ?? 0, word: 'done today', color: C.steel },
       { n: a ? 1 : 0, word: 'now', color: C.accent },
       { n: queue.length, word: 'queued', color: C.accent2 },
       { n: inboxN, word: 'inbox', color: C.muted },
@@ -1678,7 +1679,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column" flexGrow={1} flexShrink={1}>
           <Text key="head-who" wrap="truncate-end">
             <Text weight="bold" color={hex(C.accent)}>
-              {moving ? spin(f ?? 0) : '▍'} Sampo
+              {paneMark(moving, f ?? 0)} Sampo
             </Text>
             <Text color={muted}>{`  ${v.project}`}</Text>
             {modes.map(([w, c], i) => (
@@ -1687,7 +1688,7 @@ export const register: Register = (on, options) => {
           </Text>
           <Box key="head-work" flexDirection="row" gap={1} height={1} overflow="hidden">
             <Box flexShrink={0}>
-              <Text weight="bold" color={hex(C.ok)}>{doneWord}</Text>
+              <Text weight="bold" color={hex(C.steel)}>{doneWord}</Text>
             </Box>
             {term && workW >= 6 && (
               <Box flexShrink={0}>
@@ -1807,9 +1808,9 @@ export const register: Register = (on, options) => {
           const k = lit === undefined ? 1 : (clockNow - lit) / FLASH_MS
           return (
             <Text key={`step-${s.n}`} wrap="truncate-end"
-              color={s.current ? hex(C.accent) : s.done ? hex(k < 1 ? C.ok : C.dim) : undefined}
+              color={s.current ? hex(C.hot) : s.done ? hex(k < 1 ? C.steel : C.dim) : undefined}
               backgroundColor={k < 1 ? hex(mix(mix(C.ok, BG, 0.62), BG, k)) : undefined}>
-              <Text color={hex(s.done ? C.ok : s.current ? C.accent : C.dim)}>{s.done ? '✓' : s.current ? (moving ? spin(f ?? 0) : '▸') : '○'}</Text>
+              <Text color={hex(s.done ? C.steel : s.current ? C.hot : C.dim)}>{s.done ? '✓' : s.current ? (moving ? spin(f ?? 0) : '▸') : '○'}</Text>
               {` ${String(s.n).padStart(2)}  ${s.text}`}
             </Text>
           )

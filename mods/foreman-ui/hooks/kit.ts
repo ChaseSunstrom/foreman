@@ -17,6 +17,9 @@ export const C = { // T-2853: the forge (design/sampo/tokens.json's night theme 
   del: 0xe0a3a3,
   track: 0x2a2c33, // the anvil's iron
   white: 0xffffff,
+  hot: 0xff6a4a, // T-2876: the ember (tokens.json): the live point of running work
+  steel: 0xc8d8ec, // T-2876: the forge's steel highlight: finished work has cooled
+  todo: 0x5c6390, // T-2876: work still to come (tokens.json's border): the iron track is too faint to read on the night
 }
 
 // T-1081: the colourblind-safe pair (Okabe-Ito blue and orange); rows that mean an error also carry a glyph
@@ -28,8 +31,17 @@ export const PALETTES = {
   riso: { ok: 0x00a95c, err: 0xff48b0, accent: 0x62a8e5, accent2: 0xffb511 },
 }
 const BASE = { ...C } // T-1717: every colour as shipped, so a cleared saved palette puts all of them back
-export const setPalette = (name: string, custom?: Record<string, unknown>) =>
-  void Object.assign(C, BASE, name === 'cb' || name === 'riso' ? PALETTES[name] : { ...PALETTES.default, ...customColors(custom) })
+export const setPalette = (name: string, custom?: Record<string, unknown>) => {
+  const mine = customColors(custom)
+  Object.assign(C, BASE, name === 'cb' || name === 'riso' ? PALETTES[name] : { ...PALETTES.default, ...mine })
+  // T-2876: the heat language is the forge's; cb, riso and a saved palette keep their own accent and ok for running
+  // and finished work, so nothing they showed changes
+  if (name === 'cb' || name === 'riso' || Object.keys(mine).length) Object.assign(C, { hot: mine.hot ?? C.accent, steel: mine.steel ?? C.ok, todo: mine.todo ?? C.track })
+}
+
+/** T-2876: the pane's mark (design/sampo/logo/pane-glyph.txt): the anvil-stone at rest; while work runs, it and the
+ * band struck slant in turn, one a frame. One terminal cell (East Asian width N). */
+export const paneMark = (moving: boolean, frame: number) => (moving && frame % 2 ? '⊘' : '⊖')
 
 /** T-1717: a saved palette (fm design tokens --to pane --save, carried in fm ui's view) as C's numbers: known keys
  * with #rrggbb values only, so a damaged file can't paint anything odd */
@@ -129,9 +141,9 @@ export function stepCells(steps: readonly { done: boolean; current: boolean }[],
     const k = Math.floor((i * n) / width)
     const s = steps[k]
     if (gaps && k < n - 1 && Math.floor(((i + 1) * n) / width) !== k) out.push([' ', C.track])
-    else if (s?.done) out.push(['━', C.ok])
-    else if (s?.current) out.push(['━', frame === null ? C.accent : mix(C.accent, C.white, glow(i, width, frame) * 0.5)])
-    else out.push(['━', C.track])
+    else if (s?.done) out.push(['━', C.steel]) // T-2876: finished work has cooled
+    else if (s?.current) out.push(['━', frame === null ? C.hot : mix(C.hot, C.white, glow(i, width, frame) * 0.5)])
+    else out.push(['━', C.todo]) // what's to come: the forge's border, 3:1 on the night
   }
   return cells(out)
 }

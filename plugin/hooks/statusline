@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Foreman statusLine (display only). Default layout: one true-color session line (model, folder, branch, context and
-rate-limit bars, cost, lines changed) and one Foreman line (task, stage, step bar, audits, queue, autonomy, guard) —
-or, when the foreman-ui mod draws the band above the prompt, a Foreman chip on the session line instead.
+"""Sampo's statusLine (display only). Default layout: one true-color session line (model, folder, branch, context and
+rate-limit bars, cost, lines changed) and one Sampo line (task, stage, step bar, audits, queue, autonomy, guard) —
+or, when the foreman-ui mod draws the band above the prompt, a Sampo chip on the session line instead.
 
 `statusline_layout: "stack"` in the install manifest brings back the old stack: the saved original statusLine and
-claude-hud (run in parallel on the same JSON), then the Foreman line from state.line and progress.line. Either way the
+claude-hud (run in parallel on the same JSON), then the Sampo line from state.line and progress.line. Either way the
 JSON is snapshotted to state/sessions/<session_id>.json for `fm watch`. Never fails: any error still prints a line.
 """
 import glob
@@ -147,8 +147,11 @@ def snapshot(c, data, p):
 # ---------------------------------------------------------------- the default layout
 
 RESET, BOLD = "\x1b[0m", "\x1b[1m"
-ACCENT, ACCENT2, OK, WARN, ERR, DIM, TRACK, BRANCH = (0x5fd7d7, 0x87afff, 0x87d787, 0xffd75f, 0xff6b6b, 0x6c7686,
-                                                      0x3a414c, 0xd787ff)
+# T-2876: the forge (design/sampo/tokens.json's night, as the pane's kit.ts): gold for Sampo's own line, the blue flame,
+# success, warning, error, muted text, the anvil's iron for the track, the violet flame for the branch
+ACCENT, ACCENT2, OK, WARN, ERR, DIM, TRACK, BRANCH = (0xffc24d, 0x6e9bff, 0x6fd8a0, 0xc8dc5a, 0xff85bc, 0x8088a8,
+                                                      0x6c7398, 0xbc8bff)  # DIM, TRACK: read on dark and light terminals
+MARK = "⊖ "  # T-2876: the anvil-stone (design/sampo/logo/pane-glyph.txt: the pane and the statusline), one cell
 
 
 SIZE = {"S": "small", "M": "medium", "L": "large"}  # T-0108: letters meant nothing on screen
@@ -258,7 +261,7 @@ def read_status(c, p):
 def foreman_segs(st, mode):
     a, sep = st.get("active"), (" · ", fg(DIM))
     if a:
-        segs = [("▌", fg(ACCENT)), (a["id"], BOLD + fg(ACCENT)), (f" {a['type']} · {SIZE.get(a['tier'], a['tier'])}", fg(ACCENT2)),
+        segs = [(MARK, fg(ACCENT)), (a["id"], BOLD + fg(ACCENT)), (f" {a['type']} · {SIZE.get(a['tier'], a['tier'])}", fg(ACCENT2)),
                 ("  ", ""), (a["stage"], fg(DIM)), (" ", "")]
         if a["total"]:
             segs += bar(a["done"] / a["total"], 10, lambda t: mix(ACCENT2, OK, t)) + \
@@ -267,7 +270,7 @@ def foreman_segs(st, mode):
         if need:
             segs += [sep, (f"audits {a['audits'][0]}/{need}", fg(OK if a["audits"][0] >= need else DIM))]
     else:
-        segs = [("▌", fg(ACCENT)), ("sampo", BOLD + fg(ACCENT)), sep, ("idle", fg(DIM))]
+        segs = [(MARK, fg(ACCENT)), ("sampo", BOLD + fg(ACCENT)), sep, ("idle", fg(DIM))]
     g = st.get("genesis")
     if isinstance(g, dict):  # T-2118: the tower's health, amber when it can't go on by itself
         segs += [sep, (f"⌂ gen {g.get('gen')} · {g.get('stage')}", fg(WARN if g.get("kind") in ("blocked", "stopped", "fatal") else DIM))]
@@ -284,10 +287,10 @@ def foreman_segs(st, mode):
 def chip_segs(st):
     a = st.get("active") if st else None
     if not st:
-        return [("  ", ""), ("▌sampo", fg(ACCENT))]
+        return [("  ", ""), (MARK + "sampo", fg(ACCENT))]
     if not a:
-        return [("  ", ""), ("▌sampo idle", fg(ACCENT))]
-    return [("  ", ""), (f"▌{a['id']} {a['done']}/{a['total']}", BOLD + fg(ACCENT))]
+        return [("  ", ""), (MARK + "sampo idle", fg(ACCENT))]
+    return [("  ", ""), (f"{MARK}{a['id']} {a['done']}/{a['total']}", BOLD + fg(ACCENT))]
 
 
 def user_settings():
@@ -312,7 +315,7 @@ def default_layout(c, data):
     line1 = session_segs(data, cwd)
     if (settings.get("enabledPlugins") or {}).get("foreman-ui@foreman"):  # the band shows the rest above the prompt
         return [render(line1 + chip_segs(st), width)], p
-    line2 = foreman_segs(st, mode) if st else [("▌sampo", fg(ACCENT)), (" · no project here · guard on", fg(DIM))]
+    line2 = foreman_segs(st, mode) if st else [(MARK + "sampo", fg(ACCENT)), (" · no project here · guard on", fg(DIM))]
     return [render(line1, width), render(line2, width)], p
 
 
