@@ -44,6 +44,7 @@ class Budget(ForemanTestCase):
     def test_caps_refuse_what_would_overspend(self):
         bud.set_caps(day=10, run=4)
         bud.record("bench", 9.5, runs=3)
+        bud.RUN["usd"] = 0.0  # that spend was earlier commands' (T-2871: this process is a new command)
         bud.check("oracle", 0.3)  # fits
         with self.assertRaises(bud.BudgetError) as e:
             bud.check("bench", 1.0)
@@ -51,6 +52,16 @@ class Budget(ForemanTestCase):
         with self.assertRaises(bud.BudgetError) as e:
             bud.check("evolve", 5.0)
         self.assertIn("per command", str(e.exception))
+
+    def test_a_command_of_many_small_calls_stops_at_the_per_command_cap(self):
+        # T-2871: moons grow's 30 calls each fit the cap alone; their total did not
+        bud.set_caps(day=100, run=1.0)
+        for _ in range(3):
+            bud.check("moons-grow", 0.3)
+            bud.record("moons-grow", 0.3)
+        with self.assertRaises(bud.BudgetError) as e:
+            bud.check("moons-grow", 0.3)  # 0.9 spent this command + 0.3 > 1.0
+        self.assertIn("this command", str(e.exception))
 
     def test_estimates_come_from_recent_runs(self):
         for usd in (0.2, 0.4):

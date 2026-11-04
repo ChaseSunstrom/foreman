@@ -83,7 +83,12 @@ def record(feature, usd=None, runs=1, tokens=None, project=None, detail=""):
         return _record(feature, usd, runs, tokens, project, detail)
 
 
+RUN = {"usd": 0.0}  # T-2871: what this command has spent so far; one process is one command (no caller is a server)
+
+
 def _record(feature, usd, runs, tokens, project, detail):
+    if usd:
+        RUN["usd"] += usd
     e = {"ts": c.now(), "day": _today(), "feature": feature, "usd": round(usd, 4) if usd is not None else None,
          "runs": runs, "tokens": tokens, "project": project, "detail": c.fit(str(detail), 120)}
     os.makedirs(c.state_dir(), exist_ok=True)
@@ -226,6 +231,10 @@ def check(feature, est, smaller=""):
     if est > cur["run"]:
         raise BudgetError(f"budget: {feature} would spend about ${est:.2f}, over the ${cur['run']:.2f} per command "
                           f"cap{why}{hint}; or raise it: fm budget set --run N --because \"<why>\"")
+    if RUN["usd"] + est > cur["run"]:  # T-2871: many small calls, each under the cap alone
+        raise BudgetError(f"budget: {feature} would spend about ${est:.2f} more, after ${RUN['usd']:.2f} already this "
+                          f"command, over the ${cur['run']:.2f} per command cap{why}{hint}; or raise it: fm budget set "
+                          f"--run N --because \"<why>\"")
     if usd + est > cur["day"]:
         raise BudgetError(f"budget: {feature} would spend about ${est:.2f}; today ${usd:.2f} of ${cur['day']:.2f} is "
                           f"spent{why}{hint}; or raise it: fm budget set --day N --because \"<why>\"")

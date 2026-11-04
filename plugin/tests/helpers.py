@@ -298,6 +298,11 @@ class SampoTestCase(unittest.TestCase):
                   "FOREMAN_DRIVE_TASK"):
             os.environ.pop(k, None)
         os.environ["XDG_STATE_HOME"] = os.path.join(self.tmp, "xdg")  # a state fallback never reaches the real one
+        try:  # T-2871: one test is one command: a spend recorded in an earlier test is not this one's
+            from sampo import budget as _budget
+            _budget.RUN["usd"] = 0.0
+        except (ImportError, AttributeError):
+            pass
         # T-1197: a temp repo has no plugin/, so fm guard wrong fell back to the real checkout's corpus
         os.environ["FOREMAN_GUARD_CASES"] = os.path.join(self.tmp, "guard_cases.jsonl")
         self.repo = git_repo(self.tmp)
