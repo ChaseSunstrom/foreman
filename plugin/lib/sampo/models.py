@@ -347,6 +347,8 @@ def systemone_profiles(base_url="http://127.0.0.1:11434"):
 def embedding_profiles(base_url="http://127.0.0.1:11434"):
     """T-2887: an openai profile per Ollama model whose /api/tags capabilities include 'embedding' (embed() speaks its
     /v1/embeddings)."""
+    if os.environ.get("FOREMAN_NO_LOCAL_MODELS"):  # T-2880: as LOCAL discovery: a server on the box is no model in tests
+        return []
     base = base_url.rstrip("/") + ("" if base_url.rstrip("/").endswith("/v1") else "/v1")
     return [{"name": r["name"], "kind": "openai", "base_url": base, "model": r["name"], "key_env": None,
              "context": LOCAL_CONTEXT, "tools": False}

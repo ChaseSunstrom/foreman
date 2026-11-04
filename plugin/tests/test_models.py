@@ -718,6 +718,12 @@ class OwnServer(Base):
 
 
 class Extras(Base):  # T-2893: a profile's body extras, its reasoning switch, and a reply the reasoning ate
+    def test_the_test_switch_hides_local_embedders_too(self):  # T-2880: a server on the box is no model in tests
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"FOREMAN_NO_LOCAL_MODELS": "1"}), \
+                mock.patch.object(m, "_tags", side_effect=AssertionError("probed")):
+            self.assertEqual(m.embedding_profiles(), [])
+
     def sent(self, prof, **kw):
         f = self.fake((200, oa_reply("ok"), None))
         prof = {**self.profile(f), **prof}
