@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-04T03:20:26Z",
- "rev": "7ef9a24a",
+ "updated": "2026-11-04T03:37:11Z",
+ "rev": "453e829f",
  "capabilities": [
   {
    "n": 1,
@@ -26571,10 +26571,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 1167,
+   "generated": 1372,
    "write": {
-    "title": 21,
-    "line": 66,
+    "title": 22,
+    "line": 81,
     "payoff": 1
    },
    "dups": {
@@ -26583,16 +26583,1473 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 579,
-    "tier": 0,
-    "novelty": 0
+    "kill": 660,
+    "tier": 170,
+    "novelty": 9
    },
    "merged": 0,
-   "kept": 0,
-   "pending": 500
+   "kept": 91,
+   "pending": 338
   },
-  "families": [],
-  "families_total": 0
+  "families": [
+   {
+    "id": "F-000412",
+    "size": 1,
+    "lead": "Breed a generation of refactor variants and keep the best lineage",
+    "today": "Today you can't compare two competing refactors of the same code because they never run against the same workload.",
+    "with_this": "With this, you can pick the best redesign from a field of real alternatives: several refactor lineages run side by side, and the one that keeps your code healthiest becomes the new trunk.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000715",
+    "size": 1,
+    "lead": "Modulate a whole library into another language by key change",
+    "today": "Today you can't port a library to another language without rewriting it by hand and rechecking every edge.",
+    "with_this": "With this, you can offer your library to users of another language without maintaining two separate versions.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000092",
+    "size": 1,
+    "lead": "Settle refactor disputes between teams with binding rulings",
+    "today": "Today you can't stop two teams from arguing indefinitely over whether a refactor broke their contract, so cleanups stall in review.",
+    "with_this": "With this, you can get a refactor touching three teams' code merged in an afternoon, because a ruling on the same kind of change already exists.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000258",
+    "size": 1,
+    "lead": "Auction the right to touch a file",
+    "today": "Today you can't price how much a file's current owner stands to lose before someone else grabs it.",
+    "with_this": "With this, you can see the cost of disturbing shared work before it happens, so reckless grabs stop and your shared code stays intact.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-000268",
+    "size": 1,
+    "lead": "Net out overlapping refactors before they collide",
+    "today": "Today you can't know, in chat, that two people are reshaping the same module in different ways until the merge fails.",
+    "with_this": "With this, you can let several refactors run at once, with conflicts settled before anyone's work is lost or redone.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000271",
+    "size": 1,
+    "lead": "Price refactors by live spare capacity in the pipeline",
+    "today": "Today you can't tell whether a big restructuring will stall the shared automated checks for everyone else.",
+    "with_this": "With this, you can get a refactor scheduled into the quietest window at a lower price, and avoid blocking your teammates' work.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000281",
+    "size": 1,
+    "lead": "Make a reviewer's past rulings bind every later similar case",
+    "today": "Today you can't show a newcomer why a reviewer ruled as they did last time, so the same questions get argued from scratch every week.",
+    "with_this": "With this, you can have repeat questions answered by the record of earlier rulings, so changes land in line with what the team already settled and reviewers spend their time on new ground.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
+    "id": "F-000287",
+    "size": 1,
+    "lead": "Freeze a risky change for a day before anyone can merge it",
+    "today": "Today you can't pause a dangerous change while people look at it, so a risky change can ship on a busy afternoon before anyone has read it closely.",
+    "with_this": "With this, you can hold a high-risk change for twenty-four hours for a short hearing, catching the mistakes that cause outages and rollbacks before customers feel them.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
+    "id": "F-000327",
+    "size": 1,
+    "lead": "Let frequently co-read specs wire themselves together across teams",
+    "today": "Today you can't see which documents your team always reads in the same breath, so related requirements sit in separate files and get built in isolation.",
+    "with_this": "With this, you can cut the conflicting features that ship from parallel teams, because specs read together merge their shared terms before anyone builds on the wrong one.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000328",
+    "size": 1,
+    "lead": "Let stalled migrations finish on their written orders",
+    "today": "Today you can't keep a migration moving when a step fails midway and no one is around to decide.",
+    "with_this": "With this, you can have a stuck migration keep heading toward its agreed end state overnight, so your team wakes up to a finished change instead of a dead one.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000332",
+    "size": 1,
+    "lead": "Give each migration explicit rules for when it may proceed alone",
+    "today": "Today you can't say which migration decisions the agent may make without you, so every small call waits for your approval.",
+    "with_this": "With this, you can hand routine migration choices to the change itself, so nothing waits days on decisions you already made.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000335",
+    "size": 1,
+    "lead": "Turn every failed migration into a rule future migrations must obey",
+    "today": "Today you can't stop the same migration mistake from recurring in another project.",
+    "with_this": "With this, you can turn one team's painful migration lesson into protection for every project, cutting repeat outages and rework.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000447",
+    "size": 1,
+    "lead": "Ship ecosystem-wide renames as tested merge requests",
+    "today": "Today you can't rename a function in a widely used library without chasing every project that depends on it by hand.",
+    "with_this": "With this, you can change a shared library's interface and have every downstream project receive a ready, tested update before its maintainers read the announcement.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000458",
+    "size": 1,
+    "lead": "Let your dependencies write their own security patches",
+    "today": "Today you can't get a vulnerability fixed in a library you depend on until its maintainer notices, reviews it, and releases.",
+    "with_this": "With this, you can get a working fix for a library flaw landing in your repository in hours, and your users stop sitting exposed while upstream catches up.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000460",
+    "size": 1,
+    "lead": "Run the same change across a thousand repositories at once",
+    "today": "Today you can't apply one migration across hundreds of repositories without a person babysitting each one through its own quirks.",
+    "with_this": "With this, you can move your whole organization to a new framework, API, or language version in a week, and your engineers stop spending quarters on mechanical upgrades.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000462",
+    "size": 1,
+    "lead": "Let your codebase learn the conventions your team never wrote down",
+    "today": "Today you can't get a reviewer's unwritten judgment about your code's style and design applied consistently, so each new hire relearns it through friction.",
+    "with_this": "With this, you can onboard a new engineer in days instead of months, since the codebase itself explains why things are done the way they are.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000463",
+    "size": 1,
+    "lead": "Require authors to post collateral that burns on failure",
+    "today": "Today you can't make a risky change pay for the damage it might cause, so careful and careless authors push at the same cost.",
+    "with_this": "With this, you can ship safe changes faster and slow down only on risky ones, because the people who break things pay the cleanup and the people who protect things keep their deposits.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-000464",
+    "size": 1,
+    "lead": "Price every dependency with a live insurance premium",
+    "today": "Today you can't tell which third-party libraries are quietly becoming expensive to keep, because their risk only shows up after a breach.",
+    "with_this": "With this, you can see which libraries will cost you money next quarter and move off them before the premium comes due, protecting your users' data and your budget.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-000523",
+    "size": 1,
+    "lead": "Rank each change by how far it beat expectations",
+    "today": "Today you can't tell whether a change turned out better or worse than similar past changes, so good work and bad work look the same on the dashboard.",
+    "with_this": "With this, you can see which changes outperformed their expected outcome and trust them faster, while flagging the ones that underperformed before they cause trouble.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-000620",
+    "size": 1,
+    "lead": "Let blocked work compete for reviewer attention",
+    "today": "Today you can't have the changes that unblock the most people reviewed first, so urgent work waits behind older changes.",
+    "with_this": "With this, you can get the changes that unblock your whole team reviewed first, cutting how long everyone else waits.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000625",
+    "size": 1,
+    "lead": "Issue permits for new names before any code goes live",
+    "today": "Today you can't require a safety review of a new name before it reaches users.",
+    "with_this": "With this, you can stop a name that would collide, mislead, or break users from ever shipping.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000856",
+    "size": 1,
+    "lead": "Insure every agent session against drops with a priced premium",
+    "today": "Today you can't know how risky a long agent run is before starting, so you either overpay for safety or lose a day to a crash.",
+    "with_this": "With this, you can buy cover per task and get paid back for lost work, so your budget holds when sessions die.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000859",
+    "size": 1,
+    "lead": "Let agents self-organize into rescue crews for failing work",
+    "today": "Today you can't get help for a stalled task unless a person notices it, so most failures wait until morning.",
+    "with_this": "With this, you can have stuck work picked up across your whole company within minutes, without waiting for someone to notice.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000861",
+    "size": 1,
+    "lead": "Price each change's security risk as an insurance premium",
+    "today": "Today you can't know what a code change costs in expected breach losses until after an incident.",
+    "with_this": "With this, you can see the dollar exposure of each change before merging and decide whether the risk is worth the feature, with money on the line for both sides.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-000876",
+    "size": 1,
+    "lead": "Hold each refactor liable for the cloud bill it causes",
+    "today": "Today you can't tell which refactor caused a bill that doubled, so the cost lands on everyone and no one.",
+    "with_this": "With this, you can see the exact change that pushed spend up, and the team that made it pays the fix, so your projects stop inheriting surprise charges.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000970",
+    "size": 1,
+    "lead": "Give your chat assistant a process capability score for each task",
+    "today": "Today you can't know whether the assistant is capable of a given kind of task, so you guess each time.",
+    "with_this": "With this, you can route each job to a tool that has proven it handles that kind of work, and skip the ones that keep failing.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000006",
+    "size": 1,
+    "lead": "Co-evolve migrations across projects so dependent changes adjust together.",
+    "today": "Today you can't change a shared table in one project without manually hunting down every other project that depends on it.",
+    "with_this": "With this, you can change shared data and have dependent projects adapt in step, cutting the coordination meetings and broken releases that usually follow.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000115",
+    "size": 1,
+    "lead": "Let rival refactors compete and let the strongest spread",
+    "today": "Today you can't try three different restructurings of a shared module at once and let real use decide the winner.",
+    "with_this": "With this, you can end months of debate over the best redesign, because the version that survives real use across the company replaces the others.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000122",
+    "size": 1,
+    "lead": "Let agents and people trade calls and responses",
+    "today": "Today you can't hand work back and forth between automated helpers and people without someone watching the queue.",
+    "with_this": "With this, you can stop babysitting handoffs, so reviews, fixes and approvals move on your schedule instead of waiting on whoever is free.",
+    "tier": "high",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000124",
+    "size": 1,
+    "lead": "Reuse a solved item's pattern as a loop",
+    "today": "Today you can't reuse the way a similar problem was solved last time, so each new item starts from zero.",
+    "with_this": "With this, you can resolve a recurring kind of bug once and have the fix replay on every matching item in your projects.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000213",
+    "size": 1,
+    "lead": "Reroute stuck work around a broken tool automatically",
+    "today": "Today you can't keep an AI coding run going when a tool it depends on fails, so the whole task halts.",
+    "with_this": "With this, you can keep shipping through a flaky dependency and only get pulled in when a real decision is needed.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000215",
+    "size": 1,
+    "lead": "Price each agent run by the road space it uses",
+    "today": "Today you can't see which coding tasks eat the most compute relative to what they deliver, so budgets are guesses.",
+    "with_this": "With this, you can decide which features get agent time and cut the runs that burn money without producing working code.",
+    "tier": "high",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000226",
+    "size": 1,
+    "lead": "Have the upstream fix written and submitted while you sleep",
+    "today": "Today you can't get a fix for a flaw in a package you depend on without waiting weeks for its maintainers to notice.",
+    "with_this": "With this, you can wake up to a tested patch already sent upstream, so the hole closes for every project that uses that package.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000228",
+    "size": 1,
+    "lead": "Publish machine-checked behavior promises for every package",
+    "today": "Today you can't know what a package actually promises, so you find out it misbehaves only after it breaks something.",
+    "with_this": "With this, you can trust every package you use, because each one comes with checked promises about what it does and what it never touches.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000229",
+    "size": 1,
+    "lead": "Swap deep packages for slim, regenerated copies of only what you call",
+    "today": "Today you can't cut a flaw out of your product without also removing the many unused features that package drags in with it.",
+    "with_this": "With this, you can drop most of the risky code in your product, since the regenerated copy holds only the functions your product calls.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000250",
+    "size": 1,
+    "lead": "Have a rival model attack your own repo nightly",
+    "today": "Today you can't find out how easily your coding agent gets talked into a bad action until someone does it for real.",
+    "with_this": "With this, you can see a daily break rate for your own setup and fix the weak spot before an outside party finds it in your production code.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-000251",
+    "size": 1,
+    "lead": "Split reading from acting so untrusted text can't command",
+    "today": "Today you can't stop a document you're summarizing from quietly steering the agent that also has write access to your project.",
+    "with_this": "With this, you can let agents read the open web and vendor docs without any of that text holding the keys to your code or customer data.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-000252",
+    "size": 1,
+    "lead": "Let every team's agent share injection fingerprints anonymously",
+    "today": "Today you can't learn that a trick worked against another company's agent until your own repo has already been hit.",
+    "with_this": "With this, you can block known attack patterns before they reach your code, based on what thousands of other setups already caught.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-000259",
+    "size": 1,
+    "lead": "Pit a red-team swarm against every pending change",
+    "today": "Today you can't know whether a half-finished change to a file is secretly broken until it ships.",
+    "with_this": "With this, you can catch broken half-done work while you're still editing, so your deploys stop surprising you.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-000266",
+    "size": 1,
+    "lead": "Insure each refactor against regressions for a premium",
+    "today": "Today you can't transfer the risk of a restructuring to anyone else, so one bad change lands on you alone.",
+    "with_this": "With this, you can pay a small fee per change, and get money back for any regression that shows up in production within thirty days.",
+    "tier": "high",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000272",
+    "size": 1,
+    "lead": "Rewind a red build to its last green moment and replay",
+    "today": "Today you can't go back to the moment a build turned red and try a different choice there, so you re-run everything from scratch and hope.",
+    "with_this": "With this, you can step a broken pipeline back to its last healthy state, change one input, and see whether the failure disappears, which cuts the hours spent guessing why your project broke.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000273",
+    "size": 1,
+    "lead": "Run every likely next commit before anyone pushes it",
+    "today": "Today you can't know whether your next change will break the build until after you have pushed it and waited in the queue.",
+    "with_this": "With this, you can see the pipeline results of your probable next changes before you commit, so broken merges never reach your teammates and days of rework disappear.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000275",
+    "size": 1,
+    "lead": "Ask what would have happened if a merge landed earlier",
+    "today": "Today you can't find out whether a bad release would have been caught by a check you added last week, because the old commits are never re-tested with it.",
+    "with_this": "With this, you can replay your project's whole history under a new rule and see which past releases it would have stopped, so you learn which bugs could have been prevented and how many users were exposed.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000277",
+    "size": 1,
+    "lead": "Forecast the pipeline's future state before it runs",
+    "today": "Today you can't know how long your pipeline will take or whether it will fail until the whole run is finished.",
+    "with_this": "With this, you can see a forecast of your next run's outcome and duration before it starts, so you schedule releases around reality instead of around hope.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000291",
+    "size": 1,
+    "lead": "Let examples prove they still run",
+    "today": "Today you can't trust that a code sample in the docs still works when you paste it.",
+    "with_this": "With this, you can paste any example into your project and know it runs, so onboarding stops being a debugging session.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "docs"
+    ]
+   },
+   {
+    "id": "F-000320",
+    "size": 1,
+    "lead": "Let a crowd of mismatched readers locate where your spec breaks",
+    "today": "Today you can't see which exact sentence makes a fresh reader lose the thread, so you guess and rewrite whole sections.",
+    "with_this": "With this, you can point to the few sentences that cause failed reviews and fix only those, cutting a rewrite cycle from days to an afternoon for everyone who builds from your specs.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000321",
+    "size": 1,
+    "lead": "Flag every sentence a reader's brain would be surprised by",
+    "today": "Today you can't tell which lines of a spec a reader will trip on until a failed review lands days later.",
+    "with_this": "With this, you can catch unexplained jumps before anyone reads them, so the specs your team builds from get understood the first time and work doesn't stall on questions.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000323",
+    "size": 1,
+    "lead": "Let rival wordings of each sentence compete until readers agree",
+    "today": "Today you can't test two ways of saying the same requirement against each other, so the wording that reads cleanly to you ships even when others misread it.",
+    "with_this": "With this, you can settle an ambiguous requirement in one pass instead of three review rounds, so the feature your users receive matches what the spec meant.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000326",
+    "size": 1,
+    "lead": "Trace which concepts in a spec never light up for readers",
+    "today": "Today you can't tell which idea in a spec a reader never connects to anything, so an undefined term slips into the build and gets guessed wrong.",
+    "with_this": "With this, you can catch concepts nobody can place before code is written, so the features built from the spec match what the product owner pictured and rework drops.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000330",
+    "size": 1,
+    "lead": "Catch a migration that hits another team's service before merge",
+    "today": "Today you can't see which other teams' systems will break when your migration lands, until they page you.",
+    "with_this": "With this, you can merge migrations without taking down a neighbor's service, saving you incident hours and apologies.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000333",
+    "size": 1,
+    "lead": "Sweep every hidden dependency before the first migration step",
+    "today": "Today you can't find the old code paths still reading the data you're about to change, because nobody wrote them down.",
+    "with_this": "With this, you can change a field or table without learning months later that a forgotten report or script broke.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000363",
+    "size": 1,
+    "lead": "Flag mismatched machine parts like grammar errors before installing",
+    "today": "Today you can't tell which of twenty setup pieces disagrees with the others until the install has already run for hours and broken something.",
+    "with_this": "With this, you can catch a broken release setup in seconds, before it eats the morning of the engineer who is trying to ship.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-000374",
+    "size": 1,
+    "lead": "Read a slow run like a spectrum to name its elements",
+    "today": "Today you can't see which libraries account for a slow startup, because the total time hides the separate contributors.",
+    "with_this": "With this, you can cut startup time by naming the exact libraries whose lines dominate the spectrum, then drop or defer them.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "performance"
+    ]
+   },
+   {
+    "id": "F-000399",
+    "size": 1,
+    "lead": "Make slow queries explain their own decay curve",
+    "today": "Today you can't see how a query's speed will degrade as the data grows, so you only find out when production starts timing out.",
+    "with_this": "With this, you can catch the moment a query's cost starts climbing with each new batch of rows, before users feel it, and fix the migration or index while the table is still small enough to change cheaply.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000411",
+    "size": 1,
+    "lead": "Let refactor risk heal itself as tests regrow over bad spots",
+    "today": "Today you can't refactor a risky area because its missing tests leave you blind to what you might break.",
+    "with_this": "With this, you can touch the scariest parts of your code: tests grow over exactly the spots a change would endanger, so each edit arrives already guarded.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000420",
+    "size": 1,
+    "lead": "Require a city inspector's sign-off before a refactor opens",
+    "today": "Today you can't get an independent check that a cleanup meets the standard before it goes into use.",
+    "with_this": "With this, you can hand a refactor to an inspector who stamps it safe to occupy, so nobody occupies unsafe code.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000449",
+    "size": 1,
+    "lead": "Turn one reviewer's correction into checks everywhere",
+    "today": "Today you can't stop the same review comment from coming back in every other project, because each team has to learn the lesson again.",
+    "with_this": "With this, you can correct a pattern once and have every project that uses it catch the same mistake automatically, saving review hours across the whole organization.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000450",
+    "size": 1,
+    "lead": "Delete old interfaces once the ecosystem stops using them",
+    "today": "Today you can't safely remove an old interface from a library, because you can't see who still calls it across the whole ecosystem.",
+    "with_this": "With this, you can retire old code on a schedule set by real usage, so your users get a clear, tested migration path instead of a surprise break.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000454",
+    "size": 1,
+    "lead": "Port a library to another language and keep every test green",
+    "today": "Today you can't move a library to a new language without rewriting it by hand and hoping its users don't notice the differences.",
+    "with_this": "With this, you can move a core library to a faster or safer language and have every existing test and consumer behave identically, so your users switch without changing their code.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000516",
+    "size": 1,
+    "lead": "Set one pitch standard so every interface agrees",
+    "today": "Today you can't rely on two teams naming the same thing the same way, so their pieces drift out of tune when they join.",
+    "with_this": "With this, you can connect services built by different teams without a fresh translation layer, so a feature that spans three teams ships without a week of reconciling names.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "performance"
+    ]
+   },
+   {
+    "id": "F-000520",
+    "size": 1,
+    "lead": "Let competing fixes suppress each other until one wins",
+    "today": "Today you can't get several candidate fixes for a bug to compete on evidence, so you pick one and hope it holds up.",
+    "with_this": "With this, you can end up with a fix that has already beaten its alternatives, so bugs close on the first try and fewer rounds of rework reach your team.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-000527",
+    "size": 1,
+    "lead": "Find the fastest setting by bracketing, like artillery finding range",
+    "today": "Today you can't find the best configuration without days of manual trial and error.",
+    "with_this": "With this, you can land on the fastest setting in a handful of tries, cutting wait times and the cloud bill that trial runs quietly burn.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "performance"
+    ]
+   },
+   {
+    "id": "F-000528",
+    "size": 1,
+    "lead": "Push answers forward before users ask the question",
+    "today": "Today you can't have results ready before someone asks, so every request waits on fresh computation.",
+    "with_this": "With this, you can make your product feel instant for the requests you can predict, and cut the compute you pay for on requests nobody makes.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "performance"
+    ]
+   },
+   {
+    "id": "F-000571",
+    "size": 1,
+    "lead": "Detect a migration's shockwave across many repositories at once",
+    "today": "Today you can't see a migration's effect on hundreds of projects together, because each team watches only its own build and misses the pattern.",
+    "with_this": "With this, you can learn from the pattern across the ecosystem that a change is about to break your code, before your own tests show anything.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000582",
+    "size": 1,
+    "lead": "Replay the incident that justified this strange check",
+    "today": "Today you can't see the outage that caused a defensive check, so every reviewer guesses whether it still matters.",
+    "with_this": "With this, you can stop paying for the same production failure twice, protecting customers and on-call engineers across the organization.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-000590",
+    "size": 1,
+    "lead": "Rewind a stuttering screen like a game's instant replay",
+    "today": "Today you can't go back to the moment a screen hitched, because it is gone before you notice it.",
+    "with_this": "With this, you can capture the last few seconds before any hitch and hand the exact moment to whoever fixes it.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000593",
+    "size": 1,
+    "lead": "Extract a clean motion timeline from any screen recording",
+    "today": "Today you can't turn a phone screen recording into a list of when motion actually happened.",
+    "with_this": "With this, you can pull real motion timing out of a video someone filmed on their phone and diagnose a bug without device access.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000597",
+    "size": 1,
+    "lead": "Ship each release with a receipt proving its docs match",
+    "today": "Today you can't tell, for a release, which of its documentation claims were checked against the code that actually shipped.",
+    "with_this": "With this, you can stop a release that carries false instructions, so users stop following steps that no longer work and support requests about changed features drop.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-000611",
+    "size": 1,
+    "lead": "Retire outdated designs by natural selection, not deletion",
+    "today": "Today you can't phase out an old design gradually, so teams either keep dead code forever or remove it in a risky sweep.",
+    "with_this": "With this, you can drop legacy behavior safely, because the traffic and callers that still need it decide when it goes.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000616",
+    "size": 1,
+    "lead": "Dream merges overnight to catch conflicts early",
+    "today": "Today you can't find out that two changes will conflict until the morning, after both authors have moved on.",
+    "with_this": "With this, you can wake up to a list of predicted conflicts with suggested resolutions, instead of discovering them when a merge breaks.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000621",
+    "size": 1,
+    "lead": "Sample every project's name flow like wastewater for early warnings",
+    "today": "Today you can't tell which projects still use a name you already changed until something breaks.",
+    "with_this": "With this, you can catch stale names in your code, projects, and customer-facing docs before anyone hits a failure.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000630",
+    "size": 1,
+    "lead": "Migrate in escalating doses, raising batch size only when clean",
+    "today": "Today you can't tell a migration to start with one small module and grow only if the tests keep coming back clean.",
+    "with_this": "With this, you can move a large codebase to a new framework without a single bad change reaching most of your users at once.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000660",
+    "size": 1,
+    "lead": "Hold every unfinished build until strangers depend on it",
+    "today": "Today you can't tell whether an unfinished build is safe to publish before it reaches users.",
+    "with_this": "With this, you can stop shipping half-built work to people, because unfinished builds only go out once real projects have run them and they held.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-000663",
+    "size": 1,
+    "lead": "Let thousands of agents rehearse a release before anyone sees it",
+    "today": "Today you can't watch a new release get tried by a crowd of realistic users before it touches anyone who matters.",
+    "with_this": "With this, you can ship a change knowing it survived thousands of simulated users doing what your real users do, so bugs in a menu or a page surface before a person ever hits them.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-000664",
+    "size": 1,
+    "lead": "Price every unfinished release so authors feel its risk",
+    "today": "Today you can't see what an unfinished release will cost the people who have to fix it when it breaks.",
+    "with_this": "With this, you can see the real cost of publishing early before it happens, so the choice to ship half-done work is made with the downstream bill in view.",
+    "tier": "high",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-000676",
+    "size": 1,
+    "lead": "Run every upgrade path at once and keep the first that passes",
+    "today": "Today you can't try several ways to upgrade a shared library side by side, so each upgrade is a slow guess repeated by hand.",
+    "with_this": "With this, you can move a whole set of projects to a new library version in an afternoon instead of a week, so your users get the fix before the old version goes stale.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-000695",
+    "size": 1,
+    "lead": "Hear the rhythm inside a run, by its beats",
+    "today": "Today you can't see that a crash happens every 37 seconds, because timing patterns hide inside walls of text.",
+    "with_this": "With this, you can spot the timing pattern behind flaky failures in your projects and fix them as soon as the beat shows up.",
+    "tier": "high",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-000700",
+    "size": 1,
+    "lead": "Plant dormant copies of old data before each migration",
+    "today": "Today you can't go back once a migration has run, because the old data is gone.",
+    "with_this": "With this, you can phone in a failed migration and have the prior state wake up in minutes, not hours of panic over lost customer records.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-000703",
+    "size": 1,
+    "lead": "Grow the new layout beside the old until it takes over",
+    "today": "Today you can't run the old and new versions side by side, so a migration is all or nothing.",
+    "with_this": "With this, you can move users over a few percent at a time and stop the moment something looks wrong, with no late-night cutover.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-000711",
+    "size": 1,
+    "lead": "Sample proven restructurings from famous projects into yours",
+    "today": "Today you can't borrow a well-tested cleanup from a well-known project and drop it into yours safely.",
+    "with_this": "With this, you can lift a respected team's solved problem into your own code without rebuilding it from scratch.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-000717",
+    "size": 1,
+    "lead": "Predict the reviewer's objections before a newcomer opens the request",
+    "today": "Today you can't know what a reviewer will object to until they have already objected, which costs a full review cycle.",
+    "with_this": "With this, you can submit a first change with its likely objections already answered, cutting the review rounds that delay your merge by days.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
+    "id": "F-000721",
+    "size": 1,
+    "lead": "Show newcomers where their change sits among neighboring projects",
+    "today": "Today you can't see how your change ripples into other projects in the ecosystem until something downstream breaks.",
+    "with_this": "With this, you can see which downstream projects your change reaches before you open the request, so you stop breaking teams you have never met.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
+    "id": "F-000723",
+    "size": 1,
+    "lead": "Complete a partial change into the shape the project expects",
+    "today": "Today you can't get a request right when you only know part of what it needs to include.",
+    "with_this": "With this, you can describe the piece you understand and get the rest of the expected shape back, so a first-time change lands closer to the project's pattern.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
+    "id": "F-000791",
+    "size": 1,
+    "lead": "Send persona bots through every release before you ship",
+    "today": "Today you can't know whether a new feature will be ignored until real people have already walked past it.",
+    "with_this": "With this, you can find out before release which features nobody would reach for, and fix the hidden ones so your users don't pay for your guesses.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-000832",
+    "size": 1,
+    "lead": "Schedule releases by negotiating across teams' agents",
+    "today": "Today you can't avoid collisions when several teams ship into the same product in the same week.",
+    "with_this": "With this, you can get your release into a clear window without a meeting, because each team's agent offers and trades slots based on real risk and urgency.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-000855",
+    "size": 1,
+    "lead": "Track every promise your agents make across the company",
+    "today": "Today you can't tell which agent promised what to whom, so a dropped session can silently break commitments to other teams.",
+    "with_this": "With this, you can see every promise your agents made to your customers and get warned before one breaks.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000857",
+    "size": 1,
+    "lead": "Let the entire agent ecosystem learn from every crash at once",
+    "today": "Today you can't benefit from another team's crash, so every organization rediscovers the same failure modes alone.",
+    "with_this": "With this, you can ship fixes your team never had to discover, cutting recovery time for known failures to nearly zero.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000870",
+    "size": 1,
+    "lead": "See what breaks if a change never existed",
+    "today": "Today you can't see what would break, or get simpler, in a world where a given change was never made.",
+    "with_this": "With this, you can judge whether a feature is worth keeping by seeing exactly which users, tests and projects depend on it.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-000930",
+    "size": 1,
+    "lead": "Run a kickoff simulation before you touch any file",
+    "today": "Today you can't see what an edit will do across the system before you make it, so your first change often causes a second and third fix.",
+    "with_this": "With this, you can run a kickoff simulation of any proposed change in the dashboard, watch its effects play out across dependent files, and make the edit that holds on the first try.",
+    "tier": "high",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data"
+    ]
+   },
+   {
+    "id": "F-000966",
+    "size": 1,
+    "lead": "Require a first-article sign-off before any AI tool runs on your repo",
+    "today": "Today you can't prove a new AI tool behaves correctly on your real code before it touches your files.",
+    "with_this": "With this, you can let a new assistant change your project only after it passes a trial run on a copy of your own past tasks.",
+    "tier": "high",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-000967",
+    "size": 1,
+    "lead": "Accept AI code changes by lot sampling, not one-by-one review",
+    "today": "Today you can't review every AI-written change in a big batch, so bad edits slip through or review takes forever.",
+    "with_this": "With this, you can accept a week of assistant edits by checking a random sample, and know the escape rate of defects.",
+    "tier": "high",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   }
+  ],
+  "families_total": 91
  },
  "steer": {
   "run": "steer-20261102T212604-3954",
