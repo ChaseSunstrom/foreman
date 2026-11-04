@@ -1932,6 +1932,30 @@ class ForecastKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): the next requ
         raw = louhi.replay_forecast(c.find_project(self.repo), clean=False)  # T-2554: nothing to clean here: the same
         self.assertEqual((raw["held"], raw["type_hit"]), (r["held"], r["type_hit"]))
 
+    def test_the_replay_scores_the_local_arm_on_the_same_held_out_third_or_says_it_did_not_run(self):  # T-2912
+        from unittest import mock
+        from sampo import louhi, models, moonscale
+        for i in range(6):
+            t, ty, sc = (f"Add export {i} to the report", "FEATURE", "report.py") if i % 2 == 0 else \
+                        (f"Fix the totals case {i}", "FIX", "totals.py")
+            self.fm("task", "new", t, "--type", ty, "--tier", "S", "--ac", "ok :: true", "--step", "s", "--scope", sc)
+        p = c.find_project(self.repo)
+        with mock.patch.object(moonscale, "_local", lambda s: None):
+            self.assertEqual(louhi.replay_forecast(p, local=True)["local"], "not run")
+        self.assertEqual(louhi.replay_forecast(p)["local"], "not run")  # off unless asked: it costs model calls
+        prompts = []
+
+        def complete(prof, msgs, **kw):
+            prompts.append(msgs[-1]["content"])
+            return {"text": '{"type": "FEATURE", "paths": ["report.py"], "words": ["export", "report"]}'}
+        with mock.patch.object(moonscale, "_local", lambda s: {"name": "f"}), mock.patch.object(models, "complete", complete):
+            r = louhi.replay_forecast(p, local=True)
+        self.assertEqual((r["held"], r["type_hit"], r["base_type_hit"]), (2, 2, 0))
+        self.assertEqual((r["local"]["n"], r["local"]["type_hit"], r["local"]["overlap"]), (2, 1, 0.5))
+        self.assertGreater(r["local"]["word_overlap"], 0)
+        self.assertIn("Fix the totals case 3", prompts[0])  # only asks before the held-out one
+        self.assertNotIn("case 4", prompts[0])
+
     def test_the_model_replay_scores_rule_and_model_against_closed_tasks(self):
         # T-2487 (the user's rule: a use stays only if the exam shows it beats the path it replaces)
         from sampo import louhi

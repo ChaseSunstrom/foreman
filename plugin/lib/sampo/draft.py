@@ -151,14 +151,14 @@ def ahead(p):
         return None
     if c.read_meta(p).get("sensitive") or triggers.row(p, "draft-ahead")["route"] == "muted":
         return None
-    k = next((k for k in fs.prediction_kinds(p) if k["kind"] == "next-request"), None)
-    if not k or k["muted"] or k["hit"] is None or k["base_hit"] is None or k["hit"] <= k["base_hit"]:
-        return None
     rows = fs._book(p)
     pred = next((r for r in reversed(rows) if r.get("kind") == "next-request"), None)
     if not pred or any(r.get("id") == pred["id"] and r.get("kind") in ("score", "draft") for r in rows):
         return None
-    want = pred.get("pred") or {}
+    lead = fs.leading(p, rows, pred)  # T-2912: the local arm's guess when it leads the count, else the count's
+    if not lead:
+        return None
+    want = lead[1]
     wp = set(want.get("paths") or ())
     past = [(b, ps) for b, t, ps in fs._requests(p) if t == want.get("type")]
     if not past:

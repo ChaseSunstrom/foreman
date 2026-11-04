@@ -240,6 +240,88 @@ class ReviewerCostAtScale(unittest.TestCase):
 
 
 
+class LocalArm(ForemanTestCase):  # T-2912: the local model's guess, booked and scored in the same rows (fake profile only)
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def ask(self, type_, scope):
+        return json.loads(self.fm("task", "new", f"{type_} {scope}", "--type", type_, "--tier", "S", "--ac", "ok :: true",
+                                  "--step", "s", "--scope", scope, "--json").stdout)["id"]
+
+    def rows(self):
+        try:
+            with open(os.path.join(self.p.dir, fs.PREDICTIONS), encoding="utf-8") as f:
+                return [json.loads(x) for x in f if x.strip()]
+        except OSError:
+            return []
+
+    def local(self, reply, sensitive=False):
+        from sampo import models, moonscale
+        asked = []
+        prof = {"name": "fake", "base_url": "http://127.0.0.1:1", "model": "m"}
+        self.enterContext(mock.patch.object(moonscale, "_local", lambda s: asked.append(s) or prof))
+        self.enterContext(mock.patch.object(models, "complete", lambda pr, m, **kw: {"text": reply}))
+        return asked
+
+    def five(self):
+        for s in ("a.py", "b.py"):
+            open(os.path.join(self.repo, s), "w").close()
+        for t, s in (("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py"), ("FEATURE", "b.py"), ("FIX", "a.py")):
+            self.ask(t, s)
+        fs.prediction_tick(self.p)
+
+    def test_the_guess_is_booked_beside_the_transition_row_scored_and_listed_as_its_own_kind(self):
+        self.five()
+        self.local('```json\n{"type": "FIX", "paths": ["b.py", "../x.py", "ghost.py"], "words": ["Totals", "round"]}\n```')
+        fs.local_tick(self.p)
+        fs.local_tick(self.p)  # once per prediction
+        (pred,) = [r for r in self.rows() if r["kind"] == "next-request"]
+        (loc,) = [r for r in self.rows() if r["kind"] == "local"]
+        self.assertEqual(loc["id"], pred["id"])
+        self.assertEqual(loc["pred"], {"type": "FIX", "paths": ["b.py"], "words": ["totals", "round"]})
+        self.ask("FEATURE", "b.py")
+        fs.prediction_tick(self.p)
+        (s,) = [r for r in self.rows() if r["kind"] == "score"]
+        self.assertEqual((s["type_hit"], s["local_type_hit"], s["local_overlap"]), (True, False, 1.0))
+        self.assertEqual(s["local_word_overlap"], 0.0)
+        k = {k["kind"]: k for k in fs.prediction_kinds(self.p)}["next-request-local"]
+        self.assertEqual((k["n"], k["hit"], k["base_hit"]), (1, 0.0, 1.0))  # beside the transition guess
+
+    def test_a_malformed_or_unknown_reply_books_no_guess_and_a_sensitive_project_asks_loopback_only(self):
+        self.five()
+        for bad in ("no json", '{"type": "WISH", "paths": []}', '["FIX"]'):
+            self.local(bad)
+            fs.local_tick(self.p)
+        locs = [r for r in self.rows() if r["kind"] == "local"]
+        self.assertEqual([r["pred"] for r in locs], [None])  # one abstain row: asked once, never retried
+        reqs = fs._requests(self.p)
+        asked = self.local('{"type": "FIX", "paths": [], "words": []}')
+        self.fm("sensitive", "on")
+        self.assertEqual(fs.local_predict(self.p, reqs, [], [])["type"], "FIX")
+        self.assertEqual(asked, [True])  # moonscale._local(sensitive=True): loopback profiles only
+        fs.local_tick(self.p)  # a sensitive project books nothing
+        self.assertEqual(len([r for r in self.rows() if r["kind"] == "local"]), 1)
+
+    def test_session_start_reads_the_local_arm_only_when_it_leads_over_twenty_scored_rows(self):
+        self.five()
+        self.local('{"type": "FIX", "paths": ["a.py"], "words": []}')  # the transition guess says FEATURE here
+        fs.local_tick(self.p)
+
+        def score(n):
+            with open(os.path.join(self.p.dir, fs.PREDICTIONS), "a", encoding="utf-8") as f:
+                for i in range(n):
+                    f.write(json.dumps({"kind": "score", "id": f"Q{i}", "at": c.now(), "type_hit": False,
+                                        "base_type_hit": False, "local_type_hit": True}) + "\n")
+        score(19)
+        self.assertEqual(fs.lines(self.p), [])  # 19 rows: too few to lead
+        score(1)
+        (line,) = fs.lines(self.p)
+        self.assertIn("FIX on a.py", line)
+        self.assertIn("100% vs 0%", line)
+
+
 class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ahead while its kind beats the baseline
     def setUp(self):
         super().setUp()

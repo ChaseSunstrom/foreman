@@ -778,11 +778,41 @@ def _breakage_score(base, target):
     return int(any(at(w, k["planted"]) and early(w) for w in ws)), sum(at(w, k["twin"]) for w in ws)
 
 
-def replay_forecast(p, clean=True):
+def _replay_local(p, reqs, held):
+    """T-2912: the local model's guess for each held-out ask from only the asks and steers dated before it (the queue
+    was never recorded, so it is left out): {n answered, type_hit, overlap, word_overlap, base_word_overlap,
+    transition_word_overlap} on the same held-out asks; "not run" when no local model is up. The words arms are title
+    words: the local arm's own, the last ask's title (baseline), the title of the transition guess's request."""
+    from sampo import foresight as fs
+    steers, tot = c.steer_rules(p), {"n": 0, "type_hit": 0, "overlap": [], "word_overlap": [], "base_word_overlap": [],
+                                     "transition_word_overlap": []}
+    for i in held:
+        b, t, paths = reqs[i]
+        day = str(b.meta.get("created") or "")[:10]
+        lp = fs.local_predict(p, reqs[:i], [s for d, s in steers if d < day], [])
+        if lp is None:
+            return "not run"
+        if not lp:
+            continue  # asked, no usable answer: not counted as an answer
+        words = fs._words(b.title)
+        ptype = fs.predict(reqs[:i])[0]
+        tw = next(x.title for x, ty, _ in reversed(reqs[:i]) if ty == ptype)
+        tot["n"] += 1
+        tot["type_hit"] += lp["type"] == t
+        for k, v in (("overlap", fs._jaccard(lp["paths"], paths)), ("word_overlap", fs._jaccard(lp["words"], words)),
+                     ("base_word_overlap", fs._jaccard(fs._words(reqs[i - 1][0].title), words)),
+                     ("transition_word_overlap", fs._jaccard(fs._words(tw), words))):
+            tot[k].append(v or 0)
+    return {k: (round(sum(v) / len(v), 3) if v else None) if isinstance(v, list) else v for k, v in tot.items()}
+
+
+def replay_forecast(p, clean=True, local=False):
     """T-2409: the user's own request stream (fmforesight._requests) with its last third held out: each held-out request
     predicted from the ones before it by the tick's own predictor, beside the naive baseline (the last one again).
     {held, type_hit, base_type_hit, overlap, base_overlap}; the overlaps are mean path Jaccards. T-2554: clean=False
-    guesses from the old stream (the tower's briefs and mistaken captures in it) on the same held-out asks."""
+    guesses from the old stream (the tower's briefs and mistaken captures in it) on the same held-out asks.
+    T-2912: local=True adds "local" (see _replay_local) from the local model, one call per held-out ask, none to the
+    cloud; otherwise (or with no model up) it is "not run"."""
     from sampo import foresight
     own = foresight._requests(p)  # T-2554: what is scored, either way: the user's own asks, the same held-out set
     reqs = own if clean else foresight._requests(p, clean=False)  # the history each guess is made from
@@ -799,6 +829,7 @@ def replay_forecast(p, clean=True):
         bov.append(foresight._jaccard(reqs[i - 1][2], paths) or 0)
     if held:
         out["overlap"], out["base_overlap"] = round(sum(ov) / len(ov), 3), round(sum(bov) / len(bov), 3)
+    out["local"] = _replay_local(p, reqs, held) if local and held else "not run"  # T-2912: local=True asks the model
     return out
 
 
@@ -3659,7 +3690,7 @@ def grade(p, run, agent):
             res[split][k] += v
     res["cost"] = round(res["cost"], 4)
     if agent == "foresight" and any(s.get("kind") == "forecast" for s in answered):  # T-2409: the user's own stream
-        res["forecast_replay"] = replay_forecast(p)
+        res["forecast_replay"] = replay_forecast(p, local=True)  # T-2912: + the local arm, no cloud call
         res["forecast_replay_raw"] = replay_forecast(p, clean=False)  # T-2554: the stream before the cleanup
     if agent == "foresight":  # T-2487: the model layer's uses against the rules they would replace (zero tokens)
         res["model_replay"] = replay_models(p)
