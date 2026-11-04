@@ -22,6 +22,7 @@ import signal
 import subprocess
 import threading
 import time
+import urllib.parse
 import urllib.request
 
 from sampo import core as c
@@ -274,6 +275,81 @@ def snapshot(p):
     return _cached(("snap", p.dir), CACHE_S, build)
 
 
+def machine():
+    """T-3023: every registered project and every live session here; a sensitive project is its name and nothing else."""
+    def build():
+        from sampo import bus
+        projects, hidden = [], set()
+        for p, meta in c.all_projects():
+            name = os.path.basename(p.root.rstrip("/")) or p.slug
+            if meta.get("sensitive"):
+                hidden.add(p.slug)
+                projects.append({"slug": p.slug, "name": name, "sensitive": True})
+                continue
+            try:
+                briefs = c.load_briefs(p)
+                b = c.active_brief(briefs, p.lane)
+                row = {"slug": p.slug, "name": name, "sensitive": False, "drive": bool(meta.get("drive", True)),
+                       "task": b.id if b else None, "stage": c.stage(b, c.effective_autonomy(p, meta)) if b else None,
+                       "queue": sum(x.status in c.RUNNABLE for x in briefs)}
+            except Exception:  # one unreadable project doesn't hide the rest
+                row = {"slug": p.slug, "name": name, "sensitive": False}
+            projects.append(row)
+        sessions = []
+        try:
+            live_ = bus.live()
+            rows = {r["session"]: r for r in bus.rows(live_)}
+        except Exception:
+            live_, rows = [], {}
+        for s in live_:
+            r = rows.get(s["session_id"], {})
+            quiet = s.get("project") in hidden
+            sessions.append({"id": str(s["session_id"])[:8], "project": s.get("project"),
+                             "task": None if quiet else r.get("task"), "model": None if quiet else s.get("model"),
+                             "context_pct": s.get("context_pct"), "seen": s.get("ts")})
+        return {"at": c.now(), "projects": projects, "sessions": sessions}
+    return _cached("machine", CACHE_S, build)
+
+
+def resolve(default, slug):
+    """T-3023: the project ?project= names (None: unknown, or sensitive and not the server's own); no slug: the newest
+    live session's project, else the server's own."""
+    from sampo import bus
+    asked = bool(slug)
+    if not asked:
+        try:
+            slug = next((s["project"] for s in bus.live() if s.get("project")), None)
+        except Exception:
+            slug = None
+    if slug == default.slug:
+        return default
+    for p, meta in c.all_projects():
+        if p.slug == slug:
+            return None if meta.get("sensitive") else p
+    return None if asked else default  # a busiest session's project that is gone or hidden: the server's own
+
+
+def peer_uid(cport, sport, root="/proc"):
+    """T-3023: the uid owning the client-side socket of a loopback connection (local port cport, remote port sport), from
+    root/net/tcp and tcp6 (IPv4-mapped rows too); None when no such row or it can't be read."""
+    loop = ("0100007F", "00000000000000000000000001000000", "0000000000000000FFFF00000100007F")
+    for name in ("tcp", "tcp6"):
+        try:
+            with open(os.path.join(root, "net", name), encoding="ascii", errors="replace") as f:
+                lines = f.read(4 << 20).splitlines()[1:]
+        except OSError:
+            continue
+        for line in lines:
+            f = line.split()
+            try:
+                (la, lp), (_, rp) = f[1].split(":"), f[2].split(":")
+                if la.upper() in loop and int(lp, 16) == cport and int(rp, 16) == sport:
+                    return int(f[7])
+            except (ValueError, IndexError):
+                continue
+    return None
+
+
 # ---------------------------------------------------------------- the server
 
 PLACEHOLDER = ('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sampo live</title></head><body>'
@@ -310,7 +386,7 @@ class Handler(settingsserve.Handler):
             return self._send(404, "not found")
         self._send(200, data, ctype=TYPES[ext] + ("; charset=utf-8" if ext in (".css", ".js", ".svg", ".json") else ""))
 
-    def _stream(self):
+    def _stream(self, p):
         srv = self.server
         with srv.once:
             if srv.streams >= STREAMS_MAX:
@@ -323,7 +399,7 @@ class Handler(settingsserve.Handler):
                 self.send_header(k, v)
             self.end_headers()
             while not srv.stop.is_set():
-                self.wfile.write(b"event: state\ndata: " + json.dumps(snapshot(srv.project), ensure_ascii=False).encode() + b"\n\n")
+                self.wfile.write(b"event: state\ndata: " + json.dumps(snapshot(p),ensure_ascii=False).encode() + b"\n\n")
                 self.wfile.flush()
                 srv.stop.wait(STREAM_S)
         except (OSError, ValueError):
@@ -333,16 +409,28 @@ class Handler(settingsserve.Handler):
                 srv.streams -= 1
             self.close_connection = True
 
+    def _allowed(self):
+        """T-3023: a loopback peer whose socket is the server's own uid needs no link (Host is still checked); another uid,
+        or none found, takes the token and cookie path."""
+        if (self.headers.get("Host") or "").lower() in self._mine():
+            me = self.server.server_address[1]
+            if peer_uid(self.client_address[1], me) == os.getuid():
+                return urllib.parse.urlsplit(self.path).path
+        return super()._allowed()
+
     def do_GET(self):
         path = self._allowed()
         if path is None:
             return
         if path == "/":
             return self._page()
-        if path == "/api/state":
-            return self._json(snapshot(self.server.project))
-        if path == "/api/stream":
-            return self._stream()
+        if path in ("/api/state", "/api/stream", "/api/machine"):
+            if path == "/api/machine":
+                return self._json(machine())
+            p = resolve(self.server.project, urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("project", [""])[0])
+            if p is None:
+                return self._send(404, "unknown project")
+            return self._json(snapshot(p)) if path == "/api/state" else self._stream(p)
         if path.startswith("/static/"):
             return self._static(path[len("/static/"):])
         self._send(404, "not found")

@@ -139,6 +139,9 @@ class Serve(ForemanTestCase):
         self.fm("task", "new", "Serve it", "--type", "FEATURE", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
         live._CACHE.clear()
         self.p = c.find_project(self.repo)
+        self.peer = mock.patch.object(live, "peer_uid", return_value=None)  # the real /proc says: this test's own uid
+        self.peer_mock = self.peer.start()
+        self.addCleanup(self.peer.stop)
         self.server, self.token = live.make(self.p)
         self.port = self.server.server_address[1]
         self.stop = threading.Event()
@@ -253,6 +256,65 @@ class Serve(ForemanTestCase):
         self.assertEqual(set(json.loads(data[6:])), FIELDS)
         conn.close()
 
+    def test_the_servers_own_uid_gets_in_with_no_link_another_uid_does_not(self):  # T-3023
+        self.peer_mock.return_value = os.getuid()
+        self.assertEqual(self.req("/api/state", cookie=False)[0], 200)
+        self.assertEqual(self.req("/api/state", cookie=False, headers={"Host": "evil.example"})[0], 403)  # Host still applies
+        self.peer_mock.return_value = os.getuid() + 1
+        self.assertEqual(self.req("/api/state", cookie=False)[0], 403)
+        self.peer_mock.return_value = None  # not found: the cookie path
+        self.assertEqual(self.req("/api/state", cookie=False)[0], 403)
+        self.login()
+        self.assertEqual(self.req("/api/state")[0], 200)
+
+    def test_machine_lists_projects_and_sessions_a_sensitive_one_by_name_only(self):  # T-3023
+        self.login()
+        other = os.path.join(self.tmp, "secretrepo")
+        os.makedirs(other)
+        sp = c.init_project(other, sensitive=True)
+        sess = [{"session_id": "abcdef1234567890", "project": sp.slug, "cwd": other, "model": "Opus", "context_pct": 41,
+                 "ts": c.now()},
+                {"session_id": "99887766aaaa", "project": self.p.slug, "cwd": self.repo, "model": "Sonnet", "context_pct": 7,
+                 "ts": c.now()}]
+        with mock.patch("sampo.bus.live", return_value=sess):
+            st, body, _ = self.req("/api/machine")
+        self.assertEqual(st, 200)
+        m = json.loads(body)
+        mine = {x["slug"]: x for x in m["projects"]}
+        self.assertEqual(mine[sp.slug], {"slug": sp.slug, "name": "secretrepo", "sensitive": True})
+        self.assertEqual((mine[self.p.slug]["queue"], mine[self.p.slug]["task"], mine[self.p.slug]["drive"]),
+                         (1, "T-0001", True))
+        self.assertTrue(mine[self.p.slug]["stage"])
+        ses = {x["id"]: x for x in m["sessions"]}
+        self.assertEqual(ses["abcdef12"], {"id": "abcdef12", "project": sp.slug, "task": None, "model": None,
+                                           "context_pct": 41, "seen": sess[0]["ts"]})
+        self.assertEqual((ses["99887766"]["model"], ses["99887766"]["task"]), ("Sonnet", "T-0001"))
+
+    def test_the_project_param_picks_a_snapshot_unknown_is_404_none_is_the_busiest_session(self):  # T-3023
+        self.login()
+        other = os.path.join(self.tmp, "otherrepo")
+        os.makedirs(other)
+        op = c.init_project(other, sensitive=False)
+        self.assertEqual(json.loads(self.req(f"/api/state?project={op.slug}")[1])["project"]["slug"], op.slug)
+        self.assertEqual(json.loads(self.req(f"/api/state?project={self.p.slug}")[1])["project"]["slug"], self.p.slug)
+        self.assertEqual(self.req("/api/state?project=nope")[0], 404)
+        self.assertEqual(self.req("/api/stream?project=nope")[0], 404)
+        with mock.patch("sampo.bus.live", return_value=[{"session_id": "s1", "project": op.slug}]):
+            self.assertEqual(json.loads(self.req("/api/state")[1])["project"]["slug"], op.slug)
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", f"/api/stream?project={op.slug}", headers={"Host": f"127.0.0.1:{self.port}", "Cookie": self.cookie})
+        r = conn.getresponse()
+        r.readline()
+        self.assertEqual(json.loads(r.readline().decode()[6:])["project"]["slug"], op.slug)
+        conn.close()
+
+    def test_a_sensitive_project_is_not_served_by_slug(self):  # T-3023
+        self.login()
+        other = os.path.join(self.tmp, "hush")
+        os.makedirs(other)
+        sp = c.init_project(other, sensitive=True)
+        self.assertEqual(self.req(f"/api/state?project={sp.slug}")[0], 404)
+
     def test_a_spent_token_is_replaced_and_the_url_file_follows(self):
         self.login()
         deadline = time.monotonic() + 5
@@ -260,6 +322,40 @@ class Serve(ForemanTestCase):
             time.sleep(0.05)
         self.assertIsNotNone(self.server.token)  # a fresh one, so `sampo watch --web --url` always prints a URL that works
         self.assertNotEqual(self.server.token, self.token)
+
+
+class PeerUid(ForemanTestCase):  # T-3023: /proc/net/tcp as a fake root
+    HEAD = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+
+    def root(self, tcp="", tcp6=None):
+        d = os.path.join(self.tmp, "proc")
+        os.makedirs(os.path.join(d, "net"), exist_ok=True)
+        for name, rows in (("tcp", tcp), ("tcp6", tcp6)):
+            if rows is not None:
+                with open(os.path.join(d, "net", name), "w") as f:
+                    f.write(self.HEAD + rows)
+        return d
+
+    def row(self, la, lp, ra, rp, uid):
+        return f"   0: {la}:{lp:04X} {ra}:{rp:04X} 01 00000000:00000000 00:00000000 00000000  {uid}        0 12345 1 0 20 4 30 10 -1\n"
+
+    def test_ipv4_ipv6_and_mapped_rows_the_client_side_socket_gives_the_uid(self):
+        v4 = self.row("0100007F", 40000, "0100007F", 8000, 1000) + self.row("0100007F", 8000, "0100007F", 40000, 0)
+        self.assertEqual(live.peer_uid(40000, 8000, self.root(v4)), 1000)  # not the server-side row (uid 0)
+        self.assertEqual(live.peer_uid(40001, 8000, self.root(v4, "")), None)
+        m = self.row("0000000000000000FFFF00000100007F", 41000, "0000000000000000FFFF00000100007F", 8000, 1234)
+        self.assertEqual(live.peer_uid(41000, 8000, self.root("", m)), 1234)
+        six = self.row("00000000000000000000000001000000", 42000, "00000000000000000000000001000000", 8000, 77)
+        self.assertEqual(live.peer_uid(42000, 8000, self.root("", six)), 77)
+
+    def test_another_uid_is_reported_and_unparseable_or_missing_rows_are_none(self):
+        other = self.row("0100007F", 40000, "0100007F", 8000, 4242)
+        self.assertEqual(live.peer_uid(40000, 8000, self.root(other)), 4242)
+        junk = "garbage\n   0: zz:yy 1:2 01\n   1: 0100007F:9C40 0100007F:1F40 01 a b c d notauid 0 1\n"
+        self.assertIsNone(live.peer_uid(40000, 8000, self.root(junk)))
+        self.assertIsNone(live.peer_uid(40000, 8000, os.path.join(self.tmp, "nowhere")))
+        foreign = self.row("0A00000A", 40000, "0A00000A", 8000, 5)  # not a loopback address
+        self.assertIsNone(live.peer_uid(40000, 8000, self.root(foreign)))
 
 
 class Url(ForemanTestCase):
