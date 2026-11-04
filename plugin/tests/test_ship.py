@@ -1,6 +1,7 @@
 """T-1943: fm ship lands the unpushed commits on the remote's main from a scratch worktree, behind the publish grant."""
 import json
 import os
+import shlex
 import subprocess
 
 from helpers import ForemanTestCase
@@ -506,9 +507,18 @@ class Ship(ForemanTestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(sh(self.origin, "rev-parse", "main"), before)
 
-    def test_a_branch_that_touched_a_tower_file_ships_over_the_live_towers_commit(self):
-        # T-2955: fm genesis live publishes site/genesis/* to main behind the branch; the branch touched genesis.json
-        # too, so the replay fell back to git cherry and the pick conflicted: the tower's file keeps main's version
+    def test_a_tower_update_pushed_while_the_ship_tests_is_re_picked_over(self):
+        # T-2963: the live tower pushed genesis.json mid-test and the re-pick conflicted (ship 4)
+        self.ci_ignores("site/genesis/**")  # as the real repo's CI does
+        other = self._tower_setup()
+        push = (f"cd {other} && echo tower2 > site/genesis/genesis.json && git -c user.name=t -c user.email=t@t "
+                "commit -qam 'Genesis: tower update (fm genesis live)' && git push -q origin HEAD:main")
+        r = self.ship("--test", f"sh -c {shlex.quote(push)}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(sh(self.origin, "show", "main:shared.txt"), "one\ntwo\n")
+        self.assertEqual(sh(self.origin, "show", "main:site/genesis/genesis.json"), "tower2\n")
+
+    def _tower_setup(self):
         self._merged_lane_then_main_moves("site/genesis/genesis.json")
         sh(self.repo, "checkout", "-q", "work")
         os.makedirs(os.path.join(self.repo, "site", "genesis"), exist_ok=True)
@@ -523,6 +533,12 @@ class Ship(ForemanTestCase):
         sh(other, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "Genesis: tower update (fm genesis live)")
         sh(other, "push", "-q", "origin", "HEAD:main")
         self.grant()
+        return other
+
+    def test_a_branch_that_touched_a_tower_file_ships_over_the_live_towers_commit(self):
+        # T-2955: fm genesis live publishes site/genesis/* to main behind the branch; the branch touched genesis.json
+        # too, so the replay fell back to git cherry and the pick conflicted: the tower's file keeps main's version
+        self._tower_setup()
         r = self.ship("--test", "true")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(sh(self.origin, "show", "main:shared.txt"), "one\ntwo\n")

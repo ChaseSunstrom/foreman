@@ -423,6 +423,22 @@ def _tower_files(root, last, base):
     return {f for f in moved if f.startswith("site/genesis/") or f == rune.STATS}
 
 
+def _pick(root, wt, sha, tower):
+    """Cherry-pick sha onto wt's HEAD (a merge against its first parent); a conflict only in the live tower's files keeps
+    main's copy (T-2955), in the first pick and the re-pick after main moved while testing (T-2963). A failed pick is
+    aborted; the result's returncode says which."""
+    merge = len(_git(root, "rev-list", "--parents", "-n1", sha).split()) > 2
+    r = c._git(wt, "cherry-pick", *(["-m", "1"] if merge else []), sha, timeout=300, proc=True)
+    bad = set(_git(wt, "diff", "--name-only", "--diff-filter=U", ok=True).split()) if r.returncode else set()
+    if bad and bad <= tower:
+        _git(wt, "checkout", "--ours", "--", *bad)
+        _git(wt, "add", "--", *bad)
+        r = c._git(wt, "-c", "core.editor=true", "commit", "-q", "--no-edit", "--allow-empty", timeout=60, proc=True)
+    if r.returncode:
+        _git(wt, "cherry-pick", "--abort", ok=True)
+    return r
+
+
 def ship(p, args):
     """T-1943: fm ship — HEAD's commits the remote's main lacks (git cherry, by patch) or the named ones, cherry-picked
     onto the fetched main in a scratch worktree, their files compared, tested there, main re-checked, then pushed
@@ -479,16 +495,8 @@ def ship(p, args):
         _git(root, "worktree", "add", "-q", "--detach", wt, base)
         try:
             for s in picks:
-                merge = len(_git(root, "rev-list", "--parents", "-n1", s).split()) > 2
-                r = c._git(wt, "cherry-pick", *(["-m", "1"] if merge else []), s, timeout=300, proc=True)
-                bad = set(_git(wt, "diff", "--name-only", "--diff-filter=U", ok=True).split()) if r.returncode else set()
-                if bad and bad <= tower:  # T-2955: only the live tower's files clash: main's copy stands
-                    _git(wt, "checkout", "--ours", "--", *bad)
-                    _git(wt, "add", "--", *bad)
-                    r = c._git(wt, "-c", "core.editor=true", "commit", "-q", "--no-edit", "--allow-empty", timeout=60,
-                               proc=True)
+                r = _pick(root, wt, s, tower)
                 if r.returncode:
-                    _git(wt, "cherry-pick", "--abort", ok=True)
                     hint = "" if args.commits else " (main may hold it under another patch: name the commits to ship)"
                     _err(f"{s[:8]} didn't cherry-pick onto {remote} main{hint}: {c.fit(c.plain(r.stderr.strip()), 200)}; nothing was pushed")
             mine = [f for f in files if f not in tower]  # T-2955: the tower's files are main's, not the branch's
@@ -565,10 +573,9 @@ def ship(p, args):
                         _err(f"{remote} main moved while testing in files CI tests ({c.joinmore(sorted(moved), 3)}); "
                              "nothing was pushed: run fm ship again (it tests the new main)")
                     _git(wt, "checkout", "-q", "--detach", new)
+                    again = _tower_files(root, last, new) if last else tower  # T-2963:the tower may have moved again
                     for sha in picks:
-                        merge = len(_git(root, "rev-list", "--parents", "-n1", sha).split()) > 2
-                        if c._git(wt, "cherry-pick", *(["-m", "1"] if merge else []), sha, timeout=300, proc=True).returncode:
-                            _git(wt, "cherry-pick", "--abort", ok=True)
+                        if _pick(root, wt, sha, again).returncode:
                             _err(f"{remote} main moved while testing and re-picking onto it conflicted; nothing was pushed")
                     print(f"{remote} main moved while testing, only in files these commits don't touch: re-picked onto it")
                     tip = _git(wt, "rev-parse", "HEAD").strip()
