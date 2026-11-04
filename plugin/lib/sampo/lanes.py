@@ -252,9 +252,16 @@ def cmd_lane(args):
         from sampo import bus
         bus.release(p, b.id)  # T-1068
         fns = merge.functions
-        return cli.out(args, {"id": b.id, "merged": merged, "functions": fns}, f"{b.id}: merged {merge.last} into "
-                         f"{main} (--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish"
-                         + (f"\nFunctions changed:\n{functions_line(fns)}" if functions_line(fns) else ""))
+        try:  # T-2861: a changed literal whose old text lives on elsewhere: a split for the review to settle
+            pairs = twins(main, "HEAD^1", "HEAD")
+        except (OSError, subprocess.SubprocessError):
+            pairs = []
+        return cli.out(args, {"id": b.id, "merged": merged, "functions": fns, "twins": pairs}, f"{b.id}: merged "
+                       f"{merge.last} into {main} (--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its "
+                       f"criteria, fm task finish"
+                       + (f"\nFunctions changed:\n{functions_line(fns)}" if functions_line(fns) else "")
+                       + ("\nChanged text still found elsewhere (a writer and a reader may now disagree; the review "
+                          "settles each):\n" + "\n".join(twins_lines(pairs)) if pairs else ""))
     if args.action == "new":
         if c.panicked():
             raise c.PolicyError(c.PAUSED)
@@ -1831,6 +1838,42 @@ def functions_changed(diff, per_file=8, max_files=40):
 def functions_line(fns):
     """One printable line per file: `path: f, g`."""
     return "\n".join(f"{c.fit(c.plain(f), 80)}: {', '.join(v)}" for f, v in fns.items() if v)
+
+
+_LIT = re.compile(r"\"([^\"\n\\]{12,})\"|'([^'\n\\]{12,})'")
+_READS = re.compile(r"\b(?:not in|in|startswith|endswith|re\.\w+|replace|index|find|section|count)\b|[=!]=")
+
+
+def twins(root, base, head, cap=8):
+    """T-2861: string literals the change base..head removed from plugin/ code (not tests) whose old text is gone
+    from its added lines yet still lives elsewhere at head: a writer and a reader that may now disagree (T-2847's
+    blast-radius line, louhi's posture anchor). [{old, still: ['path:line', ...]}], literals with a twin read
+    (in, startswith, re., ==, ...) or held in a module constant first, at most cap."""
+    def lits(lines):
+        return {a or b for line in lines for a, b in _LIT.findall(line)}
+    r = subprocess.run(["git", "-c", "core.fsmonitor=false", "diff", "-U0", "--no-ext-diff", "--no-textconv",
+                        f"{base}..{head}", "--", "plugin", ":!plugin/tests"], cwd=root, capture_output=True,
+                       text=True, timeout=60)
+    rows = r.stdout.splitlines()
+    removed = [x[1:] for x in rows if x.startswith("-") and not x.startswith("---")]
+    gone = lits(removed) - lits(x[1:] for x in rows if x.startswith("+") and not x.startswith("+++"))
+
+    def reader(text):  # the literal is searched for, compared, or held as a module constant
+        return bool(_READS.search(text) or re.match(r"[A-Z_]+\s*=", text.strip()))
+    out = []
+    for old in sorted(gone):
+        g = subprocess.run(["git", "grep", "-n", "-F", "-e", old, head, "--", "plugin", ":!plugin/tests"], cwd=root,
+                           capture_output=True, text=True, timeout=60)
+        still = [ln.split(":", 1)[1] for ln in g.stdout.splitlines() if ":" in ln]  # head:path:line:text
+        if still:  # either side reading it ranks first: the changed reader or the reader left behind
+            reads = any(reader(s.split(":", 2)[-1]) for s in still) or any(reader(x) for x in removed if old in x)
+            out.append((not reads, old, [":".join(s.split(":", 2)[:2]) for s in still]))
+    return [{"old": o, "still": w} for _, o, w in sorted(out)[:cap]]
+
+
+def twins_lines(rows):
+    """The merge note's lines for twins()."""
+    return [f"- {c.fit(x['old'], 70)!r} changed, still at {c.joinmore(x['still'], 3)}" for x in rows]
 
 
 def merge(p, b, main, unverified=None):
