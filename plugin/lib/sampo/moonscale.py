@@ -25,6 +25,7 @@ CANDIDATES, FUNNEL = "candidates.jsonl", "funnel.jsonl"
 TIMEOUT, PROBE = 300, 2.0
 MAX_WORKERS = 8
 MAX_BATCH, FAILS = 50, 3  # a batch's moons; failed or empty calls in a row before grow gives up
+TARGET = 10000  # T-2916: the catalogue's size goal; the night's grow job and its gate both read it
 FIELDS = {"title": 120, "today": 300, "with_this": 300, "what": 600, "kill": 400, "prior_art": 200, "tier": 20}
 
 KINDS = ("bugs", "features", "refactors", "migrations", "ops", "security", "performance", "data", "docs", "design",
@@ -392,6 +393,18 @@ def _local(sensitive):
 
 
 _lock, _cuts, _THINK = threading.Lock(), collections.Counter(), None  # replies cut empty, by model; --think's override
+_LOCAL_ONLY = False  # T-2916: --local-only: a call no local model answers stops the run, never goes to Haiku
+
+
+class LocalOnly(ValueError):
+    """A --local-only call that no local model answered."""
+
+
+def night_ready(p):
+    """T-2916: whether the night may grow and funnel moons: a plain project, an answering own or loopback model, and the
+    store under TARGET."""
+    sensitive = bool(c.read_meta(p).get("sensitive"))
+    return not sensitive and len(rows(p)) < TARGET and _local(sensitive) is not None
 
 
 def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
@@ -412,6 +425,8 @@ def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
             if "reasoning used the whole budget" in str(e):
                 with _lock:
                     _cuts[prof["name"]] += 1
+    if _LOCAL_ONLY and cheap:
+        raise LocalOnly("local-only: no local model answered (MOONS_LOCAL); nothing was sent to a paid model")
     if sensitive:
         raise ValueError("a sensitive project's records go to a local model only, and none answered (MOONS_LOCAL)")
     model = "haiku" if cheap else rune.REVIEW_MODELS[-1]
@@ -425,12 +440,12 @@ def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
     return ideas.run_child(feature, system, prompt, model, TIMEOUT, project=p.slug), model
 
 
-def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=None):
+def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=None, local_only=False):
     """Ask for `batch` moons per call, one thin cell at a time, until the store holds `target` rows (default: one batch
     more), max_calls calls are made, the budget says no, or FAILS calls in a row fail or bring nothing back.
     T-2893: `workers` calls run at once (default: the local profile's slots, else 1); only this thread writes rows.
     think False/True overrides the local profile's reasoning switch for the run."""
-    global _THINK
+    global _THINK, _LOCAL_ONLY
     if not isinstance(batch, int) or not 1 <= batch <= MAX_BATCH:
         raise ValueError(f"--batch takes 1 to {MAX_BATCH}")
     if workers is None:
@@ -452,7 +467,7 @@ def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=No
     fails = paid = 0
     with _lock:
         _cuts.clear()
-    _THINK = think
+    _THINK, _LOCAL_ONLY = think, bool(local_only)
     pool = concurrent.futures.ThreadPoolExecutor(workers)
     try:
         while not r["stopped"]:
@@ -475,6 +490,9 @@ def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=No
                 except budget.BudgetError as e:
                     r["stopped"], r["error"] = "budget", c.fit(_norm(e), 300)
                     continue
+                except LocalOnly as e:
+                    r["stopped"], r["error"] = "local", c.fit(_norm(e), 300)
+                    continue
                 except (ValueError, OSError, models.ModelError) as e:
                     fails, r["error"] = fails + 1, c.fit(_norm(e), 300)
                     continue
@@ -495,7 +513,7 @@ def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=No
                         r["reasons"][why.split(":")[0]] += 1
     finally:
         pool.shutdown()
-        _THINK = None
+        _THINK, _LOCAL_ONLY = None, False
     with _lock:
         r["cut"] = dict(_cuts)
     r.update(total=total, reasons=dict(r["reasons"]), models=dict(r["models"]))
@@ -721,6 +739,9 @@ def _judge(p, r, cap, system, batch, keys, parse):
         except budget.BudgetError as e:
             r["stopped"], r["error"] = "budget", c.fit(_norm(e), 300)
             return None
+        except LocalOnly as e:
+            r["stopped"], r["error"] = "local", c.fit(_norm(e), 300)
+            return None
         except (ValueError, OSError, models.ModelError) as e:
             r["fails"], r["error"] = r["fails"] + 1, c.fit(_norm(e), 300)
             continue
@@ -831,7 +852,7 @@ def _novelty(p, r, rs, f, todo, cap):
                  for n, x in enumerate(batch, 1) if n in said], r, "novelty")
 
 
-def funnel(p, stage=None, max_calls=None):
+def funnel(p, stage=None, max_calls=None, local_only=False):
     """Run each candidate the last stage kept through the next, cheapest first (exact, embed, kill, tier, novelty; one
     with `stage`), appending each fate to funnel.jsonl with its reason, until every stage is done, max_calls judge calls
     are made, the budget says no, or FAILS calls in a row fail. A rerun picks up where the last stopped; a row a judge
@@ -842,12 +863,17 @@ def funnel(p, stage=None, max_calls=None):
         raise ValueError("--max-calls can't be negative")
     r = {"stages": {}, "calls": 0, "models": {}, "method": "", "stopped": "", "error": "", "paid": 0, "fails": 0}
     run = {"exact": _exact, "embed": _dedupe, "kill": _kill, "tier": _tier, "novelty": _novelty}
-    for st in [stage] if stage else STAGES:
-        if r["stopped"]:
-            break
-        rs, f = rows(p), fate(p)
-        r["stages"][st] = {}
-        run[st](p, r, rs, f, _at(rs, f, (ORDER[ORDER.index(st) - 1],), ("kept",)), max_calls)
+    global _LOCAL_ONLY
+    _LOCAL_ONLY = bool(local_only)
+    try:
+        for st in [stage] if stage else STAGES:
+            if r["stopped"]:
+                break
+            rs, f = rows(p), fate(p)
+            r["stages"][st] = {}
+            run[st](p, r, rs, f, _at(rs, f, (ORDER[ORDER.index(st) - 1],), ("kept",)), max_calls)
+    finally:
+        _LOCAL_ONLY = False
     r["stopped"] = r["stopped"] or "done"
     if r["stages"].get("novelty"):
         r["families"] = len(families(p)["families"])

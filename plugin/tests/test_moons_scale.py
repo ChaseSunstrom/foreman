@@ -168,6 +168,51 @@ class Route(_Moons):
                 mock.patch.object(ideas, "run_child", return_value="haiku text"):
             self.assertEqual(self.ms._ask(self.p, "sys", "prompt"), ("haiku text", "haiku"))
 
+    def test_local_only_never_reaches_haiku_when_no_local_model_answers_or_it_errs(self):  # T-2916
+        from sampo import ideas, models
+        with mock.patch.object(self.ms, "_LOCAL_ONLY", True), mock.patch.object(ideas, "run_child") as child:
+            with mock.patch.dict(os.environ, {"MOONS_LOCAL": ""}):
+                with self.assertRaises(self.ms.LocalOnly) as e:
+                    self.ms._ask(self.p, "sys", "prompt")
+                self.assertIn("local-only", str(e.exception))
+            with mock.patch.dict(os.environ, {"MOONS_TEST_KEY": "k", "MOONS_LOCAL": "jarvis"}), \
+                    mock.patch.object(models, "resolve", return_value=dict(self.PROFILE)), \
+                    mock.patch.object(self.ms, "_up", return_value=True), \
+                    mock.patch.object(models, "complete", side_effect=models.ModelError("down")):
+                with self.assertRaises(self.ms.LocalOnly):
+                    self.ms._ask(self.p, "sys", "prompt")
+        child.assert_not_called()
+
+    def test_grow_and_funnel_local_only_stop_with_the_reason_and_spend_nothing(self):  # T-2916
+        from sampo import ideas
+        with mock.patch.dict(os.environ, {"MOONS_LOCAL": ""}), mock.patch.object(ideas, "run_child") as child:
+            r = self.ms.grow(self.p, 100, local_only=True)
+            self.assertEqual((r["stopped"], r["calls"]), ("local", 1))
+            self.assertIn("local-only", r["error"])
+            cell = {"problem": "slow tests", "source": "pain", "kind": "bugs", "mechanism": "biology",
+                    "scale": "file", "surface": "terminal"}
+            self.ms.add(self.p, [good()], cell, "haiku", 1)
+            with mock.patch.object(self.ms, "_embedder", return_value=None):  # the shingle fallback: no model
+                r = self.ms.funnel(self.p, local_only=True)
+            self.assertEqual(r["stopped"], "local")
+            self.assertEqual((r["calls"], r["paid"]), (1, 0))
+            self.assertIn("local-only", r["error"])
+        child.assert_not_called()
+        self.assertIn("(local-only", self.ms.funnel_line(r))
+
+    def test_night_ready_wants_an_answering_local_model_a_plain_project_and_room_under_the_target(self):  # T-2916
+        up = mock.patch.object(self.ms, "_local", return_value=dict(self.PROFILE))
+        down = mock.patch.object(self.ms, "_local", return_value=None)
+        with up:
+            self.assertTrue(self.ms.night_ready(self.p))
+            with mock.patch.object(self.ms, "TARGET", 0):
+                self.assertFalse(self.ms.night_ready(self.p), "the target is met")
+            self.fm("sensitive", "on")
+            self.assertFalse(self.ms.night_ready(self.p))
+            self.fm("sensitive", "off")
+        with down:
+            self.assertFalse(self.ms.night_ready(self.p))
+
     def test_one_grow_run_keeps_its_paid_calls_under_the_per_command_cap(self):  # many small calls are one command
         from sampo import budget, ideas
         with mock.patch.object(budget, "effective", return_value=({"run": 0.12, "day": 100.0}, None)), \

@@ -4049,10 +4049,11 @@ def cmd_genesis(args):
                 from sampo import moonscale
                 if verb == "grow":
                     r = moonscale.grow(p, args.target, args.batch, args.seed, args.max_calls,
-                                       args.workers, None if args.think is None else args.think == "on")
+                                       args.workers, None if args.think is None else args.think == "on",
+                                       args.local_only)
                     return scli.out(args, r, moonscale.grow_line(r))
                 if verb == "funnel":
-                    r = moonscale.funnel(p, args.stage, args.max_calls)
+                    r = moonscale.funnel(p, args.stage, args.max_calls, args.local_only)
                     return scli.out(args, r, moonscale.funnel_line(r))
                 if verb == "families":
                     r = moonscale.families(p)

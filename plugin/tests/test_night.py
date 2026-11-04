@@ -55,6 +55,9 @@ class Stranger(ForemanTestCase):
 class Night(ForemanTestCase):
     def setUp(self):
         super().setUp()
+        patch = mock.patch.dict(os.environ, {"MOONS_LOCAL": ""})  # T-2916: no probe of this machine's local models
+        patch.start()
+        self.addCleanup(patch.stop)
         self.fm("init")
         d = os.path.join(c.state_dir(), "sessions")  # usage known and low (unknown usage halves the limit)
         os.makedirs(d, exist_ok=True)
@@ -290,6 +293,40 @@ class NightGuards(ForemanTestCase):
                 + json.loads(self.fm("night", "--dry-run", "--max-usd", "50", "--json").stdout)["skipped"]}
         self.assertIn(rid, " ".join(jobs["research debt"].get("argv") or [rid]))
         self.assertIn("evolve candidate", " ".join(jobs))
+
+
+class NightMoons(ForemanTestCase):  # T-2916: zero-dollar Moons jobs on the local models, local only
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        from sampo import moonscale
+        self.ms, self.p = moonscale, c.find_project(self.repo)
+
+    def names(self):
+        from sampo import night
+        return {n: (argv, usd) for n, argv, usd in night.jobs(self.p) if n.startswith("moons")}
+
+    def test_both_jobs_are_listed_at_zero_only_while_a_local_model_answers_under_the_target(self):
+        with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}):
+            got = self.names()
+        self.assertEqual(list(got), ["moons grow", "moons funnel"])
+        grow, funnel = got["moons grow"][0], got["moons funnel"][0]
+        self.assertEqual(grow[:2], ["moons", "grow"])
+        self.assertEqual(grow[grow.index("--target") + 1], str(self.ms.TARGET))
+        for argv in (grow, funnel):
+            self.assertIn("--local-only", argv)
+            self.assertTrue(int(argv[argv.index("--max-calls") + 1]) > 0)
+        self.assertEqual([u for _, u in got.values()], [0.0, 0.0])
+        with mock.patch.object(self.ms, "_local", return_value=None):
+            self.assertEqual(self.names(), {})
+        with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}), \
+                mock.patch.object(self.ms, "rows", return_value=[{}] * self.ms.TARGET):
+            self.assertEqual(self.names(), {}, "the target is met: nothing to grow")
+
+    def test_a_sensitive_project_lists_neither(self):
+        self.fm("sensitive", "on")
+        with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}):
+            self.assertEqual(self.names(), {})
 
 
 class StrangerGuards(ForemanTestCase):
