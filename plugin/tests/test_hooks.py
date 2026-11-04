@@ -3081,9 +3081,9 @@ class Stop(HookCase):
             g["drive"]["sess-1"]["since"][k] -= 45 * 60  # all past LONG_JOB_S
         with open(gate, "w") as f:
             json.dump(g, f)
-        stop()
-        last = [json.loads(x) for x in open(os.path.join(c.state_dir(), "events.jsonl")) if '"drive_wait"' in x]
-        self.assertEqual(last[-1]["running"], ["abuild1", "adesign1"], "the agents still hold it; the shell is a service")
+        out = stop()  # T-2901: the same agents are the same wait (no new drive_wait event): read what it says it waits on
+        self.assertIn("background work (abuild1, adesign1)", out.get("systemMessage", ""),
+                      "the agents still hold it; the shell is a service")
 
     def test_an_engine_list_without_the_agents_and_a_far_start_still_hold_the_drive(self):
         # T-2873: Claude Code's background_tasks listed a monitor and a shell but not two running subagents, and won over
@@ -3285,6 +3285,19 @@ class Stop(HookCase):
         with open(os.path.join(self.home, "state", "events.jsonl"), "a") as f:
             f.write(json.dumps({"ts": old, "kind": "bg_start", "session_id": "sess-1", "id": "bold"}) + "\n")
         self.assertEqual(self.decision(self.stop("Next: the queue.")), "block")
+
+    def test_shells_coming_and_going_under_the_same_agents_push_only_once(self):
+        # T-2901: each shell a subagent started made a "new running set", and the drive re-pushed every few minutes
+        self.fm("init")
+        self.task()
+        agent = {"id": "aw1", "type": "agent", "status": "running", "description": "Build"}
+        shell = lambda i: {"id": f"bs{i}", "type": "shell", "status": "running", "description": "Run", "command": "x"}
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on the build.",
+                               "session_id": "sess-1", "background_tasks": [agent, shell(1)]})
+        self.assertEqual(self.decision(p), "block")
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on the build.",
+                               "session_id": "sess-1", "background_tasks": [agent, shell(2), shell(3)]})
+        self.assertIsNone(self.decision(p), "the same agent with other shells is the same wait")
 
     def test_a_resumed_session_closes_what_its_dead_process_left_running(self):
         # T-2900: the terminal closed; the resumed session's drive waited on a builder that had died with it

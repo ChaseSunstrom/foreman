@@ -4253,13 +4253,15 @@ def _drive(p, sd, briefs, pl, g):
     running = [k for k in running if k in agents or now - since[k] < LONG_JOB_S]
     if running and sd["active"]:  # background work is out; its notification wakes the session (no active task:
         # the jobs don't hold back starting the next one)
-        first = d.get("waited") != running[:5]  # sorted: the same jobs in another order aren't a new set
+        # sorted: the same jobs in another order aren't a new set; T-2901: while agents run, only they make a new set
+        key = [k for k in running if k in agents] or running  # (the shells a subagent starts come and go under it)
+        first = d.get("waited") != key[:5]
         if first:  # one wait, one event (T-0152: every Stop counted again in fm friction)
             _event({"kind": "drive_wait", "session_id": sid, "project": p.slug, "task": work["id"],
                     "running": running[:5]})
         if d.get("offered_for") != work["id"]:  # T-2507: a new background set isn't a new round of offers; a new
             d.update(offered=[], offered_for=work["id"])  # active task is (each queued task offered once per task)
-        d.update(waited=running[:5], waiting_on=running[:3])  # waiting_on: said on screen, a silent end reads as a stall
+        d.update(waited=key[:5], waiting_on=running[:3])  # waiting_on: said on screen, a silent end reads as a stall
         if _headless() or d.get("count", 0) >= DRIVE_MAX:
             return None
         offered = d.get("offered") or []
