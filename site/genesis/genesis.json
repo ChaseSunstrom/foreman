@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-04T09:32:27Z",
- "rev": "28bd5155",
+ "updated": "2026-11-04T11:28:50Z",
+ "rev": "3ef39b25",
  "capabilities": [
   {
    "n": 1,
@@ -3775,12 +3775,12 @@
       {
        "id": "T-2910",
        "title": "sampo ideas runs its lens children on the local model: a --model local arm through the own or loopback generative profile, Haiku as the fallback, measured against the cloud arm on the same pack",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "head-to-head on the anticipation pack, judged blind; file the research note; MASTER and CHANGELOG"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2878",
@@ -3828,12 +3828,12 @@
       {
        "id": "T-2912",
        "title": "A local-model arm for the next-request prediction: the 27B reads the user's recent asks, the open queue and the standing steers and predicts the next ask's type, paths and words, booked and scored beside the transition guess and the naive baseline, shown only when it leads",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 2,
-       "current": "book it in prediction_tick, score it, list it in prediction_kinds, let _next_line and draft.ahead read the leading arm"
+       "done": 4,
+       "current": ""
       },
       {
        "id": "T-2449",
@@ -3848,12 +3848,12 @@
       {
        "id": "T-2910",
        "title": "sampo ideas runs its lens children on the local model: a --model local arm through the own or loopback generative profile, Haiku as the fallback, measured against the cloud arm on the same pack",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "head-to-head on the anticipation pack, judged blind; file the research note; MASTER and CHANGELOG"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2407",
@@ -3974,7 +3974,7 @@
       {
        "id": "T-2914",
        "title": "Meaning is planned, not labelled after: a user's M or L plan names each clause of their request that no criterion checks before work starts, and the unproven rollup splits meaning by whose words the clause is, the user's or Sampo's own notes",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
@@ -4027,7 +4027,7 @@
       {
        "id": "T-2915",
        "title": "MASTER.md opens whole in one Read: each over-long section moves to docs/map shards, MASTER.md keeps a one-line-per-entry index with links, every line wrapped under Read's line cut, and every check that reads MASTER.md reads the shards too",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
@@ -4060,12 +4060,12 @@
       {
        "id": "T-2916",
        "title": "The night shift runs on the local models: sampo night adds zero-dollar moons grow and moons funnel jobs while an own or loopback model answers and the catalogue is under its 10,000 target, local only, never falling back to a paid model",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "the local-only switch in moonscale._ask through grow and funnel and their flags"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-1476",
@@ -4080,12 +4080,12 @@
       {
        "id": "T-2910",
        "title": "sampo ideas runs its lens children on the local model: a --model local arm through the own or loopback generative profile, Haiku as the fallback, measured against the cloud arm on the same pack",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "head-to-head on the anticipation pack, judged blind; file the research note; MASTER and CHANGELOG"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2886",
@@ -4123,12 +4123,12 @@
       {
        "id": "T-2917",
        "title": "Small-model playbooks, kept on measured lift: sampo playbooks eval runs on a local profile, a local writer drafts a small-model variant of a playbook and its eval briefs, and a variant is kept only when it lifts that model at least as much as the original does",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 5,
-       "done": 4,
-       "current": "the first batch, the research note, MASTER and CHANGELOG"
+       "done": 5,
+       "current": ""
       },
       {
        "id": "T-2878",
@@ -4160,12 +4160,12 @@
       {
        "id": "T-2918",
        "title": "M-02 slice: sampo regen PATH deletes one of Sampo's own modules in a throwaway worktree and regrows it on the local 27B from its intent alone (its briefs, its map entry, its tests, the names its callers use), landing nothing, reporting each proof; run over every small leaf module, and the gen-4 ecology moons filed in the catalogue",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 2,
-       "current": "the slice run over the leaf modules, the result file, the M-02 stage line"
+       "done": 4,
+       "current": ""
       },
       {
        "id": "T-2679",
@@ -4180,12 +4180,12 @@
       {
        "id": "T-2916",
        "title": "The night shift runs on the local models: sampo night adds zero-dollar moons grow and moons funnel jobs while an own or loopback model answers and the catalogue is under its 10,000 target, local only, never falling back to a paid model",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "the local-only switch in moonscale._ask through grow and funnel and their flags"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2878",
@@ -4200,12 +4200,12 @@
       {
        "id": "T-2917",
        "title": "Small-model playbooks, kept on measured lift: sampo playbooks eval runs on a local profile, a local writer drafts a small-model variant of a playbook and its eval briefs, and a variant is kept only when it lifts that model at least as much as the original does",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 5,
-       "done": 4,
-       "current": "the first batch, the research note, MASTER and CHANGELOG"
+       "done": 5,
+       "current": ""
       },
       {
        "id": "T-0271",
@@ -4220,12 +4220,12 @@
       {
        "id": "T-2910",
        "title": "sampo ideas runs its lens children on the local model: a --model local arm through the own or loopback generative profile, Haiku as the fallback, measured against the cloud arm on the same pack",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "head-to-head on the anticipation pack, judged blind; file the research note; MASTER and CHANGELOG"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2721",
@@ -4250,7 +4250,7 @@
       {
        "id": "T-2915",
        "title": "MASTER.md opens whole in one Read: each over-long section moves to docs/map shards, MASTER.md keeps a one-line-per-entry index with links, every line wrapped under Read's line cut, and every check that reads MASTER.md reads the shards too",
-       "status": "planned",
+       "status": "done",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
@@ -29644,26 +29644,26 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 777,
+ "unproven": 785,
  "unproven_kinds": {
-  "meaning-notes": 356,
+  "meaning-notes": 357,
   "meaning-user": 245,
   "research-uncited": 32,
-  "perf-typed": 49,
+  "perf-typed": 50,
   "typed": 36,
   "red": 75,
   "tui-unshot": 7,
-  "docs": 92,
+  "docs": 99,
   "perf-noise": 1,
-  "infra": 7,
-  "ui-unshot": 17,
+  "infra": 8,
+  "ui-unshot": 18,
   "data": 2
  },
  "next": {
-  "stage": "build",
+  "stage": "critique",
   "gen": 4,
-  "action": "Mission 1 (exhaustive-thinking): finish T-2910",
-  "command": "fm focus T-2910",
+  "action": "Mission 1 (exhaustive-thinking): write its critique (closed vs planned, outside signals, what failed)",
+  "command": "fm genesis put gen-4/critique-exhaustive-thinking.md --file -",
   "kind": "ok"
  },
  "docs": {
@@ -30865,13 +30865,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 3196,
+    "kill": 3816,
     "tier": 893,
     "novelty": 26
    },
    "merged": 3,
    "kept": 197,
-   "pending": 4076
+   "pending": 3456
   },
   "families": [
    {
