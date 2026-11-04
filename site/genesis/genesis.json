@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-04T18:02:11Z",
- "rev": "3f0b0b28",
+ "updated": "2026-11-04T18:23:37Z",
+ "rev": "5494a558",
  "capabilities": [
   {
    "n": 1,
@@ -30668,10 +30668,10 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 799,
+ "unproven": 800,
  "unproven_kinds": {
   "meaning-notes": 361,
-  "meaning-user": 247,
+  "meaning-user": 248,
   "research-uncited": 33,
   "perf-typed": 51,
   "typed": 37,
@@ -31890,12 +31890,12 @@
    },
    "rejected": {
     "kill": 5795,
-    "tier": 1961,
+    "tier": 2255,
     "novelty": 26
    },
-   "merged": 12,
+   "merged": 13,
    "kept": 197,
-   "pending": 400
+   "pending": 105
   },
   "families": [
    {
