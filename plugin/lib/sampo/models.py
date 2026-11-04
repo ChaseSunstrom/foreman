@@ -896,8 +896,10 @@ def systemone(profile, prompt, choices, question=SYSTEMONE_ASK, timeout=60):
     per-option probability is a number in [0, 1], else None; a refusal or transport failure raises ModelError."""
     base, key = (profile.get("base_url") or "").rstrip("/"), _key(profile)
     _check_url(profile, base, key)
+    choices, desc = _described(choices)  # T-2894: a described choice is the criterion's text
     body = {"model": profile.get("model"), "state": prompt,
-            "questions": {"q": {"type": "choice", "instructions": question, "criteria": {c: c for c in choices}}}}
+            "questions": {"q": {"type": "choice", "instructions": question,
+                                "criteria": {c: desc.get(c) or c for c in choices}}}}
     r = _post(base + "/systemone", body, {"Authorization": f"Bearer {key}"} if key else {}, timeout, key)
     got = _of(_of(r, dict).get("answers"), dict)
     q = _of(next(iter(got.values())) if len(got) == 1 else None, dict)  # one question asked, so exactly one answer is taken
@@ -913,7 +915,8 @@ def decide(kind, prompt, choices, rule=None, bar=0.8, p=None, backends=None, tim
     backend, cleared, tried}, the best answer seen when none clears the bar (cleared False), or None when nothing
     usable came back. Every returned answer is booked in p's prediction book for scoring. A model's reply is
     untrusted: only a listed choice and a number in [0, 1] are taken from it."""
-    choices = [str(x) for x in choices]
+    desc = choices
+    choices, _ = _described(choices)
     sensitive = False
     if p is not None:
         from sampo import core
@@ -934,7 +937,8 @@ def decide(kind, prompt, choices, rule=None, bar=0.8, p=None, backends=None, tim
         if ans and take(ans, "rule"):
             return _booked(p, kind, best, tried, True, ref)
     ask = [{"role": "system", "content": DECIDE_SYSTEM},
-           {"role": "user", "content": f"Choices: {json.dumps(choices)}\nQuestion: {prompt}"}]
+           {"role": "user", "content": f"Choices: {json.dumps(desc if isinstance(desc, dict) else choices)}\n"
+                                       f"Question: {prompt}"}]
     for b in sorted(registry() if backends is None else backends, key=lambda b: not b.get("local")):
         name = str(b.get("name") or "backend")
         if sensitive and not b.get("local"):
@@ -943,7 +947,7 @@ def decide(kind, prompt, choices, rule=None, bar=0.8, p=None, backends=None, tim
         t0 = time.monotonic()
         try:
             if b["profile"].get("kind") == "systemone":
-                ans = systemone(b["profile"], prompt, choices, timeout=timeout)
+                ans = systemone(b["profile"], prompt, desc, timeout=timeout)
             else:
                 r = complete(b["profile"], ask, max_tokens=200, timeout=timeout)
                 ans = _answer(extract_json(r.get("text") or ""), choices)
@@ -991,9 +995,28 @@ SHADOW = "shadow.jsonl"  # the path's own decisions, one row per use, for the ni
 
 
 def shadow_uses():
-    from sampo import core
-    return {"intake-type": list(core.TYPES), "intake-tier": ["S", "M", "L"], "dedupe": ["same", "different"],
-            "lead-triage": ["real", "noise"]}
+    """T-2894: {use: {choice: what the choice means}}; the descriptions, written once from the intake rules, go to every
+    backend alike (systemone criteria and the chat prompt): a bare label scored a model 0.27, a described one 0.9."""
+    return {"intake-type": {
+                "RESEARCH": "find out or compare something; the result is knowledge or a decision, not a code change",
+                "CLEAN": "tidy or refactor code, docs or files with no change in behaviour",
+                "PERFORMANCE": "make something faster or smaller; measured before and after",
+                "SECURITY": "close a vulnerability or harden against misuse, secrets or untrusted input",
+                "FIX": "repair a defect: something that exists behaves wrongly, crashes or fails",
+                "FEATURE": "add a new capability or behaviour that did not exist"},
+            "intake-tier": {
+                "S": "small and obvious: about 30 lines in one or two files",
+                "M": "several files, or a design choice to make",
+                "L": "cross-cutting: schema, API or security, a large or uncertain change"},
+            "dedupe": {"same": "the two requests ask for the same work", "different": "the two requests ask for different work"},
+            "lead-triage": {"real": "a genuine defect or risk in the code", "noise": "a false alarm or style nit"}}
+
+
+def _described(choices):
+    """([labels], {label: description}) from a list of labels or a {label: description} map."""
+    if isinstance(choices, dict):
+        return [str(k) for k in choices], {str(k): str(v) for k, v in choices.items()}
+    return [str(x) for x in choices], {}
 
 
 def shadow(p, use, text, path, task=None):

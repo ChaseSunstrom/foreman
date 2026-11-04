@@ -18,7 +18,7 @@ class Server:
     """Answers /v1/systemone with `choice` at 0.9 (and records every state it saw) and /v1/embeddings with letter counts."""
 
     def __init__(self, choice="FIX"):
-        self.states, srv = [], self
+        self.states, self.crits, self.busy, srv = [], [], 0, self
 
         class H(http.server.BaseHTTPRequestHandler):
             def log_message(self, *a):
@@ -26,9 +26,16 @@ class Server:
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if self.path.endswith("/systemone") and srv.busy > 0:
+                    srv.busy -= 1
+                    self.send_response(529)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 if self.path.endswith("/systemone"):
                     srv.states.append(body["state"])
-                    crit = list(next(iter(body["questions"].values()))["criteria"])
+                    srv.crits.append(next(iter(body["questions"].values()))["criteria"])
+                    crit = list(srv.crits[-1])
                     pick = choice if choice in crit else crit[0]
                     out = {"answers": {"type": {"type": "choice", "choice": pick, "confidence": 0.9,
                                                 "probabilities": {k: (0.9 if k == pick else 0.05) for k in crit}}}}
@@ -91,7 +98,14 @@ class LouhiModels(ForemanTestCase):
             self.assertEqual((r["arm"], r["n"], r["errors"]), ("decision", len(self.held), 0))
             for k in ("accuracy", "brier", "p50_ms", "p95_ms", "run", "held"):
                 self.assertIn(k, r)
-            self.assertEqual(by[("without", use)]["arm"], "decision")  # the rules path, the baseline row
+            for base in ("majority", "orchestrator"):  # T-2894: two honest baselines, labelled
+                self.assertEqual(by[(base, use)]["arm"], "decision")
+            self.assertIn("orchestrator's own", by[("orchestrator", use)]["note"])
+            self.assertNotIn(("without", use), by)
+        train = [self.truth[t][0] for t in self.truth if t not in self.held]
+        top = max(sorted(set(train)), key=train.count)
+        self.assertEqual(by[("majority", "intake-type")]["accuracy"],
+                         round(sum(self.truth[t][0] == top for t in self.held) / len(self.held), 3))
         typ = by[("kev", "intake-type")]
         want = sum(self.truth[t][0] == "FIX" for t in self.held) / len(self.held)
         self.assertAlmostEqual(typ["accuracy"], round(want, 3), places=3)
@@ -103,10 +117,64 @@ class LouhiModels(ForemanTestCase):
         self.assertTrue(0 <= emb["recall_at_1"] <= emb["recall_at_10"] <= 1)
         self.assertEqual(emb["recall_at_10"], 1.0)  # fewer than ten held-out briefs: the right one is always in the top ten
         # no held-out label reaches a prompt, and no train task is asked about
-        with open(os.path.join(self.p.dir, "shadow.jsonl")) as f:
-            inputs = {r["input"] for r in map(json.loads, f) if r.get("task") in self.held}
-        self.assertTrue(set(self.srv.states) <= inputs)
+        inputs = {louhi._raw(c.find_brief(self.p, t)) for t in self.held}  # T-2894: the briefs' raw requests, no shadow row
+        self.assertTrue(self.srv.states and set(self.srv.states) <= inputs)
         self.assertFalse([s for s in self.srv.states if "FEATURE" in s or "FIX" in s.split()])
+        # every option carries its description, not its own label
+        crits = [x for x in self.srv.crits if "FIX" in x]
+        self.assertTrue(crits)
+        for crit in self.srv.crits:
+            self.assertTrue(all(v != k and len(v) > 12 for k, v in crit.items()), crit)
+
+    def test_a_busy_529_is_retried_then_counted(self):
+        self.srv.busy = 4  # models._post retries 3 times; the bench retries after it
+        louhi.BUSY_WAIT, was = 0, models._sleep
+        models._sleep = lambda s: None
+        self.addCleanup(setattr, louhi, "BUSY_WAIT", 2)
+        self.addCleanup(setattr, models, "_sleep", was)
+        self.run_bench()
+        r = {(x["backend"], x["use"]): x for x in self.rows()}[("kev", "intake-type")]
+        self.assertEqual((r["n"], r["errors"]), (len(self.held), 0))
+
+    def test_the_generation_arm_writes_yield_and_pass_rate_one_endpoint_at_a_time(self):
+        a, b = "http://127.0.0.1:1/v1", "http://127.0.0.1:2/v1"
+        mk = lambda n, u: {"name": n, "kind": "openai", "base_url": u, "model": n, "key_env": None, "context": 8192}  # noqa: E731
+        profs = [mk("b1", b), mk("a1", a), mk("b2", b), mk("a2", a)]
+        calls = []
+
+        def grow(prof, k):
+            calls.append(("grow", prof["name"], k))
+            return {"added": k, "kept": k // 2, "seconds": 30.0, "fallback": 0}
+
+        def funnel(prof, sample):
+            calls.append(("funnel", prof["name"], sample))
+            return {"kill": {"in": 8, "kept": 6}, "tier": {"in": sample, "kept": 2}}
+
+        def smith(prof):
+            calls.append(("smith", prof["name"]))
+            return {"closed": 3, "seeds": 4}
+
+        louhi.bench_models(self.p, decision=[], embedders=[], generators=profs, k=16, grow_fn=grow, funnel_fn=funnel,
+                           smith_fn=smith)
+        order = [x[1] for x in calls]
+        self.assertEqual(order, ["a1"] * 3 + ["a2"] * 3 + ["b1"] * 3 + ["b2"] * 3)  # an endpoint's models never alternate
+        rows = {(x["backend"], x["use"]): x for x in self.rows() if x["arm"] == "generation"}
+        y = rows[("a1", "moons-yield")]
+        self.assertEqual((y["k"], y["added"], y["admitted"], y["kill_kept"], y["tier_in"], y["tier_kept"], y["moons_per_min"]),
+                         (16, 16, 8, 6, 8, 2, 32.0))  # 16 moons in 30 s
+        self.assertIn("sample", y["note"])  # the tier stage takes a sample and says so
+        s = rows[("b2", "smith-seeds")]
+        self.assertEqual((s["pass_rate"], s["n"]), (0.75, 4))
+        self.assertIn("b2", self.fm("exam", "models", "show").stdout)
+
+    def test_no_endpoint_is_named_in_the_code(self):
+        src = os.path.join(os.path.dirname(louhi.__file__))
+        for f in ("louhi.py", "models.py"):
+            with open(os.path.join(src, f)) as fh:
+                self.assertNotIn("<private>", fh.read(), f)
+        self.assertFalse(hasattr(louhi, "SERVING"))
+        profs = [{"base_url": "http://x/v1", "model": "first"}, {"base_url": "http://x/v1", "model": "second"}]
+        self.assertEqual(louhi._serving(profs), {"http://x/v1": "first"})
 
     def test_cap_leaves_rows_out_and_show_says_how_many(self):
         self.run_bench(cap=1)
@@ -124,7 +192,6 @@ class LouhiModels(ForemanTestCase):
             {"base_url": r, "model": "aaa"},)]
         got = [(j[1]["base_url"], j[1]["model"]) for j in louhi._bench_order(jobs, {r: "qwen3.8-27b"})]
         self.assertEqual(got, [(o, "d3"), (o, "kev"), (r, "qwen3.8-27b"), (r, "aaa"), (r, "big-35b")])
-        self.assertEqual(louhi.SERVING[r.replace("jarvis.example", "<host>")], "qwen3.8-27b")
 
     def test_a_failing_backend_counts_errors_and_a_second_run_appends_a_new_run(self):
         dead = {"name": "gone", "kind": "systemone", "base_url": "http://127.0.0.1:1/v1", "model": "gone", "key_env": None}

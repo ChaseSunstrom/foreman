@@ -74,6 +74,21 @@ class Systemone(tm.Base):
         f = self.fake((200, ids, None), (200, {"models": [{"name": "kev:4b-q8_0"}]}, None), (200, {}, None))
         self.assertEqual(m._probe("ollama", f.url)["model"], "kev:4b-q8_0")  # no capabilities: the old behaviour
 
+    def test_described_choices_reach_the_criteria_and_the_chat_prompt_and_no_endpoint_is_hardcoded(self):
+        f, b = self.backend(REAL)
+        want = m.shadow_uses()["intake-type"]
+        got = m.decide("intake-type", "fix the login crash", want, backends=[b])
+        self.assertEqual(got["choice"], "FIX")
+        crit = next(iter(f.seen[0][3]["questions"].values()))["criteria"]
+        self.assertEqual(crit, want)
+        self.assertTrue(all(v != k for k, v in crit.items()))
+        chat = self.fake((200, {"choices": [{"message": {"content": '{"choice": "FIX", "probability": 0.9}'}}]}, None))
+        prof = {"name": "c", "kind": "openai", "base_url": chat.url, "model": "c", "key_env": None, "context": 8192}
+        m.decide("intake-type", "fix it", want, backends=[{"name": "c", "local": True, "profile": prof}])
+        self.assertIn(want["FIX"], json.dumps(chat.seen[0][3]["messages"]))
+        with open(m.__file__) as fh:
+            self.assertNotIn("<private>", fh.read())
+
     def test_ollama_decision_models_are_found_through_their_capabilities(self):
         tags = {"models": [{"name": "kev:4b-q8_0", "capabilities": ["completion", "decision"]},
                            {"name": "bge-m3:567m", "capabilities": ["embedding"]}, {"name": "old:1b"}]}

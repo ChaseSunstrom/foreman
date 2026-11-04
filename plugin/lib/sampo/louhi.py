@@ -850,14 +850,24 @@ def replay_models(p):
 
 # ---------------------------------------------------------------- the model bench (T-2887)
 BENCH = os.path.join("research", "models", "bench.jsonl")  # one metrics row per backend and use, appended per run
-SERVING = {"https://<host>/llm/v1": "qwen3.8-27b"}  # base_url -> the model it already serves
 BENCH_USES = ("intake-type", "intake-tier")
-BENCH_CAP = 60  # held-out rows asked per use (and briefs embedded); the rest are left out and counted
+BENCH_CAP = 200  # held-out rows asked per use (and briefs embedded); the rest are left out and counted
+BUSY_WAIT, BUSY_TRIES = 2.0, 4  # a backend answering 529 'busy' (one request at a time): wait, then ask again
+GEN_K, TIER_SAMPLE = 16, 8  # moons grown per generative profile, and how many of the survivors the review model tiers
 
 
 def _pct(xs, q):
     xs = sorted(xs)
     return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else None
+
+
+def _serving(profiles):
+    """T-2894: {base_url: the model of the first profile naming it}: what an endpoint is taken to hold already, read from
+    the profiles (models.json lists the served model first), never from a URL in code."""
+    out = {}
+    for x in profiles:
+        out.setdefault(x["base_url"], x["model"])
+    return out
 
 
 def _bench_order(jobs, serving):
@@ -866,22 +876,30 @@ def _bench_order(jobs, serving):
     return sorted(jobs, key=lambda j: (j[1]["base_url"], j[1]["model"] != serving.get(j[1]["base_url"]), j[1]["model"]))
 
 
+def _raw(b):
+    """A brief's Raw request as the person wrote it (the quote marks off), cut to 800 characters."""
+    return c.fit(" ".join(x[1:].strip() if x.startswith(">") else x.strip()
+                          for x in b.section("Raw request").splitlines() if x.strip()), 800)
+
+
 def _bench_data(p, cap):
-    """The held-out (task-id hash) closed tasks: {use: (rows, held)} with rows (task, raw request, truth, the rules'
-    guess), and the embedding arm's (title, brief) pairs. Only the request text goes into a prompt, never a label."""
+    """The held-out (task-id hash) closed tasks: {use: (rows, held, train)} with rows (task, raw request, truth, the
+    orchestrator's own shadow-path call or None) and train the labels of the other closed tasks, and the embedding
+    arm's (title, brief) pairs. Only the request text goes into a prompt, never a label."""
     from sampo import models
     try:
         with open(os.path.join(p.dir, models.SHADOW), encoding="utf-8") as f:
             shadow = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict)]
     except (OSError, ValueError):
         shadow = []
-    briefs = {b.id: b for b in c.load_briefs(p, include_archive=True) if b.status == "done" and holdout(b.id)}
+    done = [b for b in c.load_briefs(p, include_archive=True) if b.status == "done"]
+    briefs = {b.id: b for b in done if holdout(b.id)}
     out = {}
     for use in BENCH_USES:
-        last = {r["task"]: r for r in shadow if r.get("use") == use and r.get("task") in briefs and r.get("input")}
-        rows = [(t, r["input"], getattr(briefs[t], "type" if use == "intake-type" else "tier"), r.get("path"))
-                for t, r in sorted(last.items())]
-        out[use] = (rows[:cap], len(rows))
+        attr = "type" if use == "intake-type" else "tier"
+        last = {r["task"]: r.get("path") for r in shadow if r.get("use") == use and r.get("task") in briefs}
+        rows = [(t, _raw(b), getattr(b, attr), last.get(t)) for t, b in sorted(briefs.items()) if _raw(b)]
+        out[use] = (rows[:cap], len(rows), [getattr(b, attr) for b in done if not holdout(b.id)])
     pairs = []
     for t, b in sorted(briefs.items()):
         text = (b.section("Interpretation").strip() or b.section("Raw request").strip())[:600]
@@ -893,14 +911,19 @@ def _bench_data(p, cap):
 
 def _bench_decide(profile, rows, use, timeout):
     from sampo import models
-    choices = models.shadow_uses()[use]
+    choices = models.shadow_uses()[use]  # with descriptions: the same for every backend
     hits, brier, ms, errors = 0, [], [], 0
     for _, text, truth, _ in rows:
         t0 = time.monotonic()
-        try:
-            ans = models.systemone(profile, text, choices, timeout=timeout)
-        except models.ModelError:
-            ans = None
+        ans = None
+        for k in range(BUSY_TRIES):
+            try:
+                ans = models.systemone(profile, text, choices, timeout=timeout)
+                break
+            except models.ModelError as e:
+                if e.status != 529 or k == BUSY_TRIES - 1:
+                    break
+                time.sleep(BUSY_WAIT)
         if ans is None:
             errors += 1
             continue
@@ -945,12 +968,95 @@ def _bench_embed(profile, pairs, timeout):
             "p50_ms": _pct(ms, 0.5), "p95_ms": _pct(ms, 0.95), "n": n, "errors": errors}
 
 
-def bench_models(p, decision=None, embedders=None, cap=BENCH_CAP, serving=None):
-    """T-2887: the decision arm (intake type and tier, from the raw request of held-out closed tasks, through each
-    systemone backend) and the embedding arm (title to brief recall), one row per backend and use appended to
-    research/models/bench.jsonl, plus a 'without' row per use: the rules' own guess. Held out by a hash of the task id,
-    so a prompt never carries a label. Backends run grouped by base_url, one model at a time (see _bench_order);
-    a sensitive project asks loopback backends only. Returns {run, rows}."""
+def _scratch(p):
+    """A project whose files live in a fresh temp folder (the real project's meta copied, so a sensitive project stays
+    sensitive); the generation arm grows its moons there, never into the project's own store."""
+    d = tempfile.mkdtemp(prefix="fm-bench-")
+    shutil.copy(os.path.join(p.dir, "meta.json"), d)
+    return c.Project(p.slug, p.root, d)
+
+
+def _gen_grow(p, prof, k):
+    """K moons grown by one profile with reasoning off into a scratch store, then the write-time admit's verdicts;
+    {added, kept, seconds, fallback} (fallback: calls another model than the profile answered)."""
+    from sampo import moonscale
+    sp, was = _scratch(p), os.environ.get("MOONS_LOCAL")
+    os.environ["MOONS_LOCAL"] = prof["name"]
+    t0 = time.monotonic()
+    try:
+        r = moonscale.grow(sp, target=k, think=False)
+    finally:
+        os.environ.pop("MOONS_LOCAL", None) if was is None else os.environ.update(MOONS_LOCAL=was)
+    mine = {prof["name"], prof["name"] + "+nothink"}
+    return {"added": r["added"], "kept": r["kept"], "seconds": time.monotonic() - t0, "scratch": sp,
+            "fallback": sum(n for m, n in r["models"].items() if m not in mine)}
+
+
+def _gen_funnel(p, sp, sample):
+    """The kill and tier stages on a scratch store's moons, judged by the review model (the local model is off, so
+    Haiku); tier takes only `sample` of the survivors. {kill: {in, kept}, tier: {in, kept}}."""
+    from sampo import moonscale
+    was = os.environ.get("MOONS_LOCAL")
+    os.environ["MOONS_LOCAL"] = ""
+    try:
+        st = {}
+        for stage, cap in (("exact", None), ("embed", None), ("kill", None),
+                           ("tier", -(-sample // moonscale.JUDGE_BATCH))):
+            st.update(moonscale.funnel(sp, stage=stage, max_calls=cap)["stages"])
+    finally:
+        os.environ.pop("MOONS_LOCAL", None) if was is None else os.environ.update(MOONS_LOCAL=was)
+    out = {}
+    for stage in ("kill", "tier"):
+        v = st.get(stage, {})
+        out[stage] = {"in": sum(v.values()), "kept": v.get("kept", 0)}
+    return out
+
+
+def _gen_smith(prof):
+    from sampo import smithbench
+    rec = smithbench.bench(smithbench.SEEDS, prof["name"], timeout=prof.get("seed_timeout", 600))
+    return {"closed": rec["closed"], "seeds": rec["seeds"]}
+
+
+def bench_generation(p, profiles, k=GEN_K, sample=TIER_SAMPLE, grow_fn=None, funnel_fn=None, smith_fn=None, stamp=None):
+    """T-2894: per generative profile, in endpoint order: K moons grown (reasoning off) into a scratch store and
+    their yield through admit, kill and tier (tier on a sample, said in the row), moons per minute; and the Smith
+    seeds' pass rate through fm code bench. The injected functions are for tests; the defaults are live."""
+    rows = []
+    for _, prof in _bench_order([("generation", x) for x in profiles], _serving(profiles)):
+        base = {**(stamp or {}), "arm": "generation", "backend": prof["name"], "held": None, "errors": 0}
+        g = {}
+        try:
+            g = (grow_fn or (lambda pr, n: _gen_grow(p, pr, n)))(prof, k)
+            f = (funnel_fn or (lambda pr, s: _gen_funnel(p, g["scratch"], s)))(prof, sample)
+            rows.append({**base, "use": "moons-yield", "k": k, "n": g["added"], "added": g["added"], "admitted": g["kept"],
+                         "kill_in": f["kill"]["in"], "kill_kept": f["kill"]["kept"], "tier_in": f["tier"]["in"],
+                         "tier_kept": f["tier"]["kept"], "fallback": g.get("fallback", 0),
+                         "moons_per_min": round(g["added"] / (g["seconds"] / 60), 2) if g["seconds"] else None,
+                         "note": f"tier judged a sample of {sample} per profile; kill and tier by the review model"})
+        except Exception as e:  # one profile failing is a row, not the end of the run  # noqa: BLE001
+            rows.append({**base, "use": "moons-yield", "k": k, "n": 0, "errors": 1, "note": c.fit(str(e), 160)})
+        finally:
+            if g.get("scratch"):
+                shutil.rmtree(g["scratch"].dir, ignore_errors=True)
+        try:
+            s = (smith_fn or _gen_smith)(prof)
+            rows.append({**base, "use": "smith-seeds", "n": s["seeds"], "pass_rate": round(s["closed"] / s["seeds"], 3)
+                         if s["seeds"] else None})
+        except Exception as e:  # noqa: BLE001
+            rows.append({**base, "use": "smith-seeds", "n": 0, "errors": 1, "note": c.fit(str(e), 160)})
+    return rows
+
+
+def bench_models(p, decision=None, embedders=None, cap=BENCH_CAP, serving=None, generators=(), k=GEN_K, grow_fn=None,
+                 funnel_fn=None, smith_fn=None):
+    """T-2887: the decision arm (intake type and tier, from the raw request of every held-out closed task up to `cap`,
+    each choice with its description, through each systemone backend) and the embedding arm (title to brief recall),
+    one row per backend and use appended to research/models/bench.jsonl, beside two baselines per use: 'majority' (the
+    train split's most common class) and 'orchestrator' (the intake call Sampo's own path made, where a shadow row
+    exists: not a no-model path). Held out by a hash of the task id, so a prompt never carries a label. T-2894: with
+    `generators`, the generation arm (bench_generation). Backends run grouped by base_url, one model at a time (see
+    _bench_order); a sensitive project asks loopback backends only. Returns {run, rows}."""
     from sampo import models
     try:
         conf = [x for x in models.configured()[1].values() if x["kind"] == "systemone"]
@@ -963,24 +1069,31 @@ def bench_models(p, decision=None, embedders=None, cap=BENCH_CAP, serving=None):
     data, run, rows = _bench_data(p, cap), time.strftime("m%Y%m%d-%H%M%S") + f"{time.time_ns() // 1_000_000 % 1000:03d}", []
     stamp = {"run": run, "at": c.now()}
     for use in BENCH_USES:
-        got, held = data[use]
-        right = sum(r[3] == r[2] for r in got)
-        rows.append({**stamp, "arm": "decision", "use": use, "backend": "without", "accuracy": round(right / len(got), 3)
-                     if got else None, "brier": None, "p50_ms": None, "p95_ms": None, "n": len(got), "errors": 0, "held": held})
-    for arm, prof in _bench_order(jobs, SERVING if serving is None else serving):
+        got, held, train = data[use]
+        top = max(sorted(set(train)), key=train.count) if train else None
+        base = {**stamp, "arm": "decision", "use": use, "brier": None, "p50_ms": None, "p95_ms": None, "errors": 0, "held": held}
+        seen = [r for r in got if r[3] is not None]
+        rows.append({**base, "backend": "majority", "n": len(got), "accuracy": round(sum(r[2] == top for r in got) / len(got), 3)
+                     if got and top else None, "note": f"always {top}, the most common class of {len(train)} train tasks"})
+        rows.append({**base, "backend": "orchestrator", "n": len(seen), "accuracy": round(sum(r[3] == r[2] for r in seen) / len(seen), 3)
+                     if seen else None, "note": "the orchestrator's own call at capture, not a no-model path"})
+    for arm, prof in _bench_order(jobs, _serving(decision + embedders) if serving is None else serving):
         host = urllib.parse.urlsplit(prof["base_url"]).hostname or ""
         if sensitive and not models.is_loopback(host):
             continue
         timeout = 120 if models.is_loopback(host) else 300  # a first call may load the model (a remote swap takes ~3 min)
         if arm == "decision":
             for use in BENCH_USES:
-                got, held = data[use]
+                got, held, _ = data[use]
                 rows.append({**stamp, "arm": arm, "use": use, "backend": prof["name"], "held": held,
                              **_bench_decide(prof, got, use, timeout)})
         else:
             got, held = data["title-to-brief"]
             rows.append({**stamp, "arm": arm, "use": "title-to-brief", "backend": prof["name"], "held": held,
                          **_bench_embed(prof, got, timeout)})
+    gens = [x for x in generators if not sensitive or models.is_loopback(urllib.parse.urlsplit(x["base_url"]).hostname or "")]
+    if gens:
+        rows += bench_generation(p, gens, k, grow_fn=grow_fn, funnel_fn=funnel_fn, smith_fn=smith_fn, stamp=stamp)
     path = os.path.join(p.root, BENCH)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     for r in rows:
@@ -1002,7 +1115,8 @@ def bench_show(p, limit=40):
     lines = [f"model bench {rows[0]['run']} ({len(rows)} rows, held out by task-id hash)",
              f"{'backend':<28}{'use':<16}{'acc/r@1':>8}{'brier/r@10':>11}{'p50ms':>7}{'p95ms':>7}{'n':>5}{'err':>5}"]
     for r in rows[:limit]:
-        a, b = (r.get("accuracy"), r.get("brier")) if r["arm"] == "decision" else (r.get("recall_at_1"), r.get("recall_at_10"))
+        a, b = {"decision": (r.get("accuracy"), r.get("brier")), "embedding": (r.get("recall_at_1"), r.get("recall_at_10")),
+                "generation": (r.get("pass_rate", r.get("moons_per_min")), r.get("tier_kept"))}[r["arm"]]
         out = (r.get("held") or 0) - r["n"] - r["errors"]
         lines.append(f"{str(r['backend'])[:27]:<28}{r['use']:<16}{f(a):>8}{f(b):>11}{f(r.get('p50_ms')):>7}"
                      f"{f(r.get('p95_ms')):>7}{r['n']:>5}{r['errors']:>5}" + (f"  {out} held-out left out" if out > 0 else ""))
@@ -3551,7 +3665,10 @@ def cmd_exam(args):
             if args.run not in (None, "run", "show"):
                 raise ValueError("models: run or show")
             if args.run == "run":
-                res = bench_models(p)
+                from sampo import moonscale
+                gens = list({x["name"]: x for x in moonscale._generative(bool(c.read_meta(p).get("sensitive")))}.values()
+                            ) if getattr(args, "generation", False) else ()  # live and slow: only when asked
+                res = bench_models(p, cap=args.limit or BENCH_CAP, generators=gens, k=args.n or GEN_K)
                 return cli.out(args, res, f"{len(res['rows'])} rows written to {BENCH}\n{bench_show(p)}")
             return cli.out(args, {"table": bench_show(p)}, bench_show(p))
         if action == "steer":  # T-2625: the steer-expansion exam (MOONSHOT.md part B)

@@ -7863,6 +7863,9 @@ def _build_parser(only=None):
     s.add_argument("--jobs", type=int, help="run, long run: session scenarios at once (default 1, T-2292); steer run: "
                                             "cases at once (default 4)")
     s.add_argument("--final", action="store_true", help="long run: this is the end-of-run exam (session arms wait for it)")
+    s.add_argument("--generation", action="store_true", help="models run: also the generation arm: K moons (--n, default 16) "
+                   "through admit, kill and tier, and the Smith seeds, per generative profile; slow, and it calls the profiles "
+                   "(models run: --limit caps the held-out rows asked per use, default 200) (T-2894)")
     s.add_argument("--regressing", type=int, metavar="N",
                    help="long run: a session arm for capability N, which a free or Haiku arm shows regressing")
     s.add_argument("--budget", type=float, help="run: USD cap per session (default none: gen-0 puts no cap on proving; "
