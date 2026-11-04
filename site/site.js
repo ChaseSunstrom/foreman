@@ -19,7 +19,7 @@
   });
 
   var still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var stations = document.querySelectorAll("#stations li");
+  var stations = document.body.classList.contains("forge") ? [] : document.querySelectorAll("#stations li");
   if (still || !("IntersectionObserver" in window)) {
     stations.forEach(function (li) { li.classList.add("on"); });
     return;

@@ -1,10 +1,11 @@
-"""T-2759: the landing page in the forge world (SAMPO.md, Design): the Sampo mill turns in the hero over a forge glow
-while runes write themselves into the headline, the proof ledger reads as gears and dials of Sampo's real totals, a
-forge scene strikes beside the Smith section, and the Kalevala paragraph says once where the names come from. Every
-layer is progressive: the HTML is the whole page, CSS moves only where motion is allowed, site.js only adds the glow."""
+"""T-2759, T-2851: the landing page in the illustrated forge (SAMPO.md, Design): the hero is a night forge, an anvil on
+a rune stone, the headline struck line by line; the proof ledger reads Sampo's real totals; the Moons section is built
+from the catalogue; and the Kalevala paragraph says once where the names come from. Every layer is progressive: the
+HTML is the whole page (the drawings wait in <noscript> and are real DOM without script), CSS moves only where motion
+is allowed, forge.js only adds the sky, the flames and the sparks."""
 import glob
 import html
-import math
+import json
 import os
 import re
 import shutil
@@ -14,23 +15,12 @@ import unittest
 
 from helpers import PLUGIN, headless_chrome, read_text
 from test_site_build import media_blocks
-from test_site_hero import KEYS, ROOT, build_copy, build_module, hero
+from test_site_hero import ROOT, build_copy, build_module, hero, ledger
 
 sys.path.insert(0, os.path.join(PLUGIN, "lib"))
 from sampo import design  # noqa: E402
 
 MYTH = ("Kalevala", "Ilmarinen", "Väinämöinen", "Louhi", "Smith", "Rune", "Moons", "Underworld", "Ward")
-
-
-def reading(n):
-    """A dial's reading, 0 to 1: decades evenly spaced from 1 to 100,000, so a count of 7 and one of 7,000 both move."""
-    return round(min(math.log10(max(n, 1)) / 5, 1), 3)
-
-
-def dials(page):
-    """The hero's dials as {label: (figure, reading)}."""
-    return {html.unescape(dt): (html.unescape(dd), float(v)) for v, dt, dd in re.findall(
-        r'<div style="--v:([\d.]+)"><dt>(.*?)</dt><dd>(.*?)</dd></div>', hero(page))}
 
 
 def text(fragment):
@@ -52,7 +42,7 @@ class Landing(unittest.TestCase):
             raise AssertionError(r.stdout + r.stderr)
         cls.out = os.path.join(cls.tmp, "out")
         cls.page = read_text(os.path.join(cls.out, "index.html"))
-        cls.css = read_text(os.path.join(cls.out, "style.css"))
+        cls.css = read_text(os.path.join(cls.out, "style.css")) + read_text(os.path.join(cls.out, "forge.css"))
 
     @classmethod
     def tearDownClass(cls):
@@ -65,28 +55,23 @@ class Landing(unittest.TestCase):
         allowed = "".join(media_blocks(self.css, "@media (prefers-reduced-motion: no-preference)"))
         for use in re.findall(r"(?m)^\s*[^{}]*\{[^}]*\banimation(?:-name|-timeline)?:\s*(?!none)[^;}]+", self.css):
             self.assertIn(use.strip(), allowed, "an animation outside @media (prefers-reduced-motion: no-preference)")
-        for motion in ("@keyframes carve", "@keyframes rune", "@keyframes sweep", "@keyframes strike"):
-            self.assertIn(motion, allowed, "the headline's runes, the dials and the forge scene each move")
-        mill = re.search(r'<picture class="mill">(.*?)</picture>', hero(self.page), re.S)
-        self.assertTrue(mill, "the mill turns in the hero")
-        self.assertRegex(mill.group(1), r'<source media="\(prefers-reduced-motion: reduce\)" srcset="assets/mark\.svg[?"]',
-                         "the turning mill's still is the mark itself")
-        self.assertRegex(mill.group(1), r'<img src="assets/mark-animated\.svg[?"][^>]* alt=""')
-        for name in ("mark.svg", "mark-animated.svg"):
-            self.assertIn("<svg", read_text(os.path.join(self.out, "assets", name)), name)
-        js = read_text(os.path.join(ROOT, "site", "site.js"))  # the glow waits past the still return
-        still = js.index("return;", js.index("prefers-reduced-motion: reduce"))
-        self.assertGreater(js.index('getContext("webgl")'), still)
+        for motion in ("@keyframes strike", "@keyframes rune", "@keyframes burn", "@keyframes arrive"):
+            self.assertIn(motion, allowed, "the headline, the runes, the flames and the arrivals each move")
+        top = hero(self.page)  # the reduced-motion still is 12's own drawing, real DOM in <noscript> for script to set
+        self.assertRegex(top, r'<noscript class="laysrc">\s*<svg')
+        js = read_text(os.path.join(ROOT, "site", "forge.js"))
+        self.assertIn("classList.contains('anim')", js, "the sky, the fire and the sparks run only when .anim is set")
         for pause in ("visibilitychange", "--autoplay-limit", "IntersectionObserver"):
-            self.assertIn(pause, js[still:], "the glow rests offscreen, in a hidden tab and after the autoplay limit")
+            self.assertIn(pause, js, "the forge rests offscreen, in a hidden tab and after the autoplay limit")
 
     def test_the_hero_is_whole_without_script(self):
         top = hero(self.page)
-        h1 = re.search(r"<h1>(.*?)</h1>", top, re.S).group(1)
-        self.assertEqual(text(h1), "Your coding agent, with a smith on the job.", "the runes resolve into real words")
-        self.assertEqual(len(re.findall(r'class="w"', h1)), 9, "one rune per word")
-        self.assertIn('<div class="hearth"', top, "the forge's still glow is CSS, there with no script")
-        self.assertNotIn("<canvas", top, "site.js adds the shader's canvas; the HTML never needs it")
+        h1 = re.search(r'<h1 class="struck" id="h1">(.*?)</h1>', top, re.S).group(1)
+        self.assertEqual(text(h1), "Your coding agent, with a smith on the job.", "the struck lines are real words")
+        self.assertEqual(len(re.findall(r'<span class="ln">', h1)), 3, "one struck line per span")
+        self.assertIn('<div class="scene" id="scene" role="img"', top, "the forge scene is there with no script")
+        for canvas in ("firecv", "fx"):  # empty, aria-hidden: the elements forge.js draws into
+            self.assertRegex(top, rf'<canvas class="\w+" id="{canvas}" aria-hidden="true"></canvas>')
         self.assertNotIn("hero-scene", self.page)
 
     def test_the_myth_is_told_once_on_the_landing_page(self):
@@ -98,29 +83,50 @@ class Landing(unittest.TestCase):
         for name in MYTH:
             self.assertIn(name, para)
 
-    def test_the_dials_read_stats_json(self):
+    def test_the_ledger_reads_stats_json(self):
         stats = build_module()
-        with open(os.path.join(ROOT, "site", "data", "stats.json"), encoding="utf-8") as f:
-            import json
-            totals = json.load(f)["totals"]
-        got = dials(self.page)
-        self.assertEqual(len(got), 4, got)
-        for key, label in stats.STATIONS:
-            self.assertEqual(got[label], (f"{totals[key]:,}", reading(totals[key])), label)
-        src = read_text(os.path.join(ROOT, "site", "index.html"))
-        self.assertNotIn("--v:", src, "a reading typed by hand goes stale; build.py fills it from the data")
-        with tempfile.TemporaryDirectory() as tmp:  # other totals, other readings: 0 and past the scale's end too
+        self.assertNotIn("--v:", read_text(os.path.join(ROOT, "site", "index.html")), "a reading typed by hand goes stale")
+        with tempfile.TemporaryDirectory() as tmp:  # other totals, other figures
             r = build_copy(tmp, {"tasks_done": 7, "evidence": 0, "proofs": 100000, "commits": 12345678})
             self.assertEqual(r.returncode, 0, r.stderr)
-            moved = dials(read_text(os.path.join(tmp, "out", "index.html")))
-        self.assertEqual([moved[label][1] for _, label in stats.STATIONS], [0.169, 0.0, 1.0, 1.0])
-        self.assertEqual(moved["commits"][0], "12,345,678")
-        self.assertEqual(KEYS, tuple(k for k, _ in stats.STATIONS))
+            moved = ledger(read_text(os.path.join(tmp, "out", "index.html")))
+        self.assertEqual([moved[label] for _, label in stats.STATIONS], ["7", "0", "100,000", "12,345,678"])
 
     def test_the_forge_scene_sits_beside_the_smith(self):
         lanes = self.page[self.page.index('<section id="lanes">'):self.page.index('<section id="more">')]
         self.assertIn("one Smith", lanes)
         self.assertRegex(lanes, r'<figure class="smithy" aria-hidden="true">\s*<svg')
+
+    def moons(self, page):
+        sec = page[page.index('<section class="sec" id="moons"'):]
+        sec = sec[:sec.index("</section>")]
+        return sec, re.findall(r'<li( class="kt")?><b>(M-\d+)</b><span>(.*?)<i>wild (\d) of 5 · (\w[\w ]*)</i>', sec)
+
+    def test_moons_come_from_the_catalogue(self):
+        """T-2851: the wild 4s and 5s of genesis.json's moonshots, the wildest first, counts from the data."""
+        rows = [{"id": f"M-{i:02d}", "title": f"Moon number {i}", "wild": w, "stage": st}
+                for i, (w, st) in enumerate([(2, "idea"), (5, "idea"), (4, "kill"), (5, "idea"), (3, "idea"), (4, "idea")], 1)]
+
+        def edit(d):
+            d["moonshots"]["rows"] = rows
+            d["moonshots"]["total"] = len(rows)
+        with tempfile.TemporaryDirectory() as tmp:
+            r = build_copy(tmp, edit_genesis=edit)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            sec, got = self.moons(read_text(os.path.join(tmp, "out", "index.html")))
+        self.assertEqual([g[1] for g in got], ["M-02", "M-04", "M-03", "M-06"], "wild 4 and 5 only, wildest first, then by id")
+        self.assertEqual([bool(g[0]) for g in got], [False, False, True, False], "a kill test carries the kt class")
+        self.assertIn("6 moonshots over the forge", sec)
+        self.assertIn("It holds 6", sec)
+        self.assertNotIn("{{", sec)
+
+    def test_moons_follow_the_real_catalogue(self):
+        with open(os.path.join(ROOT, "site", "genesis", "genesis.json"), encoding="utf-8") as f:
+            rows = json.load(f)["moonshots"]["rows"]
+        want = [r["id"] for r in sorted((r for r in rows if r["wild"] >= 4), key=lambda r: (-r["wild"], r["id"]))]
+        sec, got = self.moons(self.page)
+        self.assertEqual([g[1] for g in got], want)
+        self.assertIn(f"{len(rows)} moonshots over the forge", sec)
 
     def test_design_lint_passes(self):
         found = design.lint([os.path.join(self.out, "index.html"), os.path.join(self.out, "style.css")])
@@ -136,9 +142,9 @@ class Landing(unittest.TestCase):
             if (!/^rgba\\(.*,\\s*0(\\.0+)?\\)$|transparent/.test(c) && !/^rgba/.test(c)) return c; }
             return getComputedStyle(document.body).backgroundColor; };
           const pairs = [];
-          for (const s of [".hero h1", ".hero .lede", ".proof dd", ".proof dt", ".proof p", "#names p"])
+          for (const s of [".hero h1", ".hero .lede", ".proof dd", ".proof dt", ".foot p"])
             for (const e of document.querySelectorAll(s)) pairs.push([s, getComputedStyle(e).color, solid(e)]);
-          return {w: document.documentElement.scrollWidth, glow: !!document.querySelector(".hearth canvas"), pairs};
+          return {w: document.documentElement.scrollWidth, anim: document.documentElement.classList.contains("anim"), pairs};
         })()"""
         rgb = lambda c: tuple(int(x) / 255 for x in re.findall(r"[\d.]+", c)[:3])
         for scheme in ("light", "dark"):
@@ -155,7 +161,7 @@ class Landing(unittest.TestCase):
                 where = f"{scheme}, reduced motion {reduced}"
                 self.assertLessEqual(got["w"], 320, f"the page scrolls sideways at 320 px ({where})")
                 if reduced:
-                    self.assertFalse(got["glow"], f"no shader under reduced motion ({where})")
+                    self.assertFalse(got["anim"], f"the forge stays still under reduced motion ({where})")
                     self.assertTrue(got["pairs"])
                     for sel, fg, bg in got["pairs"]:
                         self.assertGreaterEqual(design.contrast(rgb(fg), rgb(bg)), 4.5, f"{sel}: {fg} on {bg} ({where})")

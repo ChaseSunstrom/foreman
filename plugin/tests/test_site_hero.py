@@ -1,6 +1,7 @@
-"""T-1609, T-2040: the landing page's hero: a proof ledger of the four totals site/build.py reads from
-site/data/stats.json, and a session drawn as text in the site's palette that site.js replays line by line (a recorded
-video of a themed terminal smeared its colours). No JS or reduced motion shows the whole transcript."""
+"""T-1609, T-2040, T-2851: the landing page's proof ledger of the four totals site/build.py reads from
+site/data/stats.json (in the record, the forge's own readings), and the Smith's session drawn as text in the site's
+palette that forge.js sets down a blow at a time (a recorded video of a themed terminal smeared its colours). No JS or
+reduced motion shows the whole transcript."""
 import html
 import importlib.util
 import json
@@ -26,9 +27,9 @@ def build_module():
     return mod
 
 
-def build_copy(tmp, totals=None, edit_index=None, edit_stats=None):
-    """Build a copy of site/ the way the workflow does, its stats.json totals updated with `totals` and its
-    index.html passed through `edit_index`; the finished process."""
+def build_copy(tmp, totals=None, edit_index=None, edit_stats=None, edit_genesis=None):
+    """Build a copy of site/ the way the workflow does, its stats.json totals updated with `totals`, its index.html
+    passed through `edit_index` and its genesis/genesis.json through `edit_genesis`; the finished process."""
     shutil.copytree(os.path.join(ROOT, "site"), os.path.join(tmp, "site"), ignore=shutil.ignore_patterns("__pycache__"))
     for d in ("demo", "plugin", "design"):  # design: the tokens and the logo the build reads (T-2753)
         os.symlink(os.path.join(ROOT, d), os.path.join(tmp, d))
@@ -44,6 +45,12 @@ def build_copy(tmp, totals=None, edit_index=None, edit_stats=None):
         page = edit_index(read_text(path))
         with open(path, "w", encoding="utf-8") as f:
             f.write(page)
+    if edit_genesis:
+        path = os.path.join(tmp, "site", "genesis", "genesis.json")
+        data = read_json(path)
+        edit_genesis(data)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
     return subprocess.run([sys.executable, os.path.join(tmp, "site", "build.py"), os.path.join(tmp, "out")],
                           capture_output=True, text=True, timeout=120)
 
@@ -55,14 +62,24 @@ def built_index(tmp, totals=None):
     return read_text(os.path.join(tmp, "out", "index.html"))
 
 
+def section(page, opening):
+    """The landing's section that opens with `opening`, through its </section>."""
+    start = page.index(opening)
+    return page[start:page.index("</section>", start)]
+
+
 def hero(page):
-    start = page.index('class="wrap hero"')
-    return page[start:page.index("<section", start)]
+    return section(page, '<section class="hero"')
+
+
+def record(page):
+    """The record: the forge's own readings, where the proof ledger stands (T-2851)."""
+    return section(page, '<section class="record" id="record"')
 
 
 def ledger(page):
-    """The hero's proof ledger as {label: figure}."""
-    box = re.search(r'<div class="proof">.*?</dl></div>', hero(page), re.S)
+    """The record's proof ledger as {label: figure}."""
+    box = re.search(r'<div class="proof">.*?</dl></div>', record(page), re.S)
     return {html.unescape(dt): html.unescape(dd) for dt, dd in re.findall(r"<dt>(.*?)</dt><dd>(.*?)</dd>", box.group(0))}
 
 
@@ -97,8 +114,12 @@ class Proof(unittest.TestCase):
         self.assertIn("no code.tests", r.stdout + r.stderr)
 
 
+STATIONS = ["Capture", "Expand", "Ground", "Plan", "Execute", "Verify", "Reflect", "Record"]
+
+
 class Session(unittest.TestCase):
-    """T-2040: the hero's session is text, so it is crisp at any size and follows the theme."""
+    """T-2040, T-2851: the Smith's session is text, so it is crisp at any size and follows the theme; the forge only
+    dims the lines it hasn't struck yet, so no script and reduced motion still read the whole of it."""
 
     @classmethod
     def setUpClass(cls):
@@ -110,28 +131,25 @@ class Session(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def test_the_hero_draws_the_session_as_text_with_no_video(self):
-        h = hero(self.page)
-        self.assertIn('id="session"', h)
-        self.assertNotIn("<video", h)
-        self.assertNotIn("{{", h)
+    def test_the_smith_draws_the_session_as_text_with_no_video(self):
+        s = section(self.page, 'id="smith"')
+        self.assertIn('<figure class="log" id="log">', s)
+        self.assertIn("<pre", s)
+        self.assertGreaterEqual(s.count('class="ln'), 8)
+        for gone in ("<video", "{{"):
+            self.assertNotIn(gone, s)
         self.assertFalse(os.path.exists(os.path.join(self.out, "hero-scene.js")))
 
-    def test_the_pane_walks_the_eight_stations_in_order(self):
-        h = hero(self.page)
-        names = re.findall(r"<b>(\w+)</b>", self.page[self.page.index('id="stations"'):])[:8]
-        self.assertEqual(re.findall(r"<li[^>]*>(\w+)</li>", h[h.index('class="stage"'):]), [n.lower() for n in names])
-        stations = [int(s) for s in re.findall(r'class="ln[^"]*" data-s="(\d)"', h)]
-        self.assertEqual(len(stations), h.count('class="ln'))  # every line names its station
-        self.assertEqual(stations, sorted(stations))
-        self.assertEqual((stations[0], stations[-1]), (0, 8))
+    def test_the_loop_walks_the_eight_stations_in_order(self):
+        box = self.page[self.page.index('id="stations"'):]
+        self.assertEqual(re.findall(r"<h3>(\w+)</h3>", box[:box.index("</ol>")]), STATIONS)
 
-    def test_only_the_live_replay_hides_lines(self):
-        css = read_text(os.path.join(self.out, "style.css"))
-        hiders = re.findall(r"([^{}]*\.ln[^{}]*)\{[^}]*opacity:\s*0", css)
+    def test_only_script_hides_lines(self):
+        css = read_text(os.path.join(self.out, "forge.css"))
+        hiders = re.findall(r"([^{}@;]*\.(?:ln|rise)\b[^{}]*)\{[^}]*opacity:\s*0[;}]", css)
         self.assertTrue(hiders)
-        for sel in hiders:
-            self.assertIn(".session.live", sel)  # no JS, no hidden transcript
+        for sel in hiders:  # no JS, no hidden transcript or copy
+            self.assertRegex(sel, r"\.(?:anim|js)\b", sel)
 
     def test_the_newest_playwright_build_is_the_one_used(self):
         # review: sorted as text, a build 999 would beat 1243; with nothing on PATH the newest download runs
@@ -164,19 +182,19 @@ class Session(unittest.TestCase):
             os.killpg(p.pid, signal.SIGKILL)
             p.communicate()
             self.fail("headless Chromium timed out after 120 s")
-        if 'class="wrap hero"' not in out:  # a root sandbox, no display libs
+        if '<section class="hero"' not in out:  # a root sandbox, no display libs
             self.skipTest(f"{browser} printed no page: {err[-300:]}")
         return out
 
-    def test_the_session_replays_and_reduced_motion_shows_it_whole(self):
+    def test_the_forge_moves_and_reduced_motion_shows_it_still(self):
+        def classes(dom):
+            return re.search(r'<html[^>]*\bclass="([^"]*)"', dom).group(1).split()
         dom = self.browse()
-        self.assertIn('class="session live"', dom)
-        shown, total = len(re.findall(r'class="ln[^"]* on', dom)), dom.count('class="ln')
-        self.assertTrue(0 < shown < total, (shown, total))
-        self.assertIn('<li class="now">', dom)
-        still = self.browse("--force-prefers-reduced-motion")
-        self.assertNotIn("session live", still)
-        self.assertEqual(still.count('<li class="done">'), 8)
+        self.assertIn("anim", classes(dom))
+        self.assertIn("js", classes(dom))
+        still = classes(self.browse("--force-prefers-reduced-motion"))
+        self.assertIn("js", still)
+        self.assertNotIn("anim", still)  # every .anim rule is off: 12's stills
 
 
 if __name__ == "__main__":

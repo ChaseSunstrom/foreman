@@ -28,7 +28,7 @@ def _v(rel):  # T-2060, T-2063: browsers keep a file by its URL, so the URL carr
 
 # T-2753: assets/sampo.svg, favicon.ico and share.png are links into design/sampo/logo, so the Runestone files have one home
 ICON, FAVICON, CSS, JS = _v("assets/sampo.svg"), _v("assets/favicon.ico"), _v("style.css"), _v("site.js")
-MILL, STILL = _v("assets/mark-animated.svg"), _v("assets/mark.svg")  # T-2759: the hero's turning mill and its still
+FORGE_CSS, FORGE_JS = _v("forge.css"), _v("forge.js")  # T-2851: the landing's illustrated forge, loaded after style.css and before site.js
 SECTIONS = _v("sections.css")  # T-2852: the section pages' forge, loaded after style.css
 SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "__pycache__"}
 TOKENS = os.path.join(ROOT, "design", "sampo", "tokens.json")
@@ -52,7 +52,7 @@ def tokens_css():
         return ", ".join(n if re.fullmatch(r"[A-Za-z][\w-]*", n) else json.dumps(n) for n in names)
 
     def theme(name, pad=""):
-        return "\n".join(pad + r for r in rows([f"--{k}: {v};" for k, v in own(t[name]["color"]) + own(t[name]["chart"])] +
+        return "\n".join(pad + r for r in rows([f"--{k}: {v};" for k, v in own(t[name]["color"]) + own(t[name]["chart"]) + own(t[name].get("art", {}))] +
                                                [f"color-scheme: {name};"]).splitlines())
 
     ratio = t["font"]["scale"]["ratio"]["$value"]
@@ -328,10 +328,33 @@ def tiles(pairs, cls=""):
                                            for label, v in pairs) + "</div>"
 
 
-PROOF_MARK = "<!-- proof: build.py fills it from data/stats.json (T-1609) -->"
+PROOF_MARK = "<!-- proof: build.py fills the dials (T-1609) -->"
 SHADER_MARK = "<!-- shaders: build.py fills it with four shader cards running live (T-2062) -->"
 LANDING_SHADERS = ("shader-aurora-bands", "shader-soft-caustics", "shader-grain-gradient", "shader-halftone")
+MOONS_MARK = "<!-- moons: build.py fills the heading and the list from genesis.json's moonshots (T-2851) -->"
 STATIONS = [("tasks_done", "tasks done"), ("evidence", "evidence runs"), ("proofs", "proofs"), ("commits", "commits")]
+
+
+def moons_html(rows):
+    """T-2851: the Moons section's heading, intro and list from genesis.json's moonshots: the wild 4s and 5s, the wildest
+    first then by id, every count from the rows (the chart beside it is a drawing and says its own)."""
+    n = len(rows)
+    top = sorted((r for r in rows if r["wild"] >= 4), key=lambda r: (-r["wild"], r["id"]))
+    kills = [r["id"] for r in rows if r["stage"] == "kill"]
+    built = sum(r["stage"] == "built" for r in rows)
+    ideas = sum(r["stage"] == "idea" for r in rows)
+    kill = (f" {', '.join(kills[:-1]) + ' and ' if len(kills) > 1 else ''}{kills[-1]} "
+            f"{'stand' if len(kills) > 1 else 'stands'} at {'their' if len(kills) > 1 else 'its'} kill test, a crescent."
+            if kills else "")
+    made = f" {built} {'is' if built == 1 else 'are'} built." if built else " None is built, so no moon is full."
+    items = "".join(f'<li{" class=" + chr(34) + "kt" + chr(34) if r["stage"] == "kill" else ""}><b>{esc(r["id"])}</b>'
+                    f'<span>{esc(r["title"])}<i>wild {r["wild"]} of 5 · {"kill test" if r["stage"] == "kill" else esc(r["stage"])}</i></span></li>'
+                    for r in top)
+    return (f'<p class="eyebrow">Moons and the Underworld</p>\n    <h2 id="moons-h">{n} moonshots over the forge, <em>the wildest first</em></h2>\n'
+            f'    <p class="intro">Moons is the moonshot catalogue: ideas too large for a task, each with what it needs first. It holds {n}; '
+            f'these are the {len(top)} rated 4 or 5 of 5 for wildness, wildest first. {ideas} of the {n} are still ideas, a thin sliver '
+            f'on the chart;{kill}{made} <a class="more" href="genesis/index.html#moonshots">All of them in Rune&#x27;s sky</a></p>\n'
+            f'    <ol class="moons">{items}</ol>')
 
 
 def reading(n):
@@ -579,7 +602,7 @@ def build(out):
     shutil.copyfile(os.path.join(out, ICON.split("?")[0]), os.path.join(out, "assets", "foreman.svg"))  # old links, new mark
     with open(os.path.join(out, "index.html"), encoding="utf-8") as f:  # T-1609: the hero's poster
         page = f.read()
-    for what, mark in (("proof", PROOF_MARK), ("shaders", SHADER_MARK)):  # review: a lost mark shipped a hero with no proof
+    for what, mark in (("proof", PROOF_MARK), ("shaders", SHADER_MARK), ("moons", MOONS_MARK)):  # review: a lost mark shipped a hero with no proof
         if mark not in page:
             raise SystemExit(f"build.py: site/index.html lost the {what} mark: {mark}")
     totals, asof = stats.get("totals") or {}, str(stats.get("generated") or "")
@@ -597,12 +620,14 @@ def build(out):
     if not (counts["tests"] and counts["cards"]):  # review: a stats.json without them shipped "0 tests"
         raise SystemExit("build.py: site/data/stats.json has no code.tests or cards; run site/stats.py")
     page = page.replace(PROOF_MARK, proof(totals, asof), 1)
+    with open(os.path.join(HERE, "genesis", "genesis.json"), encoding="utf-8") as f:
+        page = page.replace(MOONS_MARK, moons_html(json.load(f)["moonshots"]["rows"]), 1)
     for old, new in (('rel="icon" href="assets/sampo.svg"', f'rel="icon" href="{ICON}"'),
                      ('rel="icon" href="assets/favicon.ico"', f'rel="icon" href="{FAVICON}"'),
                      ('rel="stylesheet" href="style.css"', f'rel="stylesheet" href="{CSS}"'),
                      ('<img src="assets/sampo.svg"', f'<img src="{ICON}"'),
-                     ('srcset="assets/mark.svg"', f'srcset="{STILL}"'),
-                     ('<img src="assets/mark-animated.svg"', f'<img src="{MILL}"'),
+                     ('rel="stylesheet" href="forge.css"', f'rel="stylesheet" href="{FORGE_CSS}"'),
+                     ('<script src="forge.js">', f'<script src="{FORGE_JS}">'),
                      ('<script src="site.js">', f'<script src="{JS}">')):
         if old not in page:  # a reworded tag would ship the old, cached file
             raise SystemExit(f"build.py: site/index.html lost {old}")

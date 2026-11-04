@@ -5,7 +5,34 @@
   --on-accent: #EEF0F6; --bronze: #7A5A26; --glow: #FFC24D; --ember: #FF6A4A;
   --error: #B0186E; --warning: #5F6A0A; --success: #1F7A45; --s1: #8A5A00;
   --s2: #2448B8; --s3: #B12E16; --s4: #0F6E48; --s5: #6A3BB5;
-  --s6: #A2460C; color-scheme: light;
+  --s6: #A2460C; --f-night: #EEF0F6; --f-night-2: #E2E6F1; --f-plate: #D6DBEA;
+  --f-ink: #12163A; --f-ash: #343A63; --f-muted: #555B80; --f-brass: #7A5A26;
+  --f-brass-2: #5E4418; --f-rule: rgba(122,90,38,.38); --f-rule-2: rgba(122,90,38,.7); --f-line: rgba(18,22,58,.13);
+  --f-blue: #2448B8; --f-gold: #8A5A00; --f-green: #0F6E48; --f-violet: #6A3BB5;
+  --f-orange: #A2460C; --f-red: #B12E16; --f-white-hot: #12163A; --f-accent: var(--f-gold);
+  --f-plate-bg: #F4F5FA; --f-ink-dim: #4B5278; --f-log-bg: #F4F5FA; --f-vapor: #7E869E;
+  --f-vapor-g: #5E8A7C; --f-sheen: .2; --f-ridge-a: #B08478; --f-ridge-m: #9A94AE;
+  --f-ridge-b: #8C96B6; --f-nrock: #5E5A66; --f-how-bg: 0; --f-how-rocks: .3;
+  --f-joint: #3C3942; --f-sb1a: #7A7482; --f-sb1b: #524E5A; --f-sb2a: #736E7C;
+  --f-sb2b: #4E4A56; --f-sb3a: #807884; --f-sb3b: #58525E; --f-sb4a: #6C6876;
+  --f-sb4b: #4A4652; --f-engrave-dim: linear-gradient(180deg,#4B5278 0%,#454B70 56%,#4B5278 100%); --f-chip: rgba(238,240,246,.95); --f-chip-ink: #12163A;
+  --f-scrim: rgba(238,240,246,.94); --f-b3a: #C8CEE2; --f-b3k1: #DEDAE0; --f-b3k2: #D4D2DC;
+  --f-b3s1: #BCC4DA; --f-b3s2: #B4BCD4; --f-b2a: #B4BBD4; --f-b2k1: #E2D8D2;
+  --f-b2k2: #D6CCCA; --f-b2s1: #A8B0CC; --f-b2s2: #9EA6C4; --f-b1a: #9CA4C2;
+  --f-b1k1: #E8DCCE; --f-b1k2: #DACEC4; --f-b1s1: #8E98B8; --f-b1s2: #848EB0;
+  --f-snow: #FFFFFF; --f-crease: rgba(40,46,90,.2); --f-men: #6E6A80; --f-menl: #8A869C;
+  --f-rim: #C0703C; --f-haze-a: rgba(238,240,246,0); --f-haze-b: rgba(238,240,246,.7); --f-floor-fade: #EEF0F6;
+  --f-wash: rgba(226,230,241,.38); --f-red-op: .14; --f-engrave: linear-gradient(180deg,#2A2140 0%,#12163A 50%,#3A2E1A 100%); --f-h-060819: #060819;
+  --f-h-c8d8ec: #c8d8ec; --f-h-f4f8ff: #f4f8ff; --f-h-a8c4ff: #a8c4ff; --f-h-fff1c8: #fff1c8;
+  --f-h-ff9a2a: #ff9a2a; --f-h-ffc24d: #ffc24d; --f-h-e0461a: #e0461a; --f-h-1a1206: #1a1206;
+  --f-h-ffe9b4: #ffe9b4; --f-h-e9c98a: #e9c98a; --f-h-c9984c: #c9984c; --f-h-8e6226: #8e6226;
+  --f-h-3a2408: #3a2408; --f-h-000: #000; --f-h-6b7180: #6b7180; --f-h-ffffff: #ffffff;
+  --f-h-9fc0ff: #9fc0ff; --f-h-6e9bff: #6e9bff; --f-h-ffb050: #ffb050; --f-h-fff: #fff;
+  --f-h-4c78ff: #4c78ff; --f-h-eaf2ff: #eaf2ff; --f-h-8a72c8: #8a72c8; --f-h-6a3bb5: #6a3bb5;
+  --f-h-0b0914: #0b0914; --f-h-3a2228: #3a2228; --f-h-3a3450: #3a3450; --f-h-8a7480: #8a7480;
+  --f-h-fff1cc: #fff1cc; --f-h-4a4550: #4a4550; --f-h-24222a: #24222a; --f-h-433f4b: #433f4b;
+  --f-h-1f1e26: #1f1e26; --f-h-504853: #504853; --f-h-2a2630: #2a2630; --f-h-3c3a46: #3c3a46;
+  --f-h-1b1a21: #1b1a21; color-scheme: light;
   --font-display: "Bodoni Moda", Didot, Georgia, serif;
   --font-text: Archivo, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "Martian Mono", Menlo, Consolas, monospace;
@@ -15,7 +42,13 @@
   --dur-move: 300ms; --dur-stage: 500ms; --dur-rune: 300ms; --dur-strike: 2200ms;
   --ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1); --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
   --ease-move: cubic-bezier(0.45, 0, 0.2, 1); --ease-strike: cubic-bezier(0.6, 0, 1, 0.6);
-  --autoplay-limit: 5000ms;
+  --ease-spring: cubic-bezier(0.2, 0.9, 0.25, 1.05); --ease-spring-2: cubic-bezier(0.3, 1.4, 0.4, 1);
+  --ease-forge-3: cubic-bezier(0.2, 0.7, 0.25, 1.0); --ease-forge-4: cubic-bezier(0.3, 0.7, 0.3, 1.0);
+  --ease-forge-5: cubic-bezier(0.5, 0.0, 0.6, 1.0); --ease-forge-6: cubic-bezier(0.2, 0.7, 0.4, 1.0);
+  --ease-forge-7: cubic-bezier(0.3, 0.0, 0.5, 1.0); --ease-forge-8: cubic-bezier(0.6, 0.0, 0.8, 0.4);
+  --ease-forge-9: cubic-bezier(0.2, 0.8, 0.3, 1.0); --ease-forge-10: cubic-bezier(0.3, 0.0, 0.3, 1.0);
+  --ease-forge-11: cubic-bezier(0.45, 0.0, 0.4, 1.0); --ease-forge-12: cubic-bezier(0.6, 0.0, 1.0, 0.6);
+  --ease-forge-13: cubic-bezier(0.15, 0.7, 0.4, 1.0); --autoplay-limit: 5000ms;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -24,7 +57,24 @@
     --on-accent: #060819; --bronze: #D4AE66; --glow: #FFC24D; --ember: #FF6A4A;
     --error: #FF85BC; --warning: #C8DC5A; --success: #6FD8A0; --s1: #FFC24D;
     --s2: #6E9BFF; --s3: #FF6A4A; --s4: #45E0A0; --s5: #BC8BFF;
-    --s6: #FF9440; color-scheme: dark;
+    --s6: #FF9440; --f-night: #060819; --f-night-2: #0B1030; --f-plate: #10173D;
+    --f-ink: #EEF0FA; --f-ash: #BAC0DD; --f-muted: #9097BC; --f-brass: #D4AE66;
+    --f-brass-2: #F0D392; --f-rule: rgba(212,174,102,.34); --f-rule-2: rgba(212,174,102,.6); --f-line: rgba(238,240,250,.11);
+    --f-blue: #6E9BFF; --f-gold: #FFC24D; --f-green: #45E0A0; --f-violet: #BC8BFF;
+    --f-orange: #FF9440; --f-red: #FF6A4A; --f-white-hot: #EAF2FF; --f-accent: var(--f-gold);
+    --f-plate-bg: #080B1F; --f-ink-dim: #8A90B4; --f-log-bg: #050714; --f-vapor: #E2E8F2;
+    --f-vapor-g: #C8F5E2; --f-sheen: .05; --f-ridge-a: #5A2C26; --f-ridge-m: #2A1A2A;
+    --f-ridge-b: #14132A; --f-nrock: #07060A; --f-how-bg: 1; --f-how-rocks: 1;
+    --f-joint: #09080C; --f-sb1a: #4A4550; --f-sb1b: #24222A; --f-sb2a: #433F4B;
+    --f-sb2b: #1F1E26; --f-sb3a: #504853; --f-sb3b: #2A2630; --f-sb4a: #3C3A46;
+    --f-sb4b: #1B1A21; --f-engrave-dim: linear-gradient(180deg,#A4AACA 0%,#8A90B4 56%,#9CA2C4 100%); --f-chip: rgba(6,8,25,.9); --f-chip-ink: #EEF0FA;
+    --f-scrim: rgba(6,8,25,.92); --f-b3a: #22264A; --f-b3k1: #383256; --f-b3k2: #2E2A4E;
+    --f-b3s1: #202448; --f-b3s2: #1C2042; --f-b2a: #121330; --f-b2k1: #36243F;
+    --f-b2k2: #2A1E38; --f-b2s1: #0F1029; --f-b2s2: #0C0D24; --f-b1a: #0A0A1A;
+    --f-b1k1: #2E1C2C; --f-b1k2: #22162A; --f-b1s1: #08081A; --f-b1s2: #060616;
+    --f-snow: #9298C4; --f-crease: rgba(0,0,0,.42); --f-men: #121020; --f-menl: #1E1A30;
+    --f-rim: #E09060; --f-haze-a: rgba(10,12,40,0); --f-haze-b: rgba(30,32,78,.6); --f-floor-fade: #060819;
+    --f-wash: rgba(238,240,246,0); --f-red-op: .65; --f-engrave: linear-gradient(180deg,#FFF6DD 0%,#F0D392 34%,#B9873F 56%,#E9C98A 78%,#FFF1CC 100%); color-scheme: dark;
   }
 }
 :root[data-theme="dark"], .install, .window, .term, .ex-cmd {
@@ -33,7 +83,24 @@
   --on-accent: #060819; --bronze: #D4AE66; --glow: #FFC24D; --ember: #FF6A4A;
   --error: #FF85BC; --warning: #C8DC5A; --success: #6FD8A0; --s1: #FFC24D;
   --s2: #6E9BFF; --s3: #FF6A4A; --s4: #45E0A0; --s5: #BC8BFF;
-  --s6: #FF9440; color-scheme: dark;
+  --s6: #FF9440; --f-night: #060819; --f-night-2: #0B1030; --f-plate: #10173D;
+  --f-ink: #EEF0FA; --f-ash: #BAC0DD; --f-muted: #9097BC; --f-brass: #D4AE66;
+  --f-brass-2: #F0D392; --f-rule: rgba(212,174,102,.34); --f-rule-2: rgba(212,174,102,.6); --f-line: rgba(238,240,250,.11);
+  --f-blue: #6E9BFF; --f-gold: #FFC24D; --f-green: #45E0A0; --f-violet: #BC8BFF;
+  --f-orange: #FF9440; --f-red: #FF6A4A; --f-white-hot: #EAF2FF; --f-accent: var(--f-gold);
+  --f-plate-bg: #080B1F; --f-ink-dim: #8A90B4; --f-log-bg: #050714; --f-vapor: #E2E8F2;
+  --f-vapor-g: #C8F5E2; --f-sheen: .05; --f-ridge-a: #5A2C26; --f-ridge-m: #2A1A2A;
+  --f-ridge-b: #14132A; --f-nrock: #07060A; --f-how-bg: 1; --f-how-rocks: 1;
+  --f-joint: #09080C; --f-sb1a: #4A4550; --f-sb1b: #24222A; --f-sb2a: #433F4B;
+  --f-sb2b: #1F1E26; --f-sb3a: #504853; --f-sb3b: #2A2630; --f-sb4a: #3C3A46;
+  --f-sb4b: #1B1A21; --f-engrave-dim: linear-gradient(180deg,#A4AACA 0%,#8A90B4 56%,#9CA2C4 100%); --f-chip: rgba(6,8,25,.9); --f-chip-ink: #EEF0FA;
+  --f-scrim: rgba(6,8,25,.92); --f-b3a: #22264A; --f-b3k1: #383256; --f-b3k2: #2E2A4E;
+  --f-b3s1: #202448; --f-b3s2: #1C2042; --f-b2a: #121330; --f-b2k1: #36243F;
+  --f-b2k2: #2A1E38; --f-b2s1: #0F1029; --f-b2s2: #0C0D24; --f-b1a: #0A0A1A;
+  --f-b1k1: #2E1C2C; --f-b1k2: #22162A; --f-b1s1: #08081A; --f-b1s2: #060616;
+  --f-snow: #9298C4; --f-crease: rgba(0,0,0,.42); --f-men: #121020; --f-menl: #1E1A30;
+  --f-rim: #E09060; --f-haze-a: rgba(10,12,40,0); --f-haze-b: rgba(30,32,78,.6); --f-floor-fade: #060819;
+  --f-wash: rgba(238,240,246,0); --f-red-op: .65; --f-engrave: linear-gradient(180deg,#FFF6DD 0%,#F0D392 34%,#B9873F 56%,#E9C98A 78%,#FFF1CC 100%); color-scheme: dark;
 }
 /* end tokens */
 /* T-2753: the page's names for the Sampo roles. Declared again on the terminals, which take the dark roles in either
@@ -68,7 +135,7 @@ img, video, svg { max-width: 100%; display: block; }
 
 .wrap { width: min(1120px, 100% - 32px); margin-inline: auto; }
 @media (min-width: 720px) { .wrap { width: min(1120px, 100% - 64px); } }
-.prose { max-width: 62ch; }
+
 .muted { color: var(--ink-2); }
 
 h1, h2, h3 { font-family: var(--display); font-weight: 600; line-height: 1.08; letter-spacing: .02em; margin: 0; }
@@ -101,7 +168,6 @@ h3 { font-size: var(--step-1); line-height: 1.15; }
 /* T-2759: the forge beside the words. The hearth is a stone plate whose glow is CSS, so it is whole with no script and
    under reduced motion; where motion is allowed site.js lights a WebGL fire under the mill (the animated mark, which
    turns once and settles; reduced motion gets the still mark from the <picture>) */
-.forge { display: grid; gap: 22px; margin-top: clamp(32px, 5vw, 48px); }
 .hearth {
   position: relative; isolation: isolate; display: grid; place-items: center; min-height: 190px; border-radius: 18px; overflow: hidden;
   background:
@@ -132,7 +198,6 @@ h3 { font-size: var(--step-1); line-height: 1.15; }
 .moons li, .waiting li { overflow-wrap: anywhere; }
 .moons small, .waiting small { display: block; color: var(--ink-2); }
 .mill img { width: 144px; height: 144px; filter: drop-shadow(0 8px 18px rgb(0 0 0 / .55)); }
-@media (min-width: 720px) and (max-width: 1079px) { .forge { grid-template-columns: minmax(0, 260px) minmax(0, 1fr); align-items: center; } }
 /* T-1609, T-2040: the proof ledger build.py fills from data/stats.json: four totals as plain figures. T-2759: each sits
    under an iron gauge, the same total read on a log scale (--v, 0 to 1, from build.py): a bronze gear behind, a
    glowing arc and needle on a stone face. The figure stays ink on paper, so the number is the data and the dial its echo */
@@ -188,9 +253,8 @@ h2 { text-wrap: balance; }
   .hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); column-gap: 64px; align-items: center; }
   .hero > * { grid-column: 1; }
   .hero h1 { font-size: clamp(3.6rem, 5.4vw, 5rem); }
-  .hero .forge { grid-column: 2; grid-row: 1 / span 4; margin: 0; }
   .hearth { min-height: 230px; }
-  .hero .reel { grid-column: 1 / -1; }
+  
 }
 .install { display: flex; align-items: stretch; max-width: 760px; background: var(--term); color: var(--term-ink); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
 .install code { flex: 1; padding: 15px 18px; overflow-wrap: anywhere; font-size: .86rem; line-height: 1.5; }
@@ -201,7 +265,6 @@ h2 { text-wrap: balance; }
 .copy[data-done] { color: var(--ok); }
 .alt { margin-top: 14px; color: var(--ink-2); font-size: .98rem; }
 
-.reel { margin: clamp(36px, 6vw, 64px) 0 0; }
 .window { background: var(--term); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
 .window .bar { display: flex; align-items: center; gap: 7px; padding: 11px 14px; background: var(--raised); }
 .window .bar i { width: 11px; height: 11px; border-radius: 50%; background: color-mix(in srgb, var(--border) 70%, var(--raised)); }
@@ -211,7 +274,7 @@ h2 { text-wrap: balance; }
 .session { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); font: .82rem/1.8 var(--mono); color: var(--term-ink); }
 .session p { margin: 0; }
 .session b { font-weight: 600; color: var(--text); }
-.session .talk { padding: 18px 22px 22px; }
+
 .session .ln { padding-left: 2ch; text-indent: -2ch; overflow-wrap: anywhere; }
 .session .ln.sub { padding-left: 5ch; text-indent: -3ch; }
 .session .pane { padding: 18px 20px; border-left: 1px solid var(--term-rule); background: color-mix(in srgb, var(--term-ink) 3%, var(--term)); }
@@ -222,7 +285,7 @@ h2 { text-wrap: balance; }
 .stage li.done::before { content: "✓"; color: var(--ok); }
 .stage li.now { color: var(--glow); }
 .stage li.now::before { content: "●"; }
-@media (max-width: 719px) { .session { grid-template-columns: 1fr; font-size: .74rem; } .session .pane { display: none; } .session .talk { padding: 14px 14px 18px; } }
+@media (max-width: 719px) { .session { grid-template-columns: 1fr; font-size: .74rem; } .session .pane { display: none; }  }
 .caption { color: var(--ink-2); font-size: .95rem; margin-top: 12px; max-width: 80ch; }
 
 /* sections */
@@ -294,33 +357,17 @@ section { padding: clamp(64px, 10vw, 120px) 0 0; }
 .lanes .t { font: 600 13px var(--mono); fill: var(--ink-2); }
 .lanes .main { stroke: var(--ink); }
 .lanes .lane { stroke: var(--accent); }
-.lanes .rev { fill: var(--signal); }
+
 .lanes .dot { fill: var(--panel); stroke: var(--ink); }
-/* T-2759: the forge beside the Smith, on stone in either theme; still, it's the moment of a blow, sparks flying */
-.smithy { margin: 26px 0 0; max-width: 440px; border-radius: 18px; overflow: hidden;
-  background: radial-gradient(70% 80% at 54% 62%, color-mix(in oklab, var(--ember) 30%, transparent), transparent 70%), var(--stone); }
-.smithy svg { display: block; width: 100%; height: auto; }
-.smithy .anvil { fill: color-mix(in oklab, var(--stone), white 22%); }
-.smithy .heat { fill: var(--ember); opacity: .45; filter: blur(6px); }
-.smithy .billet { fill: var(--glow); }
-.smithy .sparks { fill: none; stroke: var(--glow); stroke-width: 2.5; stroke-linecap: round; }
-.smithy .haft { fill: none; stroke: color-mix(in oklab, var(--bronze), white 30%); stroke-width: 7; stroke-linecap: round; }
-.smithy .head { fill: color-mix(in oklab, var(--stone), white 40%); }
-.smithy .hammer { transform-origin: 292px 40px; }
 
 /* elsewhere + honest bits */
 .agents { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 .agents span { border: 1px solid var(--rule); background: var(--panel); border-radius: 999px; padding: 6px 14px; font-weight: 500; }
-.diagram { margin: 36px 0 0; }
-.diagram img { display: block; width: 100%; max-width: 880px; height: auto; border-radius: 14px; }
+
 .facts { display: grid; gap: 22px; margin-top: 8px; }
 @media (min-width: 820px) { .facts { grid-template-columns: repeat(3, 1fr); } }
 .facts p { margin: 0; color: var(--ink-2); }
 .facts strong { display: block; font: 600 clamp(2.4rem, 5vw, 3.4rem)/1 var(--display); color: var(--ink); margin-bottom: 6px; }
-.notfor { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
-@media (min-width: 820px) { .notfor { grid-template-columns: 1fr 1fr; gap: 18px 40px; } }
-.notfor li { color: var(--ink-2); }
-.notfor strong { color: var(--ink); }
 
 /* install */
 .steps { display: grid; gap: 18px; counter-reset: s; }
@@ -328,7 +375,6 @@ section { padding: clamp(64px, 10vw, 120px) 0 0; }
 .steps .st p { margin: 0; }
 .steps h3 { display: flex; gap: 12px; align-items: baseline; }
 .steps h3::before { counter-increment: s; content: counter(s); font: 600 1rem var(--display); color: var(--signal-ink); border: 2px solid var(--signal); border-radius: 50%; width: 30px; height: 30px; display: inline-grid; place-items: center; flex: none; }
-.req { color: var(--ink-2); font-size: .98rem; }
 
 footer { margin-top: clamp(80px, 12vw, 140px); padding: 34px 0 48px; border-top: 1px solid var(--rule); color: var(--ink-2); font-size: .95rem; }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; }
@@ -351,11 +397,11 @@ footer .brand { font-size: 1.3rem; }
   @keyframes slam { 0% { opacity: 0; scale: 2.4; } 70% { opacity: 1; scale: .94; } 100% { scale: 1; } }
   @keyframes print { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0); } }
   @keyframes fill { from { scale: 0 1; } }
-  .hero > :is(h1, .lede, .install, .alt, .forge, .reel) { animation: rise var(--dur-stage) var(--ease-enter) both; }
+  
   .hero > .lede { animation-delay: var(--dur-tap); }
   .hero > .install { animation-delay: calc(var(--dur-tap) * 2); }
   .hero > .alt { animation-delay: calc(var(--dur-tap) * 3); }
-  .hero > :is(.forge, .reel) { animation-delay: calc(var(--dur-tap) * 4); }
+  
   /* T-2759: the runes write the headline: each word's rune flares in bronze, then the word is carved where it stood,
      one --dur-rune apart, all done by about 2.7 s */
   @keyframes rune { 0% { opacity: 0; } 30%, 55% { opacity: 1; } 100% { opacity: 0; } }
@@ -388,9 +434,9 @@ footer .brand { font-size: 1.3rem; }
     .head, .rules > div, .fcard, .points li, .term, .chart, .lanes, .diagram, .facts p, .notfor li, .steps .st { animation: rise var(--ease-enter) both; animation-timeline: view(); animation-range: entry 0% entry 70%; }
     .term .stamp { animation: slam var(--ease-enter) both; animation-timeline: view(); animation-range: entry 70% cover 35%; }
     .term pre { animation: print steps(11, end) both; animation-timeline: view(); animation-range: entry 40% cover 45%; }
-    .smithy { view-timeline: --smithy; }
-    .smithy .hammer { animation: strike linear both; animation-timeline: --smithy; animation-range: entry 40% cover 65%; }
-    .smithy .sparks { animation: spark linear both; animation-timeline: --smithy; animation-range: entry 40% cover 65%; }
+    
+    
+    
     .top::after { content: ""; position: absolute; inset: auto 0 0; height: 2px; background: var(--signal); transform-origin: 0 50%; animation: fill linear both; animation-timeline: scroll(root); }
     /* T-2767: a scene's marks play in as it scrolls into view: Louhi's trial stones rise, the moons are forged, the
        Underworld's runes waken by the river */
