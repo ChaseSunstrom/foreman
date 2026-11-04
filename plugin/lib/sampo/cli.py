@@ -8599,7 +8599,7 @@ def _now_sampo():
             f.write(today + "\n")
     except OSError:  # unwritable: say nothing rather than every time
         return
-    print("sampo is now sampo: `sampo <command>` runs the same commands (sampo stays as its alias)", file=sys.stderr)
+    print("fm is now sampo: `sampo <command>` runs the same commands (fm stays as its alias)", file=sys.stderr)
 
 
 def main(argv=None):

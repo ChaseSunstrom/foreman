@@ -108,6 +108,40 @@ class Migrate(ForemanTestCase):
             self.assertFalse(os.path.islink(os.path.join(self.cl, n)))
             self.assertEqual(hm.tree_hash(os.path.join(self.cl, n)), h)
 
+    def test_core_holds_through_both_paths_after_the_move(self):
+        # T-2967: the old path is a symlink to the new; a write through either is core, and a standing yes covers it
+        import fmguard as g
+        hm.migrate()
+        os.makedirs(os.path.join(self.new, "plugin", "lib"))
+        for fh in (self.old, self.new):  # the home the guard was told: the old name, or the new one
+            for root in (self.old, self.new):  # the path the write names
+                def ctx(**kw):
+                    return g.Ctx(cwd=self.h, project_root=None, home=self.h, foreman_home=fh, scratch=["/tmp"],
+                                 task_id="T-0007", **kw)
+                lib = os.path.join(root, "plugin", "lib")
+                for tool, inp in (("Edit", {"file_path": lib + "/fmcore.py", "old_string": "a", "new_string": "b"}),
+                                  ("Bash", {"command": f"echo x > {lib}/fmcore.py"})):
+                    with self.subTest(fh=fh, root=root, tool=tool):
+                        r = g.check(tool, inp, ctx())
+                        self.assertTrue(r and r.category == "core", r)
+                        self.assertIsNone(g.check(tool, inp, ctx(standing={"core"})), "the standing yes covers it")
+                guard = {"command": f"echo x > {lib}/fmguard.py"}
+                self.assertEqual(g.check("Bash", guard, ctx(standing={"core"})).category, "core")
+                tree = g.check("Bash", {"command": f"cp -r /tmp/a {root}/plugin"}, ctx(standing={"core"}))
+                self.assertTrue(tree and tree.category == "core", tree)
+
+    def test_undo_after_the_state_changed_restores_warns_and_records(self):
+        hm.migrate()
+        with open(os.path.join(self.new, "late.txt"), "w") as f:
+            f.write("written after the move")
+        r = hm.migrate(undo=True)
+        self.assertEqual(r["status"], "undone", r)
+        self.assertIn(self.old, r["warning"])
+        self.assertTrue(os.path.isdir(self.old) and not os.path.islink(self.old))
+        self.assertTrue(os.path.isfile(os.path.join(self.old, "late.txt")))
+        with self.assertRaisesRegex(ValueError, "nothing to undo"):
+            hm.migrate(undo=True)
+
     def test_undo_with_nothing_migrated_is_a_clear_refusal(self):
         with self.assertRaises(ValueError):
             hm.migrate(undo=True)

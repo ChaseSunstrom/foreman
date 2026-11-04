@@ -83,7 +83,7 @@ class RenameCli(ForemanTestCase):
 
     def test_fm_says_once_a_day_that_it_is_now_sampo(self):
         first = self.tty_stderr(FM, "state", "--line")
-        self.assertIn("now sampo", first)
+        self.assertIn("fm is now sampo: `sampo <command>` runs the same commands (fm stays as its alias)", first)
         self.assertEqual(first.strip().count("\n"), 0, "one line")
         self.assertNotIn("now sampo", self.tty_stderr(FM, "state", "--line"), "once a day")
         self.assertNotIn("now sampo", self.tty_stderr(SAMPO, "state", "--line"))

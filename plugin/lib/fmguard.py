@@ -554,11 +554,18 @@ _AGENT_WIRING = lazy(r"/\.codex/(?:hooks\.json|config\.toml)$|/\.gemini/settings
                            r"/\.?opencode/plugins?(?:/|$)")
 
 
+def _homes(ctx):
+    """T-2967: the home as named and where it really is (after sampo migrate the old name is a symlink to the new):
+    core is judged under both."""
+    return list(dict.fromkeys([ctx.foreman_home, os.path.realpath(ctx.foreman_home)]))
+
+
 def _is_core(path, ctx):
     """Protected core: all Sampo code (it enforces the guard), the rules, the eval suite, the spec and settings."""
-    fh = ctx.foreman_home
-    files = {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md") + _CORE_CONFIG}
-    dirs = [os.path.join(fh, "plugin", d) for d in _CORE_DIRS] + [os.path.join(fh, d) for d in _CORE_CONFIG_DIRS]
+    files = {os.path.join(fh, f) for fh in _homes(ctx)
+             for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md") + _CORE_CONFIG}
+    dirs = [os.path.join(fh, "plugin", d) for fh in _homes(ctx) for d in _CORE_DIRS] + \
+        [os.path.join(fh, d) for fh in _homes(ctx) for d in _CORE_CONFIG_DIRS]
     codex = os.environ.get("CODEX_HOME")
     return path in files or any(_under(path, d) for d in dirs) or path == os.path.join(ctx.home, ".claude.json") or \
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path) or _AGENT_WIRING.search(path)) or \
@@ -577,11 +584,15 @@ def _plain_path(detail):
 def _standing_covers(path, ctx):
     """A standing core yes (T-0119) covers Sampo's own code, rules, evals and spec; never this guard file, Claude
     Code's settings or Sampo state, which still ask each time."""
-    fh, path = ctx.foreman_home, _plain_path(path)
-    if path is None or any(_under(os.path.join(fh, "plugin", "lib", *g.split("/")), path) for g in GUARD_FILES):
-        return False  # not a path, the guard itself, or a whole-tree write that includes it
-    return path in {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")} or any(
-        _strictly_under(path, os.path.join(fh, "plugin", d)) for d in _CORE_DIRS)
+    path, homes = _plain_path(path), _homes(ctx)
+    if path is None:
+        return False
+    real = os.path.realpath(path)  # the old home name is a symlink to the new one after a migration
+    if any(_under(os.path.join(fh, "plugin", "lib", *g.split("/")), p) for fh in homes for g in GUARD_FILES
+           for p in (path, real)):
+        return False  # the guard itself, or a whole-tree write that includes it
+    return real in {os.path.join(fh, f) for fh in homes for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")} or any(
+        _strictly_under(real, os.path.join(fh, "plugin", d)) for fh in homes for d in _CORE_DIRS)
 
 
 def _trust_covers(path, ctx):
@@ -615,13 +626,14 @@ _GIT_CONFIG_FILE = lazy(r"/\.git/(?:worktrees/[^/]+/)?config(?:\.worktree)?$", r
 
 def _protected_roots(ctx):
     """(path, category) of everything the guard protects, for writes that cover a whole tree."""
-    fh, cl = ctx.foreman_home, os.path.join(ctx.home, ".claude")
-    roots = [(os.path.join(fh, "plugin", d), "core") for d in _CORE_DIRS]
+    cl = os.path.join(ctx.home, ".claude")
+    roots = [(os.path.join(fh, "plugin", d), "core") for fh in _homes(ctx) for d in _CORE_DIRS]
     roots += [(os.path.join(ctx.home, f), "core") for f in (".codex/hooks.json", ".codex/config.toml",  # T-0340
                                                              ".gemini/settings.json", ".config/opencode")]
-    roots += [(os.path.join(fh, f), "core") for f in _CORE_CONFIG + _CORE_CONFIG_DIRS]
-    roots += [(os.path.join(fh, "plugin", "rules", "foreman.md"), "core"), (os.path.join(fh, "BUILD_PROMPT.md"), "core"),
-              (os.path.join(ctx.home, ".claude.json"), "core"), (os.path.join(cl, "plugins"), "plugin")]
+    for fh in _homes(ctx):
+        roots += [(os.path.join(fh, f), "core") for f in _CORE_CONFIG + _CORE_CONFIG_DIRS]
+        roots += [(os.path.join(fh, "plugin", "rules", "foreman.md"), "core"), (os.path.join(fh, "BUILD_PROMPT.md"), "core")]
+    roots += [(os.path.join(ctx.home, ".claude.json"), "core"), (os.path.join(cl, "plugins"), "plugin")]
     # user-wide Claude Code settings (a project's own are handled in classify_tree)
     roots += [(os.path.join(ctx.home, ".claude", f), "core") for f in ("settings.json", "settings.local.json")]
     # Foreman state inside a tree write: the user may approve it (core); a direct write never is (state-direct)

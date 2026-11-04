@@ -38,7 +38,7 @@ def tree_hash(path):
 
 
 def _parent():
-    h = os.environ.get("SAMPO_HOME") or c.foreman_home()
+    h = c.foreman_home()
     h = os.path.abspath(os.path.expanduser(h))
     if os.path.basename(h) not in ("foreman", "sampo"):
         raise ValueError(f"{h} isn't named foreman or sampo; this only moves the standard layout")
@@ -131,18 +131,21 @@ def _undo(parent, mpath, man, dry):
             os.unlink(o)
         if os.path.isdir(n) and not os.path.lexists(o):
             os.rename(n, o)
-    bad = [f["old"] for f in man["folders"] if not os.path.isdir(f["old"]) or tree_hash(f["old"]) != f["hash"]]
-    if bad:
-        raise ValueError(f"moved back, but these differ from the hashes in the manifest: {', '.join(bad)}")
-    man["status"] = "undone"
+    man["status"] = "undone"  # recorded first: a used home (state written since the move) must not strand the undo
     _write(mpath, man)
-    return {"status": "undone", "manifest": mpath, "changed": True}
+    bad = [f["old"] for f in man["folders"] if not os.path.isdir(f["old"]) or tree_hash(f["old"]) != f["hash"]]
+    r = {"status": "undone", "manifest": mpath, "changed": True}
+    if bad:
+        r["warning"] = f"moved back, but these differ from the hashes in the manifest: {', '.join(bad)}"
+    return r
 
 
 def render(r):
     if r["status"] == "plan":
         return "\n".join(f"  {x['state']:<6} {x['old']} -> {x['new']}" for x in r["steps"]) + "\n(dry run: nothing changed)"
     if r["status"] == "undone":
+        if r.get("warning"):
+            return f"undone: the old layout is back ({r['manifest']})\nwarning: {r['warning']}"
         return f"undone: the old layout is back and matches the manifest ({r['manifest']})"
     return (f"migrated: home and siblings now live under the sampo names, symlinks at the old paths ({r['manifest']})"
             if r["changed"] else "already migrated; nothing changed")
