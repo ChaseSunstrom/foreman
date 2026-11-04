@@ -44,6 +44,16 @@ class Admit(_Cards):
     def test_a_complete_card_is_kept(self):
         self.assertEqual(self.sc.admit(good()), (True, ""))
 
+    def test_a_small_models_shapes_are_parsed_leniently_and_checked_strictly(self):  # T-2984: 400 calls, 0 kept
+        steps = good()["steps"]
+        loose = good(traps="Models may forget the dialect flag. They might not stop on the first error.",
+                     steps=[f"{s['do']} `{s['cmd']}`" if s["cmd"] else s["do"] for s in steps])
+        self.assertEqual(self.sc.admit(loose), (True, ""))
+        self.assertEqual(len(self.sc._clean(loose)["traps"]), 2)
+        ok, why = self.sc.admit(good(traps="Too short."))  # the strict checks still hold on the parsed parts
+        self.assertFalse(ok)
+        self.assertTrue(why.startswith("traps"), why)
+
     def test_each_missing_part_is_rejected_with_its_reason(self):
         cases = {
             "steps": good(steps=[]),

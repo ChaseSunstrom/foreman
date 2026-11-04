@@ -56,9 +56,26 @@ def _n(v, width):
     return c.fit(ms._norm(v), width)
 
 
+def _step(s):
+    """T-2984: a step as a small model writes it: {do, cmd}, or a plain string whose `backticked` span is its cmd."""
+    if isinstance(s, str):
+        m = re.search(r"`([^`]+)`", s)
+        return {"do": re.sub(r"^\s*\d+[.)]\s*", "", s.replace(m.group(0), "") if m else s).strip(" :-"),
+                "cmd": m.group(1) if m else ""}
+    return s
+
+
 def _clean(card):
-    """The card with every field trimmed, redacted and on one line, or None when its shape is wrong."""
-    if not isinstance(card, dict) or not isinstance(card.get("steps"), list) or not isinstance(card.get("traps"), list):
+    """The card with every field trimmed, redacted and on one line, or None when its shape is wrong. Parsed leniently
+    (T-2984: gemma4:12b wrote traps as one string of sentences, so 400 calls kept 0 cards), checked strictly by admit."""
+    if not isinstance(card, dict):
+        return None
+    card = dict(card)
+    if isinstance(card.get("traps"), str):
+        card["traps"] = [t.strip() for t in re.split(r"(?<=[.!?])\s+", card["traps"]) if t.strip()]
+    if isinstance(card.get("steps"), list):
+        card["steps"] = [_step(s) for s in card["steps"]]
+    if not isinstance(card.get("steps"), list) or not isinstance(card.get("traps"), list):
         return None
     out = {k: _n(card.get(k), w) for k, w in LIMITS.items()}
     steps = [s for s in card["steps"] if isinstance(s, dict)]
