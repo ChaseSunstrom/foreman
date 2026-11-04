@@ -78,6 +78,25 @@ class Snapshot(ForemanTestCase):
         m = {x["name"]: x for x in s["models"]}
         self.assertEqual((m["jarvis"]["where"], m["jarvis"]["calls_5m"]), ("remote", 1))
 
+    def test_a_called_but_unloaded_local_model_hangs_on_the_gantry(self):  # T-3017
+        from sampo import models
+        models.note_call({"name": "gpu-gemma", "model": "gemma4-12b-32k", "base_url": "http://127.0.0.1:11434/v1"})
+        models.note_call({"name": "jarvis", "model": "qwen3.8-27b", "base_url": "https://jarvis.example/v1"})
+        with open(os.path.join(c.state_dir(), models.CALLS), "a") as f:  # an old row, no where
+            f.write(json.dumps({"ts": c.now(), "to": "old-model", "from": "sampo"}) + "\n")
+        with mock.patch.object(live, "_get_json", return_value=None):
+            m = {x["name"]: x["where"] for x in live.snapshot(self.p)["models"]}
+        self.assertEqual((m["gemma4-12b-32k"], m["jarvis"], m["old-model"]), ("gpu", "remote", "remote"))
+
+    def test_a_ledger_row_seen_first_does_not_hide_a_local_calls_row(self):  # T-3017
+        from sampo import models
+        models.note_call({"name": "gpu-gemma", "model": "gemma4-12b-32k", "base_url": "http://127.0.0.1:11434/v1"})
+        with mock.patch.object(c, "now", return_value=c.iso(time.time() + 60)):  # newer, so it sorts first
+            c.log_event(self.p, "cards_grow", data={"models": {"gemma4-12b-32k": 1}})
+        with mock.patch.object(live, "_get_json", return_value=None):
+            m = {x["name"]: x["where"] for x in live.snapshot(self.p)["models"]}
+        self.assertEqual(m["gemma4-12b-32k"], "gpu")
+
     def test_a_child_under_a_temp_home_logs_to_the_inherited_file(self):  # T-3014: exam Smith runs
         from sampo import models
         path = os.path.join(self.tmp, "real-calls.jsonl")

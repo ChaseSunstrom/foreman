@@ -67,14 +67,15 @@ def note_call(profile, kind=None):
     sparks. A local endpoint's row names the model (as Ollama lists it), a remote one the profile. Never fails a call."""
     try:
         host = urllib.parse.urlsplit(profile.get("base_url") or "").hostname or ""
-        to = profile.get("model") if host in ("127.0.0.1", "localhost", "::1") else profile.get("name") or profile.get("model")
+        local = host in ("127.0.0.1", "localhost", "::1")
+        to = profile.get("model") if local else profile.get("name") or profile.get("model")
         words = [a for a in sys.argv[1:4] if re.fullmatch(r"[a-z][a-z-]*", a)]
         path = os.environ.get(CALLS_ENV) or os.path.join(state_dir(), CALLS)
         if os.path.exists(path) and os.path.getsize(path) > CALLS_CAP:
             os.replace(path, path + ".1")
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "to": str(to or "?"),
-                                "from": " ".join(words) or "sampo", **({"kind": kind} if kind else {})}) + "\n")
+                                "from": " ".join(words) or "sampo", "where": "local" if local else "remote", **({"kind": kind} if kind else {})}) + "\n")
     except (OSError, ValueError, TypeError, AttributeError):
         pass
 

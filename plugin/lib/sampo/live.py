@@ -164,7 +164,7 @@ def jobs(p):
 
 
 def _calls(p):
-    """[(at, from, to, kind)] of the last CALL_S seconds' model calls the code already logged."""
+    """[(at, from, to, kind, where)] (where: local/remote from the call log, else None) of the last CALL_S seconds' model calls the code already logged."""
     since = c.iso(time.time() - CALL_S)
     out = []
     for e in c.ledger_tail(p, 300):
@@ -172,21 +172,22 @@ def _calls(p):
         if not spec or at < since:
             continue
         names = d.get("models") if isinstance(d.get("models"), dict) else {d.get("model"): 1} if d.get("model") else {}
-        out += [(at, spec[0], str(m), spec[1]) for m in names if m]
+        out += [(at, spec[0], str(m), spec[1], None) for m in names if m]
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "spend.jsonl"), 200):
         f, at = str(e.get("feature") or ""), str(e.get("ts") or "")
         if f and at >= since:
-            out.append((at, f, "claude", "review" if re.search("review|audit", f) else "plan" if "plan" in f else "act"))
+            out.append((at, f, "claude", "review" if re.search("review|audit", f) else "plan" if "plan" in f else "act", None))
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "calls.jsonl"), 400):  # T-3014: every models.complete call
         f, at, to = str(e.get("from") or ""), str(e.get("ts") or ""), str(e.get("to") or "")
         if to and at >= since:
-            out.append((at, f, to, str(e.get("kind") or next((k for pat, k in CALL_KINDS if re.search(pat, f)), "act"))))
+            out.append((at, f, to, str(e.get("kind") or next((k for pat, k in CALL_KINDS if re.search(pat, f)), "act")),
+                    e.get("where") if e.get("where") in ("local", "remote") else None))
     return sorted(out, reverse=True)
 
 
 def flows(p):
     since = c.iso(time.time() - FLOW_S)
-    return [{"from": a, "to": b, "kind": k, "at": at} for at, a, b, k in _calls(p) if at >= since]
+    return [{"from": a, "to": b, "kind": k, "at": at} for at, a, b, k, _ in _calls(p) if at >= since]
 
 
 def _family(name):
@@ -208,11 +209,13 @@ def models(p):
             seen.setdefault(str(r["id"]), {"name": str(r["id"]), "family": "jeff", "where": "remote", "loaded": True,
                                            "vram_mb": None})
     calls = _calls(p)
-    for _, _, to, _ in calls:
-        seen.setdefault(to, {"name": to, "family": _family(to), "where": "cloud" if _family(to) == "claude" else "remote",
+    local = {to for _, _, to, _, w in calls if w == "local"}  # any local row wins over a ledger row seen first
+    for _, _, to, _, _ in calls:
+        seen.setdefault(to, {"name": to, "family": _family(to),
+                             "where": "cloud" if _family(to) == "claude" else "gpu" if to in local else "remote",
                              "loaded": _family(to) == "claude", "vram_mb": None})
     for name, m in seen.items():
-        hits = [at for at, _, to, _ in calls if to == name]
+        hits = [at for at, _, to, _, _ in calls if to == name]
         out.append(dict(m, calls_5m=len(hits), last_call=hits[0] if hits else None))
     return out
 

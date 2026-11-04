@@ -519,6 +519,18 @@ class ModelRules(unittest.TestCase):
         self.assertFalse(m.live(p, "intake-type"))  # the newest row for the use wins
 
 
+class NoteCallWhere(unittest.TestCase):  # T-3017
+    def test_loopback_is_local_and_anything_else_remote(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "calls.jsonl")
+            with mock.patch.dict(os.environ, {m.CALLS_ENV: path}):
+                for url in ("http://127.0.0.1:11434/v1", "http://localhost:1/v1", "http://[::1]:1/v1", "https://j.example/v1"):
+                    m.note_call({"name": "n", "model": "x", "base_url": url})
+            rows = [json.loads(line) for line in open(path)]
+        self.assertEqual([r["where"] for r in rows], ["local", "local", "local", "remote"])
+
+
 class ExtractJson(unittest.TestCase):
     def test_fenced(self):
         self.assertEqual(m.extract_json('Sure:\n```json\n{"a": 1}\n```\nthanks'), {"a": 1})
