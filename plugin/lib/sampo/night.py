@@ -24,7 +24,7 @@ from sampo import serve
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
 _LEASE = None  # T-0921: the open lock file of a running night
-NAMES = ("scout", "dream", "cold files", "guard cases", "steer checks", "compost", "consolidate", "sentinel", "moons grow", "moons funnel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue", "draft")
+NAMES = ("scout", "dream", "cold files", "guard cases", "steer checks", "compost", "consolidate", "sentinel", "moons grow", "moons funnel", "next request", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue", "draft")
 
 
 def current_model(p):
@@ -71,6 +71,8 @@ def jobs(p):
                                    "--local-only"], 0.0))
     if "funnel" in ready:
         out.append(("moons funnel", ["moons", "funnel", "--max-calls", "400", "--local-only"], 0.0))
+    if not meta.get("sensitive") and moonscale._local(False):  # T-2912: free: the local model's next-request guess
+        out.append(("next request", ["outcomes", "--predictions", "--ask-local"], 0.0))
     smoke = meta.get("smoke") or {}
     if any(k != "off" for k in smoke) and "off" not in smoke:  # T-0743: a target is set; the crawl runs locally
         out.append(("smoke", ["smoke"], 0.0))

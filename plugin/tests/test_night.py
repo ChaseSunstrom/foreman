@@ -327,6 +327,18 @@ class NightMoons(ForemanTestCase):  # T-2916: zero-dollar Moons jobs on the loca
                 mock.patch.object(self.ms, "fate", return_value={"C-1": {"stage": "kill", "verdict": "rejected"}}):
             self.assertEqual(self.names(), {}, "every row judged and the target met: nothing to do")
 
+    def test_the_local_next_request_guess_is_a_free_night_job(self):  # T-2912: local_tick had no caller
+        from sampo import foresight, night
+        with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}):
+            got = {n: (argv, usd) for n, argv, usd in night.jobs(self.p)}
+        self.assertEqual(got.get("next request"), (["outcomes", "--predictions", "--ask-local"], 0.0))
+        with mock.patch.object(self.ms, "_local", return_value=None):
+            self.assertNotIn("next request", [n for n, _, _ in night.jobs(self.p)])
+        from sampo import cli
+        with mock.patch.object(foresight, "local_tick") as tick, mock.patch.object(os, "getcwd", return_value=self.repo):
+            cli.main(["outcomes", "--predictions", "--ask-local", "--json"])
+        tick.assert_called_once()
+
     def test_a_sensitive_project_lists_neither(self):
         self.fm("sensitive", "on")
         with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}):

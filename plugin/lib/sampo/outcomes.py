@@ -196,6 +196,8 @@ def cmd_outcomes(args):
     p = cli.resolve(args)
     if getattr(args, "predictions", False) or getattr(args, "unmute", None):  # T-2406: the prediction book
         from sampo import foresight
+        if getattr(args, "ask_local", False):  # T-2912: the night job books the local model's guess first
+            foresight.local_tick(p)
         if getattr(args, "unmute", None):
             kinds = [k["kind"] for k in foresight.prediction_kinds(p)]
             if args.unmute not in kinds:

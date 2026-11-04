@@ -6843,6 +6843,8 @@ def _build_parser(only=None):
     s.add_argument("--predictions", action="store_true", help="each prediction kind's hit rate beside its naive "
                                                               "baseline, and the ones muted for trailing it (T-2406)")
     s.add_argument("--unmute", metavar="KIND", help="--predictions: let a muted kind count again from now")
+    s.add_argument("--ask-local", action="store_true", help="--predictions: first book the local model's guess for "
+                                                            "the pending next request (the night job, T-2912)")
     s.add_argument("--questions", action="store_true", help="AskUserQuestion calls by outcome: default taken, "
                                                              "another option, typed, dismissed (T-2840)")
     s.add_argument("--since", metavar="TS", help="--questions: only calls at or after this ISO time")
