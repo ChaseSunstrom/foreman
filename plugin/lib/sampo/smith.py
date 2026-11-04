@@ -2734,11 +2734,13 @@ def cmd_code(args):
             profile = choose_profile(run, args.model)
             run.model_name = profile["name"]
             run.offsite_ok(p, profile)
+            served = m.served_context(profile)  # T-2935: what the server serves, not what models.json says; T-2947: probed once
             try:  # T-2938: ctx_variant true: a num_ctx variant, made or reused, before the served check
-                profile, variant_note = m.context_variant(profile)
+                profile, variant_note = m.context_variant(profile, served)
             except m.ModelError as e:
                 raise CodeError(str(e))
-            served = m.served_context(profile)  # T-2935: what the server serves, not what models.json says
+            if variant_note:
+                served = None  # the variant serves what the profile asks
             if served and served < profile.get("context", 0):
                 served_note = (f"{profile['name']}: profile says {profile['context']} tokens of context, server serves "
                                f"{served}: using {served}")

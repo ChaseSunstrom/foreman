@@ -17,7 +17,7 @@ class Ollama:
     """A fake Ollama: GET /api/ps lists `loaded`, POST /api/show answers `show`; chat requests are recorded in .chat."""
 
     def __init__(self, loaded=(), show=None, ps=True):
-        self.loaded, self.show, self.chat = list(loaded), show or {}, []
+        self.loaded, self.show, self.chat, self.ps_hits = list(loaded), show or {}, [], 0
         o = self
 
         class H(http.server.BaseHTTPRequestHandler):
@@ -32,6 +32,7 @@ class Ollama:
                 self.wfile.write(data)
 
             def do_GET(self):
+                o.ps_hits += self.path == "/api/ps"
                 self.reply(200, {"models": o.loaded}) if ps and self.path == "/api/ps" else self.reply(404, {})
 
             def do_POST(self):
@@ -63,11 +64,11 @@ class ServedContext(unittest.TestCase):
         o = self.serve(loaded=[{"name": "q:4b", "context_length": 4096}], show={"parameters": "num_ctx 8192"})
         self.assertEqual(m.served_context(o.profile()), 4096)
 
-    def test_an_unloaded_model_falls_back_to_show_then_the_ollama_default(self):
+    def test_an_unloaded_model_falls_back_to_show_then_unknown(self):
         o = self.serve(show={"parameters": "num_ctx 8192"})
         self.assertEqual(m.served_context(o.profile()), 8192)
-        o = self.serve(show={"parameters": ""})
-        self.assertEqual(m.served_context(o.profile()), m.OLLAMA_CONTEXT)
+        o = self.serve(show={"parameters": ""})  # T-2947: OLLAMA_CONTEXT_LENGTH is invisible here: unknown, not 4096
+        self.assertIsNone(m.served_context(o.profile()))
 
     def test_a_non_ollama_or_non_loopback_profile_is_none(self):
         o = self.serve(ps=False)
@@ -94,6 +95,15 @@ class Smith(CodeCase):
         self.assertIn("serves 1024", out)
         self.assertIn("num_ctx", out)  # the variant to use
         self.assertEqual(o.chat, [])  # stopped before the first model call
+
+    def test_an_unknown_served_context_neither_shrinks_the_profile_nor_refuses_and_is_probed_once(self):
+        o = Ollama()  # empty /api/ps, no num_ctx in /api/show
+        self.addCleanup(o.close)
+        r = self.run_code(o)
+        out = r.stdout + r.stderr
+        self.assertNotIn("profile says", out)
+        self.assertNotIn("serves", out)
+        self.assertEqual(o.ps_hits, 1)  # one probe per run, with ctx_variant off or on
 
 
 if __name__ == "__main__":

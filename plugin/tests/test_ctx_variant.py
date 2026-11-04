@@ -113,6 +113,7 @@ class Variant(unittest.TestCase):
         with open(os.path.join(f.dir, "q-4b-32k.mf")) as mf:
             self.assertEqual(mf.read(), "FROM q:4b\nPARAMETER num_ctx 32768\n")
         self.assertIn("q-4b-32k", note)
+        self.assertIn("unknown", note)  # T-2947: the base stated no num_ctx; the variant is made anyway
 
     def test_an_existing_variant_is_reused_and_ollama_is_not_run(self):
         f = self.fake()
@@ -145,7 +146,7 @@ class Variant(unittest.TestCase):
     def test_a_model_name_that_could_inject_a_modelfile_line_is_refused(self):
         f = self.fake()
         with self.assertRaises(m.ModelError):
-            m.context_variant(f.profile(model="q:4b\nSYSTEM x"))
+            m.context_variant(f.profile(model="q:4b\nSYSTEM x"), 4096)  # served passed in: T-2947
         self.assertEqual(f.calls(), [])
 
 

@@ -389,13 +389,10 @@ def _local_context(name, base_url, model, row):
     return n if type(n) is int and 512 <= n <= 10_000_000 else LOCAL_CONTEXT
 
 
-def served_context(profile):
-    """T-2935: the context an Ollama server really serves profile's model with: /api/ps context_length while it is
-    loaded (that is the number in use), else _local_context's /api/show answer. None for a profile that isn't openai-kind
-    on a loopback host, or whose server has no Ollama /api/ps (it is not Ollama, or is down)."""
+def _ollama_ps(profile):
+    """(root, /api/ps rows) for an openai-kind profile on a loopback Ollama; None when it is neither or is down."""
     base = str(profile.get("base_url") or "")
-    model = profile.get("model")
-    if profile.get("kind") != "openai" or not model or not is_loopback(urllib.parse.urlsplit(base).hostname or ""):
+    if profile.get("kind") != "openai" or not profile.get("model") or not is_loopback(urllib.parse.urlsplit(base).hostname or ""):
         return None
     root = base[:-3] if base.endswith("/v1") else base
     try:
@@ -403,17 +400,36 @@ def served_context(profile):
             rows = json.loads(r.read(1 << 20)).get("models")
     except (ModelError, *_TRANSPORT, ValueError, AttributeError, TypeError, RecursionError):
         return None
-    if not isinstance(rows, list):
+    return (root, rows) if isinstance(rows, list) else None
+
+
+def served_context(profile):
+    """T-2935: the context an Ollama server really serves profile's model with: /api/ps context_length while it is
+    loaded (that is the number in use), else /api/show's num_ctx; None (unknown) when neither says. None for a profile that isn't openai-kind
+    on a loopback host, or whose server has no Ollama /api/ps (it is not Ollama, or is down)."""
+    model = profile.get("model")
+    got = _ollama_ps(profile)
+    if got is None:
         return None
+    root, rows = got
     for x in rows:
         if isinstance(x, dict) and model in (x.get("name"), x.get("model")):
             n = x.get("context_length")
             if type(n) is int and 512 <= n <= 10_000_000:
                 return n
-    return _local_context("ollama", root, model, {})
+    try:  # T-2947: no num_ctx in /api/show is unknown (OLLAMA_CONTEXT_LENGTH or a VRAM default lives only in the server)
+        req = urllib.request.Request(root.rstrip("/") + "/api/show", data=json.dumps({"model": model}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with _LOCAL_OPENER.open(req, timeout=1.0) as r:
+            got = json.loads(r.read(1 << 20))
+        hit = re.search(r"(?m)^\s*num_ctx\s+(\d+)", str(got.get("parameters") or ""))
+    except (ModelError, *_TRANSPORT, ValueError, AttributeError, TypeError, RecursionError):
+        return None
+    n = int(hit.group(1)) if hit else None
+    return n if n and 512 <= n <= 10_000_000 else None
 
 
-def context_variant(profile):
+def context_variant(profile, served=False):
     """T-2938: (profile, note). For an openai-kind profile on a loopback Ollama that sets ctx_variant true and whose
     served_context is under its context: the profile pointed at BASE-<n>k (qwen3.5:4b at 32768 gives qwen3.5-4b-32k),
     reused when /api/tags lists it, else made by `ollama create NAME -f TEMPFILE` (FROM base, PARAMETER num_ctx).
@@ -421,7 +437,13 @@ def context_variant(profile):
     create fails or times out, or the variant still serves less. ponytail: loopback only (the binary talks to the local
     server); an own remote host would need OLLAMA_HOST, or POST /api/create."""
     want = profile.get("context")
-    served = served_context(profile) if profile.get("ctx_variant") is True else None
+    if profile.get("ctx_variant") is not True:
+        served = None
+    elif served is False:  # T-2947: a caller that already probed passes its answer (None included)
+        served = served_context(profile)
+    if served is None and profile.get("ctx_variant") is True and type(want) is int and want > OLLAMA_CONTEXT \
+            and _ollama_ps(profile) is not None:
+        served = 0  # unknown on a live Ollama (likely its 4096 default): an explicit num_ctx variant is right either way
     if served is None or type(want) is not int or want < 1024 or served >= want:
         return profile, None
     base = profile["model"]
@@ -452,7 +474,7 @@ def context_variant(profile):
     got = served_context(out)
     if got is None or got < want:
         raise ModelError(f"{profile['name']}: variant {name} serves {got}, not {want}: check it with ollama show {name}")
-    return out, f"{profile['name']}: {made} {name} ({want} tokens of context) for {base}, which serves {served}"
+    return out, f"{profile['name']}: {made} {name} ({want} tokens of context) for {base}, which serves {served or 'an unknown context'}"
 
 
 def _local(name=None):
