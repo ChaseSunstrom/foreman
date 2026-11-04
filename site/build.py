@@ -339,7 +339,7 @@ def moons_html(rows):
     """T-2851: the Moons section's heading, intro and list from genesis.json's moonshots: the wild 4s and 5s, the wildest
     first then by id, every count from the rows (the chart beside it is a drawing and says its own)."""
     n = len(rows)
-    top = sorted((r for r in rows if r["wild"] >= 4), key=lambda r: (-r["wild"], r["id"]))
+    top = sorted((r for r in rows if (r.get("wild") or 0) >= 4), key=lambda r: (-r["wild"], r["id"]))  # T-2958: unrated
     kills = [r["id"] for r in rows if r["stage"] == "kill"]
     built = sum(r["stage"] == "built" for r in rows)
     ideas = sum(r["stage"] == "idea" for r in rows)

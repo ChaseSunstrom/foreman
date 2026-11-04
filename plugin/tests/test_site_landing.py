@@ -105,7 +105,8 @@ class Landing(unittest.TestCase):
     def test_moons_come_from_the_catalogue(self):
         """T-2851: the wild 4s and 5s of genesis.json's moonshots, the wildest first, counts from the data."""
         rows = [{"id": f"M-{i:02d}", "title": f"Moon number {i}", "wild": w, "stage": st}
-                for i, (w, st) in enumerate([(2, "idea"), (5, "idea"), (4, "kill"), (5, "idea"), (3, "idea"), (4, "idea")], 1)]
+                for i, (w, st) in enumerate([(2, "idea"), (5, "idea"), (4, "kill"), (5, "idea"), (3, "idea"), (4, "idea"),
+                                             (None, "idea")], 1)]  # T-2958: an unrated moon, as the live tower publishes
 
         def edit(d):
             d["moonshots"]["rows"] = rows
@@ -116,14 +117,14 @@ class Landing(unittest.TestCase):
             sec, got = self.moons(read_text(os.path.join(tmp, "out", "index.html")))
         self.assertEqual([g[1] for g in got], ["M-02", "M-04", "M-03", "M-06"], "wild 4 and 5 only, wildest first, then by id")
         self.assertEqual([bool(g[0]) for g in got], [False, False, True, False], "a kill test carries the kt class")
-        self.assertIn("6 moonshots over the forge", sec)
-        self.assertIn("It holds 6", sec)
+        self.assertIn("7 moonshots over the forge", sec)
+        self.assertIn("It holds 7", sec)
         self.assertNotIn("{{", sec)
 
     def test_moons_follow_the_real_catalogue(self):
         with open(os.path.join(ROOT, "site", "genesis", "genesis.json"), encoding="utf-8") as f:
             rows = json.load(f)["moonshots"]["rows"]
-        want = [r["id"] for r in sorted((r for r in rows if r["wild"] >= 4), key=lambda r: (-r["wild"], r["id"]))]
+        want = [r["id"] for r in sorted((r for r in rows if (r["wild"] or 0) >= 4), key=lambda r: (-r["wild"], r["id"]))]
         sec, got = self.moons(self.page)
         self.assertEqual([g[1] for g in got], want)
         self.assertIn(f"{len(rows)} moonshots over the forge", sec)
