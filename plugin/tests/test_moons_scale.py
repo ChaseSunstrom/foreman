@@ -788,3 +788,16 @@ class Promote(_Funnel):
         self.assertTrue(any("C-999999" in x for x in bad), bad)
         from sampo import moons
         self.assertTrue(any("F-999999" in x for x in moons.check(self.p)))
+
+
+class PromoteDomain(_Moons):
+    def test_a_lead_domain_reads_as_plain_words(self):
+        # T-2940: promote wrote 'refactors, at ecosystem scale, in the phone' and the cold read refused the catalogue
+        from sampo import moonscale as ms
+        self.assertEqual(ms._domain({"kind": "refactors", "scale": "ecosystem", "surface": "phone"}),
+                         "refactors across the open-source ecosystem, from a phone")
+        for s in ms.SCALES:
+            for u in ms.SURFACES:
+                d = ms._domain({"kind": "bugs", "scale": s, "surface": u})
+                self.assertNotRegex(d, r" scale,|in the phone|in the CI|in the chat")
+                self.assertTrue(d.startswith("bugs "), d)

@@ -32,6 +32,17 @@ KINDS = ("bugs", "features", "refactors", "migrations", "ops", "security", "perf
          "releases", "onboarding")
 SCALES = ("file", "repo", "all projects", "org", "ecosystem")
 SURFACES = ("terminal", "editor", "pull request", "CI", "chat", "phone", "dashboard")
+# T-2940: a promoted lead's Domain in plain words, not the raw grid cell its cold read refused
+_SCALE_WORDS = {"file": "in one file", "repo": "in one repo", "all projects": "across all of a user's projects",
+                "org": "across an organisation", "ecosystem": "across the open-source ecosystem"}
+_SURFACE_WORDS = {"terminal": "at the terminal", "editor": "in the editor", "pull request": "in pull requests",
+                  "CI": "in CI", "chat": "in chat", "phone": "from a phone", "dashboard": "on a dashboard"}
+
+
+def _domain(cell):
+    kind, scale, surface = (_norm(cell.get(k)) for k in ("kind", "scale", "surface"))
+    return ", ".join(x for x in (" ".join(x for x in (kind, _SCALE_WORDS.get(scale, scale)) if x),
+                                 _SURFACE_WORDS.get(surface, surface)) if x)
 MECHANISMS = ("biology", "ecology", "markets", "logistics", "law", "physics", "neuroscience", "evolution", "cities",
               "games", "manufacturing", "medicine", "astronomy", "music", "sport", "military", "archaeology",
               "linguistics") + moons.WILD_LENSES
@@ -985,8 +996,7 @@ def promote(p, max_n=3):
         nov = re.search(r"[1-5]", got.get("novelty", ""))
         cell, k, n = x.get("cell") or {}, fam["size"] - 1, n + 1
         blocks.append(
-            f"### M-{n:02d} · {_norm(x.get('title'))}\n- Tier: {fam['tier']}\n- Domain: {_norm(cell.get('kind'))}, at "
-            f"{_norm(cell.get('scale'))} scale, in the {_norm(cell.get('surface'))}\n- Lens: "
+            f"### M-{n:02d} · {_norm(x.get('title'))}\n- Tier: {fam['tier']}\n- Domain: {_domain(cell)}\n- Lens: "
             f"{_norm(cell.get('mechanism'))}\n- What: {_norm(x.get('today'))} {_norm(x.get('with_this'))} "
             f"{_norm(x.get('what'))}\n- Prior art: {_norm(x.get('prior_art')) or 'none named'}\n- Better by: "
             f"{c.fit(got.get('better by') or _norm(x.get('with_this')), 300)}\n- Novelty: "
