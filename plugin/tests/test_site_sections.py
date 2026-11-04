@@ -369,11 +369,11 @@ class Built(unittest.TestCase):
         pages = [os.path.join(d, n) for d in (os.path.join(self.out, "features"), os.path.join(self.out, "stories"))
                  for n in sorted(os.listdir(d)) if n.endswith(".html")]
         pages.append(os.path.join(self.out, "genesis", "index.html"))
-        actor = re.compile(r"\bClaude\b(?! Code| Desktop|'s (?:spellings|read-only))")
+        actor = re.compile(r"\bClaude\b(?! Code| Desktop| Haiku| Sonnet| Opus| Fable|'s (?:spellings|read-only))")
         for path in pages:
             text = html.unescape(re.sub(r"<[^>]+>", " ", read_text(path)))
             with self.subTest(page=os.path.relpath(path, self.out)):
-                self.assertNotRegex(text, r"(?i)jarvis")
+                self.assertNotRegex(text, r"(?i)jarvis(?!\s*\(\d)")  # T-2852: the user's jarvis repo keeps its name
                 self.assertEqual([text[max(m.start() - 40, 0):m.end() + 40] for m in actor.finditer(text)], [])
         with tempfile.TemporaryDirectory() as tmp:  # the records' own words, too: the build reads them by role
             r = build_copy(tmp, edit_stats=lambda s: s.update(
@@ -381,6 +381,13 @@ class Built(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             page = read_text(os.path.join(tmp, "out", "features", "decisions.html"))
             self.assertRegex(page, r"handed the agent a command on a large local model(?![\w-])")  # the whole name, suffix too
+        with tempfile.TemporaryDirectory() as tmp:  # a repo named jarvis and Claude's model names are facts, kept
+            r = build_copy(tmp, edit_stats=lambda s: s.update(decisions=[dict(
+                s["decisions"][0], text="Held out: Sampo (4,107 commits), jarvis (1,853) and volt; Claude Opus reviews")]))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            page = read_text(os.path.join(tmp, "out", "features", "decisions.html"))
+            self.assertIn("jarvis (1,853)", page)
+            self.assertIn("Claude Opus reviews", page)
 
     def test_phone_width_and_contrast_in_both_themes(self):
         browser = headless_chrome()

@@ -551,7 +551,9 @@ def roles(v):
     ("jarvis") becomes "a large local model" and a bare "Claude" doing the work "the agent". The hosts Sampo is
     measured on and installs into (Claude Code, Claude Desktop) keep their names."""
     if isinstance(v, str):
-        return re.sub(r"\bClaude\b(?! Code| Desktop)", "the agent", re.sub(r"(?i)[\w-]*jarvis[\w-]*", "a large local model", v))
+        # a repo named jarvis ("jarvis (1,853)") and Claude's model names (Claude Opus) are facts, kept
+        return re.sub(r"\bClaude\b(?! Code| Desktop| Haiku| Sonnet| Opus| Fable)", "the agent",
+                      re.sub(r"(?i)[\w-]*jarvis[\w-]*(?!\s*\(\d)", "a large local model", v))
     if isinstance(v, list):
         return [roles(x) for x in v]
     if isinstance(v, dict):

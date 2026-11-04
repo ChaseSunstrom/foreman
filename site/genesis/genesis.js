@@ -86,7 +86,7 @@
   /* T-2852: a model shows by its role, never by its endpoint's name: "jarvis" anywhere in the data (a key or a string,
      at any depth) reads as "a large local model". Run once on load, in place, so every renderer and md() see it */
   function roles(v) {
-    if (typeof v === "string") return v.replace(/[\w-]*jarvis[\w-]*/gi, "a large local model");
+    if (typeof v === "string") return v.replace(/[\w-]*jarvis[\w-]*(?!\s*\(\d)/gi, "a large local model");  // "jarvis (1,853)" is a repo
     if (v && typeof v === "object") Object.keys(v).forEach(function (k) {
       var n = roles(k), x = roles(v[k]);
       if (n !== k) delete v[k];
