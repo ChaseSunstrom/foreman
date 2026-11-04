@@ -217,10 +217,12 @@ def cmd_outcomes(args):
                 if str(e.get("ts") or "") >= since]
         n = {k: sum(int(r.get(k) or 0) for r in rows) for k in ("asked", "default", "other", "typed")}
         n.update(calls=len(rows), dismissed=sum(bool(r.get("dismissed")) for r in rows))
+        n["prompts"] = sum(str(e.get("ts") or "") >= since for e in c.ledger_events(  # T-2857: an fm ask's yes or no
+            p, ("approval_granted", "approval_declined"), since=since))
         cli.out(args, n, f"{n['calls']} AskUserQuestion call(s){' since ' + since if since else ''}: {n['asked']} "
                          f"question(s), {n['default']} took the default, {n['other']} another option, {n['typed']} "
-                         f"typed, {n['dismissed']} dismissed")
-        return 1 if getattr(args, "none", False) and n["calls"] else 0
+                         f"typed, {n['dismissed']} dismissed; {n['prompts']} permission prompt(s) answered")
+        return 1 if getattr(args, "none", False) and (n["calls"] or n["prompts"]) else 0
     outs = outcomes(p)
     if getattr(args, "readme", False):  # T-0960: the one sentence a README publishes
         held = sum(o["fate"] == "held" for o in outs.values())

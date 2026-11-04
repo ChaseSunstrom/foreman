@@ -57,3 +57,12 @@ class QuestionAnswers(ForemanTestCase):
         self.assertEqual(self.fm("outcomes", "--questions", "--none", check=False).returncode, 1)
         later = self.fm_json("outcomes", "--questions", "--since", "2999-01-01")
         self.assertEqual(later["calls"], 0, "nothing at or after --since")
+
+    def test_a_permission_prompt_is_an_ask_too(self):
+        # T-2857: 'stop asking me for stuff' came two minutes after an fm ask's permission prompt
+        c.log_event(self.p, "approval_granted", task="T-0001", data={"allow": ["core"], "via": "prompt"})
+        c.log_event(self.p, "approval_declined", task="T-0001", data={"allow": ["destructive"]})
+        got = self.fm_json("outcomes", "--questions")
+        self.assertEqual((got["calls"], got["prompts"]), (0, 2))
+        self.assertEqual(self.fm("outcomes", "--questions", "--none", check=False).returncode, 1)
+        self.assertIn("2 permission prompt", self.fm("outcomes", "--questions", check=False).stdout)
