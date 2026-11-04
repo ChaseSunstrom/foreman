@@ -4252,7 +4252,9 @@ class SealedPrediction(ForemanTestCase):
         rune.score_steer(self.p, "Rotate the sunburst palette every release", cite="user steer A")
         rune.score_steer(self.p, "Index the ledger by hash prefix for speed", cite="user steer B")
         gaps = lambda: [b for b in c.load_briefs(self.p) if "genesis-anticipation 1:" in b.section("Raw request")]
-        self.assertEqual([b.status for b in gaps()], ["captured", "captured"], "a miss still files one gap")
+        # T-2863: a gap waits for the next seal, deferred: the drive offered 13 of them as work in one evening
+        self.assertEqual([b.status for b in gaps()], ["deferred", "deferred"], "a miss still files one gap")
+        self.assertIn("next generation's prediction", gaps()[0].section("Log"))
         tower_file(self.tower, "gen-2/seed.md", "# Seed\ngen-0\nNo Missions this generation.\n")
         tower_file(self.tower, "lineage.md", "# Lineage\n\n## gen-1\n- baseline\n- seed base: gen-1\n")
         s = rune.step(self.p)

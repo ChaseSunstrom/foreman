@@ -3740,9 +3740,14 @@ def score_steer(p, text, cite=None):
         c.append_line(os.path.join(home(p), f"gen-{n}", "prediction-score.jsonl"), json.dumps(row))
     if not row["hit"]:
         key = f"genesis-anticipation {n}:{hashlib.sha1((cite or text).encode()).hexdigest()[:10]}"
-        eco.capture_once(p, f"FEATURE: anticipation gap (#3): the user's steer wasn't among gen-{n}'s sealed predictions: "
-                              f"{row['steer']} (nearest: {row['nearest'] or 'none'}, overlap {row['overlap']})\n{key}",
-                           "FEATURE", "genesis-anticipation", key=key)
+        b, new = eco.capture_once(p, f"FEATURE: anticipation gap (#3): the user's steer wasn't among gen-{n}'s sealed "
+                                     f"predictions: {row['steer']} (nearest: {row['nearest'] or 'none'}, overlap "
+                                     f"{row['overlap']})\n{key}", "FEATURE", "genesis-anticipation", key=key)
+        if new and b is not None and b.status == "captured":  # T-2863: input to the next prediction, not work to run
+            with c.lock(p.dir):
+                b.meta["status"] = "deferred"
+                b.append_log(f"deferred: input to the next generation's prediction; gen-{n + 1}'s seal closes it")
+                c.save_brief(p, b)
     return row
 
 
