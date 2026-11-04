@@ -42,6 +42,25 @@ class Claims(Base):
         self.assertIn("a.py", held, "the first task's lease stays")
         self.assertNotIn("b.py", held)
 
+    def test_a_bare_drop_with_no_active_task_frees_only_closed_or_taskless_leases(self):
+        # T-2870: T-2868's builder, between steps, dropped 16 leases of the shared session, the main thread's included
+        one = self.fm_json("task", "new", "One", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s",
+                           "--focus", env=A)["id"]
+        self.fm("lease", "take", "a.py", env=A)
+        two = self.fm_json("task", "new", "Two", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s",
+                           "--focus", env=A)["id"]
+        self.fm("lease", "take", "b.py", env=A)
+        self.fm("task", "block", two, "waits", env=A)  # nothing active now
+        self.assertIn("Dropped 0 lease(s)", self.fm("lease", "drop", env=A).stdout, "open tasks keep theirs")
+        held = self.fm("lease", "list").stdout
+        self.assertIn("a.py", held)
+        self.assertIn("b.py", held)
+        self.fm("task", "drop", one, "not needed", env=A)
+        self.fm("lease", "drop", env=A)
+        held = self.fm("lease", "list").stdout
+        self.assertNotIn("a.py", held, "a closed task's lease is freed")
+        self.assertIn("b.py", held)
+
     def test_a_file_named_drop_keeps_another_tasks_leases_in_the_same_session(self):
         # T-1416: a builder lane's `fm lease drop plugin/lib/fmcode.py` freed two other lanes' leases on that file
         self.fm("task", "new", "One", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus", env=A)

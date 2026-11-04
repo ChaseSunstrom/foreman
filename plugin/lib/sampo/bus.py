@@ -595,10 +595,16 @@ def cmd_lease(args):
     with c.lock(_dir()):
         data = _leases()
         before = dict(data)
-        act = c.active_brief(c.load_briefs(p), p.lane) if args.action in ("take", "drop") else None
+        briefs = c.load_briefs(p) if args.action in ("take", "drop") else []
+        act = c.active_brief(briefs, p.lane) if briefs else None
+        open_ids = {b.id for b in briefs if b.status not in c.CLOSED}
 
         def mine(v):  # T-1216, T-1416: the active task's only: builder lanes share their main session's id
-            return v["project"] == p.slug and v["session"] == me and (act is None or v.get("task") in (act.id, None))
+            if v["project"] != p.slug or v["session"] != me:
+                return False
+            if act is not None:
+                return v.get("task") in (act.id, None)
+            return v.get("task") not in open_ids  # T-2870: no active task: never another open task's lease
         if args.action == "drop" and not args.target:  # T-1134: bare drop releases what this session holds here
             data = {k: v for k, v in data.items() if not mine(v)}
             _write_leases(data)
