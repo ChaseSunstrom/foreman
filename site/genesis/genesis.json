@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-04T08:10:01Z",
+ "updated": "2026-11-04T08:15:06Z",
  "rev": "044e0c58",
  "capabilities": [
   {
@@ -3974,7 +3974,7 @@
       {
        "id": "T-2914",
        "title": "Meaning is planned, not labelled after: a user's M or L plan names each clause of their request that no criterion checks before work starts, and the unproven rollup splits meaning by whose words the clause is, the user's or Sampo's own notes",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
@@ -4060,12 +4060,12 @@
       {
        "id": "T-2916",
        "title": "The night shift runs on the local models: sampo night adds zero-dollar moons grow and moons funnel jobs while an own or loopback model answers and the catalogue is under its 10,000 target, local only, never falling back to a paid model",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
-       "current": "red tests: jobs listed with a fake answering profile, absent without one, absent at target, absent when sensitive; local-only stops instead of a Haiku call"
+       "done": 1,
+       "current": "the local-only switch in moonscale._ask through grow and funnel and their flags"
       },
       {
        "id": "T-1476",
@@ -4123,12 +4123,12 @@
       {
        "id": "T-2917",
        "title": "Small-model playbooks, kept on measured lift: sampo playbooks eval runs on a local profile, a local writer drafts a small-model variant of a playbook and its eval briefs, and a variant is kept only when it lifts that model at least as much as the original does",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 5,
-       "done": 0,
-       "current": "red tests: local eval path, keep-on-lift and refuse-on-drop, brief drafting from the original only, show by profile"
+       "done": 1,
+       "current": "local real_model through models.complete; the small writer and its brief drafter; the keep rule"
       },
       {
        "id": "T-2878",
@@ -4160,12 +4160,12 @@
       {
        "id": "T-2918",
        "title": "M-02 slice: sampo regen PATH deletes one of Sampo's own modules in a throwaway worktree and regrows it on the local 27B from its intent alone (its briefs, its map entry, its tests, the names its callers use), landing nothing, reporting each proof; run over every small leaf module, and the gen-4 ecology moons filed in the catalogue",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 0,
-       "current": "red tests: throwaway worktree only, the prompt holds intent and no code, a bad reply refused, the main checkout untouched"
+       "done": 1,
+       "current": "regen: intent gathering from briefs, the map and the tests; the model call through models.complete; the test run in the worktree"
       },
       {
        "id": "T-2679",
@@ -4180,12 +4180,12 @@
       {
        "id": "T-2916",
        "title": "The night shift runs on the local models: sampo night adds zero-dollar moons grow and moons funnel jobs while an own or loopback model answers and the catalogue is under its 10,000 target, local only, never falling back to a paid model",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 0,
-       "current": "red tests: jobs listed with a fake answering profile, absent without one, absent at target, absent when sensitive; local-only stops instead of a Haiku call"
+       "done": 1,
+       "current": "the local-only switch in moonscale._ask through grow and funnel and their flags"
       },
       {
        "id": "T-2878",
@@ -4200,12 +4200,12 @@
       {
        "id": "T-2917",
        "title": "Small-model playbooks, kept on measured lift: sampo playbooks eval runs on a local profile, a local writer drafts a small-model variant of a playbook and its eval briefs, and a variant is kept only when it lifts that model at least as much as the original does",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "M",
        "steps": 5,
-       "done": 0,
-       "current": "red tests: local eval path, keep-on-lift and refuse-on-drop, brief drafting from the original only, show by profile"
+       "done": 1,
+       "current": "local real_model through models.complete; the small writer and its brief drafter; the keep rule"
       },
       {
        "id": "T-0271",
@@ -24250,6 +24250,564 @@
     "vuln"
    ],
    "author": "self"
+  },
+  {
+   "run": "s0-001",
+   "agent": "smith",
+   "keyed": 8,
+   "found": 0,
+   "false_alarms": 0,
+   "exam_defects": 0,
+   "fixable": 8,
+   "fixed": 0,
+   "tf_keyed": 4,
+   "tf_first": 0,
+   "readings_keyed": 2,
+   "readings_hit": 0,
+   "missing_keyed": 1,
+   "missing_hit": 1,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 10,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 10,
+   "conf_missing": 10,
+   "brier_sum": 2.5,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      1
+     ],
+     "js": [
+      0,
+      2
+     ],
+     "rust": [
+      0,
+      3
+     ],
+     "ruby": [
+      0,
+      1
+     ],
+     "python": [
+      0,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      1
+     ],
+     "vuln": [
+      0,
+      1
+     ],
+     "untested": [
+      0,
+      1
+     ],
+     "slow": [
+      0,
+      2
+     ],
+     "docs": [
+      0,
+      1
+     ],
+     "flaky": [
+      0,
+      1
+     ],
+     "dep": [
+      0,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 8,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 8,
+    "fixed": 0,
+    "tf_keyed": 4,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 10,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 10,
+    "conf_missing": 10,
+    "brier_sum": 2.5,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       1
+      ],
+      "js": [
+       0,
+       2
+      ],
+      "rust": [
+       0,
+       3
+      ],
+      "ruby": [
+       0,
+       1
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ],
+      "vuln": [
+       0,
+       1
+      ],
+      "untested": [
+       0,
+       1
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       1
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "brier": 0.25,
+    "closed_share": 0.1
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-rust-15f302"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "brier": 0.25,
+   "closed_share": 0.1,
+   "model": "gpu-gemma12-nothink",
+   "at": "2026-11-04T08:10:47Z",
+   "gen": 4,
+   "split": "train",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s0-001",
+   "agent": "smith",
+   "keyed": 8,
+   "found": 0,
+   "false_alarms": 0,
+   "exam_defects": 0,
+   "fixable": 8,
+   "fixed": 0,
+   "tf_keyed": 4,
+   "tf_first": 0,
+   "readings_keyed": 2,
+   "readings_hit": 0,
+   "missing_keyed": 1,
+   "missing_hit": 1,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 10,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 10,
+   "conf_missing": 10,
+   "brier_sum": 2.5,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      1
+     ],
+     "js": [
+      0,
+      2
+     ],
+     "rust": [
+      0,
+      3
+     ],
+     "ruby": [
+      0,
+      1
+     ],
+     "python": [
+      0,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      1
+     ],
+     "vuln": [
+      0,
+      1
+     ],
+     "untested": [
+      0,
+      1
+     ],
+     "slow": [
+      0,
+      2
+     ],
+     "docs": [
+      0,
+      1
+     ],
+     "flaky": [
+      0,
+      1
+     ],
+     "dep": [
+      0,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 8,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 8,
+    "fixed": 0,
+    "tf_keyed": 4,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 10,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 10,
+    "conf_missing": 10,
+    "brier_sum": 2.5,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       1
+      ],
+      "js": [
+       0,
+       2
+      ],
+      "rust": [
+       0,
+       3
+      ],
+      "ruby": [
+       0,
+       1
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ],
+      "vuln": [
+       0,
+       1
+      ],
+      "untested": [
+       0,
+       1
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       1
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "brier": 0.25,
+    "closed_share": 0.1
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-rust-15f302"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "brier": 0.25,
+   "closed_share": 0.1,
+   "model": "gpu-gemma12-nothink",
+   "at": "2026-11-04T08:10:52Z",
+   "gen": 4,
+   "split": "train",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
   }
  ],
  "coverage": {
@@ -28027,12 +28585,12 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 8620,
+   "generated": 8796,
    "write": {
     "title": 107,
-    "line": 1206,
-    "payoff": 16,
-    "kill test": 24,
+    "line": 1227,
+    "payoff": 17,
+    "kill test": 25,
     "code": 2
    },
    "dups": {
@@ -28047,7 +28605,7 @@
    },
    "merged": 3,
    "kept": 197,
-   "pending": 3096
+   "pending": 3249
   },
   "families": [
    {
