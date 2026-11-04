@@ -40,6 +40,26 @@ class Friction(ForemanTestCase):
         self.assertNotIn("steer: make it faster", out)  # the next pass starts after this one
         self.assertIn("Gates by path", out)  # and reports what became of the last pass's self items (open)
 
+    def test_classes_group_todays_refusals_with_a_count_and_whether_they_repeated(self):  # T-2992
+        from sampo import core as c
+        p = c.find_project(self.repo)
+        for _ in range(2):
+            self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "npm publish"}})
+        for _ in range(3):
+            c.log_event(p, "self_change_refused", task="T-1", data={"sha": "a", "rows": []})
+        c.log_event(p, "enforce", task="T-1", data={"kind": "merge_refused", "reason": "guard: git push"})
+        c.log_event(p, "first_brief_close_failed", task="T-2", data={"cmd": "x", "tail": "y"})
+        c.log_event(p, "task_done", task="T-3")  # not a refusal
+        got = {r["class"]: r for r in first(self.fm("friction", "--classes", "--json").stdout)["classes"]}
+        self.assertEqual(got["self-change hold"]["count"], 3)
+        self.assertTrue(got["self-change hold"]["repeated"])
+        self.assertEqual(got["merge refused: guard: git push"]["count"], 1)
+        self.assertFalse(got["merge refused: guard: git push"]["repeated"])
+        self.assertIn("close failed", got)
+        self.assertEqual(sum(1 for k in got if k.startswith("guard block")), 1)
+        self.assertEqual(next(v for k, v in got.items() if k.startswith("guard block"))["count"], 2)
+        self.assertIn("×3 (repeated)", self.fm("friction", "--classes").stdout)
+
     def test_failed_calls_say_why_and_a_background_wait_isnt_a_stop(self):
         # T-0301: five failed Reads of different scratch files read as one cause, and a wait isn't friction
         for i in range(3):

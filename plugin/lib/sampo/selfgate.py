@@ -21,7 +21,8 @@ CASES = ("plugin/tests/fixtures/guard_cases.jsonl", "plugin/tests/fixtures/guard
 HARNESS = ("lib/sampo/replay.py", "tests/bench_hooks.py", "tests/fixtures/hook_payloads.json")  # base's copies judge
 RISE = 0.15  # a hook's p95 rise that refuses (T-2358's latency band)
 FLOOR_MS = 5.0  # under this, a rise is jitter whatever its share
-RUNS = 10  # bench runs per tree; a refusal is benched again and must hold twice
+RUNS = 10  # bench runs per tree per pair
+PAIRS, HOLD = 3, 2  # T-2992: base and branch benched in turn this many times; a rise must show in HOLD of them
 WALL_RISE, WALL_FLOOR_MS = 1.0, 100.0  # T-2363: on a loaded bench, a wall-time rise this big is a hook that waits
 CORPUS = 2000  # recent real commands replayed, newest first (fmreplay.corpus)
 _RUNNER = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nfrom sampo import replay as r\n"
@@ -115,6 +116,16 @@ def _bench(plugin):
     if not isinstance(got, dict):
         raise RuntimeError(f"hook bench: {r.stderr.strip()[-160:]}")
     return got.get("bench") or {}, got.get("injected") or {}
+
+
+def _paired(base, new):
+    """T-2992: (held rows, base's injected chars, branch's) from PAIRS benches of base then branch in turn, so load that
+    comes and goes lands on both; a hook's rise holds when it shows in HOLD pairs (a one-off spike doesn't)."""
+    runs = [(_bench(base), _bench(new)) for _ in range(PAIRS)]
+    seen = [_slower(a[0], z[0]) for a, z in runs]
+    rows = {k: next(s[k] for s in seen if k in s) for k in {k for s in seen for k in s}
+            if sum(k in s for s in seen) >= HOLD}
+    return rows, runs[0][0][1], runs[0][1][1]
 
 
 def _ms(v, loaded):
@@ -219,12 +230,7 @@ def gate(p, b, main, ref, files):
         from sampo import doctor
         f0, f1 = _footprint(base, {}), _footprint(new, {})
         if any(_benched(f) for f in files) or doctor.grown(f0, f1):  # timings, and the injected chars a cut needs
-            (t0, s0), (t1, s1) = _bench(base), _bench(new)
-            slow = _slower(t0, t1)
-            if slow:  # a rise must hold on a second bench of both trees, or it was noise
-                (t0, _), (t1, _) = _bench(base), _bench(new)
-                again = _slower(t0, t1)
-                slow = {k: again[k] for k in slow if k in again}
+            slow, s0, s1 = _paired(base, new)
             out += list(slow.values())
             f0, f1 = _footprint(base, s0), _footprint(new, s1)
         out += [f"footprint {k} {w} -> {cur} (+{int((cur - w) * 100 // w)}%) with no always-on cut to pay for it"

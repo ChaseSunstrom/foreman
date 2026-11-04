@@ -1393,6 +1393,20 @@ def reviewer_findings(msg, cap=30):
     return out
 
 
+STANDING = ("- models advise, proof decides: no model gates a close or a merge",  # T-2992
+            "- Sampo's models learn only from outcomes, the user's words and tests' verdicts, never from Claude's output",
+            "- nothing a user already has may break: keep an alias or add a migration",
+            "- a new plugin/lib module needs its fm shim, a MASTER.md bullet and a docs/map line",
+            "- a criterion never names state/ by a repo-relative path")
+
+
+def standing_decisions(p, top=8):
+    """T-2992: [(date, text)] for the newest decisions whose text says "standing" and no later row settled."""
+    rows = c._decision_rows(p)
+    return [(d, c.fit(" ".join(c.plain(t).split()), 240)) for i, (d, _, t) in enumerate(rows)
+            if re.search(r"\bstanding\b", t, re.I) and not c._settled(rows, i)][-top:]
+
+
 def defect_classes(p, days=30, top=5):
     """Lines for the defect classes reviewers confirmed in the last `days` days: class, count and one 100-char example."""
     seen, rows, no = {}, {}, []
@@ -1694,6 +1708,8 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
     if keeps:
         parts += ["## Defects this project keeps shipping", "Reviewers confirmed these in the last 30 days; check your "
                   "diff for each before you report:", *keeps, ""]
+    parts += ["## Standing rules", "Checked before the merge (sampo check --affected runs their tests); break none:",
+              *STANDING, *[f"- {d}: {t}" for d, t in standing_decisions(p)], ""]
     parts.append(contract(b.id, base, p.root))
     path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     text = c.redact("\n".join(parts)) + "\n"

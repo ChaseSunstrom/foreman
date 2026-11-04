@@ -464,6 +464,20 @@ class Lanes(ForemanTestCase):
             (self.assertIn if type_ == "CLEAN" else self.assertNotIn)(lock.format(tid), text)
             self.fm("lane", "rm", tid)
 
+    def test_the_brief_carries_the_standing_rules_and_the_decisions_that_say_standing(self):  # T-2992
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "decisions.md"), "a") as f:
+            f.write("| 2026-01-02 | A standing rule: ship small | why |\n| 2026-01-03 | Use tabs | why |\n")
+        tid = first(self.fm("task", "new", "x", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                            "--step", "s", "--json").stdout)["id"]
+        with open(json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"]) as f:
+            text = f.read()
+        self.assertIn("## Standing rules", text)
+        for want in ("models advise, proof decides", "never from Claude's output", "nothing a user already has may break",
+                     "fm shim", "MASTER.md", "never names state/", "ship small"):
+            self.assertIn(want, text)
+        self.assertNotIn("Use tabs", text)
+
     def test_lane_friction_cap_unused_slot_and_a_gone_worktree(self):
         # T-1709: the drive compared to the default 2, not fm lane max; an unused brief and a gone worktree said nothing
         from sampo import hooks
@@ -1786,7 +1800,8 @@ class SelfChangeGate(ForemanTestCase):
 
         def bench(tree):
             calls.append(tree)
-            ms = (base, branch, *(again or (base, branch)))[len(calls) - 1]
+            i = len(calls) - 1  # T-2992: base and branch in turn; `again` is what pairs 2 and 3 read
+            ms = ((base, branch) if i < 2 else again or (base, branch))[i % 2]
             return {"Stop": {"p95": ms, "budget": 150}}, {"SessionStart": 2000}
         return bench
 

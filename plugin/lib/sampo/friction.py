@@ -401,9 +401,33 @@ def minutes(days=7):
             "hook time": round(ms("hook_ms") / 60000, 1)}
 
 
+def classes(p, day=None):
+    """T-2992: [{class, count, repeated}] for today's (UTC) refusals, most first: guard blocks by category, merge
+    refusals by reason, self-change holds, failed closes. A class that happened twice or more repeated."""
+    day = day or c.now()[:10]
+    n = collections.Counter()
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 30000):
+        if e.get("kind") == "guard_block" and str(e.get("ts") or "").startswith(day):
+            n[f"guard block: {c.plain(str(e.get('category') or '?'))}"] += 1
+    for e in c.ledger_events(p, ("enforce", "self_change_refused", "first_brief_close_failed"), since=day):
+        d, ev = e.get("data") or {}, e.get("event")
+        if ev == "enforce" and d.get("kind") == "merge_refused":
+            n["merge refused: " + c.fit(re.sub(r"\d+", "N", c.plain(str(d.get("reason") or "?"))), 60)] += 1
+        elif ev == "self_change_refused":
+            n["self-change hold"] += 1
+        elif ev == "first_brief_close_failed":
+            n["close failed"] += 1
+    return [{"class": k, "count": v, "repeated": v > 1} for k, v in n.most_common()]
+
+
 def cmd_friction(args):
     from sampo import cli
     p = cli.resolve(args)
+    if getattr(args, "classes", False):
+        rows = classes(p)
+        return cli.out(args, {"classes": rows}, "Today's refusals by class:\n" + "\n".join(
+            f"  {r['class']} ×{r['count']}{' (repeated)' if r['repeated'] else ''}" for r in rows)
+            if rows else "No refusals today.")
     if getattr(args, "minutes", False):
         by = minutes()
         total = round(sum(by.values()), 1)
