@@ -383,7 +383,7 @@ def _local_context(name, base_url, model, row):
 
 def _local(name=None):
     """Reachable local servers, probed lazily in LOCAL's order (up to 0.3 s each on a filtered port)."""
-    for n, u in LOCAL:
+    for n, u in LOCAL if not os.environ.get("FOREMAN_NO_LOCAL_MODELS") else ():  # tests: a server on the box is no model
         if name is None or n == name:
             p = _probe(n, u)
             if p:

@@ -132,7 +132,7 @@ class CodeCase(ForemanTestCase):
         xdg = {k: os.path.join(self.fake_home, d) for k, d in (  # T-1442: no ~/.config default can reach the real one
             ("XDG_CONFIG_HOME", ".config"), ("XDG_DATA_HOME", ".local/share"), ("XDG_STATE_HOME", ".local/state"),
             ("XDG_CACHE_HOME", ".cache"))}
-        e = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1", HOME=self.fake_home, **{**xdg, **(extra or {})})
+        e = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1", FOREMAN_NO_LOCAL_MODELS="1", HOME=self.fake_home, **{**xdg, **(extra or {})})
         e.pop("CLAUDE_CODE_SESSION_ID", None)
         return e
 
