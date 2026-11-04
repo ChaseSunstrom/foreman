@@ -9,6 +9,7 @@ import contextlib
 import datetime
 import difflib
 import errno
+import fcntl
 import glob
 import hashlib
 import json
@@ -3859,12 +3860,37 @@ def _jobs(n):
     return n
 
 
+LOCK = ".lock"
+
+
 def _answers(p, run, agent):
     return os.path.join(root(p), run, "answers", agent)
 
 
 def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, timeout=20, request=None, jobs=1, planner=None,
               reason=None):
+    """T-3029: one run of a run's agent at a time. An exclusive flock on answers/<agent>/.lock (the kernel drops it when
+    the process dies) refuses a second run before any scenario starts, naming the holder."""
+    d = _answers(p, run, agent)
+    if not os.path.isdir(os.path.join(root(p), run)) or agent not in {*AGENTS, *SESSIONS, *LOCAL}:  # refused below as before
+        return _run_agent(p, run, agent, split, limit, budget, model, timeout, request, jobs, planner, reason)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, LOCK), "a+", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            lock.seek(0)
+            who = re.fullmatch(r"(\d+) (.*)", lock.read().strip())
+            raise ValueError(f"another sampo exam run of {run} {agent} is running"
+                             + (f" (pid {who[1]}, model {who[2]})" if who else "") + ": run arms one after another") from None
+        lock.seek(0)
+        lock.truncate()
+        lock.write(f"{os.getpid()} {c.plain(model or 'default')[:60]}")
+        lock.flush()
+        return _run_agent(p, run, agent, split, limit, budget, model, timeout, request, jobs, planner, reason)
+
+
+def _run_agent(p, run, agent, split, limit, budget, model, timeout, request, jobs, planner, reason):
     """Answers from one agent on the run's scenarios (split, then the first `limit`), then the grade. A session arm runs
     `jobs` scenarios at a time (default 1) and defaults to 3 (ponytail: a spend guard; --limit raises it); kinds take
     turns, so a short sample still spans them."""
@@ -3898,7 +3924,10 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
     if agent in SESSIONS:
         sbudget.check("exam-arm", sbudget.estimate("exam-arm", len(picked), min(budget or 0.5, 0.5)),
                        "a smaller --limit")  # the user's own fm budget cap; T-2179: no per-session dollar cap by default
-    shutil.rmtree(_answers(p, run, agent), ignore_errors=True)  # the grade is this run's answers only
+    for name in os.listdir(_answers(p, run, agent)):  # the grade is this run's answers only; the held lock stays
+        if name != LOCK:
+            full = os.path.join(_answers(p, run, agent), name)
+            shutil.rmtree(full, ignore_errors=True) if os.path.isdir(full) else os.remove(full)
     try:
         os.remove(os.path.join(root(p), run, "work", agent, PRUNED))  # T-2568: a rerun's work copies are fresh
     except FileNotFoundError:

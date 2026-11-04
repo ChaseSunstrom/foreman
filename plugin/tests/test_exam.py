@@ -1014,6 +1014,22 @@ class ExamAuthors(ForemanTestCase):
         r = self.fm("exam", "run", run, "--agent", "plain", "--jobs", "0", env=env, check=False)
         self.assertIn("--jobs", r.stderr)  # a count under 1 is refused before any session
 
+    def test_a_second_run_of_the_same_run_and_agent_is_refused_while_one_holds_it(self):  # T-3029
+        import fcntl
+        run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")["run"]
+        answers = os.path.join(os.path.dirname(os.path.dirname(self.fm_json("genesis")["dir"])), "exam", run, "answers", "plain")
+        os.makedirs(answers)
+        with open(os.path.join(answers, ".lock"), "w") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            held.write("4242 haiku")
+            held.flush()
+            r = self.fm("exam", "run", run, "--agent", "plain", "--limit", "1", "--model", "sonnet", env=self.env, check=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("pid 4242, model haiku", r.stderr)
+            self.assertFalse(os.path.exists(self.log))  # no scenario ran
+        r = self.fm_json("exam", "run", run, "--agent", "plain", "--limit", "1", env=self.env)  # released: it goes ahead
+        self.assertEqual(r["scenarios"], 1)
+
     def test_a_reply_with_no_findings_object_gets_one_more_turn_for_it(self):
         run = self.fm_json("exam", "gen", "--seed", "2", "--per-kind", "3", "--lang", "python", "--kind", "bug")["run"]
         r = self.fm_json("exam", "run", run, "--agent", "foreman", "--split", "holdout", "--limit", "1",
