@@ -984,6 +984,7 @@ class Run:
         tools = TOOLS if profile.get("tools") else None
         if tools and self.read_only:
             tools = [t for t in TOOLS if t["name"] in ("read", "search", "done")]
+        seen = {}  # T-2966: (action, target) -> times, this call of the step
         while True:
             if self.turns >= self.max_steps:
                 raise CodeError(f"stopped: the model used all {self.max_steps} turns (--max-steps) before {name} was "
@@ -1016,6 +1017,9 @@ class Run:
                 act = v.pop("action")
                 result, finished = self.do(act, v)
                 self.add(name, {"role": "user", "content": f"Result of {act}:\n{self.fence(result)}"})
+            seen[self.last_act] = seen.get(self.last_act, 0) + 1
+            if seen[self.last_act] == 3 and not finished:  # T-2966: once a key, as louhi counts it
+                finished = self.loop_break(name, profile, self.last_act, tools)
             if finished:
                 break
         self.done.add(name)
@@ -1311,7 +1315,39 @@ class Run:
             f" ({_one_line(result, 100)})" if state != "ok" else ""), action=name, target=target[:200], result=state,
             detail=result[:1500])
         self.log(kind="action", action=name, result=state)
+        self.last_act = (name, target[:200])  # T-2966: the key louhi's loop class reads
         return result, fin
+
+    def loop_break(self, name, profile, key, tools):
+        """T-2966: the third identical action in a step. One turn to --planner (else --escalate) with the step's
+        messages and a note naming the repetition; its action runs and the actor is told. With neither, the actor
+        gets the note. Returns whether the step finished."""
+        note = (f"You have now done the same action ({key[0]} {key[1]!r}) three times. Repeating it won't change the "
+                "result: take a different action, or done if the work is finished.")
+        other = self.planner or self.escalate
+        self.log(kind="loop_break", phase=name, action=key[0], target=key[1], by=other and other["name"])
+        self.emit("note", f"  {key[0]} {_one_line(key[1], 60)}: three times; "
+                  + (f"{other['name']} takes one turn" if other else "the actor is told"), quiet=True)
+        if not other:
+            self.add(name, {"role": "user", "content": note})
+            return False
+        self.check_cap(name)
+        self.turns += 1
+        r = m.complete(self.capped(other), fit(self, other, trim(self.msgs[name] + [{"role": "user", "content": note}])),
+                       tools=tools if other.get("tools") else None, max_tokens=MAX_TOKENS)
+        self.usage(r, other, name)
+        if r["tool_calls"]:
+            act, args = r["tool_calls"][0]["name"], r["tool_calls"][0]["args"]
+        else:
+            v = m.extract_json(r["text"])
+            if not isinstance(v, dict) or not isinstance(v.get("action"), str):
+                self.add(name, {"role": "user", "content": note})
+                return False
+            act, args = v.pop("action"), v
+        result, fin = self.do(act, args)
+        self.add(name, {"role": "user", "content": f"{note} {other['name']} took this action for you: {act}.\n"
+                                                    f"Result:\n{self.fence(result)}"})
+        return fin
 
     def verify(self, label):
         """[(n, cmd, output)] of the criteria whose verify failed; each run is recorded as its evidence."""
