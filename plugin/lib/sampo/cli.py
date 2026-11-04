@@ -8083,7 +8083,8 @@ def _build_parser(only=None):
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
                                                     "simplicity, bold bets")
-    s.add_argument("--model", default="sonnet")
+    s.add_argument("--model", default="sonnet", help="a claude model, or `local` (T-2910): the first usable own or "
+                   "loopback generative profile answers every child, Haiku if none does (a sensitive project: loopback only)")
     s.add_argument("--rounds", type=int, default=1, help="super brainstorm: each round builds on every idea so far")
     s.add_argument("--dry", type=int, default=3, help="stop when a later round adds fewer new ideas than this")
     s.add_argument("--seen", action="append", help="an earlier ideas.md whose ideas this run must go past (repeatable)")

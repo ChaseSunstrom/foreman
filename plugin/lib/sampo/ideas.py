@@ -772,9 +772,37 @@ FALSIFY = ("You kill ideas fast. For each numbered idea, give the quickest obser
            "it isn't worth building. Output only lines `N: <one line>`.")
 
 
+def _child(args, p, system, prompt, detail):
+    """T-2910: one brainstorm child's text: --model local goes through moonscale's routing (the first usable own or
+    loopback generative profile, else Haiku; a sensitive project never leaves loopback) and books the answering model
+    in args.booked; any other model runs `claude -p`."""
+    if args.model != "local":
+        return run_child("ideas", system, prompt, args.model, args.timeout, project=p.slug, detail=detail)
+    from sampo import moonscale  # lazy: moonscale imports this module at the top
+    text, model = moonscale._ask(p, system, prompt, feature="ideas")
+    args.booked.append({"detail": detail, "model": model})  # list.append is atomic: the round's threads share it
+    return text
+
+
+def _local_round(lenses, pack, system, args):
+    """T-2910: [(text or None, error)] for a round's lenses, one thread per slot of the profile that answers first."""
+    from concurrent.futures import ThreadPoolExecutor
+    from sampo import moonscale
+    p, sys_text = args.proj, system_text(system, pack)
+    prof = moonscale._local(bool(c.read_meta(p).get("sensitive")))
+
+    def one(lens):
+        try:
+            return _child(args, p, sys_text, lens_prompt(lens), lens), None
+        except ValueError as e:  # a budget refusal, a sensitive project with no loopback model, an empty answer
+            return None, str(e)
+    with ThreadPoolExecutor(max(1, min(len(lenses), (prof or {}).get("slots", 1)))) as ex:
+        return list(ex.map(one, lenses))
+
+
 def _falsify(titles, args, p):
     prompt = "KILL IT FAST\n" + "\n".join(f"{i}: {t}" for i, t in enumerate(titles[:60], 1))
-    text = run_child("ideas", FALSIFY, prompt, args.model, args.timeout, project=p.slug, detail="falsify")
+    text = _child(args, p, FALSIFY, prompt, "falsify")
     found = {int(m.group(1)): c.fit(c.plain(m.group(2)), 200) for m in re.finditer(r"(?m)^\s*(\d+):\s*(.+)$", text)}
     return {titles[i - 1]: f for i, f in found.items() if 0 < i <= min(len(titles), 60)}
 
@@ -782,7 +810,7 @@ def _falsify(titles, args, p):
 def _crossbreed(titles, system, args, p):
     prompt = ("CROSS-BREED: combine the strongest of these ideas into 3-6 new ideas worth more together, in the "
               "required format.\n" + "\n".join(f"- {t}" for t in titles[:30]))  # not a list: titles for a model prompt
-    text = run_child("ideas", system, prompt, args.model, args.timeout, project=p.slug, detail="crossbreed")
+    text = _child(args, p, system, prompt, "crossbreed")
     return [c.plain(t).strip() for t in _TITLE.findall(c.redact(text))]
 
 
@@ -794,8 +822,9 @@ def _run_round(lenses, pack, system, args, out_dir, prefix, cli, cache=None):
             path = os.path.join(d, "system.md")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(system_text(system, pack))
-            answers = run_children([(child_cmd(args.model, None, path), lens_prompt(lens), lens) for lens in lenses],
-                                   args.timeout, "ideas", warm=warm, cache=cache)
+            answers = _local_round(lenses, pack, system, args) if args.model == "local" else run_children(
+                [(child_cmd(args.model, None, path), lens_prompt(lens), lens) for lens in lenses],
+                args.timeout, "ideas", warm=warm, cache=cache)
     except OSError as e:
         raise cli.UsageError(str(e))
     for i, (lens, (out, why)) in enumerate(zip(lenses, answers), 1):
@@ -823,6 +852,7 @@ def cmd_ideas(args):
     c.refuse_if_paused()  # T-0591
     p = cli.resolve(args)
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
+    args.proj, args.booked = p, []  # T-2910: --model local: the project, and the model that answered each child
     pack_sha = hashlib.sha256(pack.encode()).hexdigest()  # T-0959: the pack as given, for the manifest
     voice = user_voice(p)
     pack += "" if voice.strip() and voice.strip() in pack else voice  # T-2249: fm mission's pack carries it already
@@ -942,16 +972,19 @@ def cmd_ideas(args):
                    "questions": list(dict.fromkeys(q for r in results if r["ok"] for q in r.get("questions", [])))}, f)
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:  # T-0959: what made this run
         json.dump({"pack_sha256": pack_sha, "model": args.model, "lenses": lenses, "seen": args.seen or [],
-                   "rounds": rounds, "created": c.now(), **({"cache": cache} if any(cache.values()) else {})}, f)
+                   "rounds": rounds, "created": c.now(), **({"cache": cache} if any(cache.values()) else {}),
+                   **({"children": args.booked} if args.model == "local" else {})}, f)
+    haiku = sum(b["model"] == "haiku" for b in args.booked)
     failed = [f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
     with c.lock(p.dir):
         c.log_event(p, "ideas", data={"dir": out_dir, "lenses": lenses, "rounds": rounds, "ideas": len(titles) - known,
                                       "failed": failed}, session=cli.session())
-    cli.out(args, {"dir": out_dir, "rounds": rounds, "ideas": len(titles) - known, "results": results, "yield": lens_yield},
+    cli.out(args, {"dir": out_dir, "rounds": rounds, "ideas": len(titles) - known, "results": results, "yield": lens_yield, "booked": args.booked},
               f"Brainstorm ideas in {out_dir} ({len(titles) - known} new distinct over {rounds} round(s); index: ideas.md):\n"
               + "\n".join(f"  {('part' if r['partial'] else 'ok  ') if r['ok'] else 'FAIL'}{'r' + str(r['round']) + ' ' if args.rounds > 1 else ''}"
                           f"{r['lens']}: {r['file'] if r['ok'] else r['error']}" for r in results)
               + (f"\n  dry after round {rounds}: it added {len(by_round[-1])} new" if rounds < args.rounds else "")
+              + (f"\n  no local model answered {haiku} of {len(args.booked)} children: Haiku did (--model local)" if haiku else "")
               + (f"\n  prompt cache: {cache['read']} tokens read, {cache['written']} written" if any(cache.values()) else ""))
     if failed:
         raise cli.UsageError(f"brainstorm lens(es) failed: {', '.join(failed)} (the others are saved)")

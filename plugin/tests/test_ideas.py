@@ -407,3 +407,63 @@ class SeenIndex(ForemanTestCase):
         # T-1056: coverage and kill bullets were read back as idea titles
         from sampo import ideas
         self.assertEqual(ideas.seen_titles(self.INDEX), ["Cache the parser", "Quote shell paths", "Warm the cache at start"])
+
+
+class IdeasLocal(Stubbed):  # T-2910: --model local answers every child through moonscale's routing
+    PROFILE = {"name": "jarvis", "kind": "openai", "base_url": "https://127.0.0.1:9/v1", "model": "m",
+               "key_env": "MOONS_TEST_KEY", "context": 8192, "tools": False, "slots": 2}
+
+    def run_local(self, up=True, sensitive=False, host="127.0.0.1"):
+        import argparse
+        from unittest import mock
+        from sampo import ideas, models, moonscale
+        if sensitive:
+            self.fm("sensitive", "on")
+        args = argparse.Namespace(pack=self.pack, lens=["reliability", "bold bets"], model="local", rounds=1, dry=3,
+                                  seen=None, seen_latest=None, deepen=1, falsify=True, crossbreed=True, timeout=30,
+                                  project=c.find_project(self.repo).slug, json=False)
+        asked = []
+
+        def complete(prof, msgs, **k):
+            asked.append(msgs[-1]["content"])
+            if msgs[-1]["content"].startswith("KILL"):
+                return {"text": "1: run it once"}
+            return {"text": "- **Local idea %d** — FEATURE — value 4 — effort S — risk low — category: speed" % len(asked)}
+        with mock.patch.dict(os.environ, {"MOONS_LOCAL": "jarvis", "MOONS_TEST_KEY": "k", **self.env}), \
+                mock.patch.object(models, "resolve", return_value=dict(self.PROFILE, base_url=f"https://{host}:9/v1", own=True)), \
+                mock.patch.object(moonscale, "_up", return_value=up), \
+                mock.patch.object(models, "complete", side_effect=complete) as comp, \
+                mock.patch("sys.stdout") as out:
+            try:
+                ideas.cmd_ideas(args)
+                err = None
+            except Exception as e:
+                err = e
+        return comp, "".join(x.args[0] for x in out.write.call_args_list), err
+
+    def manifest(self):
+        import glob
+        m = sorted(glob.glob(os.path.join(c.find_project(self.repo).dir, "research", "brainstorm-*", "manifest.json")))[-1]
+        return json.loads(read_text(m))
+
+    def test_every_child_goes_to_the_local_profile_and_is_booked(self):
+        comp, _, err = self.run_local()
+        self.assertIsNone(err, err)
+        self.assertGreaterEqual(comp.call_count, 5, "2 lenses, a deepen, a falsify and a crossbreed")
+        self.assertFalse(os.path.exists(self.log), "no claude -p child ran")
+        kids = self.manifest()["children"]
+        self.assertEqual(len(kids), comp.call_count)
+        self.assertEqual({k["model"] for k in kids}, {"jarvis"})
+
+    def test_no_local_model_falls_back_to_haiku_and_says_so(self):
+        _, said, err = self.run_local(up=False)
+        self.assertIsNone(err, err)
+        self.assertTrue(self.calls(), "claude -p answered")
+        self.assertIn("Haiku", said)
+        self.assertEqual({k["model"] for k in self.manifest()["children"]}, {"haiku"})
+
+    def test_a_sensitive_project_fails_closed_with_no_loopback(self):
+        comp, said, err = self.run_local(sensitive=True, host="llm.example.com")  # an own profile, but not loopback
+        comp.assert_not_called()
+        self.assertFalse(os.path.exists(self.log), "no cloud child")
+        self.assertIn("sensitive", said + str(err))
