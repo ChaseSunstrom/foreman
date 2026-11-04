@@ -96,6 +96,12 @@ class Files(unittest.TestCase):
         for i in ("jobs-list", "queue-list", "closes-list", "sessions-list", "projects-list"):
             self.assertRegex(html, rf'id="{i}" tabindex="0" aria-label="[^"]+"')
 
+    def test_phone_controls_are_big_enough(self):  # T-3026 review: iOS zooms into a field under 16px
+        css = text("live.css")
+        phone = css[css.index("max-width:700px"):]
+        self.assertRegex(phone, r"\.note-in\{[^}]*font-size:16px")
+        self.assertRegex(phone, r"\.act\{[^}]*min-height:28px")
+
     def test_reduced_motion_is_honoured_by_the_style_and_the_script(self):
         self.assertIn("prefers-reduced-motion", text("live.css"))
         self.assertIn("prefers-reduced-motion", text("live.js"))
@@ -125,6 +131,23 @@ class Stand(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):  # T-3026: /api/act as the page meets it: record headers and body; "forbid" in a note is a 403
+        srv = self.server
+        raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            body = None
+        srv.posts.append({"path": self.path, "type": self.headers.get("Content-Type"), "nonce": self.headers.get("X-Sampo-Nonce"),
+                          "body": body})
+        if self.path != "/api/act" or not isinstance(body, dict):
+            return self.send(404, b"", "text/plain")
+        if body.get("action") == "resume":
+            time.sleep(0.6)  # in flight long enough for a second press to be seen refused
+        if body.get("text") == "forbid":
+            return self.send(403, json.dumps({"ok": False, "error": "bad nonce"}).encode(), TYPES[".json"])
+        self.send(200, json.dumps({"ok": True, "exit": 0, "action": body.get("action")}).encode(), TYPES[".json"])
+
     def do_GET(self):
         srv, path = self.server, self.path.split("?")[0]
         if path == "/":
@@ -132,7 +155,8 @@ class Stand(BaseHTTPRequestHandler):
             csp = (f"default-src 'none'; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'nonce-{nonce}'; "
                    "img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; "
                    "frame-ancestors 'none'")
-            page = text("index.html").replace("__NONCE__", nonce).encode()
+            page = text("index.html").replace("__NONCE__", nonce).replace(
+                "</head>", f'<meta name="sampo-act" content="{srv.token}">\n</head>').encode()
             return self.send(200, page, TYPES[".html"], [("Content-Security-Policy", csp)])
         if path.startswith("/static/"):
             name = path[len("/static/"):]
@@ -192,7 +216,7 @@ def serve():
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Stand)
     srv.daemon_threads = True
     srv.snaps, srv.streams, srv.lock, srv.stop = snaps(), 0, threading.Lock(), threading.Event()
-    srv.log = []
+    srv.log, srv.posts, srv.token = [], [], secrets.token_hex(16)
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "live", "machine.json"), encoding="utf-8") as f:
         srv.machine = json.load(f)
     srv.other = json.loads(json.dumps(srv.snaps[-1]))  # another project: its own slug and task at the anvil
@@ -255,6 +279,7 @@ class Page(unittest.TestCase):
             while True:
                 got = b.call("Runtime.evaluate", b.sid, expression=PROBE, returnByValue=True)["result"].get("value") or {}
                 got["reqs"] = list(srv.log)
+                got["posts"], got["token"] = list(srv.posts), srv.token
                 if step and not done(got):
                     step(b, got)
                 if done(got) or time.monotonic() > deadline:
@@ -369,6 +394,113 @@ class Page(unittest.TestCase):
         self.assertEqual(got["motion"], "still")
         self.assertEqual(got["sparks"], 0)
         self.assertGreater(got["lit"], 0, "changes show as highlights")
+
+    def test_the_controls_steer_through_api_act_by_mouse_and_keyboard(self):  # T-3026 part 2
+        ctx = {"s": 0, "t": 0}
+        FOREMAN, SESS = "foreman-4a056f", "e5f6a7b8"
+        drive = f'#projects-list button[data-act^="drive_"][data-target="{FOREMAN}"]'
+        cp = f'#projects-list button[data-act="checkpoint"][data-target="{FOREMAN}"]'
+        note = f'#sessions-list button[data-act="note"][data-target="{SESS}"]'
+        resume = f'#projects-list button[data-act="resume"][data-target="{FOREMAN}"]'
+
+        def step(b, got):
+            ev = lambda js: b.call("Runtime.evaluate", b.sid, expression=js, returnByValue=True)["result"].get("value")
+            focus = lambda sel: ev(f"(document.querySelector({json.dumps(sel)}) || {{focus(){{}}}}).focus()")
+
+            def key(k, code, vk, txt=""):
+                for t in ("keyDown", "keyUp"):
+                    b.call("Input.dispatchKeyEvent", b.sid, type=t, key=k, code=code, windowsVirtualKeyCode=vk,
+                           **({"text": txt} if t == "keyDown" and txt else {}))
+            enter = lambda: key("Enter", "Enter", 13, "\r")
+            space = lambda: key(" ", "Space", 32, " ")
+            status = lambda: ev("document.getElementById('act-status') ? document.getElementById('act-status').textContent : ''")
+            posts, s = got["posts"], ctx["s"]
+            if s == 0 and ev(f"!!document.querySelector({json.dumps(drive)}) && !!document.querySelector({json.dumps(note)})"):
+                focus(f'#projects-list button.pick[data-project="{FOREMAN}"]')  # Tab from the plate's pick lands on a control
+                key("Tab", "Tab", 9)
+                ctx["tab"] = ev("(document.activeElement.dataset||{}).act || ''")
+                ctx["nodrive"] = ev("document.querySelectorAll('#projects-list [data-target=\"broken-000000\"][data-act^=\"drive_\"]').length")
+                ctx["fallback_acts"] = ev("document.querySelectorAll('#projects-list [data-target=\"broken-000000\"]').length")
+                ctx["private"] = ev("document.querySelectorAll('.plate.private [data-act]').length")
+                ctx["role"] = ev("document.getElementById('act-status').getAttribute('role')")
+                ctx["live"] = ev("document.getElementById('act-status').getAttribute('aria-live')")
+                ctx["pressed"] = ev(f"document.querySelector({json.dumps(drive)}).getAttribute('aria-pressed')")
+                focus(drive); enter(); ctx["s"] = 1
+            elif s == 1 and len(posts) >= 1:
+                ctx["status1"] = status(); focus(cp); space(); ctx["s"] = 2
+            elif s == 2 and len(posts) >= 2:  # a double press on resume starts one run: the button is disabled in flight
+                ctx["dbl"] = ev(f"(() => {{ const r = document.querySelector({json.dumps(resume)}); r.click(); r.click(); "
+                                "return r.disabled; })()")
+                ctx["s"] = 21
+            elif s == 21 and len(posts) >= 3 and ev(f"!document.querySelector({json.dumps(resume)}).disabled"):
+                ctx["n_resume"] = len(posts)
+                focus("#act-pause"); enter()  # the first press only arms it
+                ctx["armed"] = ev("document.getElementById('act-pause').textContent")
+                ctx["n_armed"] = len(posts); ctx["t"] = time.monotonic(); ctx["s"] = 3
+            elif s == 3 and time.monotonic() - ctx["t"] > 4.8:
+                ctx["disarmed"] = ev("document.getElementById('act-pause').textContent")
+                ctx["n_disarmed"] = len(posts)
+                focus("#act-pause"); enter(); enter()  # a double press (key repeat) arms but cannot confirm
+                ctx["fast"] = ev("document.getElementById('act-pause').textContent")
+                ctx["t"] = time.monotonic(); ctx["s"] = 31
+            elif s == 31 and time.monotonic() - ctx["t"] > 0.9:
+                ctx["n_fast"] = len(posts)
+                focus("#act-pause"); enter(); ctx["s"] = 4  # after the gap the second press confirms
+            elif s == 4 and len(posts) >= 4:
+                ctx["status4"] = status(); focus("#act-pause-off"); space(); ctx["s"] = 5
+            elif s == 5 and len(posts) >= 5:
+                focus(note); enter()  # opens the field; Escape cancels it
+                ctx["field"] = ev("!!document.querySelector('#sessions-list input')")
+                key("Escape", "Escape", 27)
+                ctx["gone"] = ev("!document.querySelector('#sessions-list input')")
+                ctx["back"] = ev(f"document.activeElement === document.querySelector({json.dumps(note)})")
+                focus(note); enter(); ctx["s"] = 6
+            elif s == 6 and ev("!!document.querySelector('#sessions-list input')"):
+                focus("#sessions-list input"); b.call("Input.insertText", b.sid, text="hello there"); enter(); ctx["s"] = 7
+            elif s == 7 and len(posts) >= 6:
+                focus(note); enter(); ctx["s"] = 8
+            elif s == 8 and ev("!!document.querySelector('#sessions-list input')"):
+                focus("#sessions-list input"); b.call("Input.insertText", b.sid, text="forbid"); enter(); ctx["s"] = 9
+            elif s == 9 and "reload" in status().lower():
+                ctx["status9"] = status()  # a refused note keeps its field and text
+                ctx["kept"] = ev("(document.querySelector('#sessions-list input') || {}).value")
+                ctx["s"] = 10
+
+        got, errs = self.watch((1920, 1080), False, lambda g: ctx["s"] == 10, step=step, within=70)
+        self.assertEqual([e for e in errs if "403" not in e], [])  # the forced 403 is the browser's own log line
+        self.assertEqual(ctx["s"], 10, ctx)
+        self.assertEqual(ctx["tab"], "drive_off", "Tab from a plate's pick reaches its first control")  # foreman drive is on
+        self.assertEqual((ctx["role"], ctx["live"], ctx["pressed"]), ("status", "polite", "true"))
+        self.assertEqual(ctx["private"], 0, "a sensitive project's plate has no controls")
+        posts = got["posts"]
+        self.assertEqual(len(posts), 7, posts)
+        self.assertEqual((ctx["nodrive"], ctx["fallback_acts"]), (0, 2), "a row without a drive state has no drive toggle")
+        self.assertTrue(ctx["dbl"], "the pressed button is disabled in flight")
+        self.assertEqual(ctx["n_resume"], 3, "two presses on resume ran one")
+        self.assertIn("press again", ctx["fast"])
+        self.assertEqual(ctx["n_fast"], 3, "a double press cannot confirm pause now")
+        self.assertEqual(ctx["kept"], "forbid", "a refused note keeps its text")
+        self.assertEqual(ctx["status9"].lower().count("reload"), 1, ctx["status9"])
+        for p in posts:
+            self.assertEqual((p["path"], p["type"], p["nonce"]), ("/api/act", "application/json", got["token"]))
+        self.assertEqual([p["body"] for p in posts], [
+            {"action": "drive_off", "project": FOREMAN}, {"action": "checkpoint", "project": FOREMAN},
+            {"action": "resume", "project": FOREMAN}, {"action": "pause_now", "confirmed": True}, {"action": "pause_off"},
+            {"action": "note", "session": SESS, "text": "hello there"}, {"action": "note", "session": SESS, "text": "forbid"}])
+        self.assertIn("drive", ctx["status1"].lower())
+        self.assertEqual(ctx["n_armed"], 3, "one press of pause now sends nothing")
+        self.assertIn("press again", ctx["armed"])
+        self.assertEqual((ctx["disarmed"], ctx["n_disarmed"]), ("pause now", 3), "it disarms by itself")
+        self.assertIn("pause", ctx["status4"].lower())
+        self.assertEqual((ctx["field"], ctx["gone"], ctx["back"]), (True, True, True), "Esc cancels the note field")
+        self.assertIn("reload", ctx["status9"].lower())
+        self.assertIn("bad nonce", ctx["status9"])
+        self.assertEqual(got["hash"], "", "a control press never switches the project")
+
+    def test_the_controls_fit_a_phone(self):
+        got, errs = self.watch((390, 844), False, lambda g: g.get("picks", 0) >= 3)
+        self.assertEqual(errs, [])
+        self.assertLessEqual(got["wide"], 390)
 
 
 if __name__ == "__main__":

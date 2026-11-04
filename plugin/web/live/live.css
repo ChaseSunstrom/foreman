@@ -119,6 +119,19 @@ main{display:grid;grid-template-rows:minmax(320px,1fr) auto auto var(--deck-h);g
 .pick{cursor:pointer;transition:background-color var(--dur-small) var(--ease-move),border-color var(--dur-small) var(--ease-move)}
 .pick:hover{background-color:rgba(212,174,102,.08)}
 .pick[aria-current="true"]{background-color:rgba(255,148,64,.1);border-left-color:var(--orange)}
+.rail-ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:0 0 auto;min-width:0}
+.acts{display:flex;flex-wrap:wrap;gap:4px;padding:0 6px 7px 15px}
+.act{margin:0;padding:3px 8px;font:500 10.5px/1.2 var(--font-mono);color:var(--ash);background:transparent;
+  border:1px solid var(--rule-soft);cursor:pointer;transition:background-color var(--dur-small) var(--ease-move),border-color var(--dur-small) var(--ease-move)}
+.act:hover{background-color:rgba(212,174,102,.12);border-color:var(--rule)}
+.act:focus-visible,.note-in:focus-visible{outline:2px solid var(--brass-2);outline-offset:1px}
+.act[aria-pressed="true"]{color:var(--ink);border-color:var(--orange);background-color:rgba(255,148,64,.12)}
+.act.danger.armed{color:var(--ink);border-color:var(--orange);background-color:rgba(255,106,74,.28)}
+.act[disabled]{opacity:.5;cursor:progress}
+.act-status{flex:1 0 100%;margin:0;min-height:1.2em;font:400 10.5px/1.3 var(--font-mono);color:var(--gold);overflow-wrap:anywhere}
+.act-status.bad{color:var(--red,#FF6A4A)}
+.note-in{flex:1 1 100%;min-width:0;box-sizing:border-box;padding:3px 6px;font:400 11px/1.3 var(--font-mono);color:var(--ink);
+  background:rgba(8,11,31,.9);border:1px solid var(--rule)}
 .ember{width:8px;height:8px;border-radius:50%;background:var(--muted)}
 .live .ember{background:var(--orange);box-shadow:0 0 9px 1px rgba(255,148,64,.8)}
 .rn{min-width:0;font:500 12px/1.2 var(--font-mono);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -284,12 +297,13 @@ main{display:grid;grid-template-rows:minmax(320px,1fr) auto auto var(--deck-h);g
   .is-new{background-color:rgba(255,148,64,.16)}
 }
 
-@media (min-width:1400px){.rail-s:first-child{flex:0 1 auto;max-height:44%}.rail-s:last-child{flex:1 1 0}}
+@media (min-width:1400px){.rail-s:first-of-type{flex:0 1 auto;max-height:44%}.rail-s:last-of-type{flex:1 1 0}}
 /* below 1400: the rail becomes a row of cards above the scene */
 @media (max-width:1399px){
   .top{grid-template-columns:minmax(0,1fr)}
   .rail{order:-1;flex-direction:row}
   .rail-s{flex:1 1 0;max-height:172px}
+  .rail-ctl{flex:0 0 112px;align-content:flex-start}
   .rail-list{display:flex;overflow-x:auto;overflow-y:hidden}
   .rail-list li{flex:0 0 min(230px,70vw);border-bottom:0;border-right:1px solid rgba(212,174,102,.09)}
   .rail-empty{margin:0}
@@ -318,7 +332,9 @@ main{display:grid;grid-template-rows:minmax(320px,1fr) auto auto var(--deck-h);g
   .where{order:3;flex:1 1 60%}
   .clock{order:4}
   .rail{flex-direction:column}
-  .rail-s{flex:0 0 auto}
+  .rail-s,.rail-ctl{flex:0 0 auto}
+  .note-in{font-size:16px}  /* iOS zooms into a smaller field */
+  .act{min-height:28px}
   .stage{height:auto;min-height:0;display:flex;flex-direction:column}
   #scene{position:relative;inset:auto;height:clamp(340px,52svh,440px);flex:0 0 auto}
   .focus{position:relative;left:auto;top:auto;width:auto;border-width:1px 0 0}

@@ -1448,6 +1448,80 @@ function pickRow(el, slug, label, live, kids) {
   b.title = label;
   b.replaceChildren(...kids);
 }
+// ---------- steering: POST /api/act (T-3026) ----------
+// JSON with the page's token in a header (the server injects it as <meta name="sampo-act">); every result goes to one status line.
+const actMeta = document.querySelector('meta[name="sampo-act"]'), actStatus = $("act-status"), pauseBtn = $("act-pause");
+function say(text, bad) { if (actStatus) { setText(actStatus, text); actStatus.classList.toggle("bad", !!bad); } }
+let actSeq = 0;
+// btn (the control pressed) stays disabled until the fetch settles; done(ok) runs then. Only the latest act writes the status line.
+function act(body, btn, done) {
+  const what = body.action.replace(/_/g, " ") + (body.project ? " · " + body.project : ""), mine = ++actSeq;
+  const out = (text, bad) => { if (mine === actSeq) say(text, bad); };
+  const end = ok => {
+    if (btn) { const had = document.activeElement === document.body; btn.disabled = false; if (had && btn.isConnected) btn.focus(); }
+    if (done) done(ok);
+  };
+  if (!actMeta) { out(what + ": this page has no steering token, reload the page", true); end(false); return; }
+  if (btn) btn.disabled = true;
+  out(what + "…");
+  fetch("/api/act", {method: "POST", cache: "no-store", headers: {"Content-Type": "application/json", "X-Sampo-Nonce": actMeta.content},
+    body: JSON.stringify(body)})
+    .then(r => r.json().catch(() => null).then(j => ({r, j: obj(j)})))
+    .then(({r, j}) => {
+      const ok = r.ok && j.ok === true;
+      if (ok) { out(what + ": ok"); if (/^(drive|resume)/.test(body.action)) pollMachine(); }
+      else if (r.ok) out(what + ": failed (exit " + str(j.exit) + ")", true);
+      else {
+        const e = str(j.error) || "refused (" + r.status + ")";
+        out(what + ": " + e + (r.status === 403 && !/reload/i.test(e) ? ". Reload the page" : ""), true);
+      }
+      end(ok);
+    })
+    .catch(() => { out(what + ": the server did not answer", true); end(false); });
+}
+function ensureActs(el, defs) {  // the buttons are made once per row and updated in place, so a focused one stays focused
+  let box = el.querySelector(":scope > .acts");
+  if (!box) { box = h("div", "acts"); box.setAttribute("role", "group"); el.appendChild(box); }
+  defs.forEach((d, i) => {
+    let b = box.children[i];
+    if (!b || b.tagName !== "BUTTON") { b = h("button", "act"); b.type = "button"; box.insertBefore(b, box.children[i] || null); }
+    b.dataset.act = d.act; b.dataset.target = d.target;
+    setText(b, d.text);
+    b.setAttribute("aria-label", d.label);
+    if (d.pressed === undefined) b.removeAttribute("aria-pressed"); else b.setAttribute("aria-pressed", d.pressed ? "true" : "false");
+  });
+  while (box.children.length > defs.length && box.children[defs.length].tagName === "BUTTON") box.children[defs.length].remove();
+  box.setAttribute("aria-label", "Controls for " + defs[0].who);
+}
+function noteField(btn) {  // Enter sends, Esc cancels
+  const box = btn.parentElement, open = box.querySelector(".note-in");
+  if (open) { open.focus(); return; }
+  const f = h("input", "note-in"); f.type = "text"; f.maxLength = 2000; f.dataset.target = btn.dataset.target;
+  f.setAttribute("aria-label", "Note to this session; Enter sends, Escape cancels");
+  f.placeholder = "note, Enter sends";
+  box.appendChild(f);
+  f.focus();
+}
+let armTimer = 0, armAt = 0;
+function disarm() {
+  clearTimeout(armTimer);
+  if (!pauseBtn) return;
+  pauseBtn.classList.remove("armed"); setText(pauseBtn, "pause now");
+}
+function press(b) {
+  const a = b.dataset.act, t = b.dataset.target;
+  if (b.disabled) return;
+  if (a === "note") noteField(b);
+  else if (a === "pause_now") {  // asks in the page: a second press 0.6 to 4 s later sends it (a double-click or held key doesn't)
+    if (!pauseBtn.classList.contains("armed")) {
+      pauseBtn.classList.add("armed"); setText(pauseBtn, "press again to pause"); armAt = now();
+      say("press again within 4 s to pause every session");
+      armTimer = setTimeout(() => { disarm(); say("pause now cancelled"); }, 4000);
+    } else if (now() - armAt >= 0.6) { disarm(); act({action: "pause_now", confirmed: true}, b); }
+  } else if (a === "pause_off") act({action: a}, b);
+  else if (t) act({action: a, project: t}, b);
+}
+
 function renderMachine(m) {
   if (!m || typeof m !== "object" || Array.isArray(m)) return;
   const first = machine === null;
@@ -1471,6 +1545,7 @@ function renderMachine(m) {
       (pct != null ? ", context " + Math.round(pct) + "%" : "") + ", seen " + ago;
     if (!SLUG.test(slug)) { el.className = "plate private"; el.replaceChildren(...kids); return; }
     pickRow(el, slug, label, true, kids);
+    ensureActs(el, [{act: "note", target: str(s.id), text: "note", who: name + " session", label: "Send a note to the session in " + name}]);
   }, first);
   sync($("projects-list"), projects, p => str(p.slug), (el, p) => {
     const slug = str(p.slug), name = str(p.name) || slug;
@@ -1485,6 +1560,12 @@ function renderMachine(m) {
     const kids = [h("span", "ember"), h("span", "rn", name), h("span", "rt", q != null ? q + " queued" : ""), h("p", "rm", line)];
     pickRow(el, slug, name + (task ? ", task " + task + (stage ? " " + stage : "") : ", no task") + (q != null ? ", " + q + " queued" : ""),
       false, kids);
+    const on = p.drive === true, who = name;
+    ensureActs(el, [  // no drive toggle when the row doesn't say (a fallback row)
+      ...(typeof p.drive === "boolean" ? [{act: on ? "drive_off" : "drive_on", target: slug, text: "drive", pressed: on, who,
+       label: "Drive is " + (on ? "on" : "off") + " for " + name + ". Press to turn it " + (on ? "off" : "on")}] : []),
+      {act: "checkpoint", target: slug, text: "checkpoint", who, label: "Checkpoint " + name},
+      {act: "resume", target: slug, text: "resume", who, label: "Resume " + name}]);
   }, first);
   $("sessions-empty").hidden = sessions.length > 0;
   $("projects-empty").hidden = projects.length > 0;
@@ -1501,8 +1582,27 @@ function pollMachine() {
 }
 if (rail) {
   rail.addEventListener("click", ev => {
+    const a = ev.target.closest ? ev.target.closest("button[data-act]") : null;  // a control never also picks the project
+    if (a) { press(a); return; }
     const b = ev.target.closest ? ev.target.closest("button[data-project]") : null;
     if (b && b.dataset.project !== picked()) location.hash = "project=" + encodeURIComponent(b.dataset.project);
+  });
+  rail.addEventListener("keydown", ev => {
+    const f = ev.target;
+    if (!f.classList || !f.classList.contains("note-in") || (ev.key !== "Enter" && ev.key !== "Escape")) return;
+    const btn = f.parentElement.querySelector('button[data-act="note"]'), text = f.value.trim();
+    if (f.readOnly) return;  // a send is in flight
+    if (ev.key === "Enter") {  // the field and its text stay until the server says ok
+      if (!text) return;
+      f.readOnly = true;
+      act({action: "note", session: f.dataset.target, text}, null, ok => {
+        f.readOnly = false;
+        if (ok && f.isConnected) { const had = document.activeElement === f; f.remove(); if (had && btn && btn.isConnected) btn.focus(); }
+      });
+      return;
+    }
+    f.remove();
+    if (btn) btn.focus();
   });
   window.addEventListener("hashchange", () => {  // the one way in: a click, the back button and a typed link all arrive here
     const p = fromHash();

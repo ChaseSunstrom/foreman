@@ -35,6 +35,11 @@
   </section>
 
   <aside class="rail" id="rail" aria-label="The machine: live sessions and every project">
+    <div class="rail-ctl" role="group" aria-label="Machine-wide controls">
+      <button class="act danger" id="act-pause" type="button" data-act="pause_now">pause now</button>
+      <button class="act" id="act-pause-off" type="button" data-act="pause_off">pause off</button>
+      <p class="act-status" id="act-status" role="status" aria-live="polite"></p>
+    </div>
     <section class="rail-s" aria-labelledby="sessions-h">
       <h2 class="rail-h" id="sessions-h">Sessions <span class="rail-n" id="sessions-n"></span></h2>
       <ul class="rail-list" id="sessions-list" tabindex="0" aria-label="Live sessions"></ul>
