@@ -22,6 +22,7 @@ import tempfile
 import textwrap
 import threading
 import time
+import urllib.parse
 
 from sampo import budget as sbudget
 from sampo import core as c
@@ -845,6 +846,169 @@ def replay_models(p):
         o["brier"] = round(sum(b) / len(b), 3) if b else None
         o["ms"] = ms[len(ms) // 2] if ms else None
     return out
+
+
+# ---------------------------------------------------------------- the model bench (T-2887)
+BENCH = os.path.join("research", "models", "bench.jsonl")  # one metrics row per backend and use, appended per run
+SERVING = {"https://<host>/llm/v1": "qwen3.8-27b"}  # base_url -> the model it already serves
+BENCH_USES = ("intake-type", "intake-tier")
+BENCH_CAP = 60  # held-out rows asked per use (and briefs embedded); the rest are left out and counted
+
+
+def _pct(xs, q):
+    xs = sorted(xs)
+    return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else None
+
+
+def _bench_order(jobs, serving):
+    """T-2887: jobs grouped by base_url, the model an endpoint already serves first, then by model, so a llama-swap
+    endpoint (3 minutes a switch, no way to ask what it holds) switches at most once per run and never alternates."""
+    return sorted(jobs, key=lambda j: (j[1]["base_url"], j[1]["model"] != serving.get(j[1]["base_url"]), j[1]["model"]))
+
+
+def _bench_data(p, cap):
+    """The held-out (task-id hash) closed tasks: {use: (rows, held)} with rows (task, raw request, truth, the rules'
+    guess), and the embedding arm's (title, brief) pairs. Only the request text goes into a prompt, never a label."""
+    from sampo import models
+    try:
+        with open(os.path.join(p.dir, models.SHADOW), encoding="utf-8") as f:
+            shadow = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict)]
+    except (OSError, ValueError):
+        shadow = []
+    briefs = {b.id: b for b in c.load_briefs(p, include_archive=True) if b.status == "done" and holdout(b.id)}
+    out = {}
+    for use in BENCH_USES:
+        last = {r["task"]: r for r in shadow if r.get("use") == use and r.get("task") in briefs and r.get("input")}
+        rows = [(t, r["input"], getattr(briefs[t], "type" if use == "intake-type" else "tier"), r.get("path"))
+                for t, r in sorted(last.items())]
+        out[use] = (rows[:cap], len(rows))
+    pairs = []
+    for t, b in sorted(briefs.items()):
+        text = (b.section("Interpretation").strip() or b.section("Raw request").strip())[:600]
+        if b.title and text:
+            pairs.append((t, b.title, text))
+    out["title-to-brief"] = (pairs[:cap], len(pairs))
+    return out
+
+
+def _bench_decide(profile, rows, use, timeout):
+    from sampo import models
+    choices = models.shadow_uses()[use]
+    hits, brier, ms, errors = 0, [], [], 0
+    for _, text, truth, _ in rows:
+        t0 = time.monotonic()
+        try:
+            ans = models.systemone(profile, text, choices, timeout=timeout)
+        except models.ModelError:
+            ans = None
+        if ans is None:
+            errors += 1
+            continue
+        ms.append(int((time.monotonic() - t0) * 1000))
+        hit = ans["choice"] == truth
+        hits += hit
+        brier.append((ans["probability"] - hit) ** 2)
+    n = len(ms)
+    return {"accuracy": round(hits / n, 3) if n else None, "brier": round(sum(brier) / n, 3) if n else None,
+            "p50_ms": _pct(ms, 0.5), "p95_ms": _pct(ms, 0.95), "n": n, "errors": errors}
+
+
+def _bench_embed(profile, pairs, timeout):
+    """recall@1 and @10 of each title's own brief among the briefs, by cosine; latency is one title's embedding."""
+    from sampo import models
+    errors, ms, hit1, hit10, n = 0, [], 0, 0, 0
+    try:
+        docs = []
+        for i in range(0, len(pairs), 16):
+            docs += models.embed(profile, [x[2] for x in pairs[i:i + 16]], timeout=timeout)
+    except models.ModelError:
+        return {"recall_at_1": None, "recall_at_10": None, "p50_ms": None, "p95_ms": None, "n": 0, "errors": len(pairs)}
+    norm = lambda v: sum(x * x for x in v) ** 0.5 or 1.0  # noqa: E731
+    for i, (_, title, _) in enumerate(pairs):
+        t0 = time.monotonic()
+        try:
+            q = models.embed(profile, [title], timeout=timeout)[0]
+        except models.ModelError:
+            errors += 1
+            continue
+        ms.append(int((time.monotonic() - t0) * 1000))
+        if len(q) != len(docs[0]):
+            errors += 1
+            continue
+        qn = norm(q)
+        score = [sum(a * b for a, b in zip(q, d)) / (qn * norm(d)) for d in docs]
+        rank = sum(s > score[i] for s in score)  # documents scored strictly above the right one
+        n += 1
+        hit1 += rank == 0
+        hit10 += rank < 10
+    return {"recall_at_1": round(hit1 / n, 3) if n else None, "recall_at_10": round(hit10 / n, 3) if n else None,
+            "p50_ms": _pct(ms, 0.5), "p95_ms": _pct(ms, 0.95), "n": n, "errors": errors}
+
+
+def bench_models(p, decision=None, embedders=None, cap=BENCH_CAP, serving=None):
+    """T-2887: the decision arm (intake type and tier, from the raw request of held-out closed tasks, through each
+    systemone backend) and the embedding arm (title to brief recall), one row per backend and use appended to
+    research/models/bench.jsonl, plus a 'without' row per use: the rules' own guess. Held out by a hash of the task id,
+    so a prompt never carries a label. Backends run grouped by base_url, one model at a time (see _bench_order);
+    a sensitive project asks loopback backends only. Returns {run, rows}."""
+    from sampo import models
+    try:
+        conf = [x for x in models.configured()[1].values() if x["kind"] == "systemone"]
+    except models.ModelError:
+        conf = []
+    decision = list(conf) + models.systemone_profiles() if decision is None else list(decision)
+    embedders = models.embedding_profiles() if embedders is None else list(embedders)
+    sensitive = bool(c.read_meta(p).get("sensitive"))
+    jobs = [("decision", x) for x in decision] + [("embedding", x) for x in embedders]
+    data, run, rows = _bench_data(p, cap), time.strftime("m%Y%m%d-%H%M%S") + f"{time.time_ns() // 1_000_000 % 1000:03d}", []
+    stamp = {"run": run, "at": c.now()}
+    for use in BENCH_USES:
+        got, held = data[use]
+        right = sum(r[3] == r[2] for r in got)
+        rows.append({**stamp, "arm": "decision", "use": use, "backend": "without", "accuracy": round(right / len(got), 3)
+                     if got else None, "brier": None, "p50_ms": None, "p95_ms": None, "n": len(got), "errors": 0, "held": held})
+    for arm, prof in _bench_order(jobs, SERVING if serving is None else serving):
+        host = urllib.parse.urlsplit(prof["base_url"]).hostname or ""
+        if sensitive and not models.is_loopback(host):
+            continue
+        timeout = 120 if models.is_loopback(host) else 300  # a first call may load the model (a remote swap takes ~3 min)
+        if arm == "decision":
+            for use in BENCH_USES:
+                got, held = data[use]
+                rows.append({**stamp, "arm": arm, "use": use, "backend": prof["name"], "held": held,
+                             **_bench_decide(prof, got, use, timeout)})
+        else:
+            got, held = data["title-to-brief"]
+            rows.append({**stamp, "arm": arm, "use": "title-to-brief", "backend": prof["name"], "held": held,
+                         **_bench_embed(prof, got, timeout)})
+    path = os.path.join(p.root, BENCH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    for r in rows:
+        c.append_line(path, json.dumps(r) + "\n")
+    return {"run": run, "rows": rows}
+
+
+def bench_show(p, limit=40):
+    """The latest run's table as text; says how many held-out rows each cut left out and how many table rows are cut."""
+    try:
+        with open(os.path.join(p.root, BENCH), encoding="utf-8") as f:
+            allr = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict) and r.get("run")]
+    except (OSError, ValueError):
+        allr = []
+    if not allr:
+        return "no model bench yet: sampo louhi models run"
+    rows = [r for r in allr if r["run"] == allr[-1]["run"]]
+    f = lambda v: "-" if v is None else str(v)  # noqa: E731
+    lines = [f"model bench {rows[0]['run']} ({len(rows)} rows, held out by task-id hash)",
+             f"{'backend':<28}{'use':<16}{'acc/r@1':>8}{'brier/r@10':>11}{'p50ms':>7}{'p95ms':>7}{'n':>5}{'err':>5}"]
+    for r in rows[:limit]:
+        a, b = (r.get("accuracy"), r.get("brier")) if r["arm"] == "decision" else (r.get("recall_at_1"), r.get("recall_at_10"))
+        out = (r.get("held") or 0) - r["n"] - r["errors"]
+        lines.append(f"{str(r['backend'])[:27]:<28}{r['use']:<16}{f(a):>8}{f(b):>11}{f(r.get('p50_ms')):>7}"
+                     f"{f(r.get('p95_ms')):>7}{r['n']:>5}{r['errors']:>5}" + (f"  {out} held-out left out" if out > 0 else ""))
+    if len(rows) > limit:
+        lines.append(f"{len(rows) - limit} more rows left out")
+    return "\n".join(lines)
 
 
 def _grant(sid, lang):
@@ -3383,6 +3547,13 @@ def cmd_exam(args):
         if action == "long":  # T-2258: the long-horizon tier
             from sampo import long
             return long.cmd(p, args)
+        if action == "models":  # T-2887: sampo louhi models run|show, the decision and embedding arms
+            if args.run not in (None, "run", "show"):
+                raise ValueError("models: run or show")
+            if args.run == "run":
+                res = bench_models(p)
+                return cli.out(args, res, f"{len(res['rows'])} rows written to {BENCH}\n{bench_show(p)}")
+            return cli.out(args, {"table": bench_show(p)}, bench_show(p))
         if action == "steer":  # T-2625: the steer-expansion exam (MOONSHOT.md part B)
             from sampo import steer
             return steer.cmd(p, args)

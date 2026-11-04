@@ -7834,12 +7834,13 @@ def _build_parser(only=None):
                    "(exit 1), green is fixed (exit 0), a missing saved test can't be re-checked (exit 1)")
     s = add("exam", lazy("sampo.louhi", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
-    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard", "long", "runs", "steer"),
+    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard", "long", "runs", "steer", "models"),
                    help="scorecard: each gen-0 §2 capability's held-out pass rate from graded runs; exit 1 unless all "
                         "pass (T-2097); long: replayed past changes, sampo exam long gen [--from PATH] [--n N] | run RUN | "
                         "grade RUN (--agent oracle|empty; T-2258); steer: raw words expanded into standing rules, graded by a "
                         "stronger judge, sampo exam steer [status] | cases [--from FILE] | run [--split S] [--model M] | "
-                        "expand SESSION | live on|off (T-2625)")
+                        "expand SESSION | live on|off (T-2625); models: run|show, the decision models and embedders on "
+                        "held-out closed tasks, rows in research/models/bench.jsonl (T-2887)")
     s.add_argument("run", nargs="?", help="run/grade/check: the run id sampo exam gen printed; long: gen|run|grade")
     s.add_argument("rest", nargs="*", help="long run|grade: the run id")
     s.add_argument("--from", dest="from_", metavar="PATH", help="long gen: the local git repo to replay (default Sampo's own)")

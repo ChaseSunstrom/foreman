@@ -562,8 +562,8 @@ class LocalContext(Base):  # T-1360
             m.LOCAL = [(name, f.url)]
             self.assertEqual(m.resolve()["context"], want, (name, script[-1]))
             if call:
-                self.assertEqual(f.seen[1][:2], call, name)
-        self.assertEqual(f.seen[1][3], {"model": "qwen"}, "Ollama is asked about the model it listed")
+                self.assertIn(call, [x[:2] for x in f.seen[1:]], name)  # T-2887: Ollama's /api/tags comes between
+        self.assertEqual(f.seen[-1][3], {"model": "qwen"}, "Ollama is asked about the model it listed")
 
 
 class Profiles(Base):
