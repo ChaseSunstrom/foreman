@@ -3085,6 +3085,24 @@ class Stop(HookCase):
         last = [json.loads(x) for x in open(os.path.join(c.state_dir(), "events.jsonl")) if '"drive_wait"' in x]
         self.assertEqual(last[-1]["running"], ["abuild1", "adesign1"], "the agents still hold it; the shell is a service")
 
+    def test_an_engine_list_without_the_agents_and_a_far_start_still_hold_the_drive(self):
+        # T-2873: Claude Code's background_tasks listed a monitor and a shell but not two running subagents, and won over
+        # the scan; and a designer's start 1,619 lines back fell out of the 1,500-line tail
+        from sampo import hooks
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.task("Active work")
+        self.hook("SubagentStart", {"agent_id": "afar1", "agent_type": "general-purpose", "session_id": "sess-1"})
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:  # another session's busy hour
+            f.write("".join(json.dumps({"ts": c.now(), "kind": "tool", "session_id": "other"}) + "\n"
+                            for _ in range(3000)))
+        self.assertIn("afar1", hooks._running("sess-1"), "a start 3,000 lines back still counts")
+        mon = {"id": "bmon1", "type": "shell", "status": "running", "description": "watch"}
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting.", "session_id": "sess-1",
+                           "background_tasks": [mon]})
+        waits = [json.loads(x) for x in open(os.path.join(c.state_dir(), "events.jsonl")) if '"drive_wait"' in x]
+        self.assertEqual(waits[-1]["running"], ["afar1", "bmon1"], "the scan's agents join the engine's list")
+
     def test_the_drained_product_check_waits_while_the_genesis_round_is_held(self):
         # T-2466: with fm drive --round-first on, the wait branch still said "fm capture each defect, then plan and work
         # the first": new maintenance the user's steer holds until the round is done

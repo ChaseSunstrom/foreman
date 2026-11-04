@@ -4100,7 +4100,8 @@ def _running(sid, agents=None):
     SendMessage resume), which never turn into a service past LONG_JOB_S (T-2872)."""
     state = {}
     keep = (json.dumps(sid, ensure_ascii=False),) if isinstance(sid, str) and sid else ()  # T-2033: decode its lines only
-    for e in c._tail_rows(os.path.join(c.state_dir(), "events.jsonl"), 1500, keep):
+    # T-2873: the file is every session's; 1,500 lines was under an hour of a busy one, short of BG_WAIT_S
+    for e in c._tail_rows(os.path.join(c.state_dir(), "events.jsonl"), 6000, keep):
         if not isinstance(e, dict) or e.get("session_id") != sid or (c.age_days(e.get("ts")) or 0) * 86400 > BG_WAIT_S:
             continue
         kind, key = e.get("kind"), e.get("agent_id") or e.get("id")
@@ -4237,13 +4238,14 @@ def _drive(p, sd, briefs, pl, g):
         return None  # waiting on the user's approval (AUTONOMY standard)
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
     scanned = set()  # T-2872: the event scan's agents (a subagent start or a resume), as the engine list marks them
-    running = sorted(str(t.get("id")) for t in bg if isinstance(t, dict)) if isinstance(bg, list) else sorted(
-        _running(sid, scanned))
+    found = _running(sid, scanned)
+    running = sorted({str(t.get("id")) for t in bg if isinstance(t, dict)} | scanned) if isinstance(bg, list) else \
+        sorted(found)  # T-2873: the engine's list can omit running subagents; the scan's agents join it
     # T-0415: a job running for LONG_JOB_S is a service (a workflow, a watch, a server), not something to wait for
     now, since = time.time(), d.setdefault("since", {})
     d["since"] = since = {k: since.get(k, now) for k in running}
-    agents = {str(t.get("id")) for t in bg if isinstance(t, dict) and t.get("type") == "agent"} if isinstance(bg, list) \
-        else scanned  # T-0575: a subagent (a builder can take 30 min) is work that ends, never a service
+    agents = ({str(t.get("id")) for t in bg if isinstance(t, dict) and t.get("type") == "agent"} if isinstance(bg, list)
+              else set()) | scanned  # T-0575: a subagent (a builder can take 30 min) is work that ends, never a service
     running = [k for k in running if k in agents or now - since[k] < LONG_JOB_S]
     if running and sd["active"]:  # background work is out; its notification wakes the session (no active task:
         # the jobs don't hold back starting the next one)
