@@ -9,6 +9,6 @@
  "sessions": [
   {"id": "a1b2c3d4", "project": "other-1b2c3d", "task": "T-9001", "model": "claude-opus-4-6", "context_pct": 41, "seen": "2026-11-04T18:30:05Z"},
   {"id": "e5f6a7b8", "project": "foreman-4a056f", "task": "T-2995", "model": "claude-sonnet-4-6", "context_pct": 88.5, "seen": 1793817000},
-  {"id": "c9d0e1f2", "project": "quiet-9f8e7d", "task": null, "model": null, "context_pct": 12, "seen": "2026-11-04T18:29:00Z"}
+  {"id": "c9d0e1f2", "project": "quiet-9f8e7d", "task": "T-7777", "model": "hush-model-9", "context_pct": 12, "seen": "2026-11-04T18:29:00Z"}
  ]
 }

@@ -315,6 +315,16 @@ class Serve(ForemanTestCase):
         sp = c.init_project(other, sensitive=True)
         self.assertEqual(self.req(f"/api/state?project={sp.slug}")[0], 404)
 
+    def test_no_slug_with_a_sensitive_newest_session_falls_back_to_the_servers_own(self):  # T-3024 review
+        self.login()
+        other = os.path.join(self.tmp, "hush2")
+        os.makedirs(other)
+        sp = c.init_project(other, sensitive=True)
+        with mock.patch("sampo.bus.live", return_value=[{"session_id": "s1", "project": sp.slug}]):
+            st, body, _ = self.req("/api/state")
+        self.assertEqual(st, 200)
+        self.assertEqual(json.loads(body)["project"]["slug"], self.p.slug)
+
     def test_a_spent_token_is_replaced_and_the_url_file_follows(self):
         self.login()
         deadline = time.monotonic() + 5

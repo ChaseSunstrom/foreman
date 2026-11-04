@@ -220,6 +220,7 @@ PROBE = """(() => { const $ = id => document.getElementById(id), n = (id, sel) =
     lit: +(c && c.dataset.lit || 0), scene: [Math.round(r.width), Math.round(r.height)], canvas: c ? [c.width, c.height] : [0, 0],
     hash: location.hash, sessions: n("sessions-list", "li"), projects: n("projects-list", "li"),
     picks: n("rail", "button[data-project]"), rail: $("rail") ? $("rail").textContent : "",
+    railhtml: $("rail") ? $("rail").innerHTML : "", project: $("project") ? $("project").textContent : "",
     wide: document.documentElement.scrollWidth}; })()""" % json.dumps(list(PANELS))
 
 
@@ -233,7 +234,7 @@ class Page(unittest.TestCase):
         sys.path.insert(0, os.path.join(PLUGIN, "lib"))
         self.last = snaps()[-1]
 
-    def watch(self, size, reduced, done, within=45, step=None):
+    def watch(self, size, reduced, done, within=45, step=None, hash=""):
         """Load the page at size, poll PROBE until done(got) or `within` s; (got, errors). step(b, got), if given, runs
         on every poll (it clicks, reloads); got["reqs"] lists the requests the server saw.
         A green run returns in about 8 s; the long ceiling is for a loaded machine (the gates run 16 at a time)."""
@@ -249,7 +250,7 @@ class Page(unittest.TestCase):
             b.call("Runtime.enable", b.sid)
             b.call("Log.enable", b.sid)
             b.call("Page.addScriptToEvaluateOnNewDocument", b.sid, source=WATCH)
-            shot.load(b, f"http://127.0.0.1:{srv.server_address[1]}/")
+            shot.load(b, f"http://127.0.0.1:{srv.server_address[1]}/" + hash)
             deadline = time.monotonic() + within
             while True:
                 got = b.call("Runtime.evaluate", b.sid, expression=PROBE, returnByValue=True)["result"].get("value") or {}
@@ -327,12 +328,39 @@ class Page(unittest.TestCase):
             self.assertEqual((seen["sessions"], seen["projects"]), (3, 4), size)
             for word in (".config", "vault", "T-9001", "claude-opus-4-6", "41%", "verifying", "7"):
                 self.assertIn(word, seen["rail"], word)
+            for word in ("T-7777", "hush-model-9"):  # T-3024 review: a sensitive project's session shows its name only
+                self.assertNotIn(word, seen["rail"], word)
+                self.assertNotIn(word, seen["railhtml"], word)
             self.assertLessEqual(seen["wide"], size[0], f"no sideways scroll at {size}")
             self.assertLessEqual(got["wide"], size[0], f"no sideways scroll at {size}")
             reqs = got["reqs"]
             self.assertTrue([r for r in reqs if r.startswith("/api/state?project=other-1b2c3d")], reqs)
             self.assertTrue([r for r in reqs if r.startswith("/api/stream?project=other-1b2c3d")], reqs)
             self.assertTrue([r for r in reqs if r.startswith("/api/machine")], reqs)
+
+    def test_an_unknown_project_in_the_hash_shows_unknown_not_old_data_and_stops_asking(self):  # T-3024 review
+        ctx = {}
+
+        def step(b, got):
+            if "no project" in got.get("project", "") and "t" not in ctx:
+                ctx["t"] = time.monotonic()
+        got, errs = self.watch((1920, 1080), False, lambda g: "t" in ctx and time.monotonic() - ctx["t"] > 4,
+                               step=step, hash="#project=nope-123456")
+        self.assertEqual([e for e in errs if "404" not in e], [])
+        self.assertIn("nope-123456", got["project"])
+        self.assertIn("no project", got["project"])
+        self.assertNotIn("T-2995", got["focus"])
+        self.assertEqual((got["queue"], got["closes"], got["ticker"]), (0, 0, 0))
+        streams = [r for r in got["reqs"] if r.startswith("/api/stream")]
+        self.assertLessEqual(len(streams), 1, streams)  # the stream is closed after the 404, not retried
+
+    def test_an_empty_hash_pins_the_project_and_a_reconnect_names_it(self):  # T-3024 review
+        got, errs = self.watch((1920, 1080), False, self.back)
+        self.assertEqual(errs, [])
+        self.assertEqual(got["hash"], "")
+        streams = [r for r in got["reqs"] if r.startswith("/api/stream")]
+        self.assertEqual(streams[0], "/api/stream")
+        self.assertTrue(all("project=" in r for r in streams[1:]) and len(streams) > 1, streams)
 
     def test_reduced_motion_lights_changes_and_sends_no_sparks(self):
         got, errs = self.watch((1920, 1080), True, lambda g: self.back(g) and g.get("lit", 0) > 0)

@@ -1397,6 +1397,7 @@ function take(s) {
   const at = Date.parse(str(s.at));
   if (Number.isFinite(at) && at < snapAt) return;  // an older snapshot that arrived late
   snap = s;
+  if (!currentProject && SLUG.test(str(obj(s.project).slug))) currentProject = str(s.project.slug);  // pin it (not in the hash): a reconnect must not switch projects
   if (Number.isFinite(at)) snapAt = at;
   const first = firstRender;
   firstRender = false;
@@ -1436,7 +1437,7 @@ function markCurrent() {
   }
 }
 function pickRow(el, slug, label, live, kids) {
-  el.className = "";
+  el.className = el.classList.contains("is-new") ? "is-new" : "";  // kindle() may have just lit it
   let b = el.firstElementChild;  // kept between polls, so a focused row stays focused
   if (!b || b.tagName !== "BUTTON" || b.dataset.project !== slug) {
     b = h("button", "pick"); b.type = "button"; b.dataset.project = slug;
@@ -1460,10 +1461,15 @@ function renderMachine(m) {
     const bar = h("span", "tankbar" + (pct != null && pct >= 80 ? " hot" : ""));
     bar.style.setProperty("--f", clamp(pct || 0, 0, 100) + "%");
     const line = [model, pct != null ? Math.round(pct) + "%" : "", ago].filter(Boolean).join(" · ");
+    if (quiet) {  // a sensitive project shows its name only: task and model never reach the DOM
+      el.className = "plate private";
+      el.replaceChildren(h("span", "ember"), h("span", "rn", name), h("span", "rt", "private"));
+      return;
+    }
     const kids = [h("span", "ember"), h("span", "rn", name), h("span", "rt", task), h("p", "rm", line), bar];
     const label = "Live session in " + name + (task ? ", task " + task : "") + (model ? ", " + model : "") +
       (pct != null ? ", context " + Math.round(pct) + "%" : "") + ", seen " + ago;
-    if (quiet || !SLUG.test(slug)) { el.className = "plate private"; el.replaceChildren(...kids); return; }
+    if (!SLUG.test(slug)) { el.className = "plate private"; el.replaceChildren(...kids); return; }
     pickRow(el, slug, label, true, kids);
   }, first);
   sync($("projects-list"), projects, p => str(p.slug), (el, p) => {
@@ -1511,19 +1517,20 @@ function setLink(v) {
   root.setAttribute("data-link", v);
   setText($("link-label"), LINK[v] || v);
 }
-let es = null, backoff = 1, retry = 0;
+let es = null, esQs = "", backoff = 1, retry = 0, unknown = false;
 function parse(d) { try { return JSON.parse(d); } catch (err) { return null; } }
 function connect() {
   clearTimeout(retry);
-  if (!window.EventSource) return;
-  es = new EventSource("/api/stream" + qs());
+  if (!window.EventSource || unknown) return;
+  es = new EventSource("/api/stream" + (esQs = qs()));
   es.addEventListener("open", () => { backoff = 1; snapAt = -Infinity; setLink("live"); });  // a restarted server's clock may be behind
   const on = ev => { const s = parse(ev.data); if (s) { setLink("live"); take(s); } };
   es.addEventListener("state", on);
   es.addEventListener("message", on);
   es.addEventListener("error", () => {
     setLink("reconnecting");
-    if (es && es.readyState === 2) {  // the browser gave up (a refusal, a 503): try again, slower each time
+    // the browser gave up (a refusal, a 503), or would reconnect to a stream opened before the project was pinned: reopen ours
+    if (es && (es.readyState === 2 || esQs !== qs())) {  // try again, slower each time
       es.close(); es = null;
       retry = setTimeout(connect, backoff * 1000);
       backoff = Math.min(30, backoff * 2);
@@ -1576,12 +1583,19 @@ function load() {
   const id = ++loadId;
   if (es) { es.close(); es = null; }
   clearTimeout(retry);
-  backoff = 1; snapAt = -Infinity; firstRender = true;
+  backoff = 1; snapAt = -Infinity; firstRender = true; unknown = false;
   if (topRow) topRow.setAttribute("data-swap", "");
   markCurrent();
-  fetch("/api/state" + qs(), {cache: "no-store"}).then(r => r.ok ? r.json() : null).then(s => {
+  fetch("/api/state" + qs(), {cache: "no-store"}).then(r => r.status === 404 ? 404 : r.ok ? r.json() : null).then(s => {
     if (id !== loadId) return;
-    if (s) take(s); else setText($("project"), "no project " + (currentProject || "") + " here");
+    if (s === 404) {  // not a project this server serves: show that, not the last project's data, and stop asking
+      unknown = true;
+      if (es) { es.close(); es = null; }
+      clearTimeout(retry);
+      take({project: {slug: currentProject}});  // an empty snapshot clears the scene, panels, queue, closes and ticker
+      firstRender = true; snapAt = -Infinity;
+      setText($("project"), "no project " + currentProject + " here");
+    } else if (s) take(s);
   }).catch(() => {}).then(() => { if (id === loadId && topRow) topRow.removeAttribute("data-swap"); });
   connect();
 }

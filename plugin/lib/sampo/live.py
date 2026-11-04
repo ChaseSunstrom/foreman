@@ -325,7 +325,9 @@ def resolve(default, slug):
         return default
     for p, meta in c.all_projects():
         if p.slug == slug:
-            return None if meta.get("sensitive") else p
+            if meta.get("sensitive"):
+                break
+            return p
     return None if asked else default  # a busiest session's project that is gone or hidden: the server's own
 
 
