@@ -2,10 +2,10 @@
 
 Task: T-2917 (brief 1).
 
-Parent: gen-4/seed.md row 7 → gen-0.md #5: "Getting the tools it lacks. When it hits something it can't do, it finds an
-existing plugin, skill or MCP server (`fm plugins find`, `fm lib search`) or builds one (`fm mcp new`, a script, a
-project skill), tests it, and uses it. Install grants are queued for me, never self-granted." gen-0's goal, MUSTs and
-NEVERs are quoted in the seed and apply here unchanged.
+Parent: gen-4/seed.md row 7 → gen-0.md #5 (gen-0.md:42, "Getting the tools it lacks": when it hits something it
+can't do, it finds an existing plugin, skill or server or builds one, tests it and uses it, and install grants are
+queued for the user, never self-granted; the verbs gen-0 names there are read in gen-0 itself, not restated here).
+gen-0's goal, MUSTs and NEVERs are quoted in the seed and apply here unchanged.
 
 ## Capability
 The tool a small model lacks is instructions it can follow. The user's standing steer (2026-11-03, T-2878): make the
