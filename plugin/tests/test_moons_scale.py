@@ -845,11 +845,24 @@ class StoreLock(_Funnel):
             self.assertEqual(self.fm("moons", "funnel", "--status").returncode, 0)  # read-only: no lock
         self.assertEqual(self.fm("moons", "funnel", "--max-calls", "0", check=False).returncode, 0)  # released
 
+    def test_status_is_the_funnels_alone(self):  # T-2865 review: families --status wrote families.json
+        r = self.fm("moons", "families", "--status", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("funnel --status", r.stderr)
+
+    def test_status_counts_duplicates_and_merges(self):  # T-2865 review: a dup was in no bucket
+        first, second = self.seed(moon("A", "a", "b"), moon("B", "c", "d"))
+        self.ms._log(self.p, [self.ms._event(first, "exact", "kept"), self.ms._event(second, "exact", "dup")],
+                     {"stages": {"exact": {}}}, "exact")
+        s = self.ms.status(self.p)
+        self.assertEqual(s["stages"]["exact"], {"kept": 1, "rejected": 0, "dropped": 1, "waiting": 0})
+        self.assertIn("exact 1 kept, 0 rejected, 1 dup or merged, 0 waiting", self.ms.status_line(s))
+
     def test_status_prints_each_stages_counts_without_a_model_call(self):  # T-2986
         first, _ = self.seed(moon("A", "a", "b"), moon("B", "c", "d"))
         self.ms._log(self.p, [self.ms._event(first, "exact", "kept")], {"stages": {"exact": {}}}, "exact")
         s = self.fm_json("moons", "funnel", "--status")
-        self.assertEqual(s["stages"]["exact"], {"kept": 1, "rejected": 0, "waiting": 1})
+        self.assertEqual(s["stages"]["exact"], {"kept": 1, "rejected": 0, "dropped": 0, "waiting": 1})
         self.assertEqual(s["stages"]["embed"]["waiting"], 1)
         self.assertEqual(s["total"], 2)
         self.assertIn("exact 1 kept", self.fm("moons", "funnel", "--status").stdout)

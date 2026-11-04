@@ -3694,7 +3694,12 @@ def _smith_arm(base, key, work, model, request, events, planner=None):
         _carry_runs(wt, work)
         evs_end = next((e for e in reversed(evs) if e.get("event") in ("closed", "blocked", "error", "answer", "timeout")), {})
         verifies = [e for e in evs if e.get("event") == "verify" and e.get("label") == "verify"]
-        if evs_end.get("event") == "closed" and not (verifies and verifies[-1].get("exit")):  # T-2995: green runs only
+        green = evs_end.get("event") == "closed" and not (verifies and verifies[-1].get("exit"))
+        try:  # T-2995 live: the grader's hidden check on the final tree is the stronger proof than the run's own close
+            fixed = bool(key.get("defects")) and all(passes(base, key, d, work) for d in key["defects"])
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+            fixed = False
+        if green or fixed:  # T-2995: verified runs only
             from sampo import traces
             try:
                 traces.keep(tmp, events[:-len(".events.jsonl")] + traces.SUFFIX if events.endswith(".events.jsonl")

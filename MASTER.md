@@ -93,6 +93,7 @@ The plugin itself: CLI, hooks, rules, skills, agents, tests.
 - `plugin/workflows/` `/foreman:review` and `/foreman:ideas` multi-agent… [→ files-1](docs/map/files-1.md)
 - `plugin/templates/` `brief.md` template; `mcp-server/` (sampo mcp new)… [→ files-1](docs/map/files-1.md)
 - `plugin/themes/` optional Sampo color theme (`/theme`) [→ files-1](docs/map/files-1.md)
+- `plugin/web/` `live/`: the page `sampo watch --web` serves (T-2999)… [→ files-1](docs/map/files-1.md)
 - `plugin/observability/` telegraf OTel input, Grafana dashboard, setup notes [→ files-1](docs/map/files-1.md)
 - `plugin/evals/` `claude plugin eval` cases with the rules embedded (protected) [→ files-1](docs/map/files-1.md)
 - `plugin/tests/` unit/behaviour tests, fixtures, hook bench, `e2e/` (live… [→ files-1](docs/map/files-1.md)

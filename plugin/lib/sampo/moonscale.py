@@ -130,13 +130,15 @@ def status(p):
         here = [e for x in rs if (e := f.get(x.get("id"))) and e.get("stage") == s]
         st[s] = {"kept": sum(e.get("verdict") == "kept" for e in here),
                  "rejected": sum(e.get("verdict") == "rejected" for e in here),
+                 "dropped": sum(e.get("verdict") in ("dup", "merged") for e in here),  # T-2865 review: dedupe and merges
                  "waiting": len(_at(rs, f, (ORDER[ORDER.index(s) - 1],), ("kept",)))}
     return {"total": len(rs), "stages": st}
 
 
 def status_line(r):
     return (f"Moons funnel: {r['total']} candidates; "
-            + "; ".join(f"{s} {n['kept']} kept, {n['rejected']} rejected, {n['waiting']} waiting"
+            + "; ".join(f"{s} {n['kept']} kept, {n['rejected']} rejected, "
+                        + (f"{n['dropped']} dup or merged, " if n.get("dropped") else "") + f"{n['waiting']} waiting"
                         for s, n in r["stages"].items()))
 
 

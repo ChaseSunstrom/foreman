@@ -4056,6 +4056,8 @@ def cmd_genesis(args):
                                        args.workers, None if args.think is None else args.think == "on",
                                        args.local_only)
                     return scli.out(args, r, moonscale.grow_line(r))
+                if getattr(args, "status", False) and verb != "funnel":  # T-2865 review: families --status rewrote families.json
+                    raise scli.UsageError("--status is the funnel's (sampo moons funnel --status)")
                 if verb == "funnel" and args.status:  # T-2986: read-only, no lock, no model
                     r = moonscale.status(p)
                     return scli.out(args, r, moonscale.status_line(r))
