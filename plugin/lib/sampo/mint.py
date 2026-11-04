@@ -21,6 +21,7 @@ SAMPLE = 40  # mutants tried per gen at most: the sample bound
 GREEN_RUNS = 2  # the unmutated copy must pass this many times, or the repo is skipped as flaky
 MAX_BYTES = 200_000  # bigger files are not mutated
 SKIP_DIRS = (".git", "node_modules", "target", ".venv", "venv", "__pycache__")
+DEP_DIRS = (".venv", "venv", "node_modules")  # T-2987: untracked deps linked into each copy, never copied or written
 LANG = {".py": "python", ".js": "js", ".jsx": "js", ".mjs": "js", ".ts": "ts", ".tsx": "ts", ".rb": "ruby",
         ".rs": "rust", ".c": "c"}
 DEFS_KEY = {"js": "js", "ts": "ts", "ruby": "rb", "rust": "rs", "c": "c"}  # louhi.DEFS, by language
@@ -151,19 +152,45 @@ def _apply(path, x):
         f.write("\n".join(lines))
 
 
-def _verdict(cmd, cwd):
+def _unwrap(cmd):
+    """T-2987: `uv run X` and its kin would re-sync the linked venv (repointing an editable install at the copy):
+    run X itself, which the venv's bin, first on PATH, resolves."""
+    return re.sub(r"^(?:uv|poetry|pipenv|pdm|hatch) run\s+", "", cmd)
+
+
+def _deps(src, clean, target, files):
+    """T-2987: real projects keep their deps out of git. Link the source's dependency dirs into the clean copy (every
+    copy keeps the link; nothing installs or writes through it), put a linked venv's bin first on PATH, the copy's
+    src and root first on PYTHONPATH (relative, so they name whichever copy runs: a mutant shadows an editable
+    install), no bytecode written into the user's venv, and one cargo target for the run so a mutant rebuilds only
+    its crate. The env, which grading uses too (the key's env)."""
+    env = {"PYTHONDONTWRITEBYTECODE": "1"}
+    for d in DEP_DIRS:
+        if os.path.isdir(os.path.join(src, d)) and not os.path.lexists(os.path.join(clean, d)):
+            os.symlink(os.path.join(src, d), os.path.join(clean, d))
+            if os.path.isdir(os.path.join(src, d, "bin")):
+                env["PATH"] = os.path.join(src, d, "bin") + os.pathsep + os.environ.get("PATH", "")
+                env["VIRTUAL_ENV"] = os.path.join(src, d)
+    if any(f.endswith(".py") for f in files):
+        env["PYTHONPATH"] = "src:."
+    if "Cargo.toml" in files:
+        env["CARGO_TARGET_DIR"] = target
+    return env
+
+
+def _verdict(cmd, cwd, extra=None):
     """True when the repo's test command passes, False when it fails, None when it gives no verdict (a time cap
     or a launch error): a mutant with no verdict is skipped, never kept."""
     from sampo import bench, louhi  # the code run here is the repo's own: no forge, cloud or registry credentials
     try:
-        r = subprocess.run(shlex.split(cmd), cwd=cwd, env=louhi._model_env(bench), capture_output=True,
-                           timeout=CAP_S, stdin=subprocess.DEVNULL)
+        r = subprocess.run(shlex.split(cmd), cwd=cwd, env={**louhi._model_env(bench), **(extra or {})},
+                           capture_output=True, timeout=CAP_S, stdin=subprocess.DEVNULL)
     except (subprocess.TimeoutExpired, OSError):
         return None
     return r.returncode == 0
 
 
-def _scenario(p, run, i, x, clean, cmd, src, head):
+def _scenario(p, run, i, x, clean, cmd, src, head, env=None):
     from sampo import louhi
     sid = f"{run}-m{i:02d}"
     base = os.path.join(louhi.root(p), run, sid)
@@ -175,6 +202,7 @@ def _scenario(p, run, i, x, clean, cmd, src, head):
            "author": "self", "request": REQUEST, "names": {}, "readings": [], "missing": [], "example": "",
            "done_ok": True, "claims": [], "rank": [], "commands": {"exec": cmd, "suite": ""},  # no @F@: no file to name
            "exec_t": CAP_S,  # grading gives the real suite the cap minting gave it (louhi's EXEC_T is for toy repos)
+           "env": env or {},  # T-2987: the linked deps' PATH, PYTHONPATH and cargo target, as minting ran them
            "defects": [{"kind": "bug", "symbols": [x["symbol"]], "files": [os.path.basename(x["rel"])],
                         "text": f"{x['symbol']}() is wrong: the project's own tests catch it", "tf": False,
                         "check": {"type": "suite"}}],
@@ -185,8 +213,9 @@ def _scenario(p, run, i, x, clean, cmd, src, head):
             "repo": os.path.join(base, "repo"), "request": REQUEST}
 
 
-def gen(p, repo, n=6, seed=0):
-    """Mint up to n scenarios from repo's HEAD into a new run under exam's root. Returns the run's meta."""
+def gen(p, repo, n=6, seed=0, test_cmd=None):
+    """Mint up to n scenarios from repo's HEAD into a new run under exam's root, against test_cmd or the repo's
+    detected gate. Returns the run's meta."""
     from sampo import louhi, map as mapmod
     if not 1 <= n <= 50:
         raise ValueError("--n takes 1 to 50 with --from-repo")
@@ -211,11 +240,13 @@ def gen(p, repo, n=6, seed=0):
             t.extractall(clean, filter="data")
         os.remove(tar)
         files = _files(clean)
-        cmd = next((g for g in mapmod._gates(clean, files, []) if re.search(r"test|pytest", g)), None)
+        cmd = test_cmd or next((g for g in mapmod._gates(clean, files, []) if re.search(r"test|pytest", g)), None)
         if not cmd:
             raise ValueError(f"no test command for {src}: a tests/run.py, a test script or a Makefile test target")
+        cmd = _unwrap(cmd)
+        env = _deps(src, clean, os.path.join(louhi.root(p), run, "target"), files)
         mint["command"] = cmd
-        green = [_verdict(cmd, _copy(clean, tmp, f"green{i}")) for i in range(GREEN_RUNS)]
+        green = [_verdict(cmd, _copy(clean, tmp, f"green{i}"), env) for i in range(GREEN_RUNS)]
         if not all(green):
             mint["reason"] = "red or flaky at HEAD: the unmutated tests don't pass twice"
         else:
@@ -243,7 +274,7 @@ def gen(p, repo, n=6, seed=0):
                 w = _copy(clean, tmp, f"w{mint['tried']}")
                 _apply(os.path.join(w, x["rel"]), x)
                 mint["tried"] += 1
-                v = _verdict(cmd, w)
+                v = _verdict(cmd, w, env)
                 shutil.rmtree(w, ignore_errors=True)
                 if v is None:
                     mint["skipped"] += 1
@@ -252,7 +283,7 @@ def gen(p, repo, n=6, seed=0):
                 else:
                     mint["kept"] += 1
                     mint["mutations"].append(f"{x['rel']}:{x['line']} {x['old']}->{x['new']} ({x['op']})")
-                    scen.append(_scenario(p, run, mint["kept"], x, clean, cmd, src, head))
+                    scen.append(_scenario(p, run, mint["kept"], x, clean, cmd, src, head, env))
             if not cands:
                 mint["reason"] = "no mutable comparison or bound in the sources"
         meta = {"run": run, "seed": seed, "origin": "minted", "source": src, "head": head, "command": cmd, "n": n,

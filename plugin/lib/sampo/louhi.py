@@ -4012,7 +4012,7 @@ def cmd_exam(args):
             return steer.cmd(p, args)
         if action == "gen" and args.from_repo:  # T-2978: scenarios minted from a real repo's own tests
             from sampo import mint
-            meta = mint.gen(p, args.from_repo, args.n or 6, args.seed)
+            meta = mint.gen(p, args.from_repo, args.n or 6, args.seed, getattr(args, "test_cmd", None))
             m = meta["minted"]
             return cli.out(args, {"run": meta["run"], "scenarios": meta["scenarios"], "minted": m},
                            f"{meta['run']}: {m['kept']} minted of {m['tried']} tried ({m['missed']} missed, "

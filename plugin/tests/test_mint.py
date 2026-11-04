@@ -6,6 +6,7 @@ and HEAD stay untouched. Minted scenarios are graded like seeded ones (test_exam
 import json
 import os
 import subprocess
+import sys
 
 from helpers import ForemanTestCase, git_repo, read_text
 
@@ -149,3 +150,42 @@ class MintFromRepo(ForemanTestCase):
         self.assertEqual(r["minted"]["kept"], 0)
         self.assertEqual(r["scenarios"], [])
         self.assertIn("red", r["minted"]["reason"])
+
+
+class MintWithUntrackedDeps(MintFromRepo):  # T-2987: real projects keep their deps out of git (.venv, node_modules)
+    def setUp(self):
+        super().setUp()
+        lib = os.path.join(self.repo, ".venv", "lib")
+        os.makedirs(lib)
+        os.makedirs(os.path.join(self.repo, ".venv", "bin"))
+        with open(os.path.join(lib, "helperlib.py"), "w") as f:
+            f.write("ONE = 1\n")
+        py = os.path.join(self.repo, ".venv", "bin", "python3")  # a venv's interpreter: its lib is on the path
+        with open(py, "w") as f:
+            f.write(f'#!/bin/sh\nPYTHONPATH="$(dirname "$0")/../lib:$PYTHONPATH" exec {sys.executable} "$@"\n')
+        os.chmod(py, 0o755)
+        self.write(".gitignore", ".venv/\n")
+        self.write(os.path.join("tests", "test_calc.py"), "import helperlib  # only in the untracked venv\n" + TEST_CALC)
+        self.git("add", ".")
+        self.git("commit", "-qm", "tests need the venv")
+        self.head = self.git("rev-parse", "HEAD").strip()
+
+    def test_mints_through_the_linked_venv_and_leaves_it_untouched(self):
+        before = sorted(os.listdir(os.path.join(self.repo, ".venv", "lib")))
+        r = self.mint()
+        self.assertGreaterEqual(r["minted"]["kept"], 1, r["minted"])
+        self.assertEqual(sorted(os.listdir(os.path.join(self.repo, ".venv", "lib"))), before)  # no __pycache__ written
+        key = json.loads(read_text(os.path.join(os.path.dirname(r["scenarios"][0]["repo"]), "key.json")))
+        self.assertEqual(key["env"]["PYTHONPATH"], "src:.")  # the copy's sources shadow an editable install
+        self.assertTrue(os.path.islink(os.path.join(r["scenarios"][0]["repo"], ".venv")))
+
+    def test_a_given_test_command_replaces_the_detected_one(self):  # a slow suite mints against a fast subset
+        r = self.mint("--test-cmd", "uv run python3 -B tests/run.py")
+        self.assertEqual(r["minted"]["command"], "python3 -B tests/run.py")
+        self.assertGreaterEqual(r["minted"]["kept"], 1, r["minted"])
+
+    def test_a_runner_wrapper_is_unwrapped(self):
+        from sampo import mint
+        self.assertEqual(mint._unwrap("uv run pytest -q"), "pytest -q")
+        self.assertEqual(mint._unwrap("poetry run python -m pytest"), "python -m pytest")
+        self.assertEqual(mint._unwrap("cargo test"), "cargo test")

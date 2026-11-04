@@ -7869,6 +7869,8 @@ def _build_parser(only=None):
                                          "(default 6, at most 50)")
     s.add_argument("--from-repo", dest="from_repo", metavar="PATH", help="gen: mint scenarios from this git repo's HEAD, one "
                                                                          "mutation each, kept only when its own tests go red (T-2978)")
+    s.add_argument("--test-cmd", dest="test_cmd", metavar="CMD", help="gen --from-repo: the test command to mint "
+                   "against instead of the repo's detected gate: a fast subset makes a slow suite mintable (T-2987)")
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--per-kind", type=int, default=9, help="scenarios per kind; a third (rounded) is held out")
     s.add_argument("--lang", help="comma list (default all: python,js,ts,ruby,rust,c)")
