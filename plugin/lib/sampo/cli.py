@@ -6779,7 +6779,9 @@ def _build_parser(only=None):
             "as the skill loads it, {{fact}}s (test, language, entry…) filled in from sampo map and this project's "
             ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
     s.add_argument("action", choices=["show", "eval", "route", "blame", "preview", "coverage", "draft", "mine",
-                                      "counter", "score", "kata", "lesson"], help="eval NAME: "
+                                      "counter", "score", "kata", "lesson", "small"], help="small grow|coverage|show ID: "
+                   "cards written for 4B-27B models (research/cards), grown on local models, thin grid cells first "
+                   "(--target N --workers K --batch B --max-calls M --think on|off) (T-2909); eval NAME: "
                    "held-out briefs with and without the playbook loaded, the lift recorded (T-1618); route STAGE: the "
                    "playbooks a stage or task type loads; blame NAME: each line's task, from git; preview NAME: the "
                    "checks a load adds (T-1622); coverage: a heatmap of stages by stack, the playbooks naming each "
@@ -6797,6 +6799,12 @@ def _build_parser(only=None):
     s.add_argument("--answer", help="kata: a file holding your answer, scored against every kata's checks")
     s.add_argument("name", nargs="?", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that "
                    "name; route: a stage (verifying) or type (FIX), else the words to rank books by; coverage takes none")
+    s.add_argument("rest", nargs="*", help="small show: the card id or title's other words")
+    s.add_argument("--target", type=int, help="small grow: stop when the store holds N cards")
+    s.add_argument("--batch", type=int, help="small grow: cards asked of each call (default 6, at most 20)")
+    s.add_argument("--max-calls", type=int, help="small grow: stop after M model calls")
+    s.add_argument("--workers", type=int, help="small grow: calls at once (default: the local profile's slots)")
+    s.add_argument("--think", choices=("on", "off"), help="small grow: the local model's reasoning, over its profile")
     s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
     s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
                    "the playbook literally")

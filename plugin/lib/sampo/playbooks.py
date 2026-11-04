@@ -1102,6 +1102,9 @@ def _one(name, books):
 def cmd_show(args):
     """fm playbooks show NAME (T-1621); eval NAME (T-1618); route STAGE|TEXT|--task ID, blame NAME, preview NAME (T-1622)."""
     from sampo import cli
+    if args.action == "small":  # T-2909: cards written for small models
+        from sampo import smallcards
+        return smallcards.cmd(args)
     if args.action == "coverage" and args.unused:  # T-1834: who earns a place; only ever names, never deletes
         p = cli.resolve(args, create=False) if getattr(args, "project", None) else c.find_project(os.getcwd())
         days = REACH_DAYS if args.days is None else args.days
