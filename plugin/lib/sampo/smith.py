@@ -46,6 +46,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 
 from sampo import core
 from sampo import models as m
@@ -436,8 +437,47 @@ GAP_FIELDS = (("decision", "the Decision (a RESEARCH task ends in a choice), one
                _line))
 
 
+def _tokens(messages):
+    return sum(len(str(x.get("content") or "")) for x in messages) // 4  # ponytail: chars/4, as check_truncated
+
+
+def fit(run, profile, messages):
+    """T-2939: messages cut to the context an openai-kind loopback profile has, less an output reserve (MAX_TOKENS, at
+    most a quarter of it): first the project file list in the system prompt, then older tool results (trim, keep 3 then
+    1); the instructions and the request never. Within the context, or not local: `messages` itself. Says what it left
+    out; check_truncated and _ask's served stop stay the backstop when nothing more can be cut."""
+    ctx = profile.get("served") or profile.get("context") or 0
+    local = profile.get("kind") == "openai" and m.is_loopback(urllib.parse.urlsplit(str(profile.get("base_url") or "")).hostname or "")
+    room = ctx - min(MAX_TOKENS, ctx // 4)
+    if not (local and ctx) or _tokens(messages) <= room:
+        return messages
+    out, files, results = messages, 0, 0
+    block = run.fence(_files(run.root))
+    names = _names(run.root) or []
+    if any(block in str(x.get("content")) for x in out):
+        for n in (100, 50, 20, 0):
+            small = run.fence(_files(run.root, n))
+            out = [dict(x, content=x["content"].replace(block, small)) if block in str(x.get("content")) else x
+                   for x in messages]
+            files = max(0, min(len(names), 200) - n)  # what was shown before, less what is shown now
+            if _tokens(out) <= room:
+                break
+    if _tokens(out) > room:
+        for keep in (3, 1):
+            cut = trim(out, keep)
+            results = sum(a.get("content") != b.get("content") for a, b in zip(cut, out))
+            out = cut
+            if _tokens(out) <= room:
+                break
+    if out != messages:
+        run.emit("note", f"{profile.get('name')}: the prompt was over the {ctx}-token context: left out {files} files, "
+                         f"{results} older results")
+    return out
+
+
 def _ask(run, profile, messages, what):
     """One model call for a slot, under the spend cap; a CLI planner must leave the tree as it found it."""
+    messages = fit(run, profile, messages)
     before = core.worktree_tree(run.root) if profile.get("kind") == "cli" else None
     sent = sum(len(str(x.get("content") or "")) for x in messages) // 4  # ponytail: chars/4, as check_truncated
     if profile.get("served") and sent > profile["served"]:  # T-2935: it would be cut; don't spend the call
@@ -949,7 +989,7 @@ class Run:
                                 f"done; fm code --resume {self.tid} --max-steps N carries on")
             self.check_cap(name)
             self.turns += 1
-            sent = trim(msgs)
+            sent = fit(self, profile, trim(msgs))
             r = m.complete(self.capped(profile), sent, tools=tools, max_tokens=MAX_TOKENS)
             self.usage(r, profile, name)
             check_truncated(profile, sent, r)
@@ -2436,13 +2476,18 @@ def _strict(root):
     return why
 
 
-def _files(root):
+def _names(root):
     try:
-        out = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True, timeout=30).stdout
+        return subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True, timeout=30).stdout.splitlines()
     except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _files(root, n=200):
+    names = _names(root)
+    if names is None:
         return "(unknown)"
-    names = out.splitlines()
-    return "\n".join(names[:200]) + (f"\n… {len(names) - 200} more" if len(names) > 200 else "")
+    return "\n".join(names[:n]) + (f"\n… {len(names) - n} more" if len(names) > n else "")
 
 
 ELIDED = re.compile(r"(?im)^[ \t]*(?:#|//|/\*|<!--|--)[ \t]*(?:\.\.\.|…)"  # T-1398: '# ...', '// …'
