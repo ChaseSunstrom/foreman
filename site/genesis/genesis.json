@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-04T18:45:02Z",
- "rev": "a8727a00",
+ "updated": "2026-11-04T18:50:06Z",
+ "rev": "45f1001c",
  "capabilities": [
   {
    "n": 1,
@@ -32082,8 +32082,8 @@
     "novelty": 36
    },
    "merged": 13,
-   "kept": 287,
-   "pending": 5
+   "kept": 292,
+   "pending": 0
   },
   "families": [
    {
@@ -32120,7 +32120,7 @@
    },
    {
     "id": "F-000268",
-    "size": 2,
+    "size": 3,
     "lead": "Net out overlapping refactors before they collide",
     "today": "Today you can't know, in chat, that two people are reshaping the same module in different ways until the merge fails.",
     "with_this": "With this, you can let several refactors run at once, with conflicts settled before anyone's work is lost or redone.",
@@ -32745,6 +32745,566 @@
     ]
    },
    {
+    "id": "F-005136",
+    "size": 1,
+    "lead": "Collapse loop iteration costs into a single semantic bill",
+    "today": "Today you can't predict the total token spend of a script that retries or iterates because the cap resets on every single API call.",
+    "with_this": "With this, you can run unbounded verification loops that stop automatically when the aggregate semantic value delivered reaches the project's value threshold, preventing silent budget exhaustion on infinite loops.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-005284",
+    "size": 1,
+    "lead": "Auction off bug fixes to the lowest-cost model",
+    "today": "Today you can't bid on bug fixes so the most efficient solver gets the job.",
+    "with_this": "With this, you can reduce CI failure resolution time by 80 percent per incident.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-005288",
+    "size": 1,
+    "lead": "Limit orders for developer attention in CI queues",
+    "today": "Today you can't set a price for how long you are willing to wait for a build.",
+    "with_this": "With this, you can jump the queue by bidding for priority CI slots.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-005835",
+    "size": 1,
+    "lead": "Merge duplicate subagents that are solving the same problem",
+    "today": "Today you can't stop multiple subagents from doing redundant work because you can't see they are identical.",
+    "with_this": "With this, you can save money and time by consolidating duplicate background tasks into a single efficient process.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-005844",
+    "size": 1,
+    "lead": "Auto-merge conflicting features by semantic intent inference",
+    "today": "Today you can't let CI decide which of two conflicting feature branches is the correct business logic.",
+    "with_this": "With this, you can push conflicting feature branches and CI resolves them into a single coherent implementation without human review.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-006007",
+    "size": 1,
+    "lead": "Synchronize multi-agent releases with factory line logic",
+    "today": "Today you can't coordinate multiple AI agents working on different parts of a release without manual synchronization and conflict resolution.",
+    "with_this": "With this, you can deploy multiple agents in parallel with automatic conflict resolution, like a factory line where parts are assembled in perfect sync.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-006052",
+    "size": 1,
+    "lead": "Bid on release slots like a stock exchange",
+    "today": "Today you can't dynamically adjust which dependent tasks run first based on their probability of success and market value.",
+    "with_this": "With this, you can see release blockers clear in real-time as your highest-risk items are automatically 'auctioned' to available compute, cutting mean-time-to-release by 40%.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-006058",
+    "size": 1,
+    "lead": "Index-based release for portfolio-wide stability",
+    "today": "Today you can't treat your entire product suite as a single financial index to optimize overall stability and release frequency.",
+    "with_this": "With this, you can maximize the overall 'return' (stable releases per unit of time) across your entire ecosystem by balancing the release cadence of individual products to maintain a healthy 'index' value.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-006164",
+    "size": 1,
+    "lead": "Auto-revoke secrets by rewriting history across org repos",
+    "today": "Today you can't instantly purge a leaked credential from every commit in every project without manual, error-prone history rewrites.",
+    "with_this": "With this, you can reduce the average incident response time from days to minutes and prevent the leaked key from ever being valid again.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
+    ]
+   },
+   {
+    "id": "F-006471",
+    "size": 1,
+    "lead": "Escalate release risk through a chain of command",
+    "today": "Today you can't automatically escalate a risky release decision to the right human expert based on the nature of the risk.",
+    "with_this": "With this, you can trigger a chain of human approvals in chat that matches the specific risk profile of your code, ensuring the right eyes see the right danger.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-006473",
+    "size": 1,
+    "lead": "Negotiate release constraints between opposing agents",
+    "today": "Today you can't get two AI agents with different priorities to agree on a safe release path without human mediation.",
+    "with_this": "With this, you can watch agents negotiate trade-offs in chat, reaching a consensus on what to include in a release, so you spend less time resolving technical disagreements.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-006623",
+    "size": 1,
+    "lead": "Auction migration slots among competing product teams",
+    "today": "Today you can't fairly allocate limited maintenance windows when ten product teams all need to migrate their services this week.",
+    "with_this": "With this, you can let teams bid on specific maintenance windows using their own allocated engineering capacity, ensuring the most critical migrations get the best slots without manager mediation.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-006624",
+    "size": 1,
+    "lead": "Bet on migration outcomes to fund rollback insurance",
+    "today": "Today you can't get instant financial compensation if a migration fails and requires an emergency rollback that disrupts the team.",
+    "with_this": "With this, you can earn automatic budget credits for your team if a migration succeeds, or receive a pre-funded rollback budget if it fails, removing the fear of costly mistakes.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-006701",
+    "size": 1,
+    "lead": "Let the user's silence steer the automated fleet",
+    "today": "Today you can't defer a recurring maintenance loop unless you manually intervene every cycle",
+    "with_this": "With this, you can let a single ignored alert pause all similar ops tasks across every project until you acknowledge it",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-006702",
+    "size": 1,
+    "lead": "Turn user hesitation into a project-wide cooldown",
+    "today": "Today you can't have your own uncertainty about a change stop all related automation instantly",
+    "with_this": "With this, you can freeze all pending ops actions across all projects the moment you hesitate on a single confirmation prompt",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-006703",
+    "size": 1,
+    "lead": "Make user deferrals act as a global speed limit",
+    "today": "Today you can't slow down the entire ops pipeline based on how often you defer tasks",
+    "with_this": "With this, you can automatically reduce the frequency of all automated checks across all projects when you defer more than a set number of tasks in a day",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-006705",
+    "size": 1,
+    "lead": "Let user's batch deferrals reshape the ops schedule",
+    "today": "Today you can't move all similar tasks to a specific time slot just by deferring them together",
+    "with_this": "With this, you can defer a group of tasks and have the system permanently move all similar tasks to that deferral window",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-006706",
+    "size": 1,
+    "lead": "Treat user's silence as a vote to simplify ops",
+    "today": "Today you can't have the system remove complex ops steps that you never acknowledge",
+    "with_this": "With this, you can have the system automatically simplify or remove ops workflows that you consistently ignore, across all projects",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-006708",
+    "size": 1,
+    "lead": "Let user's inconsistent deferrals flag risky automation",
+    "today": "Today you can't have the system flag automated ops actions as risky based on your own inconsistent behavior",
+    "with_this": "With this, you can have the system pause and require manual approval for any ops action that your own deferral history marks as uncertain",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-006788",
+    "size": 1,
+    "lead": "Discourse-driven migration planning for org-wide changes",
+    "today": "Today you can't plan a complex, organization-wide migration because dependencies between teams' changes are not explicitly modeled, leading to coordination failures.",
+    "with_this": "With this, you can generate a coherent, conflict-free migration plan for the entire organization, reducing deployment risks and ensuring smooth transitions for all users.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-007110",
+    "size": 1,
+    "lead": "Publish documentation drafts as ephemeral ecosystem consensus",
+    "today": "Today you can't share a half-written doc without freezing it as a permanent, version-controlled artifact that pollutes the team's history.",
+    "with_this": "With this, you can send fluid, evolving drafts to thousands of agents and peers who see the live state without cluttering the repository, accelerating review cycles.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "docs"
+    ]
+   },
+   {
+    "id": "F-007112",
+    "size": 1,
+    "lead": "Auto-resolve doc conflicts via swarm majority vote",
+    "today": "Today you can't merge documentation updates from multiple contributors without manual conflict resolution in text diffs.",
+    "with_this": "With this, you can let the ecosystem merge thousands of doc edits automatically by using majority consensus to resolve semantic conflicts, reducing maintenance time to zero.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "docs"
+    ]
+   },
+   {
+    "id": "F-007307",
+    "size": 1,
+    "lead": "Auto-negotiate agent permission grants in PR comments",
+    "today": "Today you can't have agents negotiate their own permission requirements in PR comments.",
+    "with_this": "With this, you can see agents propose and justify their needed grants in the PR thread.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
+    "id": "F-007447",
+    "size": 1,
+    "lead": "Dream up the rollback plan while the release is running",
+    "today": "Today you can't revert a complex microservice update without a human remembering the exact sequence of failed states",
+    "with_this": "With this, you can push breaking changes with the guarantee that the system will self-heal or revert within the same minute",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-007591",
+    "size": 1,
+    "lead": "Predict which flaky test will fail before it runs",
+    "today": "Today you can't identify a flaky test as a liability before it wastes a developer's time or blocks a merge.",
+    "with_this": "With this, you can automatically quarantine or fix flaky tests by quantifying their reliability score, turning instability into a visible cost that teams are incentivized to eliminate.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-007593",
+    "size": 1,
+    "lead": "Derivative contracts on your CI success rate",
+    "today": "Today you can't hedge against the risk of a bad merge that breaks the build for the whole team.",
+    "with_this": "With this, you can protect your release schedule by buying 'insurance' against CI failures, where the cost is determined by the historical reliability of your codebase.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-007594",
+    "size": 1,
+    "lead": "Spot bidding for CI resources based on urgency",
+    "today": "Today you can't get your critical tests to run first when the queue is full of low-priority jobs.",
+    "with_this": "With this, you can prioritize your most important work by bidding for immediate execution slots, ensuring that critical paths are never blocked by trivial changes.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-007596",
+    "size": 1,
+    "lead": "Staking CI resources for guaranteed fast failure",
+    "today": "Today you can't guarantee that a bad commit will be detected within seconds, even if you have high-end hardware.",
+    "with_this": "With this, you can stake compute resources against a commit to ensure instant feedback, with the stake penalized if the system fails to detect a clear breakage quickly.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ops"
+    ]
+   },
+   {
+    "id": "F-008082",
+    "size": 1,
+    "lead": "Auto-repair the code the moment a vulnerability is found",
+    "today": "Today you can't fix a security bug instantly because you have to read the code first.",
+    "with_this": "With this, you can have the code patched and tested automatically before you even open your laptop.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-008089",
+    "size": 1,
+    "lead": "Whisper the intent, and every copy obeys",
+    "today": "Today you can't update a business rule across all copied modules in your projects without manually finding and editing each instance.",
+    "with_this": "With this, you can speak the new rule into your phone, and every drifted copy across your portfolio updates instantly to match.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-008365",
+    "size": 1,
+    "lead": "Grow a feature by grafting competing implementations onto the live branch",
+    "today": "Today you can't merge three different approaches to a new module without manually deleting one or two that look slightly different but solve the same problem in better ways.",
+    "with_this": "With this, you can run parallel design patterns in the same codebase and keep the version that survives integration tests, reducing the time spent debating architectural choices by days.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-009128",
+    "size": 1,
+    "lead": "Simulate counterfactual migration paths to pick the least disruptive one",
+    "today": "Today you can't know which migration strategy is least disruptive to your running system before committing to it, so you must guess and hope.",
+    "with_this": "With this, you can choose the optimal migration path by seeing a live comparison of how each strategy affects your project's stability, performance, and user experience before you start.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-009495",
+    "size": 1,
+    "lead": "Price missing docs like a volatile asset class",
+    "today": "Today you can't see if stale documentation is worth the cost to update it in CI.",
+    "with_this": "With this, you can see a dynamic price tag on every missing doc that reflects how likely a user is to get confused.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "docs"
+    ]
+   },
+   {
+    "id": "F-009497",
+    "size": 1,
+    "lead": "Short stale docs when user confusion spikes",
+    "today": "Today you can't prioritize doc updates based on real-time user frustration signals.",
+    "with_this": "With this, you can trigger urgent doc rewrites in CI when user support tickets indicate high confusion about specific modules.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "docs"
+    ]
+   },
+   {
+    "id": "F-009680",
+    "size": 1,
+    "lead": "Bid on design fidelity before code is generated",
+    "today": "Today you can't see the cost of high-fidelity UI generation before committing to it.",
+    "with_this": "With this, you can set a budget for visual complexity and let the system propose the cheapest design that meets your acceptance criteria, saving hours of iterative refinement.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
     "id": "F-000520",
     "size": 2,
     "lead": "Let competing fixes suppress each other until one wins",
@@ -32774,6 +33334,89 @@
     "stage": "candidate",
     "evidence": "",
     "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-006372",
+    "size": 2,
+    "lead": "Predict total command cost before execution",
+    "today": "Today you can't know if a loop will blow your budget until it hits the cap mid-run",
+    "with_this": "With this, you can see the exact cost of a complex workflow before you spend a cent on it",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data",
+     "performance"
+    ]
+   },
+   {
+    "id": "F-007014",
+    "size": 2,
+    "lead": "Simulate the PR's impact on every dependent repository before merging",
+    "today": "Today you can't see how your API change breaks projects that depend on it until they file issues",
+    "with_this": "With this, you can know exactly which external projects will crash and fix the contract before code ships",
+    "tier": "high",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features",
+     "releases"
+    ]
+   },
+   {
+    "id": "F-007434",
+    "size": 2,
+    "lead": "Generate rollback scripts from code diff and infrastructure state logs",
+    "today": "Today you can't instantly roll back a release if the infrastructure changes were complex and undocumented by the departing engineer.",
+    "with_this": "With this, you can automatically generate a safe, idempotent rollback script that reverses the exact code and infrastructure changes of a failed release, allowing engineers to restore service in minutes instead of hours, preventing prolonged downtime and customer churn.",
+    "tier": "high",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
+    "id": "F-008931",
+    "size": 2,
+    "lead": "Simulate new user onboarding by acting as the developer",
+    "today": "Today you can't predict how confused a new team member will be when they clone your repo.",
+    "with_this": "With this, you can identify onboarding friction points before a new hire starts, improving team productivity and retention.",
+    "tier": "high",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
+    "id": "F-009639",
+    "size": 2,
+    "lead": "Simulate ecosystem collapse before touching the production schema",
+    "today": "Today you can't predict how a schema change ripples through hundreds of downstream services before you deploy it.",
+    "with_this": "With this, you can see which user journeys break and which revenue streams stall before the first byte is written to disk.",
+    "tier": "high",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations",
      "releases"
     ]
    },
@@ -34218,22 +34861,6 @@
     ]
    },
    {
-    "id": "F-001599",
-    "size": 1,
-    "lead": "Simulate a new team member's first week to find gaps",
-    "today": "Today you can't identify missing documentation or confusing architecture before a new hire actually gets stuck and wastes days.",
-    "with_this": "With this, you can fix onboarding friction before it happens by seeing exactly where a simulated newcomer would get lost.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "onboarding"
-    ]
-   },
-   {
     "id": "F-001642",
     "size": 1,
     "lead": "Trade historical test data for real-time execution insights",
@@ -34664,489 +35291,9 @@
     "kinds": [
      "refactors"
     ]
-   },
-   {
-    "id": "F-002671",
-    "size": 1,
-    "lead": "Intent-Driven Codebase Simplification Engine",
-    "today": "Today you can't remove dead code or redundant abstractions because you don't know what is truly safe to delete.",
-    "with_this": "With this, you can state a business goal (e.g., 'simplify the payment flow') and the agent will identify and remove all code that no longer contributes to that goal, verified by business-logic tests.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "refactors"
-    ]
-   },
-   {
-    "id": "F-002672",
-    "size": 1,
-    "lead": "Real-Time Refactoring Negotiation Loop",
-    "today": "Today you can't resolve architectural disagreements during refactoring without stopping work and holding a meeting.",
-    "with_this": "With this, you can have the agent simulate the debate between two architectural approaches, presenting you with the trade-offs in code complexity and performance, so you can decide in seconds.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "refactors"
-    ]
-   },
-   {
-    "id": "F-002728",
-    "size": 1,
-    "lead": "Create a public square for internal package documentation",
-    "today": "Today you can't easily find the correct way to use an internal utility library without reading source code or asking colleagues.",
-    "with_this": "With this, you can ask a natural language question in chat and receive a snippet of code that is guaranteed to work with the current version of your internal library, reducing onboarding time for new developers.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "docs"
-    ]
-   },
-   {
-    "id": "F-002731",
-    "size": 1,
-    "lead": "Streamline multi-repo dependency updates as city-wide infrastructure projects",
-    "today": "Today you can't coordinate a major version upgrade of a shared dependency across all 50 repositories in your organization without causing merge conflicts and manual testing chaos.",
-    "with_this": "With this, you can trigger a single command that automatically creates and merges the necessary updates across all affected repositories, ensuring a consistent version across the entire organization.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "docs"
-    ]
-   },
-   {
-    "id": "F-002964",
-    "size": 1,
-    "lead": "Simulate user experience drift before it happens",
-    "today": "Today you can't predict how your UI will look or perform under different network conditions and devices.",
-    "with_this": "With this, you can run a 'drift simulation' that shows you how your UI will degrade or break on low-end devices.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "migrations"
-    ]
-   },
-   {
-    "id": "F-003322",
-    "size": 1,
-    "lead": "Predict token cost by simulating agent behavior before execution",
-    "today": "Today you can't estimate the cost of a complex multi-step task before starting because you only see the bill after the agents have run.",
-    "with_this": "With this, you can set a budget cap for a task and see a real-time projection of token usage, stopping the process if it exceeds the limit, saving money on runaway agents.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "data"
-    ]
-   },
-   {
-    "id": "F-003395",
-    "size": 1,
-    "lead": "Enforce data consistency across all projects in one PR",
-    "today": "Today you can't ensure that a database change in one project doesn't break a different project sharing the same schema.",
-    "with_this": "With this, you can validate a database change against all services that use that schema, not just the one making the change.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "data"
-    ]
-   },
-   {
-    "id": "F-003485",
-    "size": 1,
-    "lead": "Run the migration on a live ghost of the current schema",
-    "today": "Today you can't see if a data migration breaks business logic before it touches production data.",
-    "with_this": "With this, you can verify data integrity and query performance against a synthetic replica of your production state, catching logic errors that unit tests miss.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "migrations"
-    ]
-   },
-   {
-    "id": "F-003525",
-    "size": 1,
-    "lead": "Route new interface contracts through a live pilot zone before release",
-    "today": "Today you can't verify if a breaking change affects any client before pushing it to production.",
-    "with_this": "With this, you can deploy a change that automatically quarantines incompatible clients to a fallback version, preventing outages for your users.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "onboarding"
-    ]
-   },
-   {
-    "id": "F-003558",
-    "size": 1,
-    "lead": "Simulate 1000 future schema states to predict which migration will fail first",
-    "today": "Today you can't see which of your upcoming migrations will break under concurrent user load or data growth.",
-    "with_this": "With this, you can predict the first migration failure in a sequence, preventing production outages and saving on emergency patch costs.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "migrations"
-    ]
-   },
-   {
-    "id": "F-003869",
-    "size": 1,
-    "lead": "Quarantine new dependencies like a host cell walls off a virus.",
-    "today": "Today you can't see if a new library will corrupt your local state or leak data before it touches your disk.",
-    "with_this": "With this, you can safely preview the side effects of any package install on a live copy of your project without dirtying your real environment.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "design"
-    ]
-   },
-   {
-    "id": "F-003870",
-    "size": 1,
-    "lead": "Evolve your project's dependency tree through natural selection.",
-    "today": "Today you can't discover which package versions actually work best together for your specific codebase without trial and error.",
-    "with_this": "With this, you can automatically test dozens of dependency combinations against your test suite to find the most stable and performant configuration.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "design"
-    ]
-   },
-   {
-    "id": "F-003871",
-    "size": 1,
-    "lead": "Immunize your codebase against future supply chain attacks.",
-    "today": "Today you can't predict if a popular library will be compromised in the next update.",
-    "with_this": "With this, you can maintain a local, evolving 'memory' of trusted behaviors for every package, alerting you when a new update deviates from its historical pattern.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "design"
-    ]
-   },
-   {
-    "id": "F-003879",
-    "size": 1,
-    "lead": "Auto-generate the rollback script for any complex migration",
-    "today": "Today you can't automatically generate a safe, tested rollback script for a migration that alters data in a non-reversible way.",
-    "with_this": "With this, you can merge any migration PR knowing that a fully tested, executable rollback script is already written and attached to the PR description.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "migrations"
-    ]
-   },
-   {
-    "id": "F-003883",
-    "size": 1,
-    "lead": "Generate the data migration script from the new schema",
-    "today": "Today you can't automatically write the data transformation script needed to move data from the old database schema to the new one when the schema changes significantly.",
-    "with_this": "With this, you can see a complete, executable data migration script generated in the PR when you update your database schema, ready to run in production.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "migrations"
-    ]
-   },
-   {
-    "id": "F-003945",
-    "size": 1,
-    "lead": "Branch a database to test alternative migration paths",
-    "today": "Today you can't try a different migration strategy without restarting the whole process.",
-    "with_this": "With this, you can fork the database into multiple branches, each testing a different migration order or method simultaneously.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "migrations"
-    ]
-   },
-   {
-    "id": "F-003958",
-    "size": 1,
-    "lead": "Transplant fresh sessions to graft onto legacy codebase",
-    "today": "Today you can't verify a pull request by comparing its output against a completely independent rebuild of the same state.",
-    "with_this": "With this, you can detect hidden state drift by seeing if a fresh agent session produces identical artifacts to the accumulated history.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "onboarding"
-    ]
-   },
-   {
-    "id": "F-003998",
-    "size": 1,
-    "lead": "Auto-evolve security patches by mutating code until they survive chaos",
-    "today": "Today you can't let the system fix its own vulnerabilities without human-written patches that often miss edge cases.",
-    "with_this": "With this, you can ship code that self-repairs security flaws in production, reducing incident response time from hours to minutes and lowering patch maintenance costs.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "security"
-    ]
-   },
-   {
-    "id": "F-004031",
-    "size": 1,
-    "lead": "Auto-generate the regression test suite for your dependency upgrade",
-    "today": "Today you can't automatically create the unit tests required to prove your library upgrade doesn't break downstream consumers.",
-    "with_this": "With this, you can receive a PR that includes new test files covering the exact behavioral changes of your upgrade, validated against the live ecosystem.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "onboarding"
-    ]
-   },
-   {
-    "id": "F-004079",
-    "size": 1,
-    "lead": "Generate documentation diffs from production code behavior",
-    "today": "Today you can't verify that docs match the actual behavior of the system in CI",
-    "with_this": "With this, you can see exactly which documentation paragraphs are obsolete because the code no longer behaves that way",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "docs"
-    ]
-   },
-   {
-    "id": "F-004119",
-    "size": 1,
-    "lead": "Heal the UI graph by mutating the codebase",
-    "today": "Today you can't automatically fix broken user flows just because the crawler detected them.",
-    "with_this": "With this, you can reduce release blockers by 80% because the system patches the frontend code to resolve detected navigation dead-ends.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-004126",
-    "size": 1,
-    "lead": "Auto-generate complete feature documentation from code diffs",
-    "today": "Today you can't have a pull request that automatically produces a full user-facing documentation page for every new feature or graph mentioned in the diff.",
-    "with_this": "With this, you can open a pull request and receive a link to a live, rendered documentation page that explains the new functionality to end users, eliminating manual writing.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "design"
-    ]
-   },
-   {
-    "id": "F-004263",
-    "size": 1,
-    "lead": "Graft new code patterns onto the repo using evolutionary pressure",
-    "today": "Today you can't safely introduce a new architectural pattern without manually auditing every file for compatibility",
-    "with_this": "With this, you can evolve the codebase by mutating a subset of files and letting the test suite prune incompatible branches automatically",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "refactors"
-    ]
-   },
-   {
-    "id": "F-004306",
-    "size": 1,
-    "lead": "Simulate user impact of code changes before deployment",
-    "today": "Today you can't estimate how many users will be negatively affected by a code change before deploying it.",
-    "with_this": "With this, you can decide whether to roll back a risky change or push it forward with full knowledge of the potential user impact, protecting your product reputation and user experience.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-004307",
-    "size": 1,
-    "lead": "Auto-generate rollback plans based on code dependencies",
-    "today": "Today you can't automatically generate a safe rollback plan for a complex release.",
-    "with_this": "With this, you can instantly execute a safe rollback if a release fails, minimizing downtime and saving your team from the panic and time spent manually figuring out how to revert changes.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-004435",
-    "size": 1,
-    "lead": "Use a 'Chess' algorithm to plan multi-agent task dependencies",
-    "today": "Today you can't predict if three agents will deadlock when working on interdependent features",
-    "with_this": "With this, you can visualize the 'move tree' of agent interactions, avoiding deadlocks by seeing the 'forks' in the game",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "design"
-    ]
-   },
-   {
-    "id": "F-004503",
-    "size": 1,
-    "lead": "Let your pipeline breed self-healing data filters",
-    "today": "Today you can't automatically fix data quality issues once they are discovered in production.",
-    "with_this": "With this, you can reduce manual data cleaning time by allowing the system to generate and test fixes automatically.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "security"
-    ]
-   },
-   {
-    "id": "F-004575",
-    "size": 1,
-    "lead": "Isolate vulnerable dependencies into ephemeral sandboxed execution cells",
-    "today": "Today you can't prevent a malicious transitive dependency from touching your production data or environment variables during normal runtime.",
-    "with_this": "With this, you can guarantee that any known vulnerable package runs in a resource-constrained, network-isolated micro-environment that expires after the specific code path completes.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "ops"
-    ]
-   },
-   {
-    "id": "F-004613",
-    "size": 1,
-    "lead": "Detect hidden dependencies between modules that are not explicit in the code",
-    "today": "Today you can't see the implicit coupling that makes your modules hard to change independently.",
-    "with_this": "With this, you can decouple tightly woven modules, enabling faster development and reducing the risk of unintended side effects when one part of the system changes.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "refactors"
-    ]
-   },
-   {
-    "id": "F-004657",
-    "size": 1,
-    "lead": "Simulate ecosystem impact before releasing a patch",
-    "today": "Today you can't know if your patch will break other teams' integrations.",
-    "with_this": "With this, you can see exactly which downstream services will fail before you ship.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
    }
   ],
-  "families_total": 191
+  "families_total": 280
  },
  "steer": {
   "run": "steer-20261102T212604-3954",
