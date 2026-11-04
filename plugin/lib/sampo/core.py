@@ -5520,7 +5520,7 @@ def unrunnable(cmd, root, notes=None):
             err = io.StringIO()
             try:
                 with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
-                    cli.build_parser().parse_args(words[1:])
+                    cli.build_parser().parse_args(cli._alias(words[1:])[0])  # T-2866: as main reads it
             except SystemExit as e:
                 if e.code:
                     return f"sampo doesn't take `{' '.join(words)}` ({fit(' '.join(err.getvalue().split()), 160)})"
