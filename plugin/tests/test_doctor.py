@@ -1286,6 +1286,23 @@ class ModelBackends(ForemanTestCase):  # T-2489: the model layer's backends on o
             self.assertIn("sensitive: local only", d.check_model_backends(p).detail)
 
 
+class LocalEmbedders(ForemanTestCase):  # T-2880: the backends line names local embedders and the pinned ones missing
+    def test_line_names_embedders_and_each_missing_pin_with_its_pull_command(self):
+        from unittest import mock
+        from sampo import models
+        reg = [{"name": "ollama", "local": True, "profile": {}}]
+        with mock.patch.object(models, "registry", return_value=reg), mock.patch.object(
+                models, "embedding_profiles", return_value=[{"name": "bge-m3:567m"}]):
+            r = d.check_model_backends(None)
+        self.assertEqual(r.status, "PASS")
+        self.assertIn("embedders: bge-m3:567m", r.detail)
+        self.assertIn("missing pin: nomic-embed-text:v1.5 (ollama pull nomic-embed-text:v1.5)", r.detail)
+        self.assertNotIn("ollama pull bge-m3", r.detail)
+        with mock.patch.object(models, "registry", return_value=reg), mock.patch.object(
+                models, "embedding_profiles", side_effect=OSError("boom")):
+            self.assertEqual(d.check_model_backends(None).status, "PASS")
+
+
 class SelfFixWeek(ForemanTestCase):  # T-2365: the week's self-fix trials on one doctor line, held against not held
     def test_the_week_s_self_fix_trials_held_against_not_held_and_none_when_none(self):
         import datetime

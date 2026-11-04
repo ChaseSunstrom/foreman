@@ -123,6 +123,7 @@ gh repo clone ChaseSunstrom/sampo ~/.claude/foreman && ~/.claude/foreman/install
 - `--apply-conflicts`: disable plugins that compete with Sampo instead of only reporting them.
 - `--no-plugins`: skip the curated plugin setup.
 - `--bypass` / `--no-bypass`: make bypass mode your default, or keep your current permission mode, without being asked.
+- `--local-models` / `--no-local-models`: pull the pinned Ollama embedding models (bge-m3, nomic-embed-text) for the moons funnel, or don't and don't ask. Needs Ollama installed; the installer never installs it.
 - `--no-mod`: skip the sampo-ui mod.
 - `--no-wiring`: don't touch `~/.claude`.
 - `--build`: open Claude Code on `/foreman:build` to rebuild from `BUILD_PROMPT.md`.

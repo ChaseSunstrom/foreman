@@ -10,6 +10,8 @@
 #   --no-plugins     skip setup-plugins.sh
 #   --bypass         make bypassPermissions the default permission mode without asking
 #   --no-bypass      don't set it, and don't ask (on a terminal the installer asks; with no terminal it doesn't set it)
+#   --local-models   pull the pinned Ollama embedding models (bge-m3, nomic-embed-text) for the moons funnel; needs ollama installed
+#   --no-local-models  don't, and don't ask (on a terminal the installer asks; with no terminal it doesn't pull)
 #   --no-mod         don't install the foreman-ui mod (band above the prompt, dashboard pane, toasts)
 #   --no-wiring      don't wire Sampo into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)
 #   anything else    passed through to setup-plugins.sh (e.g. --security, --docs, --apply-conflicts)
@@ -23,7 +25,9 @@ FOREMAN_REPO="${FOREMAN_REPO:-https://github.com/ChaseSunstrom/sampo.git}"
 FOREMAN_HOME="${FOREMAN_HOME:-$HOME/.claude/foreman}"
 FOREMAN_DESKTOP_REPO="${FOREMAN_DESKTOP_REPO:-ChaseSunstrom/foreman-desktop}"
 
-BUILD=0 PLUGINS=1 BYPASS=ask WIRING=1 MOD=1 DESKTOP=0 PASS=()
+EMBED_PINS="bge-m3:567m nomic-embed-text:v1.5"   # T-2880: exact tags (doctor.EMBED_PINS is the same list)
+
+BUILD=0 PLUGINS=1 BYPASS=ask LOCAL=ask WIRING=1 MOD=1 DESKTOP=0 PASS=()
 for arg in "$@"; do
   case "$arg" in
     --build) BUILD=1 ;;
@@ -31,9 +35,11 @@ for arg in "$@"; do
     --no-plugins) PLUGINS=0 ;;
     --bypass) BYPASS=1 ;;
     --no-bypass) BYPASS=0 ;;
+    --local-models) LOCAL=1 ;;
+    --no-local-models) LOCAL=0 ;;
     --no-mod) MOD=0 ;;
     --no-wiring) WIRING=0 ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) PASS+=("$arg") ;;
   esac
 done
@@ -214,6 +220,27 @@ print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if 
       say "Foreman Desktop installed: $HOME/Applications/Foreman.app" ;;
     *) die "Foreman Desktop has builds for Linux x86_64 and macOS; build it from https://github.com/$FOREMAN_DESKTOP_REPO" ;;
   esac
+fi
+
+# 6. Local embedding models (T-2880): opt-in like bypass. Sampo finds Ollama's embedders by itself (no profile to
+# write); this only pulls the pinned ones. It never installs the runtime: that needs root and is Ollama's to ship.
+if [ "$LOCAL" = ask ]; then
+  LOCAL=0
+  if (exec </dev/tty) 2>/dev/null; then
+    printf '\nPull the local embedding models Sampo'"'"'s moons funnel uses (%s; ~1 GB, needs Ollama)? [y/N] ' "$EMBED_PINS"
+    read -r ans </dev/tty || ans=""
+    case "$ans" in y|Y|yes|YES) LOCAL=1 ;; esac
+  fi
+fi
+if [ "$LOCAL" = 1 ]; then
+  if command -v ollama >/dev/null 2>&1; then
+    for m in $EMBED_PINS; do
+      say "Pulling $m"
+      ollama pull "$m" || say "Couldn't pull $m (is the Ollama server running? retry: ollama pull $m)"
+    done
+  else
+    say "Ollama isn't installed: get it from https://ollama.com/download, then rerun with --local-models (or ollama pull each of: $EMBED_PINS)"
+  fi
 fi
 
 say "Sampo is installed at $FOREMAN_HOME"

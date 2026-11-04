@@ -35,6 +35,8 @@ assume yes. The command it installs is `sampo`; `fm` still works as an alias for
    | `--no-wiring` | leave `~/.claude` alone: no status line wrapper, deny rules, `CLAUDE.md` block, rules link or `sampo` link |
    | `--bypass` | make `bypassPermissions` the default permission mode without asking |
    | `--no-bypass` | don't set it and don't ask |
+   | `--local-models` | pull the pinned Ollama embedding models (`bge-m3:567m`, `nomic-embed-text:v1.5`) for the moons funnel; needs Ollama installed (the installer never installs it) |
+   | `--no-local-models` | don't pull and don't ask (on a terminal the installer asks; with no terminal it doesn't pull) |
    | `--desktop` | also install Sampo Desktop from its newest release |
    | `--build` | open Claude Code on the Sampo build (rebuild or resume from `BUILD_PROMPT.md`) |
    | anything else | passed through to `setup-plugins.sh` (for example `--security`, `--docs`, `--apply-conflicts`) |

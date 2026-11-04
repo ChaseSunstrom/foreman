@@ -378,7 +378,43 @@ class InstallScript(unittest.TestCase):
     def test_build_install_adds_build_tools(self):
         self.assertIn("--build-tools", self.setup_args("--build"))
 
-    def no_claude(self, *agents):
+    def local_models(self, *flags, ollama=True):
+        """T-2880: install.sh with a stub `ollama` that logs its calls (never a real pull), or with none on PATH."""
+        calls = os.path.join(self.env["HOME"], "ollama-calls")
+        env = self.no_claude(skip=("ollama",))
+        if ollama:
+            with open(os.path.join(self.env["HOME"], "noclaude", "ollama"), "w") as f:
+                f.write(f'#!/usr/bin/env bash\necho "ollama $*" >> {calls}\nexit 0\n')
+            os.chmod(os.path.join(self.env["HOME"], "noclaude", "ollama"), 0o755)
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins", "--no-bypass", "--no-wiring",
+                            "--no-mod", *flags], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL,
+                           timeout=60, start_new_session=True)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return (read_text(calls) if os.path.exists(calls) else ""), p.stdout + p.stderr
+
+    def test_local_models_pulls_each_pinned_embedder(self):
+        calls, _ = self.local_models("--local-models")
+        self.assertIn("ollama pull bge-m3:567m\n", calls)
+        self.assertIn("ollama pull nomic-embed-text:v1.5\n", calls)
+
+    def test_local_models_without_ollama_prints_the_download_url_and_installs_on(self):
+        calls, out = self.local_models("--local-models", ollama=False)
+        self.assertEqual(calls, "")
+        self.assertIn("https://ollama.com/download", out)
+        self.assertIn("Sampo is installed", out)
+
+    def test_local_models_does_nothing_without_a_terminal_and_no_flag(self):
+        self.assertEqual(self.local_models()[0], "")
+
+    def test_no_local_models_pulls_nothing(self):
+        self.assertEqual(self.local_models("--no-local-models")[0], "")
+
+    def test_the_pins_match_the_doctor_s(self):
+        from sampo import doctor
+        src = read_text(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(FM))), "install.sh"))
+        self.assertIn('EMBED_PINS="' + " ".join(doctor.EMBED_PINS) + '"', src)
+
+    def no_claude(self, *agents, skip=()):
         """T-2174: this machine's tools with no claude anywhere on PATH, the running python3 first, and a stub for
         each named agent CLI."""
         farm = os.path.join(self.env["HOME"], "noclaude")
@@ -390,9 +426,9 @@ class InstallScript(unittest.TestCase):
             os.chmod(os.path.join(farm, a), 0o755)
         for d in os.environ["PATH"].split(os.pathsep):
             for n in (os.listdir(d) if os.path.isdir(d) else []):
-                if n != "claude" and n not in AGENT_CLIS and not os.path.lexists(os.path.join(farm, n)):
+                if n != "claude" and n not in AGENT_CLIS and n not in skip and not os.path.lexists(os.path.join(farm, n)):
                     os.symlink(os.path.join(d, n), os.path.join(farm, n))
-        repo = os.path.dirname(os.path.dirname(os.path.dirname(FM)))
+        repo =os.path.dirname(os.path.dirname(os.path.dirname(FM)))
         os.symlink(os.path.join(repo, "plugin"), os.path.join(self.fhome, "plugin"))
         return dict(self.env, PATH=farm)
 

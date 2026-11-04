@@ -653,6 +653,9 @@ def check_flaky_rates(p, top=3):
         for r, _, n, e in rows[:top]))
 
 
+EMBED_PINS = ("bge-m3:567m", "nomic-embed-text:v1.5")  # T-2880: install.sh's EMBED_PINS (a test keeps them equal)
+
+
 def check_model_backends(p):
     """T-2489: the model layer's backends (fmmodels.registry: configured, reachable local, keyed cloud), local or
     cloud, and which uses are live; information only, so it never fails the doctor."""
@@ -667,8 +670,14 @@ def check_model_backends(p):
     kind = lambda b: "local" if b.get("local") else "own" if b.get("own") else "cloud"  # noqa: E731  T-2494
     names = lambda k: ", ".join(c.plain(str(b.get("name")))[:40] for b in reg if kind(b) == k) or "none"  # noqa: E731
     sens = "; sensitive: local only" if p and c.read_meta(p).get("sensitive") else ""
+    try:  # T-2880: the local embedders the moons funnel uses, and the pinned ones install.sh --local-models pulls
+        have = [str(e.get("name")) for e in models.embedding_profiles()]
+    except Exception:  # noqa: BLE001  a note, not a failure
+        have = []
+    emb = f"; embedders: {', '.join(c.plain(n)[:40] for n in have) or 'none'}" + "".join(
+        f"; missing pin: {m} (ollama pull {m})" for m in EMBED_PINS if m.split(":")[0] not in {n.split(":")[0] for n in have})
     return Result("model backends", "PASS", f"local: {names('local')}; own: {names('own')}; cloud: {names('cloud')}; "
-                                            f"live: {', '.join(live) or 'none'}{sens}")
+                                            f"live: {', '.join(live) or 'none'}{emb}{sens}")
 
 
 def _pinned_models():
