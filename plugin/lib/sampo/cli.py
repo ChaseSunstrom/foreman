@@ -7754,7 +7754,12 @@ def _build_parser(only=None):
                    help="exam: who drafts (genesis: sampo genesis draft; plain: a model with the format only; oracle/empty: "
                         "the scoring's own bounds)")
     s.add_argument("--split", choices=("holdout", "train", "all"), default="holdout", help="exam: which scenarios")
-    s.add_argument("--seed", type=int, default=0, help="exam: the scenario draw")
+    s.add_argument("--seed", type=int, default=0, help="exam: the scenario draw; moonshot grow/coverage: the tie-break "
+                                                       "among equally thin cells")
+    s.add_argument("--target", type=int, help="moonshot grow: stop when the candidate store holds N (default: one batch "
+                                              "more)")
+    s.add_argument("--batch", type=int, default=8, help="moonshot grow: moons asked of each call (default 8, at most 50)")
+    s.add_argument("--max-calls", type=int, help="moonshot grow: stop after M model calls")
     s.add_argument("--author", choices=("self", "child"), default="self",
                    help="exam: child = each project's defect and G-line's MUST/NEVER lines come from a tool-less model, "
                         "so #13 scores on scenarios Sampo didn't write (T-2215)")

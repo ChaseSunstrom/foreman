@@ -4042,12 +4042,19 @@ def cmd_genesis(args):
                 return scli.out(args, r, "\n".join(f"{x['id']} {x['next']} ({x['tier']}"
                                                     + (f", unblocks {x['unblocks']}" if x["unblocks"] else "") + f"): "
                                                     + x["title"] for x in r) or "Nothing to climb yet.")
+            if verb in ("grow", "coverage"):  # T-2868: Moonscale, the candidate store at scale
+                from sampo import moonscale
+                if verb == "grow":
+                    r = moonscale.grow(p, args.target, args.batch, args.seed, args.max_calls)
+                    return scli.out(args, r, moonscale.grow_line(r))
+                r = moonscale.coverage(p, args.seed)
+                return scli.out(args, r, moonscale.coverage_lines(r))
             if verb != "status":
                 if verb == "check":  # T-2858: the catalogue's problems alone, exit 1 on any
                     bad = moons.check(p)
                     scli.out(args, {"problems": bad}, "\n".join(bad) or "Moonshot catalogue: no problems.")
                     return 1 if bad else 0
-                raise scli.UsageError("fm genesis moonshot [status|rate|order|check]")
+                raise scli.UsageError("fm genesis moonshot [status|rate|order|check|grow|coverage]")
             s = moons.summary(p)
             return scli.out(args, s, "\n".join(moons.seed_lines(p, current(p) or 1)))  # this generation's work
         if action == "novelty":
