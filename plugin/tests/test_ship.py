@@ -506,6 +506,28 @@ class Ship(ForemanTestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(sh(self.origin, "rev-parse", "main"), before)
 
+    def test_a_branch_that_touched_a_tower_file_ships_over_the_live_towers_commit(self):
+        # T-2955: fm genesis live publishes site/genesis/* to main behind the branch; the branch touched genesis.json
+        # too, so the replay fell back to git cherry and the pick conflicted: the tower's file keeps main's version
+        self._merged_lane_then_main_moves("site/genesis/genesis.json")
+        sh(self.repo, "checkout", "-q", "work")
+        os.makedirs(os.path.join(self.repo, "site", "genesis"), exist_ok=True)
+        with open(os.path.join(self.repo, "site", "genesis", "genesis.json"), "w") as f:
+            f.write("branch\n")
+        sh(self.repo, "add", ".")
+        sh(self.repo, "commit", "-qm", "branch touches the tower file")
+        other = os.path.join(self.tmp, "other")
+        with open(os.path.join(other, "site", "genesis", "genesis.json"), "w") as f:
+            f.write("tower\n")
+        sh(other, "add", ".")
+        sh(other, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "Genesis: tower update (fm genesis live)")
+        sh(other, "push", "-q", "origin", "HEAD:main")
+        self.grant()
+        r = self.ship("--test", "true")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(sh(self.origin, "show", "main:shared.txt"), "one\ntwo\n")
+        self.assertEqual(sh(self.origin, "show", "main:site/genesis/genesis.json"), "tower\n")
+
     def test_a_remembered_test_runs_when_test_is_left_out(self):
         # T-1950: the oldest runtime's suite was retyped on every ship
         mark = os.path.join(self.tmp, "ran")

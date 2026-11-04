@@ -414,6 +414,15 @@ def _affected_first(p, wt, base, env):
         _err("the affected tests failed in the scratch tree" + (f": {', '.join(bad)}" if bad else "") + "; nothing was pushed")
 
 
+def _tower_files(root, last, base):
+    """T-2955: the files main moved since the last ship (by content) inside fm genesis live's write set (rune.live adds
+    site/genesis and the stats file): the tower publishes them to main behind every branch, so main's copy is the one
+    to keep. Everything else reaches main only through a ship, so a move there is someone else's and still stops it."""
+    from sampo import rune
+    moved = _git(root, "diff", "--name-only", last, base).splitlines()
+    return {f for f in moved if f.startswith("site/genesis/") or f == rune.STATS}
+
+
 def ship(p, args):
     """T-1943: fm ship — HEAD's commits the remote's main lacks (git cherry, by patch) or the named ones, cherry-picked
     onto the fetched main in a scratch worktree, their files compared, tested there, main re-checked, then pushed
@@ -440,7 +449,8 @@ def ship(p, args):
         last = ""  # rebased or another branch: git cherry alone
     def _files(a, b):
         return set(_git(root, "diff", "--name-only", a, b).splitlines())
-    if not picks and last and not (_files(last, base) & _files(last, "HEAD")):
+    tower = _tower_files(root, last, base) if last else set()  # T-2955: main's copy of these is the one to keep
+    if not picks and last and not ((_files(last, base) - tower) & _files(last, "HEAD")):
         # T-2054: main is where the last ship left it (T-2212: or moved only in files the branch left alone), so replay
         # the branch's own history: a merged lane's commit may not apply alone (its merge settled a conflict), but each
         # first-parent step applies in turn
@@ -471,11 +481,18 @@ def ship(p, args):
             for s in picks:
                 merge = len(_git(root, "rev-list", "--parents", "-n1", s).split()) > 2
                 r = c._git(wt, "cherry-pick", *(["-m", "1"] if merge else []), s, timeout=300, proc=True)
+                bad = set(_git(wt, "diff", "--name-only", "--diff-filter=U", ok=True).split()) if r.returncode else set()
+                if bad and bad <= tower:  # T-2955: only the live tower's files clash: main's copy stands
+                    _git(wt, "checkout", "--ours", "--", *bad)
+                    _git(wt, "add", "--", *bad)
+                    r = c._git(wt, "-c", "core.editor=true", "commit", "-q", "--no-edit", "--allow-empty", timeout=60,
+                               proc=True)
                 if r.returncode:
                     _git(wt, "cherry-pick", "--abort", ok=True)
                     hint = "" if args.commits else " (main may hold it under another patch: name the commits to ship)"
                     _err(f"{s[:8]} didn't cherry-pick onto {remote} main{hint}: {c.fit(c.plain(r.stderr.strip()), 200)}; nothing was pushed")
-            if files and c._git(wt, "diff", "--quiet", "HEAD", picks[-1], "--", *files, timeout=300, proc=True).returncode:
+            mine = [f for f in files if f not in tower]  # T-2955: the tower's files are main's, not the branch's
+            if mine and c._git(wt, "diff", "--quiet", "HEAD", picks[-1], "--", *mine, timeout=300, proc=True).returncode:
                 _err(f"the shipped files differ from {picks[-1][:8]}'s: a commit is missing or extra, or main changed "
                      "these files since the branch left it (rebase onto main); nothing was pushed")
             from sampo import ambient
