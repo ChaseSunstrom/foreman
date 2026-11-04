@@ -7865,7 +7865,10 @@ def _build_parser(only=None):
     s.add_argument("run", nargs="?", help="run/grade/check: the run id sampo exam gen printed; long: gen|run|grade")
     s.add_argument("rest", nargs="*", help="long run|grade: the run id")
     s.add_argument("--from", dest="from_", metavar="PATH", help="long gen: the local git repo to replay (default Sampo's own)")
-    s.add_argument("--n", type=int, help="long gen: goals to make (default 6, at most 20)")
+    s.add_argument("--n", type=int, help="long gen: goals to make (default 6, at most 20); gen --from-repo: scenarios to keep "
+                                         "(default 6, at most 50)")
+    s.add_argument("--from-repo", dest="from_repo", metavar="PATH", help="gen: mint scenarios from this git repo's HEAD, one "
+                                                                         "mutation each, kept only when its own tests go red (T-2978)")
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--per-kind", type=int, default=9, help="scenarios per kind; a third (rounded) is held out")
     s.add_argument("--lang", help="comma list (default all: python,js,ts,ruby,rust,c)")

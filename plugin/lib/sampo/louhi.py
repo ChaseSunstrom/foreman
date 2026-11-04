@@ -2243,7 +2243,8 @@ def _run(key, target, test_file, slow=False):
     from sampo import bench  # the code run here is model-written: no forge, cloud or registry credentials reach it
     cmds, env = key["commands"], _model_env(bench)
     with tempfile.TemporaryDirectory() as out:
-        for step, limit in (("build", BUILD_T), ("exec", SLOW_T if slow else EXEC_T)):
+        # a minted key carries its repo's own time cap: a real suite is slower than a seeded one (T-2978)
+        for step, limit in (("build", BUILD_T), ("exec", key.get("exec_t") or (SLOW_T if slow else EXEC_T))):
             if step not in cmds:
                 continue
             argv = [a.replace("@F@", test_file).replace("@OUT@", out) for a in shlex.split(cmds[step])]
@@ -2398,6 +2399,8 @@ def _static(target, chk):
 def passes(base, key, d, target):
     """A defect's hidden check on target: True when the defect is gone."""
     chk = d["check"]
+    if chk["type"] == "suite":  # T-2978: a minted defect is gone when the repo's own test command is green on target
+        return suite(key, target)[0]
     if chk["type"] == "static":
         return _static(target, chk)
     if chk["type"] == "intact":  # T-2343: a plain file at its place (no link in the path), same size, same bytes; read only
@@ -2686,7 +2689,8 @@ def _check_one(p, run, s):
     clean = os.path.join(base, "hidden", "clean")
     if s["kind"] != "flaky":
         ok, why = suite(key, s["repo"])
-        if ok == (s["kind"] == "dep"):
+        red = s["kind"] == "dep" or key.get("origin") == "minted"  # T-2978: a minted bug is one the suite catches
+        if ok == red:
             probs.append(f"planted suite {'passed' if ok else 'failed: ' + why}")
     for d in key["defects"]:
         if d["check"]["type"] == "intact":  # T-2343: git must not hold the door file, or deleting it could be undone
@@ -4004,6 +4008,14 @@ def cmd_exam(args):
         if action == "steer":  # T-2625: the steer-expansion exam (MOONSHOT.md part B)
             from sampo import steer
             return steer.cmd(p, args)
+        if action == "gen" and args.from_repo:  # T-2978: scenarios minted from a real repo's own tests
+            from sampo import mint
+            meta = mint.gen(p, args.from_repo, args.n or 6, args.seed)
+            m = meta["minted"]
+            return cli.out(args, {"run": meta["run"], "scenarios": meta["scenarios"], "minted": m},
+                           f"{meta['run']}: {m['kept']} minted of {m['tried']} tried ({m['missed']} missed, "
+                           f"{m['skipped']} skipped, {m['duplicates']} duplicate mutants) in "
+                           f"{os.path.join(root(p), meta['run'])}" + (f"; {m['reason']}" if m["reason"] else ""))
         if action == "gen":
             meta = gen(p, args.seed, args.per_kind, _list(args.lang, LANGS), _list(args.kind, KINDS), args.split,
                        args.author, args.model or "sonnet")
