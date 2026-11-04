@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-04T04:44:32Z",
- "rev": "a8f5a791",
+ "updated": "2026-11-04T04:54:49Z",
+ "rev": "aaebcf34",
  "capabilities": [
   {
    "n": 1,
@@ -25420,7 +25420,7 @@
  },
  "not_yet": 8,
  "not_yet_open": 8,
- "unproven": 765,
+ "unproven": 766,
  "unproven_kinds": {
   "meaning": 598,
   "research-uncited": 30,
@@ -25431,7 +25431,7 @@
   "docs": 87,
   "perf-noise": 1,
   "infra": 7,
-  "ui-unshot": 15,
+  "ui-unshot": 16,
   "data": 2
  },
  "next": {
@@ -26572,11 +26572,11 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 1900,
+   "generated": 2115,
    "write": {
     "title": 27,
-    "line": 163,
-    "payoff": 2,
+    "line": 203,
+    "payoff": 3,
     "kill test": 4
    },
    "dups": {
@@ -26591,7 +26591,7 @@
    },
    "merged": 0,
    "kept": 91,
-   "pending": 774
+   "pending": 948
   },
   "families": [
    {
