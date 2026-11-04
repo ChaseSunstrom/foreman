@@ -3984,6 +3984,14 @@ def cmd_exam(args):
             from sampo import long
             return long.cmd(p, args)
         if action == "models":  # T-2887: sampo louhi models run|show, the decision and embedding arms
+            if getattr(args, "export", None):  # T-2974: the training lake
+                from sampo import lake
+                man = lake.write(os.path.abspath(args.export), bool(getattr(args, "with_agent", False)))
+                c.write_atomic(os.path.join(p.dir, "research", "models", "lake-manifest.json"),
+                               json.dumps(man, indent=2, sort_keys=True) + "\n")
+                return cli.out(args, man, f"lake {man['hash'][:12]}: {man['rows']} rows from {man['projects']} projects "
+                                          f"(excluded {man['excluded']['sensitive']} sensitive, {man['excluded']['optout']} "
+                                          f"opted out, {man['dupes']} dupes) in {os.path.abspath(args.export)}")
             if args.run not in (None, "run", "show"):
                 raise ValueError("models: run or show")
             if args.run == "run":

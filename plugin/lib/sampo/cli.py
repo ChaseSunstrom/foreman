@@ -7882,6 +7882,11 @@ def _build_parser(only=None):
     s.add_argument("--jobs", type=int, help="run, long run: session scenarios at once (default 1, T-2292); steer run: "
                                             "cases at once (default 4)")
     s.add_argument("--final", action="store_true", help="long run: this is the end-of-run exam (session arms wait for it)")
+    s.add_argument("--export", metavar="DIR", help="models: write the training lake to DIR (rows.jsonl, manifest.json) and its "
+                   "manifest to this project's research/models/lake-manifest.json: finished tasks of every project here, "
+                   "outcome-labelled, names and paths stripped, sensitive and lake_optout projects left out (T-2974)")
+    s.add_argument("--with-agent", action="store_true", help="models --export: also the agent-written fields "
+                   "(the brief's reading, approach, criteria, steps, lessons), each marked author=agent; off by default")
     s.add_argument("--generation", action="store_true", help="models run: also the generation arm: K moons (--n, default 16) "
                    "through admit, kill and tier, and the Smith seeds, per generative profile; slow, and it calls the profiles "
                    "(models run: --limit caps the held-out rows asked per use, default 200) (T-2894)")
