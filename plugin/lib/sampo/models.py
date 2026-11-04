@@ -257,6 +257,19 @@ def _profile(name, d, where):
         if not (isinstance(d["embed_model"], str) and d["embed_model"]):
             bad("embed_model must be a model name")
         p["embed_model"] = d["embed_model"]
+    if "body" in d:  # T-2893: extras merged into the OpenAI request (never over its own keys)
+        if not isinstance(d["body"], dict):
+            bad("body must be an object")
+        p["body"] = d["body"]
+    if "think" in d:  # T-2893: chat_template_kwargs.enable_thinking, unless body sets it
+        if not isinstance(d["think"], bool):
+            bad("think must be true or false")
+        p["think"] = d["think"]
+    for k in ("slots", "max_out"):  # T-2893: parallel requests the server allows; the output budget of a bulk call
+        if k in d:
+            if isinstance(d[k], bool) or not isinstance(d[k], int) or d[k] <= 0:
+                bad(f"{k} must be a positive whole number")
+            p[k] = d[k]
     p["base_url"] = p["base_url"].rstrip("/")
     return p
 
@@ -770,7 +783,8 @@ def embed(profile, texts, timeout=120):
     return vecs
 
 
-def complete(profile, messages, tools=None, max_tokens=2048, timeout=120):
+def complete(profile, messages, tools=None, max_tokens=2048, timeout=120, think=None):
+    """think (T-2893): True/False overrides the profile's own switch for this call."""
     if profile.get("kind") == "cli":
         return _cli(profile, messages, timeout)
     if profile.get("kind") == "systemone":
@@ -796,7 +810,12 @@ def complete(profile, messages, tools=None, max_tokens=2048, timeout=120):
         return {"text": "".join(b.get("text", "") for b in content if b.get("type") == "text"), "tool_calls": calls,
                 "usage": {"in": usage.get("input_tokens", 0), "out": usage.get("output_tokens", 0)},
                 "stop": _stop(r.get("stop_reason"), calls)}
-    body = {"model": profile.get("model"), "max_tokens": max_tokens, "messages": to_openai(messages)}
+    body = {**_of(profile.get("body"), dict), "model": profile.get("model"), "max_tokens": max_tokens,
+            "messages": to_openai(messages)}
+    think = profile.get("think") if think is None else think
+    if isinstance(think, bool):
+        kw = body.get("chat_template_kwargs")
+        body["chat_template_kwargs"] = {"enable_thinking": think, **(kw if isinstance(kw, dict) else {})}
     if tools:
         body["tools"] = [t if "function" in t else {"type": "function", "function": t} for t in tools]
     headers = {"Authorization": f"Bearer {key}"} if key else {}
@@ -809,9 +828,14 @@ def complete(profile, messages, tools=None, max_tokens=2048, timeout=120):
     except (KeyError, IndexError, TypeError, AttributeError):
         raise ModelError(_scrub(f"{base}: reply has no usable choices: {json.dumps(r)[:200]}", key)) from None
     usage = _of(r.get("usage"), dict)
-    return {"text": msg.get("content") or "", "tool_calls": calls,
+    stop = _stop(choice.get("finish_reason"), calls)
+    text = msg.get("content") or ""
+    if stop == "length" and not calls and not (text if isinstance(text, str) else "x").strip():
+        raise ModelError(f"{profile.get('name')}: reasoning used the whole budget: no text in {max_tokens} tokens "
+                         "(think: false, or a larger max_out)")  # T-2893: said, not a silent fallback
+    return {"text": text, "tool_calls": calls,
             "usage": {"in": usage.get("prompt_tokens", 0), "out": usage.get("completion_tokens", 0)},
-            "stop": _stop(choice.get("finish_reason"), calls)}
+            "stop": stop}
 
 
 # ---------------------------------------------------------------- JSON from free text

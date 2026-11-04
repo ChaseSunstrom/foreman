@@ -136,7 +136,8 @@ class Route(_Moons):
 
     def ask(self, env, up=True):
         from sampo import ideas, models
-        with mock.patch.dict(os.environ, env), mock.patch.object(models, "resolve", return_value=dict(self.PROFILE)), \
+        with mock.patch.dict(os.environ, {"MOONS_LOCAL": "jarvis", **env}), \
+                mock.patch.object(models, "resolve", return_value=dict(self.PROFILE)), \
                 mock.patch.object(self.ms, "_up", return_value=up), \
                 mock.patch.object(models, "complete", return_value={"text": "local text"}) as comp, \
                 mock.patch.object(ideas, "run_child", return_value="haiku text") as child:
@@ -160,7 +161,7 @@ class Route(_Moons):
 
     def test_haiku_when_the_local_model_errs(self):
         from sampo import ideas, models
-        with mock.patch.dict(os.environ, {"MOONS_TEST_KEY": "k"}), \
+        with mock.patch.dict(os.environ, {"MOONS_TEST_KEY": "k", "MOONS_LOCAL": "jarvis"}), \
                 mock.patch.object(models, "resolve", return_value=dict(self.PROFILE)), \
                 mock.patch.object(self.ms, "_up", return_value=True), \
                 mock.patch.object(models, "complete", side_effect=models.ModelError("down")), \
@@ -214,6 +215,97 @@ class Grow(_Moons):
         cells = {(x["cell"]["kind"], x["cell"]["scale"], x["cell"]["surface"]) for x in rows}
         self.assertEqual(len(cells), 2, "the second batch went to another thin cell")
         self.assertEqual(self.ms.coverage(self.p)["reasons"], {"payoff": 2})
+
+    def test_two_workers_run_two_calls_at_once_and_append_whole_rows(self):  # T-2893
+        import threading
+        gate, seen = threading.Barrier(2, timeout=5), []
+
+        def fake(p, system, prompt, cheap=True, paid=0):
+            gate.wait()  # raises BrokenBarrierError unless a second call is in flight
+            seen.append(prompt)
+            return reply(4), "jarvis"
+        with mock.patch.object(self.ms, "_ask", side_effect=fake):
+            r = self.ms.grow(self.p, 8, batch=4, workers=2)
+        self.assertEqual((r["calls"], r["added"], r["stopped"]), (2, 8, "target"))
+        rows = self.ms.rows(self.p)
+        self.assertEqual([x["id"] for x in rows], [f"C-{i:06d}" for i in range(1, 9)])
+        self.assertEqual(sorted({x["batch"] for x in rows}), [1, 2])
+        self.assertEqual(len({x["title"] for x in rows[:4]}), 4)
+        with self.assertRaises(ValueError):
+            self.ms.grow(self.p, 8, workers=0)
+
+    def test_the_line_counts_local_haiku_and_empty_by_length_per_model(self):
+        from sampo import models
+        n = []
+
+        def fake(p, system, prompt, cheap=True, paid=0):
+            n.append(1)
+            if len(n) == 1:
+                with self.ms._lock:
+                    self.ms._cuts["jarvis"] += 1  # what _ask books when the local reply was cut empty
+                return reply(2), "haiku"
+            return reply(2), "jarvis"
+        with mock.patch.object(self.ms, "_ask", side_effect=fake):
+            r = self.ms.grow(self.p, 100, batch=2, max_calls=2)
+        self.assertEqual((r["models"], r["cut"]), ({"haiku": 1, "jarvis": 1}, {"jarvis": 1}))
+        self.assertIn("haiku 1, jarvis 1; empty by length (reasoning ate the budget): jarvis 1", self.ms.grow_line(r))
+        prof = {"name": "jarvis", "kind": "openai", "base_url": "https://127.0.0.1:9/v1", "model": "m",
+                "key_env": None, "context": 8192, "tools": False}
+        err = models.ModelError("jarvis: reasoning used the whole budget: no text")
+        with mock.patch.object(self.ms, "_local", return_value=prof), mock.patch.object(models, "complete", side_effect=err), \
+                mock.patch.object(self.ms.ideas, "run_child", return_value="h"):
+            self.ms._cuts.clear()
+            self.assertEqual(self.ms._ask(self.p, "s", "p"), ("h", "haiku"))
+        self.assertEqual(dict(self.ms._cuts), {"jarvis": 1})
+
+    def test_think_and_max_out_reach_the_local_call(self):
+        from sampo import models
+        prof = {"name": "jarvis", "kind": "openai", "base_url": "https://127.0.0.1:9/v1", "model": "m",
+                "key_env": None, "context": 8192, "tools": False, "max_out": 1500}
+        with mock.patch.object(self.ms, "_local", return_value=prof), \
+                mock.patch.object(models, "complete", return_value={"text": "t"}) as comp:
+            self.ms._ask(self.p, "s", "p")
+            self.assertEqual((comp.call_args.kwargs["max_tokens"], comp.call_args.kwargs["think"]), (1500, None))
+            self.ms._THINK = False
+            try:
+                self.ms._ask(self.p, "s", "p")
+            finally:
+                self.ms._THINK = None
+            self.assertIs(comp.call_args.kwargs["think"], False)
+            self.ms._THINK = True
+            try:
+                self.assertEqual(self.ms._ask(self.p, "s", "p"), ("t", "jarvis+think"))
+            finally:
+                self.ms._THINK = None
+        cell = {"problem": "slow tests", "source": "pain", "kind": "bugs", "mechanism": "biology", "scale": "file",
+                "surface": "terminal"}
+        self.ms.add(self.p, [good(), good(kill="")], cell, "jarvis+think", 1)
+        self.ms.add(self.p, [good()], cell, "jarvis+nothink", 2)
+        by = self.ms.coverage(self.p)["by_model"]
+        self.assertEqual(by, {"jarvis+think": {"rows": 2, "kept": 1}, "jarvis+nothink": {"rows": 1, "kept": 1}})
+        self.assertIn("Kept by model: jarvis+nothink 1 of 1, jarvis+think 1 of 2", self.ms.coverage_lines(self.ms.coverage(self.p)))
+
+    def test_the_default_local_profile_is_the_first_own_or_loopback_generative_one(self):
+        from sampo import models
+
+        def prof(name, base, model, **kw):
+            return {"name": name, "kind": "openai", "base_url": base, "model": model, "key_env": None, "context": 8192,
+                    "tools": False, **kw}
+        conf = {"cloud": prof("cloud", "https://api.example.com/v1", "big"),
+                "embed": prof("embed", "http://127.0.0.1:11434/v1", "nomic", own=True),
+                "decide": prof("decide", "http://127.0.0.1:11434/v1", "jev", own=True),
+                "mine": prof("mine", "https://gpu.example.com/v1", "qwen", own=True),
+                "loop": prof("loop", "http://127.0.0.1:8080/v1", "small")}
+        env = {k: v for k, v in os.environ.items() if k != "MOONS_LOCAL"}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(models, "configured", return_value=(None, conf)), \
+                mock.patch.object(models, "_local", side_effect=lambda *a: iter([prof("ollama", "http://127.0.0.1:11434/v1", "gen")])), \
+                mock.patch.object(models, "embedding_profiles", return_value=[prof("nomic", "", "nomic")]), \
+                mock.patch.object(models, "systemone_profiles", return_value=[prof("jev", "", "jev")]), \
+                mock.patch.object(self.ms, "_up", return_value=True):
+            self.assertEqual(self.ms._local(False)["name"], "mine")
+            self.assertEqual(self.ms._local(True)["name"], "loop", "a sensitive project's is loopback only")
+        with mock.patch.dict(os.environ, {"MOONS_LOCAL": ""}), mock.patch.object(models, "configured", return_value=(None, conf)):
+            self.assertIsNone(self.ms._local(False), "an empty MOONS_LOCAL turns the local model off")
 
     def test_grow_tells_each_call_how_many_paid_calls_came_before(self):
         seen = []
@@ -334,9 +426,59 @@ class _Funnel(_Moons):
         from sampo import models
         judge = judge or Judge(self.ms)
         with mock.patch.object(self.ms, "_ask", side_effect=judge), \
-                mock.patch.object(self.ms, "_local", return_value=dict(PROFILE) if local else None), \
+                mock.patch.object(self.ms, "_embedder", return_value=dict(PROFILE) if local else None), \
                 mock.patch.object(models, "embed", side_effect=self.embed):
             return self.ms.funnel(self.p, **kw), judge
+
+    def test_the_embed_stage_has_its_own_profile_the_best_ranked_embedding_model(self):  # T-2893
+        import http.server
+        import threading
+        from sampo import models
+        seen = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _a(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                seen.append((self.path, json.loads(self.rfile.read(n)) if n else None))
+                if self.path == "/api/tags":
+                    out = {"models": [{"name": "weak-embed", "capabilities": ["embedding"]},
+                                      {"name": "bge-m3:567m", "capabilities": ["embedding"]},
+                                      {"name": "gen", "capabilities": ["completion"]}]}
+                elif self.path == "/v1/models":
+                    out = {"data": [{"id": "bge-m3:567m"}]}
+                else:
+                    out = {"data": [{"index": 0, "embedding": [1.0, 0.0]}]}
+                data = json.dumps(out).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            do_GET = do_POST = _a
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, args=(0.02,), daemon=True).start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        url, real = f"http://127.0.0.1:{srv.server_address[1]}", models.embedding_profiles
+        bench = os.path.join(self.p.root, "research", "models")
+        os.makedirs(bench)
+        with open(os.path.join(bench, "bench.jsonl"), "w") as f:
+            for name, rec in (("weak-embed", 0.5), ("bge-m3:567m", 0.9)):
+                f.write(json.dumps({"arm": "embedding", "use": "title-to-brief", "backend": name, "recall_at_1": rec}) + "\n")
+        env = {k: v for k, v in os.environ.items() if k != "MOONS_EMBED"}
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(models, "embedding_profiles", side_effect=lambda *a: real(url)), \
+                mock.patch.object(models, "_local", side_effect=lambda *a: iter(())):
+            prof = self.ms._embedder(self.p)
+            self.assertEqual(prof["model"], "bge-m3:567m", "the model the bench ranks best")
+            self.assertEqual(models.embed(prof, ["a"]), [[1.0, 0.0]])
+            self.assertEqual(seen[-1], ("/v1/embeddings", {"model": "bge-m3:567m", "input": ["a"]}))
+            self.fm("sensitive", "on")
+            self.assertEqual(self.ms._embedder(self.p)["model"], "bge-m3:567m", "loopback is fine for a sensitive project")
+        with mock.patch.dict(os.environ, {"MOONS_EMBED": ""}):
+            self.assertIsNone(self.ms._embedder(self.p), "an empty MOONS_EMBED turns it off")
 
     def fates(self):
         return {k: (e["stage"], e["verdict"]) for k, e in self.ms.fate(self.p).items()}

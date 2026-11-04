@@ -7760,6 +7760,8 @@ def _build_parser(only=None):
                                               "more)")
     s.add_argument("--batch", type=int, default=8, help="moonshot grow: moons asked of each call (default 8, at most 50)")
     s.add_argument("--max-calls", type=int, help="moonshot grow/funnel: stop after M model calls")
+    s.add_argument("--workers", type=int, help="moonshot grow: calls at once (default: the local profile's slots)")
+    s.add_argument("--think", choices=("on", "off"), help="moonshot grow: the local model's reasoning, over its profile")
     s.add_argument("--stage", choices=("exact", "embed", "kill", "tier", "novelty"),
                    help="moonshot funnel: run this stage alone (default: all, cheapest first)")
     s.add_argument("--max", type=int, help="moonshot promote: at most N family leads (default 3)")

@@ -4048,7 +4048,8 @@ def cmd_genesis(args):
             if verb in ("grow", "coverage", "funnel", "families", "promote"):  # T-2868/T-2869: Moonscale
                 from sampo import moonscale
                 if verb == "grow":
-                    r = moonscale.grow(p, args.target, args.batch, args.seed, args.max_calls)
+                    r = moonscale.grow(p, args.target, args.batch, args.seed, args.max_calls,
+                                       args.workers, None if args.think is None else args.think == "on")
                     return scli.out(args, r, moonscale.grow_line(r))
                 if verb == "funnel":
                     r = moonscale.funnel(p, args.stage, args.max_calls)

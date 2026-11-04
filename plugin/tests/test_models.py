@@ -715,3 +715,37 @@ class OwnServer(Base):
         os.environ.update(TYPESAFE_API_KEY="k", TYPESAFE_MODEL="jeff")  # pragma: allowlist secret
         got = next(x for x in m.profiles() if x["name"] == "typesafe")
         self.assertEqual((got["model"], got["key_env"]), ("jeff", "TYPESAFE_API_KEY"))
+
+
+class Extras(Base):  # T-2893: a profile's body extras, its reasoning switch, and a reply the reasoning ate
+    def sent(self, prof, **kw):
+        f = self.fake((200, oa_reply("ok"), None))
+        prof = {**self.profile(f), **prof}
+        m.complete(prof, [{"role": "user", "content": "hi"}], **kw)
+        return f.seen[0][3]
+
+    def test_body_extras_and_think_reach_the_request(self):
+        body = self.sent({"body": {"top_k": 20, "model": "evil"}, "think": False})
+        self.assertEqual(body["top_k"], 20)
+        self.assertEqual(body["model"], "m1", "an extra never replaces the request's own keys")
+        self.assertEqual(body["chat_template_kwargs"], {"enable_thinking": False})
+        body = self.sent({"body": {"chat_template_kwargs": {"enable_thinking": True, "x": 1}}, "think": False})
+        self.assertEqual(body["chat_template_kwargs"], {"enable_thinking": True, "x": 1}, "body wins over think")
+        self.assertNotIn("chat_template_kwargs", self.sent({}))
+        self.assertTrue(self.sent({"think": False}, think=True)["chat_template_kwargs"]["enable_thinking"],
+                        "the call's think overrides the profile's")
+
+    def test_an_empty_reply_cut_by_length_names_the_reasoning(self):
+        f = self.fake((200, oa_reply("", finish="length"), None))
+        with self.assertRaises(m.ModelError) as e:
+            m.complete(self.profile(f), [{"role": "user", "content": "hi"}])
+        self.assertIn("reasoning used the whole budget", str(e.exception))
+        f = self.fake((200, oa_reply("half a sent", finish="length"), None))
+        self.assertEqual(m.complete(self.profile(f), [{"role": "user", "content": "hi"}])["text"], "half a sent")
+
+    def test_the_new_profile_keys_are_checked(self):
+        for k, v in (("body", []), ("think", "no"), ("slots", 0), ("max_out", True), ("slots", 1.5)):
+            with self.subTest(k=k), self.assertRaises(m.ModelError):
+                m._profile("x", {"model": "a", k: v}, "t")
+        p = m._profile("x", {"model": "a", "body": {"a": 1}, "think": False, "slots": 2, "max_out": 9000}, "t")
+        self.assertEqual((p["body"], p["think"], p["slots"], p["max_out"]), ({"a": 1}, False, 2, 9000))

@@ -6,11 +6,13 @@ replays the store, so it resumes. candidates.jsonl holds one row per moon, funne
 candidate's fate is its last); neither is ever rewritten. T-2869 (part 2, below): the funnel's stages cheapest first
 (exact and embedding dedupe, kill check, tier screen, novelty), families, promotion to moonshot.md and the export."""
 import collections
+import concurrent.futures
 import json
 import math
 import os
 import random
 import re
+import threading
 import urllib.parse
 import urllib.request
 
@@ -21,6 +23,7 @@ from sampo import ideas, models, moons, rune
 FEATURE, FALLBACK = "moons-grow", 0.05
 CANDIDATES, FUNNEL = "candidates.jsonl", "funnel.jsonl"
 TIMEOUT, PROBE = 300, 2.0
+MAX_WORKERS = 8
 MAX_BATCH, FAILS = 50, 3  # a batch's moons; failed or empty calls in a row before grow gives up
 FIELDS = {"title": 120, "today": 300, "with_this": 300, "what": 600, "kill": 400, "prior_art": 200, "tier": 20}
 
@@ -268,7 +271,13 @@ def coverage(p, seed=0):
     reasons = collections.Counter(str(e.get("reason") or "").split(":")[0] for e in fates.values()
                                   if e.get("verdict") == "rejected")
     grid = [(k, s, u) for k in KINDS for s in SCALES for u in SURFACES]
+    by_model = {}  # T-2893: the A/B of reasoning on and off is each model's rows and how many the funnel kept
+    for x in rs:
+        row = by_model.setdefault(str(x.get("model") or "?"), {"rows": 0, "kept": 0})
+        row["rows"] += 1
+        row["kept"] += fates.get(x.get("id"), {}).get("verdict") == "kept"
     return {"total": len(rs), "kept": verdicts["kept"], "rejected": verdicts["rejected"], "verdicts": dict(verdicts),
+            "by_model": by_model,
             "reasons": dict(reasons), "cells": {"/".join(map(str, k)): v for k, v in cnt["cells"].items()},
             "grid": len(grid), "touched": sum(1 for x in grid if cnt["cells"][x]),
             "mechanisms": dict(cnt["mechanisms"]), "sources": dict(cnt["sources"]),
@@ -284,7 +293,9 @@ def coverage_lines(r):
                                             for x in r["thinnest"]]
                      + [f"Mechanisms touched: {sum(1 for m in MECHANISMS if r['mechanisms'].get(m))} of "
                         f"{len(MECHANISMS)}; sources: " + (", ".join(f"{k} {v}" for k, v in
-                                                                    sorted(r["sources"].items())) or "none")])
+                                                                    sorted(r["sources"].items())) or "none")]
+                     + (["Kept by model: " + ", ".join(f"{m} {v['kept']} of {v['rows']}"
+                                                       for m, v in sorted(r["by_model"].items()))] if r["by_model"] else []))
 
 
 def _prompt(cell, k):
@@ -339,16 +350,8 @@ def _up(prof, key):
         return False
 
 
-def _local(sensitive):
-    """The MOONS_LOCAL profile (default jarvis) when its key is set and it answers; a sensitive project's only on
-    loopback."""
-    name = os.environ.get("MOONS_LOCAL", "jarvis").strip()
-    if not name:
-        return None
-    try:
-        prof = models.resolve(name)
-    except (models.ModelError, OSError, ValueError):
-        return None
+def _usable(prof, sensitive):
+    """prof when its key is set, it is allowed (a sensitive project's only on loopback) and its server answers."""
     env = prof.get("key_env")
     key = (os.environ.get(env) or "").strip() if env else None
     if env and not key:
@@ -356,6 +359,39 @@ def _local(sensitive):
     if sensitive and not models.is_loopback(urllib.parse.urlsplit(prof.get("base_url") or "").hostname or ""):
         return None
     return prof if _up(prof, key) else None
+
+
+def _generative(sensitive):
+    """T-2893: the own or loopback profiles that write text, models.json's first, then the local servers; never a
+    decision (systemone) or embedding model."""
+    try:
+        conf = models.configured()[1]
+        skip = {x["model"] for x in models.systemone_profiles() + models.embedding_profiles()}
+        for prof in list(conf.values()) + list(models._local()):
+            host = urllib.parse.urlsplit(prof.get("base_url") or "").hostname or ""
+            if prof.get("kind") == "openai" and prof.get("model") not in skip and (
+                    models.is_loopback(host) or (prof.get("own") and not sensitive)):
+                yield prof
+    except (models.ModelError, OSError, ValueError):
+        return
+
+
+def _local(sensitive):
+    """The MOONS_LOCAL profile when set (empty turns the local model off), else the first usable own or local
+    generative profile (T-2893); a sensitive project's only on loopback."""
+    name = os.environ.get("MOONS_LOCAL")
+    if name is None:
+        return next(filter(None, (_usable(x, sensitive) for x in _generative(sensitive))), None)
+    if not name.strip():
+        return None
+    try:
+        prof = models.resolve(name.strip())
+    except (models.ModelError, OSError, ValueError):
+        return None
+    return _usable(prof, sensitive)
+
+
+_lock, _cuts, _THINK = threading.Lock(), collections.Counter(), None  # replies cut empty, by model; --think's override
 
 
 def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
@@ -367,11 +403,15 @@ def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
     if prof:
         try:
             r = models.complete(prof, [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-                                max_tokens=4096, timeout=TIMEOUT)
+                                max_tokens=min(prof.get("max_out", 4096), prof.get("context", 4096)), timeout=TIMEOUT,
+                                think=_THINK)
             if (r.get("text") or "").strip():
-                return r["text"], prof["name"]
-        except (models.ModelError, ValueError, *models._TRANSPORT):
-            pass
+                # a --think run books its rows under their own name, so coverage's "kept by model" is the A/B (T-2893)
+                return r["text"], prof["name"] + ("" if _THINK is None else "+think" if _THINK else "+nothink")
+        except (models.ModelError, ValueError, *models._TRANSPORT) as e:
+            if "reasoning used the whole budget" in str(e):
+                with _lock:
+                    _cuts[prof["name"]] += 1
     if sensitive:
         raise ValueError("a sensitive project's records go to a local model only, and none answered (MOONS_LOCAL)")
     model = "haiku" if cheap else rune.REVIEW_MODELS[-1]
@@ -385,11 +425,19 @@ def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
     return ideas.run_child(feature, system, prompt, model, TIMEOUT, project=p.slug), model
 
 
-def grow(p, target=None, batch=8, seed=0, max_calls=None):
+def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=None):
     """Ask for `batch` moons per call, one thin cell at a time, until the store holds `target` rows (default: one batch
-    more), max_calls calls are made, the budget says no, or FAILS calls in a row fail or bring nothing back."""
+    more), max_calls calls are made, the budget says no, or FAILS calls in a row fail or bring nothing back.
+    T-2893: `workers` calls run at once (default: the local profile's slots, else 1); only this thread writes rows.
+    think False/True overrides the local profile's reasoning switch for the run."""
+    global _THINK
     if not isinstance(batch, int) or not 1 <= batch <= MAX_BATCH:
         raise ValueError(f"--batch takes 1 to {MAX_BATCH}")
+    if workers is None:
+        prof = _local(bool(c.read_meta(p).get("sensitive")))
+        workers = (prof or {}).get("slots", 1)
+    if not isinstance(workers, int) or not 1 <= workers <= MAX_WORKERS:
+        raise ValueError(f"--workers takes 1 to {MAX_WORKERS}")
     if max_calls is not None and max_calls < 0:
         raise ValueError("--max-calls can't be negative")
     rs = rows(p)
@@ -400,42 +448,56 @@ def grow(p, target=None, batch=8, seed=0, max_calls=None):
     batch_no = max((r["batch"] for r in rs if type(r.get("batch")) is int), default=0)
     probs = problems(p) if total < target else []
     r = {"calls": 0, "added": 0, "kept": 0, "rejected": 0, "reasons": collections.Counter(),
-         "models": collections.Counter(), "stopped": "", "error": "", "target": target}
+         "models": collections.Counter(), "stopped": "", "error": "", "target": target, "workers": workers}
     fails = paid = 0
-    while not r["stopped"]:
-        if total >= target:
-            r["stopped"] = "target"
-        elif max_calls is not None and r["calls"] >= max_calls:
-            r["stopped"] = "max_calls"
-        elif fails >= FAILS:
-            r["stopped"] = "failed"
-        if r["stopped"]:
-            break
-        cell = _pick(cnt, probs, 1, seed)[0]
-        r["calls"] += 1
-        try:
-            text, model = _ask(p, SYSTEM, _prompt(cell, batch), paid=paid)
-        except budget.BudgetError as e:
-            r["stopped"], r["error"] = "budget", c.fit(_norm(e), 300)
-            break
-        except (ValueError, OSError, models.ModelError) as e:
-            fails, r["error"] = fails + 1, c.fit(_norm(e), 300)
-            continue
-        paid += model in ("haiku", rune.REVIEW_MODELS[-1])  # a local answer is free
-        objs = _objects(text, batch)
-        if not objs:
-            fails, r["error"] = fails + 1, f"{model}: no moons in the reply"
-            continue
-        fails, batch_no = 0, batch_no + 1
-        out = add(p, objs, cell, model, batch_no)
-        _bump(cnt, cell, len(out))
-        total += len(out)
-        r["added"] += len(out)
-        r["models"][model] += 1
-        for _, verdict, why in out:
-            r[verdict] += 1
-            if why:
-                r["reasons"][why.split(":")[0]] += 1
+    with _lock:
+        _cuts.clear()
+    _THINK = think
+    pool = concurrent.futures.ThreadPoolExecutor(workers)
+    try:
+        while not r["stopped"]:
+            if total >= target:
+                r["stopped"] = "target"
+            elif max_calls is not None and r["calls"] >= max_calls:
+                r["stopped"] = "max_calls"
+            elif fails >= FAILS:
+                r["stopped"] = "failed"
+            if r["stopped"]:
+                break
+            k = min(workers, -(-(target - total) // batch), FAILS - fails,
+                    workers if max_calls is None else max_calls - r["calls"])
+            cells = _pick(cnt, probs, k, seed)
+            r["calls"] += len(cells)
+            futs = [pool.submit(_ask, p, SYSTEM, _prompt(cell, batch), paid=paid + i) for i, cell in enumerate(cells)]
+            for cell, fut in zip(cells, futs):  # one thread reads the replies and writes the rows, in order
+                try:
+                    text, model = fut.result()
+                except budget.BudgetError as e:
+                    r["stopped"], r["error"] = "budget", c.fit(_norm(e), 300)
+                    continue
+                except (ValueError, OSError, models.ModelError) as e:
+                    fails, r["error"] = fails + 1, c.fit(_norm(e), 300)
+                    continue
+                paid += model in ("haiku", rune.REVIEW_MODELS[-1])  # a local answer is free
+                objs = _objects(text, batch)
+                if not objs:
+                    fails, r["error"] = fails + 1, f"{model}: no moons in the reply"
+                    continue
+                fails, batch_no = 0, batch_no + 1
+                out = add(p, objs, cell, model, batch_no)
+                _bump(cnt, cell, len(out))
+                total += len(out)
+                r["added"] += len(out)
+                r["models"][model] += 1
+                for _, verdict, why in out:
+                    r[verdict] += 1
+                    if why:
+                        r["reasons"][why.split(":")[0]] += 1
+    finally:
+        pool.shutdown()
+        _THINK = None
+    with _lock:
+        r["cut"] = dict(_cuts)
     r.update(total=total, reasons=dict(r["reasons"]), models=dict(r["models"]))
     if r["calls"]:
         c.log_event(p, "moons_grow", data={k: r[k] for k in ("calls", "added", "kept", "rejected", "stopped", "models")})
@@ -446,7 +508,9 @@ def grow_line(r):
     return (f"Moons grow: {r['calls']} call(s), {r['added']} added ({r['kept']} kept, {r['rejected']} rejected), "
             f"{r['total']} of {r['target']} in the store; stopped: {r['stopped']}"
             + (f" ({r['error']})" if r["error"] and r["stopped"] != "target" else "")
-            + ("; " + ", ".join(f"{m} {n}" for m, n in r["models"].items()) if r["models"] else ""))
+            + ("; " + ", ".join(f"{m} {n}" for m, n in r["models"].items()) if r["models"] else "")
+            + ("; empty by length (reasoning ate the budget): " + ", ".join(f"{m} {n}" for m, n in r["cut"].items())
+               if r.get("cut") else ""))
 
 
 # T-2869 (part 2): the funnel, families, promotion and the export -----------------------------------------------------
@@ -568,12 +632,42 @@ def _embed(prof, texts):
     return out
 
 
+def _embedder(p):
+    """T-2893: the embed stage's profile, apart from grow's chat model. MOONS_EMBED names one (empty: none, so shingles);
+    unset, the local Ollama embedding models, the best title-to-brief recall@1 in research/models/bench.jsonl first;
+    else the grow profile when it names an embed_model. A sensitive project's is loopback only."""
+    sensitive, name = bool(c.read_meta(p).get("sensitive")), os.environ.get("MOONS_EMBED")
+    if name is not None:
+        try:
+            return _usable(models.resolve(name.strip()), sensitive) if name.strip() else None
+        except (models.ModelError, OSError, ValueError):
+            return None
+    best = {}
+    try:
+        with open(os.path.join(p.root, "research", "models", "bench.jsonl"), encoding="utf-8") as f:
+            for line in f:
+                try:
+                    x = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(x, dict) and x.get("arm") == "embedding" and x.get("use") == "title-to-brief" \
+                        and type(x.get("recall_at_1")) in (int, float):
+                    best[x.get("backend")] = x["recall_at_1"]  # the latest row per model
+    except OSError:
+        pass
+    for prof in sorted(models.embedding_profiles(), key=lambda x: -best.get(x["model"], -1)):
+        if _usable(prof, sensitive):
+            return prof
+    prof = _local(sensitive)
+    return prof if prof and prof.get("embed_model") else None
+
+
 def _reps(p, rs, extra=None):
     """(method, {id: representation}) for the rows and `extra` ({key: text}, the catalogue, never cached): "embed" (unit
     vectors from the local profile's embed_model, each row's cached in vectors.jsonl by model, so a row is embedded
     once; the server down, a model whose cache holds every row), else "shingle" (each text's char 5-grams)."""
     extra, texts = extra or {}, {r["id"]: _text(r) for r in rs}
-    cache, prof = _vectors(p), _local(bool(c.read_meta(p).get("sensitive")))
+    cache, prof = _vectors(p), _embedder(p)
     if prof:
         model = prof.get("embed_model") or prof.get("model") or ""
         try:
