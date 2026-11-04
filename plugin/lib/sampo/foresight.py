@@ -269,7 +269,8 @@ def _next_line(p):
         return []
     (k, pred), r = lead, mine[-1]
     paths = c.joinmore([c.plain(str(x))[:80] for x in pred.get("paths") or []], 3)
-    c.append_line(os.path.join(p.dir, PREDICTIONS), json.dumps({"kind": "shown", "id": r["id"]}) + "\n")
+    # T-2950: the arm whose guess was shown, so shown_hit scores that arm's hit
+    c.append_line(os.path.join(p.dir, PREDICTIONS), json.dumps({"kind": "shown", "id": r["id"], "arm": k["kind"]}) + "\n")
     return [f"You may ask next: {c.plain(str(pred.get('type')))[:20]}" + (f" on {paths}" if paths else "")
             + f" (guesses hit {k['hit']:.0%} vs {k['base_hit']:.0%} for "
             + ("the count of past asks" if k["kind"] == LOCAL_KIND else "'same as last'") + ")."]
@@ -504,11 +505,13 @@ def prediction_kinds(p):
                            "base_hit": _rate([bh for _, _, bh in rows if bh is not None]),
                            "muted": len(fresh) >= MUTE_MIN and hit is not None and base is not None and hit < base},
                           **(extra or {})))
-    shown = {r.get("id") for r in book if r.get("kind") == "shown"}  # T-2681: guesses the user saw at session start
+    shown = {r.get("id"): r.get("arm") for r in book if r.get("kind") == "shown"}  # T-2681: seen at session start
     seen_rows = [r for r in scores if r.get("id") in shown]
+    shown_hits = [(r.get("local_type_hit") if shown[r.get("id")] == LOCAL_KIND else r.get("type_hit")) is True
+                  for r in seen_rows]  # T-2950: each shown row scored by the arm that was shown
     kind("next-request", [(str(r.get("at") or ""), r.get("type_hit") is True, r.get("base_type_hit") is True)
                           for r in scores],
-         {"shown_n": len(seen_rows), "shown_hit": _rate([r.get("type_hit") is True for r in seen_rows]),
+         {"shown_n": len(seen_rows), "shown_hit": _rate(shown_hits),
           "overlap": _rate([r["overlap"] for r in scores if isinstance(r.get("overlap"), (int, float))]),
           "base_overlap": _rate([r["base_overlap"] for r in scores if isinstance(r.get("base_overlap"), (int, float))])})
     ls = [r for r in scores if r.get("local_type_hit") is not None]  # T-2912: its base is the transition guess, same rows

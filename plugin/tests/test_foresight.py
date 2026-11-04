@@ -320,6 +320,14 @@ class LocalArm(ForemanTestCase):  # T-2912: the local model's guess, booked and 
         (line,) = fs.lines(self.p)
         self.assertIn("FIX on a.py", line)
         self.assertIn("100% vs 0%", line)
+        # T-2950: the shown row names the local arm, and its hit is scored by that arm, not the transition guess
+        (row,) = [r for r in self.rows() if r["kind"] == "shown"]
+        self.assertEqual(row["arm"], fs.LOCAL_KIND)
+        with open(os.path.join(self.p.dir, fs.PREDICTIONS), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"kind": "score", "id": row["id"], "at": c.now(), "type_hit": False,
+                                "base_type_hit": False, "local_type_hit": True}) + "\n")
+        k = next(k for k in fs.prediction_kinds(self.p) if k["kind"] == "next-request")
+        self.assertEqual((k["shown_n"], k["shown_hit"]), (1, 1.0))
 
 
 class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ahead while its kind beats the baseline
@@ -579,7 +587,7 @@ class PredictionBook(ForemanTestCase):  # T-2406 (#3): the next request predicte
         (line,) = fs.lines(self.p)
         self.assertIn("FEATURE on b.py", line)
         self.assertIn("100% vs 0%", line)
-        self.assertEqual(shown(), [{"kind": "shown", "id": pred["id"]}])
+        self.assertEqual(shown(), [{"kind": "shown", "id": pred["id"], "arm": "next-request"}])  # T-2950: its arm
         self.assertEqual(fs.lines(self.p), [])  # once per prediction
         self.assertEqual(len(shown()), 1)
         with open(os.path.join(self.p.dir, fs.PREDICTIONS), "a", encoding="utf-8") as f:  # its score, read apart

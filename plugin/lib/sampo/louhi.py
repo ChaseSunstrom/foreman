@@ -76,6 +76,7 @@ ASKS = ("vague", "ambiguous", "missing-tool")  # T-2217: graded on what the answ
 LANGS = ("python", "js", "ts", "ruby", "rust", "c")
 RUN_ID = re.compile(r"s\d+-(\d{3,})")
 BUILD_T, EXEC_T, SLOW_T = 120, 20, 5  # seconds; a timeout is a failure
+REPLAY_LOCAL_CAP = 30  # T-2950: the newest held-out asks the local arm is asked per grade (a wedged server costs these)
 POOLS = {"total": ("total", "cart_total", "sum_prices"), "page": ("page", "paginate", "page_of", "slice_page"),
          "dedupe": ("dedupe", "unique", "uniq_keep_order"), "query": ("user_query", "find_user_sql", "lookup_sql"),
          "label": ("label", "pad_label", "right_align"), "clamp": ("clamp", "bound", "limit_to")}
@@ -831,7 +832,8 @@ def replay_forecast(p, clean=True, local=False):
         bov.append(foresight._jaccard(reqs[i - 1][2], paths) or 0)
     if held:
         out["overlap"], out["base_overlap"] = round(sum(ov) / len(ov), 3), round(sum(bov) / len(bov), 3)
-    out["local"] = _replay_local(p, reqs, held) if local and held else "not run"  # T-2912: local=True asks the model
+    # T-2912: local=True asks the model; T-2950: only the newest REPLAY_LOCAL_CAP held-out asks
+    out["local"] = _replay_local(p, reqs, held[-REPLAY_LOCAL_CAP:]) if local and held else "not run"
     return out
 
 
@@ -2241,7 +2243,7 @@ def _model_env(bench):
 def _run(key, target, test_file, slow=False):
     """Run one test file in target with the key's commands. (ok, why)."""
     from sampo import bench  # the code run here is model-written: no forge, cloud or registry credentials reach it
-    cmds, env = key["commands"], _model_env(bench)
+    cmds, env = key["commands"], {**_model_env(bench), **key.get("env", {})}  # T-2987: a minted repo's linked deps
     with tempfile.TemporaryDirectory() as out:
         # a minted key carries its repo's own time cap: a real suite is slower than a seeded one (T-2978)
         for step, limit in (("build", BUILD_T), ("exec", key.get("exec_t") or (SLOW_T if slow else EXEC_T))):

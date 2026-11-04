@@ -1955,6 +1955,12 @@ class ForecastKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): the next requ
         self.assertGreater(r["local"]["word_overlap"], 0)
         self.assertIn("Fix the totals case 3", prompts[0])  # only asks before the held-out one
         self.assertNotIn("case 4", prompts[0])
+        prompts.clear()  # T-2950: a wedged local server costs at most the cap's calls per grade, the newest asks
+        with mock.patch.object(moonscale, "_local", lambda s: {"name": "f"}), mock.patch.object(models, "complete", complete), \
+                mock.patch.object(louhi, "REPLAY_LOCAL_CAP", 1):
+            r = louhi.replay_forecast(p, local=True)
+        self.assertEqual((r["held"], r["local"]["n"], len(prompts)), (2, 1, 1))
+        self.assertIn("export 4", prompts[0])  # the newest held-out ask (case 5) was asked: the first is in its history
 
     def test_the_model_replay_scores_rule_and_model_against_closed_tasks(self):
         # T-2487 (the user's rule: a use stays only if the exam shows it beats the path it replaces)
