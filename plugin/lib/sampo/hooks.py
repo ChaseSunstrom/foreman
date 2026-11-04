@@ -4239,8 +4239,9 @@ def _drive(p, sd, briefs, pl, g):
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
     scanned = set()  # T-2872: the event scan's agents (a subagent start or a resume), as the engine list marks them
     found = _running(sid, scanned)
-    running = sorted({str(t.get("id")) for t in bg if isinstance(t, dict)} | scanned) if isinstance(bg, list) else \
-        sorted(found)  # T-2873: the engine's list can omit running subagents; the scan's agents join it
+    live = scanned & set(found)  # the scan's agents still running (scanned holds every agent it saw start)
+    running = sorted({str(t.get("id")) for t in bg if isinstance(t, dict)} | live) if isinstance(bg, list) else \
+        sorted(found)  # T-2873: the engine's list can omit running subagents; the scan's live ones join it
     # T-0415: a job running for LONG_JOB_S is a service (a workflow, a watch, a server), not something to wait for
     now, since = time.time(), d.setdefault("since", {})
     d["since"] = since = {k: since.get(k, now) for k in running}

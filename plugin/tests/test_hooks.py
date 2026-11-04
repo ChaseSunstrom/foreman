@@ -3093,6 +3093,8 @@ class Stop(HookCase):
         self.fm("autonomy", "full")
         self.task("Active work")
         self.hook("SubagentStart", {"agent_id": "afar1", "agent_type": "general-purpose", "session_id": "sess-1"})
+        self.hook("SubagentStart", {"agent_id": "adone1", "agent_type": "general-purpose", "session_id": "sess-1"})
+        self.hook("SubagentStop", {"agent_id": "adone1", "agent_type": "general-purpose", "session_id": "sess-1"})
         with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:  # another session's busy hour
             f.write("".join(json.dumps({"ts": c.now(), "kind": "tool", "session_id": "other"}) + "\n"
                             for _ in range(3000)))
@@ -3101,7 +3103,7 @@ class Stop(HookCase):
         self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting.", "session_id": "sess-1",
                            "background_tasks": [mon]})
         waits = [json.loads(x) for x in open(os.path.join(c.state_dir(), "events.jsonl")) if '"drive_wait"' in x]
-        self.assertEqual(waits[-1]["running"], ["afar1", "bmon1"], "the scan's agents join the engine's list")
+        self.assertEqual(waits[-1]["running"], ["afar1", "bmon1"], "the scan's live agents join; a stopped one doesn't")
 
     def test_the_drained_product_check_waits_while_the_genesis_round_is_held(self):
         # T-2466: with fm drive --round-first on, the wait branch still said "fm capture each defect, then plan and work
