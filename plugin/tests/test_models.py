@@ -735,6 +735,14 @@ class Extras(Base):  # T-2893: a profile's body extras, its reasoning switch, an
         self.assertTrue(self.sent({"think": False}, think=True)["chat_template_kwargs"]["enable_thinking"],
                         "the call's think overrides the profile's")
 
+    def test_think_false_reaches_ollama_too(self):
+        # T-2928: Ollama's OpenAI API ignores chat_template_kwargs and think; only reasoning_effort none turns it off
+        self.assertEqual(self.sent({"think": False})["reasoning_effort"], "none")
+        self.assertNotIn("reasoning_effort", self.sent({"think": True}), "reasoning on leaves the server's default")
+        self.assertNotIn("reasoning_effort", self.sent({}))
+        self.assertEqual(self.sent({"think": False, "body": {"reasoning_effort": "low"}})["reasoning_effort"], "low",
+                         "a body that sets it wins")
+
     def test_an_empty_reply_cut_by_length_names_the_reasoning(self):
         f = self.fake((200, oa_reply("", finish="length"), None))
         with self.assertRaises(m.ModelError) as e:

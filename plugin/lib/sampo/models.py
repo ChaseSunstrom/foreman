@@ -816,6 +816,8 @@ def complete(profile, messages, tools=None, max_tokens=2048, timeout=120, think=
     if isinstance(think, bool):
         kw = body.get("chat_template_kwargs")
         body["chat_template_kwargs"] = {"enable_thinking": think, **(kw if isinstance(kw, dict) else {})}
+        if think is False:  # T-2928: Ollama's OpenAI API reads only this one; llama.cpp and vLLM read the kwargs
+            body.setdefault("reasoning_effort", "none")
     if tools:
         body["tools"] = [t if "function" in t else {"type": "function", "function": t} for t in tools]
     headers = {"Authorization": f"Bearer {key}"} if key else {}
