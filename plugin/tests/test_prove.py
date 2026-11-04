@@ -856,7 +856,9 @@ class InfraProof(ForemanTestCase):
         got = self.by_file(fmprove_infra.infra(self.tree, allowed=False))
         self.assertEqual(got["compose.yaml"]["verdict"], "unproven")
         with open(os.path.join(self.bin, "hadolint"), "w") as f:
-            f.write("#!/bin/sh\nwhile :; do :; done\n")  # a builtin loop: the PATH here holds no sleep
+            # a builtin loop (the PATH here holds no sleep) that ends with its parent: a runner killed before the
+            # timeout fires must not leave it spinning under init (T-3028: found at 78% CPU after 1h45)
+            f.write("#!/bin/sh\nwhile kill -0 $PPID 2>/dev/null; do :; done\n")
         with mock.patch("sampo.find.TOOL_T", 1):
             got = self.by_file(fmprove_infra.infra(self.tree, allowed=False))
         self.assertEqual(got["Dockerfile"]["verdict"], "unproven")
