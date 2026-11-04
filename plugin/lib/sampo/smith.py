@@ -1,6 +1,6 @@
 """fm code (T-1212): Smith's loop run by the harness, with a model filling small slots (Smith Code, T-1207).
 
-    fm code "<request>" [--model NAME] [--escalate NAME] [--max-steps 40] [--dry-plan] [--no-commit] [--json]
+    fm code "<request>" [--model NAME] [--escalate NAME] [--planner NAME] [--max-steps 40] [--dry-plan] [--no-commit] [--json]
     fm code --resume [ID]          continue a run that crashed or was killed, from its journal
     fm code models                 the model profiles (fmmodels) and where each comes from
     fm code tui [REQUEST]          the same run in a terminal UI (fmcodetui, T-1283); on a terminal, fm code "<request>"
@@ -554,6 +554,7 @@ class Run:
         self.done, self.msgs, self.turns, self.tokens = set(), {}, 0, [0, 0]
         self.baseline = self.model_name = self.close_notes = self.plan_msgs = None
         self.sensitive, self.escalate, self.cap = False, getattr(args, "escalate", None), CAP
+        self.planner = getattr(args, "planner", None)  # T-2945: the profile for the plan and close notes
         self.no_commit, self.max_steps = bool(getattr(args, "no_commit", False)), getattr(args, "max_steps", None)
         self.secret_envs = {cloud[4] for cloud in m.CLOUD}  # and each profile's own key_env, added as it's resolved
         self.worker, self.verify_cmd = getattr(args, "worker", None), getattr(args, "verify", None)
@@ -2747,9 +2748,13 @@ def cmd_code(args):
         run.escalate = m.resolve(run.escalate) if run.escalate else None  # a bad name fails now, not 3 rounds in
         if run.escalate:
             run.offsite_ok(p, run.escalate)
+        run.planner = m.resolve(run.planner) if run.planner else None  # T-2945: same rule as --escalate
+        if run.planner:
+            run.offsite_ok(p, run.planner)
         from sampo import smithbench  # T-1355: which Foreman ran this, for when two installs answer to fm
         run.emit("start", "", quiet=True, schema=SCHEMA, request=run.request, task=run.tid, worker=run.worker,
-                 model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None,
+                 model=profile and profile["name"], planner=run.planner and run.planner["name"],
+                 verify=run.verify_cmd, resume=args.resume is not None,
                  foreman={"root": core.PLUGIN_ROOT, "version": smithbench.version()}, containment=containment(root))
         if served_note:
             run.emit("note", served_note)
@@ -2832,6 +2837,7 @@ def _plan(run, profile, dry=False):
     msgs = [{"role": "system", "content": (f"{variant_note()}\n" if variant_note() else "") + PLAN_PROMPT
              + run.fence(_files(run.root))},
             {"role": "user", "content": run.request + _context_note(run)}]
+    profile = run.planner or profile  # T-2945: --planner asks the plan (and its re-plan); steps stay on --model
     run.plan = slot(run, profile, msgs, check_plan, "plan", PLAN_FIELDS)
     if is_answer(run.plan):  # a question: no checks to judge
         return
@@ -3296,8 +3302,9 @@ def _journal_start(run, profile):
     pl = run.plan
     run.journal = os.path.join(run.jdir, f"{run.tid}.jsonl")
     run.log(kind="start", task=run.tid, request=run.request, plan=pl, model=profile and profile["name"],
-            messages=run.plan_msgs,
+            planner=run.planner and run.planner["name"], messages=run.plan_msgs,
             options={"no_commit": run.no_commit, "escalate": run.escalate and run.escalate["name"],
+                     "planner": run.planner and run.planner["name"],
                      "max_steps": run.max_steps, "worker": run.worker, "worker_timeout": run.worker_timeout,
                      "verify": run.verify_cmd, "own_plan": run.own_plan, "max_usd": run.max_usd,
                      "context": run.context})
@@ -3387,7 +3394,7 @@ def _finish(run, profile):
     if pl["tier"] == "M":
         notes = run.close_notes
         if notes is None:
-            notes = slot(run, profile, [{"role": "system", "content": CLOSE_PROMPT},
+            notes = slot(run, run.planner or profile, [{"role": "system", "content": CLOSE_PROMPT},
                                         {"role": "user", "content": _task_text(run)}], check_close, "set of close notes",
                          CLOSE_FIELDS)
             run.log(kind="close_notes", notes=notes)
@@ -3398,7 +3405,7 @@ def _finish(run, profile):
     # T-2937: asked for any tier; a close key already given isn't asked again; a modelless run (--worker --verify) has
     # nobody to ask, so finish refuses with its own reason
     if profile is not None and (need := _gaps_needed(run)):
-        got = _gap_slot(run, profile, need)
+        got = _gap_slot(run, run.planner or profile, need)
         run.log(kind="gap_notes", notes=got)
         for key, section in (("decision", "Decision"), ("regression", "Regression test")):
             if key in need:
@@ -3527,6 +3534,7 @@ def _load(run, tid, ended=False):
     opts = start.get("options") or {}
     run.no_commit = run.no_commit or bool(opts.get("no_commit"))
     run.escalate = run.args.escalate or opts.get("escalate")
+    run.planner = getattr(run.args, "planner", None) or opts.get("planner")
     run.max_steps = run.args.max_steps or opts.get("max_steps")
     run.max_usd = getattr(run.args, "max_usd", None) or opts.get("max_usd")
     run.context = run.context or str(opts.get("context") or "")  # T-1374
