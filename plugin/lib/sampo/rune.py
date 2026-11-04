@@ -4045,6 +4045,10 @@ def cmd_genesis(args):
                 return scli.out(args, r, "\n".join(f"{x['id']} {x['next']} ({x['tier']}"
                                                     + (f", unblocks {x['unblocks']}" if x["unblocks"] else "") + f"): "
                                                     + x["title"] for x in r) or "Nothing to climb yet.")
+            if verb == "regen":  # T-2918: M-02's slice, `sampo moons regen PATH | --leaves | --slice`
+                from sampo import regen
+                args.path = args.module
+                return regen.cmd_regen(args)
             if verb in ("grow", "coverage", "funnel", "families", "promote"):  # T-2868/T-2869: Moonscale
                 from sampo import moonscale
                 if verb == "grow":
@@ -4069,7 +4073,7 @@ def cmd_genesis(args):
                     scli.out(args, {"problems": bad}, "\n".join(bad) or "Moonshot catalogue: no problems.")
                     return 1 if bad else 0
                 raise scli.UsageError("fm genesis moonshot [status|rate|order|check|grow|coverage|funnel|families|"
-                                      "promote]")
+                                      "promote|regen]")
             s = moons.summary(p)
             return scli.out(args, s, "\n".join(moons.seed_lines(p, current(p) or 1)))  # this generation's work
         if action == "novelty":

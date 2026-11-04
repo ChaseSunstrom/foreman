@@ -7780,7 +7780,10 @@ def _build_parser(only=None):
     s.add_argument("--author", choices=("self", "child"), default="self",
                    help="exam: child = each project's defect and G-line's MUST/NEVER lines come from a tool-less model, "
                         "so #13 scores on scenarios Sampo didn't write (T-2215)")
-    s.add_argument("--model", help="exam: the child author's model (default sonnet)")
+    s.add_argument("--model", help="exam: the child author's model (default sonnet); moonshot regen: the profile to ask")
+    s.add_argument("module", nargs="?", help="moonshot regen: the module to regrow in a throwaway worktree (T-2918)")
+    s.add_argument("--leaves", action="store_true", help="moonshot regen: print the sample, modules under 260 lines with a test")
+    s.add_argument("--slice", action="store_true", help="moonshot regen: run every leaf, local model then Haiku; files bench/moonshot/m02-slice-result.json")
     s.add_argument("--lang", help="exam: comma list of languages to draw projects in (default all six)")
     s.add_argument("--task", help="live on: the task whose publish grant switches it on (default: the active task)")
     s.add_argument("--handle", metavar="K=HOW", action="append", help="review (repeatable, T-2592): mark finding K as gap (the next Seed's top gaps) or "

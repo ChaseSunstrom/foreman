@@ -1,0 +1,40 @@
+{
+  "ran": false,
+  "note": "not run: the GPU and the remote endpoint were busy the night of T-2918; run sampo moons regen --slice (local 27B first, Haiku second) to fill this file",
+  "sample": [
+    "plugin/lib/sampo/ambient.py",
+    "plugin/lib/sampo/anergy.py",
+    "plugin/lib/sampo/away.py",
+    "plugin/lib/sampo/backtest.py",
+    "plugin/lib/sampo/contract.py",
+    "plugin/lib/sampo/dataproof.py",
+    "plugin/lib/sampo/debug.py",
+    "plugin/lib/sampo/demo.py",
+    "plugin/lib/sampo/draft.py",
+    "plugin/lib/sampo/evolve.py",
+    "plugin/lib/sampo/incident.py",
+    "plugin/lib/sampo/loop.py",
+    "plugin/lib/sampo/marks.py",
+    "plugin/lib/sampo/mission.py",
+    "plugin/lib/sampo/office.py",
+    "plugin/lib/sampo/oracle.py",
+    "plugin/lib/sampo/raster.py",
+    "plugin/lib/sampo/relate.py",
+    "plugin/lib/sampo/relproof.py",
+    "plugin/lib/sampo/repeats.py",
+    "plugin/lib/sampo/risk.py",
+    "plugin/lib/sampo/secrets.py",
+    "plugin/lib/sampo/selfgate.py",
+    "plugin/lib/sampo/split.py",
+    "plugin/lib/sampo/stack.py",
+    "plugin/lib/sampo/stories.py",
+    "plugin/lib/sampo/trials.py"
+  ],
+  "profiles": [
+    "local",
+    "haiku"
+  ],
+  "modules": [],
+  "advanced": "not-yet",
+  "blocker": "no live run yet; Advanced: M-02 slice waits for 2 or more round trips"
+}
