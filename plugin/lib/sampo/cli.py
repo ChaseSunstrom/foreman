@@ -7778,6 +7778,7 @@ def _build_parser(only=None):
                                                              "the run (never Haiku)")
     s.add_argument("--stage", choices=("exact", "embed", "kill", "tier", "novelty"),
                    help="moonshot funnel: run this stage alone (default: all, cheapest first)")
+    s.add_argument("--status", action="store_true", help="moonshot funnel: print each stage's counts (read-only, no model)")
     s.add_argument("--max", type=int, help="moonshot promote: at most N family leads (default 3)")
     s.add_argument("--author", choices=("self", "child"), default="self",
                    help="exam: child = each project's defect and G-line's MUST/NEVER lines come from a tool-less model, "

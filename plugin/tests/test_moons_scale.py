@@ -414,7 +414,7 @@ class Cli(_Moons):
         self.assertNotEqual(self.fm("moons", "funnel", "--stage", "bogus", check=False).returncode, 0)
 
 
-# T-2869 ------------------------------------------------------------------------------------------------------------
+# T-2869 -----------------------------------------------------------------------------------------------------
 
 def moon(title, today, with_this, **kw):
     return good(title=title, today="Today you can't " + today, with_this="With this, you can " + with_this, **kw)
@@ -832,3 +832,24 @@ class PromoteDomain(_Moons):
                 d = ms._domain({"kind": "bugs", "scale": s, "surface": u})
                 self.assertNotRegex(d, r" scale,|in the phone|in the CI|in the chat")
                 self.assertTrue(d.startswith("bugs "), d)
+
+
+class StoreLock(_Funnel):
+    def test_a_second_funnel_or_families_exits_naming_the_holder_and_judges_nothing(self):  # T-2986
+        self.seed(moon("Lint the lint", "lint twice", "lint once"))
+        with self.ms.store_lock(self.p):
+            for verb in ("funnel", "families"):
+                r = self.fm("moons", verb, check=False)
+                self.assertEqual(r.returncode, 1, r.stderr)
+                self.assertIn(f"another funnel holds the moons store (pid {os.getpid()})", r.stderr)
+            self.assertEqual(self.fm("moons", "funnel", "--status").returncode, 0)  # read-only: no lock
+        self.assertEqual(self.fm("moons", "funnel", "--max-calls", "0", check=False).returncode, 0)  # released
+
+    def test_status_prints_each_stages_counts_without_a_model_call(self):  # T-2986
+        first, _ = self.seed(moon("A", "a", "b"), moon("B", "c", "d"))
+        self.ms._log(self.p, [self.ms._event(first, "exact", "kept")], {"stages": {"exact": {}}}, "exact")
+        s = self.fm_json("moons", "funnel", "--status")
+        self.assertEqual(s["stages"]["exact"], {"kept": 1, "rejected": 0, "waiting": 1})
+        self.assertEqual(s["stages"]["embed"]["waiting"], 1)
+        self.assertEqual(s["total"], 2)
+        self.assertIn("exact 1 kept", self.fm("moons", "funnel", "--status").stdout)

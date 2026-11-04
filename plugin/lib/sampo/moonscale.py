@@ -7,6 +7,8 @@ candidate's fate is its last); neither is ever rewritten. T-2869 (part 2, below)
 (exact and embedding dedupe, kill check, tier screen, novelty), families, promotion to moonshot.md and the export."""
 import collections
 import concurrent.futures
+import contextlib
+import fcntl
 import json
 import math
 import os
@@ -93,6 +95,49 @@ SYSTEM = ("You invent moonshots for the people who use a coding harness: ideas t
 
 def _dir(p):
     return os.path.join(rune.home(p), "moons")
+
+
+class Busy(Exception):
+    pass
+
+
+@contextlib.contextmanager
+def store_lock(p):
+    """T-2986: one funnel or families run at a time on a moons store: a non-blocking flock on its own .funnel.lock (not
+    core.lock's .lock, which every append takes), the holder's pid inside. The kernel drops it with the process, so a
+    crashed run never leaves it held. Busy names the holder."""
+    os.makedirs(_dir(p), exist_ok=True)
+    fd = os.open(os.path.join(_dir(p), ".funnel.lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pid = os.pread(fd, 20, 0).decode("ascii", "replace").strip()
+            raise Busy(f"another funnel holds the moons store (pid {pid if pid.isdigit() else '?'})") from None
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor releases the flock
+
+
+def status(p):
+    """T-2986: read-only, no model: each stage's kept / rejected counts (a row's last event there) and the rows waiting
+    for it (kept by the stage before, not yet judged here)."""
+    rs, f = rows(p), fate(p)
+    st = {}
+    for s in STAGES:
+        here = [e for x in rs if (e := f.get(x.get("id"))) and e.get("stage") == s]
+        st[s] = {"kept": sum(e.get("verdict") == "kept" for e in here),
+                 "rejected": sum(e.get("verdict") == "rejected" for e in here),
+                 "waiting": len(_at(rs, f, (ORDER[ORDER.index(s) - 1],), ("kept",)))}
+    return {"total": len(rs), "stages": st}
+
+
+def status_line(r):
+    return (f"Moons funnel: {r['total']} candidates; "
+            + "; ".join(f"{s} {n['kept']} kept, {n['rejected']} rejected, {n['waiting']} waiting"
+                        for s, n in r["stages"].items()))
 
 
 def _norm(v):

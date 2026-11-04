@@ -4056,12 +4056,20 @@ def cmd_genesis(args):
                                        args.workers, None if args.think is None else args.think == "on",
                                        args.local_only)
                     return scli.out(args, r, moonscale.grow_line(r))
-                if verb == "funnel":
-                    r = moonscale.funnel(p, args.stage, args.max_calls, args.local_only)
-                    return scli.out(args, r, moonscale.funnel_line(r))
-                if verb == "families":
-                    r = moonscale.families(p)
-                    return scli.out(args, r, moonscale.families_line(r))
+                if verb == "funnel" and args.status:  # T-2986: read-only, no lock, no model
+                    r = moonscale.status(p)
+                    return scli.out(args, r, moonscale.status_line(r))
+                if verb in ("funnel", "families"):
+                    try:
+                        with moonscale.store_lock(p):  # T-2986: a second run would judge the same rows twice
+                            if verb == "funnel":
+                                r = moonscale.funnel(p, args.stage, args.max_calls, args.local_only)
+                                return scli.out(args, r, moonscale.funnel_line(r))
+                            r = moonscale.families(p)
+                            return scli.out(args, r, moonscale.families_line(r))
+                    except moonscale.Busy as e:
+                        print(e, file=sys.stderr)
+                        return 1
                 if verb == "promote":
                     r = moonscale.promote(p, 3 if args.max is None else args.max)
                     return scli.out(args, r, moonscale.promote_line(r))
