@@ -956,7 +956,8 @@ def _vote(labels):
 def _retrieval_vectors(p, prof, texts, timeout):
     """{text: unit vector}, cached by (model, sha1 of the text) in RETRIEVAL_VECTORS as moonscale's vectors are."""
     from sampo import models
-    model, path = prof.get("embed_model") or prof.get("model") or "", os.path.join(p.root, RETRIEVAL_VECTORS)
+    # in Sampo's state, not the repo: the cache is megabytes and every project's bench writes one
+    model, path = prof.get("embed_model") or prof.get("model") or "", os.path.join(p.dir, RETRIEVAL_VECTORS)
     key = lambda t: hashlib.sha1(t.encode()).hexdigest()  # noqa: E731
     have = {}
     try:

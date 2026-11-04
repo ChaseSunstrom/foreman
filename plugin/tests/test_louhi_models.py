@@ -141,9 +141,10 @@ class LouhiModels(ForemanTestCase):
         self.assertEqual(louhi._vote(["FIX"] * 4 + ["FEATURE"] * 3), "FIX")
         self.assertIsNone(louhi._vote(["FIX"] * 3 + ["FEATURE"] * 3))  # split: abstain
         self.run_bench()  # a second run embeds nothing new: the vectors are cached by model and text hash
-        with open(os.path.join(self.p.root, louhi.RETRIEVAL_VECTORS)) as f:
+        with open(os.path.join(self.p.dir, louhi.RETRIEVAL_VECTORS)) as f:
             ids = [(json.loads(x)["id"]) for x in f]
         self.assertEqual(len(ids), len(set(ids)))
+        self.assertFalse(os.path.exists(os.path.join(self.p.root, louhi.RETRIEVAL_VECTORS)), "the cache stays out of the repo")
 
     def test_a_busy_529_is_retried_then_counted(self):
         self.srv.busy = 4  # models._post retries 3 times; the bench retries after it
