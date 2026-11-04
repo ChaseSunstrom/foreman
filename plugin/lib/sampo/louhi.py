@@ -865,7 +865,8 @@ def replay_models(p):
             truth = "different" if r.get("input") in kept else r.get("path")
         else:
             continue
-        o = out.setdefault(use, {"n": 0, "path_hits": 0, "model_n": 0, "model_hits": 0, "brier": None, "_b": [], "_ms": []})
+        o = out.setdefault(use, {"n": 0, "path_hits": 0, "model_n": 0, "model_hits": 0, "model_path_hits": 0, "brier": None,
+                                         "_b": [], "_ms": []})
         o["n"] += 1
         o["path_hits"] += r.get("path") == truth
         a = answers.get(r.get("id"))
@@ -873,6 +874,7 @@ def replay_models(p):
             hit = a.get("choice") == truth
             o["model_n"] += 1
             o["model_hits"] += hit
+            o["model_path_hits"] += r.get("path") == truth  # T-2976: the path on these same rows
             o["_b"].append((a["probability"] - (1 if hit else 0)) ** 2)  # the Brier score of the stated choice
             if isinstance(a.get("ms"), int):
                 o["_ms"].append(a["ms"])
@@ -998,18 +1000,13 @@ def _retrieval_rows(base, name, held, train, near, note):
     return rows
 
 
-def _bench_retrieval(p, data, stamp, profiles, timeout_of):
-    """T-2975: k-NN vote (RETRIEVAL_K, abstain under RETRIEVAL_NEED) from the train split's raw requests: BM25 (recall's
-    tokens and formula) and, per embedder, cosine over its vectors. accuracy is on answered rows, accuracy_all counts an
-    abstain wrong."""
-    from sampo import models, recall
-    train, held = data["train-raw"], {u: data[u][0] for u in BENCH_USES}
-    base = {**stamp, "arm": "retrieval", "brier": None, "p50_ms": None, "p95_ms": None, "errors": 0}
-    base_for = lambda u: {**base, "held": data[u][1]}  # noqa: E731
-    docs = [recall._tokens(t[0]) for t in train]
+def _bm25(texts):
+    """`near(raw)`: the indexes of the RETRIEVAL_K texts nearest the request (recall's tokens and BM25 formula)."""
+    from sampo import recall
+    docs = [recall._tokens(t) for t in texts]
     avg, df = (sum(map(len, docs)) / len(docs) if docs else 1) or 1, collections.Counter(w for d in docs for w in set(d))
 
-    def bm25(raw):
+    def near(raw):
         q, sc = set(recall._tokens(raw)), []
         for i, d in enumerate(docs):
             tf = collections.Counter(w for w in d if w in q)
@@ -1018,7 +1015,18 @@ def _bench_retrieval(p, data, stamp, profiles, timeout_of):
             if s > 0:
                 sc.append((s, i))
         return [i for _, i in sorted(sc, key=lambda x: -x[0])[:RETRIEVAL_K]]
+    return near
 
+
+def _bench_retrieval(p, data, stamp, profiles, timeout_of):
+    """T-2975: k-NN vote (RETRIEVAL_K, abstain under RETRIEVAL_NEED) from the train split's raw requests: BM25 (recall's
+    tokens and formula) and, per embedder, cosine over its vectors. accuracy is on answered rows, accuracy_all counts an
+    abstain wrong."""
+    from sampo import models
+    train, held = data["train-raw"], {u: data[u][0] for u in BENCH_USES}
+    base = {**stamp, "arm": "retrieval", "brier": None, "p50_ms": None, "p95_ms": None, "errors": 0}
+    base_for = lambda u: {**base, "held": data[u][1]}  # noqa: E731
+    bm25 = _bm25([t[0] for t in train])
     out = []
     for use, r in zip(BENCH_USES, _retrieval_rows(base, "bm25", held, train, bm25, f"BM25 over {len(train)} train requests")):
         out.append({**r, "held": data[use][1]})
@@ -1237,11 +1245,221 @@ def bench_models(p, decision=None, embedders=None, cap=BENCH_CAP, serving=None, 
     return {"run": run, "rows": rows}
 
 
+# ---------------------------------------------------------------- leave-one-project-out (T-2976)
+LOO_THRS = (0.0, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95)  # abstain thresholds: an answer under one falls back to today's path
+LOO_MIN_PROJECTS, LOO_MIN_ROWS, LOO_BOOT, LOO_SEED, LOO_Q = 3, 5, 1000, 2976, 0.05  # a project under LOO_MIN_ROWS only trains
+_lake_h = lambda x: hashlib.sha256(str(x).encode()).hexdigest()[:12]  # noqa: E731  # rows name a project by this hash, never its path
+
+
+def lake_rows():
+    """The cross-project pool: the training lake's rows (every non-sensitive, non-opted-out project here, request text
+    only) as {project, text, type, tier}. today's path isn't in the lake, so a row has no 'path'."""
+    from sampo import lake
+    rows, _ = lake.collect(with_agent=False)
+    return [{"project": r["prov"]["project"], "text": r["fields"]["request"]["text"], "type": r.get("type"),
+             "tier": r.get("tier")} for r in rows if r.get("prov", {}).get("project") and r["fields"]["request"].get("text")]
+
+
+def _majority(train, use):
+    attr = "type" if use == "intake-type" else "tier"
+    top = max(sorted({r[attr] for r in train if r.get(attr)}), key=[r[attr] for r in train].count, default=None)
+    return lambda text: (top, 1.0)
+
+
+def _bm25_vote(train, use):
+    attr = "type" if use == "intake-type" else "tier"
+    pool = [r for r in train if r.get(attr)][-RETRIEVAL_TRAIN:]
+    near = _bm25([r["text"] for r in pool])
+
+    def predict(text):
+        ix = near(text)
+        v = _vote([pool[i][attr] for i in ix])
+        return (v, sum(pool[i][attr] == v for i in ix) / len(ix)) if v is not None else None
+    return predict
+
+
+def _backend_make(prof, timeout):
+    """A decision backend as a contestant: its choice and stated probability for the request."""
+    def make(train, use):
+        from sampo import models
+        choices = models.shadow_uses()[use]
+        return lambda text: (lambda a: (a["choice"], a["probability"]))(models.systemone(prof, text, choices, timeout=timeout))
+    return make
+
+
+def _boot_lb(ds, seed=LOO_SEED):
+    """The LOO_Q quantile of the mean of `ds` (per-project deltas) over LOO_BOOT resamples of the projects."""
+    rng = random.Random(seed)
+    return sorted(sum(rng.choices(ds, k=len(ds))) / len(ds) for _ in range(LOO_BOOT))[int(LOO_Q * LOO_BOOT)]
+
+
+def _gate(ds, seed=LOO_SEED):
+    """(bootstrap lower bound, adopt?) for per-project gains `ds`: enough projects, the bound above 0 (by more than float
+    noise), and no project's own gain below 0 (with 3 projects the 5% quantile can't see the worst one)."""
+    lb = _boot_lb(ds, seed)
+    return lb, len(ds) >= LOO_MIN_PROJECTS and lb > 1e-9 and min(ds) >= 0
+
+
+def _new_run(prefix, last=[""]):  # noqa: B006  # a run id unique within this process too (ms resolution)
+    while True:
+        run = time.strftime(prefix + "%Y%m%d-%H%M%S") + f"{time.time_ns() // 1_000_000 % 1000:03d}"
+        if run != last[0]:
+            last[0] = run
+            return run
+        time.sleep(0.002)
+
+
+def loo_models(p, rows=None, contestants=None, thresholds=LOO_THRS, seed=LOO_SEED, cap=None):
+    """T-2976: leave-one-project-out. Each project with LOO_MIN_ROWS rows or more is held out whole, the others its
+    training pool; each contestant (`{name: make(train, use) -> predict(text) -> (label, confidence) | None}`, default:
+    majority and BM25 k-NN) answers every held-out request, and at each abstain threshold an answer under it falls back
+    to today's path (the row's own 'path' call, else the train majority; models.resolve_use is the one rule). Rows
+    (arm 'loo', appended to BENCH): per project and 'pooled', per use, contestant and threshold: n, answered, coverage,
+    accuracy, wilson_lb (of the answered rows), delta (mean over projects of resolved minus path accuracy), and on the
+    pooled row delta_lb (a bootstrap over projects, seeded) and adopt (_gate: >= LOO_MIN_PROJECTS projects, delta_lb > 0, no project's gain < 0). Each row names its 'baseline'
+    ("path", "majority" or "mixed").
+    cap: held-out rows per use over all projects. Returns {run, rows, adopt: {use: verdict}}."""
+    from sampo import models
+    rows = lake_rows() if rows is None else rows
+    contestants = {"majority": _majority, "bm25": _bm25_vote} if contestants is None else contestants
+    by = collections.defaultdict(list)
+    for r in rows:
+        by[r["project"]].append(r)
+    held_p = sorted(k for k, v in by.items() if len(v) >= LOO_MIN_ROWS)
+    per = max(1, cap // len(held_p)) if cap and held_p else None
+    run, stamp, out = _new_run("m"), {"at": c.now(), "arm": "loo"}, []
+    stamp["run"] = run
+    for use in BENCH_USES:
+        attr = "type" if use == "intake-type" else "tier"
+        acc = collections.defaultdict(lambda: collections.defaultdict(lambda: [0, 0, 0, 0, 0, 0]))  # n, ans, hits, d, path_ok, errs
+        have = [bool((r.get("path") or {}).get(use)) for r in rows if r.get(attr)]  # which baseline the gain is against
+        basis = "path" if have and all(have) else "majority" if not any(have) else "mixed"
+        for proj in held_p:
+            train = [r for k in sorted(by) if k != proj for r in by[k]]
+            held = [r for r in by[proj] if r.get(attr)][:per]
+            top = _majority(train, use)("")[0]
+            for name, make in contestants.items():
+                predict = make(train, use)
+                for r in held:
+                    try:
+                        got = predict(r["text"])
+                    except (models.ModelError, ValueError, *models._TRANSPORT):
+                        got = None
+                    pth = (r.get("path") or {}).get(use) or top
+                    for thr in thresholds:
+                        lab, src = models.resolve_use(use, r["text"], lambda _t, g=got: g, lambda pth=pth: pth, thr)
+                        a = acc[(name, thr)][proj]
+                        a[0] += 1
+                        a[1] += src == "model"
+                        a[2] += src == "model" and lab == r[attr]
+                        a[3] += (lab == r[attr]) - (pth == r[attr])
+                        a[4] += pth == r[attr]
+                        a[5] += got is None
+        for (name, thr), projs in sorted(acc.items()):
+            base = {**stamp, "use": use, "backend": name, "thr": thr, "baseline": basis, "held": sum(v[0] for v in projs.values())}
+            tot = [sum(v[i] for v in projs.values()) for i in range(6)]
+            fmt = lambda t, extra: {**base, **extra, "n": t[0], "answered": t[1],  # noqa: E731
+                                    "coverage": round(t[1] / t[0], 3) if t[0] else None,
+                                    "accuracy": round(t[2] / t[1], 3) if t[1] else None,
+                                    "wilson_lb": round(models.wilson_lower(t[2], t[1]), 3), "errors": t[5],
+                                    "path_accuracy": round(t[4] / t[0], 3) if t[0] else None}
+            ds = []
+            for proj, v in sorted(projs.items(), key=lambda kv: _lake_h(kv[0])):
+                ds.append(v[3] / v[0])
+                out.append(fmt(v, {"project": _lake_h(proj), "delta": round(ds[-1], 4)}))
+            lb, ok = _gate(ds, seed)
+            out.append(fmt(tot, {"project": "pooled", "projects": len(ds), "delta": round(sum(ds) / len(ds), 4),
+                                 "delta_lb": round(lb, 4), "adopt": ok}))
+    path = os.path.join(p.root, BENCH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    for r in out:
+        c.append_line(path, json.dumps(r) + "\n")
+    return {"run": run, "rows": out, "adopt": _verdicts(out)}
+
+
+def _verdicts(rows):
+    """{use: {adopt, backend, thr, delta, delta_lb, projects, why}}: the pooled row with the highest delta_lb that adopts
+    (ties by name then threshold), else the highest delta_lb with the reason it fails."""
+    out = {}
+    for use in BENCH_USES:
+        pooled = [r for r in rows if r["use"] == use and r.get("project") == "pooled"]
+        if not pooled:
+            continue
+        best = max(pooled, key=lambda r: (r["adopt"], r["delta_lb"], r["backend"], r["thr"]))
+        if best["projects"] < LOO_MIN_PROJECTS:
+            why = f"under {LOO_MIN_PROJECTS} projects ({best['projects']})"
+        else:
+            why = f"lower bound {best['delta_lb']:+.3f} over {best['projects']} held-out projects" + (
+                "" if best["adopt"] else " is not above 0")
+        out[use] = {"adopt": best["adopt"], "backend": best["backend"], "thr": best["thr"], "delta": best["delta"],
+                    "baseline": best.get("baseline"),
+                    "delta_lb": best["delta_lb"], "projects": best["projects"], "why": why}
+    return out
+
+
+def adopt_models(p, res):
+    """T-2976: per use, 'model-live' into decisions.md (citing the bench run) when the verdict adopts and the use isn't
+    live yet; 'model-shadow' when it doesn't and the use is live. Returns {use: (state, why)}; a second call with the
+    same result writes nothing."""
+    from sampo import models
+    out = {}
+    for use, v in res["adopt"].items():
+        was = models.live(p, use)
+        if v["adopt"]:
+            if not was:
+                models._set_state(p, "live", use, f"exam {res['run']}: {v['backend']} at confidence >= {v['thr']} beat "
+                                  f"{'today' + chr(39) + 's path' if v.get('baseline') == 'path' else 'the train majority' if v.get('baseline') == 'majority' else 'the path or train majority'} "
+                                  f"by {v['delta']:+.3f}, lower bound {v['delta_lb']:+.3f} over {v['projects']} held-out projects")
+            out[use] = ("live", v["why"])
+        else:
+            if was:
+                models._set_state(p, "shadow", use, f"exam {res['run']}: {v['why']}")
+            out[use] = ("shadow", v["why"])
+    return out
+
+
+def _loo_runs(p):
+    """The leave-one-project-out run ids in BENCH, oldest first."""
+    try:
+        with open(os.path.join(p.root, BENCH), encoding="utf-8") as f:
+            rs = [json.loads(x) for x in f if x.strip()]
+    except (OSError, ValueError):
+        return []
+    return list(dict.fromkeys(r["run"] for r in rs if isinstance(r, dict) and r.get("arm") == "loo" and r.get("run")))
+
+
+def flip_report(p, a, b):
+    """T-2976: each change between loo runs `a` and `b` (ids in BENCH): a (use, contestant) that adopts in one and not the
+    other is a FLIP; a pooled row whose delta_lb or coverage moved by 0.01 or more is a CHANGE; else 'no change'."""
+    try:
+        with open(os.path.join(p.root, BENCH), encoding="utf-8") as f:
+            rs = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict) and r.get("arm") == "loo"
+                  and r.get("project") == "pooled"]
+    except (OSError, ValueError):
+        rs = []
+    get = lambda run: {(r["use"], r["backend"], r["thr"]): r for r in rs if r["run"] == run}  # noqa: E731
+    ra, rb, lines = get(a), get(b), []
+    state = lambda m, u, n: any(r["adopt"] for (uu, nn, _), r in m.items() if (uu, nn) == (u, n))  # noqa: E731
+    for u, n in sorted({(u, n) for u, n, _ in [*ra, *rb]}):
+        sa, sb = state(ra, u, n), state(rb, u, n)
+        if sa != sb:
+            lines.append(f"FLIP {u} {n}: {'live' if sa else 'shadow'} -> {'live' if sb else 'shadow'}")
+    for k in sorted(set(ra) & set(rb)):
+        for f in ("delta_lb", "coverage"):
+            x, y = ra[k][f], rb[k][f]
+            if x is not None and y is not None and abs(x - y) >= 0.01:
+                lines.append(f"CHANGE {k[0]} {k[1]} thr={k[2]} {f}: {x} -> {y}")
+    for k in sorted(set(ra) ^ set(rb)):
+        lines.append(f"{'GONE' if k in ra else 'NEW'} {k[0]} {k[1]} thr={k[2]}")
+    return f"flip report {a} -> {b}\n" + ("\n".join(lines) if lines else "no change")
+
+
 def bench_show(p, limit=40):
     """The latest run's table as text; says how many held-out rows each cut left out and how many table rows are cut."""
     try:
         with open(os.path.join(p.root, BENCH), encoding="utf-8") as f:
-            allr = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict) and r.get("run")]
+            allr = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict) and r.get("run")
+                    and r.get("arm") != "loo"]  # T-2976: the loo rows have their own report (flip_report)
     except (OSError, ValueError):
         allr = []
     if not allr:
@@ -3998,6 +4216,30 @@ def cmd_exam(args):
                 return cli.out(args, man, f"lake {man['hash'][:12]}: {man['rows']} rows from {man['projects']} projects "
                                           f"(excluded {man['excluded']['sensitive']} sensitive, {man['excluded']['optout']} "
                                           f"opted out, {man['dupes']} dupes) in {os.path.abspath(args.export)}")
+            if getattr(args, "loo", False):  # T-2976: whole projects held out; --adopt writes model-live / model-shadow
+                from sampo import models
+                try:
+                    dec = [x for x in models.configured()[1].values() if x["kind"] == "systemone"]
+                except models.ModelError:
+                    dec = []
+                lo = lambda x: models.is_loopback(urllib.parse.urlsplit(x["base_url"]).hostname or "")  # noqa: E731
+                cons = {"majority": _majority, "bm25": _bm25_vote, **{  # the lake holds no sensitive project, so any backend may read it
+                    x["name"]: _backend_make(x, 120 if lo(x) else 300) for x in dec + models.systemone_profiles()}}
+                prev = _loo_runs(p)
+                res = loo_models(p, contestants=cons, cap=args.limit or BENCH_CAP)
+                msg = [f"{res['run']}: {len(res['rows'])} rows written to {BENCH}"] + [
+                    f"{u}: {'ADOPT' if v['adopt'] else 'shadow'} {v['backend']} thr={v['thr']} ({v['why']})"
+                    for u, v in res["adopt"].items()]
+                if getattr(args, "adopt", False):
+                    res["state"] = adopt_models(p, res)
+                    res["demoted"] = models.demote(p)
+                    msg += [f"{u} -> model-{s}" for u, (s, _) in res["state"].items()] + [
+                        f"demoted {u}: live {h}/{n} under floor {fl}" for u, h, n, fl in res["demoted"]]
+                if prev:
+                    res["flips"] = flip_report(p, prev[-1], res["run"])
+                    c.append_line(os.path.join(p.dir, "research", "models", "flips.md"), res["flips"] + "\n\n")
+                    msg.append(res["flips"])
+                return cli.out(args, res, "\n".join(msg))
             if args.run not in (None, "run", "show"):
                 raise ValueError("models: run or show")
             if args.run == "run":

@@ -1072,7 +1072,58 @@ def _booked(p, kind, best, tried, cleared, ref=None):
     return out
 
 
-EXAM_RUN = re.compile(r"\b(?:s\d+-\d+|l\d{3})\b")  # an fm exam run id (s21-013) or a long-tier one (l001)
+EXAM_RUN = re.compile(r"\b(?:s\d+-\d+|l\d{3}|m\d{8}-\d{9})\b")  # an exam run id (s21-013), a long-tier one (l001), a model bench one (T-2976)
+LIVE_MIN = 10  # live answers scored before a use can be demoted (fewer is noise)
+
+
+def wilson_lower(hits, n, z=1.645):
+    """T-2976: the one-sided 95% lower bound of a proportion (Wilson); 0.0 for no rows."""
+    if n <= 0:
+        return 0.0
+    ph = hits / n
+    d = 1 + z * z / n
+    return max(0.0, (ph + z * z / (2 * n) - z * ((ph * (1 - ph) + z * z / (4 * n)) / n) ** 0.5) / d)
+
+
+def resolve_use(slot, text, model, path, thr=0.0):
+    """T-2976: the one wrapper bench and live both call. `model(text)` is (label, confidence) or None (abstain);
+    `path()` is today's rule call. An abstain, an answer under `thr` or a model that raises falls back to the path.
+    Returns (label, 'model'|'path'); `slot` names the use (kept for the caller's log)."""
+    try:
+        got = model(text)
+    except (ModelError, ValueError, KeyError, *_TRANSPORT):
+        got = None
+    try:
+        answered = bool(got) and got[0] is not None and got[1] >= thr
+    except TypeError:  # a backend's confidence of None: no answer
+        answered = False
+    if answered:
+        return got[0], "model"
+    return path(), "path"
+
+
+def _set_state(p, state, use, why):
+    from sampo import core
+    cell = lambda s: str(s).replace("|", "/").replace("\n", " ")  # noqa: E731
+    core.append_line(os.path.join(p.dir, "decisions.md"),
+                     f"| {time.strftime('%Y-%m-%d')} | model-{state}: {use}: {cell(why)} | T-2976 adoption rule | |\n")
+
+
+def demote(p, floor=None):
+    """T-2976: each live use whose booked answers (louhi.replay_models) number LIVE_MIN or more and whose
+    agreement falls under the floor (default: the path's own accuracy over the same rows) goes back to shadow with a
+    decision row. Returns [(use, hits, n, floor)] of the uses demoted; a second run finds them shadow and does nothing."""
+    from sampo import louhi
+    out = []
+    for use, o in sorted(louhi.replay_models(p).items()):
+        n = o["model_n"]
+        if n < LIVE_MIN or not live(p, use):
+            continue
+        fl = o["model_path_hits"] / n if floor is None else floor  # the path on the rows the model answered
+        if o["model_hits"] / n < fl:
+            _set_state(p, "shadow", use, f"live agreement {o['model_hits']}/{n} under the floor {fl:.2f}")
+            out.append((use, o["model_hits"], n, round(fl, 3)))
+    return out
 
 
 def live(p, use):

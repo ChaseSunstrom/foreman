@@ -7892,6 +7892,12 @@ def _build_parser(only=None):
     s.add_argument("--export", metavar="DIR", help="models: write the training lake to DIR (rows.jsonl, manifest.json) and its "
                    "manifest to this project's research/models/lake-manifest.json: finished tasks of every project here, "
                    "outcome-labelled, names and paths stripped, sensitive and lake_optout projects left out (T-2974)")
+    s.add_argument("--loo", action="store_true", help="models: leave-one-project-out over the lake's projects: each held out "
+                   "whole, per-project and pooled rows (coverage at each abstain threshold, Wilson bound, bootstrap lower bound "
+                   "of the gain over today's path), a flip report against the last --loo run; --limit caps held-out rows (T-2976)")
+    s.add_argument("--adopt", action="store_true", help="models --loo: write model-live for a use whose lower bound beats "
+                   "today's path over 3+ held-out projects, model-shadow for a live one that no longer does, and demote live "
+                   "uses whose live agreement fell under the floor")
     s.add_argument("--with-agent", action="store_true", help="models --export: also the agent-written fields "
                    "(the brief's reading, approach, criteria, steps, lessons), each marked author=agent; off by default")
     s.add_argument("--generation", action="store_true", help="models run: also the generation arm: K moons (--n, default 16) "

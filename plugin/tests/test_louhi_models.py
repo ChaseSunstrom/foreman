@@ -221,3 +221,135 @@ class LouhiModels(ForemanTestCase):
         self.run_bench()
         self.assertEqual(len({x["run"] for x in self.rows()}), 2)
         self.assertNotIn("gone", self.fm("exam", "models", "show").stdout)  # show prints the latest run only
+
+
+def _pool(n=12, lose_on=None):
+    """Three fake projects a, b, c of n rows each; today's path is wrong on every row (right on `lose_on`'s)."""
+    rows, truth = [], {}
+    for pr in "abc":
+        for i in range(n):
+            t, typ = f"request {pr} {i}", ("FIX", "FEATURE")[i % 2]
+            rows.append({"project": pr, "text": t, "type": typ, "tier": "S",
+                         "path": {"intake-type": typ if pr == lose_on else "RESEARCH", "intake-tier": "S"}})
+            truth[t] = typ
+    return rows, truth
+
+
+def _model(truth, lose_on=None, conf=0.9):
+    """A contestant that knows every answer, except on project `lose_on`, where it answers wrong."""
+    def make(train, use):
+        return lambda text: ((truth[text] if f" {lose_on} " not in text else "RESEARCH") if use == "intake-type" else "S", conf)
+    return make
+
+
+class LouhiLoo(ForemanTestCase):
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def loo(self, rows, **cons):
+        return louhi.loo_models(self.p, rows=rows, contestants=cons)
+
+    def rows(self):
+        with open(os.path.join(self.p.root, louhi.BENCH)) as f:
+            return [json.loads(x) for x in f]
+
+    def test_each_project_is_held_out_whole_and_rows_carry_coverage_and_a_wilson_bound_per_contestant(self):
+        rows, truth = _pool()
+        seen = []
+
+        def make(train, use):
+            seen.append(sorted({r["project"] for r in train}))  # what a held-out project's contestant trained on
+            return _model(truth)(train, use)
+        res = self.loo(rows, good=make)
+        self.assertEqual(sorted(set(map(tuple, seen))), [("a", "b"), ("a", "c"), ("b", "c")])  # never the held-out one
+        rs = [r for r in res["rows"] if r["backend"] == "good" and r["use"] == "intake-type"]
+        self.assertEqual({r["project"] for r in rs} - {"pooled"}, {louhi._lake_h(x) for x in "abc"})
+        pooled = {r["thr"]: r for r in rs if r["project"] == "pooled"}
+        self.assertEqual(set(pooled), set(louhi.LOO_THRS))
+        self.assertEqual((pooled[0.5]["n"], pooled[0.5]["coverage"], pooled[0.5]["accuracy"]), (36, 1.0, 1.0))
+        self.assertAlmostEqual(pooled[0.5]["wilson_lb"], models.wilson_lower(36, 36), places=3)
+        self.assertLess(pooled[0.5]["wilson_lb"], 1.0)
+        self.assertEqual(pooled[0.95]["coverage"], 0.0)  # conf 0.9 abstains over 0.95
+        self.assertEqual(self.rows()[-1]["arm"], "loo")  # written to the bench file
+
+    def test_a_contestant_that_wins_on_two_projects_and_loses_the_held_out_third_is_not_adopted(self):
+        rows, truth = _pool(lose_on="c")
+        res = self.loo(rows, mixed=_model(truth, lose_on="c"))
+        a = res["adopt"]["intake-type"]
+        self.assertFalse(a["adopt"], a)
+        self.assertLessEqual(a["delta_lb"], 0)
+        self.assertEqual(louhi.adopt_models(self.p, res)["intake-type"][0], "shadow")
+        self.assertFalse(models.live(self.p, "intake-type"))
+
+    def test_a_contestant_ahead_on_every_project_is_adopted_with_the_run_cited_and_abstains_fall_back_to_the_path(self):
+        rows, truth = _pool()
+        res = self.loo(rows, good=_model(truth))
+        a = res["adopt"]["intake-type"]
+        self.assertTrue(a["adopt"] and a["delta_lb"] > 0 and a["projects"] == 3, a)
+        self.assertEqual(louhi.adopt_models(self.p, res)["intake-type"][0], "live")
+        self.assertTrue(models.live(self.p, "intake-type"))  # the row cites the bench run: m...
+        self.assertIn(res["run"], open(os.path.join(self.p.dir, "decisions.md")).read())
+        path = lambda: "RESEARCH"  # noqa: E731
+        self.assertEqual(models.resolve_use("intake-type", "x", lambda t: ("FIX", 0.9), path, 0.5), ("FIX", "model"))
+        self.assertEqual(models.resolve_use("intake-type", "x", lambda t: ("FIX", 0.4), path, 0.5), ("RESEARCH", "path"))
+        self.assertEqual(models.resolve_use("intake-type", "x", lambda t: None, path), ("RESEARCH", "path"))
+
+    def test_one_project_the_model_loses_on_blocks_adoption_even_when_the_bootstrap_bound_is_positive(self):
+        lb, ok = louhi._gate([0.3, 0.3, -0.05])
+        self.assertGreater(lb, 0)  # the 5% quantile of 3 projects misses the worst one...
+        self.assertFalse(ok)  # ...so the worst project's own gain must be >= 0 too
+        self.assertTrue(louhi._gate([0.3, 0.3, 0.0])[1])
+        self.assertFalse(louhi._gate([0.0, 0.0, 0.0])[1])  # a tie is not a win, whatever the float noise
+
+    def test_a_confidence_of_none_falls_back_to_the_path(self):
+        self.assertEqual(models.resolve_use("u", "x", lambda t: ("FIX", None), lambda: "FEATURE"), ("FEATURE", "path"))
+
+    def test_rows_and_decision_name_the_baseline_actually_used(self):
+        rows, truth = _pool()  # every row has a path
+        res = self.loo(rows, good=_model(truth))
+        self.assertEqual({r["baseline"] for r in res["rows"]}, {"path"})
+        louhi.adopt_models(self.p, res)
+        self.assertIn("beat today's path", open(os.path.join(self.p.dir, "decisions.md")).read())
+        nop = [{k: v for k, v in r.items() if k != "path"} for r in rows]
+        res = louhi.loo_models(self.p, rows=nop, contestants={"good": _model(truth)})
+        self.assertEqual({r["baseline"] for r in res["rows"]}, {"majority"})
+        self.assertEqual(res["adopt"]["intake-type"]["baseline"], "majority")
+
+    def test_under_three_projects_nothing_is_adopted(self):
+        rows, truth = _pool()
+        res = self.loo([r for r in rows if r["project"] != "c"], good=_model(truth))
+        a = res["adopt"]["intake-type"]
+        self.assertFalse(a["adopt"])
+        self.assertIn("3 projects", a["why"])
+
+    def test_the_bootstrap_is_seeded(self):
+        rows, truth = _pool(lose_on="c")
+        a = self.loo(rows, mixed=_model(truth, lose_on="c"))["adopt"]["intake-type"]["delta_lb"]
+        self.assertEqual(self.loo(rows, mixed=_model(truth, lose_on="c"))["adopt"]["intake-type"]["delta_lb"], a)
+
+    def test_a_live_use_whose_live_agreement_falls_under_the_floor_goes_back_to_shadow_once(self):
+        rows, truth = _pool()
+        louhi.adopt_models(self.p, self.loo(rows, good=_model(truth)))
+        self.assertTrue(models.live(self.p, "intake-type"))
+        self.assertEqual(models.demote(self.p), [])  # no booked answers: nothing to judge
+        # the floor is the path's accuracy on the booked rows (12/20), not on every shadow row (n=40, 36 hits)
+        fake = {"intake-type": {"n": 40, "path_hits": 36, "model_n": 20, "model_hits": 8, "model_path_hits": 12}}
+        orig = louhi.replay_models
+        louhi.replay_models = lambda p: fake
+        try:
+            self.assertEqual(models.demote(self.p)[0][:3], ("intake-type", 8, 20))
+            self.assertFalse(models.live(self.p, "intake-type"))
+            self.assertEqual(models.demote(self.p), [])  # a second run: already shadow
+        finally:
+            louhi.replay_models = orig
+
+    def test_the_flip_report_names_each_change_between_two_runs(self):
+        rows, truth = _pool(lose_on="c")
+        r1 = self.loo(rows, m=_model(truth, lose_on="c"))["run"]
+        rows2, _ = _pool()
+        r2 = louhi.loo_models(self.p, rows=rows2, contestants={"m": _model(truth)})["run"]
+        text = louhi.flip_report(self.p, r1, r2)
+        self.assertRegex(text, r"FLIP intake-type m: shadow -> live")
+        self.assertIn("no change", louhi.flip_report(self.p, r2, r2))
