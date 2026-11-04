@@ -192,6 +192,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmledger` (`sampo verify-ledger`: the ledger's hash chain proved line by line… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmlib` (T-0933: `sampo lib` — the stack library: card parsing and lint, stack… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmlong`… [→ files-lib-2](docs/map/files-lib-2.md)
+- `fmlive` (T-2998: `sampo watch --web [--url|--port N]`, a read-only page on 127.0.0.1 with a snapshot and SSE feed… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmloop` (T-1057: `sampo loop`, an empty queue starts an improvement round… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmmandate` (T-2557: a goal keeps its raw text's "Done when:" bullets… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmmap` (`sampo map`, `sampo impact`; `sampo map --cold`: hot files no session… [→ files-lib-3](docs/map/files-lib-3.md)

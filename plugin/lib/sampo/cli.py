@@ -8401,6 +8401,9 @@ def _build_parser(only=None):
     s = add("watch", lazy("sampo.watch", "cmd_watch"), tier=("Running elsewhere", 1280), help="live dashboard")
     s.add_argument("--once", action="store_true")
     s.add_argument("--interval", type=float, default=1.0)
+    s.add_argument("--web", action="store_true", help="serve a read-only live page on 127.0.0.1 (jobs, local models, GPU, flows); runs until stopped (T-2998)")
+    s.add_argument("--url", action="store_true", help="with --web: reprint the running page's URL (a fresh one-time link)")
+    s.add_argument("--port", type=int, help="with --web: a fixed port (default a random one)")
 
     s = add("install-user", lazy("sampo.setup", "cmd_install"), tier=("Internal (hooks and installer)", 1330), help="wire Sampo into ~/.claude (used by install.sh)")
     s.add_argument("--dry-run", action="store_true")

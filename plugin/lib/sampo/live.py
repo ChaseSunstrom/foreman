@@ -1,0 +1,399 @@
+"""T-2998: sampo watch --web: everything Sampo is doing, as a read-only page on 127.0.0.1 (T-2997).
+
+The server is settingsserve's: the one-time token swapped for an HttpOnly SameSite=Strict cookie, the Host check against
+DNS rebinding, a CSP with nonces (its Handler, subclassed, not copied). It never changes state and never stops on idle:
+it runs until Ctrl-C or SIGTERM. Its URL is written to the project's state (live.url, mode 0600); a spent token is
+replaced at once, so `sampo watch --web --url` always prints a URL that still works.
+
+GET /            the page: plugin/web/live/index.html (its __NONCE__ becomes the CSP nonce), or a placeholder
+GET /static/NAME a file of plugin/web/live/ (live.css, live.js)
+GET /api/state   one snapshot (the contract: research live-schema)
+GET /api/stream  Server-Sent Events: a `state` event with the snapshot every 2 s
+
+Each collector is cheap (no model call, nothing beyond 127.0.0.1: Ollama's /api/ps, the Jeff server's /v1/models,
+nvidia-smi, /proc) and fails soft: its field is empty, never a 500. The whole snapshot is cached CACHE_S seconds, so any
+number of pages cost one build. Model calls come from what the code already logs: the ledger's cards_grow, moons_grow,
+moons_funnel, run_session, genesis_confirm and genesis_review events (each names its models) and state/spend.jsonl."""
+import json
+import os
+import re
+import secrets
+import signal
+import subprocess
+import threading
+import time
+import urllib.request
+
+from sampo import core as c
+from sampo import settingsserve
+
+WEB = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "web", "live"))
+CACHE_S = 1.5  # the snapshot is shared; the stream asks every 2 s
+SLOW_S = 30  # the stats read whole card and moon files
+STREAM_S = 2
+STREAMS_MAX = 8  # open streams at once: a thread each
+FLOW_S, CALL_S = 60, 300
+NET_TIMEOUT = 1.0
+OLLAMA, JEFF = "http://127.0.0.1:11434/api/ps", "http://127.0.0.1:8766/v1/models"
+TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".png": "image/png",
+         ".json": "application/json", ".woff2": "font/woff2", ".html": "text/html"}
+JOBS = ((r"moons funnel", "funnel"), (r"playbooks small grow", "grow"), (r"exam run", "exam"), (r"exam models", "bench"),
+        (r"\bcheck\b", "check"))
+FLOW_OF = {"cards_grow": ("card grow", "write"), "moons_grow": ("moon grow", "write"),
+           "moons_funnel": ("moon funnel", "judge"), "run_session": ("session run", "act"),
+           "genesis_confirm": ("genesis", "review"), "genesis_review": ("genesis", "review")}
+_CACHE, _LOCK = {}, threading.Lock()
+
+
+def _cached(key, ttl, fn):
+    with _LOCK:
+        hit = _CACHE.get(key)
+        if hit and time.monotonic() - hit[0] < ttl:
+            return hit[1]
+    val = fn()
+    with _LOCK:
+        _CACHE[key] = (time.monotonic(), val)
+    return val
+
+
+def _get_json(url):
+    """The JSON at a loopback URL, None when it is down or isn't JSON."""
+    try:
+        with urllib.request.urlopen(url, timeout=NET_TIMEOUT) as r:  # nosec: a constant 127.0.0.1 URL
+            return json.loads(r.read(1 << 20))
+    except (OSError, ValueError, RecursionError):
+        return None
+
+
+def _smi():
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.used,memory.total,utilization.gpu",
+                            "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=2)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return r.stdout if r.returncode == 0 else ""
+
+
+def _procs():
+    """[(pid, command line)] of every process /proc lists (empty where it isn't there)."""
+    out = []
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return out
+    for n in names:
+        if n.isdigit() and int(n) != os.getpid():
+            try:
+                with open(f"/proc/{n}/cmdline", "rb") as f:
+                    out.append((int(n), f.read(4096).replace(b"\0", b" ").decode("utf-8", "replace").strip()))
+            except OSError:
+                continue
+    return out
+
+
+# ---------------------------------------------------------------- collectors: each takes the project, returns its field
+
+def _briefs(p):
+    return _cached(("briefs", p.dir), CACHE_S, lambda: c.load_briefs(p))
+
+
+def project(p):
+    meta = c.read_meta(p)
+    return {"slug": p.slug, "drive": bool(meta.get("drive", True)), "autonomy": c.effective_autonomy(p, meta)}
+
+
+def focus(p):
+    b = c.active_brief(_briefs(p), p.lane)
+    if not b:
+        return None
+    steps = b.steps()
+    return {"id": b.id, "title": b.title, "step": f"{sum(s.done for s in steps)}/{len(steps)}",
+            "stage": c.stage(b, c.effective_autonomy(p))}
+
+
+def queue(p):
+    open_ = sorted((b for b in _briefs(p) if b.status in c.RUNNABLE), key=c._key)[:12]
+    return [{"id": b.id, "title": b.title, "type": b.type, "tier": b.tier, "status": b.status} for b in open_]
+
+
+def _closed_today(p):
+    from sampo import outcomes
+    today = c.now()[:10]
+    done = [b for b in _briefs(p) if b.status == "done" and str(b.meta.get("updated") or "").startswith(today)]
+    rows = sorted(({"id": b.id, "title": b.title, "at": outcomes.done_at(b)} for b in done), key=lambda r: r["at"], reverse=True)
+    return [r for r in rows if r["at"].startswith(today)]
+
+
+def closed_today(p):
+    return _closed_today(p)[:30]
+
+
+def lanes(p):
+    return [{"task": b.id, "title": b.title, "model": b.meta.get("builder_model"), "since": b.meta.get("updated")}
+            for b in _briefs(p) if b.status not in c.CLOSED and b.meta.get("lane")]
+
+
+def jobs(p):
+    out = []
+    for pid, cmd in _procs():
+        words = cmd.split()
+        if not words or os.path.basename(words[0]) not in ("sampo", "fm") and not os.path.basename(words[0]).startswith("python"):
+            continue
+        at = next((i for i, w in enumerate(words) if os.path.basename(w) in ("sampo", "fm")), None)
+        rest = " ".join(words[at + 1:]) if at is not None else cmd
+        kind = next((k for rx, k in JOBS if at is not None and re.match(rx, rest)), None)
+        if "jeff-train" in cmd or "jeffexport" in cmd:
+            kind = "train"
+        if not kind:
+            continue
+        m = re.search(r"--(?:profile|model)[ =](\S+)", cmd)
+        try:
+            since = c.iso(os.stat(f"/proc/{pid}").st_ctime)
+        except OSError:
+            since = None
+        out.append({"name": c.fit(rest, 60), "kind": kind, "pid": pid, "since": since, "model": m and m.group(1),
+                    "progress": None, "line": c.fit(cmd, 100)})
+    return out
+
+
+def _calls(p):
+    """[(at, from, to, kind)] of the last CALL_S seconds' model calls the code already logged."""
+    since = c.iso(time.time() - CALL_S)
+    out = []
+    for e in c.ledger_tail(p, 300):
+        spec, at, d = FLOW_OF.get(e.get("event")), str(e.get("ts") or ""), e.get("data") or {}
+        if not spec or at < since:
+            continue
+        names = d.get("models") if isinstance(d.get("models"), dict) else {d.get("model"): 1} if d.get("model") else {}
+        out += [(at, spec[0], str(m), spec[1]) for m in names if m]
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "spend.jsonl"), 200):
+        f, at = str(e.get("feature") or ""), str(e.get("ts") or "")
+        if f and at >= since:
+            out.append((at, f, "claude", "review" if re.search("review|audit", f) else "plan" if "plan" in f else "act"))
+    return sorted(out, reverse=True)
+
+
+def flows(p):
+    since = c.iso(time.time() - FLOW_S)
+    return [{"from": a, "to": b, "kind": k, "at": at} for at, a, b, k in _calls(p) if at >= since]
+
+
+def _family(name):
+    n = name.lower()
+    return ("claude" if re.match(r"(claude|haiku|sonnet|opus)", n) else "jeff" if "jeff" in n else
+            "embed" if "embed" in n or "bge" in n else "ollama")
+
+
+def models(p):
+    out, seen = [], {}
+    for r in (_cached("ps", 2, lambda: _get_json(OLLAMA)) or {}).get("models") or []:
+        name = str(r.get("name") or r.get("model") or "")
+        vram = int(r.get("size_vram") or 0) // 1048576
+        if name:
+            seen[name] = {"name": name, "family": _family(name), "where": "gpu" if vram else "cpu", "loaded": True,
+                          "vram_mb": vram}
+    for r in (_cached("jeff", 3, lambda: _get_json(JEFF)) or {}).get("data") or []:
+        if isinstance(r, dict) and r.get("id"):
+            seen.setdefault(str(r["id"]), {"name": str(r["id"]), "family": "jeff", "where": "remote", "loaded": True,
+                                           "vram_mb": None})
+    calls = _calls(p)
+    for _, _, to, _ in calls:
+        seen.setdefault(to, {"name": to, "family": _family(to), "where": "cloud" if _family(to) == "claude" else "remote",
+                             "loaded": _family(to) == "claude", "vram_mb": None})
+    for name, m in seen.items():
+        hits = [at for at, _, to, _ in calls if to == name]
+        out.append(dict(m, calls_5m=len(hits), last_call=hits[0] if hits else None))
+    return out
+
+
+def gpu(p):
+    for line in _smi().splitlines():
+        name, *nums = [x.strip() for x in line.split(",")]
+        if len(nums) == 3 and all(x.isdigit() for x in nums):
+            return {"name": name, "used_mb": int(nums[0]), "total_mb": int(nums[1]), "util_pct": int(nums[2])}
+    return None
+
+
+def events(p):
+    """The ledger's and state/events.jsonl's newest, plain text, redacted (hook timing and tool rows are noise)."""
+    rows = []
+    for e in c.ledger_tail(p, 80):
+        rows.append((str(e.get("ts") or ""), str(e.get("event") or ""),
+                     f"{e.get('task') or ''} {json.dumps(e.get('data') or {}, ensure_ascii=False)}".strip()))
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 200):
+        if e.get("kind") not in ("hook_ms", "tool"):
+            rows.append((str(e.get("ts") or ""), str(e.get("kind") or ""),
+                         json.dumps({k: v for k, v in e.items() if k not in ("ts", "kind", "session_id")}, ensure_ascii=False)))
+    return [{"at": at, "kind": k, "text": c.fit(c.redact(t), 160)} for at, k, t in sorted(rows, reverse=True)[:60]]
+
+
+def stats(p):
+    def slow():
+        from sampo import moonscale, smallcards
+        cov, st = smallcards.coverage(), moonscale.status(p)
+        return {"cards": {"general": cov["total"], "ui": cov["ui"].get("total", 0), "ui_cells": cov["ui"].get("filled", 0),
+                          "grid_ui": cov["ui"].get("grid", 0)},
+                "moons": {"candidates": st["total"], "stages": st["stages"]},
+                "bench": []}  # ponytail: the bench table is a model read away; the page shows none until a cheap one exists
+    return dict(_cached(("stats", p.dir), SLOW_S, slow), closed_today=len(_closed_today(p)))
+
+
+COLLECTORS = {"project": project, "focus": focus, "queue": queue, "closed_today": closed_today, "lanes": lanes, "jobs": jobs,
+              "models": models, "gpu": gpu, "flows": flows, "events": events, "stats": stats}
+EMPTY = {"project": {}, "focus": None, "gpu": None, "stats": {}}  # every other field's empty is []
+
+
+def snapshot(p):
+    """The contract's snapshot; a collector that raises leaves its field empty. Cached CACHE_S seconds per project."""
+    def build():
+        s = {"at": c.now()}
+        for name, fn in COLLECTORS.items():
+            try:
+                s[name] = fn(p)
+            except Exception:  # a collector is cheap and optional; the rest of the page stands
+                s[name] = EMPTY.get(name, [])
+        return s
+    return _cached(("snap", p.dir), CACHE_S, build)
+
+
+# ---------------------------------------------------------------- the server
+
+PLACEHOLDER = ('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sampo live</title></head><body>'
+               '<h1>Sampo live</h1><p>The page files (plugin/web/live) are not here; /api/state has the data.</p></body></html>')
+
+
+class Handler(settingsserve.Handler):
+    CMD, PATHS = "sampo watch --web", ()
+
+    def _json(self, obj):
+        self._send(200, json.dumps(obj, ensure_ascii=False), ctype="application/json; charset=utf-8")
+
+    def _page(self):
+        nonce = secrets.token_urlsafe(16)
+        try:
+            with open(os.path.join(WEB, "index.html"), encoding="utf-8") as f:
+                body = f.read().replace("__NONCE__", nonce)
+        except OSError:
+            body = PLACEHOLDER
+        self._send(200, body, nonce, csp=(f"default-src 'none'; script-src 'self' 'nonce-{nonce}'; style-src 'self' "
+                                          f"'nonce-{nonce}'; img-src 'self' data:; font-src 'self'; connect-src 'self'; "
+                                          "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"))
+
+    def _static(self, name):
+        ext = os.path.splitext(name)[1]
+        try:
+            if not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9._-]*", name) or ext not in TYPES:
+                raise OSError
+            with open(os.path.join(WEB, name), "rb") as f:
+                data = f.read(4 << 20).decode("utf-8") if ext in (".css", ".js", ".svg", ".json") else None
+                if data is None:
+                    return self._send(404, "not found")
+        except (OSError, UnicodeDecodeError):
+            return self._send(404, "not found")
+        self._send(200, data, ctype=TYPES[ext] + ("; charset=utf-8" if ext in (".css", ".js", ".svg", ".json") else ""))
+
+    def _stream(self):
+        srv = self.server
+        with srv.once:
+            if srv.streams >= STREAMS_MAX:
+                return self._send(503, "too many streams")
+            srv.streams += 1
+        try:
+            self.send_response(200)
+            for k, v in (("Content-Type", "text/event-stream"), ("Cache-Control", "no-store"), ("Connection", "close"),
+                         ("Content-Security-Policy", "default-src 'none'"), ("X-Content-Type-Options", "nosniff")):
+                self.send_header(k, v)
+            self.end_headers()
+            while not srv.stop.is_set():
+                self.wfile.write(b"event: state\ndata: " + json.dumps(snapshot(srv.project), ensure_ascii=False).encode() + b"\n\n")
+                self.wfile.flush()
+                srv.stop.wait(STREAM_S)
+        except (OSError, ValueError):
+            pass  # the page went away
+        finally:
+            with srv.once:
+                srv.streams -= 1
+            self.close_connection = True
+
+    def do_GET(self):
+        path = self._allowed()
+        if path is None:
+            return
+        if path == "/":
+            return self._page()
+        if path == "/api/state":
+            return self._json(snapshot(self.server.project))
+        if path == "/api/stream":
+            return self._stream()
+        if path.startswith("/static/"):
+            return self._static(path[len("/static/"):])
+        self._send(404, "not found")
+
+
+def make(p, port=0):
+    """A server bound to 127.0.0.1 (port 0: a random one), not yet serving: (server, the URL's one-time token)."""
+    server = settingsserve.Server(("127.0.0.1", port), Handler)
+    server.token, server.session = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    server.once, server.project, server.last = threading.Lock(), p, time.monotonic()
+    server.stop, server.streams = threading.Event(), 0
+    return server, server.token
+
+
+def url_path(p):
+    return os.path.join(p.dir, "live.url")
+
+
+def write_url(p, url):
+    c.write_atomic(url_path(p), url + "\n")
+    os.chmod(url_path(p), 0o600)  # the URL holds a token that opens the page
+
+
+def _url(server):
+    return f"http://127.0.0.1:{server.server_address[1]}/?t={server.token}"
+
+
+def serve(server, stop=None):
+    """Answer requests until `stop` is set; a spent token is replaced and live.url rewritten. No idle timeout."""
+    stop = server.stop = stop or server.stop
+    server.timeout = 0.5
+    try:
+        while not stop.is_set():
+            server.handle_request()
+            with server.once:
+                if server.token is None:
+                    server.token = secrets.token_urlsafe(32)
+                    if server.project is not None:
+                        write_url(server.project, _url(server))
+    finally:
+        stop.set()  # open streams end
+        server.server_close()
+
+
+def cmd_live(args):
+    from sampo import cli
+    p = cli.resolve(args, create=False)
+    if args.url:
+        try:
+            with open(url_path(p), encoding="utf-8") as f:
+                print(f.read().strip())
+            return 0
+        except OSError:
+            raise cli.UsageError("sampo watch --web isn't running here (sampo watch --web starts it)") from None
+    server, _ = make(p, args.port or 0)
+    write_url(p, _url(server))
+    print(f"Sampo live: {_url(server)}\n(read-only, 127.0.0.1 only; the link works once, `sampo watch --web --url` prints a fresh one; "
+          "Ctrl-C stops it)", flush=True)
+    stop = threading.Event()
+    old = signal.signal(signal.SIGTERM, lambda *a: stop.set())
+    try:
+        serve(server, stop)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        signal.signal(signal.SIGTERM, old)
+        try:
+            os.remove(url_path(p))
+        except OSError:
+            pass
+    print("stopped", flush=True)
+    return 0

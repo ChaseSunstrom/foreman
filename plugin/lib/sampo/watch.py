@@ -191,6 +191,9 @@ def render(d, width=100):
 
 
 def cmd_watch(args):
+    if getattr(args, "web", False):
+        from sampo import live
+        return live.cmd_live(args)
     from sampo import cli
     p = cli.resolve(args)
     if args.once:

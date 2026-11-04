@@ -188,15 +188,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a):  # the first request line holds the token: nothing is logged
         pass
 
-    def _send(self, status, body="", nonce="", extra=()):
+    def _send(self, status, body="", nonce="", extra=(), ctype="text/html; charset=utf-8", csp=None):
+        """ctype and csp (T-2998: sampo watch --web's JSON, script and style) default to this page's own."""
         data = body.encode("utf-8")
         self.send_response(status)
         for k, v in extra:
             self.send_header(k, v)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Content-Security-Policy", f"default-src 'none'; style-src 'nonce-{nonce}'; "
-                         "form-action 'self'; base-uri 'none'; frame-ancestors 'none'" if nonce else "default-src 'none'")
+        self.send_header("Content-Security-Policy", csp or (f"default-src 'none'; style-src 'nonce-{nonce}'; "
+                         "form-action 'self'; base-uri 'none'; frame-ancestors 'none'" if nonce else "default-src 'none'"))
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("X-Content-Type-Options", "nosniff")
