@@ -53,5 +53,5 @@ async function scale() {
     none: b.texts.concat(b.html.split("\n")).some(t => /not graded yet/i.test(t)),
     docs: a.docs,
     long: says(l, /ahead/) && says(l, /Sampo/) && says(l, /\$1\.50/) && says(l, /cost \?/) && says(l, /2 of 3/),
-    longReason: says(r, /no common goals/) && !says(r, /ahead|behind/), longNone: says(n, /no long-horizon run yet/i)}));
+    longReason: says(r, /no common goals/) && !says(r, /Sampo is (ahead of|level with|behind) plain/) /* T-2960: the row's own sentence */, longNone: says(n, /no long-horizon run yet/i)}));
 })();
