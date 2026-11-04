@@ -2493,7 +2493,9 @@ LOAD = re.compile(r"^build|ImportError|ModuleNotFoundError|NameError|SyntaxError
 def _copy(src, overlay=None):
     tmp = tempfile.mkdtemp(prefix="fm-exam-")
     dst = os.path.join(tmp, "w")
-    shutil.copytree(src, dst, ignore=shutil.ignore_patterns(".git", "node_modules", "target"), symlinks=True)
+    # a real dep or build dir is left out; a link to one is a minted repo's own deps and stays (T-2987)
+    shutil.copytree(src, dst, symlinks=True, ignore=lambda d, names: {
+        n for n in names if n == ".git" or n in ("node_modules", "target") and not os.path.islink(os.path.join(d, n))})
     if overlay:
         shutil.copytree(overlay, dst, dirs_exist_ok=True)
     return tmp, dst

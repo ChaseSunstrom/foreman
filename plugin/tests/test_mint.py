@@ -193,6 +193,16 @@ class MintWithUntrackedDeps(MintFromRepo):  # T-2987: real projects keep their d
         self.assertGreaterEqual(r["minted"]["missed"], 1)
         self.assertTrue(all(m.startswith("other.py:") for m in r["minted"]["mutations"]))
 
+    def test_grading_copies_keep_a_linked_dep_dir_and_skip_a_real_one(self):  # a minted TS repo graded without tsc
+        from sampo import louhi
+        src = os.path.join(self.tmp, "graded")
+        os.makedirs(os.path.join(src, "real", "node_modules"))
+        os.makedirs(os.path.join(src, "deps"))
+        os.symlink(os.path.join(src, "deps"), os.path.join(src, "node_modules"))
+        tmp, dst = louhi._copy(src)
+        self.assertTrue(os.path.islink(os.path.join(dst, "node_modules")))
+        self.assertFalse(os.path.exists(os.path.join(dst, "real", "node_modules")))
+
     def test_a_runner_wrapper_is_unwrapped(self):
         from sampo import mint
         self.assertEqual(mint._unwrap("uv run pytest -q"), "pytest -q")
