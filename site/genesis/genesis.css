@@ -325,7 +325,7 @@ button.chip{cursor:pointer;transition:color var(--dur-small),border-color var(--
 .art.live .stillfire{display:none}
 /* the sky over the tower: a faint nebula along the bands, and the fire's glow on the smoke above the crown */
 .tscene::before{content:"";position:absolute;left:-10%;right:-4%;top:0;height:62%;pointer-events:none;
-  background:radial-gradient(48% 34% at 58% 44%,color-mix(in srgb,var(--orange) 13%,transparent),transparent 72%),radial-gradient(70% 46% at 52% 30%,color-mix(in srgb,var(--brass) 10%,transparent),transparent 74%),radial-gradient(30% 22% at 76% 18%,color-mix(in srgb,var(--gold) 8%,transparent),transparent 80%)}
+  background:radial-gradient(48% 34% at 58% 44%,color-mix(in srgb,var(--orange) 13%,transparent),transparent 72%),radial-gradient(70% 46% at 52% 30%,color-mix(in srgb,var(--violet) 12%,transparent),transparent 74%),radial-gradient(30% 22% at 76% 18%,color-mix(in srgb,var(--blue) 10%,transparent),transparent 80%)} /* design-lint: allow purple-blue-gradient 12's night-sky wash, a glow of three palette colours */
 button.rule{display:flex;flex-direction:column;justify-content:flex-start;width:100%}
 .cap{align-content:start}
 /* on a phone the tower comes straight after the headline */
@@ -366,6 +366,37 @@ button.rule{display:flex;flex-direction:column;justify-content:flex-start;width:
 /* muted text on the plates, and the key's diamond, given margin over AA by day */
 .trow .n,.tier b,.tier small,.waits .note,.meta .box>b,.legend{color:color-mix(in srgb,var(--muted) 82%,var(--ink))}
 .vkey .btn2 b{color:color-mix(in srgb,var(--gold) 78%,var(--ink))}
+
+/* round 3 (critique 5) */
+code .nw{white-space:nowrap}
+.rules{grid-auto-flow:dense}
+.rule.solos{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 30px;padding:11px 16px 12px}
+.rule.solos b{margin:0}
+.trow.fold{cursor:default}
+.trow.fold:hover{background:none;color:var(--ash)} /* design-lint: allow afterglow a folded row is not a button: hover keeps it still */
+.trow.fold .t{font-style:italic}
+.docs{grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr))}
+.doc .dn{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#scorecard summary{cursor:pointer;width:max-content;max-width:100%;padding:6px 0;font:500 13px/1.4 var(--mono);color:color-mix(in srgb,var(--accent) 78%,var(--ink))}
+#scorecard details[open] summary{margin-bottom:8px}
+/* R-t: phones show only the id: a page-colour halo drawn under each glyph (no box), so a corona behind never thins it */
+@container (max-width: 620px){.sname b{-webkit-text-stroke:4px color-mix(in srgb,var(--night) 86%,transparent);paint-order:stroke fill;text-shadow:0 0 8px var(--night)}}
+/* round 4 (critique 6) */
+.md .tagl{display:grid;grid-template-columns:6.4rem minmax(0,1fr);gap:0 14px;margin:0;padding:7px 0;border-top:1px solid var(--line)}
+.md .tagl + .tagl{border-top-color:color-mix(in srgb,var(--line) 60%,transparent)}
+.md .tagl + :not(.tagl){margin-top:1.1em}
+.md .tg{font:600 12px/1.7 var(--mono);letter-spacing:.12em;color:color-mix(in srgb,var(--accent) 78%,var(--ink))}
+.md .tg.t-must,.md .tg.t-done-when{color:color-mix(in srgb,var(--green) 70%,var(--ink))}
+.md .tg.t-never{color:color-mix(in srgb,var(--red) 72%,var(--ink))}
+.md .tg.t-context{color:color-mix(in srgb,var(--muted) 70%,var(--ink))}
+@media (max-width: 600px){.md .tagl{display:block}.md .tg{display:block;line-height:1.5}}
+.trows{padding-bottom:26px;scrollbar-width:thin;scrollbar-color:var(--rule-2) transparent;-webkit-mask-image:linear-gradient(black calc(100% - 26px),transparent);mask-image:linear-gradient(black calc(100% - 26px),transparent)}
+.rules{align-items:start}
+.docs .first .doc + h3{margin-top:24px}
+.docs{display:block;columns:4 250px;column-gap:24px}  /* R-s: the groups pack into balanced columns, so no group sits alone on a row */
+.docs>div{break-inside:avoid;margin:0 0 28px}
+.lvl .flag .fs{display:none}
+@media (max-width: 600px){.lvl.l4{display:flex;flex-direction:column;align-items:flex-start}.lvl.l4 .flag{float:none;order:9;margin:12px 0 0;white-space:nowrap}.lvl .flag .fl{display:none}.lvl .flag .fs{display:inline}}
 
 /* C: the Moons funnel at scale: each fate a numeral on a brass rule, then the families it left (T-2852) */
 .funnel{list-style:none;margin:14px 0 6px;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:12px 18px}

@@ -1,5 +1,5 @@
 /* T-2851: the illustrated forge's sky, flames and sparks, ported from 12-forge-illustrated; runs only when html has .anim */
-const HOW_P=[[39.29, 9.74, 1], [60.0, 20.53, 0], [39.64, 31.32, 1], [60.0, 42.37, 0], [40.0, 54.21, 1], [60.0, 65.53, 0], [40.36, 77.11, 1], [60.0, 88.16, 0]], HB=[640, 415], RZ=[870, 84, 46];
+const HB=[640, 415], RZ=[870, 84, 46];
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -7,7 +7,7 @@ const root = document.documentElement, ANIM = root.classList.contains('anim');
 /* the forge rests an autoplay limit after the last input and wakes on the next; a hidden tab rests too */
 let asleep = false, lastIn = performance.now();
 const LIMIT = parseFloat(getComputedStyle(root).getPropertyValue('--autoplay-limit')) || 5000;
-const LOOPS = ["drift", "breath", "steamw", "flick", "rune", "rvb", "rvg", "breathe", "burn", "cue", "emb", "blow", "fl", "barheat", "fly", "quench", "q4h", "qsteam", "ripple", "rivet", "lick", "sprise", "tw", "bank", "mk-burn", "mk-breathe", "mk-rune", "mk-rivet", "mk-hot", "mk-swing", "mk-flash", "mk-fly", "mk-rise", "mk-twinkle"];
+const LOOPS = ["drift", "breath", "steamw", "flick", "rune", "rvb", "rvg", "breathe", "burn", "cue", "emb", "blow", "fl", "barheat", "fly", "rivet", "lick", "sprise", "tw", "bank", "mk-burn", "mk-breathe", "mk-rune", "mk-rivet", "mk-hot", "mk-swing", "mk-flash", "mk-fly", "mk-rise", "mk-twinkle"];
 function wake() {
   asleep = false; root.classList.remove('rest');
   document.getAnimations().forEach(a => LOOPS.includes(a.animationName) && a.playState === 'finished' && a.play());
@@ -64,20 +64,23 @@ const setLay = () => {
 };
 setTimeout(setLay, 0);
 
-/* ---------- How: the station in view lights up on the forge path ---------- */
+/* ---------- How: the camera goes to the station in view on the forge road ---------- */
 const lis = $$('#stations li'), NUM = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']; let stIdx = 0;
 const setSt = i => {
   stIdx = i; lis.forEach((l, k) => l.classList.toggle('on', k === i));
-  /* the station lights and works once (its motion is finite, keyed to data-st), and the molten trail runs down to it */
-  const hf = $('.fig.how'); if (hf) { hf.dataset.st = i; hf.querySelectorAll('.hs').forEach((h, k) => h.classList.toggle('on', k === i)); }
-  const stTag = $('#st-tag'), p = HOW_P[i];
-  if (stTag) { stTag.textContent = NUM[i] + ' · ' + lis[i].querySelector('h3').textContent; stTag.style.left = p[0] + '%'; stTag.style.top = p[1] + '%'; stTag.classList.toggle('rt', !!p[2]); }
+  /* the camera travels down the road to the station (data-st), which lights (its .hs groups) and works once */
+  const hf = $('.fig.how'); if (hf) { hf.dataset.st = i; hf.querySelectorAll('.hs').forEach(h => h.classList.toggle('on', +h.dataset.i === i)); }
+  const stTag = $('#st-tag'); if (stTag) stTag.textContent = NUM[i] + ' · ' + lis[i].querySelector('h3').textContent;
 };
 let stTouch = 0;
-const lo = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { stTouch = performance.now(); setSt(lis.indexOf(e.target)); } }), { rootMargin: '-45% 0px -45% 0px' });
+/* the row being read: a thin line mid-screen on desktop; on phones a line two-thirds down, under the pinned road (thin, so one row at a time) */
+const PHONE = matchMedia('(max-width: 900px)').matches, LINE = PHONE ? .66 : .49;
+const lo = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { stTouch = performance.now(); setSt(lis.indexOf(e.target)); } }), { rootMargin: PHONE ? '-66% 0px -33% 0px' : '-49% 0px -50% 0px' });
 lis.forEach(l => { lo.observe(l); l.addEventListener('pointerenter', () => { stTouch = performance.now(); setSt(lis.indexOf(l)); }); }); setSt(0);
-/* left alone, the fire walks the stations: the next one lights every 2.6 s while How is on screen */
-if (ANIM) setInterval(() => { const h = lis[0] && lis[0].closest('.sec'); if (!document.hidden && !asleep && h && h.classList.contains('on') && performance.now() - stTouch > 4000) setSt((stIdx + 1) % lis.length); }, 2600);
+/* before the list is read (row I still under the reading line), the camera walks the road once, a station every 2.6 s, and rests at
+   the record house; once row I reaches the line, only the row being read moves it, so the lit station is always the row's */
+if (ANIM) setInterval(() => { const h = lis[0] && lis[0].closest('.sec'); if (!document.hidden && !asleep && h && h.classList.contains('on') && stIdx < lis.length - 1
+  && performance.now() - stTouch > 4000 && lis[0].getBoundingClientRect().top > innerHeight * LINE) setSt(stIdx + 1); }, 2600);
 
 /* ---------- Smith: three lines are there from the start; each blow sets the next ones down and lights the one it ran ---------- */
 const lines = $$('#log .ln'); let shown = 3, li = 0;
@@ -130,7 +133,7 @@ if (!ANIM) {
 }
 
 /* =================================================================== the forge, alive */
-const hero = $('.hero'), scene = $('#scene'), fore = $('#fore'), glow = $('#glow'), bloom = $('#bloom');
+const hero = $('.hero'), scene = $('#scene'), fore = $('#fore'), glow = $('#glow'), bloom = $('#bloom'), carried = $('.scene .carry');
 const layer = { far: $('.lay.far'), mid: $('.lay.mid'), fore, near: $('.lay.near') };
 const STRIKE = [745, 387], BY = 398, F = v => v.toFixed(1);
 let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -266,7 +269,7 @@ function bellows(b, mouth) {
 /* ---- the hammer: raised, wound up, the blow, the rebound, lifted again; side-on, the handle rising to the smith ---- */
 const hm = $('#hammer'), PER = 3.4, FIRST = 1.6;
 /* the blow, the raised pose (shared with the stills), and the lift before each blow: the head rises and the wrist cocks back */
-const I = [731.7, 324.4, -12], Rz = RZ, R2 = [RZ[0] + 14, RZ[1] - 34, RZ[2] + 8], OFF = [1180, -220, 56];
+const I = [731.7, 324.4, -12], Rz = RZ, R2 = [RZ[0] + 14, RZ[1] - 34, RZ[2] + 8], OFF = [1420, -420, 64];   /* off the frame on every width (phones show the scene 120 % wide) */
 const bez = (a, c, b, t) => [lerp(lerp(a[0], c[0], t), lerp(c[0], b[0], t), t), lerp(lerp(a[1], c[1], t), lerp(c[1], b[1], t), t)];
 const eio = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2, eout = t => 1 - Math.pow(1 - t, 3);
 function pose(t) {
@@ -483,9 +486,10 @@ function frameHero(t, dt) {
   stepFx(dt);
   const busy = flashT < .6 || hp.down || P.some(p => p.kind === 0), slow = P.some(p => p.kind >= 2);
   if (odd && (busy || (slow && frameN % 6 === 1) || (fxDirty && !slow))) { drawFx(hp); fxDirty = busy || slow; }   /* with the fire, on the odd frames */
-  /* the billet: lit in with the anvil, then easing toward its flattened shape */
+  /* the billet and its tongs (one wrapper) come in with the anvil, 0.9-1.5 s, never before the hearth; then the billet eases toward its flattened shape */
+  if (!arrived && carried) { carried.style.opacity = clamp((t - .9) / .6, 0, 1).toFixed(2); arrived = t > 1.55; }
   sq = lerp(sq, squash, 1 - Math.exp(-dt * 14));
-  if (billet) { billet.style.transform = `scale(${(1 + .025 * sq).toFixed(4)},${(1 - .07 * sq).toFixed(4)})`; if (!arrived) { billet.style.opacity = clamp((t - .55) / .5, 0, 1).toFixed(2); arrived = t > 1.1; } }
+  if (billet) billet.style.transform = `scale(${(1 + .025 * sq).toFixed(4)},${(1 - .07 * sq).toFixed(4)})`;
   /* one light: the fire's flicker and breath, and the blow's flash, on everything the fire reaches */
   const fl = Math.max(0, 1 - flashT * 6), L = ig * (.72 + .12 * flick + puff.a * .1) + fl * .5;
   if (frameN % 4 === 0 || fl > 0) {      /* the light rig at 15 Hz (every frame through a flash): each write recomposites its layer */

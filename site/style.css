@@ -12,27 +12,28 @@
   --f-orange: #A2460C; --f-red: #B12E16; --f-white-hot: #12163A; --f-accent: var(--f-gold);
   --f-plate-bg: #F4F5FA; --f-ink-dim: #4B5278; --f-log-bg: #F4F5FA; --f-vapor: #7E869E;
   --f-vapor-g: #5E8A7C; --f-sheen: .2; --f-ridge-a: #B08478; --f-ridge-m: #9A94AE;
-  --f-ridge-b: #8C96B6; --f-nrock: #5E5A66; --f-how-bg: 0; --f-how-rocks: .3;
-  --f-joint: #3C3942; --f-sb1a: #7A7482; --f-sb1b: #524E5A; --f-sb2a: #736E7C;
-  --f-sb2b: #4E4A56; --f-sb3a: #807884; --f-sb3b: #58525E; --f-sb4a: #6C6876;
-  --f-sb4b: #4A4652; --f-engrave-dim: linear-gradient(180deg,#4B5278 0%,#454B70 56%,#4B5278 100%); --f-chip: rgba(238,240,246,.95); --f-chip-ink: #12163A;
-  --f-scrim: rgba(238,240,246,.94); --f-b3a: #C8CEE2; --f-b3k1: #DEDAE0; --f-b3k2: #D4D2DC;
-  --f-b3s1: #BCC4DA; --f-b3s2: #B4BCD4; --f-b2a: #B4BBD4; --f-b2k1: #E2D8D2;
-  --f-b2k2: #D6CCCA; --f-b2s1: #A8B0CC; --f-b2s2: #9EA6C4; --f-b1a: #9CA4C2;
-  --f-b1k1: #E8DCCE; --f-b1k2: #DACEC4; --f-b1s1: #8E98B8; --f-b1s2: #848EB0;
-  --f-snow: #FFFFFF; --f-crease: rgba(40,46,90,.2); --f-men: #6E6A80; --f-menl: #8A869C;
-  --f-rim: #C0703C; --f-haze-a: rgba(238,240,246,0); --f-haze-b: rgba(238,240,246,.7); --f-floor-fade: #EEF0F6;
-  --f-wash: rgba(226,230,241,.38); --f-red-op: .14; --f-engrave: linear-gradient(180deg,#2A2140 0%,#12163A 50%,#3A2E1A 100%); --f-h-060819: #060819;
-  --f-h-c8d8ec: #c8d8ec; --f-h-f4f8ff: #f4f8ff; --f-h-a8c4ff: #a8c4ff; --f-h-fff1c8: #fff1c8;
-  --f-h-ff9a2a: #ff9a2a; --f-h-ffc24d: #ffc24d; --f-h-e0461a: #e0461a; --f-h-1a1206: #1a1206;
-  --f-h-ffe9b4: #ffe9b4; --f-h-e9c98a: #e9c98a; --f-h-c9984c: #c9984c; --f-h-8e6226: #8e6226;
-  --f-h-3a2408: #3a2408; --f-h-000: #000; --f-h-6b7180: #6b7180; --f-h-ffffff: #ffffff;
-  --f-h-9fc0ff: #9fc0ff; --f-h-6e9bff: #6e9bff; --f-h-ffb050: #ffb050; --f-h-fff: #fff;
-  --f-h-4c78ff: #4c78ff; --f-h-eaf2ff: #eaf2ff; --f-h-8a72c8: #8a72c8; --f-h-6a3bb5: #6a3bb5;
-  --f-h-0b0914: #0b0914; --f-h-3a2228: #3a2228; --f-h-3a3450: #3a3450; --f-h-8a7480: #8a7480;
-  --f-h-fff1cc: #fff1cc; --f-h-4a4550: #4a4550; --f-h-24222a: #24222a; --f-h-433f4b: #433f4b;
-  --f-h-1f1e26: #1f1e26; --f-h-504853: #504853; --f-h-2a2630: #2a2630; --f-h-3c3a46: #3c3a46;
-  --f-h-1b1a21: #1b1a21; color-scheme: light;
+  --f-ridge-b: #8C96B6; --f-nrock: #5E5A66; --f-hill-a: #6A6070; --f-hill-b: #3E3846;
+  --f-hill-rock: #7A7080; --f-grass: #5E6A52; --f-fog: #E8E2F0; --f-tw-a: #6A6274;
+  --f-tw-b: #554E60; --f-tw-c: #433D4C; --f-joint: #3C3942; --f-sb1a: #7A7482;
+  --f-sb1b: #524E5A; --f-sb2a: #736E7C; --f-sb2b: #4E4A56; --f-sb3a: #807884;
+  --f-sb3b: #58525E; --f-sb4a: #6C6876; --f-sb4b: #4A4652; --f-engrave-dim: linear-gradient(180deg,#4B5278 0%,#454B70 56%,#4B5278 100%);
+  --f-chip: rgba(238,240,246,.95); --f-chip-ink: #12163A; --f-scrim: rgba(238,240,246,.94); --f-b3a: #C8CEE2;
+  --f-b3k1: #DEDAE0; --f-b3k2: #D4D2DC; --f-b3s1: #BCC4DA; --f-b3s2: #B4BCD4;
+  --f-b2a: #B4BBD4; --f-b2k1: #E2D8D2; --f-b2k2: #D6CCCA; --f-b2s1: #A8B0CC;
+  --f-b2s2: #9EA6C4; --f-b1a: #9CA4C2; --f-b1k1: #E8DCCE; --f-b1k2: #DACEC4;
+  --f-b1s1: #8E98B8; --f-b1s2: #848EB0; --f-snow: #FFFFFF; --f-crease: rgba(40,46,90,.2);
+  --f-men: #6E6A80; --f-menl: #8A869C; --f-rim: #C0703C; --f-haze-a: rgba(238,240,246,0);
+  --f-haze-b: rgba(238,240,246,.7); --f-floor-fade: #EEF0F6; --f-wash: rgba(226,230,241,.38); --f-red-op: .14;
+  --f-engrave: linear-gradient(180deg,#2A2140 0%,#12163A 50%,#3A2E1A 100%); --f-h-060819: #060819; --f-h-c8d8ec: #c8d8ec; --f-h-f4f8ff: #f4f8ff;
+  --f-h-a8c4ff: #a8c4ff; --f-h-fff1c8: #fff1c8; --f-h-ff9a2a: #ff9a2a; --f-h-ffc24d: #ffc24d;
+  --f-h-e0461a: #e0461a; --f-h-1a1206: #1a1206; --f-h-ffe9b4: #ffe9b4; --f-h-e9c98a: #e9c98a;
+  --f-h-c9984c: #c9984c; --f-h-8e6226: #8e6226; --f-h-3a2408: #3a2408; --f-h-000: #000;
+  --f-h-6b7180: #6b7180; --f-h-ffffff: #ffffff; --f-h-9fc0ff: #9fc0ff; --f-h-6e9bff: #6e9bff;
+  --f-h-ffb050: #ffb050; --f-h-fff: #fff; --f-h-4c78ff: #4c78ff; --f-h-eaf2ff: #eaf2ff;
+  --f-h-8a72c8: #8a72c8; --f-h-6a3bb5: #6a3bb5; --f-h-0b0914: #0b0914; --f-h-3a2228: #3a2228;
+  --f-h-3a3450: #3a3450; --f-h-8a7480: #8a7480; --f-h-fff1cc: #fff1cc; --f-h-4a4550: #4a4550;
+  --f-h-24222a: #24222a; --f-h-433f4b: #433f4b; --f-h-1f1e26: #1f1e26; --f-h-504853: #504853;
+  --f-h-2a2630: #2a2630; --f-h-3c3a46: #3c3a46; --f-h-1b1a21: #1b1a21; color-scheme: light;
   --font-display: "Bodoni Moda", Didot, Georgia, serif;
   --font-text: Archivo, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "Martian Mono", Menlo, Consolas, monospace;
@@ -48,7 +49,8 @@
   --ease-forge-7: cubic-bezier(0.3, 0.0, 0.5, 1.0); --ease-forge-8: cubic-bezier(0.6, 0.0, 0.8, 0.4);
   --ease-forge-9: cubic-bezier(0.2, 0.8, 0.3, 1.0); --ease-forge-10: cubic-bezier(0.3, 0.0, 0.3, 1.0);
   --ease-forge-11: cubic-bezier(0.45, 0.0, 0.4, 1.0); --ease-forge-12: cubic-bezier(0.6, 0.0, 1.0, 0.6);
-  --ease-forge-13: cubic-bezier(0.15, 0.7, 0.4, 1.0); --autoplay-limit: 5000ms;
+  --ease-forge-13: cubic-bezier(0.15, 0.7, 0.4, 1.0); --ease-forge-14: cubic-bezier(0.5, 0.0, 0.75, 0.5);
+  --autoplay-limit: 5000ms;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -64,17 +66,21 @@
     --f-orange: #FF9440; --f-red: #FF6A4A; --f-white-hot: #EAF2FF; --f-accent: var(--f-gold);
     --f-plate-bg: #080B1F; --f-ink-dim: #8A90B4; --f-log-bg: #050714; --f-vapor: #E2E8F2;
     --f-vapor-g: #C8F5E2; --f-sheen: .05; --f-ridge-a: #5A2C26; --f-ridge-m: #2A1A2A;
-    --f-ridge-b: #14132A; --f-nrock: #07060A; --f-how-bg: 1; --f-how-rocks: 1;
-    --f-joint: #09080C; --f-sb1a: #4A4550; --f-sb1b: #24222A; --f-sb2a: #433F4B;
-    --f-sb2b: #1F1E26; --f-sb3a: #504853; --f-sb3b: #2A2630; --f-sb4a: #3C3A46;
-    --f-sb4b: #1B1A21; --f-engrave-dim: linear-gradient(180deg,#A4AACA 0%,#8A90B4 56%,#9CA2C4 100%); --f-chip: rgba(6,8,25,.9); --f-chip-ink: #EEF0FA;
-    --f-scrim: rgba(6,8,25,.92); --f-b3a: #22264A; --f-b3k1: #383256; --f-b3k2: #2E2A4E;
-    --f-b3s1: #202448; --f-b3s2: #1C2042; --f-b2a: #121330; --f-b2k1: #36243F;
-    --f-b2k2: #2A1E38; --f-b2s1: #0F1029; --f-b2s2: #0C0D24; --f-b1a: #0A0A1A;
-    --f-b1k1: #2E1C2C; --f-b1k2: #22162A; --f-b1s1: #08081A; --f-b1s2: #060616;
-    --f-snow: #9298C4; --f-crease: rgba(0,0,0,.42); --f-men: #121020; --f-menl: #1E1A30;
-    --f-rim: #E09060; --f-haze-a: rgba(10,12,40,0); --f-haze-b: rgba(30,32,78,.6); --f-floor-fade: #060819;
-    --f-wash: rgba(238,240,246,0); --f-red-op: .65; --f-engrave: linear-gradient(180deg,#FFF6DD 0%,#F0D392 34%,#B9873F 56%,#E9C98A 78%,#FFF1CC 100%); color-scheme: dark;
+    --f-ridge-b: #14132A; --f-nrock: #07060A; --f-hill-a: #17131C; --f-hill-b: #0A090E;
+    --f-hill-rock: #211C26; --f-grass: #3A4A3A; --f-fog: #8A96C8; --f-tw-a: #3A3442;
+    --f-tw-b: #2A2632; --f-tw-c: #1A1820; --f-joint: #09080C; --f-sb1a: #4A4550;
+    --f-sb1b: #24222A; --f-sb2a: #433F4B; --f-sb2b: #1F1E26; --f-sb3a: #504853;
+    --f-sb3b: #2A2630; --f-sb4a: #3C3A46; --f-sb4b: #1B1A21; --f-engrave-dim: linear-gradient(180deg,#A4AACA 0%,#8A90B4 56%,#9CA2C4 100%);
+    --f-chip: rgba(6,8,25,.9); --f-chip-ink: #EEF0FA; --f-scrim: rgba(6,8,25,.92); --f-b3a: #22264A;
+    --f-b3k1: #383256; --f-b3k2: #2E2A4E; --f-b3s1: #202448; --f-b3s2: #1C2042;
+    --f-b2a: #121330; --f-b2k1: #36243F; --f-b2k2: #2A1E38; --f-b2s1: #0F1029;
+    --f-b2s2: #0C0D24; --f-b1a: #0A0A1A; --f-b1k1: #2E1C2C; --f-b1k2: #22162A;
+    --f-b1s1: #08081A; --f-b1s2: #060616; --f-snow: #9298C4; --f-crease: rgba(0,0,0,.42);
+    --f-men: #121020; --f-menl: #1E1A30; --f-rim: #E09060; --f-haze-a: rgba(10,12,40,0);
+    --f-haze-b: rgba(30,32,78,.6); --f-floor-fade: #060819; --f-wash: rgba(238,240,246,0); --f-red-op: .65;
+    --f-engrave: linear-gradient(180deg,#FFF6DD 0%,#F0D392 34%,#B9873F 56%,#E9C98A 78%,#FFF1CC 100%); --f-display: "Bodoni Moda",Didot,Georgia,serif; --f-sans: "Archivo","Helvetica Neue",Arial,sans-serif; --f-mono: "Martian Mono",Menlo,Consolas,monospace;
+    --f-radius: 2px; --f-spring: cubic-bezier(.2,.9,.25,1.05); --f-spring-2: cubic-bezier(.3,1.4,.4,1); --f-gutter: clamp(16px,5vw,80px);
+    color-scheme: dark;
   }
 }
 :root[data-theme="dark"], .install, .window, .term, .ex-cmd {
@@ -90,17 +96,21 @@
   --f-orange: #FF9440; --f-red: #FF6A4A; --f-white-hot: #EAF2FF; --f-accent: var(--f-gold);
   --f-plate-bg: #080B1F; --f-ink-dim: #8A90B4; --f-log-bg: #050714; --f-vapor: #E2E8F2;
   --f-vapor-g: #C8F5E2; --f-sheen: .05; --f-ridge-a: #5A2C26; --f-ridge-m: #2A1A2A;
-  --f-ridge-b: #14132A; --f-nrock: #07060A; --f-how-bg: 1; --f-how-rocks: 1;
-  --f-joint: #09080C; --f-sb1a: #4A4550; --f-sb1b: #24222A; --f-sb2a: #433F4B;
-  --f-sb2b: #1F1E26; --f-sb3a: #504853; --f-sb3b: #2A2630; --f-sb4a: #3C3A46;
-  --f-sb4b: #1B1A21; --f-engrave-dim: linear-gradient(180deg,#A4AACA 0%,#8A90B4 56%,#9CA2C4 100%); --f-chip: rgba(6,8,25,.9); --f-chip-ink: #EEF0FA;
-  --f-scrim: rgba(6,8,25,.92); --f-b3a: #22264A; --f-b3k1: #383256; --f-b3k2: #2E2A4E;
-  --f-b3s1: #202448; --f-b3s2: #1C2042; --f-b2a: #121330; --f-b2k1: #36243F;
-  --f-b2k2: #2A1E38; --f-b2s1: #0F1029; --f-b2s2: #0C0D24; --f-b1a: #0A0A1A;
-  --f-b1k1: #2E1C2C; --f-b1k2: #22162A; --f-b1s1: #08081A; --f-b1s2: #060616;
-  --f-snow: #9298C4; --f-crease: rgba(0,0,0,.42); --f-men: #121020; --f-menl: #1E1A30;
-  --f-rim: #E09060; --f-haze-a: rgba(10,12,40,0); --f-haze-b: rgba(30,32,78,.6); --f-floor-fade: #060819;
-  --f-wash: rgba(238,240,246,0); --f-red-op: .65; --f-engrave: linear-gradient(180deg,#FFF6DD 0%,#F0D392 34%,#B9873F 56%,#E9C98A 78%,#FFF1CC 100%); color-scheme: dark;
+  --f-ridge-b: #14132A; --f-nrock: #07060A; --f-hill-a: #17131C; --f-hill-b: #0A090E;
+  --f-hill-rock: #211C26; --f-grass: #3A4A3A; --f-fog: #8A96C8; --f-tw-a: #3A3442;
+  --f-tw-b: #2A2632; --f-tw-c: #1A1820; --f-joint: #09080C; --f-sb1a: #4A4550;
+  --f-sb1b: #24222A; --f-sb2a: #433F4B; --f-sb2b: #1F1E26; --f-sb3a: #504853;
+  --f-sb3b: #2A2630; --f-sb4a: #3C3A46; --f-sb4b: #1B1A21; --f-engrave-dim: linear-gradient(180deg,#A4AACA 0%,#8A90B4 56%,#9CA2C4 100%);
+  --f-chip: rgba(6,8,25,.9); --f-chip-ink: #EEF0FA; --f-scrim: rgba(6,8,25,.92); --f-b3a: #22264A;
+  --f-b3k1: #383256; --f-b3k2: #2E2A4E; --f-b3s1: #202448; --f-b3s2: #1C2042;
+  --f-b2a: #121330; --f-b2k1: #36243F; --f-b2k2: #2A1E38; --f-b2s1: #0F1029;
+  --f-b2s2: #0C0D24; --f-b1a: #0A0A1A; --f-b1k1: #2E1C2C; --f-b1k2: #22162A;
+  --f-b1s1: #08081A; --f-b1s2: #060616; --f-snow: #9298C4; --f-crease: rgba(0,0,0,.42);
+  --f-men: #121020; --f-menl: #1E1A30; --f-rim: #E09060; --f-haze-a: rgba(10,12,40,0);
+  --f-haze-b: rgba(30,32,78,.6); --f-floor-fade: #060819; --f-wash: rgba(238,240,246,0); --f-red-op: .65;
+  --f-engrave: linear-gradient(180deg,#FFF6DD 0%,#F0D392 34%,#B9873F 56%,#E9C98A 78%,#FFF1CC 100%); --f-display: "Bodoni Moda",Didot,Georgia,serif; --f-sans: "Archivo","Helvetica Neue",Arial,sans-serif; --f-mono: "Martian Mono",Menlo,Consolas,monospace;
+  --f-radius: 2px; --f-spring: cubic-bezier(.2,.9,.25,1.05); --f-spring-2: cubic-bezier(.3,1.4,.4,1); --f-gutter: clamp(16px,5vw,80px);
+  color-scheme: dark;
 }
 /* end tokens */
 /* T-2753: the page's names for the Sampo roles. Declared again on the terminals, which take the dark roles in either

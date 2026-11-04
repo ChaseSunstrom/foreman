@@ -30,7 +30,7 @@
   /* A small markdown renderer: headings, lists, tables, code, bold, italics, links. Escapes first. */
   function inline(s) {
     return String(s).split(/(`[^`]+`)/).map(function (part, i) {
-      if (i % 2) return "<code>" + esc(part.slice(1, -1)) + "</code>";
+      if (i % 2) return "<code>" + esc(part.slice(1, -1)).replace(/(^|\s)(--?[A-Za-z][\w-]*)/g, '$1<span class="nw">$2</span>') + "</code>";
       return esc(part)
         .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
         .replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,;:]|$)/g, "$1<i>$2</i>")
@@ -74,6 +74,9 @@
         for (i++; i < lines.length && /^\s+\S/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s/.test(lines[i]); i++) item.push(lines[i].trim());
         out.push("<li>" + inline(item.join(" ")) + "</li>"); continue;
       }
+      if ((m = /^([A-Z][A-Z-]+[!?]?):\s+(.*)$/.exec(l))) {  /* an intake line (MUST:, CONTEXT:, RESEARCH!:) is its own block, its tag a label */
+        flush(); out.push('<p class="tagl"><b class="tg t-' + m[1].replace(/[!?]/g, "").toLowerCase() + '">' + esc(m[1]) + "</b><span>" + inline(m[2]) + "</span></p>"); i++; continue;
+      }
       if (!l.trim()) { flush(); i++; continue; }
       if (list) flush();
       para.push(l.trim()); i++;
@@ -94,6 +97,12 @@
     });
     return v;
   }
+  function exams() {  /* the export can hold a run twice (same run, agent and time): count and list it once */
+    var seen = {};
+    return (D["exam"] || []).filter(function (e) { var k = [e.run, e.agent, e.at].join("|"); return seen[k] ? false : (seen[k] = true); });
+  }
+  function human(s) { s = String(s == null ? "" : s).replace(/-/g, " ").replace(/^self /, "self-"); return s.charAt(0).toUpperCase() + s.slice(1); }  /* a mission's slug as people say it */
+  function wordCut(s) { s = String(s == null ? "" : s); return /…$/.test(s) ? s.slice(0, -1).replace(/\s*\S*$/, "").replace(/[\s,;:(]+$/, "") + "…" : s; }  /* the export's cut, moved back to a whole word */
   function capName(n) { var c = D.capabilities.filter(function (x) { return x.n === n; })[0]; return c ? c.name : "#" + n; }
   function firstSentence(s) { var m = /^(.*?[.!?])(\s|$)/.exec(s || ""); return m ? m[1] : s || ""; }
   function state(m) {
@@ -176,7 +185,7 @@
       [done + "/" + steps, "task steps done"],
       [(tiered ? Math.round(100 * (c[3] + c[4]) / tiered) : 0) + "%", "of planned gaps tier 3–4"],
       [moonRows().length, "moons over the tower"],
-      [D.exam.length, "Louhi results"],
+      [exams().length, "Louhi results"],
       [D.coverage.filled + "/" + D.coverage.cells, "coverage cells filled"],
       [1, "message from you"]];
     $("stats").innerHTML = rows.map(function (r) { return "<div><dt>" + esc(r[1]) + "</dt><dd>" + esc(r[0]) + "</dd></div>"; }).join("") +
@@ -192,18 +201,21 @@
     var tiles = g.missions.map(function (m) {
       var s = state(m);
       return '<button type="button" class="tile ' + s + '" data-mission="' + esc(m.name) + '" data-n="' + (m.n || "") +
-        '" data-deps="' + m.depends.join(" ") + '"><i>' + (m.n ? m.n + " · " : "") + STATE[s] + "</i><b>" + esc(m.name) + "</b></button>";
+        '" data-deps="' + m.depends.join(" ") + '"><i>' + (m.n ? m.n + " · " : "") + STATE[s] + "</i><b>" + esc(human(m.name)) + "</b></button>";
     }).join("");
-    var trows = ts.length ? '<ul class="trows">' + ts.map(function (x) {
+    var ci = ts.filter(function (x) { return /^CI failed on this branch/.test(x.t.title) && x.t.status !== "done"; });
+    var how = ci.map(function (x) { return x.t.status; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+    var trows = ts.length ? '<ul class="trows">' + ts.filter(function (x) { return ci.indexOf(x) < 0; }).map(function (x) {
       var t = x.t;
       return '<li><button type="button" class="trow' + (t.status === "done" ? " done" : "") + '" data-task="' + esc(t.id) + '"><code>' + esc(t.id) +
         '</code><span class="t">' + esc(say(t.title)) + '</span><span class="n">' + t.done + "/" + t.steps + " · " + esc(t.status) + "</span>" + bar(t) + "</button></li>";
-    }).join("") + "</ul>" : '<p class="empty">No task filed yet for this generation.</p>';
+    }).join("") + (ci.length ? '<li><div class="trow fold"><code>CI</code><span class="t">' + esc(plural(ci.length, "CI rerun") + ", " + how.join(" or ")) +
+      '</span><span class="n">' + esc(ci.map(function (x) { return x.t.id; }).join(" · ")) + "</span></div></li>" : "") + "</ul>" : '<p class="empty">No task filed yet for this generation.</p>';
     var seed = "gen-" + g.n + "/seed.md";
     $("tower-body").className = "";
     $("tower-body").innerHTML = '<div class="levels"><p class="loop" aria-hidden="true">rewrites the Seed every round</p>' +
-      '<button type="button" class="lvl l4" data-l4="1"><span class="flag">only better rewrites survive</span><span class="k">Level 4</span><h3>Louhi &amp; critique</h3>' +
-      "<p>" + plural(D.exam.length, "Louhi result") + " · " + plural(g.critiques.length, "critique") + " · lineage " + (D.docs["lineage.md"] ? "kept" : "starts after gen 1") +
+      '<button type="button" class="lvl l4" data-l4="1"><span class="flag"><span class="fl">only better rewrites survive</span><span class="fs">better rewrites only</span></span><span class="k">Level 4</span><h3>Louhi &amp; critique</h3>' +
+      "<p>" + plural(exams().length, "Louhi result") + " · " + plural(g.critiques.length, "critique") + " · lineage " + (D.docs["lineage.md"] ? "kept" : "starts after gen 1") +
       " · drift " + esc(g.drift || "–") + " · sweep " + esc(g.sweep || "–") + "</p></button>" +
       '<div class="lvl l3"><span class="k">Level 3</span><h3>Tasks, built &amp; proved</h3><p>' + plural(ts.length, "task") + ", " + live + " open · red tests first, spikes and races in lanes</p>" + trows + "</div>" +
       '<div class="lvl l2"><span class="k">Level 2</span><h3>Missions, up to 8</h3><p>One prompt per gap cluster, each its own session. Hover one to see what it waits on.</p>' +
@@ -240,9 +252,9 @@
       return '<div class="group ' + gr[0] + '"><h3>' + gr[1] + "<small>" + gr[2] + "</small></h3>" + gr[3].filter(function (n) { return known[n]; }).map(function (n) {
         var c = known[n], gaps = D.gaps[String(n)] || [], k = counts(gaps), ms = missionsFor(n, G);
         var chips = (k[4] ? '<span class="chip t4">' + k[4] + "× tier 4</span>" : "") + (k[3] ? '<span class="chip t3">' + k[3] + "× tier 3</span>" : "") +
-          (ms.length ? ms.map(function (m) { return '<span class="chip">→ ' + esc(m.name) + "</span>"; }).join("") : '<span class="chip">no mission in gen ' + G.n + "</span>");
+          (ms.length ? ms.map(function (m) { return '<span class="chip">→ ' + esc(human(m.name)) + "</span>"; }).join("") : '<span class="chip">no mission in gen ' + G.n + "</span>");
         return '<button type="button" class="cap" data-cap="' + n + '"><span class="num">' + n + "</span><span><b>" + esc(c.name) + "</b>" +
-          (n === 13 ? '<span class="big">the big one</span>' : "") + "<p>" + esc(say(firstSentence(c.text))) + '</p><span class="chips">' + chips + "</span></span></button>";
+          (n === 13 ? '<span class="big">the big one</span>' : "") + "<p>" + inline(say(firstSentence(c.text))) + '</p><span class="chips">' + chips + "</span></span></button>";
       }).join("") + "</div>";
     }).join("");
   }
@@ -268,11 +280,11 @@
     return (e.keyed || 0) + (e.fixable || 0) + (e.tf_keyed || 0) + (e.readings_keyed || 0) + (e.missing_keyed || 0) > 0 || !!(String(e.agent).indexOf("draft-") === 0 && e.closed);
   }
   function exam() {
-    var last = D.exam.slice(-12).reverse(), rows = last.filter(graded), rest = last.filter(function (e) { return !graded(e); });
+    var last = exams().slice(-12).reverse(), rows = last.filter(graded), rest = last.filter(function (e) { return !graded(e); });
     var names = rest.map(function (e) { return say(e.agent); }).filter(function (a, i, all) { return all.indexOf(a) === i; });
     $("exam").innerHTML = rows.length ? '<div class="tbl"><table><thead><tr><th>agent</th><th>run</th><th>found</th><th>false alarms</th><th>fixed</th><th>tests first</th><th>readings</th><th>missing tool</th><th>cost</th><th>split</th></tr></thead><tbody>' +
       rows.map(function (e) {
-        return "<tr><td><b>" + esc(say(e.agent)) + "</b>" + (/haiku/i.test(e.model || "") ? " <small>Haiku smoke, not counted</small>" : "") + (e.author && !/child/.test(e.author) ? " <small>template-written, not counted</small>" : "") + "</td><td><code>" + esc(e.run || "") + "</code></td><td>" + (String(e.agent).indexOf("draft-") === 0 && e.closed ? frac((e.closed.holdout || []).length + (e.closed.train || []).length, e.scenarios) + " drafts" + (e.given ? " · " + frac((e.given.holdout || []).length + (e.given.train || []).length, e.scenarios) + " on what it was given" : "") : frac(e.found, e.keyed)) + "</td><td>" + esc(e.false_alarms == null ? "–" : e.false_alarms) + (e.exam_defects ? " · " + esc(e.exam_defects) + " exam defect" + (e.exam_defects === 1 ? "" : "s") : "") + (e.proved_by_arm ? " (" + esc(e.proved_by_arm) + " with the arm's own proof)" : "") +
+        return "<tr><td><b>" + esc(say(e.agent)) + "</b>" + (/haiku/i.test(e.model || "") ? " <small>Haiku smoke, not counted</small>" : "") + (e.author && !/child/.test(e.author) ? " <small>· template-written, not counted</small>" : "") + "</td><td><code>" + esc(e.run || "") + "</code></td><td>" + (String(e.agent).indexOf("draft-") === 0 && e.closed ? frac((e.closed.holdout || []).length + (e.closed.train || []).length, e.scenarios) + " drafts" + (e.given ? " · " + frac((e.given.holdout || []).length + (e.given.train || []).length, e.scenarios) + " on what it was given" : "") : frac(e.found, e.keyed)) + "</td><td>" + esc(e.false_alarms == null ? "–" : e.false_alarms) + (e.exam_defects ? " · " + esc(e.exam_defects) + " exam defect" + (e.exam_defects === 1 ? "" : "s") : "") + (e.proved_by_arm ? " (" + esc(e.proved_by_arm) + " with the arm's own proof)" : "") +
           "</td><td>" + frac(e.fixed, e.fixable) + "</td><td>" + frac(e.tf_first, e.tf_keyed) + "</td><td>" + frac(e.readings_hit, e.readings_keyed) + "</td><td>" + frac(e.missing_hit, e.missing_keyed) +
           "</td><td>" + (typeof e.cost === "number" && e.cost > 0 ? "$" + e.cost.toFixed(2) : "–") +
           "</td><td>" + esc(e.split || "all") + (e.author && e.author !== "self" ? " · by " + esc(e.author) : "") + (e.holdout && e.holdout.scenarios ? " · held out " + frac(e.holdout.found, e.holdout.keyed) + " found" : "") + (typeof e.errors === "number" && e.errors > 0 ? " · " + e.errors + " errored" : "") + "</td></tr>";
@@ -300,7 +312,13 @@
         tr.appendChild(document.createElement("td")).textContent = String(v == null ? "" : v);
       });
     });
-    box.appendChild(wrap).appendChild(t);
+    if (rows.some(function (r) { return r.graded != null; })) { box.appendChild(wrap).appendChild(t); return; }
+    /* R-k: nothing graded yet: say so once, with the rows behind a disclosure */
+    p = box.appendChild(document.createElement("p")); p.className = "muted";
+    p.textContent = "No capability has enough held-out grades yet; " + (rows.length === 1 ? "1 is" : rows.length + " are") + " waiting on graded scenarios.";
+    h = box.appendChild(document.createElement("details"));
+    h.appendChild(document.createElement("summary")).textContent = "What each one waits on";
+    h.appendChild(wrap).appendChild(t);
   }
 
   /* T-2263: the deciding long-horizon row, Sampo vs plain on the common goals (the data keys are the export's own); textContent only, null shows as "?" */
@@ -352,7 +370,7 @@
       b = tr.appendChild(document.createElement("td")).appendChild(document.createElement("button"));
       b.type = "button"; b.className = "mid"; b.setAttribute("data-moon", String(r.id)); b.textContent = String(r.id);
       [r.title, wildOf(r) ? wildOf(r) + " of 5" : "unscored", String(r.tier || "?") + "; " + String(r.author || "?") + " → " + String(r.reviewer || "unrated"),
-        r.stage, r.domain, r.novelty, Array.isArray(r.unblocks) ? r.unblocks.join(", ") : "", r.asked === "no" ? "never asked" : String(r.asked)
+        r.stage, wordCut(r.domain), r.novelty, Array.isArray(r.unblocks) ? r.unblocks.join(", ") : "", r.asked === "no" ? "never asked" : String(r.asked)
       ].forEach(function (v) { tr.appendChild(document.createElement("td")).textContent = v == null ? "" : String(v); });
     });
   }
@@ -444,8 +462,9 @@
       var m = /^\*\*(.+?)\*\*\s*(.*)$/.exec(r), title = m ? m[1].replace(/\.$/, "") : "Standing rule " + (i + 1), rest = m ? m[2] : r;
       return '<button type="button" class="rule steer" data-rule="' + i + '"><b>' + inline(say(title)) + '</b><span class="rb">' + inline(say(firstSentence(rest))) + "</span></button>";
     });
-    var intent = (Array.isArray(D.intent) ? D.intent : []).map(function (r) {  // [head, rest], parsed by fm genesis export
-      return '<div class="rule intent"><b>' + esc(say(r[0])) + '</b><span class="rb">' + esc(say(r[1])) + "</span></div>";
+    var all = Array.isArray(D.intent) ? D.intent : [], solo = all.filter(function (r) { return !String(r[1] || "").trim(); });
+    var intent = all.filter(function (r) { return solo.indexOf(r) < 0; }).map(function (r) {  // [head, rest], parsed by fm genesis export
+      return '<div class="rule intent"><b>' + inline(say(r[0])) + '</b><span class="rb">' + inline(say(r[1])) + "</span></div>";
     });
     $("rules").innerHTML = intent.join("") + RUN.map(function (r) { return '<div class="rule"><b>' + esc(r[0]) + '</b><span class="rb">' + esc(r[1]) + "</span></div>"; }).join("") + steer.join("");
   }
@@ -457,11 +476,14 @@
       var key = n === "gen-0.md" ? "Foundation" : n.indexOf("/") < 0 ? "Tower-wide" : n.split("/")[0].replace("gen-", "Generation ");
       (groups[key] = groups[key] || []).push(n);
     });
-    $("docs-body").innerHTML = Object.keys(groups).filter(function (k) { return groups[k].length; }).map(function (k) {
-      return "<div><h3>" + esc(k) + "</h3>" + groups[k].map(function (n) {
-        return '<button type="button" class="doc" data-doc="' + esc(n) + '">' + esc(n.split("/").pop()) + "<small>" + D.docs[n].split("\n").length + " lines</small></button>";
-      }).join("") + "</div>";
-    }).join("");
+    var col = function (k) {
+      return "<h3>" + esc(k) + "</h3>" + groups[k].map(function (n) {
+        return '<button type="button" class="doc" data-doc="' + esc(n) + '"><span class="dn" title="' + esc(n) + '">' + esc(n.split("/").pop()) + "</span><small>" + D.docs[n].split("\n").length + " lines</small></button>";
+      }).join("");
+    };
+    var keys = Object.keys(groups).filter(function (k) { return groups[k].length; }), first = keys.filter(function (k) { return k === "Foundation" || k === "Tower-wide"; });
+    $("docs-body").innerHTML = (first.length ? '<div class="first">' + first.map(col).join("") + "</div>" : "") +  /* R-s: the one-file Foundation shares a column */
+      keys.filter(function (k) { return first.indexOf(k) < 0; }).map(function (k) { return "<div>" + col(k) + "</div>"; }).join("");
   }
 
   /* ======================= the scene: the tower and its vault of moons, in scene units (1000 wide) =======================
@@ -661,7 +683,7 @@
       if (m) {
         var s0 = state(m), isNext = hot && c.next === m.n, col = isNext ? RSH.next : (hot ? RSH : RS)[s0];
         b.push(rune(Math.floor(hash(m.name) * 24), (xa + xb) / 2, ym, Math.min(rh * .78, bw * 1.3) / 16, col[0], col[1]));
-        o.push('<g class="mb" data-mission="' + esc(m.name) + '" data-gen="' + c.n + '"><title>' + esc("Mission " + (m.n || "") + " · " + m.name + " · " + (isNext ? "next" : STATE[s0])) + "</title>" + b.join("") + "</g>");
+        o.push('<g class="mb" data-mission="' + esc(m.name) + '" data-gen="' + c.n + '"><title>' + esc("Mission " + (m.n || "") + " · " + human(m.name) + " · " + (isNext ? "next" : STATE[s0])) + "</title>" + b.join("") + "</g>");
       } else o.push(b.join(""));
     }
     if (hot) [ma - 1.5, ma + rh + 1.5, mb + 1].slice(0, rows + 1).forEach(function (yy) {  /* the molten seams' white-hot cores */
@@ -976,7 +998,7 @@
         }
         x.restore();
         x.save(); x.clip(lit); x.strokeStyle = day ? "rgba(255,255,255,.5)" : p[0]; x.globalAlpha = .7; x.lineWidth = Math.max(.8, R * .07);
-        x.beginPath(); x.arc(0, 0, R - x.lineWidth / 2, -1.5708, 1.5708); x.stroke(); x.restore();
+        x.beginPath(); x.arc(0, 0, Math.max(0, R - x.lineWidth / 2), -1.5708, 1.5708); x.stroke(); x.restore();  /* a sprite sized before layout can be under a pixel */
         x.strokeStyle = day ? "rgba(18,22,58,.45)" : "rgba(" + p[3] + ",.32)"; x.lineWidth = Math.max(.7, R * .045); x.beginPath(); x.arc(0, 0, R, 0, 6.2832); x.stroke();
       }
       m.spr = cvs; m.ss = S2 / 2 / (k * dpr);
@@ -1349,14 +1371,14 @@
     var m = G.missions.filter(function (x) { return x.name === name; })[0];
     if (!m) return;
     var doc = D.docs["gen-" + G.n + "/mission-" + name + ".md"];
-    var deps = m.depends.map(function (n) { var d = G.missions.filter(function (x) { return x.n === n; })[0]; return d ? n + " · " + d.name : "#" + n; });
+    var deps = m.depends.map(function (n) { var d = G.missions.filter(function (x) { return x.n === n; })[0]; return d ? n + " · " + human(d.name) : "#" + n; });
     var meta = box("State", esc(STATE[state(m)])) +
       box("Capabilities", m.caps.map(function (n) { return '<span class="chip">#' + n + " " + esc(capName(n)) + "</span>"; }).join(" ") || esc(m.caps_text)) +
       box("Gaps it closes", '<span class="chips">' + tierChips(m.gaps) + "</span>") +
       box("Waits on", esc(deps.join(", ") || "nothing: it can start now")) +
       box("Tasks", taskList(m.tasks)) +
       (m.critiqued ? box("Critique", '<button type="button" class="doc" data-doc="gen-' + G.n + "/critique-" + esc(name) + '.md">critique-' + esc(name) + ".md</button>") : "");
-    show("gen " + G.n + " · mission " + (m.n || ""), "Mission: " + name, meta,
+    show("gen " + G.n + " · mission " + (m.n || ""), "Mission: " + human(name), meta,
       doc ? md(doc) : '<p class="empty">Not written yet. The Seed queues it' + (deps.length ? " after " + esc(deps.join(", ")) : "") + "; it shows here the moment it's filed.</p>",
       "mission=" + name);
   }
@@ -1375,12 +1397,12 @@
     var gap = (D.docs["gap-map.md"] || "").split(/^(?=## )/m).filter(function (s) { return new RegExp("^## " + n + "\\.").test(s); })[0] || "";
     var per = D.generations.map(function (g) {
       var ms = missionsFor(n, g);
-      return ms.length ? "<li>gen " + g.n + ": " + ms.map(function (m) { return '<button type="button" class="chip" data-mission="' + esc(m.name) + '" data-gen="' + g.n + '">' + esc(m.name) + " · " + STATE[state(m)] + "</button>"; }).join(" ") + "</li>" : "";
+      return ms.length ? "<li>gen " + g.n + ": " + ms.map(function (m) { return '<button type="button" class="chip" data-mission="' + esc(m.name) + '" data-gen="' + g.n + '">' + esc(human(m.name)) + " · " + STATE[state(m)] + "</button>"; }).join(" ") + "</li>" : "";
     }).join("");
     var k = counts(D.gaps[String(n)] || []);
     var meta = box("Open gaps", k[4] + " tier 4 · " + k[3] + " tier 3" + (k[2] + k[1] ? " · " + (k[2] + k[1]) + " smaller" : "")) +
       box("Missions", per ? "<ul>" + per + "</ul>" : "none yet") +
-      box("Louhi", D.exam.length ? plural(D.exam.length, "result") + " in Louhi's log (section D)" : "no run yet: mission 1 builds Louhi");
+      box("Louhi", exams().length ? plural(exams().length, "result") + " in Louhi's log (section D)" : "no run yet: mission 1 builds Louhi");
     show("capability #" + n, c.name, meta, "<h4>Your message, §2</h4>" + md(capSection(D.docs["gen-0.md"], n)) +
       (gap ? "<h4>Gap map</h4>" + md(gap.replace(/^## .*\n/, "")) : ""), "cap=" + n);
   }
@@ -1391,13 +1413,13 @@
     show(t.id + " · " + [t.type, t.tier].filter(Boolean).join(" "), say(t.title),
       box("Progress", t.done + " of " + t.steps + " steps · " + esc(t.status) + bar(t)) +
       box("Now on", esc(t.current || (t.status === "done" ? "closed" : "–"))) +
-      box("Mission", x.m ? '<button type="button" class="chip" data-mission="' + esc(x.m.name) + '">' + esc(x.m.name) + "</button>" : "the Seed itself"),
+      box("Mission", x.m ? '<button type="button" class="chip" data-mission="' + esc(x.m.name) + '">' + esc(human(x.m.name)) + "</button>" : "the Seed itself"),
       '<p class="empty">The brief lives in the project\'s Sampo state; every commit it makes names ' + esc(t.id) + ".</p>", "task=" + t.id);
   }
   function openL4() {
     var g = G, crit = g.critiques.map(function (n) { return '<button type="button" class="doc" data-doc="gen-' + g.n + "/critique-" + esc(n) + '.md">critique-' + esc(n) + ".md</button>"; }).join("");
     show("level 4", "Louhi & critique · generation " + g.n,
-      box("Louhi", plural(D.exam.length, "result") + " logged. A rewrite stays only if its generation closed more Louhi scenarios than its parent did; the held-out third only grades a capability as done.") +
+      box("Louhi", plural(exams().length, "result") + " logged. A rewrite stays only if its generation closed more Louhi scenarios than its parent did; the held-out third only grades a capability as done.") +
       box("Drift & sweep", ["drift", "sweep"].map(function (k) {
         var n = "gen-" + g.n + "/" + k + ".md";
         return D.docs[n] ? '<button type="button" class="doc" data-doc="' + n + '">' + k + ".md · " + esc(g[k] || "no verdict") + "</button>" : "";
@@ -1415,7 +1437,7 @@
     var pips = '<span class="pips w' + w + '" aria-hidden="true">' + [1, 2, 3, 4, 5].map(function (i) { return "<i" + (i <= w ? ' class="on"' : "") + "></i>"; }).join("") + "</span>";
     var meta = box("Wild", pips + esc(w ? w + " of 5" : "not scored yet")) +
       box("Tier", esc(String(r.tier || "?")) + " counted<br><small>author " + esc(r.author || "?") + " → reviewer " + esc(r.reviewer || "unrated") + "</small>") +
-      box("Stage", esc(STAGEW[st])) + box("Domain", esc(r.domain || "–")) + box("Novelty", esc(r.novelty || "?") + " of 5") +
+      box("Stage", esc(STAGEW[st])) + box("Domain", esc(f.domain || r.domain || "–")) + box("Novelty", esc(r.novelty || "?") + " of 5") +
       (Array.isArray(r.unblocks) && r.unblocks.length ? box("Unblocks", r.unblocks.map(chip).join(" ")) : "") +
       (needed.length ? box("Unblocked by", needed.map(function (x) { return chip(x.id); }).join(" ")) : "") +
       box("Asked", esc(r.asked === "no" ? "never asked for" : "asked in " + r.asked)) +
