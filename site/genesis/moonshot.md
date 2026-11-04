@@ -755,3 +755,45 @@
 - Unblocks: none
 - Kill: In a throwaway worktree of Sampo, harvest every user-facing message that asserts a state change or a count, compile and weave checkers for the first 100, and run the full test suite, `sampo drill` (its fault-planted scripted day) and `sampo demo` in shadow mode. Separately plant 10 lies by mutating emitting paths (a write that silently fails, an off-by-one count) without touching the messages. Pass if the checkers catch at least 8 of the 10 planted lies, raise false alarms on fewer than 1% of utterances and add under 20% to the suite's runtime; report any real lie found in the unmutated runs. Fail if they catch fewer than 6, or if more than 10% of the 100 messages cannot be compiled into a checkable proposition at all (then most messages are not claims about state).
 - Stage: idea
+
+### M-59 · Fuse two small models into a lichen that outthinks the frontier model neither can match
+- Tier: xhigh
+- Domain: model orchestration and small-model uplift
+- Lens: ecology: symbiosis (a lichen is an alga and a fungus that become one organism neither can be alone); crossbred from "Pair two weak models as a lichen" × "Rate each local model as a symbiont, with a cheater cut-off"
+- What: Sampo pairs a fast small model (the alga: a 4B that proposes) with the large local model (the fungus: the 27B that holds structure and memory) and evolves the exchange between them over nightly rounds on Sampo's own closed tasks: what each passes the other, when, and in what shape. Neither model is fine-tuned. The protocol is the organism, kept as a versioned card the pair carries. The jaw-drop is a pair that closes held-out tasks the frontier model closes, at no cloud cost, while each partner alone closes half as many.
+- Prior art: mixture-of-agents and LLM debate (fixed protocols, peer models); speculative decoding (a small model drafts tokens for a large one, by a hand-fixed protocol); Sampo's routing (local first, then Haiku, never a pair).
+- Better by: the protocol is evolved and selected on the user's own held-out work, and the pair is judged against the frontier arm, not against either partner.
+- Novelty: 4
+- Needs: T-2878 (a Louhi smith arm on local models), T-2917 (small-model playbooks kept on lift)
+- Unblocks: none
+- Kill: on 20 train-split Louhi scenarios, run the 4B alone, the 27B alone and three hand-written pair protocols (propose and critique, outline and fill, test-first and implement), graded by each scenario's hidden checks. Viable if the best pair beats the better partner alone by 5 or more scenarios; not-yet if by 1 or fewer.
+- Stage: idea
+
+### M-60 · Grow a mycorrhizal network under every repo on the machine, trading failure shapes as nutrients
+- Tier: massive
+- Domain: cross-project learning
+- Lens: ecology: mycorrhizal networks (fungi join the roots of different trees and carry carbon and alarm signals between them); crossbred from "Grow a mycorrhizal lesson network between repos and lanes" × "Federate failure shapes between Sampo installs"
+- What: Every repo Sampo serves grows hyphae: compressed failure shapes from its proven fixes, the outline of a bug's syntax and data flow and never its code. The network carries each shape to repos whose code is near it, and a repo that receives one is warned before it writes that bug. Trees that fix more feed more. A sensitive repo neither sends nor receives. Over months the network learns which of the user's repos are kin, and a new repo is inoculated from its nearest kin on day one.
+- Prior art: GitHub's multi-repository variant analysis (people write the query for one known bug); Semgrep registry rules (shared by hand); federated learning (shares gradients, not failure shapes); Sampo's lessons (one project's).
+- Better by: shapes move by measured kinship between the user's own repos, unasked, and a delivered warning counts only when the receiving repo later fixes that shape.
+- Novelty: 4
+- Needs: a failure-shape miner from proven FIX tasks (the miner M-22 also needs), kinship from import graphs and stack cards, a cross-project store under the sensitive rule
+- Unblocks: M-22
+- Kill: over every project in Sampo's state with 5 or more proven FIX tasks, ask of each fix whether a shape mined from another project's earlier fixes flags the lines the fix changed, before the fix, at under one false flag per 2,000 lines. Report each project's era (first and last fix date) and fail the run if the eras don't overlap. Viable if 10% or more of fixes were foreseen by a kin repo; not-yet if under 3%.
+- Stage: idea
+
+### M-61 · Breed a Red Queen: a predator that evolves new bugs against Sampo's own detectors every night
+- Tier: massive
+- Domain: verification by adversarial co-evolution
+- Lens: ecology: Red Queen dynamics (predator and prey must keep evolving to stay where they are); crossbred from "Run a Red Queen arms race between generator and critic" × "Reintroduce an apex predator into the funnel"
+- What: A predator lineage on the local models writes plausible bugs into throwaway copies of the user's repos, aimed at slipping past Sampo's finders, guard, review lenses and tests. Every bug that escapes is a lesson the prey (the detectors) must learn before the next night, and every detector that improves forces the predator to evolve. Both populations are scored, and the arms race's trace is a living map of where Sampo is blind.
+- Prior art: mutation testing (random, not adaptive); coverage-guided fuzzing (finds crashes, not quiet logic bugs); GANs (images, not code); LLM red-teaming (prompts); Sampo's hunk-mutation proof (T-0271), which mutates one task's hunks once.
+- Better by: the bug writer adapts to the detectors Sampo actually runs, and the detectors are scored only on bugs nobody wrote for them, on the user's own code.
+- Novelty: 4
+- Needs: T-2910 (local brainstorm volume), the exam's planted-defect renderer, a night slot (T-2916)
+- Unblocks: M-22
+- Kill: on the exam's throwaway repos, have the local 27B write 100 bugs over three rounds, each round shown which earlier bugs `sampo find` caught. Viable if the third round's escape rate is at least twice the first's (the predator learns); not-yet if it is flat.
+- Stage: idea
+
+The novelty marks above are the author's. `fm genesis novelty` marks the obvious ones by a cold read, and a typed mark
+counts for nothing.
