@@ -142,6 +142,27 @@ class Grow(_Cards):
             r = self.sc.grow(self.p, target=50, batch=3, workers=1)
         self.assertEqual((r["stopped"], r["added"]), ("failed", 0))
 
+    def test_a_refused_card_is_sent_back_once_with_its_reason_and_kept_if_it_passes(self):  # T-2985
+        steps = [dict(s) for s in good()["steps"]]
+        steps[1]["cmd"] = "grep -n def tests/test_a.py && echo done"
+        chained = good(title="Chained command card", steps=steps)
+        hopeless = good(title="Hopeless card here", example="")
+        fixed = good(title="Chained command card")
+        calls = []
+
+        def fake(p, system, prompt, cheap=True, paid=0, feature=None):
+            calls.append(prompt)
+            cards = [chained, hopeless] if len(calls) == 1 else [fixed, hopeless]
+            return "\n".join(json.dumps(x) for x in cards), "gpu-qwen9"
+        with mock.patch.object(self.sc.ms, "_ask", side_effect=fake):
+            r = self.sc.grow(self.p, target=1, batch=2, workers=1)
+        self.assertEqual(len(calls), 2, "one repair call, never a loop")
+        self.assertIn("command: step 2", calls[1])
+        self.assertIn("example: 8 words at least", calls[1])
+        self.assertEqual([x["title"] for x in self.sc.rows()], ["Chained command card"])
+        self.assertEqual((r["kept"], r["rejected"], r["repair_asked"], r["repair_kept"]), (1, 1, 2, 1))
+        self.assertIn("repaired 1 of 2", self.sc.grow_line(r))
+
     def test_coverage_counts_cells_and_lines_name_the_filled_share(self):
         self.sc.add(self.p, [good(title="Card alpha one"), good(title="Card beta two")], cell(), "m", 1)
         self.sc.add(self.p, [good(title="Card gamma three")], cell("docs", "rust", "plan", "ops"), "m", 2)
