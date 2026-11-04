@@ -8,8 +8,8 @@ from helpers import read_text
 
 EDIT = (call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
 GAPS = {"decision": "Recommendation: change the operator; would change if: callers want a difference",
-        "numbers": "add calls per second: 10 → 12 (timeit over 1000 runs)",
-        "regression": "test_calc.py failed before the change and passes now"}
+        "numbers": "add calls per second: 9 → 14 (timeit over 500 runs)",
+        "regression": "test_add.py failed before the fix and passes now"}
 
 
 def reply(**keys):
@@ -35,7 +35,14 @@ class CloseGaps(CodeCase):
 
     def test_performance_numbers_and_fix_regression_ride_the_same_slot(self):
         self.closes(dict(PLAN, type="PERFORMANCE"), reply(numbers=GAPS["numbers"]))
-        self.assertIn("10 → 12", read_text(self.task()["path"]))
+        self.assertIn("9 → 14", read_text(self.task()["path"]))
+
+    def test_a_copied_example_is_asked_again(self):  # audit: the example is a claim the model never made
+        from sampo import smith
+        copied = smith.GAP_FIELDS[1][1].split("(for example: ", 1)[1][:-1]
+        f = self.closes(dict(PLAN, type="PERFORMANCE"), reply(numbers=copied), reply(numbers=GAPS["numbers"]))
+        self.assertIn("copies the example", f.said(4))
+        self.assertIn("9 → 14", read_text(self.task()["path"]))
 
     def test_a_fix_with_a_red_run_asks_nothing_more(self):
         f = self.closes(PLAN)

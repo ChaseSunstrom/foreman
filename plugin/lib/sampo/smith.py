@@ -316,13 +316,17 @@ def _gaps_needed(run):
 def _gap_slot(run, profile, keys):
     """T-2937: the model's answer for each missing key, in a slot of its own with a worked example."""
     fields = tuple(f for f in GAP_FIELDS if f[0] in keys)
+    examples = {f[0]: f[1].split("(for example: ", 1)[1][:-1] for f in fields}
 
     def check(v):
         if not isinstance(v, dict):
             return "the reply holds no JSON object"
         bad = [k for k in keys if not (isinstance(v.get(k), str) and v[k].strip())]
-        return f"give {', '.join(bad)} as text" if bad else None
-    ex = json.dumps({f[0]: f[1].split("(for example: ", 1)[1][:-1] for f in fields})
+        if bad:
+            return f"give {', '.join(bad)} as text"
+        copied = [k for k in keys if v[k].strip() == examples[k]]  # audit: a copied example is an invented claim
+        return f"{', '.join(copied)} copies the example: give this task's own" if copied else None
+    ex = json.dumps(examples, ensure_ascii=False)
     msgs = [{"role": "system", "content": GAP_PROMPT.format(keys=", ".join(keys), example=ex)},
             {"role": "user", "content": _task_text(run)}]
     return slot(run, profile, msgs, check, "set of close notes", fields)
@@ -356,8 +360,9 @@ def _items(text):
 
 
 def _word(text):
-    w = text.split()
-    return w[0].strip(".,;:'\"`*").upper() if w else ""
+    """The first word that is a type or tier ("The task is a FIX" gives FIX), else the first word."""
+    w = [x.strip(".,;:'\"`*").upper() for x in text.split()]
+    return next((x for x in w if x in TYPES or x in ("S", "M", "L")), w[0] if w else "")
 
 
 def _criteria(text):
@@ -3345,7 +3350,9 @@ def _finish(run, profile):
               f"--docs={notes['docs']}", f"--lesson={notes['lesson']}"]
         if pl["type"] == "FIX":
             a += [f"--why-not-caught={notes['why_not_caught']}"]
-    if need := _gaps_needed(run):  # T-2937: asked for any tier; a close key already given isn't asked again
+    # T-2937: asked for any tier; a close key already given isn't asked again; a modelless run (--worker --verify) has
+    # nobody to ask, so finish refuses with its own reason
+    if profile is not None and (need := _gaps_needed(run)):
         got = _gap_slot(run, profile, need)
         run.log(kind="gap_notes", notes=got)
         for key, section in (("decision", "Decision"), ("regression", "Regression test")):
