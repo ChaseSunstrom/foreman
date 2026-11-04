@@ -1,5 +1,5 @@
 # Sampo's glyph in the pane and the statusline: one terminal cell, East Asian width N, drawn by JetBrains Mono, Hack,
-# Adwaita Mono and FreeMono (fc-list ':charset=2296 2298:spacing=mono'). Rest is the stone with its rynd bar; turn alternates it with the bar slanted, one frame
-# a tick, and stops on rest. Colour: forge-light (#FF9E3D) on dark, the light theme's bronze (#7A5020) on light.
+# Adwaita Mono and FreeMono (fc-list ':charset=2296 2298:spacing=mono'). Rest is the anvil-stone with its hot band; turn alternates it with the band struck slant, one frame
+# a tick, and stops on rest. Colour: forge-light (#FFC24D) on dark, the light theme's bronze (#7A5A26) on light.
 rest: ⊖
 turn: ⊖ ⊘

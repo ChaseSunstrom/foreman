@@ -1,39 +1,39 @@
 /* tokens: python3 site/build.py --tokens writes this block from design/sampo/tokens.json; edit the json */
 :root {
-  --surface: #F6F0E4; --raised: #FFFBF3; --sunken: #EBE1CE; --text: #16181C;
-  --text-muted: #58503F; --border: #8E7F66; --stone: #16181C; --accent: #17436E;
-  --on-accent: #F6F0E4; --bronze: #7A5020; --glow: #FF9E3D; --ember: #E0601F;
-  --error: #A8104A; --warning: #7A6A00; --success: #2C7A45; --s1: #8A6212;
-  --s2: #2A6FB0; --s3: #C2410C; --s4: #1F7F73; --s5: #7A4FB5;
-  --s6: #B8326A; color-scheme: light;
-  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, "Book Antiqua", Georgia, serif;
-  --font-text: Seravek, "Gill Sans Nova", Ubuntu, Calibri, "DejaVu Sans", "Source Sans Pro", sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --surface: #EEF0F6; --raised: #E2E6F1; --sunken: #D6DBEA; --text: #12163A;
+  --text-muted: #555B80; --border: #7C819F; --stone: #2A2C33; --accent: #2448B8;
+  --on-accent: #EEF0F6; --bronze: #7A5A26; --glow: #FFC24D; --ember: #FF6A4A;
+  --error: #B0186E; --warning: #5F6A0A; --success: #1F7A45; --s1: #8A5A00;
+  --s2: #2448B8; --s3: #B12E16; --s4: #0F6E48; --s5: #6A3BB5;
+  --s6: #A2460C; color-scheme: light;
+  --font-display: "Bodoni Moda", Didot, Georgia, serif;
+  --font-text: Archivo, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Martian Mono", Menlo, Consolas, monospace;
   --step-1: 1.333rem; --step-2: 1.777rem; --step-3: 2.369rem;
   --step-4: 3.157rem; --step-5: 4.209rem; --step-6: 5.61rem;
   --dur-tap: 90ms; --dur-small: 150ms; --dur-enter: 220ms; --dur-exit: 150ms;
-  --dur-move: 300ms; --dur-stage: 500ms; --dur-rune: 240ms; --dur-turn: 4000ms;
+  --dur-move: 300ms; --dur-stage: 500ms; --dur-rune: 300ms; --dur-strike: 2200ms;
   --ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1); --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
-  --ease-move: cubic-bezier(0.45, 0, 0.2, 1); --ease-mill: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-move: cubic-bezier(0.45, 0, 0.2, 1); --ease-strike: cubic-bezier(0.6, 0, 1, 0.6);
   --autoplay-limit: 5000ms;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --surface: #121418; --raised: #1B1E24; --sunken: #0B0C0F; --text: #F6F0E4;
-    --text-muted: #BDB29E; --border: #6E675B; --stone: #262A31; --accent: #9CCBEB;
-    --on-accent: #121418; --bronze: #D9A870; --glow: #FF9E3D; --ember: #F07434;
-    --error: #FF8FAB; --warning: #E2D35A; --success: #7FD49A; --s1: #D9A870;
-    --s2: #7DB7E8; --s3: #F07434; --s4: #4DB8A8; --s5: #B596E6;
-    --s6: #E87AA6; color-scheme: dark;
+    --surface: #060819; --raised: #0B1030; --sunken: #04050F; --text: #EEF0FA;
+    --text-muted: #9097BC; --border: #5C6390; --stone: #2A2C33; --accent: #F0D392;
+    --on-accent: #060819; --bronze: #D4AE66; --glow: #FFC24D; --ember: #FF6A4A;
+    --error: #FF85BC; --warning: #C8DC5A; --success: #6FD8A0; --s1: #FFC24D;
+    --s2: #6E9BFF; --s3: #FF6A4A; --s4: #45E0A0; --s5: #BC8BFF;
+    --s6: #FF9440; color-scheme: dark;
   }
 }
 :root[data-theme="dark"], .install, .window, .term, .ex-cmd {
-  --surface: #121418; --raised: #1B1E24; --sunken: #0B0C0F; --text: #F6F0E4;
-  --text-muted: #BDB29E; --border: #6E675B; --stone: #262A31; --accent: #9CCBEB;
-  --on-accent: #121418; --bronze: #D9A870; --glow: #FF9E3D; --ember: #F07434;
-  --error: #FF8FAB; --warning: #E2D35A; --success: #7FD49A; --s1: #D9A870;
-  --s2: #7DB7E8; --s3: #F07434; --s4: #4DB8A8; --s5: #B596E6;
-  --s6: #E87AA6; color-scheme: dark;
+  --surface: #060819; --raised: #0B1030; --sunken: #04050F; --text: #EEF0FA;
+  --text-muted: #9097BC; --border: #5C6390; --stone: #2A2C33; --accent: #F0D392;
+  --on-accent: #060819; --bronze: #D4AE66; --glow: #FFC24D; --ember: #FF6A4A;
+  --error: #FF85BC; --warning: #C8DC5A; --success: #6FD8A0; --s1: #FFC24D;
+  --s2: #6E9BFF; --s3: #FF6A4A; --s4: #45E0A0; --s5: #BC8BFF;
+  --s6: #FF9440; color-scheme: dark;
 }
 /* end tokens */
 /* T-2753: the page's names for the Sampo roles. Declared again on the terminals, which take the dark roles in either

@@ -1,7 +1,8 @@
 """T-2753 (T-2742 step 7a): the site wears Sampo's design system. Its colours, type and motion come from
 design/sampo/tokens.json through one generated block at the top of site/style.css (`python3 site/build.py --tokens`
-writes it; the build refuses a stale one), its icon, favicon and share card are the Runestone files the build copies
+writes it; the build refuses a stale one), its icon, favicon and share card are the anvil-stone files the build copies
 from design/sampo/logo, and no page names Foreman outside the forms kept as aliases."""
+# map-links: design/sampo/tokens.json site/style.css site/index.html
 import json
 import os
 import re
@@ -61,7 +62,7 @@ class Tokens(unittest.TestCase):
         for face in ("display", "text", "mono"):
             stack = re.search(rf"--font-{face}: ([^;]+);", self.block).group(1)
             self.assertEqual([s.strip().strip('"') for s in stack.split(",")], t["font"][face]["$value"])
-        self.assertIn('"Iowan Old Style"', self.block)
+        self.assertIn('"Bodoni Moda"', self.block)
         self.assertIn(", serif;", self.block, "a generic family stays a keyword")
         ratio = t["font"]["scale"]["ratio"]["$value"]
         self.assertIn(f"--step-2: {round(ratio ** 2, 3)}rem;", self.block)
@@ -128,7 +129,7 @@ class Built(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def test_the_logo_files_are_the_runestone_ones(self):
+    def test_the_logo_files_are_the_anvil_stone_ones(self):
         for rel, src in (("sampo.svg", "icon-16.svg"), ("favicon.ico", "favicon.ico"), ("share.png", "share.png"),
                          ("foreman.svg", "icon-16.svg")):  # the old icon URL keeps working, and shows the new mark
             with open(os.path.join(self.out, "assets", rel), "rb") as a, open(os.path.join(LOGO, src), "rb") as b:

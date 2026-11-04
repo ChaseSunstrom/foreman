@@ -1,7 +1,7 @@
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="design/sampo/logo/readme-header-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="design/sampo/logo/readme-header-light.svg">
-  <img src="design/sampo/logo/readme-header-dark.svg" width="720" alt="Sampo: the Runestone, a rune-carved millstone with a hot eye, beside the Sampo wordmark">
+  <img src="design/sampo/logo/readme-header-dark.svg" width="720" alt="Sampo: a steel anvil on a rune-cut stone bound with a riveted band, a many-coloured fire behind it, beside the Sampo wordmark">
 </picture></p>
 
 <h1 align="center">Sampo</h1>

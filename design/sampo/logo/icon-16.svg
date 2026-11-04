@@ -1,7 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-labelledby="t">
-<title id="t">Sampo</title>
-<defs><radialGradient id="eye16" cx="8" cy="8" r="4" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFE3A8"/><stop offset="0.55" stop-color="#FF9E3D"/><stop offset="1" stop-color="#E0601F"/></radialGradient></defs>
-<circle cx="8" cy="8" r="7.25" fill="#16181C" stroke="#B07A3B" stroke-width="1.5"/>
-<circle cx="8" cy="8" r="4" fill="url(#eye16)"/>
-<rect x="5" y="7" width="6" height="1" fill="#16181C"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-labelledby="t"><title id="t">Sampo</title><defs><linearGradient id="f" x1="0" y1="1" x2="0" y2="7" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#E2481A"/><stop offset=".55" stop-color="#FF9A2E"/><stop offset="1" stop-color="#FFE08A"/></linearGradient></defs><path fill="url(#f)" d="M8 1 L10 3.5 L10.5 6.5 H5.5 L6 3.5 Z M4.5 3.5 L5.5 5 V6.5 H3.5 V5 Z M11.5 3 L12.5 4.5 V6.5 H10.5 V4.5 Z"/><path fill="#5B8CFF" d="M8 3.5 L9 5 V6.5 H7 V5 Z"/><path fill="#B9AFA8" d="M2 6.5 H11.5 L13.5 7 L15.5 7.5 L13.5 8 L10.5 8.5 V9.5 H5.5 V8.5 L3.5 8.5 L3 7.5 H2 Z"/><path fill="#FFE6C8" d="M3 6.5 H11.5 V7 H3 Z"/><path fill="#4E5260" d="M3.5 8 H11.5 L10.5 8.5 V9.5 H5.5 V8.5 H3.5 Z"/><path fill="#FF9A2E" d="M4 9.5 H12 V10.5 H4 Z"/><path fill="#5A5664" d="M2 10.5 H5.5 V15.5 H1 Z"/><path fill="#3A3944" d="M5.5 10.5 H10.5 L11 15.5 H5.5 Z"/><path fill="#22232C" d="M10.5 10.5 H14 L15 15.5 H11 Z"/><path fill="#2A2C33" d="M1.5 11.5 H14.5 V12.5 H1.5 Z"/></svg>

@@ -2,6 +2,7 @@
 source every surface reads (light and dark palettes, type stacks, motion rules); each of the three directions under
 design/sampo/directions/ ships a full mark, a 16 px icon, a monochrome mark, a wordmark and an animated mark whose
 still is what reduced motion shows; index.html previews them all in both themes. Nothing loads from another host."""
+# map-links: design/sampo/tokens.json design/sampo/index.html site/style.css design/sampo/logo/build.py design/sampo/logo/art.py design/sampo/logo/glyphs.json design/sampo/logo/mark-simple.svg design/sampo/logo/pane-glyph.txt
 import json
 import math
 import os
@@ -26,7 +27,7 @@ SVG = "{http://www.w3.org/2000/svg}"
 LOGO = os.path.join(ROOT, "logo")
 COMPOSED = ("mark-animated.svg", "mark-light.svg", "mono.svg", "wordmark.svg", "app-icon.svg", "desktop-icon.svg",
             "readme-header-light.svg", "readme-header-dark.svg", "share.svg")
-LOGO_SVGS = ("mark.svg", "icon-16.svg") + COMPOSED
+LOGO_SVGS = ("mark.svg", "mark-simple.svg", "icon-16.svg") + COMPOSED
 RASTERS = {"app-icon-512.png": (512, 512), "app-icon-1024.png": (1024, 1024), "desktop-icon-1024.png": (1024, 1024),
            "share.png": (1200, 630)}
 GENERIC = {"serif", "sans-serif", "monospace", "system-ui", "ui-monospace", "ui-serif", "ui-sans-serif"}
@@ -109,7 +110,8 @@ def check_animation(test, path):
     decls = re.findall(r"animation\s*:\s*([^;}]+)", text)
     test.assertTrue([x for x in decls if x.strip() != "none"], path)
     for decl in decls:
-        bare = re.sub(r"[\w-]+\([^)]*\)", " ", decl).split()  # drop cubic-bezier(…) and steps(…)
+        test.assertNotRegex(decl, r"(?<!\d)\.\d+m?s\b", f"{path}: write 0.5s, not .5s, so the bound below reads it")
+        bare =re.sub(r"[\w-]+\([^)]*\)", " ", decl).split()  # drop cubic-bezier(…) and steps(…)
         secs = [float(x[:-2]) / 1000 if x.endswith("ms") else float(x[:-1])
                 for x in bare if re.fullmatch(r"\d+(?:\.\d+)?m?s", x)]
         count = [float(x) for x in bare if re.fullmatch(r"\d+(?:\.\d+)?", x)]
@@ -253,23 +255,32 @@ def ico_sizes(path):
     return sorted(sizes)
 
 
-def geometry(path):
-    """The stone's carved geometry, the runes and the furrows, as (transform, d) pairs: every composed mark cuts it
-    the same, so the still never drifts from the animation or the variants."""
-    out = {}
-    for e in ET.fromstring(read_text(path)).iter():
-        if e.get("id") in ("runes", "furrows"):
-            out[e.get("id")] = [(p.get("transform"), p.get("d")) for p in e.iter() if p.get("d")]
-    return out
+FIRE = {"#6E9BFF": "blue", "#FFC24D": "gold", "#FF6A4A": "red", "#45E0A0": "green", "#BC8BFF": "violet"}
 
 
 def by_id(path, ident):
-    return next(e for e in ET.fromstring(read_text(path)).iter() if e.get("id") == ident)
+    return next((e for e in ET.fromstring(read_text(path)).iter() if e.get("id") == ident), None)
+
+
+def shorthand(text, selector):
+    """The times and count of selector's animation shorthand: (duration, delay, count)."""
+    m = re.search(re.escape(selector) + r"\{[^}]*?animation:\w+ ([\d.]+)s [\w-]+(?:\([^)]*\))? ([\d.]+)s(?: (\d+))?", text)
+    return m and (float(m.group(1)), float(m.group(2)), int(m.group(3) or 1))
+
+
+def frames(text, name):
+    """A @keyframes block as {percent: declarations}."""
+    body = re.search(r"@keyframes %s\{(.*?\})\}" % name, text, re.S).group(1)
+    out = {}
+    for sel, decl in re.findall(r"([\d.%,]+)\{([^}]*)\}", body):
+        for pc in sel.split(","):
+            out[float(pc.rstrip("%"))] = decl
+    return out
 
 
 class Logo(unittest.TestCase):
-    """T-2751: the chosen Runestone mark, refined per the cold review, and every variant SAMPO.md's Logo paragraph
-    names, in design/sampo/logo/."""
+    """T-2850: the anvil-stone mark from direction 12 (the illustrated forge) at three levels, full, simplified and the
+    16 px glyph, and every variant SAMPO.md's Logo paragraph names, in design/sampo/logo/."""
 
     def test_every_variant_is_there(self):
         for name in LOGO_SVGS + tuple(RASTERS) + ("favicon.ico", "pane-glyph.txt", "README.md", "REVIEW.md"):
@@ -277,7 +288,7 @@ class Logo(unittest.TestCase):
 
     def test_every_svg_is_well_formed_and_loads_nothing_from_another_host(self):
         for name in LOGO_SVGS:
-            check_svg(self, os.path.join(LOGO, name), limit=24000)
+            check_svg(self, os.path.join(LOGO, name), limit=160000)
 
     def test_the_rasters_have_their_sizes(self):
         for name, size in RASTERS.items():
@@ -293,62 +304,62 @@ class Logo(unittest.TestCase):
     def test_mono_uses_one_ink(self):
         check_mono(self, os.path.join(LOGO, "mono.svg"))
 
-    def test_the_still_and_every_composed_mark_cut_one_geometry(self):
-        still = geometry(os.path.join(LOGO, "mark.svg"))
-        self.assertEqual(sorted(still), ["furrows", "runes"])
-        self.assertEqual(len(still["runes"]), 8)
-        for name in COMPOSED:
-            self.assertEqual(geometry(os.path.join(LOGO, name)), still, name)
+    def test_every_level_and_composed_mark_shares_one_anvil_and_one_stone(self):
+        """The stone (three facets) and the anvil over it are one drawing: the full mark, the simplified one, mono and
+        every composition carry the same outlines, so no variant drifts from the mark."""
+        names = ("mark.svg", "mark-simple.svg") + COMPOSED
+        for part in ("stone", "anvil"):
+            ds = {}
+            for name in names:
+                e = by_id(os.path.join(LOGO, name), part)
+                self.assertIsNotNone(e, f"{name}: no {part}")
+                ds[name] = e.get("d")
+            self.assertEqual(len(set(ds.values())), 1, f"{part} differs: {ds}")
+        self.assertEqual(by_id(os.path.join(LOGO, "mark.svg"), "stone").get("d").count("M"), 3, "three facets")
 
-    def test_the_furrows_read_on_the_stone_and_the_eye_has_no_lens_dot(self):
-        mark = os.path.join(LOGO, "mark.svg")
-        disc, furrows = by_id(mark, "disc"), by_id(mark, "furrows")
-        self.assertGreaterEqual(ratio(furrows.get("stroke"), disc.get("fill")), 2, "furrows near-invisible")
-        self.assertIn("Q", furrows.get("d"), "harp furrows curve")
-        eye = by_id(mark, "eye-core")
-        dots = [e for e in ET.fromstring(read_text(mark)).iter() if e.tag == SVG + "circle"
-                and e.get("cx") == eye.get("cx") and e.get("cy") == eye.get("cy")
-                and float(e.get("r")) < float(eye.get("r"))]
-        self.assertEqual(dots, [], "a dot in the eye reads as a camera lens")
+    def test_the_runes_glow_in_five_fire_colours(self):
+        for name in ("mark.svg", "mark-animated.svg"):
+            runes = list(by_id(os.path.join(LOGO, name), "runes"))
+            self.assertEqual(len(runes), 5, name)
+            colours = [next(p.get("stroke") for p in r.iter() if p.get("stroke")).upper() for r in runes]
+            self.assertEqual(sorted(FIRE[c] for c in colours if c in FIRE), sorted(FIRE.values()), f"{name}: {colours}")
+            drawings = {next(p.get("d") for p in r.iter() if p.get("d")) for r in runes}
+            self.assertEqual(len(drawings), 5, f"{name}: two runes share a drawing")
 
-    def test_the_stone_turns_once_round_and_stops_inside_five_seconds(self):
+    def test_the_hammer_strikes_and_settles_inside_five_seconds(self):
         text = check_animation(self, os.path.join(LOGO, "mark-animated.svg"))
-        turn = re.search(r"@keyframes\s+turn\s*\{(.*?)\}\s*\}", text, re.S)
-        self.assertTrue(turn, "no turn keyframes")
-        angles = [float(a) for a in re.findall(r"rotate\((-?\d+(?:\.\d+)?)deg\)", turn.group(1))]
-        self.assertGreaterEqual(max(angles) - min(angles), 360, "at least one full turn before it settles")
-        sparks = [e for e in ET.fromstring(text).iter() if (e.get("class") or "").startswith("k")
-                  and e.tag == SVG + "circle"]
-        self.assertTrue(sparks)
-        last_rune = float(re.search(r"\.r8\{animation:\w+ [\d.]+m?s [\w-]+ ([\d.]+)s", text).group(1))
-        for k in sparks:
-            self.assertGreaterEqual(float(k.get("r")), 2, "sparks big enough to see")
-            px, py = float(k.get("cx")) - 32, float(k.get("cy")) - 32
-            self.assertGreaterEqual(math.hypot(px, py), 28, "from the rim")
-            name = k.get("class")
-            flight = re.search(r"@keyframes\s+%s\s*\{.*?100%%\{[^}]*translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)" % name,
-                               text, re.S)
-            self.assertTrue(flight, f"{name}: no flight")
-            dx, dy = float(flight.group(1)), float(flight.group(2))
-            self.assertGreater(dx * -py + dy * px, 0, f"{name} flies against the clockwise spin")
-            delay = float(re.search(r"\.%s\{animation:\w+ [\d.]+m?s [\w-]+ ([\d.]+)s" % name, text).group(1))
-            self.assertLessEqual(abs(delay - last_rune), 0.25, f"{name}: launch as the last rune lights")
+        self.assertIn('class="hm"', text)
+        rest = re.search(r"\.hm\{[^}]*?transform:([^;}]+)", text).group(1)
+        swing = frames(text, "swing")
+        pose = lambda decl: re.search(r"transform:([^;}]+)", decl).group(1)
+        self.assertEqual(pose(swing[0]), rest, "it starts from the raised pose")
+        self.assertEqual(pose(swing[100]), rest, "it settles on the raised pose, the still")
+        strikes = [pc for pc, d in swing.items() if re.search(r"rotate\(-\d", d)]
+        self.assertTrue(strikes, "the hammer comes down on the billet")
+        dur, delay, count = shorthand(text, ".hm")
+        self.assertLessEqual(delay + dur * count, 5)
+        self.assertGreaterEqual(count, 1)
 
-    def test_the_runes_are_eight_different_drawings(self):
-        runes = [d for _, d in geometry(os.path.join(LOGO, "mark.svg"))["runes"]]
-        self.assertEqual(len(set(runes)), 8, "two runes share a drawing")
-        tallies = [d for d in runes if re.fullmatch(r"M32 5V11(M[\d.]+ [\d.]+H[\d.]+)+", d)]
-        self.assertLessEqual(len(tallies), 1, "staves notched by half-bars read as one repeated tally")
+    def test_the_sparks_are_big_enough_to_see_and_fly_as_the_hammer_lands(self):
+        text = read_text(os.path.join(LOGO, "mark-animated.svg"))
+        sparks = [p for g in ET.fromstring(text).iter() if g.get("class") == "sparks" for p in g.iter(SVG + "path")]
+        self.assertGreaterEqual(len(sparks), 12)
+        for p in sparks:
+            self.assertGreaterEqual(float(p.get("stroke-width")), 2, "a spark under 2 units vanishes below 128 px")
+            length = float(re.fullmatch(r"M(-[\d.]+) 0 H0", p.get("d")).group(1))
+            self.assertGreaterEqual(-length, 6, "a spark is a streak, not a dot")
+        self.assertEqual(shorthand(text, ".sparks path"), shorthand(text, ".hm"), "sparks keep the hammer's beat")
+        swing, fly = frames(text, "swing"), frames(text, "fly")
+        strike = min(pc for pc, d in swing.items() if re.search(r"rotate\(-\d", d))
+        lit = min(pc for pc, d in fly.items() if "opacity:1" in d)
+        self.assertEqual(lit, strike, "the sparks leave the billet as the hammer meets it")
 
-    def test_the_small_icons_bar_sits_on_whole_pixels_and_lets_the_eye_show_past_it(self):
+    def test_the_small_icon_sits_on_whole_and_half_pixels(self):
         root = ET.fromstring(read_text(os.path.join(LOGO, "icon-16.svg")))
-        bar = next(e for e in root.iter() if e.tag == SVG + "rect")
-        x, y, w, h = (float(bar.get(a)) for a in ("x", "y", "width", "height"))
-        self.assertTrue(all(v == int(v) for v in (x, y, w, h)), "bar off the pixel grid")
-        eye = next(e for e in root.iter() if e.tag == SVG + "circle" and "url(" in (e.get("fill") or ""))
-        cx, r = float(eye.get("cx")), float(eye.get("r"))
-        self.assertGreater(x, cx - r, "the bar covers the eye's left edge (a circled minus)")
-        self.assertLess(x + w, cx + r, "the bar covers the eye's right edge (a circled minus)")
+        nums = [float(n) for p in root.iter(SVG + "path") for n in re.findall(r"-?\d+(?:\.\d+)?", p.get("d"))]
+        self.assertTrue(nums)
+        off = sorted({n for n in nums if (n * 2) != int(n * 2)})
+        self.assertEqual(off, [], "an edge off the half-pixel grid blurs at 16 px")
 
     @unittest.skipUnless(shutil.which("rsvg-convert"), "build.py renders its PNGs with rsvg-convert")
     def test_the_generator_rebuilds_every_committed_svg_byte_for_byte(self):
@@ -363,11 +374,12 @@ class Logo(unittest.TestCase):
                     self.assertEqual(a.read(), b.read(), f"{name}: the committed file is not what build.py makes")
 
     def test_the_light_variant_takes_the_light_themes_roles(self):
-        path = os.path.join(LOGO, "mark-light.svg")
-        disc = by_id(path, "disc")
-        self.assertEqual(disc.get("fill").upper(), hex_of("light", "stone").upper())
-        self.assertEqual(disc.get("stroke").upper(), hex_of("light", "bronze").upper())
-        self.assertGreaterEqual(ratio(disc.get("stroke"), hex_of("light", "surface")), 3, "the rim holds on parchment")
+        """The forge keeps its own light by day; only the star above it, drawn on the page itself, takes the theme."""
+        for theme, name in (("light", "mark-light.svg"), ("dark", "mark.svg")):
+            star = by_id(os.path.join(LOGO, name), "star")
+            fill = star.get("fill") or next(p.get("fill") for p in star.iter() if p.get("fill"))
+            self.assertEqual(fill.upper(), hex_of(theme, "bronze" if theme == "light" else "accent").upper(), name)
+            self.assertGreaterEqual(ratio(fill, hex_of(theme, "surface")), 3, f"{name}: the star holds on the page")
 
     def test_the_pane_glyph_fits_one_terminal_cell(self):
         lines = dict(ln.split(":", 1) for ln in read_text(os.path.join(LOGO, "pane-glyph.txt")).splitlines()
