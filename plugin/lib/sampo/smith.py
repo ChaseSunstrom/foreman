@@ -2790,7 +2790,8 @@ def cmd_code(args):
         if run.planner:
             run.offsite_ok(p, run.planner)
         from sampo import smithbench  # T-1355: which Foreman ran this, for when two installs answer to fm
-        run.emit("start", "", quiet=True, schema=SCHEMA, request=run.request, task=run.tid, worker=run.worker,
+        run.emit("start", f"fm code in {p.slug} ({os.path.realpath(root)})", schema=SCHEMA, request=run.request,
+                 task=run.tid, worker=run.worker, project=p.slug, root=os.path.realpath(root),  # T-2741: -p shows where
                  model=profile and profile["name"], planner=run.planner and run.planner["name"],
                  verify=run.verify_cmd, resume=args.resume is not None,
                  foreman={"root": core.PLUGIN_ROOT, "version": smithbench.version()}, containment=containment(root))

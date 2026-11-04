@@ -421,6 +421,20 @@ class MissNote(CodeCase):
 
 
 class SelfRunningNote(CodeCase):  # T-2364: fm code shows what runs by itself, as fm state does
+    def test_the_first_line_names_the_project_and_its_root(self):  # T-2741: a -p run shows where it resolved
+        self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        r = self.code("fix calc.add so it adds", "--model", "fake")
+        slug = json.load(open(os.path.join(self.repo, ".fm", "project.json"))).get("slug") if os.path.exists(
+            os.path.join(self.repo, ".fm", "project.json")) else None
+        first = r.stdout.splitlines()[0]
+        self.assertTrue(first.startswith("fm code in "), first)
+        self.assertIn(f"({os.path.realpath(self.repo)})", first)
+        if slug:
+            self.assertIn(slug, first)
+        r = self.code("fix calc.add so it adds", "--model", "fake", "--json", check=False)
+        start = next(json.loads(x) for x in r.stdout.splitlines() if x.startswith("{") and '"start"' in x)
+        self.assertEqual((bool(start.get("project")), start.get("root")), (True, os.path.realpath(self.repo)))
+
     def test_fm_code_prints_the_self_running_line_at_its_start(self):
         self.fm("task", "new", "waiting", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         self.fm("ask", "T-0001", "plugin", "--later", "--why", "needs a linter")
