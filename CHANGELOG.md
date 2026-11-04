@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- The pane and band wear the forge palette: fire-gold for what runs, the blue flame for reading, the site's status colours (T-2853).
+- The moonshot reviewer scores each moon's wildness (1-5); an extreme or massive moon below 4 counts as xhigh, the generation brief carries six wild lenses and the reviewer's anti-patterns, and 30 wild moons (M-21..M-50) join the catalogue, from regrowing half a codebase to an app that compiles itself from traffic (T-2858).
+- `sampo outcomes --questions [--since TS] [--none]` counts AskUserQuestion calls by outcome; with `--none` it fails when any was asked, and a steer rule may use that read-only form as its `--check` (T-2840).
+- An agent resumed with SendMessage counts as running background work, so drive waits for its round instead of pushing the next task (T-2848).
+- Every reader of typed commands and goals (cost, repeats, friction, bench, long runs, mandate, Rune, fixes, the CLI, the Smith TUI, Louhi) counts `sampo` as it counts `fm`; the rename scan covers every module and judges each pattern by what it matches (T-2845).
+- `fm` or `sampo` run inside a builder lane re-runs that lane's own plugin, once, and only for a lane the main repo's worktree registry names back that you own; checks and writes then hit the lane, not the main install (T-2843).
+- Skills, commands, agents, the rules and the docs teach `sampo` spellings (`sampo task new`, `sampo check` …), and README and INSTALL say `fm` still works; every hook, core and guard pattern that matched an `fm` command matches `sampo` too, and a ratchet counts the `fm` spellings left (T-2778).
+- `fm code` (Smith) starts a run on the `--escalate` model when its own settled closes of that type and tier keep needing later fixes (5 or more settled, 30% or more fixed later or reverted); each close records the harness that made it (T-2739).
+- Stack cards for junit:junit, knip, mime-guess, Kotlin Android, org.json, the JUnit platform launcher, Robolectric and psutil (T-2799).
+- `fm doctor`'s hook SLO judges only PreToolUse runs taken at normal host load: each timing records load per CPU, and runs on a busy machine are left out and counted in the row (T-2798).
+- A test can name the files it guards on a `# map-links: PATH …` line, so `fm check --affected` runs a test that reads other modules as text when they change (T-2838).
+- A criterion whose text quotes the `— verify with` form runs its own trailing command, not the quoted one (T-2839).
+- The Stop drive counts a Bash call the harness moved to the background and a Monitor as running work, and with no task active names the next task once per running set instead of on every stop (T-2790).
+- One parser reads typed verify commands: `TEXT :: CMD` (split on the last ` :: `) and `TEXT — verify with `+"`CMD`"+` work in `task new --ac`, `task ac add/edit`, `fm batch` and `task set --section` alike (T-2789).
+- `fm check --affected` hands a bare-name test runner only the tests in its own folder, so a template's `test_*.py` no longer fails every close that touches it (T-2836).
+- The rename scan now covers install.sh, the CI workflows, the project templates and the site scripts; their prose says Sampo (T-2818).
+- Model-written code that exam and long runs execute no longer inherits the session's Sampo state paths, git variables or load gate (T-2835).
+- `fm new` scaffolds a project without waiting on host load: its first `fm check` is a fixed self-test, not a gate competing for the machine (T-2834).
+- Sandboxed `fm` runs (demo, drill, exam, bench, long runs, doc fences) no longer wait on or get refused by the host load gate; `fm new`'s first check no longer times out under load in tests (T-2822)
+- Links point at the renamed repo: the README, site, install.sh, INSTALL and templates use ChaseSunstrom/sampo and its Pages URL, and the rename scan counts any link to the old address (T-2811)
+- Subcommand usage names what was typed (`sampo` or `fm`) on Python 3.12 as well as 3.14 (T-2814)
+- The eval cases embed the current rules (T-2812)
+- The operating rules and the status line, compact and subagent hook text say Sampo (T-2809)
+- Agent, plugin and marketplace descriptions and install.sh's messages say Sampo (T-2808)
+- The foreman-ui mod says Sampo on screen: pane, band, toasts and tool text (T-2807)
+- MASTER.md names the product Sampo and its parts Smith, Rune, Louhi, Moons, Underworld and the Ward, with the old names as aliases (T-2810)
+- Gates under machine load wait or stretch instead of failing: `fm lane brief` holds a new lane past 1.5 load per core, and `fm task finish`, `fm lane merge` and `fm check` wait (bounded) for load to fall and scale their timeouts by load per core (T-2797)
+- The close's proof gate, like its scope check, ignores files another lane's merge brought in (T-2791)
+- `fm bench duel --ablate` no longer offers `gate-pipe`, which became a guard refusal and is never ablatable (T-2776)
+- The guard's no-revise lock is tested under the `sampo` paths the code now lives at, as well as the `fm*` shims (T-2780)
+- Hook notes and library messages say Sampo, with Smith, Rune, Louhi and the Ward where a line means one; every reader of a renamed string (the release mark, cost's refusal counter, snapshot subjects) accepts both names, so old logs still count (T-2779)
+- The rename ratchet sees old module names passed as keywords, later arguments or f-strings (T-2783)
+- `fm task ac ID edit N --text` reads `TEXT :: CMD` or a trailing `— verify with \`CMD\`` as the verify command (T-2786)
+- `fm task finish` no longer counts files, or audit staleness, that another task's `fm lane merge` brought in while the task was focused (T-2784)
+- `fm doctor`'s module-map check scans the `sampo` package, not the old shims (T-2782)
+- Rune's anticipation gaps are consumed: the next generation's predict step lists the last one's missed steers, and sealing its prediction closes those gaps (T-2774)
+- A user steer is scored once per cite however many decisions cite it, and the doctor's hint for an unchecked steer names `--cites` (T-2756)
+- `fm outcomes --atlas` lists an area only when two distinct tasks there needed a later fix or closed weak (T-2764)
+- `fm friction` reports gates slow under machine load as one load line, not as regressions; `check_run` records the load per core (T-2763)
+- `fm shot --width W[,W…] --scheme light|dark|both` shoots the page matrix through one browser (T-2758)
+- A gate piped into `tail` or `head` without `pipefail` is refused with the fix named, instead of a note that was ignored (T-2765)
+- Louhi, Moons and Underworld pages are built from the tower's own records (exam runs, the moonshot catalogue, the not-yet list), with real-number dials and one scene mark per record; the Moons page reads its tiers from the catalogue (T-2767, T-2777)
+- The hook's committed-library fallback runs only committed code: an import finder serves every `sampo.*` module and the guard from HEAD, so an uncommitted sibling module can no longer run under the guard (T-2781)
+- The library is the `sampo` package (`plugin/lib/sampo/`); every old `fmX` import path stays as a shim (T-2748)
+- The skills, commands and output style say Sampo, with Smith, Rune, Louhi and the Ward where a line means one; plugin ids, paths and `fm` command spellings stay (T-2768)
+- Tab completion and `fm help --all` teach the Sampo names: completion offers them and walks each to its old verb's subcommands, the shell hook completes `sampo` as well as `fm` (T-2775)
+- `sampo` is Foreman's new name, and every old name still works: `sampo smith`, `rune`, `louhi`, `moons`, `underworld` and `ward` run as `code`, `genesis`, `exam`, `genesis moonshot`, `genesis underworld` and `guard`; `fm` says once a day on a terminal that it is now `sampo`; `SAMPO_*` env wins over `FOREMAN_*`; commits say `Sampo-Task` and both trailers are read (T-2766)
 - The landing page is in the forge world: the Sampo mill turns over a forge-glow shader while runes write the headline, the stats are gears and dials of Sampo's real totals, a forge strikes beside the Smith section, and one paragraph tells where the names come from. The shader comes to rest within five seconds, runs again under the pointer, and stops offscreen; the page is complete with no JS and under reduced motion.
 - README and INSTALL now say Sampo. They carry the Runestone header in light and dark, the new verbs (`sampo smith`, `rune`, `moons`, `louhi`, `underworld`, `ward`), the Kalevala paragraph that explains the names (once), and an upgrade note listing what keeps working: `fm`, `foreman@foreman`, `/foreman:`, `FOREMAN_*`, `Foreman-Task` and `~/.claude/foreman`.
 - The site's charts now use Sampo's palette: bronze, rune blue, ember, verdigris, violet and rose. `design/sampo/tokens.json` holds six chart colours per theme, each at least 3:1 against the chart panel and well apart in hue from its neighbours. The site's chart variables and the design preview are generated from that file, and the old blue is gone.
