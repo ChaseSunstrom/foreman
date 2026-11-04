@@ -317,6 +317,13 @@ def _message(block, ctx):
     else:
         how = (f"create or focus a task first (sampo task new \"…\" --type T --tier S, or sampo focus ID), "
                f"then sampo task set <ID> --allow {cat}, then retry")
+    trusted, standing = getattr(ctx, "trusted", False), "core" in (getattr(ctx, "standing", None) or ())
+    if cat == "core" and (trusted or standing) and _plain_path(detail) is None:
+        # T-2859: the yes covers this change as plain file edits; only the form can't be read ('stop asking me')
+        yes = "Trust (/fm-trust on)" if trusted else "The standing core yes"
+        return (f"Foreman guard: blocked core: {detail}. {yes} covers this change made as plain file edits, not in "
+                f"this form: use the Edit or Write tool on each file (or a draft, then sampo edit < draft). No "
+                f"question for the user.")
     if cat in USER_ONLY:  # rules/foreman.md, README and MASTER name these categories too
         what = f"{detail} is protected core" if cat == "core" else detail
         return f"Foreman guard: blocked {cat}: {what}. To authorize: " + _ASK.format(id=tid, cat=cat) + "."

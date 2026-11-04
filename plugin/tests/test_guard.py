@@ -826,6 +826,26 @@ class Core(GuardCase):
         self.assertIsNone(run("sed -i s/a/b/ plugin/lib/fmguard.py", trusted=True))
         self.assertBlocked(run("cp -r /tmp/a {fhome}/plugin", trusted=True), "core")
 
+    def test_a_yes_that_covers_the_change_never_says_ask_the_user(self):
+        # T-2859: 'stop asking me for stuff' (2026-11-03) came after a form-only core block said "then ask the user"
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
+
+        def msg(cmd, **kw):
+            ctx = g.Ctx(cwd=self.fhome, project_root=None, home=self.home, foreman_home=self.fhome, scratch=["/tmp"],
+                        task_id="T-0007", **kw)
+            b = g.check("Bash", {"command": self.sub(cmd)}, ctx)
+            self.assertIsNotNone(b, cmd)
+            return g.message(b, ctx)
+        form_only = ("cp -r /tmp/a {fhome}/plugin", {"trusted": True})  # a tree write: the yes covers per-file edits
+        heredoc = ("cd {fhome}; python3 - <<'EOF'\nfrom sampo import moons\nprint(moons.MIX)\nEOF", {"standing": {"core"}})
+        for cmd, kw in (form_only, heredoc):
+            m = msg(cmd, **kw)
+            self.assertNotIn("ask the user", m, cmd)
+            self.assertIn("Edit or Write", m, cmd)
+        guard = msg("sed -i s/a/b/ plugin/lib/fmguard.py", standing={"core"})  # never covered by a standing yes alone
+        self.assertIn("ask the user", guard)
+        self.assertIn("ask the user", msg("cp -r /tmp/a {fhome}/plugin"))  # no yes at all
+
     def test_clobber_redirect(self):  # T-0358: >| was one word, so its target went unchecked
         self.run_table([
             ("echo x >| {fhome}/plugin/lib/fmguard.py", "core"),
