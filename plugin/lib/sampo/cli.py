@@ -7759,7 +7759,10 @@ def _build_parser(only=None):
     s.add_argument("--target", type=int, help="moonshot grow: stop when the candidate store holds N (default: one batch "
                                               "more)")
     s.add_argument("--batch", type=int, default=8, help="moonshot grow: moons asked of each call (default 8, at most 50)")
-    s.add_argument("--max-calls", type=int, help="moonshot grow: stop after M model calls")
+    s.add_argument("--max-calls", type=int, help="moonshot grow/funnel: stop after M model calls")
+    s.add_argument("--stage", choices=("exact", "embed", "kill", "tier", "novelty"),
+                   help="moonshot funnel: run this stage alone (default: all, cheapest first)")
+    s.add_argument("--max", type=int, help="moonshot promote: at most N family leads (default 3)")
     s.add_argument("--author", choices=("self", "child"), default="self",
                    help="exam: child = each project's defect and G-line's MUST/NEVER lines come from a tool-less model, "
                         "so #13 scores on scenarios Sampo didn't write (T-2215)")

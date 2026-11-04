@@ -253,6 +253,10 @@ def _profile(name, d, where):
                 type(v) in (int, float) and 0 <= v < 1e6 for v in price.values())):
             bad('price must be {"in": USD, "out": USD} per million tokens')
         p["price"] = price
+    if d.get("embed_model") is not None:  # T-2869: the /embeddings model when the chat model can't embed
+        if not (isinstance(d["embed_model"], str) and d["embed_model"]):
+            bad("embed_model must be a model name")
+        p["embed_model"] = d["embed_model"]
     p["base_url"] = p["base_url"].rstrip("/")
     return p
 
@@ -701,10 +705,8 @@ def _cli(profile, messages, timeout):
             "stop": "end", "usd": got.get("total_cost_usd")}
 
 
-def complete(profile, messages, tools=None, max_tokens=2048, timeout=120):
-    if profile.get("kind") == "cli":
-        return _cli(profile, messages, timeout)
-    base = (profile.get("base_url") or "").rstrip("/")
+def _key(profile):
+    """The profile's key from its key_env, None when it names none; unset or holding control characters raises."""
     env, key = profile.get("key_env"), None
     if env:
         key = (os.environ.get(env) or "").strip()
@@ -712,6 +714,34 @@ def complete(profile, messages, tools=None, max_tokens=2048, timeout=120):
             raise ModelError(f"profile {profile.get('name')!r}: {env} is not set")
         if any(ord(ch) < 32 or ord(ch) == 127 for ch in key):
             raise ModelError(f"profile {profile.get('name')!r}: {env} holds control characters")
+    return key
+
+
+def embed(profile, texts, timeout=120):
+    """T-2869: one vector per text from an OpenAI-shaped /embeddings, with complete's key, loopback and redirect rules.
+    The model is the profile's embed_model, else its model. A reply of the wrong shape raises ModelError."""
+    if profile.get("kind") != "openai":
+        raise ModelError(f"profile {profile.get('name')!r}: only an openai profile embeds")
+    base, key = (profile.get("base_url") or "").rstrip("/"), _key(profile)
+    _check_url(profile, base, key)
+    texts = list(texts)
+    r = _post(base + "/embeddings", {"model": profile.get("embed_model") or profile.get("model"), "input": texts},
+              {"Authorization": f"Bearer {key}"} if key else {}, timeout, key)
+    data = _of(_of(r, dict).get("data"), list)
+    if len(data) != len(texts) or not all(isinstance(d, dict) for d in data):
+        raise ModelError(f"profile {profile.get('name')!r}: /embeddings gave {len(data)} vectors for {len(texts)}")
+    data = sorted(data, key=lambda d: d.get("index") if type(d.get("index")) is int else 0)
+    vecs = [d.get("embedding") for d in data]
+    if not all(isinstance(v, list) and v and all(type(x) in (int, float) for x in v) for v in vecs):
+        raise ModelError(f"profile {profile.get('name')!r}: /embeddings gave a vector that isn't a list of numbers")
+    return vecs
+
+
+def complete(profile, messages, tools=None, max_tokens=2048, timeout=120):
+    if profile.get("kind") == "cli":
+        return _cli(profile, messages, timeout)
+    base = (profile.get("base_url") or "").rstrip("/")
+    key = _key(profile)
     _check_url(profile, base, key)
     if profile.get("kind") == "anthropic":
         system, msgs = to_anthropic(messages)

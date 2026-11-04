@@ -1202,6 +1202,9 @@ def export(p, out):
     from sampo import moons
     if (ms := moons.export(p))["total"]:  # T-2626: the moonshot catalogue, both tiers, stage, asked or not
         data["moonshots"] = ms
+    from sampo import moonscale
+    if (sc := moonscale.export(p))["funnel"]["generated"]:  # T-2869: the funnel's counts and the top families
+        data["moons_scale"] = sc
     if st := ssteer.latest(p, held=True):  # T-2625: the steer-expansion exam's newest run, its held-out rate on the page
         data["steer"] = {k: st.get(k) for k in ("run", "at", "model", "judge", "cases", "failed", "harmful", "holdout",
                                                 "train")}
@@ -4042,11 +4045,20 @@ def cmd_genesis(args):
                 return scli.out(args, r, "\n".join(f"{x['id']} {x['next']} ({x['tier']}"
                                                     + (f", unblocks {x['unblocks']}" if x["unblocks"] else "") + f"): "
                                                     + x["title"] for x in r) or "Nothing to climb yet.")
-            if verb in ("grow", "coverage"):  # T-2868: Moonscale, the candidate store at scale
+            if verb in ("grow", "coverage", "funnel", "families", "promote"):  # T-2868/T-2869: Moonscale
                 from sampo import moonscale
                 if verb == "grow":
                     r = moonscale.grow(p, args.target, args.batch, args.seed, args.max_calls)
                     return scli.out(args, r, moonscale.grow_line(r))
+                if verb == "funnel":
+                    r = moonscale.funnel(p, args.stage, args.max_calls)
+                    return scli.out(args, r, moonscale.funnel_line(r))
+                if verb == "families":
+                    r = moonscale.families(p)
+                    return scli.out(args, r, moonscale.families_line(r))
+                if verb == "promote":
+                    r = moonscale.promote(p, 3 if args.max is None else args.max)
+                    return scli.out(args, r, moonscale.promote_line(r))
                 r = moonscale.coverage(p, args.seed)
                 return scli.out(args, r, moonscale.coverage_lines(r))
             if verb != "status":
@@ -4054,7 +4066,8 @@ def cmd_genesis(args):
                     bad = moons.check(p)
                     scli.out(args, {"problems": bad}, "\n".join(bad) or "Moonshot catalogue: no problems.")
                     return 1 if bad else 0
-                raise scli.UsageError("fm genesis moonshot [status|rate|order|check|grow|coverage]")
+                raise scli.UsageError("fm genesis moonshot [status|rate|order|check|grow|coverage|funnel|families|"
+                                      "promote]")
             s = moons.summary(p)
             return scli.out(args, s, "\n".join(moons.seed_lines(p, current(p) or 1)))  # this generation's work
         if action == "novelty":
