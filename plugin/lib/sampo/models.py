@@ -48,6 +48,7 @@ import shlex
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import unicodedata
@@ -55,7 +56,27 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from sampo.core import foreman_home
+from sampo.core import foreman_home, state_dir
+
+CALLS, CALLS_CAP = "calls.jsonl", 4 << 20  # T-3014: ~150 B a call, ~1.5 MB a busy day; one .1 file past the cap
+CALLS_ENV = "SAMPO_CALLS"  # set by the CLI, inherited: an exam's Smith runs under a temp home and still logs here
+
+
+def note_call(profile, kind=None):
+    """T-3014: one row per model call (when, to which model, which verb asked) for sampo watch --web's lanterns and
+    sparks. A local endpoint's row names the model (as Ollama lists it), a remote one the profile. Never fails a call."""
+    try:
+        host = urllib.parse.urlsplit(profile.get("base_url") or "").hostname or ""
+        to = profile.get("model") if host in ("127.0.0.1", "localhost", "::1") else profile.get("name") or profile.get("model")
+        words = [a for a in sys.argv[1:4] if re.fullmatch(r"[a-z][a-z-]*", a)]
+        path = os.environ.get(CALLS_ENV) or os.path.join(state_dir(), CALLS)
+        if os.path.exists(path) and os.path.getsize(path) > CALLS_CAP:
+            os.replace(path, path + ".1")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "to": str(to or "?"),
+                                "from": " ".join(words) or "sampo", **({"kind": kind} if kind else {})}) + "\n")
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
 
 TRIES, RETRY_CAP, MAX_BODY, PROBE_TIMEOUT = 3, 20.0, 32 << 20, 0.3
 ANTHROPIC_VERSION = "2023-06-01"
@@ -866,6 +887,7 @@ def embed(profile, texts, timeout=120):
         raise ModelError(f"profile {profile.get('name')!r}: only an openai profile embeds")
     base, key = (profile.get("base_url") or "").rstrip("/"), _key(profile)
     _check_url(profile, base, key)
+    note_call(profile, "embed")
     texts = list(texts)
     r = _post(base + "/embeddings", {"model": profile.get("embed_model") or profile.get("model"), "input": texts},
               {"Authorization": f"Bearer {key}"} if key else {}, timeout, key)
@@ -888,6 +910,7 @@ def complete(profile, messages, tools=None, max_tokens=2048, timeout=120, think=
     base = (profile.get("base_url") or "").rstrip("/")
     key = _key(profile)
     _check_url(profile, base, key)
+    note_call(profile)
     if profile.get("kind") == "anthropic":
         system, msgs = to_anthropic(messages)
         body = {"model": profile.get("model"), "max_tokens": max_tokens, "messages": msgs}

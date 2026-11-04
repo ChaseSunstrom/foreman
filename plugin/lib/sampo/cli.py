@@ -8655,6 +8655,8 @@ def _now_sampo():
 def main(argv=None):
     if argv is None:  # a command line, not an in-process call (the hooks)
         _now_sampo()
+        # T-3014: the live page's call log; children (an exam's Smith under a temp home) inherit the real one
+        os.environ.setdefault("SAMPO_CALLS", os.path.join(c.state_dir(), "calls.jsonl"))
     argv = sys.argv[1:] if argv is None else argv
     argv, aliased = _alias(list(argv))
     if aliased:

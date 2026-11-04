@@ -43,6 +43,7 @@ os.environ.setdefault("FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
 from sampo import setup  # noqa: E402
 for _k in setup.ENV:
     os.environ.pop(_k, None)
+os.environ.pop("SAMPO_CALLS", None)  # T-3014: a test run under sampo check never logs into the live page's calls
 
 
 def valid_m_plan():

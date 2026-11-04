@@ -65,6 +65,67 @@ class Snapshot(ForemanTestCase):
         self.assertNotIn("a" * 40, json.dumps(s))
         self.assertTrue(old)
 
+    def test_logged_model_calls_become_lanterns_and_flows(self):  # T-3014 live: Jarvis and Smith never showed
+        from sampo import models
+        with mock.patch.object(models.sys, "argv", ["sampo", "exam", "run", "s5-019", "--model", "jarvis"]):
+            models.note_call({"name": "jarvis", "model": "qwen3.8-27b", "base_url": "https://jarvis.example/llm/v1"})
+        with mock.patch.object(models.sys, "argv", ["sampo", "playbooks", "small", "grow"]):
+            models.note_call({"name": "gpu-qwen4", "model": "qwen3.5:4b", "base_url": "http://127.0.0.1:11434/v1"})
+        with mock.patch.object(live, "_get_json", return_value=None):
+            s = live.snapshot(self.p)
+        self.assertEqual(sorted((f["from"], f["to"], f["kind"]) for f in s["flows"]),
+                         [("exam run", "jarvis", "act"), ("playbooks small grow", "qwen3.5:4b", "write")])
+        m = {x["name"]: x for x in s["models"]}
+        self.assertEqual((m["jarvis"]["where"], m["jarvis"]["calls_5m"]), ("remote", 1))
+
+    def test_a_child_under_a_temp_home_logs_to_the_inherited_file(self):  # T-3014: exam Smith runs
+        from sampo import models
+        path = os.path.join(self.tmp, "real-calls.jsonl")
+        with mock.patch.dict(os.environ, {"SAMPO_CALLS": path}):
+            models.note_call({"name": "jarvis", "model": "qwen3.8-27b", "base_url": "https://jarvis.example/v1"})
+        with open(path) as f:
+            self.assertEqual(json.loads(f.read())["to"], "jarvis")
+        self.assertFalse(os.path.exists(os.path.join(c.state_dir(), models.CALLS)))
+
+    def test_complete_and_embed_log_their_calls_even_when_the_call_fails(self):  # T-3014 review
+        from sampo import models
+        prof = {"name": "gpu-x", "kind": "openai", "base_url": "http://127.0.0.1:11434/v1", "model": "m:1", "key_env": None}
+        with mock.patch.object(models, "_post", side_effect=models.ModelError("down")):
+            for call in (lambda: models.complete(prof, [{"role": "user", "content": "hi"}]),
+                         lambda: models.embed(prof, ["a"])):
+                with self.assertRaises(models.ModelError):
+                    call()
+        with open(os.path.join(c.state_dir(), models.CALLS)) as f:
+            rows = [json.loads(x) for x in f]
+        self.assertEqual([(r["to"], r.get("kind")) for r in rows], [("m:1", None), ("m:1", "embed")])
+        with mock.patch.object(live, "_get_json", return_value=None):
+            self.assertIn("embed", [f["kind"] for f in live.snapshot(self.p)["flows"]])
+
+    def test_the_cli_hands_its_call_log_to_children(self):  # T-3014 review: an exam's Smith under a temp home
+        from sampo import cli
+        with mock.patch.dict(os.environ), mock.patch.object(cli.sys, "argv", ["sampo", "--version"]):
+            os.environ.pop("SAMPO_CALLS", None)
+            with self.assertRaises(SystemExit):
+                cli.main()
+            self.assertEqual(os.environ.get("SAMPO_CALLS"), os.path.join(c.state_dir(), "calls.jsonl"))
+
+    def test_the_call_log_rotates_past_its_cap(self):
+        from sampo import models
+        with mock.patch.object(models, "CALLS_CAP", 200):
+            for _ in range(10):
+                models.note_call({"name": "gpu-qwen4", "model": "qwen3.5:4b", "base_url": "http://127.0.0.1:11434/v1"})
+        path = os.path.join(c.state_dir(), models.CALLS)
+        self.assertLessEqual(os.path.getsize(path), 200 + 200)
+        self.assertTrue(os.path.exists(path + ".1"))
+
+    def test_events_read_in_words(self):  # T-3014 live: the ticker printed {"file": "/home/…", "tool": "Edit"}
+        c.log_event(self.p, "touched", task="T-0001", data={"file": "/home/x/proj/plugin/tests/test_traces.py", "tool": "Edit"})
+        c.log_event(self.p, "evidence", task="T-0001", data={"step": 3, "ac": None, "cmd": "python3 plugin/bin/sampo shot x"})
+        text = {e["kind"]: e["text"] for e in live.snapshot(self.p)["events"]}
+        self.assertEqual(text["touched"], "T-0001 Edit test_traces.py")
+        self.assertEqual(text["evidence"], "T-0001 step 3 · python3 plugin/bin/sampo shot x")
+        self.assertNotIn("{", text["touched"] + text["evidence"])
+
     def test_the_snapshot_is_cached_a_moment(self):
         with mock.patch.object(live, "_procs", return_value=[]) as g:
             live.snapshot(self.p)
@@ -152,6 +213,21 @@ class Serve(ForemanTestCase):
             self.assertEqual(self.req("/static/..%2Flive.css")[0], 404)
             self.assertEqual(self.req("/static/../../x")[0], 404)
             self.assertEqual(self.req("/static/missing.js")[0], 404)
+
+    def test_fonts_are_served_as_bytes(self):  # T-3014 live: every font fell back, _static 404'd anything not text
+        self.login()
+        d = os.path.join(self.tmp, "web")
+        os.makedirs(d)
+        raw = b"wOF2\x00\x01\xff\xfe" * 8
+        with open(os.path.join(d, "A-normal.woff2"), "wb") as f:
+            f.write(raw)
+        with mock.patch.object(live, "WEB", d):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("GET", "/static/A-normal.woff2", headers={"Host": f"127.0.0.1:{self.port}", "Cookie": self.cookie})
+            r = conn.getresponse()
+            self.assertEqual((r.status, r.getheader("Content-Type"), r.read()), (200, "font/woff2", raw))
+            conn.close()
+            self.assertEqual(self.req("/static/..%2FA-normal.woff2")[0], 404)
 
     def test_the_stream_sends_state_events(self):
         self.login()

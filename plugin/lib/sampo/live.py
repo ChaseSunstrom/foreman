@@ -42,6 +42,8 @@ JOBS = ((r"moons funnel", "funnel"), (r"playbooks small grow", "grow"), (r"exam 
 FLOW_OF = {"cards_grow": ("card grow", "write"), "moons_grow": ("moon grow", "write"),
            "moons_funnel": ("moon funnel", "judge"), "run_session": ("session run", "act"),
            "genesis_confirm": ("genesis", "review"), "genesis_review": ("genesis", "review")}
+CALL_KINDS = ((r"grow|card|write", "write"), (r"funnel|judge|moon", "judge"), (r"embed", "embed"), (r"train", "train"),
+              (r"plan", "plan"), (r"review|audit", "review"))  # T-3014: the calling verb's spark colour; else act
 _CACHE, _LOCK = {}, threading.Lock()
 
 
@@ -170,6 +172,10 @@ def _calls(p):
         f, at = str(e.get("feature") or ""), str(e.get("ts") or "")
         if f and at >= since:
             out.append((at, f, "claude", "review" if re.search("review|audit", f) else "plan" if "plan" in f else "act"))
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "calls.jsonl"), 400):  # T-3014: every models.complete call
+        f, at, to = str(e.get("from") or ""), str(e.get("ts") or ""), str(e.get("to") or "")
+        if to and at >= since:
+            out.append((at, f, to, str(e.get("kind") or next((k for pat, k in CALL_KINDS if re.search(pat, f)), "act"))))
     return sorted(out, reverse=True)
 
 
@@ -218,13 +224,25 @@ def events(p):
     """The ledger's and state/events.jsonl's newest, plain text, redacted (hook timing and tool rows are noise)."""
     rows = []
     for e in c.ledger_tail(p, 80):
-        rows.append((str(e.get("ts") or ""), str(e.get("event") or ""),
-                     f"{e.get('task') or ''} {json.dumps(e.get('data') or {}, ensure_ascii=False)}".strip()))
+        d = e.get("data") if isinstance(e.get("data"), dict) else {}
+        rows.append((str(e.get("ts") or ""), str(e.get("event") or ""), f"{e.get('task') or ''} {_words(d)}".strip()))
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 200):
         if e.get("kind") not in ("hook_ms", "tool"):
-            rows.append((str(e.get("ts") or ""), str(e.get("kind") or ""),
-                         json.dumps({k: v for k, v in e.items() if k not in ("ts", "kind", "session_id")}, ensure_ascii=False)))
+            rows.append((str(e.get("ts") or ""), str(e.get("kind") or ""), _words(e)))
     return [{"at": at, "kind": k, "text": c.fit(c.redact(t), 160)} for at, k, t in sorted(rows, reverse=True)[:60]]
+
+
+_QUIET = {"ts", "kind", "session_id", "task", "project", "h", "prev", "hash", "file", "tool", "step"}
+
+
+def _words(d):
+    """T-3014: a payload as the ticker's words, never JSON: the tool, the file's name and the step, then counts, then
+    its prose fields: `Edit test_traces.py`, `step 3 · python3 plugin/bin/sampo shot x`."""
+    head = [str(d[k]) for k in ("tool",) if d.get(k)] + ([os.path.basename(str(d["file"]))] if d.get("file") else [])
+    head += [f"step {d['step']}"] if d.get("step") is not None else []
+    head += [f"{k} {v}" for k, v in d.items() if k not in _QUIET and isinstance(v, (int, float)) and not isinstance(v, bool)]
+    prose = [v for k, v in d.items() if k not in _QUIET and isinstance(v, str) and v]
+    return " · ".join(x for x in (" ".join(head), *prose) if x)
 
 
 def stats(p):
@@ -285,9 +303,9 @@ class Handler(settingsserve.Handler):
             if not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9._-]*", name) or ext not in TYPES:
                 raise OSError
             with open(os.path.join(WEB, name), "rb") as f:
-                data = f.read(4 << 20).decode("utf-8") if ext in (".css", ".js", ".svg", ".json") else None
-                if data is None:
-                    return self._send(404, "not found")
+                data = f.read(4 << 20)
+            if ext in (".css", ".js", ".svg", ".json"):
+                data = data.decode("utf-8")
         except (OSError, UnicodeDecodeError):
             return self._send(404, "not found")
         self._send(200, data, ctype=TYPES[ext] + ("; charset=utf-8" if ext in (".css", ".js", ".svg", ".json") else ""))
