@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, customColors, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
+import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, customColors, elapsed, PALETTES, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
 import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts, usable } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
@@ -1570,7 +1570,7 @@ test("a saved palette in fm ui's view paints over the default, checked (T-1717)"
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect((await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color).toBe(hex(0x123456))
-  expect((await ui.find({ type: 'Text', text: 'step 1 passed' }))?.props.color).toBe(hex(0x87d787)) // a bad value: kept
+  expect((await ui.find({ type: 'Text', text: 'step 1 passed' }))?.props.color).toBe(hex(PALETTES.default.ok)) // a bad value: kept
   await ui.unmount()
 })
 
@@ -1588,8 +1588,8 @@ test("palette 'cb' swaps the ok/err colours and the error still carries a glyph 
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   const failed = await ui.find({ type: 'Text', text: 'step 1 failed' })
   const passed = await ui.find({ type: 'Text', text: 'step 1 passed' })
-  expect(failed?.props.color).not.toBe(hex(0xff6b6b))
-  expect(passed?.props.color).not.toBe(hex(0x87d787))
+  expect(failed?.props.color).not.toBe(hex(PALETTES.default.err))
+  expect(passed?.props.color).not.toBe(hex(PALETTES.default.ok))
   expect(failed?.props.color).toBe(hex(0xe69f00))
   expect(passed?.props.color).toBe(hex(0x56b4e9))
   expect(await ui.find({ type: 'Text', text: '✗' })).toBeDefined()
@@ -1608,7 +1608,7 @@ test("palette 'riso' paints ok and errors in fm code's risograph inks, and defau
   expect(await color('step 1 passed')).toBe(hex(0x00a95c))
   opts.palette = 'default'
   await clock.advance(2000)
-  expect(await color('step 1 failed')).toBe(hex(0xff6b6b))
+  expect(await color('step 1 failed')).toBe(hex(PALETTES.default.err))
   await ui.unmount()
 })
 
@@ -1616,7 +1616,8 @@ test('kit: a task type and a lane take the active palette, not the one at load (
   setPalette('riso')
   expect([typeColor('CLEAN'), typeColor('FEATURE'), typeColor('FIX')]).toEqual([hex(0x62a8e5), hex(0xffb511), hex(0xff48b0)])
   setPalette('default')
-  expect([C.accent, C.accent2, typeColor('FEATURE'), typeColor('FIX')]).toEqual([0x5fd7d7, 0x87afff, hex(0x87afff), hex(0xff6b6b)])
+  const D = PALETTES.default // T-2853: the default follows the forge palette, not a literal
+  expect([C.accent, C.accent2, typeColor('FEATURE'), typeColor('FIX')]).toEqual([D.accent, D.accent2, hex(D.accent2), hex(D.err)])
 })
 
 // T-1574: the engine's /config rows for the mod's options, read live from `opts` (what /config or fm settings set holds)
@@ -1633,7 +1634,7 @@ test('a motion or palette changed in the settings applies on the next poll, no r
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   const failedColor = async () => (await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color
   await clock.advance(2000)
-  expect(await failedColor()).toBe(hex(0xff6b6b))
+  expect(await failedColor()).toBe(hex(PALETTES.default.err))
   opts.palette = 'cb'
   opts.motion = 'off'
   await clock.advance(2000) // one poll

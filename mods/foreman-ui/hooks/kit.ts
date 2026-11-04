@@ -1,21 +1,21 @@
 // The visual kit: palette, true-color Raster bars for the terminal and their text twins for other surfaces, the
 // spinner, and how each tool call reads while it runs. Pure functions: no $, so every surface and test can use them.
 
-export const C = {
-  accent: 0x5fd7d7,
-  accent2: 0x87afff,
-  ok: 0x87d787,
-  warn: 0xffd75f,
-  err: 0xff6b6b,
-  edit: 0xffaf5f,
-  agent: 0xd787ff,
-  web: 0x87d7af,
-  skill: 0xf5a3c7,
+export const C = { // T-2853: the forge (design/sampo/tokens.json's night theme and 12's fire colours)
+  accent: 0xffc24d, // the fire's gold: what runs now
+  accent2: 0x6e9bff, // the blue flame: reading rows, far from the gold
+  ok: 0x6fd8a0,
+  warn: 0xc8dc5a,
+  err: 0xff85bc,
+  edit: 0xff9440, // the forge's orange
+  agent: 0xbc8bff, // the violet flame
+  web: 0x4dd0e1,
+  skill: 0xf0d392, // pale brass
   dim: 0x6c7686,
-  muted: 0x9aa3b0, // T-1026: secondary text that still reads; dim is for the least of it
+  muted: 0x9097bc, // T-1026: secondary text that still reads; dim is for the least of it
   add: 0xa8d5a2, // diff text: softer than ok/err, which stay on the +/- signs (T-0143: 'weird in contrast')
   del: 0xe0a3a3,
-  track: 0x30363f,
+  track: 0x2a2c33, // the anvil's iron
   white: 0xffffff,
 }
 
@@ -23,7 +23,7 @@ export const C = {
 // T-1512: riso, fm code's risograph inks for a dark background (fmcodetui.RISO["night"]): green, fluorescent pink,
 // cornflower and sunflower (accent and accent2 stay far apart: running and reading rows)
 export const PALETTES = {
-  default: { ok: 0x87d787, err: 0xff6b6b, accent: 0x5fd7d7, accent2: 0x87afff },
+  default: { ok: 0x6fd8a0, err: 0xff85bc, accent: 0xffc24d, accent2: 0x6e9bff },
   cb: { ok: 0x56b4e9, err: 0xe69f00, accent: 0x5fd7d7, accent2: 0x87afff },
   riso: { ok: 0x00a95c, err: 0xff48b0, accent: 0x62a8e5, accent2: 0xffb511 },
 }

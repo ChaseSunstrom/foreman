@@ -415,3 +415,40 @@ class DesignPlugin(unittest.TestCase):  # T-1652: the design skills as an option
             link = os.path.join(base, "skills", s)
             self.assertTrue(os.path.islink(link) and os.path.isfile(os.path.join(link, "SKILL.md")), s)
             self.assertTrue(os.path.realpath(link).startswith(os.path.join(os.path.realpath(PLUGIN), "skills")), s)
+
+
+class PaneForge(unittest.TestCase):  # T-2853: the pane wears the forge (the illustrated-forge theme, 2026-11-03)
+    TOKENS = os.path.join(os.path.dirname(PLUGIN), "design", "sampo", "tokens.json")
+
+    def palette(self):
+        text = read_text(KIT)
+        body = text[text.index("export const C = {"):text.index("}", text.index("export const C = {"))]
+        c = {k: int(v, 16) for k, v in re.findall(r"^\s*(\w+):\s*0x([0-9a-fA-F]{6})", body, re.M)}
+        d = text[text.index("default: {"):text.index("}", text.index("default: {"))]
+        return c, {k: int(v, 16) for k, v in re.findall(r"(\w+):\s*0x([0-9a-fA-F]{6})", d)}
+
+    @staticmethod
+    def lum(x):
+        ch = [((x >> s) & 255) / 255 for s in (16, 8, 0)]
+        ch = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in ch]
+        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+    def ratio(self, a, b):
+        x, y = sorted((self.lum(a), self.lum(b)), reverse=True)
+        return (x + 0.05) / (y + 0.05)
+
+    def test_the_default_palette_is_the_forge_and_reads_on_a_dark_terminal(self):
+        c, default = self.palette()
+        night = json.loads(read_text(self.TOKENS))["dark"]["color"]
+        tok = lambda k: int(night[k]["$value"][1:], 16)
+        self.assertEqual((c["accent"], c["ok"], c["warn"], c["err"]), (tok("glow"), tok("success"), tok("warning"),
+                                                                       tok("error")))
+        self.assertEqual(c["muted"], tok("text-muted"))
+        self.assertEqual({k: c[k] for k in default}, default, "setPalette('default') puts the same colours back")
+        for k in ("accent", "accent2", "ok", "warn", "err", "edit", "agent", "web", "skill", "muted"):
+            for bg in (0x1E1E1E, 0x060819):  # a common dark terminal, and the forge's night
+                self.assertGreaterEqual(self.ratio(c[k], bg), 4.5, f"{k} on #{bg:06x}")
+        far = lambda a, b: sum((((a >> s) & 255) - ((b >> s) & 255)) ** 2 for s in (16, 8, 0)) ** 0.5
+        for a, b in (("accent", "accent2"), ("accent", "warn"), ("ok", "err"), ("err", "edit"), ("skill", "err"),
+                     ("accent", "skill"), ("agent", "accent2"), ("ok", "web")):
+            self.assertGreater(far(c[a], c[b]), 60, f"{a} and {b} read apart")
