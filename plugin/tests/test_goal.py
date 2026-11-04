@@ -710,5 +710,85 @@ class GoalRedBefore(GoalBase):
         self.assertNotIn("goal_red", c.read_meta(self.p))
 
 
+DOC = """intro
+DONE-WHEN: every capability in §2 passes its held-out exam (including #13: a thing), the completeness sweep (§7) is clean, and two generations find no gap. It ends.
+
+## 1. Setup
+1. **Not this.** setup entry
+
+## 2. The spec
+
+1. **Initiative.** In any repo it finds work.
+2. Second entry without bold. More words here.
+    - a sub bullet that is no entry
+3. **Third.** x
+
+## 3. Later
+1. **Later one.** y
+"""
+
+
+class GoalDoc(GoalBase):  # T-2913
+    def setUp(self):
+        super().setUp()
+        import os
+        bindir = os.path.join(self.tmp, "bin")
+        os.makedirs(bindir)
+        with open(os.path.join(bindir, "claude"), "w") as fh:
+            fh.write(STUB)
+        os.chmod(os.path.join(bindir, "claude"), 0o755)
+        self.env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "STUB_LOG": os.path.join(self.tmp, "stub.log"),
+                    "STUB_REPLY": ""}
+        os.makedirs(os.path.join(self.repo, "research"))
+        with open(os.path.join(self.repo, "research", "spec.md"), "w") as fh:
+            fh.write(DOC)
+        with open(os.path.join(self.tmp, "outside.md"), "w") as fh:
+            fh.write("## 2. x\n1. **Leaked.** no\n")
+
+    def plan(self, goal, *extra):
+        self.fm("goal", "set", goal, "--no-end", "--replace")
+        return json.loads(self.fm("goal", "plan", "--json", *extra, env=self.env).stdout)
+
+    def users(self, got):
+        return [i["text"] for i in got["items"] if i["tag"] == "user"]
+
+    def test_a_cited_section_becomes_one_item_per_entry_and_per_done_when_clause(self):
+        u = self.users(self.plan("Build it per research/spec.md §2"))
+        self.assertEqual(u[:3], ["Initiative", "Second entry without bold", "Third"], u)
+        self.assertEqual(len(u), 6, u)  # 3 entries + 3 clauses; the sub bullet and the other sections are no entry
+        self.assertTrue(any(x.startswith("the completeness sweep") for x in u), u)
+        self.assertFalse(any("Later" in x or "Not this" in x for x in u), u)
+
+    def test_a_path_outside_the_repo_or_a_link_is_never_read(self):
+        import os
+        for goal in (f"Build it per {os.path.join(self.tmp, 'outside.md')} §2", "Build it per ../outside.md §2",
+                     "Build it per https://example.com/research/spec.md §2"):
+            u = self.users(self.plan(goal))
+            self.assertFalse(any("Leaked" in x or "Initiative" in x for x in u), (goal, u))
+
+    def test_the_plan_lists_no_text_twice_and_drops_a_model_line_on_a_standard_items_surface(self):
+        got = self.plan("Build it per research/spec.md §2")
+        texts = [" ".join(i["text"].lower().split()) for i in got["items"]]
+        self.assertEqual(len(texts), len(set(texts)), texts)
+        from sampo import mandate as sm
+        seen = sm._dedupe([{"tag": "standard", "text": "it works on the web surface"},
+                           {"tag": "model", "text": "works on the web surface"},
+                           {"tag": "model", "text": "cover a.py"}, {"tag": "model", "text": "Cover a.py."}])
+        self.assertEqual([i["text"] for i in seen], ["it works on the web surface", "cover a.py"])
+
+    def test_apply_gives_a_clause_the_check_it_names_and_the_verdict_names_each_unmet_item(self):
+        self.plan("Build it per research/spec.md §2")
+        self.fm("goal", "plan", "--apply", "--done-when", "true", env=dict(self.env))
+        items = json.loads(self.fm("goal", "show", "--json", check=False).stdout)["goal"]["items"]
+        by = {i["text"][:12]: i["done_when"] for i in items}
+        self.assertEqual(by["the complete"], "sampo rune check")
+        self.assertTrue(by["every capabi"].startswith("sampo exam scorecard"), by)
+        self.assertEqual((by["two generati"], by["Initiative"]), ("true", "true"))
+        out = self.fm("goal", "verdict", check=False).stdout
+        self.assertNotIn("the goal has no items", out)
+        self.assertIn("item 1 has no task", out)
+        self.assertIn("item 6 has no task", out)
+
+
 if __name__ == "__main__":
     unittest.main()

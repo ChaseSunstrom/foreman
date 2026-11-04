@@ -437,6 +437,109 @@ def _grounded(root, line, found, files, verbs):
     return None
 
 
+def _target(text):
+    """T-2913: what an item covers: ('surface', S), ('path', P) or ('verb', V), else None."""
+    import re
+    for kind, rx in (("surface", r"works on the (.+) surface$"), ("path", r"cover (\S+)$"), ("verb", r"fm (\S+) works")):
+        if m := re.search(rx, text):
+            return kind, m[1]
+    return None
+
+
+def _dedupe(items):
+    """T-2913: items in order, none twice by normalized text; a model item whose target (surface, path or verb) an
+    earlier item already has is dropped too."""
+    seen, targets, out = set(), set(), []
+    for i in items:
+        n, t = _norm(i["text"]), _target(_norm(i["text"]))
+        if n in seen or (i["tag"] == "model" and t and t in targets):
+            continue
+        seen.add(n)
+        targets.add(t)
+        out.append(i)
+    return out
+
+
+DOC_CAP = 200_000
+DOC_ITEMS = 40
+DOC_CHECKS = (("exam", "sampo exam scorecard"), ("sweep", "sampo rune check"))  # a clause's word -> the Sampo check it names
+
+
+def _doc_path(text, roots):
+    """T-2913: the first file the goal's words name that resolves (realpath) inside a root: a repo-relative or
+    research-relative .md/.txt token; a link, an absolute or '..' path, or a symlink out is never read."""
+    import os
+    import re
+    for tok in re.findall(r"[^\s()\[\]<>\"'`,;]+\.(?:md|txt)\b", text):
+        if "://" in tok or tok.startswith(("/", "~")) or ".." in tok.split("/"):
+            continue
+        for root in roots:
+            f = os.path.realpath(os.path.join(root, tok))
+            if os.path.isfile(f) and any(f.startswith(os.path.realpath(r) + os.sep) for r in roots):
+                return tok, f
+    return None, None
+
+
+def _section(body, text, tok):
+    """The lines of the section the goal names after the file (§N), else the whole file."""
+    import re
+    m = re.search(re.escape(tok) + r"\W{0,3}§\s*(\d+)", text) or re.search(r"§\s*(\d+)", text)
+    if not m:
+        return body.splitlines()
+    out, level = [], 0
+    for ln in body.splitlines():
+        h = re.match(r"(#{1,6})\s*(\d+)[.\s]", ln)
+        if h and not level and h[2] == m[1]:
+            level = len(h[1])
+        elif level and (h2 := re.match(r"(#{1,6})\s", ln)) and len(h2[1]) <= level:
+            break
+        elif level:
+            out.append(ln)
+    return out
+
+
+def _clauses(line):
+    """A DONE-WHEN line split on its top-level commas (a leading 'and' dropped), cut at the first sentence end."""
+    import re
+    line = re.split(r"\.\s", line, 1)[0].rstrip(".")
+    out, depth, cur = [], 0, ""
+    for ch in line:
+        depth += (ch in "([") - (ch in ")]")
+        if ch == "," and depth <= 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    return [x for x in (re.sub(r"(?i)^and\s+", "", s.strip()) for s in out + [cur]) if x]
+
+
+def doc_items(text, roots):
+    """T-2913: [(item text, check or None)] from the document a goal's words cite: one per top-level numbered entry
+    of the named section (§N; the whole file when none, bullets if nothing is numbered) and one per DONE-WHEN clause
+    of the file, the clause's own Sampo check where its words name one. Pure: no model, no write."""
+    import re
+    tok, f = _doc_path(text, roots)
+    if not f:
+        return []
+    try:
+        with open(f, encoding="utf-8", errors="replace") as fh:
+            body = c.plain_lines(fh.read(DOC_CAP))
+    except OSError:
+        return []
+    lines = _section(body, text, tok)
+    ent = [ln for ln in lines if re.match(r"\d+[.)]\s+\S", ln)] or [ln for ln in lines if re.match(r"[-*]\s+\S", ln)]
+    out = []
+    for ln in ent:
+        s = re.sub(r"^(?:\d+[.)]|[-*])\s+", "", ln)
+        b = re.match(r"\*\*(.+?)\*\*", s)
+        out.append((c.fit((b[1] if b else re.split(r"(?<=[.!?])\s", s, 1)[0]).strip().rstrip(".:"), 120), None))
+    for ln in body.splitlines():
+        if (d := re.match(r"(?i)done[ -]when:\s*(.+)", ln)):
+            for cl in _clauses(d[1]):
+                out.append((c.fit(cl, 120), next((chk for w, chk in DOC_CHECKS if w in cl.lower()), None)))
+    return out[:DOC_ITEMS]
+
+
 def _misses(p):
     """T-2136: the top 5 recent past misses: items added after a finished verdict (the goal_verdict event), and tasks
     reopened (a task_set to an open status) within 7 days of their task_done, and (T-2417) the newest done tasks fm
@@ -481,7 +584,9 @@ def plan(p, m):
     from sampo import cli
     verbs = set(cli.build_parser()._subparsers._group_actions[0].choices)  # once per plan; no public helper
     top = {f.split("/")[0].lower() for f in files}
-    items = [{"tag": "user", "text": x} for x in m.get("clauses") or [m["text"]]]
+    docs = doc_items(m["text"], [p.root, p.dir])  # T-2913: the document the goal cites is the user's own list
+    items = [{"tag": "user", "text": t, "check": k} for t, k in docs] or [
+        {"tag": "user", "text": x} for x in m.get("clauses") or [m["text"]]]
     std = ["tests cover the work"] if any("test" in f.lower() for f in files) else []
     std += [f"{n} updated" for n, k in (("MASTER.md", "master.md"), ("README", "readme.md"), ("CHANGELOG entry", "changelog.md"))
             if k in top]
@@ -503,7 +608,7 @@ def plan(p, m):
                 l = c.fit(l.strip()[2:].strip(), 120)
                 g = _grounded(p.root, l, found, set(files), verbs)
                 (items.append({"tag": "model", "text": g}) if g else proposals.append(l))
-    return {"items": items, "proposals": proposals, "checklist": _misses(p), "note": note}
+    return {"items": _dedupe(items), "proposals": proposals, "checklist": _misses(p), "note": note}
 
 
 def cmd_plan(p, args):
@@ -518,7 +623,13 @@ def cmd_plan(p, args):
         for i in got["items"]:
             if _norm(i["text"]) not in have:
                 have.add(_norm(i["text"]))
-                got["added"].append(add_item(p, i["text"], args.done_when, i["tag"])["text"])
+                try:  # T-2913: a clause's own check, else the floor every item gets
+                    it = add_item(p, i["text"], i.get("check") or args.done_when, i["tag"])
+                except cli.UsageError:
+                    if not i.get("check"):
+                        raise
+                    it = add_item(p, i["text"], args.done_when, i["tag"])
+                got["added"].append(it["text"])
     lines = [f"[{i['tag']}] {i['text']}" for i in got["items"]]
     lines += ["proposals (not added):"] * bool(got["proposals"]) + [f"  {x}" for x in got["proposals"]]
     lines += ["checklist:"] * bool(got["checklist"]) + [f"  {x}" for x in got["checklist"]]
