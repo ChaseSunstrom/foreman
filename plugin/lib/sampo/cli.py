@@ -7898,6 +7898,14 @@ def _build_parser(only=None):
     s.add_argument("--verifier", action="store_true", help="models: train the close-holds head on the lake's outcome labels "
                    "with whole projects held out; per-project AUC and false-done caught at 10%% false alarms to bench.jsonl, "
                    "weights to this project's research/models/verifier.json (T-2977)")
+    s.add_argument("--jeff", metavar="DIR", help="models: write Jeff Examples (intake-type from user tags, intake-tier from the "
+                   "scope size, close-holds from the outcome) to DIR as train/dev/temperature.jsonl, split by whole projects "
+                   "with --holdout in none (T-2970)")
+    s.add_argument("--holdout", metavar="HASH", help="models --jeff, --train-jeff: the project (lake hash) held out of every fold "
+                   "(default: the largest that leaves 60%% of the rows)")
+    s.add_argument("--train-jeff", action="store_true", help="models: export, then train a LoRA adapter on the Jeff v1.3 base "
+                   "through jeff-train into ~/.local/share/sampo/jeff/adapters/sampo-decide; refuses while another model holds "
+                   "the GPU; prints the jeff-sampo-decide profile line (T-2970)")
     s.add_argument("--loo", action="store_true", help="models: leave-one-project-out over the lake's projects: each held out "
                    "whole, per-project and pooled rows (coverage at each abstain threshold, Wilson bound, bootstrap lower bound "
                    "of the gain over today's path), a flip report against the last --loo run; --limit caps held-out rows (T-2976)")

@@ -1287,6 +1287,17 @@ def _backend_make(prof, timeout):
     return make
 
 
+def _held_out_only(make, holdout):
+    """T-2970: one adapter has one held-out project (`holdout`, its data's). In a --loo round whose train pool contains
+    that project the adapter has seen the held-out one, so it abstains there: only the round that holds `holdout` out
+    scores it. No recorded holdout (None): it trained on everything, so it never scores."""
+    def wrapped(train, use):
+        if holdout is None or any(r["project"] == holdout for r in train):
+            return lambda text: None
+        return make(train, use)
+    return wrapped
+
+
 def _boot_lb(ds, seed=LOO_SEED):
     """The LOO_Q quantile of the mean of `ds` (per-project deltas) over LOO_BOOT resamples of the projects."""
     rng = random.Random(seed)
@@ -4225,6 +4236,19 @@ def cmd_exam(args):
                 return cli.out(args, res, f"verifier: {res['rows']} closes, pooled held-out AUC {pl['auc']}, false-done caught at "
                                           f"10% false alarms {pl['caught_at_10pct_false_alarms']} (today lets {res['today']} by); "
                                           f"weights {'written' if res['weights'] else 'not written (a class is missing)'}")
+            if getattr(args, "jeff", None) or getattr(args, "train_jeff", False):  # T-2970: Sampo's own Jeff LoRA
+                from sampo import jeffexport as jx
+                if args.jeff:  # a ValueError (unknown holdout, Refused) becomes a usage error below
+                    info = jx.export(p, os.path.abspath(args.jeff), getattr(args, "holdout", None))
+                    n = info["counts"]
+                    return cli.out(args, info, f"jeff data in {os.path.abspath(args.jeff)}: holdout {info['holdout']}; "
+                                               + "; ".join(f"{k} {sum(v.values())}" for k, v in n.items()))
+                data = os.path.join(jx.jeff_home(), "data")
+                jx.export(p, data, getattr(args, "holdout", None))
+                res = jx.train(jx.jeff_home(), data)
+                line = json.dumps(res["profile"])
+                return cli.out(args, res, f"trained {res['step']} into {res['adapter']}; restart the Jeff server, then add "
+                                          f"this profile to models.json: {line}")
             if getattr(args, "loo", False):  # T-2976: whole projects held out; --adopt writes model-live / model-shadow
                 from sampo import models
                 try:
@@ -4234,6 +4258,9 @@ def cmd_exam(args):
                 lo = lambda x: models.is_loopback(urllib.parse.urlsplit(x["base_url"]).hostname or "")  # noqa: E731
                 cons = {"majority": _majority, "bm25": _bm25_vote, **{  # the lake holds no sensitive project, so any backend may read it
                     x["name"]: _backend_make(x, 120 if lo(x) else 300) for x in dec + models.systemone_profiles()}}
+                from sampo import jeffexport
+                if jeffexport.PROFILE in cons:  # T-2970: scored only in the round that holds out its own holdout
+                    cons[jeffexport.PROFILE] = _held_out_only(cons[jeffexport.PROFILE], jeffexport.holdout_of(p))
                 prev = _loo_runs(p)
                 res = loo_models(p, contestants=cons, cap=args.limit or BENCH_CAP)
                 msg = [f"{res['run']}: {len(res['rows'])} rows written to {BENCH}"] + [
