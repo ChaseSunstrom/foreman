@@ -3299,8 +3299,15 @@ def _session_arm(agent, base, key, work, model, budget, timeout, request=None):
 
 LOCAL = ("smith",)  # T-2908: fm code on a local model profile; not in SESSIONS (long.py and rune read those as Claude sessions)
 SMITH_T, SMITH_LOAD, SMITH_STEPS = 900, 300, 40  # T-2908: a scenario's seconds, extra for a remote endpoint's model load, turns
-FAILURE_CLASSES = ("malformed", "wrong_tool", "loop", "false_done", "timeout", "refused")
-_MALFORMED = re.compile(r"no valid|field by field|weren't a JSON object|needs \w+ as ")
+FAILURE_CLASSES = ("malformed", "wrong_tool", "loop", "false_done", "timeout", "refused",
+                   "budget", "plan_refused", "no_plan", "finish_refused")  # T-2926: the last four are how a run ends
+_MALFORMED = re.compile(r"field by field|weren't a JSON object|needs \w+ as ")
+# T-2926: an end's text -> its class, in order (models.py and smith.py word these)
+_ENDS = (("budget", re.compile(r"reasoning used the whole budget")),
+         ("plan_refused", re.compile(r"fm (?:task new|focus) refused the plan")),
+         ("no_plan", re.compile(r"gave no valid plan")),
+         ("finish_refused", re.compile(r"fm task finish refused")),
+         ("loop", re.compile(r"used all \d+ turns")))
 EVENTS_CAP = 2 << 20  # bytes of one scenario's event log kept
 
 
@@ -3349,6 +3356,18 @@ def _smith_arm(base, key, work, model, request, events):
             "model": c.plain(model)[:60]}
 
 
+def _end_text(text):
+    return next((k for k, rx in _ENDS if rx.search(text)), None)
+
+
+def end_class(events):
+    """T-2926: the one class a scenario's stream ended in: closed, a FAILURE_CLASSES name, or other."""
+    end = next((e for e in reversed(events) if e.get("event") in ("closed", "blocked", "error", "answer", "timeout")), {})
+    if end.get("event") == "closed":
+        return "closed"
+    return "timeout" if end.get("event") == "timeout" else _end_text(str(end.get("text") or "")) or "other"
+
+
 def failure_classes(events):
     """T-2908: {class: count} of what went wrong in one Smith event stream (only the nonzero classes). malformed: a
     reply fm code couldn't read or an action whose arguments were wrong; wrong_tool: an action Smith doesn't have; loop:
@@ -3358,7 +3377,10 @@ def failure_classes(events):
     seen = {}
     for e in events:
         kind, text = e.get("event"), str(e.get("text") or "") + str(e.get("detail") or "")
-        if kind in ("error", "blocked") and _MALFORMED.search(text):
+        named = kind in ("error", "blocked") and _end_text(text)
+        if named and named != "loop":
+            n[named] += 1
+        elif kind in ("error", "blocked") and _MALFORMED.search(text) and not named:
             n["malformed"] += 1
         elif kind == "note" and "field by field" in text:
             n["malformed"] += 1
@@ -3388,11 +3410,13 @@ def taxonomy(p, run, agent="smith"):
     """T-2908: the failure classes over a run's answered scenarios: {run, agent, model, scenarios, classes: {class:
     {count, scenarios, rate}}} with every class listed, most common first. rate: the share of scenarios it hit."""
     load(p, run)
-    answers, per = _answers(p, run, agent), []
+    answers, per, ends = _answers(p, run, agent), [], {}
     for name in sorted(os.listdir(answers)) if os.path.isdir(answers) else ():
         if name.endswith(".events.jsonl"):
             with open(os.path.join(answers, name), encoding="utf-8", errors="replace") as f:
-                per.append(failure_classes([e for e in (_json_line(ln) for ln in f) if e]))
+                evs = [e for e in (_json_line(ln) for ln in f) if e]
+                per.append(failure_classes(evs))
+                ends[end_class(evs)] = ends.get(end_class(evs), 0) + 1
     if not per:
         raise ValueError(f"no Smith event logs from {agent!r} in {run} (fm exam run {run} --agent smith --model PROFILE)")
     classes = {k: {"count": sum(x.get(k, 0) for x in per), "scenarios": sum(k in x for x in per),
@@ -3403,6 +3427,7 @@ def taxonomy(p, run, agent="smith"):
     except OSError:
         model = None
     return {"run": run, "agent": agent, "model": model, "scenarios": len(per),
+            "ends": dict(sorted(ends.items(), key=lambda kv: -kv[1])),  # T-2926: one end per scenario; sums to scenarios
             "classes": dict(sorted(classes.items(), key=lambda kv: -kv[1]["rate"]))}
 
 
@@ -3845,8 +3870,9 @@ def cmd_exam(args):
             return 1 if res.get("ungraded") else 0
         if action == "taxonomy":  # T-2908: Smith's failure classes from a run's event logs
             res = taxonomy(p, args.run, args.agent or "smith")
-            return cli.out(args, res, f"{res['run']} {res['agent']} {res['model'] or ''}: {res['scenarios']} scenarios\n" + "\n".join(
-                f"  {k:<10} {v['count']:>3} in {v['scenarios']} scenarios ({v['rate']:.0%})" for k, v in res["classes"].items()))
+            return cli.out(args, res, f"{res['run']} {res['agent']} {res['model'] or ''}: {res['scenarios']} scenarios\n"
+                           "ends: " + ", ".join(f"{k} {v}" for k, v in res["ends"].items()) + "\n" + "\n".join(
+                f"  {k:<14} {v['count']:>3} in {v['scenarios']} scenarios ({v['rate']:.0%})" for k, v in res["classes"].items()))
         if action == "grade":
             if args.model:  # T-2158: answers from before the stamp, or stamped "default", name their model here
                 who = args.agent or "oracle"

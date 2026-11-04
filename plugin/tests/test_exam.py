@@ -2155,7 +2155,11 @@ class SmithArm(ForemanTestCase):
         from sampo import louhi
         act = lambda r, d="", a="read", t="x": {"event": "action", "action": a, "target": t, "result": r, "detail": d}
         cases = {
-            "malformed": [{"event": "error", "text": "fm code: the model gave no valid plan after 2 repairs"}],
+            "malformed": [{"event": "error", "text": "fm code: the arguments weren't a JSON object"}],
+            "no_plan": [{"event": "error", "text": "fm code: the model gave no valid plan after 2 repairs"}],  # T-2926
+            "budget": [{"event": "error", "text": "fm code: model: p: reasoning used the whole budget: no text in 8192 tokens"}],
+            "plan_refused": [{"event": "error", "text": "fm code: fm focus refused the plan: x"}],
+            "finish_refused": [{"event": "blocked", "text": "T-1 blocked: fm code: fm task finish refused: x"}],
             "wrong_tool": [act("error", "error: no action 'fly'; the actions are read")],
             "loop": [act("ok")] * 3,
             "false_done": [{"event": "verify", "label": "verify", "exit": 1}],
@@ -2179,7 +2183,7 @@ class SmithArm(ForemanTestCase):
         self.fm_json("exam", "run", g["run"], "--agent", "smith", "--model", "fake", "--limit", "2", timeout=240)
         tax = self.fm_json("exam", "taxonomy", g["run"], "--agent", "smith")
         cl = tax["classes"]
-        self.assertEqual((cl["wrong_tool"]["scenarios"], cl["malformed"]["scenarios"]), (1, 1), cl)
+        self.assertEqual((cl["wrong_tool"]["scenarios"], cl["no_plan"]["scenarios"], cl["malformed"]["scenarios"]), (1, 1, 0), cl)  # T-2926
         self.assertEqual(cl["wrong_tool"]["rate"], 0.5)
         self.assertEqual(set(cl), set(__import__("sampo.louhi", fromlist=["x"]).FAILURE_CLASSES))
         self.assertNotEqual(self.fm("exam", "taxonomy", "nope", check=False).returncode, 0)
