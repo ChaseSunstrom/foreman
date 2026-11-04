@@ -90,6 +90,11 @@ class Files(unittest.TestCase):
         for panel in PANELS + ("link", "motion"):
             self.assertRegex(page, rf'\bid="{panel}"', panel)
 
+    def test_scrolling_lists_take_the_keyboard(self):  # T-2999 review: keyboard users could not scroll long lists
+        html = text("index.html")
+        for i in ("jobs-list", "queue-list", "closes-list"):
+            self.assertRegex(html, rf'id="{i}" tabindex="0" aria-label="[^"]+"')
+
     def test_reduced_motion_is_honoured_by_the_style_and_the_script(self):
         self.assertIn("prefers-reduced-motion", text("live.css"))
         self.assertIn("prefers-reduced-motion", text("live.js"))

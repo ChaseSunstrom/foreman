@@ -424,7 +424,7 @@ function row(list, seg, gap) {
   list.forEach((nd, i) => {
     const r = Math.floor(i / per), c = i % per, m = Math.min(per, n - r * per);
     const step = m > 1 ? Math.min(gap * 1.4, span / (m - 1)) : 0, mid = (seg.x0 + seg.x1) / 2;
-    nd.tx = mid - step * (m - 1) / 2 + step * c + (r % 2 ? step * 0.5 : 0) * (m < per ? 0 : 1) * 0;
+    nd.tx = mid - step * (m - 1) / 2 + step * c;
     nd.ty = seg.y - r * gap * 0.62;
     nd.s = 1 - r * 0.14;
   });
@@ -488,7 +488,7 @@ function source(from) {
     if (n.place === "job") jobs.push(n);
     else if (n.place === "lane") lanes.set(str(n.data.task).toUpperCase(), n);
   }
-  for (const n of jobs) { const nm = str(n.data.name).toLowerCase(); if (nm === f || nm.startsWith(f) || f.startsWith(nm)) return n; }
+  for (const n of jobs) { const nm = str(n.data.name).toLowerCase(); if (nm && f && (nm === f || nm.startsWith(f) || f.startsWith(nm))) return n; }
   const tid = /\bT-\d+\b/i.exec(from);
   if (tid) return lanes.get(tid[0].toUpperCase()) || anvil;
   for (const [re, kind] of KW) if (re.test(f)) { const n = jobs.find(j => str(j.data.kind) === kind); if (n) return n; }
@@ -677,7 +677,7 @@ function drawTowerLight(n, t, still) {
     glow(n.x, n.y, 6 * U, [234, 242, 255], 0.95 * a * (I ? 1 : 0.2));
     cx.globalCompositeOperation = "source-over";
     label(n.x, n.y - 18 * U, "Jarvis", 11 * U, rgba(BRASS, 0.95), 4, a, "display");
-    label(n.x, n.y + 62 * U + (G.wide ? 0 : 0), cut(n.label, 22), 9.5 * U, rgba([238, 240, 250], 0.85), 4, a);
+    label(n.x, n.y + 62 * U, cut(n.label, 22), 9.5 * U, rgba([238, 240, 250], 0.85), 4, a);
     return;
   }
   const c = n.place === "hill" ? [180, 205, 255] : [214, 190, 255];
@@ -868,7 +868,7 @@ function drawBench(n, t, still) {
   cx.save(); cx.translate(x + 2 * s, y - 50 * s); cx.scale(0.42, 0.42);
   figure(0, 0, s, a, 1);
   cx.restore();
-  limb(x - 6 * s, y - 50 * s + 0.42 * 0, x - 9 * s - 2 * s * lift, y - 30 * s - 6 * s * lift, 3.6 * s, a, false);
+  limb(x - 6 * s, y - 50 * s, x - 9 * s - 2 * s * lift, y - 30 * s - 6 * s * lift, 3.6 * s, a, false);
   if (!still && u > 0.995 - 0.01 && streaks.length < 180) {
     for (let i = 0; i < 2; i++) streaks.push({x: x - 9 * s, y: y - 28 * s, vx: (R() - 0.5) * 120 * U, vy: -(60 + R() * 90) * U, life: 0.25 + R() * 0.2, max: 0.45, w: 0.7});
   }
@@ -926,7 +926,7 @@ function step(t, dt, ig) {
   // nodes: fade, glide, forget
   let live = 0;
   for (const [k, n] of nodes) {
-    if (n.transient && n.until <= t && n.ta > 0 && !n.data._snap) n.ta = 0;
+    if (n.transient && n.until <= t && n.ta > 0) n.ta = 0;
     if (t >= n.born) n.a += (n.ta - n.a) * (1 - Math.exp(-dt * 3.2));
     n.x += (n.tx - n.x) * (1 - Math.exp(-dt * 2.6));
     n.y += (n.ty - n.y) * (1 - Math.exp(-dt * 2.6));
@@ -1425,7 +1425,7 @@ function connect() {
   clearTimeout(retry);
   if (!window.EventSource) return;
   es = new EventSource("/api/stream");
-  es.addEventListener("open", () => { backoff = 1; setLink("live"); });
+  es.addEventListener("open", () => { backoff = 1; snapAt = -Infinity; setLink("live"); });  // a restarted server's clock may be behind
   const on = ev => { const s = parse(ev.data); if (s) { setLink("live"); take(s); } };
   es.addEventListener("state", on);
   es.addEventListener("message", on);
@@ -1446,6 +1446,7 @@ function applyMode() {
   root.setAttribute("data-motion", s ? "still" : "full");
   if (btn) {
     btn.setAttribute("aria-pressed", String(s));
+    btn.textContent = s && !reduce.matches ? "Animate" : "Still";  // the label names what a press does
     btn.disabled = !!reduce.matches;
     btn.title = reduce.matches ? "Your system asks for reduced motion: the scene holds still and changes are lit"
       : "Hold the scene still: no sparks, changes shown by highlight";
