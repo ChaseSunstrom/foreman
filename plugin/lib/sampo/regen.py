@@ -137,21 +137,25 @@ _RESULT = re.compile(r"^(\w+) \([\w.]+\)(?:\n.*)? \.\.\. (ok|FAIL|ERROR|skipped.
 
 
 def run_tests(wt, tests):
-    """{test name: passed} over the module's own test files, run in the worktree."""
-    res = {}
-    for t in tests:
-        d, mod = os.path.dirname(os.path.join(wt, t)), os.path.splitext(os.path.basename(t))[0]
-        try:
-            r = subprocess.run([sys.executable, "-m", "unittest", "-v", mod], cwd=d, capture_output=True, text=True,
-                               timeout=300)
-            out = r.stderr
-        except subprocess.TimeoutExpired:
-            res[f"{mod} (timed out)"] = False
-            continue
-        for name, state in _RESULT.findall(out):
-            res[name] = state == "ok" or state.startswith("skipped")
-        if r.returncode and not any(not v for v in res.values()):
-            res[f"{mod} (did not run)"] = False  # an import error fails the file before any test names itself
+    """{test name: passed} over the module's own test files, run in the worktree with fmprove's environment (no
+    credentials, HOME a throwaway folder): the module under test is model-written code."""
+    from sampo import prove
+    res, home = {}, tempfile.mkdtemp(prefix="fm-regen-home-")
+    try:
+        for t in tests:
+            d, mod = os.path.dirname(os.path.join(wt, t)), os.path.splitext(os.path.basename(t))[0]
+            try:
+                r = subprocess.run([sys.executable, "-m", "unittest", "-v", mod], cwd=d, capture_output=True,
+                                   text=True, timeout=300, env=prove._env(home))
+            except subprocess.TimeoutExpired:
+                res[f"{mod} (timed out)"] = False
+                continue
+            for name, state in _RESULT.findall(r.stderr):
+                res[name] = state == "ok" or state.startswith("skipped")
+            if r.returncode and not any(not v for v in res.values()):
+                res[f"{mod} (did not run)"] = False  # an import error fails the file before any test names itself
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
     return res
 
 
@@ -161,13 +165,15 @@ def regen(root, rel, ask, intent_text, links, tries=TRIES):
     tmp = tempfile.mkdtemp(prefix="fm-regen-")
     wt = os.path.join(tmp, "repo")
     try:
-        target = os.path.realpath(os.path.join(wt, rel))
-        if os.path.isabs(rel) or not target.startswith(os.path.realpath(wt) + os.sep):
+        if os.path.isabs(rel):
             raise ValueError(f"{rel}: not a path inside the repo")
         r = subprocess.run(["git", "-C", root, "worktree", "add", "--detach", "-q", wt, "HEAD"], capture_output=True,
                            text=True)
         if r.returncode:
             raise OSError(f"git worktree add: {r.stderr.strip()[:200]}")
+        target = os.path.realpath(os.path.join(wt, rel))  # audit: after the add, so a tracked symlink resolves out
+        if not target.startswith(os.path.realpath(wt) + os.sep):
+            raise ValueError(f"{rel}: not a path inside the repo")
         try:
             with open(os.path.join(wt, rel), encoding="utf-8") as f:
                 allowed = imports(f.read())
@@ -221,6 +227,7 @@ def make_ask(p, name, sensitive=False):
 def slice_run(root, sample, attempt, out, profiles, on_sample=None):
     """Run attempt(module, profile)->result over the sample, each profile in turn until one round-trips; the sample is
     stated (printed, filed) before anything runs; the file is rewritten after each module. Advanced when 2 round-trip."""
+    from sampo import models
     if on_sample:
         on_sample(list(sample))
     res = {"sample": list(sample), "profiles": list(profiles), "modules": [], "advanced": "not-yet", "ran": True}
@@ -237,7 +244,7 @@ def slice_run(root, sample, attempt, out, profiles, on_sample=None):
         for prof in profiles:
             try:
                 r = attempt(m, prof)
-            except (ValueError, OSError) as e:
+            except (ValueError, OSError, models.ModelError) as e:  # audit: a down model tries the next profile
                 r = {"module": m, "round_trip": False, "error": str(e)[:300]}
             tried.append(prof)
             if r.get("round_trip"):

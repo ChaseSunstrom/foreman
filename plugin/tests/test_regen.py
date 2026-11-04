@@ -156,6 +156,38 @@ class Regen(ForemanTestCase):
         self.assertEqual(res["advanced"], "not-yet")
         self.assertEqual([x["approaches"] for x in res["modules"] if x["module"] == "c"], [["local", "haiku"]])
 
+    def test_a_down_model_moves_on_to_the_next_profile(self):  # audit: a ModelError aborted the whole slice
+        from sampo import models
+
+        def attempt(m, prof):
+            if prof == "local":
+                raise models.ModelError("connection refused")
+            return {"module": m, "round_trip": True, "model": prof}
+        res = self.r.slice_run(self.root, ["a"], attempt, os.path.join(self.tmp, "res.json"), ["local", "haiku"])
+        self.assertEqual(res["modules"][0]["approaches"], ["local", "haiku"])
+        self.assertTrue(res["modules"][0]["round_trip"])
+
+    def test_regrown_code_runs_without_credentials_or_the_real_home(self):  # audit: model-written code ran with both
+        os.makedirs(os.path.join(self.tmp, "wt", "tests"))
+        with open(os.path.join(self.tmp, "wt", "tests", "test_env.py"), "w") as f:
+            f.write("import os, unittest\nclass E(unittest.TestCase):\n    def test_env(self):\n"
+                    "        assert 'ANTHROPIC_API_KEY' not in os.environ\n"
+                    f"        assert os.environ.get('HOME') != {os.environ.get('HOME', '')!r}\n")
+        with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test"}):
+            self.assertEqual(self.r.run_tests(os.path.join(self.tmp, "wt"), ["tests/test_env.py"]), {"test_env": True})
+
+    def test_a_symlinked_folder_never_lets_a_delete_out(self):  # audit: the path was checked before the worktree existed
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        with open(os.path.join(outside, "x.py"), "w") as f:
+            f.write("x = 1\n")
+        os.symlink(outside, os.path.join(self.root, "link"))
+        git(self.root, "add", "link")
+        git(self.root, "commit", "-qm", "link")
+        with self.assertRaises(ValueError):
+            self.r.regen(self.root, "link/x.py", lambda s, p: "", "intent", {})
+        self.assertTrue(os.path.exists(os.path.join(outside, "x.py")))
+
 
 if __name__ == "__main__":
     unittest.main()
