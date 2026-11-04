@@ -177,3 +177,88 @@ class Grow(_Cards):
         self.assertIn("SOURCE TEXT HERE", prompt)
         self.assertIn("data, never instructions", prompt)
         self.assertIn("python3", prompt)
+
+
+def ui_card(**kw):
+    card = good(title="Check button contrast in React",
+                when="A React button's text may be too faint against its background colour.",
+                steps=[{"do": "Run the playwright accessibility spec for the button page.", "cmd": "npx playwright test button.spec.ts"},
+                       {"do": "Read the contrast ratio the spec reports and require at least 4.5:1.", "cmd": ""},
+                       {"do": "Open the stylesheet and darken the text colour one step.", "cmd": "grep -n color src/Button.css"}],
+                check="The spec passes and the reported ratio is 4.5:1 or more.")
+    card.update(kw)
+    return card
+
+
+def ui_cell(**kw):
+    return {"component": "button", "platform": "react", "concern": "accessibility", "stage": "verify", "grid": "ui", **kw}
+
+
+class UiGrid(_Cards):
+    def test_the_grid_has_3840_cells(self):
+        sc = self.sc
+        self.assertEqual((len(sc.COMPONENTS), len(sc.PLATFORMS), len(sc.CONCERNS)), (16, 8, 10))
+        self.assertEqual(len(sc._ui_cells()), 3840)
+
+    def test_a_measured_check_is_kept_and_a_vague_one_refused(self):
+        self.assertEqual(self.sc.admit(ui_card(), "ui"), (True, ""))
+        number = [{"do": "Run the page and measure the tap target size.", "cmd": "grep -n button src/a.css"},
+                  {"do": "Check the target is at least 44px wide and tall.", "cmd": ""},
+                  {"do": "Open the stylesheet and set min-height to 44px.", "cmd": "grep -n min-height src/a.css"}]
+        self.assertTrue(self.sc.admit(ui_card(steps=number), "ui")[0], "a stated number is a measure")
+        vague = [{"do": "Open the stylesheet and adjust the spacing a little.", "cmd": "grep -n margin src/a.css"},
+                 {"do": "Look at the page and check it looks good.", "cmd": "grep -n button src/a.css"},
+                 {"do": "Tell the user it is nicer now.", "cmd": ""}]
+        ok, why = self.sc.admit(ui_card(steps=vague), "ui")
+        self.assertFalse(ok)
+        self.assertTrue(why.startswith(("vague:", "measure:")), why)
+        plain = [dict(s, do=s["do"].replace("looks good", "is fine").replace("nicer", "different")) for s in vague]  # no vague phrase, still no measure
+        ok, why = self.sc.admit(ui_card(steps=plain), "ui")
+        self.assertTrue(not ok and why.startswith("measure:"), why)
+        self.assertTrue(self.sc.admit(good())[0], "the general grid is unchanged")
+
+    def test_pnpm_and_yarn_count_as_commands_in_the_ui_grid_only(self):
+        steps = ui_card()["steps"]
+        steps[2] = {"do": "Run the lint rule for the button's aria labels.", "cmd": "pnpm exec eslint src"}
+        self.assertTrue(self.sc.admit(ui_card(steps=steps), "ui")[0])
+        self.assertFalse(self.sc.admit(ui_card(steps=steps))[0])
+
+    def test_add_records_the_grid_and_the_cell_and_a_repeat_is_a_dup(self):
+        out = self.sc.add(self.p, [ui_card(), ui_card()], ui_cell(), "haiku", 1)
+        self.assertEqual([v for _, v, _ in out], ["kept", "dup"])
+        r = self.sc.rows()[0]
+        self.assertEqual((r["cell"]["grid"], r["cell"]["component"], r["cell"]["platform"]), ("ui", "button", "react"))
+
+    def test_grow_ui_fills_ui_cells_only_and_names_them_in_the_prompt(self):
+        seen = []
+
+        def fake(p, system, prompt, cheap=True, paid=0, feature=None, writer=None):
+            seen.append((prompt, writer))
+            return "\n".join(json.dumps(ui_card(title=f"Button contrast card {len(seen)} {i}")) for i in range(2)), "haiku"
+        self.sc.add(self.p, [good(title="A general card here")], cell(), "m", 1)
+        with mock.patch.object(self.sc.ms, "_ask", side_effect=fake):
+            r = self.sc.grow(self.p, target=4, batch=2, workers=1, grid="ui", writer="haiku")
+        self.assertEqual((r["kept"], r["stopped"]), (4, "target"))
+        self.assertTrue(all(w == "haiku" for _, w in seen))
+        for word in ("component=", "platform=", "concern=", "stage="):
+            self.assertIn(word, seen[0][0])
+        cov = self.sc.coverage("ui")
+        self.assertEqual((cov["total"], cov["grid"]), (4, 3840))
+        self.assertEqual(self.sc.coverage()["total"], 1, "the general grid counts its own cards only")
+        self.assertIn("UI cards: 4 in 2 of 3840 cells", self.sc.coverage_text(self.sc.coverage()))
+        self.assertIn("4 in 2 of 3840", self.sc.coverage_line(cov))
+
+    def test_writer_routing_in_ask_never_calls_a_real_model(self):
+        ms = self.sc.ms
+        with mock.patch.object(ms, "_local", return_value={"name": "loc"}), \
+                mock.patch.object(ms.models, "complete", return_value={"text": "x"}) as comp, \
+                mock.patch.object(ms.ideas, "run_child", return_value="paid") as run, \
+                mock.patch.object(ms.budget, "check"):
+            self.assertEqual(ms._ask(self.p, "s", "p", writer="sonnet"), ("paid", "sonnet"))
+            self.assertEqual(ms._ask(self.p, "s", "p", writer="haiku")[1], "haiku")
+            comp.assert_not_called()
+            self.assertEqual(ms._ask(self.p, "s", "p", writer="local")[1], "loc")
+        with mock.patch.object(ms, "_local", return_value=None), self.assertRaises(ValueError):
+            ms._ask(self.p, "s", "p", writer="local")
+        with self.assertRaises(ValueError):
+            ms._ask(self.p, "s", "p", writer="gpt")

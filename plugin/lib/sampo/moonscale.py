@@ -470,12 +470,18 @@ def night_ready(p):
     return ({"grow"} if grow else set()) | ({"funnel"} if waits or grow else set())  # grown rows funnel the same night
 
 
-def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
+WRITERS = ("haiku", "sonnet", "local")
+
+
+def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE, writer=None):
     """(text, the model that answered): the local model first, else Haiku (cheap=False: the strongest review model).
+    T-2994 writer: "haiku"/"sonnet" skip the local model and pay (same budget caps); "local" never pays.
     A sensitive project never goes to the cloud. Raises budget.BudgetError when the budget says no: today's cap, or the
     per-command cap over this call and the `paid` cloud calls the same run made before it."""
     sensitive = bool(c.read_meta(p).get("sensitive"))
-    prof = _local(sensitive) if cheap else None
+    if writer is not None and writer not in WRITERS:
+        raise ValueError(f"--writer takes {', '.join(WRITERS)}")
+    prof = _local(sensitive) if cheap and writer not in ("haiku", "sonnet") else None
     if prof:
         try:
             r = models.complete(prof, [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
@@ -488,12 +494,13 @@ def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE):
             if "reasoning used the whole budget" in str(e):
                 with _lock:
                     _cuts[prof["name"]] += 1
-    if _LOCAL_ONLY:  # audit: cheap=False goes to the strongest review model, paid too
+    if _LOCAL_ONLY or writer == "local":  # audit: cheap=False goes to the strongest review model, paid too
         raise LocalOnly("local-only: no local model answered (MOONS_LOCAL); nothing was sent to a paid model")
     if sensitive:
         raise ValueError("a sensitive project's records go to a local model only, and none answered (MOONS_LOCAL)")
-    model = "haiku" if cheap else rune.REVIEW_MODELS[-1]
-    est = budget.estimate(feature, 1, FALLBACK if cheap else 10 * FALLBACK)
+    model = writer if writer in ("haiku", "sonnet") else "haiku" if cheap else rune.REVIEW_MODELS[-1]
+    # ponytail: sonnet is priced at 5x the Haiku fallback by guess; the budget ledger corrects it as rows accrue
+    est = budget.estimate(feature, 1, FALLBACK * (5 if model == "sonnet" else 1) if cheap else 10 * FALLBACK)
     budget.check(feature, est)
     cap = budget.effective()[0]["run"]
     if est * (paid + 1) > cap:

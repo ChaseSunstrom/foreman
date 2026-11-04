@@ -6814,6 +6814,8 @@ def _build_parser(only=None):
     s.add_argument("--max-calls", type=int, help="small grow: stop after M model calls")
     s.add_argument("--workers", type=int, help="small grow: calls at once (default: the local profile's slots)")
     s.add_argument("--think", choices=("on", "off"), help="small grow: the local model's reasoning, over its profile")
+    s.add_argument("--grid", choices=("ui",), help="small grow|coverage: the UI grid (component x platform x concern x stage, T-2994)")
+    s.add_argument("--writer", choices=("haiku", "sonnet", "local"), help="small grow: who writes the cards (default: the local model, then Haiku)")
     s.add_argument("--briefs", help="eval: the brief set (default plugin/evals/playbooks/<stage>/<name>.json)")
     s.add_argument("--real", action="store_true", help="eval: ask a model (claude -p, budgeted) instead of reading "
                    "the playbook literally")
