@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-04T04:04:13Z",
- "rev": "7f5575df",
+ "updated": "2026-11-04T04:14:26Z",
+ "rev": "cc964027",
  "capabilities": [
   {
    "n": 1,
@@ -25420,7 +25420,7 @@
  },
  "not_yet": 8,
  "not_yet_open": 8,
- "unproven": 762,
+ "unproven": 763,
  "unproven_kinds": {
   "meaning": 598,
   "research-uncited": 30,
@@ -25431,7 +25431,8 @@
   "docs": 86,
   "perf-noise": 1,
   "infra": 7,
-  "ui-unshot": 15
+  "ui-unshot": 15,
+  "data": 1
  },
  "next": {
   "stage": "mission",
