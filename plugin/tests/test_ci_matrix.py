@@ -36,6 +36,18 @@ class CiMatrix(unittest.TestCase):
         miscount = text.replace("matrix.experimental && 3 || 2", "matrix.experimental && 4 || 2")
         self.assertNotEqual(problems(miscount), [], "a run line that divides by more shards than jobs is caught")
 
+    def test_the_experimental_job_gets_a_longer_class_watchdog(self):
+        # T-2844: run 41716829800's macOS 3.14 shard killed test_exam.LeanKind at 480 s (504 s there, 85 s here)
+        with open(WORKFLOW, encoding="utf-8") as f:
+            text = f.read()
+        m = re.search(r"--timeout \$\{\{ matrix\.experimental && (\d+) \|\| (\d+) \}\}", text)
+        self.assertIsNotNone(m, "the run line sets --timeout per job kind")
+        exp, main = int(m.group(1)), int(m.group(2))
+        self.assertEqual(main, 480, "the main jobs keep run.py's default watchdog")
+        self.assertGreaterEqual(exp, 900)
+        deadline = int(re.search(r"--deadline \$\{\{ matrix\.experimental && (\d+)", text).group(1))
+        self.assertLess(exp, deadline, "one class can't eat the whole experimental deadline")
+
 
 if __name__ == "__main__":
     unittest.main()
