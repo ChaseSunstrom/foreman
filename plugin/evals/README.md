@@ -1,8 +1,8 @@
-# Foreman eval suite (PROTECTED CORE)
+# Sampo eval suite (PROTECTED CORE)
 
-`claude plugin eval` cases that referee Foreman changes (BUILD_PROMPT §4.9). They encode the §12 scenarios that fit a
+`claude plugin eval` cases that referee Sampo changes (BUILD_PROMPT §4.9). They encode the §12 scenarios that fit a
 single fresh session: 1 (intake block), 2 (mid-task capture, self-contained), 13 (guard in bypass mode), plus the
-"plain one-liner gets classified" behavior. Scenarios that need seeded Foreman state across turns (4, 5, 6, 7, 12…)
+"plain one-liner gets classified" behavior. Scenarios that need seeded Sampo state across turns (4, 5, 6, 7, 12…)
 are covered by `plugin/tests/e2e/` and the unit tests.
 
 Run (live plugin; compare with a candidate worktree by running the same command on its plugin/ and diffing

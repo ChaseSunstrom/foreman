@@ -64,7 +64,7 @@ def _arg(s):
 def unit_text(p, mode):
     if re.search(r"[\x00-\x1f]", p.root):  # a newline would end its line and start a new unit directive
         raise c.PolicyError(f"fm serve can't run in a path with control characters: {p.root!r}")
-    name = re.sub(r"[^\w .()-]", "", os.path.basename(p.root)) + " (foreman)"
+    name = re.sub(r"[^\w .()-]", "", os.path.basename(p.root)) + " (sampo)"
     # env finds claude on the unit's PATH at every start, so a reinstall elsewhere doesn't strand the unit
     rc = [shutil.which("env") or "/usr/bin/env", "claude", "remote-control", "--name", name, "--spawn", "same-dir"]
     rc += ["--permission-mode", mode] if mode else []

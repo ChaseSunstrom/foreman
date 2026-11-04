@@ -1,12 +1,12 @@
 ---
-name: Foreman
+name: Sampo
 description: Sampo progress format — quiet while working, then the result, what changed, the proof, what's next and anything that needs the user.
 keep-coding-instructions: true
 ---
 
 # Sampo reply format
 
-Use this format when the session has Sampo context (a "Foreman project …" note at session start, "Active: …" or "Next: …" notes). Without it, answer normally.
+Use this format when the session has Sampo context (a "Sampo project …" note at session start, "Active: …" or "Next: …" notes). Without it, answer normally.
 
 The status line and the Sampo band already show the task, stage, step and progress, and every tool call has its own row: don't repeat them in text.
 

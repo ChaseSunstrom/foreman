@@ -405,9 +405,11 @@ class OutputStyle(unittest.TestCase):
         with open(path) as f:
             text = f.read()
         head, body = text.split("---\n")[1], text.split("---\n", 2)[2]
-        self.assertIn("name: Foreman", head)
+        self.assertIn("name: Sampo", head)
         self.assertIn("keep-coding-instructions: true", head)
-        self.assertEqual(setup.OUTPUT_STYLE, "foreman:Foreman")  # plugin styles are selected as <plugin>:<name>
+        self.assertIn('"Sampo project', body)  # T-2946: the note the session-start hook opens with
+        self.assertEqual(setup.OUTPUT_STYLE, "foreman:Sampo")  # plugin styles are selected as <plugin>:<name>
+        self.assertIn("foreman:Foreman", setup.OUTPUT_STYLES)  # a stored older choice still counts as ours
         for needle in ("✓", "Changed:", "Next:", "Needs you", "write nothing between tool calls"):
             self.assertIn(needle, body)
         self.assertNotIn("▸ Step", body, "the band and tool rows show steps; replies don't repeat them (T-0095)")

@@ -187,7 +187,7 @@ class EndToEnd(CodeCase):
         self.assertIn("return a - b", f.said(2))
         # rm -rf ~ never ran, and the guard's refusal is what the model read next
         self.assertTrue(os.path.exists(os.path.join(self.fake_home, "keep")))
-        self.assertIn("Foreman guard", f.said(3))
+        self.assertIn("Ward: blocked", f.said(3))
         self.assertIn("refused", f.said(3))
         self.assertIn("calc.py", r.stdout)
         journal = os.path.join(os.path.dirname(os.path.dirname(self.task()["path"])), "code", "T-0001.jsonl")

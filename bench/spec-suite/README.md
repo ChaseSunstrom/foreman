@@ -10,8 +10,8 @@ types and the exact output formats.
 
 ## Why
 
-The duel's first cases came from Foreman's own history, where a hidden test can check wording the request
-never stated, and Foreman's guard protects that repo's core in both arms. Here every hidden test checks only
+The duel's first cases came from Sampo's own history, where a hidden test can check wording the request
+never stated, and Sampo's guard protects that repo's core in both arms. Here every hidden test checks only
 behaviour its commit message states, in a repo neither arm knows, so a duel measures diligence, cost and time
 rather than luck at guessing wording.
 
@@ -115,7 +115,7 @@ The hard suite's eight tasks are a gapless chain of commits, so they also make o
 `--together` asks for every request of the range in one prompt under `## Request k` headings, graded by
 all their hidden tests at the newest commit; results count the tests passing (`tests: [passed, total]`).
 `--compact-at TOKENS` sets `CLAUDE_CODE_AUTO_COMPACT_WINDOW` on both arms, so each compacts as a long
-session would, and keeps the sessions to count their compactions. With Foreman, a prompt of several
+session would, and keeps the sessions to count their compactions. With Sampo, a prompt of several
 requests queues one task per request, each holding its request's text, so the queue says what's left after
-a compaction. `--marathon N` lets Foreman's arm go on after the asked work: N passes of finding and doing
+a compaction. `--marathon N` lets Sampo's arm go on after the asked work: N passes of finding and doing
 work nobody asked for, until its `--budget` cap, which ends it without counting as a crash.

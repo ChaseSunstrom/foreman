@@ -1,4 +1,4 @@
-"""Foreman guard: decides whether a tool call is dangerous enough to block (PROTECTED CORE).
+"""Ward, Sampo's guard: decides whether a tool call is dangerous enough to block (PROTECTED CORE).
 
 Pure functions, no state writes. The PreToolUse hook calls check(); a Block is denied unless the
 active brief's `allow:` lists its category. `state-direct` is never authorizable. Callers treat any
@@ -45,11 +45,11 @@ VERB_TWINS = {"rune": "genesis", "louhi": "exam", "ward": "guard", "smith": "cod
 # fm subcommands that undo or grant what only the user decides: sub -> (the word that makes it so, why, what they type).
 # One table, so the next one isn't forgotten.
 USER_ONLY_FM = {
-    "posture": ("lite", "sampo posture lite turns Foreman's hooks off but the guard's: the user decides that",
+    "posture": ("lite", "sampo posture lite turns Sampo's hooks off but the guard's: the user decides that",
                 "sampo posture lite"),  # T-0963
-    "pause": ("off", "sampo pause off is the user's to run: they paused everything Foreman runs unattended, so only they "
+    "pause": ("off", "sampo pause off is the user's to run: they paused everything Sampo runs unattended, so only they "
                      "lift it", "sampo pause off"),  # T-0591
-    "approve-reads": ("on", "sampo approve-reads on lets Foreman answer Claude Code's permission dialogs for reads: the "
+    "approve-reads": ("on", "sampo approve-reads on lets Sampo answer Claude Code's permission dialogs for reads: the "
                             "user turns it on", "sampo approve-reads on"),  # T-0974
     "rule": ("rm", "sampo rule rm is the user's to run: their rule stops what they said to stop, so only they lift it",
              "sampo rule rm N"),  # T-0971; `add rm` is a rare miss
@@ -63,7 +63,7 @@ USER_ONLY_FM = {
                            "precedent for proxy answers: only the user records them", "sampo decide ANSWER --answer N"),  # T-1064
     "risk": ("set", "sampo risk set moves the daily risk budget that slows Claude's autonomy: the brake is the user's to "
                     "move", "sampo risk set --day N --because \"<why>\""),  # T-1080
-    "home": ("import", "sampo home import is the user's to run: it writes a whole Foreman state, settings included, from "
+    "home": ("import", "sampo home import is the user's to run: it writes a whole Sampo state, settings included, from "
                        "a file", "sampo home import FILE"),  # T-1665
     "prove": ("--yes-run", "sampo prove --yes-run is the user's to run: it says yes to running this tree's tests, as "
                            "them, with the network, now and from then on", "sampo prove PATH --yes-run"),  # T-2122, T-2202
@@ -117,7 +117,7 @@ class Ctx:
 
     @property
     def state_dirs(self):
-        """T-1318: every place state lives, judged the same way: Foreman's own state folder and an explicit one too
+        """T-1318: every place state lives, judged the same way: Sampo's own state folder and an explicit one too
         (~/.claude linked into a dotfiles repo, FOREMAN_STATE under macOS's linked /tmp), each as named and with its
         folder resolved (the leaf never followed), then the fallbacks."""
         named = [d for d in (os.path.join(self.foreman_home, "state") if self.foreman_home else None, self.state_dir) if d]
@@ -241,13 +241,13 @@ def _hint(detail, cat=""):
     if detail.endswith(_FOCUS_LATE):
         return " Run the sampo focus (or sampo task new … --focus) as its own command, then this one."
     if detail.endswith("; git merge)"):
-        return (" On Foreman's own repo, land a reviewed builder branch with sampo lane merge ID: it merges --no-ff and "
+        return (" On Sampo's own repo, land a reviewed builder branch with sampo lane merge ID: it merges --no-ff and "
                 "checks each file it changes as that task's write.")
     if cat == "core" and detail.endswith("(a tree write over it)"):  # T-1897: 21 in a week, none with a hint
         return (" Run git checkout, reset, cherry-pick or rebase in a scratch worktree (git worktree add <scratch>/x, "
-                "then cd <scratch>/x && git …). Foreman's own tree changes through a task: sampo edit or the Edit tool per "
+                "then cd <scratch>/x && git …). Sampo's own tree changes through a task: sampo edit or the Edit tool per "
                 "file (with a standing core yes: sampo ask ID core --standing), sampo task finish to commit.")
-    if detail.startswith("interpreter code driving Foreman's modules"):  # review of T-1897: 17 in a week, no hint
+    if re.match(r"interpreter code driving (?:Sampo|Foreman)'s modules", detail):  # review of T-1897: 17 in a week, no hint
         return " A draft that only names them goes through the Write tool, then sampo edit < draft as the next command."
     if detail.endswith("(written from interpreter code)"):
         return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
@@ -295,23 +295,23 @@ def _message(block, ctx):
     cat, detail = block.category, block.detail
     tid = ctx.task_id or "<ID>"
     if cat == "self-authorize":
-        return (f"Foreman guard: blocked self-authorize: {detail}. Protected core (Foreman code, rules, evals, "
+        return (f"Ward: blocked self-authorize: {detail}. Protected core (Sampo code, rules, evals, "
                 f"BUILD_PROMPT.md, settings) and remote sessions need the user's approval, which an agent can't grant: "
                 + _ASK.format(id=tid, cat="<" + "|".join(sorted(USER_ONLY)) + ">") + ".")
     if cat == "confine":
-        return (f"Foreman guard: blocked confine: {detail} is outside this builder's worktree ({ctx.confine[0]}). A builder "
+        return (f"Ward: blocked confine: {detail} is outside this builder's worktree ({ctx.confine[0]}). A builder "
                 f"writes only there (and in scratch); report what needs changing elsewhere to the main thread.")
     if cat == "brief":
-        return (f"Foreman: no active task in this project, so {detail} can't be edited yet. One command starts a small "
+        return (f"Sampo: no active task in this project, so {detail} can't be edited yet. One command starts a small "
                 f"task: sampo task new \"<title>\" --type FIX --tier S --ac \"<done when>\" --step \"<step>\" --focus "
                 f"(bigger work: /foreman:intake; sampo next says what's next).")
     if cat == "state-direct":
         diff = re.search(r"/audits/(T-\d+)\.diff$", str(detail))  # T-0413
-        return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
+        return (f"Ward: blocked state-direct: {detail} is Sampo state. Change it through fm "
                 f"(sampo task …, sampo capture, sampo checkpoint{f'; sampo audit prep {diff[1]} rewrites it' if diff else ''}); "
                 f"direct writes are never authorized.")
     if unliftable(cat, detail):  # T-1298, T-1929, T-1932: the way through is text the guard reads (the hint)
-        return f"Foreman guard: blocked {cat}: {detail}; no grant lifts this."
+        return f"Ward: blocked {cat}: {detail}; no grant lifts this."
     if ctx.task_id:
         how = f"sampo task set {ctx.task_id} --allow {cat} (records it in the brief), then retry"
     else:
@@ -321,13 +321,13 @@ def _message(block, ctx):
     if cat == "core" and (trusted or standing) and _plain_path(detail) is None:
         # T-2859: the yes covers this change as plain file edits; only the form can't be read ('stop asking me')
         yes = "Trust (/fm-trust on)" if trusted else "The standing core yes"
-        return (f"Foreman guard: blocked core: {detail}. {yes} covers this change made as plain file edits, not in "
+        return (f"Ward: blocked core: {detail}. {yes} covers this change made as plain file edits, not in "
                 f"this form: use the Edit or Write tool on each file (or a draft, then sampo edit < draft). No "
                 f"question for the user.")
     if cat in USER_ONLY:  # rules/foreman.md, README and MASTER name these categories too
         what = f"{detail} is protected core" if cat == "core" else detail
-        return f"Foreman guard: blocked {cat}: {what}. To authorize: " + _ASK.format(id=tid, cat=cat) + "."
-    return f"Foreman guard: blocked {cat}: {detail}. To authorize: {how}."
+        return f"Ward: blocked {cat}: {what}. To authorize: " + _ASK.format(id=tid, cat=cat) + "."
+    return f"Ward: blocked {cat}: {detail}. To authorize: {how}."
 
 
 def project_root_for(cwd, home):
@@ -555,7 +555,7 @@ _AGENT_WIRING = lazy(r"/\.codex/(?:hooks\.json|config\.toml)$|/\.gemini/settings
 
 
 def _is_core(path, ctx):
-    """Protected core: all Foreman code (it enforces the guard), the rules, the eval suite, the spec and settings."""
+    """Protected core: all Sampo code (it enforces the guard), the rules, the eval suite, the spec and settings."""
     fh = ctx.foreman_home
     files = {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md") + _CORE_CONFIG}
     dirs = [os.path.join(fh, "plugin", d) for d in _CORE_DIRS] + [os.path.join(fh, d) for d in _CORE_CONFIG_DIRS]
@@ -575,8 +575,8 @@ def _plain_path(detail):
 
 
 def _standing_covers(path, ctx):
-    """A standing core yes (T-0119) covers Foreman's own code, rules, evals and spec; never this guard file, Claude
-    Code's settings or Foreman state, which still ask each time."""
+    """A standing core yes (T-0119) covers Sampo's own code, rules, evals and spec; never this guard file, Claude
+    Code's settings or Sampo state, which still ask each time."""
     fh, path = ctx.foreman_home, _plain_path(path)
     if path is None or any(_under(os.path.join(fh, "plugin", "lib", *g.split("/")), path) for g in GUARD_FILES):
         return False  # not a path, the guard itself, or a whole-tree write that includes it
@@ -585,7 +585,7 @@ def _standing_covers(path, ctx):
 
 
 def _trust_covers(path, ctx):
-    """/fm-trust on (T-0120) covers every core file, the guard and Claude Code settings included; never Foreman state
+    """/fm-trust on (T-0120) covers every core file, the guard and Claude Code settings included; never Sampo state
     (only fm writes it) or a whole-tree write."""
     path = _plain_path(path)
     if path is None:
@@ -1693,7 +1693,7 @@ def _subst_bodies(text, tails=True, clean=False):
 
 
 def _real_fm(argv, ctx):
-    """argv runs Foreman's own fm: bare `fm` (the caller has ruled out PATH, alias and function changes), or its real
+    """argv runs Sampo's own fm: bare `fm` (the caller has ruled out PATH, alias and function changes), or its real
     path, directly or as python's script. Anything else named fm is just a program (automated review of T-0153)."""
     fm_bins = {os.path.realpath(os.path.join(ctx.foreman_home, "plugin", "bin", p)) for p in FM_PROGRAMS}
     same = lambda path: os.path.realpath(os.path.join(ctx.cwd, os.path.expanduser(path))) in fm_bins
@@ -1972,7 +1972,7 @@ _SOURCE_DIRS = lazy(r"(?:\.claude/worktrees/[\w.-]+/)?plugin/(?:" + "|".join(_CO
 
 
 def _writes_unrun_source(line, cmd, ctx):
-    """T-0761: a data heredoc writing one file of Foreman's own code (T-0981: or its tests, or a worktree's copy) that
+    """T-0761: a data heredoc writing one file of Sampo's own code (T-0981: or its tests, or a worktree's copy) that
     the command never names again is a source edit (a core path write the user's yes gates), not interpreter code run
     here. Run or imported by name, it is."""
     m = _SOURCE_WRITE.fullmatch(line.strip())
@@ -1992,7 +1992,7 @@ _DRAFT_USE = lazy(r"\s*" + FM_NAME_RE + r"\s+edit\b.*|\s*python[0-9.]*\s+(?:-[BE
 
 
 def _writes_unrun_draft(line, cmd, ctx):
-    """T-1917: a data heredoc writing a scratch draft (.txt/.patch…) is text, though it names Foreman's modules, when
+    """T-1917: a data heredoc writing a scratch draft (.txt/.patch…) is text, though it names Sampo's modules, when
     the command names the draft again only as fm edit's input or a script's argument, never as code: no wider than the
     two-command form (write the file, then run). Fails closed on anything that could spell its name another way (globs,
     expansion, quotes, escapes), a cd, a second heredoc, or a script that isn't already a plain file on disk."""
@@ -2072,7 +2072,7 @@ def _python_c_units(shell):
 
 
 def _drives_fm(cmd, cwd=None):
-    """T-0170: interpreter code that imports Foreman's modules and calls their writers. Quoted heredocs fed straight to
+    """T-0170: interpreter code that imports Sampo's modules and calls their writers. Quoted heredocs fed straight to
     python, and (T-1194) literal `python -c` code, are parsed: text that merely mentions `import fm…` (an edit script's
     strings) isn't an import. The text match of before decides for everything else: fm import text outside those
     (data heredocs, the shell, -c code it can't read), code that doesn't parse, and dynamic code (exec, eval, getattr,
@@ -2083,7 +2083,7 @@ def _drives_fm(cmd, cwd=None):
     units, rest, starters, _ = _python_units(cmd)
     c_units, shell, c_starters = _python_c_units("\n".join(rest))
     if _FM_INTERNALS.search("\n".join([shell] + starters)):
-        return "shell text it can't read as python names Foreman's modules (a heredoc not fed to python, a file run later)"
+        return "shell text it can't read as python names Sampo's modules (a heredoc not fed to python, a file run later)"
     # T-1204: python's own settings (PYTHONPATH loads sitecustomize, PYTHONSTARTUP…), set in the command or inherited,
     # change what any of its code runs, as _python_c_units already refuses for -c
     if (units or c_units) and ("PYTHON" in "\n".join([shell] + starters) or any(os.environ.get(k) for k in _PY_PATH_VARS)):
@@ -2233,7 +2233,7 @@ def _interpreter_writes(cmd, ctx):
     """Interpreter code (heredoc, -c, -e) that writes files: every quoted path it names counts as a write target.
 
     Coarse on purpose: a script that names a protected path and writes anything is treated as writing it. Code that
-    imports Foreman's modules and calls their writers bypasses fm (the only state writer): that needs core, i.e. the
+    imports Sampo's modules and calls their writers bypasses fm (the only state writer): that needs core, i.e. the
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
@@ -2241,7 +2241,7 @@ def _interpreter_writes(cmd, ctx):
                                              or _writes_unrun_draft(line, cmd, ctx)), ctx.cwd):
         # T-0740: 9 repeats in a day; T-0934: `cd DIR; python3 - <<EOF` is refused only because of the `;`. T-1171: 12
         # of 31 refusals in four days wrote a test with cat <<EOF and ran the tests in the same command
-        return [("core", f"interpreter code driving Foreman's modules: {why} (use the fm CLI; to edit a Foreman source file "
+        return [("core", f"interpreter code driving Sampo's modules: {why} (use the fm CLI; to edit a Sampo source file "
                          "whose text names its modules, use the Edit or Write tool"
                          + ("; chain the cd with && instead of ;, or pass the path" if re.search(r"\bcd\s+[^\n;&|]+;", cmd)
                             else "")
@@ -3753,13 +3753,13 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"sampo plugins {rest[0]} changes Claude Code's plugins{target}"))
             if sub == "night" and any(_user_only_hit("--install", a) for a in rest):  # T-2357: plugin is the user's yes
-                found.append(("plugin", "sampo night --install puts timers on this machine that run Foreman unattended "
+                found.append(("plugin", "sampo night --install puts timers on this machine that run Sampo unattended "
                                         "(sampo night --stage queues the request for the user)"))
             if sub in USER_ONLY_FM and any(_user_only_hit(USER_ONLY_FM[sub][0], a) for a in rest):  # flag order is free
                 word, why, typed = USER_ONLY_FM[sub]
                 found.append(("self-authorize", f"{why} (they can type ! {typed})"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
-                found.append(("core", "sampo agents uninstall removes Foreman's guard from another coding agent"))
+                found.append(("core", "sampo agents uninstall removes Sampo's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "sampo serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
@@ -4264,7 +4264,7 @@ _BUDGET = 0.2  # CPU seconds. 0.5 gave a cold hook p95 of 331 ms over 330 real s
 
 
 def _script_cache_path(ctx):
-    """In Foreman's state folder, where the guard refuses a direct write: a session can't forge an entry."""
+    """In Sampo's state folder, where the guard refuses a direct write: a session can't forge an entry."""
     return os.path.join(ctx.state_dir or os.path.join(ctx.foreman_home, "state"), "guard-scripts.json")
 
 
@@ -4291,7 +4291,7 @@ def _pairs(v, n):
 def _cache_load(path):
     """The cache's good entries: one that is malformed (a hand edit, a crash, an older shape) is dropped on its own,
     never an error that blocks every script run. Limit, documented not fixed: the cache is trusted as the guard's own
-    file because the guard refuses a Bash write to Foreman's state; a write made outside the guard (another program
+    file because the guard refuses a Bash write to Sampo's state; a write made outside the guard (another program
     running as the user) can forge an entry."""
     import json
     try:
@@ -4436,7 +4436,7 @@ def _literal_scan(text, ctx=None):
             line = text[a:len(text) if b == -1 else b]
             if not line.lstrip().startswith("#") and (verbs.search(line) or any(
                     mark in r.group(1) for r in redirect.finditer(line))):
-                out.append((at(i), line.strip(), "a write into Foreman's state"))
+                out.append((at(i), line.strip(), "a write into Sampo's state"))
                 break
             i = text.find(mark, len(text) if b == -1 else b)
     for rx, why in _SCAN:
@@ -4497,7 +4497,7 @@ def _run_targets(text):
 
 def _script_verdict(script, cwd, kind, ctx, depth):
     """Findings for the script file a command runs, cached by the sha256 of its bytes (and of this guard file) in
-    Foreman's state folder, where the guard refuses direct writes: a script run again costs a hash, not a parse (the
+    Sampo's state folder, where the guard refuses direct writes: a script run again costs a hash, not a parse (the
     hook runs before every Bash call: a 20 KB script took seconds to parse cold). One cold read has a time budget
     (FM_GUARD_SCRIPT_BUDGET, CPU seconds, default _BUDGET). Past it the whole file gets the literal scan instead
     (_literal_scan): a hit is refused, none is allowed unread and noted in _UNREAD; either is cached. The file's own
@@ -5261,7 +5261,7 @@ _MARKET_UPDATE = "claude plugin marketplace update"
 def _check_claude_config(name, args, stdin=""):
     """Installing or toggling plugins, marketplaces and MCP servers, or changing Claude Code's config: new code and
     always-on context in every session, so only the user's yes to `fm ask ID plugin` allows it. A session started
-    with its own settings, MCP servers or plugins counts too (its settings can switch Foreman's hooks off)."""
+    with its own settings, MCP servers or plugins counts too (its settings can switch Sampo's hooks off)."""
     if not re.fullmatch(r"claude(?:-code)?(?:@[\w.-]+)?", name):  # also npx @anthropic-ai/claude-code[@version]
         return []
     # a prompt's slash command isn't a tool call the guard sees; `stdin` is the raw command text when claude reads a

@@ -11,7 +11,7 @@ from test_guard import GuardCase
 
 class GuardHeredoc(GuardCase):
     def driving(self, cmd):
-        return "driving Foreman's modules" in str(self.bash(cmd) or "")
+        return "driving Sampo's modules" in str(self.bash(cmd) or "")
 
     def test_a_cd_prefix_is_parsed_like_a_bare_heredoc(self):
         edit = "s = open('fmx.py').read()\ns = s.replace('a', '''    import fmcli\\n    p = fmcli.resolve(args)\\n''')\n" \
@@ -158,5 +158,5 @@ class EditTool(GuardCase):
     def test_the_driving_refusal_names_the_edit_tool(self):
         # T-0740: 9 refusals in one day from edit scripts whose text names fm modules; the way out is the Edit tool
         said = str(self.bash("python3 - <<'PY'\nimport fmcli\nfmcli.main()\nPY") or "")
-        self.assertIn("driving Foreman's modules", said)
+        self.assertIn("driving Sampo's modules", said)
         self.assertIn("Edit or Write tool", said)

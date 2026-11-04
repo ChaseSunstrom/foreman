@@ -9,12 +9,15 @@ import unittest
 # map-links: plugin/lib/sampo/cost.py plugin/lib/sampo/repeats.py plugin/lib/sampo/friction.py plugin/lib/sampo/bench.py plugin/lib/sampo/long.py plugin/lib/sampo/smithtui.py plugin/lib/sampo/mandate.py plugin/lib/sampo/rune.py plugin/lib/sampo/fixes.py plugin/lib/sampo/cli.py plugin/lib/sampo/louhi.py plugin/lib/fmguard.py
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BASELINE = 19  # 2026-11-03 (T-2818: widened to install.sh, workflows, templates, site/*.py and site/genesis; their prose renamed, Foreman Desktop and the release-subject grep kept, count unchanged at 19):876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry), 61 after MASTER.md (T-2810: MASTER's lines, and the lowercase-id forms KEPT now keeps on every surface), 42 after the mod (T-2807: the code-matched forms it keeps are listed in KEPT), 23 after the agents, listing, output style and install.sh (T-2808), 19 after the rules (T-2809); the goal is 0
+BASELINE = 16  # 2026-11-04 (T-2946: surfaces widened to looks.html, hooks.json, READMEs, fmguard, hook, bin/fm; 74 found, the guard now says Ward:/Sampo:, 16 left are readers of the old text); 2026-11-03 (T-2818: widened to install.sh, workflows, templates, site/*.py and site/genesis; their prose renamed, Foreman Desktop and the release-subject grep kept, count unchanged at 19):876 before the rename, 720 after the site and README (T-2753, T-2760), 475 after the skills, commands and output style (T-2768), 402 after the library strings and the mod (T-2779; the rest are protocol: the release subject, fmguard's refusal and posture text, which older transcripts and the guard still carry), 61 after MASTER.md (T-2810: MASTER's lines, and the lowercase-id forms KEPT now keeps on every surface), 42 after the mod (T-2807: the code-matched forms it keeps are listed in KEPT), 23 after the agents, listing, output style and install.sh (T-2808), 19 after the rules (T-2809); the goal is 0
 SURFACES = ("README.md", "MASTER.md", "INSTALL.md", "site/*.html", "site/*.js", "plugin/skills/**/*.md",
             "plugin/commands/*.md", "plugin/agents/*.md", ".claude-plugin/marketplace.json",
             "plugin/.claude-plugin/plugin.json", "plugin/output-styles/*", "mods/foreman-ui/**", "plugin/rules/*.md",
             "install.sh", ".github/workflows/*.yml", "plugin/templates/**", "site/*.py",
-            "site/genesis/*.html", "site/genesis/*.js", "site/genesis/*.css")
+            "site/genesis/*.html", "site/genesis/*.js", "site/genesis/*.css",
+            # T-2946: the cold review found the guard, the looks page, the hooks and the READMEs outside the scan
+            # (fmguard.py, hook and bin/fm are code: library_strings counts their string literals, not their comments)
+            "plugin/lib/looks.html", "plugin/hooks/hooks.json", "plugin/README.md", "plugin/evals/README.md", "plugin/observability/README.md", "bench/*/README.md")
 # names kept on purpose: old plugin ids, commands, agents, env, trailer and path, each an alias of its Sampo name, and
 # the one line that says what Sampo was called. T-2807: also the strings code matches (the mod's pane id 'foreman', the
 # skill namespace foreman:next, the install folder /foreman/, the resume prompt the plugin and the mod both read, the
@@ -45,7 +48,8 @@ def library_strings():
     import tokenize
     mid = getattr(tokenize, "FSTRING_MIDDLE", -1)
     rows = []
-    for f in sorted(glob.glob(os.path.join(ROOT, "plugin/lib/sampo/*.py"))) + [os.path.join(ROOT, "plugin/hooks/compact")]:
+    for f in sorted(glob.glob(os.path.join(ROOT, "plugin/lib/sampo/*.py"))) + [os.path.join(ROOT, p) for p in (
+            "plugin/hooks/compact", "plugin/lib/fmguard.py", "plugin/hooks/hook", "plugin/bin/fm")]:
         with open(f, encoding="utf-8") as fh:
             src = fh.read()
         for t in tokenize.generate_tokens(io.StringIO(src).readline):

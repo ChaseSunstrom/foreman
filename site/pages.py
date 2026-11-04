@@ -167,7 +167,7 @@ def _decisions(s):
                  ("reversed or revisited later", sum(bool(x.get("later")) for x in tape))])
     items = "".join(
         f'<li><time>{esc(x["date"])}</time> <b>{esc(x["kind"])}</b>'
-        + (f' {int(x["confidence"])}%' if isinstance(x.get("confidence"), int) else "") + f' {esc(x["text"])}'
+        + (f' {int(x["confidence"])}%' if isinstance(x.get("confidence"), int) else "") + f' {esc(_say(x["text"]))}'
         + (f' <em>{esc(x["later"]["how"])} {esc(x["later"]["date"])}</em>' if x.get("later") else "") + "</li>"
         for x in tape)
     return row + (f'<ol class="tape" style="max-height:70vh;overflow-y:auto">{items}</ol>' if items else "")

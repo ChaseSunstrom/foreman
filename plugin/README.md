@@ -1,6 +1,6 @@
-# foreman (plugin)
+# Sampo (plugin)
 
-The Foreman plugin: hooks, the `fm` state CLI, skills, read-only agents and the visibility layer. It loads in place from this repo through the local `foreman` marketplace, so edits apply on `/reload-plugins`.
+The Sampo plugin (installed as `foreman`, its old name): hooks, the `fm` state CLI, skills, read-only agents and the visibility layer. It loads in place from this repo through the local `foreman` marketplace, so edits apply on `/reload-plugins`.
 
 - **Hooks** (`hooks/hooks.json` → `hooks/hook <Event>`): SessionStart / UserPromptSubmit inject short factual state; PreToolUse runs the guard (fails closed) and scope notes; PostToolUse(+Failure) and subagent events feed the ledger and `fm watch`; PreCompact checkpoints; Stop runs the evidence gate and drive mode; MessageDisplay adds the reply badge; Notification and Stop emit terminal titles and notifications; SessionEnd records activity.
 - **CLI** `bin/fm` (Python 3 stdlib): the only writer of `~/.claude/foreman/state/`. `fm --help`. Consent: `fm ask` (raises Claude Code's permission prompt; only the user's approval there grants it); audits: `fm task audit`; autonomy: `fm autonomy standard|full`; tool-less brainstorm children: `fm ideas`; headless: `fm serve` (Remote Control under systemd) and `fm run` (fresh session per task).

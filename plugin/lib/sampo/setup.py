@@ -27,7 +27,8 @@ COMPACT_PCT = "70"  # compact earlier than the default: PreCompact checkpoints a
 COMPACT_WINDOW = "200k"  # T-1796: a 1M window let every reply re-read ~380k tokens; 70% of 200k compacts near 140k
 ENV = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": STOP_CAP, "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": COMPACT_PCT,
        "CLAUDE_CODE_AUTO_COMPACT_WINDOW": COMPACT_WINDOW}
-OUTPUT_STYLE = "foreman:Foreman"  # plugin/output-styles/foreman.md; plugin styles are selected as <plugin>:<name>
+OUTPUT_STYLE = "foreman:Sampo"  # plugin/output-styles/foreman.md; plugin styles are selected as <plugin>:<name>
+OUTPUT_STYLES = (OUTPUT_STYLE, "foreman:Foreman")  # T-2946: the id an install stored before the rename still counts
 WHY = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": "drive mode: long queues aren't cut at 8 continuations",
        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "compact before long contexts degrade; Sampo state survives compaction",
        "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "every reply re-reads the whole context: a 200k window keeps it small"}
@@ -153,7 +154,7 @@ def plan_install(P):
         actions.append("worktree.baseRef = head (builder lanes start from your current branch, not the remote's)")
     if new_m.get("outputStyle_set"):  # T-1279: older installs chose the style; the rules carry the format now
         new_m.pop("outputStyle_set")
-        if new_s.get("outputStyle") == OUTPUT_STYLE:  # a style the user changed to since is left alone
+        if new_s.get("outputStyle") in OUTPUT_STYLES:  # a style the user changed to since is left alone
             new_s.pop("outputStyle")
             actions.append("outputStyle removed (the reply format now comes from the rules; saves Claude Code's per-turn style reminder)")
 
@@ -355,7 +356,7 @@ def cmd_uninstall(args):
         if not wt and m.get("worktree_created"):
             new_s.pop("worktree")
         actions.append("worktree.baseRef removed")
-    if m.get("outputStyle_set") and new_s.get("outputStyle") == OUTPUT_STYLE:
+    if m.get("outputStyle_set") and new_s.get("outputStyle") in OUTPUT_STYLES:
         new_s.pop("outputStyle")
         actions.append("outputStyle removed")
     if _without_compact(new_s):  # T-0783: fm compact-output on's hook goes with the rest

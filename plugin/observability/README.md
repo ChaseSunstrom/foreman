@@ -1,6 +1,6 @@
-# Foreman observability (Claude Code → OpenTelemetry → telegraf → InfluxDB → Grafana)
+# Sampo observability (Claude Code → OpenTelemetry → telegraf → InfluxDB → Grafana)
 
-Nothing here is active until you turn it on. Foreman never edits your telegraf config or enables telemetry on its own.
+Nothing here is active until you turn it on. Sampo never edits your telegraf config or enables telemetry on its own.
 
 ## 1. Telegraf
 Append `telegraf.conf` (an `inputs.opentelemetry` listener on :4317, tagged `source=claude-code`) to your telegraf config, route it to a bucket (example output block included, commented out), and restart telegraf.

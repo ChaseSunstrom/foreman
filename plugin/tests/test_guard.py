@@ -1576,7 +1576,7 @@ class InterpreterWrites(GuardCase):
 
     def test_driving_foremans_modules_means_real_imports(self):
         # T-0170 (self-improvement pass 2): an edit script whose strings mention `import fmhooks` was blocked
-        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        driving = lambda cmd: "driving Sampo's modules" in str(self.bash(cmd) or "")
         self.assertFalse(driving("python3 - <<'PY'\nnew = \"import fmsecrets\\nfmsecrets.write_atomic(p, s)\"\n"
                                  "print(len(new))\nPY"))
         for cmd in ("python3 - <<'PY'\nimport fmhooks\nfmhooks.save_brief(x)\nPY",
@@ -1600,7 +1600,7 @@ class InterpreterWrites(GuardCase):
         # T-2068: 42 refusals in a week named no clause, so each rewrite was a guess at which of six had fired
         cases = {
             "cat > x.py <<'EOF'\nimport fmcore\nfmcore.write_meta(p, {{}})\nEOF\npython3 x.py":
-                "shell text it can't read as python names Foreman's modules",
+                "shell text it can't read as python names Sampo's modules",
             "export PYTHONPATH=.\npython3 - <<'PY'\nimport fmcore\nfmcore.write_meta(p, {{}})\nPY": "a PYTHON setting",
             "python3 - <<'PY'\nimport fmcore\nfmcore.write_meta(\nPY": "python code that doesn't parse",
             "python3 - <<'PY'\nexec(\"import fmsecrets; write_atomic(1)\")\nPY": "dynamic code or an import outside",
@@ -1610,13 +1610,13 @@ class InterpreterWrites(GuardCase):
         }
         for cmd, clause in cases.items():
             got = str(self.bash(cmd) or "")
-            self.assertIn("interpreter code driving Foreman's modules", got, cmd)
+            self.assertIn("interpreter code driving Sampo's modules", got, cmd)
             self.assertIn(clause, got, cmd)
 
     def test_a_quoted_heredoc_gets_the_python_settings_and_earlier_cd_checks(self):
         # T-1204: -c code (T-1194) is refused when python's settings or an earlier cd change what it imports; a
         # heredoc fed to python had neither check
-        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        driving = lambda cmd: "driving Sampo's modules" in str(self.bash(cmd) or "")
         body = "python3 - <<'EOF'\nimport re\ns = 'import fmcore; fmcore.write_meta(p, {{}})'\nprint(re.escape(s))\nEOF"
         self.assertFalse(driving(body))
         self.assertTrue(driving("export PYTHONPATH=/tmp/x\n" + body))
@@ -1631,7 +1631,7 @@ class InterpreterWrites(GuardCase):
     def test_an_uppercase_variable_or_and_chain_before_a_heredoc(self):
         # T-1887 (friction 5x): `S=… && python3 - "$S/f" <<'EOF'` made the heredoc no unit, so the text match refused
         # an edit script that names fm modules only in its strings
-        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        driving = lambda cmd: "driving Sampo's modules" in str(self.bash(cmd) or "")
         body = ("python3 - \"$S/a.py\" <<'EOF'\nimport re\ns = 'import fmcore; fmcore.write_meta(p, {{}})'\n"
                 "print(re.escape(s))\nEOF")
         for pre in ("S=/tmp/x && ", "S=/tmp/x; ", "s=/tmp/x && W=/tmp/y; "):
@@ -1645,7 +1645,7 @@ class InterpreterWrites(GuardCase):
 
     def test_python_c_code_gets_the_same_proof_as_a_quoted_heredoc(self):
         # T-1194: -c code went to the text match, so a helper naming fm modules only in its strings was refused
-        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        driving = lambda cmd: "driving Sampo's modules" in str(self.bash(cmd) or "")
         lit = "import re; s = 'import fmcore; fmcore.write_meta(p, {{}})'; print(len(re.findall('fm', s)))"
         for cmd in (f"python3 -c \"{lit}\"", f"python3 -c '{lit.replace(chr(39), chr(34))}'",
                     f"python3 -Bc \"{lit}\"", f"python3 -I -W ignore -X utf8 -c \"{lit}\" arg | head -3",
@@ -1687,12 +1687,12 @@ class InterpreterWrites(GuardCase):
             for cmd in (f"cd {d} && {code}", f"cd {d}; {code}", f"pushd {d}; {code}",
                         f"cd {d} && " + "cd . && " * 9 + code):  # a chain longer than the regex reads
                 self.assertTrue(driving(cmd), cmd)
-            self.assertIn("driving Foreman's modules", str(self.bash(code, cwd=d)))  # no cd: the cwd is the folder
+            self.assertIn("driving Sampo's modules", str(self.bash(code, cwd=d)))  # no cd: the cwd is the folder
 
     def test_a_test_written_and_run_in_one_command_is_told_to_split(self):
         # T-1171: 12 of 31 real refusals in four days wrote a test with cat <<EOF and ran the tests in the same
         # command; each half alone passes, so the refusal says to split instead of only naming the Edit tool
-        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        driving = lambda cmd: "driving Sampo's modules" in str(self.bash(cmd) or "")
         body = "import fmcore\nfmcore.write_meta(p, {{}})\n"  # bash() formats the command: {{}} is {}
         both = f"cat >> tests/test_x.py <<'EOF'\n{body}EOF\npython3 plugin/tests/run.py test_x"
         self.assertIn("write the file in one command and run it in the next", str(self.bash(both)))
@@ -1735,7 +1735,7 @@ class InterpreterWrites(GuardCase):
     def test_writing_a_foreman_source_file_is_not_driving_it(self):
         # T-0761: a source edit (cat >> plugin/lib/fmx.py <<'EOF') naming fmcore's writers, beside a test run, was this
         # core block, which a standing yes can't cover (6x in a week); running or importing what it wrote still is
-        driving = lambda cmd: any("driving Foreman's modules" in str(d)
+        driving = lambda cmd: any("driving Sampo's modules" in str(d)
                                   for _, d in g.check_bash(self.sub(cmd), self.ctx()))
         body = "import fmcore\nfmcore.write_meta(p, {{}})\nEOF\n"
         for cmd in ("cat >> {fhome}/plugin/lib/fmrecall.py <<'EOF'\n" + body + "python3 -m pytest -q {fhome}/plugin/tests",
@@ -1754,7 +1754,7 @@ class InterpreterWrites(GuardCase):
 
     def test_a_scratch_draft_naming_foreman_modules_is_text_until_it_runs(self):
         # T-1917: a draft for fm edit (or an apply script on disk) whose text names fmcore's writers was this core block
-        driving = lambda cmd: any("driving Foreman's modules" in str(d)
+        driving = lambda cmd: any("driving Sampo's modules" in str(d)
                                   for _, d in g.check_bash(cmd, self.ctx()))
         s = "/tmp/claude-1000/proj/sess/scratchpad"
         tool = os.path.join(self.repo, "apply.py")
@@ -2406,7 +2406,7 @@ class GuardFriction(GuardCase):
                 "    import fmcli\n    fmcli.mutate(p, b.id, g, 'x', None)\n>>>\n")
         edit = f"fm edit <<'EOF'\n{body}EOF\npython3 plugin/tests/run.py test_lanes"
         r = self.bash(edit, cwd=self.fhome)
-        self.assertFalse(r and "driving Foreman's modules" in str(r.detail), r and r.detail)
+        self.assertFalse(r and "driving Sampo's modules" in str(r.detail), r and r.detail)
         run = self.sub(f"python3 - <<'EOF'\n{self.BODY}EOF\npython3 plugin/tests/run.py test_lanes")
         self.assertBlocked(self.bash(run, cwd=self.fhome), "core")
 

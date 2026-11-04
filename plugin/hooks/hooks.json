@@ -1,5 +1,5 @@
 {
-  "description": "Foreman: one dispatcher per event (hooks/hook <Event>). PROTECTED CORE: the PreToolUse guard lives here.",
+  "description": "Sampo: one dispatcher per event (hooks/hook <Event>). PROTECTED CORE: the PreToolUse guard lives here.",
   "hooks": {
     "SessionStart": [
       {

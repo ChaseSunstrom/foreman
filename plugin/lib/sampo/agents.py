@@ -191,8 +191,13 @@ def _answer(agent, event, ev, ctx, stop, code, err):
 # ---- fm agents install / uninstall / list ----
 
 PLUGIN_MARK = "written by `fm agents install opencode`"
-MD_START, MD_END = "<!-- >>> foreman (fm agents install; fm agents uninstall removes it) -->", "<!-- <<< foreman -->"
-TOML_START, TOML_END = "# >>> foreman (fm agents install codex; fm agents uninstall codex removes it)", "# <<< foreman"
+MD_START, MD_END = "<!-- >>> sampo (fm agents install; fm agents uninstall removes it) -->", "<!-- <<< sampo -->"
+TOML_START, TOML_END = "# >>> sampo (fm agents install codex; fm agents uninstall codex removes it)", "# <<< sampo"
+
+
+def _older(s):
+    """T-2946: the marker an install wrote before the rename (it said foreman); read and removed, never written."""
+    return s.replace(">>> sampo", ">>> foreman").replace("<<< sampo", "<<< foreman")
 
 
 def _config_dirs():
@@ -291,8 +296,9 @@ def _add_hooks(cfg, agent):
 def _block(text, start, end, body):
     """text with Sampo's marked block removed (body None) or replaced/appended (body str)."""
     # the separator install added goes with the block; text the user put after it keeps a line break before it
-    text = re.sub(r"(\n?)" + re.escape(start) + r".*?" + re.escape(end) + r"\n?",
-                  lambda m: "\n" if m.group(1) and m.end() < len(m.string) else "", text or "", flags=re.S)
+    for s, e in ((start, end), (_older(start), _older(end))):
+        text = re.sub(r"(\n?)" + re.escape(s) + r".*?" + re.escape(e) + r"\n?",
+                      lambda m: "\n" if m.group(1) and m.end() < len(m.string) else "", text or "", flags=re.S)
     if body is None:
         return text
     sep = "" if not text else "\n" if text.endswith("\n") else "\n\n"
@@ -387,7 +393,7 @@ def status(agent):
             have.append("hooks")
     if json.dumps(FM) in (_read(f["mcp"]) or ""):
         have.append("MCP")
-    if MD_START in (_read(f["rules"]) or ""):
+    if any(m in (_read(f["rules"]) or "") for m in (MD_START, _older(MD_START))):
         have.append("rules")
     guard = "plugin" if agent == "opencode" else "hooks"
     return {"agent": agent, "installed": guard in have, "detail": ", ".join(have) or None,

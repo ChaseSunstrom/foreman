@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""fm: Foreman's state CLI. See `fm --help` and MASTER.md."""
+"""fm: Sampo's state CLI. See `fm --help` and MASTER.md."""
 import os
 import sys
 

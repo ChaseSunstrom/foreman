@@ -318,6 +318,14 @@ class Block(ForemanTestCase):
         self.assertEqual(a._block(put + "b\n", "S", "E", None), "a\n\nb\n")
         self.assertEqual(a._block(a._block(put + "b\n", "S", "E", "y"), "S", "E", None), "a\n\nb\n")
 
+    def test_a_block_an_older_install_marked_foreman_is_replaced_and_found(self):  # T-2946
+        from sampo import agents as a
+        old = a.MD_START.replace("sampo", "foreman") + "\nold\n" + a.MD_END.replace("sampo", "foreman") + "\n"
+        new = old.replace("foreman", "sampo")
+        self.assertEqual(a._block("a\n" + old, a.MD_START, a.MD_END, None), a._block("a\n" + new, a.MD_START, a.MD_END, None))
+        self.assertEqual(a._block("a\n" + old, a.MD_START, a.MD_END, "new").count("old"), 0)
+        self.assertEqual(a._block("a\n" + old, a.MD_START, a.MD_END, "new").count(a.MD_START), 1)
+
 
 class Judgment(ForemanTestCase):
     def test_judgment_the_plan_line_names_the_plan_shape_and_calibration_with_no_growth(self):  # T-2344

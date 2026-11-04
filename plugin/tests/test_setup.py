@@ -135,6 +135,14 @@ class Install(SetupCase):
         self.assertNotIn("outputStyle", self.load())
         self.assertIn("rules", out)
         self.assertNotIn("outputStyle_set", read_json(self.manifest_path()))
+        # T-2946: the style's older id, stored by an install before the rename, is taken back the same way
+        with open(self.settings, "w") as f:
+            json.dump(dict(ORIGINAL, outputStyle="foreman:Foreman"), f)
+        m["outputStyle_set"] = True
+        with open(self.manifest_path(), "w") as f:
+            json.dump(m, f)
+        self.run_fm("install-user")
+        self.assertNotIn("outputStyle", self.load())
         # a style the user chose is never touched, even Foreman's when Foreman did not set it
         for style in ("Concise", setup.OUTPUT_STYLE):
             with open(self.settings, "w") as f:
