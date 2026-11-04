@@ -1867,7 +1867,7 @@ def twins(root, base, head, cap=8):
         still = [ln.split(":", 1)[1] for ln in g.stdout.splitlines() if ":" in ln]  # head:path:line:text
         if still:  # either side reading it ranks first: the changed reader or the reader left behind
             reads = any(reader(s.split(":", 2)[-1]) for s in still) or any(reader(x) for x in removed if old in x)
-            out.append((not reads, old, [":".join(s.split(":", 2)[:2]) for s in still]))
+            out.append((not reads, old, [":".join(s.split(":", 2)[:2]) for s in still]))  # not a list: a path:line pair
     return [{"old": o, "still": w} for _, o, w in sorted(out)[:cap]]
 
 
