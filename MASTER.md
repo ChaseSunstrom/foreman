@@ -185,6 +185,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fminfra` (`sampo prove --infra [PATH] [--yes-run] [--json]`, T-2385: each… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fminstr` (`sampo which --instruments`: the zero-token instruments `sampo sym`… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmintegrations` (T-1551: Sampo for other tools, read-only: `sampo timeline` as… [→ files-lib-2](docs/map/files-lib-2.md)
+- `fmjeffexport` (T-2970: Sampo's own decider on Jeff, `sampo exam models --jeff DIR` and `--train-jeff`: Examples… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmlake` (T-2974: the training lake, `sampo exam models --export DIR [--with-agent]`: outcome-labelled… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmlandlock` (T-1607: a sampo smith worker's writes confined with Landlock… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmlanes` (`sampo lane`: git worktrees as lanes with their own active task… [→ files-lib-2](docs/map/files-lib-2.md)
