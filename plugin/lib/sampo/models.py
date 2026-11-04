@@ -381,6 +381,30 @@ def _local_context(name, base_url, model, row):
     return n if type(n) is int and 512 <= n <= 10_000_000 else LOCAL_CONTEXT
 
 
+def served_context(profile):
+    """T-2935: the context an Ollama server really serves profile's model with: /api/ps context_length while it is
+    loaded (that is the number in use), else _local_context's /api/show answer. None for a profile that isn't openai-kind
+    on a loopback host, or whose server has no Ollama /api/ps (it is not Ollama, or is down)."""
+    base = str(profile.get("base_url") or "")
+    model = profile.get("model")
+    if profile.get("kind") != "openai" or not model or not is_loopback(urllib.parse.urlsplit(base).hostname or ""):
+        return None
+    root = base[:-3] if base.endswith("/v1") else base
+    try:
+        with _LOCAL_OPENER.open(root.rstrip("/") + "/api/ps", timeout=1.0) as r:
+            rows = json.loads(r.read(1 << 20)).get("models")
+    except (ModelError, *_TRANSPORT, ValueError, AttributeError, TypeError, RecursionError):
+        return None
+    if not isinstance(rows, list):
+        return None
+    for x in rows:
+        if isinstance(x, dict) and model in (x.get("name"), x.get("model")):
+            n = x.get("context_length")
+            if type(n) is int and 512 <= n <= 10_000_000:
+                return n
+    return _local_context("ollama", root, model, {})
+
+
 def _local(name=None):
     """Reachable local servers, probed lazily in LOCAL's order (up to 0.3 s each on a filtered port)."""
     for n, u in LOCAL if not os.environ.get("FOREMAN_NO_LOCAL_MODELS") else ():  # tests: a server on the box is no model

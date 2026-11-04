@@ -388,6 +388,13 @@ CLOSE_FIELDS = (("intent", "the intent note (how the change meets the request), 
 def _ask(run, profile, messages, what):
     """One model call for a slot, under the spend cap; a CLI planner must leave the tree as it found it."""
     before = core.worktree_tree(run.root) if profile.get("kind") == "cli" else None
+    sent = sum(len(str(x.get("content") or "")) for x in messages) // 4  # ponytail: chars/4, as check_truncated
+    if profile.get("served") and sent > profile["served"]:  # T-2935: it would be cut; don't spend the call
+        name = profile["name"]
+        raise CodeError(f"{name}: the {what} prompt is about {sent} tokens but the server serves {profile['served']} "
+                        f"(Ollama's default without num_ctx): serve a num_ctx variant, e.g. a Modelfile with "
+                        f"`PARAMETER num_ctx 32768` and `ollama create {name}-32k`, and use it, or "
+                        "a smaller request")
     run.unlean = None
     run.check_cap(what)
     try:
@@ -2625,11 +2632,16 @@ def cmd_code(args):
             if run.worker_timeout is not None and run.worker_timeout <= 0:
                 raise CodeError("--worker-timeout is a number of seconds above 0")
             run.worker_timeout = run.worker_timeout or WORKER_TIMEOUT
-        profile = None  # T-1214: a worker with --verify needs no model
+        profile, served_note = None, None  # T-1214: a worker with --verify needs no model
         if not (run.worker and run.verify_cmd):
             profile = choose_profile(run, args.model)
             run.model_name = profile["name"]
             run.offsite_ok(p, profile)
+            served = m.served_context(profile)  # T-2935: what the server serves, not what models.json says
+            if served and served < profile.get("context", 0):
+                served_note = (f"{profile['name']}: profile says {profile['context']} tokens of context, server serves "
+                               f"{served}: using {served}")
+                profile = dict(profile, context=served, served=served)
             run.cap = CAP if profile.get("context", 0) >= SMALL_CONTEXT else CAP // 2
         run.max_steps = run.max_steps or 40
         run.escalate = m.resolve(run.escalate) if run.escalate else None  # a bad name fails now, not 3 rounds in
@@ -2639,6 +2651,8 @@ def cmd_code(args):
         run.emit("start", "", quiet=True, schema=SCHEMA, request=run.request, task=run.tid, worker=run.worker,
                  model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None,
                  foreman={"root": core.PLUGIN_ROOT, "version": smithbench.version()}, containment=containment(root))
+        if served_note:
+            run.emit("note", served_note)
         warned = install_warning()  # T-1757
         if warned:
             run.emit("note", warned)
