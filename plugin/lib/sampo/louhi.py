@@ -3656,7 +3656,16 @@ _ENDS = (("budget", re.compile(r"reasoning used the whole budget")),
 EVENTS_CAP = 2 << 20  # bytes of one scenario's event log kept
 
 
-def _smith_arm(base, key, work, model, request, events, planner=None):
+def _per_fix(res, tokens):
+    """T-3006: an arm's cost beside its yield: tokens summed over its answers, the share of scenarios that closed
+    (fix_rate) and tokens per closed scenario (None when none closed), so --reason arms compare on one line."""
+    done = sum(len(v) for v in res["closed"].values())
+    res["tokens"] = sum(tokens)
+    res["fix_rate"] = round(done / res["scenarios"], 4) if res.get("scenarios") else None
+    res["tokens_per_fix"] = round(res["tokens"] / done) if done else None
+
+
+def _smith_arm(base, key, work, model, request, events, planner=None, reason=None):
     """T-2908: fm code on a local model profile in a temp copy of the scenario (own Smith home, no user state, the
     smithbench isolation); the tree it leaves is copied to work, Smith's event stream to `events`. The answer has no
     findings of its own (Smith reports a summary), so _smith_findings asks the profile once for them from the end
@@ -3675,6 +3684,7 @@ def _smith_arm(base, key, work, model, request, events, planner=None):
                                capture_output=True, timeout=60)
         argv = [sys.executable, smithbench.FM, "code", request or key["request"], "--json", "--max-steps", str(SMITH_STEPS), "--model", model,
                 *(["--planner", planner] if planner else []),  # T-2945: split planning from acting
+                *(["--reason", reason] if reason else []),  # T-3006: how the model reasons on this arm
                 "--stale-ok", "exam scenario: a throwaway copy in its own Smith home (T-2908)"]
         proc = subprocess.Popen(argv, cwd=wt, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, start_new_session=True)
@@ -3719,7 +3729,8 @@ def _smith_arm(base, key, work, model, request, events, planner=None):
     return {"findings": found, "notes": [c.redact(str(end.get("text") or ""))[:400]] if end else [],
             "done": end.get("event") == "closed", "cost": 0, "tokens": tokens,
             "error": "timeout" if late else c.redact(err.strip()[-300:] or "fm code gave no events") if crashed else None,
-            "model": c.plain(model)[:60], "planner": c.plain(planner)[:60] if planner else None}
+            "model": c.plain(model)[:60], "planner": c.plain(planner)[:60] if planner else None,
+            "reason": reason}
 
 
 FINDINGS_TEXT, FINDINGS_FILES = 4000, 300  # chars of end text and repo paths sent to the findings call
@@ -3845,7 +3856,8 @@ def _answers(p, run, agent):
     return os.path.join(root(p), run, "answers", agent)
 
 
-def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, timeout=20, request=None, jobs=1, planner=None):
+def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, timeout=20, request=None, jobs=1, planner=None,
+              reason=None):
     """Answers from one agent on the run's scenarios (split, then the first `limit`), then the grade. A session arm runs
     `jobs` scenarios at a time (default 1) and defaults to 3 (ponytail: a spend guard; --limit raises it); kinds take
     turns, so a short sample still spans them."""
@@ -3860,8 +3872,12 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
         smodels.resolve(model)
         if planner:
             smodels.resolve(planner)
-    elif planner:
-        raise ValueError(f"--planner goes with --agent {', '.join(LOCAL)}")
+    elif planner or reason:
+        raise ValueError(f"--planner and --reason go with --agent {', '.join(LOCAL)}")
+    if reason:
+        from sampo import smith
+        if reason not in smith.REASONS:
+            raise ValueError(f"--reason is one of {', '.join(smith.REASONS)}")
     request = request or ("make this great" if agent == "genesis" else None)  # recorded, so the row says what was asked
     seen = {}
 
@@ -3888,6 +3904,8 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
         c.write_atomic(os.path.join(_answers(p, run, agent), "model"), c.plain(model or "default")[:60])  # not a list: a name cut at 60 characters
     if planner:  # T-2945: the split run's planner, beside its model
         c.write_atomic(os.path.join(_answers(p, run, agent), "planner"), c.plain(planner)[:60])  # not a list: a name cut at 60 characters
+    if reason:  # T-3006: the arm's reasoning mode, beside its model
+        c.write_atomic(os.path.join(_answers(p, run, agent), "reason"), reason)
 
     def one(s):
         base, key = os.path.join(root(p), run, s["id"]), _key(p, run, s["id"])
@@ -3900,7 +3918,7 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
                 sbudget.record("exam-arm", answer["cost"], project=p.slug, detail=f"{agent} {s['id']}")
         elif agent in LOCAL:  # no Claude spend: a local model
             answer = _smith_arm(base, key, work, model, request,
-                                os.path.join(_answers(p, run, agent), f"{s['id']}.events.jsonl"), planner)
+                                os.path.join(_answers(p, run, agent), f"{s['id']}.events.jsonl"), planner, reason)
         else:
             answer, src = AGENTS[agent](base, key)
             shutil.copytree(src, work, ignore=shutil.ignore_patterns(".git"))
@@ -4135,7 +4153,16 @@ def grade(p, run, agent):
             gen = int(f.read())
     except (OSError, ValueError):  # answers from before the stamp
         gen = rune.current(p)
-    for name in ("request", "model"):
+    if agent in LOCAL:  # T-3006: tokens per fix, per arm
+        toks = []
+        for s in answered:
+            try:
+                with open(os.path.join(_answers(p, run, agent), f"{s['id']}.json"), encoding="utf-8") as f:
+                    toks.append(int(json.load(f).get("tokens") or 0))
+            except (OSError, ValueError, AttributeError, TypeError):
+                pass
+        _per_fix(res, toks)
+    for name in ("request", "model", "reason"):
         try:
             with open(os.path.join(_answers(p, run, agent), name), encoding="utf-8") as f:
                 res[name] = f.read()
@@ -4177,6 +4204,9 @@ def summary(r):
         parts.append(f"Brier {r['brier']}" + (f" ({r['conf_missing']} unstated, scored 50)" if r.get("conf_missing") else ""))
     if r.get("model"):  # T-2158: which model answered; a Haiku line is a smoke signal
         parts.append(f"model {c.plain(str(r['model']))[:40]}")
+    if r.get("reason"):  # T-3006: the arm, its yield and what a fix cost
+        parts.append(f"reason {c.plain(str(r['reason']))[:12]}"
+                     + (f" ({r['tokens_per_fix']} tokens/fix)" if r.get("tokens_per_fix") is not None else ""))
     if r.get("broken"):
         parts.append(f"{r['broken']} broken")
     h = r.get("holdout") or {}
@@ -4336,7 +4366,7 @@ def cmd_exam(args):
         if action == "run":
             res = run_agent(p, args.run, args.agent or "oracle", args.split, args.limit, args.budget, args.model,
                             request=args.request, jobs=1 if args.jobs is None else args.jobs,
-                            planner=getattr(args, "planner", None))
+                            planner=getattr(args, "planner", None), reason=getattr(args, "reason", None))
             cli.out(args, res, summary(res))
             return 1 if res.get("ungraded") else 0
         if action == "taxonomy":  # T-2908: Smith's failure classes from a run's event logs

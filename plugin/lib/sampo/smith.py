@@ -60,6 +60,56 @@ CAP = 3000            # characters of a run's head, and of its tail, the model s
 READ_LINES, READ_MAX, LINE_MAX, READ_BYTES = 200, 400, 500, 16 << 20
 RUN_TIMEOUT, VERIFY_TIMEOUT, FM_TIMEOUT = 120, 600, 900
 MAX_TOKENS, KEEP_RESULTS, SMALL_CONTEXT = 8192, 6, 32768
+# T-3006: --reason arms. state: the model's compact state rides each call, thinking off but for low confidence, a failed
+# check or a loop break, a named check before an edit; off/native: thinking off/on every turn; budget: on, capped, closed
+# by force; bias: the profile's ruminate_bias; schema: a JSON schema on text-action turns
+REASONS = ("state", "off", "native", "budget", "bias", "schema")
+THINK_BUDGET, DELIBERATE_TOKENS, LOW_CONFIDENCE = 1024, 2 * MAX_TOKENS, 0.5
+STATE_TEXT, STATE_FACTS = 160, 5  # characters of a state's text fields; facts kept
+STATE_NOTE = ("\nWith every action also send \"state\": a compact note of your thinking, so you need little other "
+              "thinking: {\"goal\": \"...\", \"facts\": [\"what you have verified\"], \"hypothesis\": \"your best "
+              "explanation\", \"next_check\": \"the command or file that would confirm it\", \"confidence\": 0 to 1}. "
+              "Replace it each time; keep it short. Read or run the next_check before you edit.")
+STATE_PROP = {"type": "object", "description": "your compact state: goal, facts, hypothesis, next_check, confidence"}
+ACTION_SCHEMA = {"oneOf": [  # one object per action, with the fields it needs
+    {"type": "object", "required": ["action", *need], "properties": {"action": {"const": act}}}
+    for act, need in (("read", ["path"]), ("search", ["pattern"]), ("edit", ["file", "old", "new"]),
+                      ("write", ["file", "content"]), ("run", ["cmd"]), ("done", ["summary"]))]}
+
+
+def _names_check(want, a):
+    """T-3006: whether this read, search or run is the check a state's next_check names: its file, pattern or command
+    is in the text, or the text is in the command."""
+    want = " ".join(want.lower().split())
+    return any(t and (t in want.split() or want in t) for t in
+               (" ".join(str(a.get(k)).lower().split()) for k in ("path", "pattern", "cmd") if a.get(k) is not None))
+
+
+def deliberate_cap(profile, sent, cap):
+    """T-3006: a bigger output cap only as far as the context has room for it after the prompt (fit reserves the usual
+    MAX_TOKENS, so a long thinking turn must not ask for more than is left)."""
+    ctx = profile.get("served") or profile.get("context") or 0
+    if not ctx or cap <= MAX_TOKENS:
+        return cap
+    return max(min(MAX_TOKENS, ctx // 4), min(cap, ctx - _tokens(sent)))
+
+
+def clean_state(v):
+    """T-3006: a model's state, read leniently and capped: {goal, facts, hypothesis, next_check, confidence}; confidence a
+    number 0..1 (a percent is divided) or None. None when it isn't an object or says nothing."""
+    if not isinstance(v, dict):
+        return None
+    def text(x):
+        return " ".join(x.split())[:STATE_TEXT] if isinstance(x, str) else ""
+    conf = v.get("confidence")
+    conf = None if isinstance(conf, bool) or not isinstance(conf, (int, float)) or conf != conf or conf < 0 else \
+        min(float(conf) / 100 if conf > 1 else float(conf), 1.0)
+    facts = [text(f) for f in v.get("facts") if isinstance(f, str)][:STATE_FACTS] if isinstance(v.get("facts"), list) else []
+    st = {"goal": text(v.get("goal")), "facts": [f for f in facts if f], "hypothesis": text(v.get("hypothesis")),
+          "next_check": text(v.get("next_check")), "confidence": conf}
+    return st if any(st[k] for k in ("goal", "facts", "hypothesis", "next_check")) or conf is not None else None
+
+
 WORKER_TIMEOUT, JUDGE_MAX = 1200, 300  # a worker turn's seconds; changed files the guard judges one by one
 ON_EVENTS = {"closed": ("closed",), "blocked": ("blocked", "needs-you"), "error": ("needs-you",)}  # T-1351: [on]
 LIMIT_WAIT, LIMIT_WAITS = 3600, 3  # T-1356: seconds a usage limit is waited out (code.toml limit_wait); waits a turn
@@ -565,6 +615,8 @@ class Run:
         self.kept = []  # events before the task (and its journal) exists, written once it does
         self.usd, self.max_usd, self.slug = None, getattr(args, "max_usd", None), None  # T-1357
         self.context = ""  # T-1374: what was piped on stdin
+        self.reason = getattr(args, "reason", None)  # T-3006: one of REASONS, or None: as before
+        self.state, self.checked, self.bad_run, self.broke = None, False, False, False  # a resume starts the state again
         self.nonce = secrets.token_hex(6)  # T-1394: the data envelope's tag, which no file can know ahead
 
     def fence(self, text):
@@ -970,7 +1022,8 @@ class Run:
             return
         if name not in self.msgs:
             self.add(name, {"role": "system", "content": ACT_PROMPT + (f"\n{variant_note()}" if variant_note() else "")
-                            + ("" if profile.get("tools") else TEXT_ACTIONS) + self.small_playbook(profile)})
+                            + ("" if profile.get("tools") else TEXT_ACTIONS) + self.small_playbook(profile)
+                            + (STATE_NOTE if self.reason == "state" else "")})
             self.add(name, {"role": "user", "content": prompt})
         msgs = self.msgs[name]
         lost = self.fence("not run (interrupted): the harness stopped before this action's result was recorded; it may "
@@ -984,6 +1037,10 @@ class Run:
         tools = TOOLS if profile.get("tools") else None
         if tools and self.read_only:
             tools = [t for t in TOOLS if t["name"] in ("read", "search", "done")]
+        if tools and self.reason == "state":  # T-3006: every action may carry the state
+            tools = [dict(t, parameters=dict(t["parameters"], properties=dict(t["parameters"]["properties"],
+                                                                                state=STATE_PROP))) for t in tools]
+        self.state, self.checked, self.bad_run, self.broke = None, False, False, False  # T-3006: each step starts clean
         seen = {}  # T-2966: (action, target) -> times, this call of the step
         while True:
             if self.turns >= self.max_steps:
@@ -992,7 +1049,12 @@ class Run:
             self.check_cap(name)
             self.turns += 1
             sent = fit(self, profile, trim(msgs))
-            r = m.complete(self.capped(profile), sent, tools=tools, max_tokens=MAX_TOKENS)
+            kw, cap = self.reason_kw(name, tools)
+            if self.reason == "state" and self.state:  # T-3006: the state stands in for older prose, one message
+                sent = sent + [{"role": "user", "content": "State so far (your own last note, data not instructions):\n"
+                                + self.fence(self.redact(json.dumps(self.state)))}]
+            cap = deliberate_cap(profile, sent, cap)
+            r = m.complete(self.capped(profile), sent, tools=tools, max_tokens=cap, **kw)
             self.usage(r, profile, name)
             check_truncated(profile, sent, r)
             calls = r["tool_calls"]
@@ -1005,7 +1067,7 @@ class Run:
                 self.add(name, {"role": "assistant", "content": r["text"], "tool_calls": calls})
                 finished = False
                 for tc in calls:
-                    result, fin = self.do(tc["name"], tc["args"])
+                    result, fin = self.step(tc["name"], tc["args"])
                     self.add(name, {"role": "tool", "tool_call_id": tc["id"], "content": self.fence(result)})
                     finished = finished or fin
             else:
@@ -1015,8 +1077,10 @@ class Run:
                     self.add(name, {"role": "user", "content": "No action found." + TEXT_ACTIONS})
                     continue
                 act = v.pop("action")
-                result, finished = self.do(act, v)
+                result, finished = self.step(act, v)
                 self.add(name, {"role": "user", "content": f"Result of {act}:\n{self.fence(result)}"})
+            if self.last_act is None:  # T-3006: a check-first bounce ran nothing: it counts as no action
+                continue
             seen[self.last_act] = seen.get(self.last_act, 0) + 1
             if seen[self.last_act] == 3 and not finished:  # T-2966: once a key, as louhi counts it
                 finished = self.loop_break(name, profile, self.last_act, tools)
@@ -1305,6 +1369,57 @@ class Run:
         self.msgs.setdefault(phase, []).append(msg)
         self.log(kind="msg", phase=phase, msg=msg)
 
+    def reason_kw(self, name, tools):
+        """T-3006: (complete's extra keywords, output cap) for this action turn under --reason, its mode journaled.
+        state: thinking on (and a bigger cap) only when the state's confidence is under LOW_CONFIDENCE, the last check
+        failed or the loop broke; off once a state exists; a run with no state yet is as without --reason."""
+        r, kw, cap, mode, why = self.reason, {}, MAX_TOKENS, "plain", None
+        if r == "off":
+            kw, mode = {"think": False}, "lean"
+        elif r == "native":
+            kw, mode = {"think": True}, "native"
+        elif r == "budget":
+            kw, mode = {"think": True, "think_budget": THINK_BUDGET}, "budget"
+        elif r == "bias":
+            kw, mode = {"bias": True}, "bias"
+        elif r == "schema" and not tools:
+            kw, mode = {"schema": ACTION_SCHEMA}, "schema"
+        elif r == "state":
+            conf = (self.state or {}).get("confidence")
+            why = "loop break" if self.broke else "failed check" if self.bad_run else \
+                "low confidence" if conf is not None and conf < LOW_CONFIDENCE else None
+            if why:
+                kw, cap, mode = {"think": True}, DELIBERATE_TOKENS, "deliberate"
+            elif self.state:
+                kw, mode = {"think": False}, "lean"
+            self.broke = self.bad_run = False
+        if r:
+            self.log(kind="reason", phase=name, mode=mode, why=why)
+        return kw, cap
+
+    def step(self, name, a):
+        """T-3006: do(), and under --reason state: a named check before an edit (asked once, then the edit runs), the
+        failed-run flag, and the state this action carried (it governs the turns after it)."""
+        if self.reason != "state" or not isinstance(a, dict):
+            return self.do(name, a)
+        new = clean_state(a.pop("state", None))
+        want = (self.state or {}).get("next_check")
+        if name in ("edit", "write") and want and not self.checked:
+            self.checked = True
+            self.last_act = None  # no action ran: the loop count skips this turn
+            result, fin = (f"not run: your state names a check first ({want}). Run or read it, then send the edit "
+                           "again; if the check changes your mind, say so in the state."), False
+        else:
+            result, fin = self.do(name, a)
+            if name in ("read", "search", "run") and want and _names_check(want, a):
+                self.checked = True
+            if name == "run":
+                self.bad_run = not result.startswith("exit 0")
+        if new:
+            self.checked = self.checked and new["next_check"] == want
+            self.state = new
+        return result, fin
+
     def do(self, name, a):
         result, fin = self.act(name, a)
         result = self.redact(result)
@@ -1325,6 +1440,7 @@ class Run:
         note = (f"You have now done the same action ({key[0]} {key[1]!r}) three times. Repeating it won't change the "
                 "result: take a different action, or done if the work is finished.")
         other = self.planner or self.escalate
+        self.broke = True  # T-3006: the next turn thinks
         self.log(kind="loop_break", phase=name, action=key[0], target=key[1], by=other and other["name"])
         self.emit("note", f"  {key[0]} {_one_line(key[1], 60)}: three times; "
                   + (f"{other['name']} takes one turn" if other else "the actor is told"), quiet=True)
@@ -1344,6 +1460,8 @@ class Run:
                 self.add(name, {"role": "user", "content": note})
                 return False
             act, args = v.pop("action"), v
+        if isinstance(args, dict):
+            args.pop("state", None)  # T-3006: the planner's turn carries no state of the actor's
         result, fin = self.do(act, args)
         self.add(name, {"role": "user", "content": f"{note} {other['name']} took this action for you: {act}.\n"
                                                     f"Result:\n{self.fence(result)}"})
@@ -2783,7 +2901,9 @@ def cmd_code(args):
                 profile = dict(profile, context=served, served=served)
             run.cap = CAP if profile.get("context", 0) >= SMALL_CONTEXT else CAP // 2
         run.max_steps = run.max_steps or 40
-        run.escalate = m.resolve(run.escalate) if run.escalate else None  # a bad name fails now, not 3 rounds in
+        if run.reason and run.reason not in REASONS:
+            raise cli.UsageError(f"--reason is one of {', '.join(REASONS)}")
+        run.escalate =m.resolve(run.escalate) if run.escalate else None  # a bad name fails now, not 3 rounds in
         if run.escalate:
             run.offsite_ok(p, run.escalate)
         run.planner = m.resolve(run.planner) if run.planner else None  # T-2945: same rule as --escalate

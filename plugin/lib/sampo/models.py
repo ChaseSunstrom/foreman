@@ -901,8 +901,70 @@ def embed(profile, texts, timeout=120):
     return vecs
 
 
-def complete(profile, messages, tools=None, max_tokens=2048, timeout=120, think=None):
-    """think (T-2893): True/False overrides the profile's own switch for this call."""
+UNSUPPORTED = {}  # T-3006: profile name -> {feature: why} for each reasoning extra a backend couldn't take
+
+
+EXTRA_FEATURE = {"thinking_budget_tokens": "think_budget", "logit_bias": "logit_bias", "response_format": "schema"}
+ANSWER_ALLOWANCE = 2048  # tokens beyond a thinking budget the call may spend on its answer
+
+
+def support(profile):
+    """T-3006: the reasoning extras (think_budget, logit_bias, schema) this profile has refused or can't take, with why."""
+    return dict(UNSUPPORTED.get(profile.get("name"), {}))
+
+
+def _refuse(profile, feature, why):
+    UNSUPPORTED.setdefault(profile.get("name"), {})[feature] = str(why)[:200]
+
+
+def _reasoned(profile, messages, tools, max_tokens, timeout, think, budget, bias, schema):
+    """T-3006: complete with the reasoning extras. A thinking budget the model spends whole gets a forced close (asked
+    again with thinking off); the rumination bias is the profile's own ruminate_bias {token id: bias}; schema is a JSON
+    schema for the reply. An extra the backend refuses (400/422) is dropped, asked again, and recorded by support()."""
+    extra = {}
+    if profile.get("kind") != "openai":
+        for what, on in (("think_budget", budget), ("logit_bias", bias), ("schema", schema)):
+            if on:
+                _refuse(profile, what, f"a {profile.get('kind')} profile takes none")
+    else:
+        if budget and think is not False:
+            extra["thinking_budget_tokens"] = int(budget)
+        if bias:
+            lb = profile.get("ruminate_bias")
+            if isinstance(lb, dict) and lb:
+                extra["logit_bias"] = {str(k): v for k, v in lb.items()}
+            else:
+                _refuse(profile, "logit_bias", "the profile sets no ruminate_bias")
+        if schema:
+            extra["response_format"] = {"type": "json_schema", "json_schema": {"name": "action", "schema": schema}}
+
+    known = support(profile)  # an extra refused once is not sent again: no refuse-and-resend on every turn
+    extra = {k: v for k, v in extra.items() if EXTRA_FEATURE[k] not in known}
+    cap = max_tokens
+    if budget and think is not False:  # servers often ignore thinking_budget_tokens: bound the call ourselves
+        cap = min(max_tokens, int(budget) + ANSWER_ALLOWANCE)
+
+    def go(ex, th, cap=max_tokens):
+        body = {**_of(profile.get("body"), dict), **ex}
+        return complete(dict(profile, body=body), messages, tools, cap, timeout, th)
+    try:
+        return go(extra, think, cap)
+    except ModelError as e:
+        if budget and "reasoning used the whole budget" in str(e):
+            return go({k: v for k, v in extra.items() if k != "thinking_budget_tokens"}, False)  # the forced close
+        if extra and e.status in (400, 422):
+            for k in extra:  # only what was sent
+                _refuse(profile, EXTRA_FEATURE[k], f"the server refused: {e}")
+            return go({}, think, cap)
+        raise
+
+
+def complete(profile, messages, tools=None, max_tokens=2048, timeout=120, think=None, think_budget=None, bias=False,
+             schema=None):
+    """think (T-2893): True/False overrides the profile's own switch for this call. T-3006: think_budget, bias and
+    schema are the --reason arms' extras (see _reasoned)."""
+    if think_budget or bias or schema:
+        return _reasoned(profile, messages, tools, max_tokens, timeout, think, think_budget, bias, schema)
     if profile.get("kind") == "cli":
         return _cli(profile, messages, timeout)
     if profile.get("kind") == "systemone":

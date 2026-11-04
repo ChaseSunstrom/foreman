@@ -718,6 +718,26 @@ class OwnServer(Base):
 
 
 class Extras(Base):  # T-2893: a profile's body extras, its reasoning switch, and a reply the reasoning ate
+    def setUp(self):
+        super().setUp()
+        m.UNSUPPORTED.clear()  # T-3006: refusals are remembered per profile name, process-wide
+        self.addCleanup(m.UNSUPPORTED.clear)
+
+    def test_a_refused_extra_is_not_sent_again_and_only_the_sent_ones_are_blamed(self):  # T-3006
+        f = self.fake((400, {"error": "bad"}, None), (200, oa_reply("ok"), None), (200, oa_reply("ok"), None))
+        prof = {**self.profile(f), "ruminate_bias": {"1": -1}}
+        ask = [{"role": "user", "content": "hi"}]
+        m.complete(prof, ask, schema={"type": "object"})
+        self.assertEqual(list(m.support(prof)), ["schema"], "bias was never sent, so never blamed")
+        m.complete(prof, ask, schema={"type": "object"}, bias=True)
+        self.assertEqual(len(f.seen), 3, "one refused call, one retry, then one call: no refuse-and-resend")
+        self.assertNotIn("response_format", f.seen[2][3])
+        self.assertIn("logit_bias", f.seen[2][3])
+
+    def test_a_thinking_budget_bounds_max_tokens_even_when_the_server_ignores_it(self):  # T-3006
+        f = self.fake((200, oa_reply("ok"), None))
+        m.complete(self.profile(f), [{"role": "user", "content": "hi"}], max_tokens=16384, think=True, think_budget=512)
+        self.assertEqual(f.seen[0][3]["max_tokens"], 512 + m.ANSWER_ALLOWANCE)
     def test_the_test_switch_hides_local_embedders_too(self):  # T-2880: a server on the box is no model in tests
         from unittest import mock
         with mock.patch.dict(os.environ, {"FOREMAN_NO_LOCAL_MODELS": "1"}), \
@@ -740,6 +760,32 @@ class Extras(Base):  # T-2893: a profile's body extras, its reasoning switch, an
         self.assertNotIn("chat_template_kwargs", self.sent({}))
         self.assertTrue(self.sent({"think": False}, think=True)["chat_template_kwargs"]["enable_thinking"],
                         "the call's think overrides the profile's")
+
+    def test_reason_arms_reach_the_request_and_unsupported_ones_are_reported(self):  # T-3006
+        body = self.sent({"ruminate_bias": {"151667": -5}}, think=True, think_budget=512, bias=True,
+                         schema={"type": "object"})
+        self.assertEqual(body["thinking_budget_tokens"], 512)
+        self.assertEqual(body["logit_bias"], {"151667": -5})
+        self.assertEqual(body["response_format"]["json_schema"]["schema"], {"type": "object"})
+        m.UNSUPPORTED.clear()
+        body = self.sent({}, bias=True)
+        self.assertNotIn("logit_bias", body)
+        self.assertIn("logit_bias", m.support({"name": "t"}), "no bias set: said, per profile")
+
+    def test_a_server_refusing_the_extras_is_asked_again_without_them_and_remembered(self):  # T-3006
+        m.UNSUPPORTED.clear()
+        f = self.fake((400, {"error": "unknown field response_format"}, None), (200, oa_reply("ok"), None))
+        r = m.complete(self.profile(f), [{"role": "user", "content": "hi"}], schema={"type": "object"})
+        self.assertEqual(r["text"], "ok")
+        self.assertNotIn("response_format", f.seen[1][3])
+        self.assertIn("schema", m.support({"name": "t"}))
+
+    def test_a_budget_spent_on_thinking_closes_it_and_asks_again_with_thinking_off(self):  # T-3006
+        eaten = {"choices": [{"message": {"content": ""}, "finish_reason": "length"}], "usage": {}}
+        f = self.fake((200, eaten, None), (200, oa_reply("answer"), None))
+        r = m.complete(self.profile(f), [{"role": "user", "content": "hi"}], think=True, think_budget=64)
+        self.assertEqual(r["text"], "answer")
+        self.assertIs(f.seen[1][3]["chat_template_kwargs"]["enable_thinking"], False)
 
     def test_think_false_reaches_ollama_too(self):
         # T-2928: Ollama's OpenAI API ignores chat_template_kwargs and think; only reasoning_effort none turns it off
