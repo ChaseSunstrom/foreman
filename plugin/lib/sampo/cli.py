@@ -1274,6 +1274,14 @@ def _red_full_check(p):
     return None
 
 
+def _close_advice(p, b):
+    """T-2977's verifier at a close: models advise, proof decides (T-2993). Its score is logged, and a live, low
+    score prints the missing evidence as advice; the close lands either way."""
+    from sampo import verifier
+    if low := verifier.close_score(p, b):
+        print(f"fm: advice: {low}", file=sys.stderr)
+
+
 def task_finish(p, args):
     """One-call close-out (R1; any tier since T-0097): runs each open criterion's own verify command (else --run) and
     --run for each open step, records them as fm runs, checks what passed, records the audits (S: self; M/L: each
@@ -1412,9 +1420,7 @@ def task_finish(p, args):
         _ablate(p, need_brief(p, b.id), args)
     if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted
         _commit_task(p, need_brief(p, b.id), args.commit, dry=True, with_=args.with_)
-    from sampo import verifier  # T-2977: shadow score (a close_score event); an ask only when models.live names it
-    if low := verifier.close_score(p, need_brief(p, b.id)):
-        raise c.PolicyError(low)
+    _close_advice(p, need_brief(p, b.id))
     args.task_cmd = "done"
     args.not_verified = ([f"affected tests skipped: {c.fit(args.waived_affected, 90)}"]  # T-1159
                          if getattr(args, "waived_affected", None) else []) + [

@@ -141,13 +141,13 @@ class Shadow(SampoTestCase):
         self.assertIsInstance(ev[0]["data"]["score"], float)
         self.assertEqual(c.find_brief(self.p, tid).status, "done")
 
-    def test_live_asks_for_the_missing_evidence_under_the_threshold(self):
+    def test_live_advises_the_missing_evidence_and_never_blocks_the_close(self):  # models advise, proof decides
         with open(os.path.join(self.p.dir, "decisions.md"), "w") as f:
             f.write("| Date | Decision | Why | Revisit |\n|---|---|---|---|\n"
                     "| 2026-11-04 | model-live: verifier: exam s30-001 beat today's false-done rate | why |  |\n")
         tid, r = self.close()
-        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("close score", r.stdout + r.stderr)
         self.assertIn("tests_passed", r.stdout + r.stderr)
-        self.assertNotEqual(c.find_brief(self.p, tid).status, "done")
+        self.assertEqual(c.find_brief(self.p, tid).status, "done")
         self.assertTrue(self.events()[-1]["data"]["live"])
