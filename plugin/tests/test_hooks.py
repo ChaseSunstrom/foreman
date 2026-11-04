@@ -3053,6 +3053,38 @@ class Stop(HookCase):
             json.dump(g, f)
         self.assertNotIn("step 1/2", stop(ci, agent).get("reason", ""), "the agent still holds it")
 
+    def test_from_the_event_scan_a_long_subagent_still_holds_the_drive(self):
+        # T-2872: with no engine list, only background_tasks marked agents (T-0575), so a 45-minute builder and a resumed
+        # designer round read as services past LONG_JOB_S and the drive pushed new work over them
+        from sampo import hooks
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.task("Active work")
+        self.task("Queued work", focus=False)
+        self.hook("SubagentStart", {"agent_id": "abuild1", "agent_type": "foreman:fm-builder", "session_id": "sess-1"})
+        self.hook("PostToolUse", {"tool_name": "SendMessage", "tool_input": {"to": "adesign1"}, "session_id": "sess-1",
+                                  "tool_response": {"message": "Resuming agent adesign1", "resumedAgentId": "adesign1"}})
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "x", "run_in_background": True},
+                                  "session_id": "sess-1", "tool_response": "ID: bshell1"})
+        agents = set()
+        self.assertEqual(sorted(hooks._running("sess-1", agents)), ["abuild1", "adesign1", "bshell1"])
+        self.assertEqual(agents, {"abuild1", "adesign1"})
+
+        def stop():
+            return parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting.",
+                                            "session_id": "sess-1"}))
+        stop()
+        gate = os.path.join(c.find_project(self.repo).dir, "gate.json")
+        with open(gate) as f:
+            g = json.load(f)
+        for k in ("abuild1", "adesign1", "bshell1"):
+            g["drive"]["sess-1"]["since"][k] -= 45 * 60  # all past LONG_JOB_S
+        with open(gate, "w") as f:
+            json.dump(g, f)
+        stop()
+        last = [json.loads(x) for x in open(os.path.join(c.state_dir(), "events.jsonl")) if '"drive_wait"' in x]
+        self.assertEqual(last[-1]["running"], ["abuild1", "adesign1"], "the agents still hold it; the shell is a service")
+
     def test_the_drained_product_check_waits_while_the_genesis_round_is_held(self):
         # T-2466: with fm drive --round-first on, the wait branch still said "fm capture each defect, then plan and work
         # the first": new maintenance the user's steer holds until the round is done

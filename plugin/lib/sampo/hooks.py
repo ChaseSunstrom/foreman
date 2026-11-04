@@ -3086,7 +3086,7 @@ def post_tool_use(pl, ok=True):
     elif ok and tool == "SendMessage":  # T-2848: a resume records no SubagentStart; its notice's task-id is this id
         m = re.search(r"resumedAgentId\W+([\w-]+)", json.dumps(pl.get("tool_response")))  # a dict or its JSON text
         if m:
-            _event({"kind": "bg_start", "session_id": pl.get("session_id"), "id": m.group(1)})
+            _event({"kind": "bg_start", "session_id": pl.get("session_id"), "id": m.group(1), "agent": True})
     if ok and p and tool == "Bash":
         _grant_prompted(pl, p)
         note = _bash_touches(pl, p)
@@ -4094,9 +4094,10 @@ def _context(sid):
 BG_WAIT_S = 2 * 3600  # backstop: a start older than this is assumed finished (T-0096: 6 h stalled a 5-day session)
 
 
-def _running(sid):
+def _running(sid, agents=None):
     """Background agents and commands of this session still running: their completion notification wakes the
-    session, so drive waits instead of pushing busywork."""
+    session, so drive waits instead of pushing busywork. agents, a set, gets the ids that are subagents (a start or a
+    SendMessage resume), which never turn into a service past LONG_JOB_S (T-2872)."""
     state = {}
     keep = (json.dumps(sid, ensure_ascii=False),) if isinstance(sid, str) and sid else ()  # T-2033: decode its lines only
     for e in c._tail_rows(os.path.join(c.state_dir(), "events.jsonl"), 1500, keep):
@@ -4105,6 +4106,8 @@ def _running(sid):
         kind, key = e.get("kind"), e.get("agent_id") or e.get("id")
         if kind in ("subagent_start", "bg_start"):
             state[key] = True
+            if agents is not None and (kind == "subagent_start" or e.get("agent")):
+                agents.add(key)
         elif kind in ("subagent_stop", "bg_done"):
             state[key] = False
     return [k for k, on in state.items() if on]
@@ -4233,12 +4236,14 @@ def _drive(p, sd, briefs, pl, g):
     if c.waits_on_user(wb, waiting, sd.get("autonomy") or "standard"):  # T-1061: "slow" gates M too
         return None  # waiting on the user's approval (AUTONOMY standard)
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
-    running = sorted(str(t.get("id")) for t in bg if isinstance(t, dict)) if isinstance(bg, list) else sorted(_running(sid))
+    scanned = set()  # T-2872: the event scan's agents (a subagent start or a resume), as the engine list marks them
+    running = sorted(str(t.get("id")) for t in bg if isinstance(t, dict)) if isinstance(bg, list) else sorted(
+        _running(sid, scanned))
     # T-0415: a job running for LONG_JOB_S is a service (a workflow, a watch, a server), not something to wait for
     now, since = time.time(), d.setdefault("since", {})
     d["since"] = since = {k: since.get(k, now) for k in running}
     agents = {str(t.get("id")) for t in bg if isinstance(t, dict) and t.get("type") == "agent"} if isinstance(bg, list) \
-        else set()  # T-0575: a subagent (a builder can take 30 min) is work that ends, never a service
+        else scanned  # T-0575: a subagent (a builder can take 30 min) is work that ends, never a service
     running = [k for k in running if k in agents or now - since[k] < LONG_JOB_S]
     if running and sd["active"]:  # background work is out; its notification wakes the session (no active task:
         # the jobs don't hold back starting the next one)
