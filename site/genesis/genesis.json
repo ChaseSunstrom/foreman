@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-04T08:15:06Z",
- "rev": "044e0c58",
+ "updated": "2026-11-04T08:23:12Z",
+ "rev": "6936e68f",
  "capabilities": [
   {
    "n": 1,
@@ -4064,7 +4064,7 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 1,
+       "done": 2,
        "current": "the local-only switch in moonscale._ask through grow and funnel and their flags"
       },
       {
@@ -4127,8 +4127,8 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 5,
-       "done": 1,
-       "current": "local real_model through models.complete; the small writer and its brief drafter; the keep rule"
+       "done": 4,
+       "current": "the first batch, the research note, MASTER and CHANGELOG"
       },
       {
        "id": "T-2878",
@@ -4164,8 +4164,8 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 4,
-       "done": 1,
-       "current": "regen: intent gathering from briefs, the map and the tests; the model call through models.complete; the test run in the worktree"
+       "done": 2,
+       "current": "the slice run over the leaf modules, the result file, the M-02 stage line"
       },
       {
        "id": "T-2679",
@@ -4184,7 +4184,7 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 3,
-       "done": 1,
+       "done": 2,
        "current": "the local-only switch in moonscale._ask through grow and funnel and their flags"
       },
       {
@@ -4204,8 +4204,8 @@
        "type": "FEATURE",
        "tier": "M",
        "steps": 5,
-       "done": 1,
-       "current": "local real_model through models.complete; the small writer and its brief drafter; the keep rule"
+       "done": 4,
+       "current": "the first batch, the research note, MASTER and CHANGELOG"
       },
       {
        "id": "T-0271",
@@ -27424,10 +27424,10 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 773,
+ "unproven": 774,
  "unproven_kinds": {
   "meaning-notes": 356,
-  "meaning-user": 244,
+  "meaning-user": 245,
   "research-uncited": 30,
   "perf-typed": 49,
   "typed": 34,
@@ -28585,10 +28585,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 8796,
+   "generated": 9061,
    "write": {
-    "title": 107,
-    "line": 1227,
+    "title": 110,
+    "line": 1286,
     "payoff": 17,
     "kill test": 25,
     "code": 2
@@ -28605,7 +28605,7 @@
    },
    "merged": 3,
    "kept": 197,
-   "pending": 3249
+   "pending": 3452
   },
   "families": [
    {
