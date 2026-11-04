@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-04T14:16:18Z",
+ "updated": "2026-11-04T14:21:23Z",
  "rev": "36c83154",
  "capabilities": [
   {
@@ -31239,7 +31239,7 @@
      "M-08",
      "M-09"
     ],
-    "asked": "T-0701"
+    "asked": "T-2977"
    },
    {
     "id": "M-18",
@@ -31501,7 +31501,7 @@
     "novelty": "4",
     "stage": "idea",
     "unblocks": [],
-    "asked": "T-1061"
+    "asked": "T-2978"
    },
    {
     "id": "M-36",
@@ -31889,13 +31889,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 4817,
+    "kill": 4852,
     "tier": 893,
     "novelty": 26
    },
    "merged": 3,
    "kept": 197,
-   "pending": 2455
+   "pending": 2420
   },
   "families": [
    {
