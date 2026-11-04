@@ -10,6 +10,7 @@
 
 ### Everything else
 
+- `sampo exam run` refuses a second run of the same run and agent while one is running, naming its pid and model, so two `--model` arms can't mix their answers (T-3029).
 - Sampo Code's terminal UI and the pane speak the forge's heat language: what runs glows in fire colours, what is finished cools to steel, and checks that passed stay green. The TUI's night and paper themes take the forge's colours, its banner reads `⊖ SAMPO CODE`, and the pane's mark is the anvil-stone (`⊖` at rest, `⊖ ⊘` while a turn runs). cb, riso, signal and a saved custom palette look exactly as before, and the new TUI preset `classic` brings back the old night (T-2876).
 - Sampo reads the context an Ollama model is really served (`/api/ps`, else `/api/show`) and uses it instead of what `models.json` claims; a Smith prompt that wouldn't fit stops before the call with the `ollama create NAME-32k` fix, instead of a run on a silently truncated prompt (T-2935).
 - `sampo exam taxonomy` names how each smith scenario ended (reasoning used the whole budget, plan refused, no valid plan, finish refused, a loop, a timeout, closed or other), one end per scenario, summing to the scenarios; a plan that never validated no longer counts as malformed (T-2926).
