@@ -209,6 +209,14 @@ class Worker(CodeCase):
         self.assertIn('runner = "claude"', read_text(os.path.join(self.home, "code.toml")))
         self.assertIn("[runners.mine]", read_text(os.path.join(self.home, "code.toml")), "the rest of the file stays")
 
+    def test_a_modelless_close_with_a_gap_blocks_cleanly(self):
+        # T-2937 audit: --worker with --verify has no model, so a PERFORMANCE close's missing numbers can't be asked;
+        # it blocks with finish's own reason, never a traceback
+        self.cli("claude", "fix-calc\n")
+        r = self.work("PERFORMANCE: make calc.add add", "--worker", "claude", "--verify", VERIFY, check=False)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertEqual(self.task()["status"], "blocked", r.stdout + r.stderr)
+
     def test_a_project_picks_a_runner_by_name_only(self):
         self.cli("codex", "fix-calc\n")
         self.work("runners", "--use", "codex", "--here")
