@@ -181,8 +181,15 @@ Reply with exactly one action as a JSON object, such as {"action": "read", "path
 CLOSE_PROMPT = """The task is verified. Before Smith closes it, reply with only one JSON object of short notes:
 {"intent": "how the change meets the request", "adversary": "what input or case could still break it, and why it
 doesn't", "docs": "the docs updated, or none: why", "lesson": "what the next similar task should know, or none: why",
-"why_not_caught": "the test, gate or guard that would have caught it earlier, or none: why"}"""
+"why_not_caught": "the test, gate or guard that would have caught it earlier, or none: why"}
+For example: {"intent": "calc.add now returns a + b, which is what the request asks", "adversary": "negative numbers: they
+add too, the test covers 2 + -3", "docs": "none: an internal fix", "lesson": "none: a one-character bug",
+"why_not_caught": "none: test_calc.py is the test that catches it"}"""
 CLOSE_KEYS = ("intent", "adversary", "docs", "lesson", "why_not_caught")
+GAP_PROMPT = """The task is verified, but Smith cannot close it without the notes below. Reply with only one JSON
+object holding exactly these keys:
+{keys}
+For example: {example}"""
 
 
 class CodeError(Exception):
@@ -294,6 +301,33 @@ def check_close(v):
     return f"give {', '.join(bad)} as text" if bad else None
 
 
+def _gaps_needed(run):
+    """T-2937: which of GAP_FIELDS' keys fm task finish would refuse this task for: the brief says."""
+    p = core.find_project(run.root)
+    b = p and core.find_brief(p, run.tid)
+    if not b:
+        return []
+    return [k for k, lacks in (
+        ("decision", b.type == "RESEARCH" and not b.section("Decision").strip()),
+        ("numbers", b.type == "PERFORMANCE" and not b.section("Measurements").strip()),
+        ("regression", bool(b.proof_gap()))) if lacks]
+
+
+def _gap_slot(run, profile, keys):
+    """T-2937: the model's answer for each missing key, in a slot of its own with a worked example."""
+    fields = tuple(f for f in GAP_FIELDS if f[0] in keys)
+
+    def check(v):
+        if not isinstance(v, dict):
+            return "the reply holds no JSON object"
+        bad = [k for k in keys if not (isinstance(v.get(k), str) and v[k].strip())]
+        return f"give {', '.join(bad)} as text" if bad else None
+    ex = json.dumps({f[0]: f[1].split("(for example: ", 1)[1][:-1] for f in fields})
+    msgs = [{"role": "system", "content": GAP_PROMPT.format(keys=", ".join(keys), example=ex)},
+            {"role": "user", "content": _task_text(run)}]
+    return slot(run, profile, msgs, check, "set of close notes", fields)
+
+
 def check_truncated(profile, messages, r):
     """T-1404: some servers (llama.cpp, Ollama, vLLM with a small context) drop the start of a long prompt and answer
     anyway; a reply that read far fewer prompt tokens than were sent never saw its instructions. API profiles only (a
@@ -376,13 +410,25 @@ PLAN_FIELDS = (("type", f"the task's type, one word of {', '.join(TYPES)} (for e
                               "example: 70)", _number, _is_m),
                ("why", "why you chose it, one line (for example: it is the smallest change that makes the test "
                        "pass)", _line, _is_m))
-CLOSE_FIELDS = (("intent", "the intent note (how the change meets the request), one line", _line),
+CLOSE_FIELDS = (("intent", "the intent note (how the change meets the request), one line (for example: calc.add now "
+                           "returns a + b, which is what the request asks)", _line),
                 ("adversary", "the adversary note (what input or case could still break it, and why it doesn't), one "
-                              "line", _line),
-                ("docs", "the docs note (the docs updated, or none: why), one line", _line),
-                ("lesson", "the lesson note (what the next similar task should know, or none: why), one line", _line),
+                              "line (for example: negative numbers add too, the test covers 2 + -3)", _line),
+                ("docs", "the docs note (the docs updated, or none: why), one line (for example: none: an internal "
+                         "fix)", _line),
+                ("lesson", "the lesson note (what the next similar task should know, or none: why), one line (for "
+                           "example: none: a one-character bug)", _line),
                 ("why_not_caught", "the why-not-caught note (the test, gate or guard that would have caught it "
-                                   "earlier, or none: why), one line", _line))
+                                   "earlier, or none: why), one line (for example: none: test_calc.py is the test "
+                                   "that catches it)", _line))
+# T-2937: what fm task finish refuses a verified close for, one slot each, asked only when the task's brief lacks it
+GAP_FIELDS = (("decision", "the Decision (a RESEARCH task ends in a choice), one line (for example: Recommendation: "
+                           "retry the flaky test twice; would change if: the failures keep a pattern)", _line),
+              ("numbers", "the measurements (a PERFORMANCE task shows before and after), one line (for example: "
+                          "add calls per second: 10 → 12 (timeit over 1000 runs))", _line),
+              ("regression", "the regression test (a FIX shows the test that failed before and passes now, or none: "
+                             "why), one line (for example: test_calc.py failed before the change and passes now)",
+               _line))
 
 
 def _ask(run, profile, messages, what):
@@ -3293,6 +3339,16 @@ def _finish(run, profile):
               f"--docs={notes['docs']}", f"--lesson={notes['lesson']}"]
         if pl["type"] == "FIX":
             a += [f"--why-not-caught={notes['why_not_caught']}"]
+    if need := _gaps_needed(run):  # T-2937: asked for any tier; a close key already given isn't asked again
+        got = _gap_slot(run, profile, need)
+        run.log(kind="gap_notes", notes=got)
+        for key, section in (("decision", "Decision"), ("regression", "Regression test")):
+            if key in need:
+                code, out = run.fm("task", "set", run.tid, "--section", section, "--text", got[key])
+                if code:
+                    raise Blocked(f"fm code: fm task set {section} refused: {_one_line(out, 400)}")
+        if "numbers" in need:
+            a += [f"--numbers={got['numbers']}"]
     if not run.no_commit:
         a += ["--commit", f"{pl['title']} ({run.tid})"]
     code, out = run.fm(*a)

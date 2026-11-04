@@ -1,0 +1,59 @@
+"""T-2937: a verified task isn't refused at finish for a Decision, Measurements or Regression test the model never
+wrote: the close asks for each missing one in its own slot, with a worked example (fakes only)."""
+import json
+import unittest
+
+from test_code import CLOSE, M_PLAN, PLAN, CodeCase, call, plan
+from helpers import read_text
+
+EDIT = (call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+GAPS = {"decision": "Recommendation: change the operator; would change if: callers want a difference",
+        "numbers": "add calls per second: 10 → 12 (timeit over 1000 runs)",
+        "regression": "test_calc.py failed before the change and passes now"}
+
+
+def reply(**keys):
+    return {"text": json.dumps(keys)}
+
+
+class CloseGaps(CodeCase):
+    def closes(self, p, *script):
+        f = self.serve("anthropic", plan(p), *EDIT, *script)
+        r = self.code("research add", "--model", "fake")
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        return f
+
+    def test_research_s_sets_the_decision_before_finish(self):
+        f = self.closes(dict(PLAN, type="RESEARCH"), reply(decision=GAPS["decision"]))
+        self.assertIn("would change if: callers", read_text(self.task()["path"]))
+        self.assertEqual(len(f.seen), 4)  # plan, edit, done, the one gap slot: no M close notes for S
+
+    def test_research_m_asks_close_notes_then_the_decision(self):
+        f = self.closes(dict(M_PLAN, type="RESEARCH"), CLOSE, reply(decision=GAPS["decision"]))
+        self.assertIn("would change if: callers", read_text(self.task()["path"]))
+        self.assertEqual(len(f.seen), 5)
+
+    def test_performance_numbers_and_fix_regression_ride_the_same_slot(self):
+        self.closes(dict(PLAN, type="PERFORMANCE"), reply(numbers=GAPS["numbers"]))
+        self.assertIn("10 → 12", read_text(self.task()["path"]))
+
+    def test_a_fix_with_a_red_run_asks_nothing_more(self):
+        f = self.closes(PLAN)
+        self.assertEqual(len(f.seen), 3)
+
+    def test_the_prompt_carries_a_worked_example_for_each_key(self):
+        from sampo import smith
+        for key, q, *_ in smith.CLOSE_FIELDS + smith.GAP_FIELDS:
+            self.assertIn("for example", q, key)
+        for key in smith.CLOSE_KEYS:
+            self.assertIn(f'"{key}"', smith.CLOSE_PROMPT)
+        self.assertIn("For example", smith.CLOSE_PROMPT)
+
+    def test_the_gap_prompt_sent_shows_the_example(self):
+        f = self.closes(dict(PLAN, type="RESEARCH"), reply(decision=GAPS["decision"]))
+        self.assertIn("Recommendation:", f.said(3))
+        self.assertIn("For example", f.said(3))
+
+
+if __name__ == "__main__":
+    unittest.main()
