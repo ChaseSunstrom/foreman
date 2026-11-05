@@ -1754,6 +1754,21 @@ def _git_dir(root):
     return os.path.normpath(os.path.join(root, d)) if r.returncode == 0 and d else None
 
 
+def _config_damage(root):
+    """T-3185: what a test run with an inherited GIT_DIR leaves in a real repo's own config: core.bare=true on a
+    checkout with a working tree (every merge then fails 'must be run in a work tree'). Read with --git-dir so the
+    broken flag can't hide it."""
+    gd = os.path.join(root, ".git")
+    if not os.path.isdir(gd):
+        return []
+    get = lambda k: _run(["git", "--git-dir", gd, "config", "--local", "--get", k], timeout=20).stdout.strip()  # noqa: E731
+    out = []
+    if get("core.bare") == "true":
+        out.append(f"{root} has a working tree but its .git/config says core.bare=true (a test run with an inherited "
+                   f"GIT_DIR): git --git-dir {gd} config core.bare false")
+    return out  # ponytail: the leaked fixture identity isn't checked (fixture repos carry it legitimately)
+
+
 def _empty_objects(root):
     """Zero-byte loose objects: what a crash mid-write leaves; git then fails on any command that reads one. None
     outside git. Only object names count (git's in-flight tmp_obj_* files are zero-byte for a moment), and only files
@@ -1800,6 +1815,8 @@ def check_integrity(roots, projects, current=None):
         if n:
             bad.append((current is None or root in mine, f"{n} empty git object{'s' * (n != 1)} in {root} (a crash mid-write; fm doctor "
                                       f"--repair moves them aside, and git rewrites any the working files still hold)"))
+        for line in _config_damage(root):
+            bad.append((current is None or root in mine, line))
     for p in projects:
         here = current is None or bool(current) and p.slug == current.slug
         for path in sorted(glob.glob(os.path.join(p.dir, "tasks", "*.md"))):

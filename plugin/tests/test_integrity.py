@@ -2,6 +2,7 @@
 named; fm doctor --repair quarantines the empty objects (they hold nothing) and touches nothing else."""
 import json
 import os
+import subprocess
 
 from helpers import ForemanTestCase
 
@@ -33,6 +34,17 @@ class Check(_Case):
         self.assertIn("1 empty git object", r.detail)
         self.assertIn(self.repo, r.detail)
         self.assertIn("fm doctor --repair", r.detail)
+
+    def test_a_working_tree_marked_bare_fails(self):
+        """T-3185: a test run with an inherited GIT_DIR set core.bare=true in the real repo; every merge then failed."""
+        subprocess.run(["git", "-C", self.repo, "config", "core.bare", "true"], check=True)
+        try:
+            r = self.d.check_integrity([self.repo], [self.p])
+        finally:
+            subprocess.run(["git", "--git-dir", os.path.join(self.repo, ".git"), "config", "core.bare", "false"])
+        self.assertEqual(r.status, "FAIL", r.detail)
+        self.assertIn("core.bare=true", r.detail)
+        self.assertEqual(self.d.check_integrity([self.repo], [self.p]).status, "PASS")
 
     def test_in_flight_and_fresh_files_are_not_damage(self):
         tmp = os.path.join(os.path.dirname(self.obj), "tmp_obj_abc123")

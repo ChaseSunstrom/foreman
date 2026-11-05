@@ -10,6 +10,12 @@ import tempfile
 import time
 import unittest
 
+# T-3185: an inherited GIT_DIR (a git hook, a sentinel run) makes every `git -C <scratch repo>` act on the real repo
+# instead: on 2026-11-05 a run wrote core.bare=true and the fixture identity into the project's own .git/config.
+for _k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+           "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX"):
+    os.environ.pop(_k, None)
+
 PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIB = os.path.join(PLUGIN, "lib")
 FM = os.path.join(PLUGIN, "bin", "fm")
