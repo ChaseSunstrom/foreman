@@ -26,6 +26,7 @@
 - Smith no longer lets a model quit early: a done with no edit made while the plan's verify command fails gets that failure back as the next turn, at most twice, and early-done stops are counted per model (T-3180).
 - Briefs, criteria templates and playbooks name `claude plugin test mods/foreman-ui` for the UI mod, never `npx vitest`, which can't run in a fresh lane and refused a merge (T-3143).
 - `sampo lane brief` refuses a task whose own commits are already in main and says to re-run its criteria and finish it, so a merged task never gets a second builder; a revert reopens it (T-3168).
+- Merges land after their fast checks: the full suite then runs on main in the background, a red result reverts exactly that merge and reopens its lane with the failing tests named, and further merges wait while a landed merge is red (T-3141).
 - The Sampo pane opens with a crest: the Sampo mark ringed by runes that light in turn while work runs, and a hammer per running subagent in its own colour, striking with sparks; under 60 columns it folds to a 3-row mark, and the Clawd mascot is still an option (T-3113).
 - `sampo doctor` warns when Ollama loads a local model with less context than models.json declares for it, naming the profile and both numbers (T-3164).
 - The live page counts only builders still working: "N at work · M waiting to merge", with waiting lanes dimmed in the network view (T-3170).
