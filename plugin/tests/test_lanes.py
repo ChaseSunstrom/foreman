@@ -1944,18 +1944,40 @@ class SelfChangeGate(ForemanTestCase):
             return {}, {"SessionStart": 2000 if f"{os.sep}base{os.sep}" in tree else 1900}
         self.assertEqual(self.gate(bench=bench), [])
 
-    def test_only_the_users_yes_after_the_refusal_passes_never_a_decision_or_the_standing_yes(self):
+    def test_only_the_users_yes_after_the_refusal_passes_never_a_decision(self):
         self.branch({"plugin/rules/foreman.md": "r" * 1099 + "\n"})
         self.fm("decide", f"{self.tid}: footprint rules chars +10% is fine")
-        meta = c.read_meta(self.p)
-        meta["standing"] = {"core": c.now()}
-        c.write_meta(self.p, meta)
         c.log_event(self.p, "approval_granted", task=self.tid, data={"allow": ["core"], "via": "prompt"})  # before
         time.sleep(1.05)
         self.assertTrue(self.gate())
         time.sleep(1.05)
         c.log_event(self.p, "approval_granted", task=self.tid, data={"allow": ["core"], "via": "prompt"})
         self.assertEqual(self.gate(), [])
+
+    def _standing_core(self):
+        meta = c.read_meta(self.p)
+        meta["standing"] = {"core": {"at": c.now(), "task": self.tid, "why": "test"}}
+        c.write_meta(self.p, meta)
+
+    def test_the_standing_yes_passes_a_hold_made_only_of_footprint_verbs_or_hook_speed(self):
+        # T-3217: "I said stop asking me for things" (2026-11-05): quality holds take the user's standing core yes
+        self.branch({"plugin/rules/foreman.md": "r" * 1099 + "\n"})
+        self.assertTrue(self.gate(), "no standing yes: the footprint hold stands")
+        self._standing_core()
+        self.assertEqual(self.gate(), [])
+        self.assertTrue(c.ledger_events(self.p, ["self_change_standing_pass"]))
+
+    def test_the_standing_yes_never_passes_a_branch_that_weakens_the_guard(self):
+        self.branch({"plugin/lib/fmguard.py": "x = 2\n"})
+        self._standing_core()
+        base_tree = []
+
+        def verdicts(tree, cmds):
+            base_tree.append(tree)
+            loose = len(base_tree) > 1  # the branch is judged second
+            return ["allow" if cmd == "ls" or (loose and cmd.startswith("rm")) else "destructive" for cmd, _ in cmds]
+        rows = self.gate(verdicts=verdicts)
+        self.assertTrue(rows and "destructive" in rows[0], rows)
 
     def test_a_gate_that_cant_run_refuses_with_the_reason(self):
         self.branch({"plugin/hooks/hook": "#!/bin/sh\n"})

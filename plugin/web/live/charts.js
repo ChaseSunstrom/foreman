@@ -94,8 +94,8 @@ function funnel(host, o) {
   const label = o.label + ": " + st.map(s => s.name + " " + f(s.kept) + " kept of " + f(s.total) + (s.wait ? ", " + f(s.wait) + " waiting" : "")).join("; ");
   const s = frame(host, W, H, label, "ch-funnel");
   st.forEach((r, i) => {
-    const y = i * (RH + G) + 1, w = Math.max(3, r.total / most * bw), x = cx - w / 2;
-    if (i) { const p = st[i - 1], pw = Math.max(3, p.total / most * bw); s.append(svg("polygon", "ch-link", {points: [cx - pw / 2, y - G, cx + pw / 2, y - G, cx + w / 2, y, cx - w / 2, y].map(n => n.toFixed(1)).join(" ")})); }
+    const y = i * (RH + G) + 1, w = r.total ? Math.max(3, r.total / most * bw) : 0, x = cx - w / 2;  // T-3054: an empty stage draws no bar
+    if (i) { const p = st[i - 1], pw = p.total ? Math.max(3, p.total / most * bw) : 0; s.append(svg("polygon", "ch-link", {points: [cx - pw / 2, y - G, cx + pw / 2, y - G, cx + w / 2, y, cx - w / 2, y].map(n => n.toFixed(1)).join(" ")})); }
     const t = r.total || 1;
     s.append(txt("ch-n", 0, y + RH / 2 + 4, r.name, "start"));
     let px = x;

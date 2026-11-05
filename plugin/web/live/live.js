@@ -39,6 +39,9 @@ const R = rng(hash("sampo-forge"));
 // ---------- colours ----------
 const KIND = {write: [255, 194, 77], judge: [188, 139, 255], embed: [69, 224, 160], train: [255, 148, 64],
   plan: [110, 155, 255], act: [255, 106, 74], review: [234, 242, 255]};
+// T-3054 review: the light scheme's --k-* tokens (live.css), so a line holds 3:1 on a light ground
+const KLITE = {write: [138, 83, 0], judge: [109, 63, 208], embed: [10, 122, 83], train: [178, 58, 7],
+  plan: [47, 98, 224], act: [198, 40, 40], review: [58, 69, 86]};
 const JOBC = {funnel: "#BC8BFF", grow: "#FFC24D", exam: "#6E9BFF", train: "#FF9440", bench: "#45E0A0", check: "#EAF2FF",
   other: "#BAC0DD"};
 const TYPEC = {FIX: "#FF6A4A", FEATURE: "#FFC24D", CLEAN: "#45E0A0", PERF: "#FF9440", SECURITY: "#BC8BFF", RESEARCH: "#6E9BFF"};
@@ -1976,7 +1979,7 @@ function netDraw(t, st) {
   c.font = font(11); c.textAlign = "center"; c.textBaseline = "alphabetic";
   NHEAD.forEach((head, i) => {
     const x = i === 0 ? clamp(NW * 0.13, 52, 150) : i === 1 ? NW / 2 : NW - clamp(NW * 0.13, 52, 150);
-    c.fillStyle = rgba(HEADC, 0.7); c.fillText(head, x, 20);
+    c.fillStyle = rgba(HEADC, modern ? 1 : 0.7); c.fillText(head, x, 20);
     const g = c.createLinearGradient(0, 30, 0, NH);
     g.addColorStop(0, rgba(HEADC, 0.10)); g.addColorStop(1, rgba(HEADC, 0));
     c.fillStyle = g; c.fillRect(x - 0.5, 30, 1, NH - 30);
@@ -1986,10 +1989,10 @@ function netDraw(t, st) {
   for (const e of nedges) {
     const a = P.get(e.a), b = P.get(e.b);
     if (!a || !b) continue;
-    const col = KIND[e.kind] || KIND.review, lit = (nlitE.get(e.id) || 0) > t, g = nglowE.get(e.id) || 0;
+    const KC = lite ? KLITE : KIND, col = KC[e.kind] || KC.review, lit = (nlitE.get(e.id) || 0) > t, g = nglowE.get(e.id) || 0;
     // a running job: dashed, steady (breathing when animated); a past call: solid, fading with its age over the 5 minutes
     const base = e.dim ? 0.4 + (st ? 0 : 0.1 * Math.sin(t * 1.6)) : 0.3 * (1 - 0.6 * clamp((t - e.t) / 300, 0, 1));
-    const al = clamp(base + 0.5 * g + (lit ? 0.55 : 0), 0, 1);
+    const al = clamp(base + 0.5 * g + (lit ? 0.55 : 0), lite ? 0.6 : 0, 1);  // a floor on light: graphics hold 3:1
     const lw = 0.8 + clamp(e.w, 1, 10) * 0.45, mx = (a.x + b.x) / 2;
     c.setLineDash(e.dim ? [5, 5] : []);
     c.beginPath(); c.moveTo(a.x, a.y); c.bezierCurveTo(mx, a.y, mx, b.y, b.x, b.y);
@@ -1998,26 +2001,26 @@ function netDraw(t, st) {
   }
   c.setLineDash([]);
   // the beads: a head with a short trail
-  c.globalCompositeOperation = "lighter";
+  c.globalCompositeOperation = lite ? "source-over" : "lighter";  // additive glow whitens out on a light ground
   for (const p of npulses) {
     if (t < p.t0) continue;
     const a = P.get(p.a), b = P.get(p.b);
     if (!a || !b) continue;
-    const u = clamp((t - p.t0) / p.dur, 0, 1), col = KIND[p.kind] || KIND.review;
+    const u = clamp((t - p.t0) / p.dur, 0, 1), col = (lite ? KLITE : KIND)[p.kind] || (lite ? KLITE : KIND).review;
     for (let i = 7; i >= 1; i--) {
       const q = nbez(a, b, clamp(u - i * 0.03, 0, 1)), f = 1 - i / 8;
       nglow(c, q[0], q[1], 3 + 6 * f, col, 0.38 * f);
     }
     const h = nbez(a, b, u);
-    nglow(c, h[0], h[1], 14, col, 0.9); nglow(c, h[0], h[1], 4, PALE, 0.95);
+    nglow(c, h[0], h[1], 14, col, 0.9); nglow(c, h[0], h[1], 4, modern ? col : PALE, 0.95);
   }
   c.globalCompositeOperation = "source-over";
   // the nodes
   for (const [k, n] of nnodes) {
     const q = P.get(k), lit = (nlitN.get(k) || 0) > t;
     const a = clamp(Math.max(n.glow, n.on ? 0.5 : 0.18, lit ? 1 : 0), 0, 1.4);
-    const col = n.kind && KIND[n.kind] && n.col !== 0 ? KIND[n.kind] : lite ? NLITE[n.col] : NCOL[n.col], r = n.group ? 4 : n.col === 0 ? 6.5 : 5;
-    c.globalCompositeOperation = "lighter";
+    const KC = lite ? KLITE : KIND, col = n.kind && KC[n.kind] && n.col !== 0 ? KC[n.kind] : lite ? NLITE[n.col] : NCOL[n.col], r = n.group ? 4 : n.col === 0 ? 6.5 : 5;
+    c.globalCompositeOperation = lite ? "source-over" : "lighter";
     nglow(c, q.x, q.y, 12 + 22 * a, col, 0.18 + 0.4 * a);
     c.globalCompositeOperation = "source-over";
     if (!n.group) { c.fillStyle = rgba(INKC, 0.35 + 0.6 * Math.min(1, a)); c.beginPath(); c.arc(q.x, q.y, r - 1.2, 0, TAU); c.fill(); }
@@ -2026,7 +2029,7 @@ function netDraw(t, st) {
     c.font = font(11);
     const lab = nfit(c, n.label, NW / 3 - 14), hw = c.measureText(lab).width / 2, lx = clamp(q.x, hw + 4, NW - hw - 4), ly = q.y + r + 14;
     c.lineJoin = "round"; c.lineWidth = 3; c.strokeStyle = lite ? "rgba(244,246,251,.9)" : modern ? "rgba(22,29,50,.85)" : "rgba(4,5,14,.85)"; c.strokeText(lab, lx, ly);  // a halo, so a line behind it doesn't cut the name
-    c.fillStyle = rgba(INKC, 0.5 + 0.45 * Math.min(1, a)); c.fillText(lab, lx, ly);
+    c.fillStyle = rgba(INKC, (modern ? 0.8 : 0.5) + (modern ? 0.2 : 0.45) * Math.min(1, a)); c.fillText(lab, lx, ly);  // 11px: 4.5:1
   }
   // the vignette, as the scene has
   if (!modern) {

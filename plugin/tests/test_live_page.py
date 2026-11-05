@@ -607,7 +607,7 @@ class Page(unittest.TestCase):
         js, html, css = text("live.js"), text("index.html"), text("live.css")
         self.assertIn("strokeText", js)
         self.assertIn("measureText", js[js.index("function netDraw") - 900:])
-        self.assertIn("rgba(HEADC, 0.7)", js)
+        self.assertIn("rgba(HEADC, modern ? 1 : 0.7)", js)  # T-3054 review: modern headings at full alpha (4.5:1)
         self.assertIn("title", js[js.index("function netHover"):][:900])
         self.assertRegex(html, r"thickness[^<]*calls[^<]*running[^<]*dashed|dashed[^<]*running")
         self.assertIn("scroll-snap-type:x proximity", css)

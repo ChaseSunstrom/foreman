@@ -333,7 +333,7 @@ main{display:grid;grid-template-rows:minmax(320px,1fr) auto auto var(--deck-h);g
 @media (prefers-reduced-motion:no-preference){
   [data-motion="full"] .bar,[data-motion="full"] .ticker,[data-motion="full"] .counters,[data-motion="full"] .panel{
     animation:rise var(--dur-arrive) var(--ease-enter) both;animation-delay:calc(var(--i,0) * var(--dur-step) + var(--dur-stage))}
-  [data-motion="full"] .bar{--i:0}[data-motion="full"] .ticker{--i:3}[data-motion="full"] .counters{--i:4}
+  [data-motion="full"] .bar{--i:0}[data-motion="full"] .ticker{--i:3}[data-motion="full"] .counters{--i:4}[data-motion="full"] .charts .panel{--i:5}
   .deck .panel:nth-child(1){--i:6}.deck .panel:nth-child(2){--i:7}.deck .panel:nth-child(3){--i:8}
   .deck .panel:nth-child(4){--i:9}.deck .panel:nth-child(5){--i:10}
   [data-motion="full"] .focus{animation:plaque var(--dur-arrive) var(--ease-enter) both;animation-delay:var(--dur-plate)}
@@ -452,7 +452,8 @@ main{display:grid;grid-template-rows:minmax(320px,1fr) auto auto var(--deck-h);g
 [data-theme="modern"] .drop{color:var(--on-accent);background:var(--gold);border-radius:8px}
 
 /* the stage: a focus strip, the network as the hero, a one-line key */
-[data-theme="modern"] main{grid-template-rows:minmax(430px,1fr) auto auto var(--deck-h)}
+/* T-3054 review: five children (the top with the network as hero, the ticker, counters, charts, the deck) */
+[data-theme="modern"] main{grid-template-rows:minmax(430px,1fr) auto auto auto var(--deck-h)}
 [data-theme="modern"] .stage{min-height:430px;display:grid;grid-template-rows:auto minmax(0,1fr) auto;border-radius:12px;
   border-color:var(--rule-soft);background:var(--plate);box-shadow:var(--shadow)}
 [data-theme="modern"] .focus{grid-row:1;position:relative;left:auto;top:auto;width:auto;display:flex;flex-wrap:wrap;align-items:center;
@@ -494,8 +495,13 @@ main{display:grid;grid-template-rows:minmax(320px,1fr) auto auto var(--deck-h);g
 [data-theme="modern"] .did,[data-theme="modern"] .dt,[data-theme="modern"] .qtier,[data-theme="modern"] .gpu-read,
 [data-theme="modern"] .vram,[data-theme="modern"] .bench,[data-theme="modern"] .act,[data-theme="modern"] .act-status,
 [data-theme="modern"] .note-in,[data-theme="modern"] .stages li,[data-theme="modern"] .stages b{font-family:var(--font-text)}
-[data-theme="modern"] .act{border-radius:6px;border-color:var(--rule);letter-spacing:0}
-[data-theme="modern"] .act[aria-pressed="true"],[data-theme="modern"] .act.danger.armed{border-color:var(--orange)}
+[data-theme="modern"] .act{border-radius:6px;border-color:var(--rule);letter-spacing:0;min-height:28px;padding:5px 10px;font-size:12px}
+[data-theme="modern"] .act.danger{border-color:var(--k-red)}
+/* T-3054 review: no forge warmth in the modern look: a new row is a plain highlight, an empty count is quiet */
+[data-theme="modern"] .is-new{animation:none;background:var(--hover)}
+[data-theme="modern"] .rt{color:var(--muted)}
+[data-theme="modern"] .act[aria-pressed="true"]{border-color:var(--k-blue);background-color:var(--hover)}
+[data-theme="modern"] .act.danger.armed{border-color:var(--k-red)}
 [data-theme="modern"] .note-in{background:var(--night);border-radius:6px}
 [data-theme="modern"] .live .ember{box-shadow:none}
 [data-theme="modern"] .tankbar{background:linear-gradient(90deg,var(--green) 0 var(--f),var(--track) 0)}
@@ -534,6 +540,7 @@ main{display:grid;grid-template-rows:minmax(320px,1fr) auto auto var(--deck-h);g
 [data-theme="modern"] .bench td.bu{letter-spacing:.02em}
 
 @media (max-width:1199px){
+  [data-theme="modern"] main{grid-template-rows:none;grid-auto-rows:auto}  /* T-3054 review: the charts stack, the page scrolls */
   [data-theme="modern"] .stage{min-height:0}
   [data-theme="modern"] #net{height:clamp(340px,52svh,440px);align-self:auto}
 }
