@@ -164,6 +164,49 @@ class StaticGates(unittest.TestCase):
             "".join(f'<use href="#d" x="{i}" y="{i}"/>' for i in range(12)) + "</svg>"
         self.assertNotIn("xml", failed(works.inspect(reused.encode(), "icon")))
 
+    def test_paint_marker_and_stylesheet_fan_out_or_a_cycle_fails_xml(self):  # T-3198
+        svg = f'<svg {NS} viewBox="0 0 320 120">{{}}</svg>'.format
+        cell = '<rect width="1" height="1" {}/>'.format
+        pats = '<pattern id="p0" width="1" height="1"><rect width="1" height="1"/></pattern>' + "".join(
+            f'<pattern id="p{i}" width="1" height="1">{cell(f"fill=\'url(#p{i - 1})\'") * 2}</pattern>'
+            for i in range(1, 26))
+        pts = " ".join(f"L{i} {i % 2}" for i in range(1, 20))
+        marks = '<marker id="m0"><circle r="1"/></marker>' + "".join(
+            f'<marker id="m{i}"><path d="M0 0 {pts}" style="marker-mid: url(#m{i - 1})"/></marker>' for i in range(1, 5))
+        sheet = "".join(f".k{i}{{fill:url(#q{i - 1})}}" for i in range(1, 27))
+        qs = '<pattern id="q0" width="1" height="1"><rect width="1" height="1"/></pattern>' + "".join(
+            f'<pattern id="q{i}" width="1" height="1">{cell(f"class=\'k{i}\'") * 2}</pattern>' for i in range(1, 26))
+        bombs = {"pattern": svg(f'<defs>{pats}</defs><rect width="9" height="9" fill="url(#p25)"/>'),  # 2^25 tiles
+                 "marker": svg(f'<defs>{marks}</defs><path d="M0 0 {pts}" marker-mid="url(#m4)"/>'),  # 18^5 marks
+                 "stylesheet": svg(f'<style>{sheet}</style><defs>{qs}</defs><rect class="k26" width="9" height="9"/>'),
+                 "cycle": svg('<defs><pattern id="a" width="1" height="1">' + cell("fill=\"url('#b')\"") +
+                              '</pattern><pattern id="b" width="1" height="1">' + cell('fill="url(#a)"') +
+                              '</pattern></defs><rect width="9" height="9" fill="url(#a)"/>')}
+        for name, bomb in bombs.items():
+            with self.subTest(name):
+                self.assertIn("xml", failed(works.inspect(bomb.encode(), "card")))
+        ok = svg('<style>.hatch{fill:url(#h)} .line{stroke:#333} .shade{fill:url(#g)}</style><defs>'
+                 '<pattern id="h" width="4" height="4" patternUnits="userSpaceOnUse"><path class="line" d="M0 4L4 0"/>'
+                 '</pattern><linearGradient id="g"><stop offset="0" stop-color="#fff"/><stop offset="1"/>'
+                 '</linearGradient><marker id="arrow" markerWidth="4" markerHeight="4"><path d="M0 0L4 2L0 4z"/>'
+                 '</marker></defs>' + "".join(f'<rect class="hatch" x="{i}" width="1" height="1"/>' for i in range(12))
+                 + "".join(f'<circle class="shade" cx="{i}" cy="2" r="1"/>' for i in range(40))
+                 + "".join(f'<line x1="0" y1="{i}" x2="5" y2="{i}" marker-end="url(#arrow)"/>' for i in range(30)))
+        self.assertNotIn("xml", failed(works.inspect(ok.encode(), "card")))
+
+    def test_stylesheet_rules_naming_a_url_are_capped_and_the_worst_allowed_stays_fast(self):  # T-3198
+        def page(n, body):
+            pats = "".join(f'<pattern id="p{i}" width="1" height="1"><rect width="1" height="1"/></pattern>' for i in range(n))
+            return f'<svg {NS} viewBox="0 0 320 120"><style>{"".join(f"*{{fill:url(#p{i})}}" for i in range(n))}</style>' \
+                   f'<defs>{pats}</defs>{body}</svg>'.encode()
+        over = works.inspect(page(works.MAX_RULES + 1, "<g/>"), "scene")
+        self.assertEqual([g["got"] for g in over["gates"] if g["gate"] == "xml"],
+                         [f"over {works.MAX_RULES} stylesheet rules naming a url(#…)"])
+        start = time.monotonic()
+        worst = works.inspect(page(works.MAX_RULES, "<g/>" * 19000), "scene")  # every rule on every element
+        self.assertLess(time.monotonic() - start, 10)
+        self.assertIn("xml", failed(worst))
+
     def test_the_harness_rules_come_after_the_work_and_hidden_text_is_gone(self):
         sneaky = CARD.replace("<rect", "<style>text{visibility:visible!important}</style><rect", 1)
         w = works.inspect(sneaky.encode(), "card")

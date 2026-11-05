@@ -10,6 +10,7 @@
 
 ### Everything else
 
+- `sampo works check` counts the copies nested patterns, markers, masks, clips and filters make, through url(#id) in attributes, styles and stylesheet rules, toward its 5,000-copy cap, so an exponential pattern or marker bomb fails `xml` like a `<use>` bomb does; more than 64 stylesheet rules naming a url(#id) fail it too (T-3198).
 - The crest's Sampo mark is hand-drawn pixel art in four flat tones (fire, steel, stone) instead of a blurry downscale, and shot.py draws half blocks exactly (T-3210).
 - Calling cards: `sampo card list|show|call|test|rank|bench` runs verified, confined generators a small model calls by name, with seed cards, an embedding ranker offered through fm code, and a paired with-versus-without measurement (T-3160).
 - Kalevala part 2: `sampo kalevala start`, `step`, `gen` and `select` run each aspect's Rune tower as a sealed job, at most K at once and charged once inside Kalevala's own daily share, keep Kalevala's own generations, and carry closed behaviour changes into every tower's next seed as capabilities (T-3081).

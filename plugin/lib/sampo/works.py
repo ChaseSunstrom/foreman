@@ -31,7 +31,8 @@ NOT_COLOURS = {"none", "currentcolor", "transparent", "inherit", "initial", "uns
 TYPES = {"icon": (3000, (1, 24), 3, 48), "spot": (40000, (2, 200), 12, 320),
          "card": (120000, (2, 1500), 24, 640), "scene": (200000, (20, 3000), 64, 640)}
 THEMES = {"light": ("#ffffff", "#1b1f24"), "dark": ("#111318", "#e6e8eb")}  # page background, ink (currentColor)
-MAX_READ, MAX_ELEMENTS, MAX_DEPTH, MAX_USES = 1 << 20, 20000, 200, 5000  # MAX_USES: <use> copies, all expanded
+MAX_READ, MAX_ELEMENTS, MAX_DEPTH, MAX_USES = 1 << 20, 20000, 200, 5000  # MAX_USES: copies, all expanded
+MAX_RULES = 64  # T-3198: stylesheet rules naming a url(#id), each matched against every element
 HANGS = 3  # works in a row the browser hangs or dies on before the rest of the batch is left untried
 # the browser's whole environment (no keys or tokens), and no names to resolve and no proxy to reach: no network
 ENV_KEEP = ("PATH", "HOME", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR", "FONTCONFIG_FILE",
@@ -49,6 +50,9 @@ XML_BAR = "bar an SVG with a viewBox"
 STATIC_CSS = "*{animation:none!important;transition:none!important}"
 CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
 CSS_URL = re.compile(r"url\(\s*['\"]?\s*([^'\")\s]*)", re.I)
+URL_REF = re.compile(r"url\(\s*['\"]?\s*#([^'\")\s]+)", re.I)  # T-3198: what a reference copies, for _uses
+CSS_RULE, CSS_WORD = re.compile(r"([^{}]*)\{([^{}]*)\}"), re.compile(r"([.#]?)(-?[_a-zA-Z][\w-]*)")
+NUMBER = re.compile(r"[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?")
 CSS_PAINT = re.compile(r"(?<![\w-])(" + "|".join(PAINTS) + r")\s*:\s*([^;}!]+)", re.I)
 
 
@@ -94,27 +98,74 @@ def _parse(data):
         if count > MAX_ELEMENTS or depth > MAX_DEPTH:
             return None, None, f"over {MAX_ELEMENTS} elements or {MAX_DEPTH} deep"
         stack += [(c, depth + 1) for c in el]
-    uses = _uses(root)
+    rules = _sheet(root)
+    if len(rules) > MAX_RULES:
+        return None, None, f"over {MAX_RULES} stylesheet rules naming a url(#…)"
+    uses = _uses(root, rules)
     if uses is None or uses > MAX_USES:
-        return None, None, "a <use> that reaches itself" if uses is None else f"over {MAX_USES} <use> copies"
+        return None, None, "a reference (use, href or url(#…)) that reaches itself" if uses is None else \
+            f"over {MAX_USES} copies through use, href or url(#…)"
     return root, vb, None
 
 
-def _uses(root):
-    """How many copies the browser makes expanding every <use> (nested ones multiply), capped past MAX_USES; None
-    when one reaches itself. ponytail: counts a use inside <defs> as drawn: over, never under."""
+def _decls(text):
+    """[(property, value)] of a CSS declaration block."""
+    return [(k.strip().lower(), v) for k, _, v in (d.partition(":") for d in text.split(";")) if v]
+
+
+def _sheet(root):
+    """[(selector parts, declarations)] of the stylesheet rules that name a url(#id). A part is None when it could match
+    any element (*, an attribute or pseudo-class alone), else its (prefix, name) words. T-3198."""
+    rules = []
+    for st in (e for e in root.iter() if _local(e.tag)[0] == "style"):
+        text = re.sub(r"/\*.*?\*/", " ", "".join(st.itertext()), flags=re.S)
+        for sel, body in CSS_RULE.findall(text):
+            if URL_REF.search(body):
+                parts = [re.sub(r"::?[\w-]+(\([^)]*\))?", " ", s) for s in sel.split(",")]
+                rules.append(([None if "[" in s or "*" in s or not CSS_WORD.search(s) else set(CSS_WORD.findall(s))
+                               for s in parts], _decls(body)))
+    return rules
+
+
+def _refs(el, rules):
+    """[(id, weight)] el itself names: an href (not a link's), and each url(#id) in its attributes, its style and the
+    stylesheet rules its words could match; a marker-mid weighs one per number in its geometry (over its vertices)."""
+    local = _local(el.tag)[0]
+    decls = [(_local(k)[0].lower(), v) for k, v in el.attrib.items()]
+    if local in ("linearGradient", "radialGradient", "stop"):  # draw nothing, so only a gradient's href reaches out
+        decls = [(k, v) for k, v in decls if k == "href"]
+    else:
+        mine = {("", local), ("#", el.get("id")), *((".", x) for x in (el.get("class") or "").split())}
+        decls += _decls(el.get("style") or "") + [d for parts, ds in rules
+                                                  if any(p is None or p & mine for p in parts) for d in ds]
+    mid = 1 + len(NUMBER.findall(" ".join(v for k, v in decls if k in ("d", "points"))))
+    out = []
+    for k, v in decls:
+        if k == "href":
+            out += [(v.strip()[1:], 1)] if local != "a" and v.strip().startswith("#") else []
+        elif k != "style":
+            out += [(i, mid if k in ("marker-mid", "marker") else 1) for i in URL_REF.findall(v)]
+    return out
+
+
+def _uses(root, rules=()):
+    """How many copies the browser makes expanding every reference: a <use>'s or another href, and each url(#id) in an
+    attribute, a style or a stylesheet rule (patterns, markers, masks, clips, filters; T-3198). Nested ones multiply,
+    capped past MAX_USES; None when one reaches itself; a gradient costs no copy. ponytail: counts what sits inside
+    <defs> as drawn and a rule as matching every element its words could: over, never under."""
     ids = {}
     for el in root.iter():
         if el.get("id"):
             ids.setdefault(el.get("id"), el)
-    refs, count, open_, stack = {}, {}, set(), [root]
+    own, refs, count, open_, stack = {}, {}, {}, set(), [root]
 
     def targets(el):
         if el not in refs:
-            hrefs = [(u.get("href") or u.get(f"{{{XLINK_NS}}}href") or "").strip() for u in el.iter()
-                     if _local(u.tag)[0] == "use"]
-            refs[el] = [ids.get(h[1:]) if h.startswith("#") else None for h in hrefs]
+            refs[el] = [(ids.get(i), w) for e in el.iter() for i, w in (own[e] if e in own else own.setdefault(e, _refs(e, rules)))]
         return refs[el]
+
+    def cost(t):
+        return 0 if t is not None and _local(t.tag)[0] in ("linearGradient", "radialGradient") else 1
 
     while stack:
         el = stack[-1]
@@ -122,14 +173,14 @@ def _uses(root):
             stack.pop()
             continue
         open_.add(el)
-        todo = [t for t in targets(el) if t is not None and t not in count]
+        todo = [t for t, _ in targets(el) if t is not None and t not in count]
         if any(t in open_ for t in todo):
             return None
         if todo:
             stack += todo
             continue
         open_.discard(el)
-        count[el] = min(MAX_USES + 1, sum(1 + (count[t] if t is not None else 0) for t in targets(el)))
+        count[el] = min(MAX_USES + 1, sum(w * (cost(t) + (count[t] if t is not None else 0)) for t, w in targets(el)))
         stack.pop()
     return count[root]
 
