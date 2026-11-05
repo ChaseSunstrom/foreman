@@ -7782,7 +7782,8 @@ def _build_parser(only=None):
             "home under research/genesis: gen-0 kept verbatim, tower docs filed in shape, every generation's status (T-2078)")
     s.add_argument("action", nargs="?", choices=("status", "init", "put", "export", "live", "publish", "check", "step",
                                                  "draft", "spec", "select", "confirm", "seed", "drift", "sweep", "exam", "frontier",
-                                                 "novelty", "grow", "steer", "review", "moonshot", "underworld"))
+                                                 "novelty", "grow", "steer", "review", "moonshot", "underworld", "towers"))
+    s.add_argument("--tower", help="work on this tower's own home, research/genesis/towers/NAME (T-3053); none: the root tower")
     s.add_argument("path", nargs="?", help="put: the tower doc, e.g. gap-map.md or gen-1/seed.md; live: on|off; export: the folder "
                                           "for genesis.json and the docs (site/genesis here); draft: the goal line (none: "
                                           "a whole gen-0 anyway); select/seed/drift/sweep: the generation N")

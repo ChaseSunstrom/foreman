@@ -2,7 +2,7 @@
 
 Not loaded every session (`~/.claude/rules/foreman.md` points here). Read it when you're unsure where something lives or how the parts interact. `sampo doctor` checks the file map below against disk.
 
-**Names:** Sampo (formerly Foreman) is the product; its parts are Smith (the task loop: plan, build, prove), Rune (Genesis, `sampo rune`), Moons (moonshots), Louhi (the exam, `sampo louhi`), Underworld (the not-yet ledger) and the Ward (the guard). The old names stay as aliases, and every path, command, plugin id and `FOREMAN_*` variable below keeps its old spelling.
+**Names:** Sampo (formerly Foreman) is the product; its parts are Smith (the task loop: plan, build, prove), Rune (Genesis, `sampo rune`), Moons (moonshots), Louhi (the exam, `sampo louhi`), Underworld (the not-yet ledger) and the Ward (the guard). Several Rune towers can share a project: `sampo genesis --tower NAME <verb>` works on `research/genesis/towers/NAME` (own gen-0, docs, steers.md, exam lines); moons, exam scenarios and the user's steers stay shared at the root; `sampo genesis towers` lists them; publish, export and live stay root-only (T-3053). The old names stay as aliases, and every path, command, plugin id and `FOREMAN_*` variable below keeps its old spelling.
 
 **Contents:** [What it is](#1-what-sampo-is) · [Prompting](#2-how-to-prompt-it) · [File map](#3-file-map) · [Interaction diagram](#4-interaction-diagram) · [Lifecycle](#5-lifecycle-walkthrough-a-fix-line-to-an-archived-task) · [Precedence](#6-source-of-truth-and-precedence) · [Integrations](#7-integrations) · [BUILD_PROMPT](#8-relationship-to-build_promptmd-and-the-repo) · [Operations](#9-operations) · [Limitations](#10-known-limitations) · [Deviations](#11-deviations-from-build_promptmd)
 

@@ -3687,7 +3687,7 @@ def _lean_grew(p, run, agent, sid, ov):
     """T-2363: the metrics of ov past their band against this arm's first measure of the scenario this generation
     (exam/lean-start.json); the first measure is the start, so it never grows."""
     from sampo import rune
-    path, gen = os.path.join(root(p), "lean-start.json"), str(rune.current(p))
+    path, gen = os.path.join(root(p), "lean-start.json"), (f"{rune._TOWER}/" if rune._TOWER else "") + str(rune.current(p))  # T-3053: a tower's gen 1 is its own
     with c.lock(p.dir):
         try:
             with open(path, encoding="utf-8") as f:

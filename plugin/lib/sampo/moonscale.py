@@ -97,7 +97,7 @@ SYSTEM = ("You invent moonshots for the people who use a coding harness: ideas t
 
 
 def _dir(p):
-    return os.path.join(rune.home(p), "moons")
+    return os.path.join(rune.root(p), "moons")
 
 
 class Busy(Exception):

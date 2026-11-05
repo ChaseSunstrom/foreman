@@ -25,8 +25,85 @@ OWNED = re.compile(r"exam\.jsonl|frame\.md|gen-[1-9][0-9]*/((drift|sweep|select|
 GEN = re.compile(r"gen-([1-9][0-9]*)")
 
 
-def home(p):
+_TOWER = None  # T-3053: the tower this process works on (sampo genesis --tower NAME); None is the root tower
+TOWER_NAME = re.compile(r"[a-z][a-z0-9-]{0,23}")
+
+
+def _valid(name):
+    return bool(TOWER_NAME.fullmatch(name)) and not name.endswith("-") and name != "root"
+
+
+def set_tower(name):
+    """Name the tower every rune verb follows for this process; None is the root tower. A bad name is refused."""
+    global _TOWER
+    if name is not None and not _valid(name):
+        raise ValueError(f"tower name {name!r}: lowercase letters, digits and dashes, from a letter, up to 24, and not 'root'")
+    _TOWER = name
+
+
+def root(p):
+    """The root tower's home. Shared by every tower: the moons store, the exam scenarios and the steer-expansion exam."""
     return os.path.join(p.dir, "research", "genesis")
+
+
+def home(p):
+    return root(p) if _TOWER is None else os.path.join(root(p), "towers", _TOWER)
+
+
+def sd(p):
+    """Where a tower keeps its small state files (reads, passes, lean, accepted, step cache): the project's state folder
+    for the root tower (as always), the tower's own home for a tower."""
+    return p.dir if _TOWER is None else home(p)
+
+
+def _log(p, event, **kw):
+    """c.log_event for a tower's events: a tower's carry its name, so its seal, reads and verdicts stay its own."""
+    if _TOWER:
+        kw["data"] = dict(kw.get("data") or {}, tower=_TOWER)
+    return c.log_event(p, event, **kw)
+
+
+def _events(p, kinds):
+    return [e for e in c.ledger_events(p, kinds=kinds) if (e.get("data") or {}).get("tower") == _TOWER]
+
+
+def own_steers(p):
+    """A tower's own steers: the bullets of steers.md in its home (the root tower has none: the user's steers are its)."""
+    if not _TOWER:
+        return []
+    try:
+        with open(os.path.join(home(p), "steers.md"), encoding="utf-8", errors="replace") as f:
+            return [x[2:].strip() for x in f if x.startswith("- ") and x[2:].strip()]
+    except OSError:
+        return []
+
+
+def tower_steers(p):
+    """The steers a tower works under: the user's, shared by every tower, then its own."""
+    return [t for _, t in c.steer_rules(p)] + own_steers(p)
+
+
+def towers(p):
+    """[{name, aspect, generation, select, drift}] for the root (named root, once it has a gen-0) and each tower."""
+    out, base = [], root(p)
+    tdir = os.path.join(base, "towers")
+    names = [n for n in sorted(os.listdir(tdir)) if _valid(n) and os.path.isdir(os.path.join(tdir, n))] if os.path.isdir(tdir) else []
+    last = {}  # (tower, kind) -> the newest verdict: one ledger scan for every tower
+    for e in c.ledger_events(p, kinds=["genesis_select", "genesis_drift"]):
+        x = e.get("data") or {}
+        last[(x.get("tower"), e.get("event"))] = x.get("verdict")
+    for name in ([None] if os.path.isfile(os.path.join(base, "gen-0.md")) else []) + names:
+        d = base if name is None else os.path.join(tdir, name)
+        try:
+            with open(os.path.join(d, "gen-0.md"), encoding="utf-8", errors="replace") as f:
+                aspect = next((x.strip() for x in f if x.strip()), "")
+        except OSError:
+            aspect = ""
+        out.append({"name": name or "root", "aspect": c.fit(aspect, 80),
+                    "generation": max([int(m[1]) for x in (os.listdir(d) if os.path.isdir(d) else ())
+                                       if (m := GEN.fullmatch(x))] or [0]),
+                    "select": last.get((name, "genesis_select")), "drift": last.get((name, "genesis_drift"))})
+    return out
 
 
 def init(p, data):
@@ -52,7 +129,7 @@ def init(p, data):
 def seal(p):
     """The sha256 init logged for gen-0 (the ledger: a seal file can be deleted or forged beside an edit), else
     gen-0.sha256's, else ''."""
-    for e in c.ledger_events(p, kinds=["genesis_init"]):
+    for e in _events(p, ["genesis_init"]):
         if (e.get("data") or {}).get("sha256"):
             return str(e["data"]["sha256"])
     try:
@@ -90,7 +167,7 @@ def put(p, name, text):
     _read(p, name, text)
     path = _file(p, name, text, record="put")
     if sealed:
-        c.log_event(p, "genesis_seal", data={"gen": int(sealed[1]), "sha": hashlib.sha256(text.encode()).hexdigest()})
+        _log(p, "genesis_seal", data={"gen": int(sealed[1]), "sha": hashlib.sha256(text.encode()).hexdigest()})
         _close_gaps(p, int(sealed[1]) - 1, name)
     if (m := re.fullmatch(r"gen-(\d+)/seed\.md", name)):
         try:  # T-2359: the generation's lean start; never fails a put
@@ -138,7 +215,7 @@ def _file(p, name, text, record=""):
         c.write_atomic(path, data)
         rec = _reads(p, PASSED)
         if record == "put" or (record == "keep" and before and rec.get(name) == before):
-            c.write_atomic(os.path.join(p.dir, PASSED), json.dumps(dict(rec, **{name: sha(data.encode())})))
+            c.write_atomic(os.path.join(sd(p), PASSED), json.dumps(dict(rec, **{name: sha(data.encode())})))
     return path
 
 
@@ -247,7 +324,7 @@ def _norm_name(s):
 def _grown(p):
     """{entry id: hash} fm genesis grow logged (frame_grow events)."""
     return {(e.get("data") or {}).get("id"): (e.get("data") or {}).get("hash")
-            for e in c.ledger_events(p, kinds=["frame_grow"]) if e.get("event") == "frame_grow"}
+            for e in _events(p, ["frame_grow"]) if e.get("event") == "frame_grow"}
 
 
 def frame(p):
@@ -321,7 +398,7 @@ def grow(p, kind, name, evidence, measure):
         head = f"{nid} {kind}: {c.redact(name)}"
         text = (_doc(d, "frame.md") or FRAME_HEAD).rstrip("\n") + f"\n\n## {head}\n{body}"
         path = _file(p, "frame.md", text)
-        c.log_event(p, "frame_grow", data={"id": nid, "kind": kind, "name": c.fit(name, 120),
+        _log(p, "frame_grow", data={"id": nid, "kind": kind, "name": c.fit(name, 120),
                                            "measure": c.fit(measure, 200), "hash": _entry_hash(head, body)})
         lineage, line = _doc(d, "lineage.md") or "# Lineage\n", f"- gen-{n}: {head} ({measure})"
         m = re.search(r"^## Frame\n(?:(?!## ).*\n?)*", lineage, re.M)  # one Frame section, its lines in order
@@ -556,7 +633,7 @@ def read_check(p):
             continue
         if passes is None:
             passes = {}
-            for e in c.ledger_events(p, kinds=["genesis_read"]):
+            for e in _events(p, ["genesis_read"]):
                 x, ts = e.get("data") or {}, c.parse_ts(e.get("ts"))
                 if x.get("verdict") == "pass" and ts:
                     passes.setdefault(str(x.get("name")), []).append(ts.timestamp())
@@ -605,7 +682,7 @@ def _idea_key(title, body):
 
 def _novelty_store(p):
     try:
-        with open(os.path.join(p.dir, "genesis-novelty.json"), encoding="utf-8") as f:
+        with open(os.path.join(sd(p), "genesis-novelty.json"), encoding="utf-8") as f:
             got = json.load(f)
         return got if isinstance(got, dict) else {}
     except (OSError, ValueError):
@@ -640,8 +717,8 @@ def novelty(p, n):
         for k, obvious in said.items():  # the first read of an idea's text stands: a reroll can't turn obvious new
             store.setdefault(_idea_key(*got[k - 1]), {"obvious": obvious, "gen": n, "title": c.fit(got[k - 1][0], 120),
                                                       "at": c.now()})
-        c.write_atomic(os.path.join(p.dir, "genesis-novelty.json"), json.dumps(dict(list(store.items())[-500:]), indent=1))
-    c.log_event(p, "genesis_novelty", data={"gen": n, "ideas": len(got), "obvious": sum(said.values())})
+        c.write_atomic(os.path.join(sd(p), "genesis-novelty.json"), json.dumps(dict(list(store.items())[-500:]), indent=1))
+    _log(p, "genesis_novelty", data={"gen": n, "ideas": len(got), "obvious": sum(said.values())})
     return {"gen": n, "ideas": len(got), "judged": len(said), "obvious": [got[k - 1][0] for k, o in said.items() if o]}
 
 
@@ -667,6 +744,7 @@ def _asker(p):
     asks = [(b.id, set(recall.words(b.section("Raw request") or b.title)))
             for b in c.load_briefs(p, include_archive=True) if b.meta.get("source") == "user"]
     asks += [(f"steer {dt}", set(recall.words(t))) for dt, t in c.steer_rules(p)]
+    asks += [("tower steer", set(recall.words(t))) for t in own_steers(p)]
 
     def asked(title):
         want = set(recall.words(title))
@@ -1027,7 +1105,7 @@ def health(p, briefs=None):
     except OSError:  # mid-update: a surface loses its line, never its caller
         code = 0
     key = hashlib.sha1(json.dumps([sorted(marks), sorted((b.id, b.status) for b in briefs), code]).encode()).hexdigest()
-    path = os.path.join(p.dir, "genesis-step.json")
+    path = os.path.join(sd(p), "genesis-step.json")
     try:
         with open(path, encoding="utf-8") as f:
             got = json.load(f)
@@ -2236,7 +2314,7 @@ def select(p, n, agent="foreman"):
             from sampo import cli as scli
             _file(p, f"gen-{n}/select.md", f"# Select\n\nGen: {n}\nVerdict: {r['verdict']}\nSeed base: {r['base']}\n"
                                            f"Reason: {r['reason']}\n")
-            c.log_event(p, "genesis_select", data={"gen": n, "verdict": r["verdict"], "base": r["base"]},
+            _log(p, "genesis_select", data={"gen": n, "verdict": r["verdict"], "base": r["base"]},
                         session=scli.session())
         return r
 
@@ -2309,7 +2387,7 @@ def confirm(p, n, agent="foreman"):
                 new = re.sub(r"^- seed base:.*$", lambda _: f"- seed base: {keep}", new, count=1, flags=re.M)
             _file(p, "lineage.md", old[:sec.start()] + new + old[sec.end():], record="keep")
         from sampo import cli as scli
-        c.log_event(p, "genesis_confirm", data={"gen": n, "mark": mark, "run": shown, "model": model},
+        _log(p, "genesis_confirm", data={"gen": n, "mark": mark, "run": shown, "model": model},
                     session=scli.session())
         return out(mark, why)
 
@@ -2510,7 +2588,7 @@ def _seed(p, n, agent):
            "it too):", "", intent(), "",
            "## " + STEERS, "", f"The user's steers since gen-0 as of {time.strftime('%Y-%m-%d', time.gmtime())}, each "
            "still in force, as sessions recorded them from the user's messages (T-2160; fm genesis drift checks every "
-           "row):", "", *c.standing_rules(p), "",
+           "row):", "", *c.standing_rules(p), *[f"- tower: {c.plain(t)}" for t in own_steers(p)], "",
            "## What this generation is for", "",
            *[f"Top gap (cross-cutting review): {g}\n" for g in _review_gaps(p, n - 1)],  # T-2501: first of all
            *[f"Top gap: {g}\n" for g in free_beats(p, agent, "train")],  # T-2184: before any cell or Mission
@@ -2549,7 +2627,7 @@ def _seed(p, n, agent):
     try:
         path = put(p, name, text)
     except ValueError as e:  # T-2482: keep the draft, so the fix revises it instead of regenerating blind
-        draft = os.path.join(p.dir, f"genesis-seed-draft-{n}.md")
+        draft = os.path.join(sd(p), f"genesis-seed-draft-{n}.md")
         c.write_atomic(draft, text)
         raise ValueError(f"{e}\nThe draft is kept at {draft}: revise the lines named and fm genesis put {name} "
                          f"--file {draft}") from e
@@ -2659,7 +2737,8 @@ def _successor(old, lines):
 
 
 def _steer_lines(p):
-    return "\n".join(f"- {_fence(c.plain(d))}" for _, t, d in c._decision_rows(p) if c.STEER.search(t))
+    return "\n".join([f"- {_fence(c.plain(d))}" for _, t, d in c._decision_rows(p) if c.STEER.search(t)]
+                     + [f"- {_fence(c.plain(t))}" for t in own_steers(p)])  # T-3053: a tower's own steers.md adds
 
 
 def _breakable(p, gen0):
@@ -2672,7 +2751,7 @@ VERDICTS, READERS, HAIKU_FLOOR = "genesis-verdicts.json", "genesis-readers.json"
 
 def _verdict(p, k, v, model, msg=""):
     """T-2471 (rule 3): the deciding read's verdict for this exact text (sha256 key); never judged again."""
-    c.write_atomic(os.path.join(p.dir, VERDICTS), json.dumps(dict(_reads(p, VERDICTS), **{k: {
+    c.write_atomic(os.path.join(sd(p), VERDICTS), json.dumps(dict(_reads(p, VERDICTS), **{k: {
         "v": v, "by": model, "at": c.now(), **({"msg": msg} if msg else {})}})))
 
 
@@ -2681,7 +2760,7 @@ def _log_reader(p, name, sonnet):
     s = _reads(p, READERS)
     log = [x for x in s.get("log") or [] if isinstance(x, dict)][-49:]
     log.append({"at": c.now(), "name": name, "haiku": "fail", "sonnet": sonnet})
-    c.write_atomic(os.path.join(p.dir, READERS), json.dumps({
+    c.write_atomic(os.path.join(sd(p), READERS), json.dumps({
         "fails": int(s.get("fails") or 0) + 1, "overruled": int(s.get("overruled") or 0) + (sonnet == "pass"), "log": log}))
 
 
@@ -2774,7 +2853,7 @@ ACCEPTED = "genesis-accepted.json"
 
 def _reads(p, f=READS):
     try:
-        with open(os.path.join(p.dir, f)) as fh:
+        with open(os.path.join(sd(p), f)) as fh:
             r = json.load(fh)
     except (OSError, ValueError):
         return {}
@@ -2872,7 +2951,7 @@ def _read(p, name, text):
         acc = _reads(p, ACCEPTED)  # reloaded: _read1 just wrote this section's entry
         if not carried and isinstance(acc.get(key), dict):  # a pass with advisory findings is read again
             acc[key]["pass"] = ph
-            c.write_atomic(os.path.join(p.dir, ACCEPTED), json.dumps(acc))
+            c.write_atomic(os.path.join(sd(p), ACCEPTED), json.dumps(acc))
     if failed:
         raise ValueError("\n".join(failed) + "\nRevise the sections named and put it again: a tower file counts only once "
                          "a cold read passes every section (the passed ones aren't read again).")
@@ -2880,7 +2959,7 @@ def _read(p, name, text):
         cur = _reads(p, f)
         keep = {k2: v for k2, v in cur.items() if k2 in keys or not (k2.startswith(name + "#") or (f == READS and k2 == name))}
         if keep != cur:
-            c.write_atomic(os.path.join(p.dir, f), json.dumps(keep))
+            c.write_atomic(os.path.join(sd(p), f), json.dumps(keep))
 
 
 def _read1(p, name, text, outline="", label="", legacy=()):
@@ -2898,7 +2977,7 @@ def _read1(p, name, text, outline="", label="", legacy=()):
     vk = _key(text)
     hit = _reads(p, VERDICTS).get(vk)
     if isinstance(hit, dict) and hit.get("v") in ("pass", "fail"):  # T-2471 (rule 3): unchanged text is never re-judged
-        c.log_event(p, "genesis_read", data={"name": name, "verdict": hit["v"], "cached": True, "by": hit.get("by")})
+        _log(p, "genesis_read", data={"name": name, "verdict": hit["v"], "cached": True, "by": hit.get("by")})
         if hit["v"] == "pass":
             return 0
         raise ValueError(str(hit.get("msg") or f"{label} wasn't filed: its last cold read failed this text; revise it"))
@@ -2956,12 +3035,12 @@ def _read1(p, name, text, outline="", label="", legacy=()):
     if verdict != "unread":  # flagged now, carried included, or failed earlier and still unmet: not accepted
         flagged = set().union(set(), *(k for _, _, k in hits)) | keys([q for q, _ in after]) | keys([h for h, _ in loose])
         clear = set().union(set(), *occ.values()) - flagged
-        c.write_atomic(os.path.join(p.dir, ACCEPTED), json.dumps(dict(_reads(p, ACCEPTED), **{
+        c.write_atomic(os.path.join(sd(p), ACCEPTED), json.dumps(dict(_reads(p, ACCEPTED), **{
             name: {"charter": ck, "lines": sorted(clear & (seen | ok)), "seen": sorted(clear)}})))
     if after != stored:  # reloaded: another put may have filed its own findings during this read
         reads = dict(_reads(p), **{name: after})
-        c.write_atomic(os.path.join(p.dir, READS), json.dumps({k: v for k, v in reads.items() if v}))
-    c.log_event(p, "genesis_read", data={"name": name, "verdict": verdict, "lines": len(held), "carried": len(carried), "loose": len(loose),
+        c.write_atomic(os.path.join(sd(p), READS), json.dumps({k: v for k, v in reads.items() if v}))
+    _log(p, "genesis_read", data={"name": name, "verdict": verdict, "lines": len(held), "carried": len(carried), "loose": len(loose),
                                          "carried_lines": [c.fit(c.plain(h), 60) for h, _ in carried][:10]})
     note = "".join(f"\n  ~ {h} — reader: {w} (advisory: two earlier reads left it unflagged; a second fail blocks)"
                    for h, w in carried)
@@ -3034,6 +3113,9 @@ def drift(p, n):
                     notes.append(f"new since this seed ({date}): {c.fit(line, 120)}")
                 else:
                     found.append(f"seed.md: '## {STEERS}' misses the user's steer row (add it whole): - {date}: {line}")
+            for t in own_steers(p):  # T-3053: this tower's own steers.md, advisory like a same-day steer
+                if f"- tower: {c.plain(t)}" not in mine:
+                    notes.append(f"seed.md lacks this tower's own steer: - tower: {c.fit(c.plain(t), 120)}")
     read = "skipped: fix the lines above first"  # one paid read per clean candidate, not per failed attempt
     if not found:
         from sampo import ideas as sideas
@@ -3358,7 +3440,7 @@ def record_lean(p, n):
     same = os.path.realpath(doctor.PLUGIN) == os.path.realpath(os.path.join(p.root, "plugin"))  # the bench times the running fm
     hp = doctor.hook_p95() if same else None
     with c.lock(p.dir):
-        c.write_atomic(os.path.join(p.dir, LEAN), json.dumps(dict(_reads(p, LEAN), **{str(n): {
+        c.write_atomic(os.path.join(sd(p), LEAN), json.dumps(dict(_reads(p, LEAN), **{str(n): {
             "at": c.now(), "commit": head, "metrics": got[0], "verbs": got[1], "hook_p95": hp}})))
 
 
@@ -3733,7 +3815,7 @@ STOP = {"with", "that", "this", "from", "into", "every", "each", "when", "what",
 
 def _seal(p, n):
     """T-2505: the sha256 gen n's prediction was sealed with (its first put), or None."""
-    return next(((e.get("data") or {}).get("sha") for e in c.ledger_events(p, ("genesis_seal",))
+    return next(((e.get("data") or {}).get("sha") for e in _events(p, ("genesis_seal",))
                  if (e.get("data") or {}).get("gen") == n), None)
 
 
@@ -3785,7 +3867,7 @@ def score_steer(p, text, cite=None):
     files one anticipation (#3) gap. None when no prediction is sealed, or (T-2756) when this gen already scored
     that cite: one steer is scored once, however many decisions cite it."""
     from sampo import eco
-    gens = sorted({(e.get("data") or {}).get("gen") for e in c.ledger_events(p, ("genesis_seal",))} - {None})
+    gens = sorted({(e.get("data") or {}).get("gen") for e in _events(p, ("genesis_seal",))} - {None})
     if not gens:
         return None
     n = gens[-1]
@@ -4000,9 +4082,27 @@ def _sweep_fixes(p, n, red):
 
 
 def cmd_genesis(args):
+    try:
+        return _cmd_genesis(args)
+    finally:
+        set_tower(None)  # an in-process caller (a hook) must not carry the tower on
+
+
+def _cmd_genesis(args):
     from sampo import cli as scli
     p = scli.resolve(args)
     action = args.action or "status"
+    try:
+        set_tower(getattr(args, "tower", None))
+    except ValueError as e:
+        raise scli.UsageError(str(e))
+    if _TOWER and action in ("publish", "export", "live"):  # one site folder and one origin: no tower has its own yet
+        raise scli.UsageError(f"fm genesis {action} is for the root tower: a tower has no site destination of its own yet")
+    if action == "towers":
+        rows = towers(p)
+        return scli.out(args, {"towers": rows}, "\n".join(
+            f"{r['name']}: gen {r['generation']}, select {r['select'] or '-'}, drift {r['drift'] or '-'}  {r['aspect']}"
+            for r in rows) or "No towers yet (sampo genesis --tower NAME init --file F).")
     if action in ("init", "put") and not args.file:
         raise scli.UsageError(f"fm genesis {action} needs --file F")
     if args.per_kind is not None and action not in ("spec", "exam"):  # T-2101: not silently ignored
@@ -4018,7 +4118,7 @@ def cmd_genesis(args):
     try:
         if action == "init":
             path = init(p, read(binary=True))
-            c.log_event(p, "genesis_init", data={"path": path, "sha256": seal(p)}, session=scli.session())
+            _log(p, "genesis_init", data={"path": path, "sha256": seal(p)}, session=scli.session())
             kick(p)
             return scli.out(args, {"dir": home(p), "path": path}, f"gen-0 saved, read-only: {path}")
         if action == "put":
@@ -4026,7 +4126,7 @@ def cmd_genesis(args):
                 raise scli.UsageError("fm genesis put NAME --file F")
             text = read()
             path, kinds = put(p, args.path, text), c.secret_kinds(text)
-            c.log_event(p, "genesis_put", data={"name": args.path}, session=scli.session())
+            _log(p, "genesis_put", data={"name": args.path}, session=scli.session())
             kick(p)
             return scli.out(args, {"dir": home(p), "path": path, "redacted": kinds},
                              f"Filed: {path}" + (f" (redacted: {', '.join(kinds)})" if kinds else ""))
@@ -4048,7 +4148,7 @@ def cmd_genesis(args):
             return scli.out(args, r, r["text"].rstrip("\n"))
         if action == "spec":
             r = spec(p, per_kind)
-            c.log_event(p, "genesis_spec", data={"run": r["run"]}, session=scli.session())
+            _log(p, "genesis_spec", data={"run": r["run"]}, session=scli.session())
             kick(p)
             return scli.out(args, r, f"Spec: {len(r['rows'])} capabilities, {r['total']} scenarios "
                                       f"({r['held']} held out) in exam run {r['run']}"
@@ -4069,7 +4169,7 @@ def cmd_genesis(args):
                 rs = review_handle(p, n, args.handle)  # T-2592: a list, every value checked before any applies
                 return scli.out(args, rs, "\n".join(f"gen {n} review: finding {r['n']} → {r['handled']}" for r in rs))
             r = review(p, n)
-            c.log_event(p, "genesis_review", data={"gen": n, "findings": len(r["findings"]), "model": r["model"]},
+            _log(p, "genesis_review", data={"gen": n, "findings": len(r["findings"]), "model": r["model"]},
                         session=scli.session())
             return scli.out(args, r, f"gen {n} review by {r['model']} (Missions: {r['missions']}): "
                                       f"{len(r['findings'])} finding(s), {r['dropped']} dropped with no ground"
@@ -4077,7 +4177,7 @@ def cmd_genesis(args):
         if action in ("drift", "sweep"):
             n = int(args.path)
             r = drift(p, n) if action == "drift" else sweep(p, n, args.agent)
-            c.log_event(p, f"genesis_{action}", data={"gen": n, "verdict": r["verdict"]}, session=scli.session())
+            _log(p, f"genesis_{action}", data={"gen": n, "verdict": r["verdict"]}, session=scli.session())
             kick(p)
             scli.out(args, r, f"gen {n} {action}: {r['verdict']}\n" + "\n".join(r["lines"]) + f"\n  {r['path']}"
                       + (f"\n  fix tasks: {', '.join(r['fixes'])}" if r.get("fixes") else "")  # T-2477
@@ -4165,7 +4265,7 @@ def cmd_genesis(args):
             n = int(args.path)
             r = (select if action == "select" else seed)(p, n, args.agent)
             if action == "seed":
-                c.log_event(p, "genesis_seed", data={"gen": n, "base": r["base"]}, session=scli.session())
+                _log(p, "genesis_seed", data={"gen": n, "base": r["base"]}, session=scli.session())
             if action == "seed" or r["verdict"] != "rerun":
                 kick(p)
             if action == "seed":

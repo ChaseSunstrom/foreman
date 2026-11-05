@@ -42,7 +42,7 @@ _USER = re.compile(r"\buser\b", re.I)  # a logged steer that reports the user's 
 
 def _home(p):
     from sampo import rune
-    return rune.home(p)
+    return rune.root(p)  # T-3053: the steer-expansion exam is the user's, shared by every tower
 
 
 def _path(p, name):
