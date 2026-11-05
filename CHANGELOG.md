@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- `sampo sandbox` binds back, read-only, what a job reads from under /tmp or /run and its working folder there, so `run.py --sandbox` works from a repo under /tmp, as in `sampo ship`'s scratch tree (T-3246).
 - The live page's jobs list reads a python3 command's program past options with a value (`-X dev`, `-W ignore`), follows `-m MODULE`, and names no program for `-c CODE`, so those runs are no longer missed (T-3199).
 - The first builder lane is never starved by moderate load: with no builder working, `sampo lane brief` starts one unless the load is past 3 per CPU; further lanes keep the 1.5 per CPU bar. Sampo's own test sweeps and fills had held the load over the bar for three hours with nothing being built (T-3243).
 - The hook-imports bench runs its scratch project with background work off and tolerates a late writer when cleaning up, so its teardown no longer fails with 'Directory not empty' on CI (T-3241).

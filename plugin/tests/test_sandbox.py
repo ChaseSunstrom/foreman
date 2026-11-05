@@ -452,6 +452,24 @@ class Image(ForemanTestCase):
         self.assertTrue(os.path.exists(os.path.join(root, "x.txt")))
 
 
+@unittest.skipUnless(OK, f"no job sandbox here: {WHY}")
+class RepoUnderTmp(ForemanTestCase):
+    """T-3246: sampo ship tests a scratch tree under /tmp; the job's fresh /tmp hid it and bwrap couldn't chdir."""
+
+    def test_what_a_job_reads_from_under_tmp_is_bound_back_read_only(self):
+        repo = os.path.join(self.tmp, "repo")
+        os.makedirs(os.path.join(repo, "sub"))
+        with open(os.path.join(repo, "data.txt"), "w") as f:
+            f.write("readable\n")
+        out = os.path.join(self.tmp, "out")
+        os.makedirs(out)
+        r = subprocess.run(sb.argv(["sh", "-c", f"cat {repo}/data.txt; pwd; echo x > {repo}/new.txt"], out,
+                                   cwd=os.path.join(repo, "sub"), reads=[repo]),
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.stdout.split()[:2], ["readable", os.path.join(repo, "sub")], r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(repo, "new.txt")), "read-only")
+
+
 class Fallback(ForemanTestCase):
     def test_without_a_sandbox_a_job_runs_plain_only_when_its_caller_says_so(self):
         target = os.path.join(self.tmp, "plain.txt")

@@ -180,7 +180,9 @@ def sandboxed(argv, tmp, env):
     if lib not in sys.path:
         sys.path.insert(0, lib)
     from sampo import sandbox
-    return sandbox.argv(argv, tmp, cwd=HERE, nest=True), sandbox.job_env(env, tmp)  # tests that run bwrap need nesting
+    repo = os.path.dirname(os.path.dirname(HERE))  # T-3246: readable even under /tmp (sampo ship's scratch tree)
+    return (sandbox.argv(argv, tmp, cwd=HERE, nest=True, reads=[repo]),  # nest: tests that run bwrap themselves
+            sandbox.job_env(env, tmp))
 
 
 def run_one(cid, k, timeout=480, deadline=None):

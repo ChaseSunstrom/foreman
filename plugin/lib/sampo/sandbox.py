@@ -288,7 +288,7 @@ def _tidy(made):
             pass
 
 
-def argv(cmd, root, writes=(), net="off", home=None, cwd=None, net_dir=None, nest=False):
+def argv(cmd, root, writes=(), net="off", home=None, cwd=None, net_dir=None, nest=False, reads=()):
     """bwrap's argv for cmd: root and each existing folder in writes writable, everything else read-only, credentials
     masked (a credential folder that holds a writable one is masked first, then the writable one bound back over it),
     PROTECTED read-only in root. net allow: no network but the proxy's socket folder (net_dir), bound at NET_DIR.
@@ -306,9 +306,11 @@ def argv(cmd, root, writes=(), net="off", home=None, cwd=None, net_dir=None, nes
         a.append("--unshare-net")
     if net == "allow":
         a += ["--bind", net_dir, NET_DIR]
-    for h in homes:
-        if any(_under(h, t) for t in ("/tmp", "/run")) and os.path.isdir(h):  # under a fresh tmpfs: back, read-only
-            a += ["--ro-bind", h, h]
+    # under a fresh tmpfs, back and read-only: a home there, what the job reads (T-3246: sampo ship's scratch tree is
+    # under /tmp) and its working folder
+    for r in dict.fromkeys(os.path.realpath(x) for x in [*homes, *reads, cwd or root] if x):
+        if any(_under(r, t) for t in ("/tmp", "/run")) and os.path.isdir(r) and not any(_under(r, w) for w in rw):
+            a += ["--ro-bind", r, r]
     creds = [p for p in dict.fromkeys(os.path.realpath(os.path.join(h, x)) for h in homes for x in CREDENTIALS)
              if os.path.exists(p)]  # a link to nothing has nothing to read (and nothing to mount over: nested runs)
 
