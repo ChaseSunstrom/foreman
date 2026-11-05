@@ -21,6 +21,8 @@
 - Tests can no longer write to the real repo: the test helpers drop an inherited GIT_DIR (and the other variables that redirect git) at import, after a run wrote core.bare=true and the fixture identity into Sampo's own .git/config and every merge failed; fm doctor now fails a working tree marked bare (T-3185).
 - Fast merges part 1: the hook bench records which modules each hook loads at runtime, so a change outside them can skip the self-change gate's bench (T-3139).
 - Targeted runs never wait for load: task evidence, check --affected and a finish's criterion checks start at once with a load-scaled timeout; a full check or lane merge waits at most 60 s (T-3144).
+- Back-to-back merges onto one main bench the base tree once: the self-change gate caches the base side's bench and guard replay by the base tree's content hash, signed with a key only the user's account can read, and reuses the bench only at a similar machine load (T-3176).
+- Ward treats every file under `~/.config/sampo` as a credential (secrets.env, selfgate.key and any later key), not only by file name, with a replay case for each (T-3188).
 - A full `sampo check`'s suite gate gets at least 30 min, scaled by load per CPU and capped at 2 h, and a gate that times out says the load and deadline it had (T-3174).
 - Job progress, the data half: Sampo's long loops write a per-pid progress file and the live page's jobs show done, total, rate and ETA (T-3083).
 - The site's Benchmarks page has a Models section: a $0 rerun of the model bench every Rune generation and the promotion rule with its decision rows (T-3093).
