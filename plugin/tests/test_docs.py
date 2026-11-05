@@ -297,6 +297,28 @@ class PluginParity(unittest.TestCase):
         self.assertRegex(rules, r"(?:fm|sampo) which", "the rules point a session at sampo which")
 
 
+class UiModTestCommand(unittest.TestCase):  # T-3143
+    """The UI mod has no package.json or node_modules: `npx vitest run` in it fails ('Cannot find package
+    claude-code/testing'). Nothing under plugin/ may suggest it; the library card names the real command."""
+
+    def test_no_text_names_vitest_for_a_mod(self):
+        bad = []
+        for d, _, files in os.walk(PLUGIN):
+            if "node_modules" in d or os.sep + "tests" in d[len(PLUGIN):]:
+                continue
+            for f in files:
+                if f.endswith((".md", ".py", ".json", ".txt")):
+                    for n, line in enumerate(read_text(os.path.join(d, f)).splitlines(), 1):
+                        if re.search(r"vitest", line) and "never" not in line and re.search(r"mods/|foreman-ui", line):
+                            bad.append(f"{f}:{n}")
+        self.assertEqual(bad, [])
+
+    def test_the_mod_card_names_claude_plugin_test_and_warns_off_vitest(self):
+        card = read_text(os.path.join(PLUGIN, "skills", "library", "cards", "claude-code", "cc-mod-testing.md"))
+        self.assertIn("claude plugin test mods/foreman-ui", card)
+        self.assertRegex(card, r"never `npx vitest")
+
+
 class CodeExamples(unittest.TestCase):  # T-1353
     """Every `sampo smith …` example in README's Smith section parses with the CLI's own parser to the code verb (Smith
     is `fm code` until the verb lands, T-2760), so a renamed or removed flag can't linger in the docs."""
