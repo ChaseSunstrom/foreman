@@ -91,7 +91,7 @@ Top gap (cross-cutting review): what a demanding user would complain about first
 
 Top gap (cross-cutting review): what a demanding user would complain about first: SessionStart injects 2,733 characters twice and fm burden now reads "76 characters per turn instead of 48"; the user pays more context every turn while the session-start note gained a prediction line, a pile line and a ship nudge in one generation. (2,733 chars)
 
-Close the open coverage cells, most first, retry every not-yet item, and act on what the critiques asked; the exam's train split decides whether this rewrite stays (fm genesis select).
+Close the open coverage cells, most first, retry every not-yet item, and act on what the critiques asked; the exam decides whether this rewrite stays: the train split selects it (fm genesis select) and the held-out generated projects confirm it (fm genesis confirm), as gen-0's exam asks.
 
 ## Missions
 
@@ -119,7 +119,7 @@ Missions in table order; Missions that don't depend on each other run in paralle
 ## Moonshot (one Mission a generation, from gen 2)
 
 - Far-domain lens: ecology. Borrow a mechanism from ecology that no harness has, and say what it becomes in Foreman.
-- Frontier digest: gen-4/frontier.md (fm genesis frontier 4; what's new outside, read, never cloned).
+- Frontier digest: gen-4/frontier.md (fm genesis frontier 4): what's new outside, read only in the targeted form gen-0 §5 allows; nothing cloned or swept.
 - Each idea in mission-moonshot.md carries three lines: `Prior art:` (what exists, or none found), `Better by:` (how ours beats it) and `Novelty: 1-5`. fm genesis novelty marks the obvious ones by a cold read; a mark typed into the file counts for nothing, and an obvious idea can't be the spiked pick while a non-obvious one exists.
 - The pick is spiked; a failed spike goes to not-yet.md with its blocker, never dropped.
 - Campaign (MOONSHOT.md part A, advanced in every generation; the catalogue is moonshot.md): 20 of 100 — low 1/5, medium 2/10, high 3/15, xhigh 4/20, extreme 5/25, massive 5/25 (author's tiers); 0 unrated; 1 of 4 extreme or massive kill-tested; 0 built; 0 not-yet.
