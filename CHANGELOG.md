@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- The live-jobs test that reads a real process's start time skips where there is no /proc (macOS), as the live page itself reads processes only through /proc (T-3240).
 - The calling-card tests skip where a card's call can't be confined (macOS has no Landlock), as the confinement tests already did, so CI on macOS isn't red for a refusal that is by design (T-3238).
 - `sampo works check` and the UI card examples read the contrast of every text colour on every background, not just the commonest pairs, so a small badge or one faint line under 4.5:1 fails; antialiasing shades and hinting variants still don't count. It caught the UI kit's form controls on the browser's own dark-theme grey (4.34:1); they now take the kit's surface colour (T-3226).
 - The test runner gives every test class `FOREMAN_NO_LOCAL_MODELS=1` unless you set it yourself, so a test that leans on this machine's Ollama models fails here the way it would on CI, which has none (T-3229).

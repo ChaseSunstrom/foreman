@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import time
+import unittest
 import unittest.mock as mock
 
 from helpers import LIB, ForemanTestCase
@@ -73,6 +74,7 @@ class Progress(ForemanTestCase):
         self.assertIsNone(self._job()[0]["progress"])  # 4242 is the only live job; 777 is not in the process list
         self.assertFalse(os.path.exists(_file(777)))
 
+    @unittest.skipUnless(os.path.exists("/proc/self/stat"), "the live page reads processes through /proc (Linux); T-3240")
     def test_a_real_process_writes_its_file_and_is_read_with_its_real_start(self):  # no mock of the start ticks
         code = ("import sys, time; sys.path.insert(0, sys.argv[1]); from sampo import core as c; "
                 "c.progress(5, 10, 'u', 'n'); time.sleep(60)")
