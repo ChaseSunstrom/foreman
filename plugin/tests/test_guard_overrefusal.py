@@ -101,3 +101,22 @@ class BareCredName(GuardCase):
                     "python3 -c \"import sys; print('.ssh' in sys.argv[0], '{home}')\""):
             with self.subTest(cmd=cmd):
                 self.assertBlocked(self.bash(cmd, cwd=self.repo), "credentials")
+
+
+class PrintfFirstWord(GuardCase):
+    """T-3223: printf sets a variable only through -v as its first word; a later -v (command -v inside a substitution
+    among its arguments) beside an unquoted $t was refused as 'IFS may be changed' though nothing names IFS."""
+
+    def test_a_later_dash_v_in_printfs_arguments_passes(self):
+        for cmd in ('for t in podman docker bwrap; do printf "%s=%s " $t "$(command -v $t || echo -)"; done; echo',
+                    "printf '%s\\n' $x \"$(command -v $x)\"", 'printf "%s -v %s" $a $b'):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(self.bash(cmd, cwd=self.repo))
+
+    def test_a_computed_or_hidden_dash_v_stays_refused(self):
+        name = '"$(echo SFI | rev)"'
+        for cmd in (f"printf -v {name} /; ls $x", f'printf "-v" {name} /; ls $x', f"printf '-v' {name} /; ls $x",
+                    f"X=-v; printf $X {name} /; ls $x", f"printf {{{{-v,{name}}}}} /; ls $x",  # the helper formats {…}
+                    f"printf `echo -v` {name} /; ls $x", f"true; printf -v{name} /; ls $x"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd, cwd=self.repo), "system")

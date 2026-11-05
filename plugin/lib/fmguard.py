@@ -823,7 +823,10 @@ _READ_REDEFINED = lazy(r"\b(?:alias|enable|function)\b|\bread\s*\(")
 _NAME_COMPUTED = lazy(  # a variable name built by an expansion: declare $'\x49FS=/', export "$n=/", (( $n = 1 ))
     r"(?:^|[;&|({`\n]|\$\(|\b(?:then|do|else|elif)\s)\s*(?:builtin\s+|command\s+)?(?:"  # at command position
     r"(?:declare|typeset|local|export|readonly|read|mapfile|readarray|getopts|let)\b[^;&|\n]*?\s[^\s=;&|]*[$`'\"\\]"
-    r"|(?:declare|typeset|local)\b[^;&|\n]*\s-\w*n|printf\b[^;&|\n]*-v\s*\S*[$`'\"\\])"
+    r"|(?:declare|typeset|local)\b[^;&|\n]*\s-\w*n"
+    # T-3223: printf's -v is an option only before its format: never past a quote or an expansion (command -v inside
+    # "$(…)" among its arguments isn't one); a first word an expansion, brace or backtick could make -v counts too
+    r"|printf\b[^;&|\n$`'\"]*[\"']?-v[\"']?\s*\S*[$`'\"\\]|printf\s+[^\s;&|]*[$`{])"
     r"|\(\(\s*(?:[^()]*,\s*)?\$\{?\w+\}?\s*(?:[-+*/%^|&]|<<|>>)?=(?!=)|\$\{![^}]*=")  # (( $n = 1 )), not (( a == b ))
 _UNQUOTED = lazy(r"\$[\w{@*#?!$(-]|`")
 _RUNS_HERE = lazy(  # T-0590: code this shell runs that the line doesn't show: eval text, a sourced file

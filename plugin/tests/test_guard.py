@@ -394,7 +394,9 @@ class RmOutside(GuardCase):
             ('D={repo}/build; printf -v D %s /; rm -rf "$D"', "rm-outside"),
             ('D={repo}/build; printf "-vD" %s /; rm -rf "$D"', "rm-outside"),
             # its security review: a first word bash computes may turn out to be -v
-            ('X=-vD; D={repo}/build; printf $X %s /; rm -rf "$D"', "rm-outside"),
+            # T-3223: printf's first word an expansion could make -v reads as a computed name too, and system
+            # reports first; the rm-outside finding is still there (RmOutside.test_printf_through_a_variable…)
+            ('X=-vD; D={repo}/build; printf $X %s /; rm -rf "$D"', "system"),
             ('D={repo}/build; printf {{-v,D}} %s /; rm -rf "$D"', "rm-outside"),
             ('D={repo}/build; printf `echo -vD` %s /; rm -rf "$D"', "system"),  # T-0585: printf -v with a computed name beside an unquoted `…` (rm-outside too)
             ('D={repo}/build; printf -[v]D %s /; rm -rf "$D"', "rm-outside"),  # a glob from a -v prefix
@@ -416,6 +418,11 @@ class RmOutside(GuardCase):
             ("git rm -r --cached dir", None),
             ("ls -la && pytest -q", None),
         ], self.bash)
+
+    def test_printf_through_a_variable_still_reads_as_setting_its_name(self):  # T-3223
+        found = g.findings("Bash", {"command": self.sub('X=-vD; D={repo}/build; printf $X %s /; rm -rf "$D"')},
+                           self.ctx())
+        self.assertIn("rm-outside", [cat for cat, _ in found])
 
     def test_no_project_means_cwd_home_is_not_safe(self):
         r = g.check("Bash", {"command": "rm -rf stuff"}, self.ctx(cwd=self.home))
