@@ -2,9 +2,9 @@
 
 Verdict: drifted
 
-Checked seed.md, mission-anticipation.md, mission-exhaustive-thinking.md, mission-getting-the-tools-it-lacks.md, mission-goal-to-finish.md, mission-moonshot.md, mission-self-triggering.md, mission-staying-lean-and-safe.md, mission-verifying-anything.md against gen-0's 6 MUST/NEVER line(s); cold read: skipped: fix the lines above first.
+Checked seed.md, mission-anticipation.md, mission-exhaustive-thinking.md, mission-getting-the-tools-it-lacks.md, mission-goal-to-finish.md, mission-moonshot.md, mission-self-triggering.md, mission-staying-lean-and-safe.md, mission-verifying-anything.md against gen-0's 6 MUST/NEVER line(s); cold read: 1 drifted line(s).
 
-- seed.md: no '## Standing intent' section holding templates/standing-intent.md verbatim
+- seed.md (cold read): Close the open coverage cells, most first, retry every not-yet item, and act on what the critiques asked; the exam's train split decides whether this rewrite stays (fm genesis select).
 
 Advisory (not a failure):
 - new since this seed (2026-11-03): Rename Foreman to Sampo per SAMPO.md: aliases first, then the migration (move with backup, manifest and undo), then int…
