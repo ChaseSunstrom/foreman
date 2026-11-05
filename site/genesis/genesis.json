@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T13:25:33Z",
- "rev": "919d8139",
+ "updated": "2026-11-05T13:30:55Z",
+ "rev": "0b4ed540",
  "capabilities": [
   {
    "n": 1,
@@ -2113,12 +2113,12 @@
       {
        "id": "T-2261",
        "title": "Guard (for the user's review, touches the guard): the interpreter-code rule blocks a…",
-       "status": "planned",
-       "type": "FEATURE",
+       "status": "active",
+       "type": "FIX",
        "tier": "M",
-       "steps": 0,
+       "steps": 3,
        "done": 0,
-       "current": ""
+       "current": "failing tests: the filter-tail forms pass; the adversarial forms stay refused"
       },
       {
        "id": "T-2068",
@@ -36247,9 +36247,9 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 826,
+ "unproven": 828,
  "unproven_kinds": {
-  "meaning-notes": 361,
+  "meaning-notes": 363,
   "meaning-user": 248,
   "research-uncited": 33,
   "perf-typed": 57,
@@ -36259,7 +36259,7 @@
   "docs": 116,
   "perf-noise": 1,
   "infra": 9,
-  "ui-unshot": 31,
+  "ui-unshot": 32,
   "data": 5
  },
  "next": {
