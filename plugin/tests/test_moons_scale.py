@@ -777,12 +777,14 @@ class Promote(_Funnel):
                 mock.patch.object(ideas, "run_child", side_effect=child), \
                 mock.patch.object(self.rune, "put", wraps=self.rune.put) as put:
             r = self.ms.promote(self.p)
-            self.assertEqual(r["blocks"], ["M-03", "M-04"], r)
+            self.assertEqual(r["blocks"], ["M-03", "M-04", "M-05"], r)
             self.assertEqual(put.call_args[0][1], "moonshot.md")
             self.assertIn(("moons-promote", "opus-x"), seen, "the strongest model designs the kill test")
             self.assertIn("genesis-read", [f for f, _ in seen], "the cold read passed it")
             again = self.ms.promote(self.p)
-        self.assertEqual(again["blocks"], [], "a promoted family isn't promoted twice")
+            third = self.ms.promote(self.p)
+        self.assertEqual(again["promoted"], ["F-000003"], "the family's variant is the one moon left")
+        self.assertEqual(third["blocks"], [], "a promoted family isn't promoted twice")
         with open(self.doc) as f:
             doc = f.read()
         block = doc[doc.index("### M-03"):doc.index("### M-04")]
@@ -792,7 +794,7 @@ class Promote(_Funnel):
                      "- Family: F-000003 (1 variant)"):
             self.assertIn(want, block)
         self.assertIn(f"### M-04 · {DEPLOY['title']}", doc)
-        self.assertNotIn(SECRET["title"], doc, "an xhigh lead isn't promoted")
+        self.assertLess(doc.index(DEPLOY["title"]), doc.index(SECRET["title"]), "an xhigh lead is drawn after the big tiers")
         from sampo import moons
         rated = {x["id"]: x["reviewer"] for x in moons.rows(self.p)}
         self.assertEqual(rated["M-03"], "massive", "moons.rate gave the cold tier")
@@ -823,6 +825,208 @@ class Promote(_Funnel):
         self.assertTrue(any("C-999999" in x for x in bad), bad)
         from sampo import moons
         self.assertTrue(any("F-999999" in x for x in moons.check(self.p)))
+
+
+class Catalogue(_Funnel):
+    """T-3047: every kept moon exported beside genesis.json, and promotion drawing from all of them."""
+
+    def build_families(self):
+        return Families.build(self)
+
+    def many(self, n):
+        ids = self.seed(*(moon(f"Idea number {i}", f"do thing {i}.", f"get thing {i} done.") for i in range(n)))
+        lines = [json.dumps({"id": i, "at": "2026-11-03T00:00:00Z", "stage": "novelty", "verdict": "kept", "reason": "",
+                             "model": "m", "tier": "high" if k % 2 else "extreme", "wild": k % 5 + 1})
+                 for k, i in enumerate(ids)]
+        self.c.append_line(os.path.join(self.ms._dir(self.p), self.ms.FUNNEL), "\n".join(lines))
+        return ids
+
+    def load_cat(self, out):
+        """The index, then each shard it names, joined in order."""
+        with open(os.path.join(out, "moons-catalogue.json")) as f:
+            idx = json.load(f)
+        rows = []
+        for s in idx["shards"]:
+            with open(os.path.join(out, s["file"])) as f:
+                rows += json.load(f)
+        self.assertEqual(len(rows), idx["total"])
+        return rows
+
+    def test_the_catalogue_is_an_index_and_shards_a_visitor_fetches_a_page_at_a_time(self):  # T-3047 review 4
+        ids = self.many(250)
+        out = os.path.join(self.tmp, "site")
+        with mock.patch.object(self.ms, "SHARD", 100):
+            self.ms.export(self.p, out)
+        with open(os.path.join(out, "moons-catalogue.json")) as f:
+            idx = json.load(f)
+        self.assertEqual((idx["total"], idx["per"], [s["n"] for s in idx["shards"]]), (250, 100, [100, 100, 50]))
+        self.assertEqual(sorted(idx["tiers"].items()), [("extreme", 125), ("high", 125)])
+        self.assertEqual([s["tiers"] for s in idx["shards"]], [["extreme"], ["extreme", "high"], ["high"]])
+        self.assertLess(os.path.getsize(os.path.join(out, "moons-catalogue.json")), 2000, "the index stays small")
+        self.assertEqual(sorted(r["id"] for r in self.load_cat(out)), sorted(ids))
+        with mock.patch.object(self.ms, "SHARD", 200):  # fewer shards: no stale file is left behind
+            self.ms.export(self.p, out)
+        self.assertEqual(sorted(x for x in os.listdir(out) if x.startswith("moons-catalogue")),
+                         ["moons-catalogue-001.json", "moons-catalogue-002.json", "moons-catalogue.json"])
+
+    def test_the_public_catalogue_carries_no_problem_or_source_text_and_a_real_scrub_redacts_it(self):  # T-3047 review 6, 10
+        ids = self.seed(moon("Secret title sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123", "do a thing.", "get a thing."))
+        self.c.append_line(os.path.join(self.ms._dir(self.p), self.ms.FUNNEL), json.dumps(
+            {"id": ids[0], "at": "2026-11-03T00:00:00Z", "stage": "novelty", "verdict": "kept", "reason": "",
+             "model": "m", "tier": "high", "wild": 3}))
+        rs = [dict(x, cell={"kind": "bugs", "scale": "team", "surface": "cli", "mechanism": "mutate",
+                            "problem": "PRIVATE-PROBLEM", "source": "PRIVATE-SOURCE"}) for x in self.ms.rows(self.p)]
+        out = os.path.join(self.tmp, "site")
+
+        def scrub(x):
+            if isinstance(x, str):
+                return self.c.redact(x)
+            if isinstance(x, list):
+                return [scrub(v) for v in x]
+            return {k: scrub(v) for k, v in x.items()} if isinstance(x, dict) else x
+        with mock.patch.object(self.ms, "rows", return_value=rs):
+            self.ms.export(self.p, out, scrub=scrub)
+        raw = "".join(open(os.path.join(out, x)).read() for x in os.listdir(out))
+        self.assertNotIn("PRIVATE", raw)
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz0123", raw, "the scrub ran over every file")
+        self.assertEqual(set(self.load_cat(out)[0]),
+                         {"id", "title", "today", "with_this", "grid", "tier", "wild", "family", "lead", "drawn"})
+
+    def test_export_writes_every_kept_moon_beside_the_page_data_not_a_top_slice(self):
+        ids = self.many(250)
+        out = os.path.join(self.tmp, "site")
+        got = self.ms.export(self.p, out)
+        self.assertEqual(got["catalogue"], {"file": "moons-catalogue.json", "total": 250})
+        rows = self.load_cat(out)
+        self.assertEqual(sorted(r["id"] for r in rows), sorted(ids), "all 250 survivors, EXPORT_TOP is for families")
+        self.assertGreater(250, self.ms.EXPORT_TOP)
+        r = rows[0]
+        for k in ("id", "title", "today", "with_this", "grid", "tier", "wild", "family", "lead", "drawn"):
+            self.assertIn(k, r)
+        self.assertEqual({x["grid"] for x in rows}, {"user"}, "a row with no grid is the user's")
+        self.assertEqual((rows[0]["tier"], rows[-1]["tier"]), ("extreme", "high"), "best first")
+        self.assertEqual(self.ms.export(self.p, out)["catalogue"]["total"], 250, "a second run writes the same file")
+
+    def test_a_grid_family_and_a_hostile_line_reach_the_catalogue(self):
+        ids = Families.survive(self, (FLAKY, "high", 3), (Families.MUTATE, "massive", 5), (DEPLOY, "extreme", 4))
+        self.build_families()
+        real = self.ms.rows
+        rs = [dict(x, grid="sampo") if x["id"] == ids[2] else x for x in real(self.p)]
+        out = os.path.join(self.tmp, "site")
+        with mock.patch.object(self.ms, "rows", return_value=rs):
+            self.ms.export(self.p, out, scrub=lambda x: x)
+        by = {r["id"]: r for r in self.load_cat(out)}
+        self.assertEqual((by[ids[2]]["grid"], by[ids[0]]["grid"]), ("sampo", "user"))
+        self.assertEqual((by[ids[1]]["lead"], by[ids[0]]["lead"]), (True, False))
+        self.assertEqual(by[ids[0]]["family"], by[ids[1]]["family"])
+        self.assertNotEqual(by[ids[2]]["family"], by[ids[1]]["family"])
+
+    def test_rune_export_writes_the_catalogue_and_tells_the_page_where_it_is(self):
+        from sampo import rune
+        self.many(5)
+        out = os.path.join(self.tmp, "site")
+        rune.export(self.p, out)
+        with open(os.path.join(out, "genesis.json")) as f:
+            self.assertEqual(json.load(f)["moons_scale"]["catalogue"], {"file": "moons-catalogue.json", "total": 5})
+        self.assertTrue(os.path.isfile(os.path.join(out, "moons-catalogue.json")))
+
+    def promote(self, **kw):
+        from sampo import ideas
+        seen = []
+
+        def child(feature, system, prompt, model, timeout, project=None, **k):
+            seen.append(feature)
+            if feature == "genesis-read":
+                return "CLEAN"
+            if feature == "moonshot-rate":
+                return "\n".join(f"{i}: massive | wild 5 | bold" for i in range(1, 30))
+            return self.reply
+        with mock.patch.object(self.rune, "REVIEW_MODELS", ("haiku", "opus-x")), \
+                mock.patch.object(ideas, "run_child", side_effect=child):
+            r = self.ms.promote(self.p, **kw)
+        return r, seen
+
+    reply = ("Kill: Run it on 10 repos for one day; if it catches fewer than 3 real bugs, it is dead.\n"
+             "Better by: no tool does it\nNovelty: 5\nNeeds: none\n")
+
+    def setUp(self):
+        super().setUp()
+        from sampo import rune
+        self.rune = rune
+        rune.init(self.p, GEN0_CAPS.encode())
+        self.doc = os.path.join(rune.home(self.p), "moonshot.md")
+        with open(self.doc, "w") as f:
+            f.write("# Moonshot catalogue\n\n### M-01 · Market for lane time\n- Tier: high\n")
+
+    def test_promotion_draws_family_leads_first_then_variants_and_records_each_draw(self):
+        ids = Families.survive(self, (FLAKY, "extreme", 3), (Families.MUTATE, "massive", 5), (DEPLOY, "extreme", 4),
+                               (SECRET, "high", 2))
+        self.build_families()
+        r, _ = self.promote(max_n=2)
+        self.assertEqual(r["blocks"], ["M-02", "M-03"], r)
+        with open(self.doc) as f:
+            doc = f.read()
+        self.assertLess(doc.index(Families.MUTATE["title"]), doc.index(DEPLOY["title"]), "massive lead, then extreme")
+        self.assertNotIn(FLAKY["title"], doc, "the variant waits behind every lead")
+        r, _ = self.promote()
+        self.assertEqual(len(r["blocks"]), 2, r)
+        with open(self.doc) as f:
+            doc = f.read()
+        self.assertLess(doc.index(FLAKY["title"]), doc.index(SECRET["title"]), "a big variant before a lower tier's lead")
+        self.assertEqual(self.promote()[0]["blocks"], [], "nothing is drawn twice")
+        draws = [d for e in self.c.ledger_events(self.p, ["moons_drawn"]) for d in e["data"]["draws"]]
+        self.assertEqual([d["id"] for d in draws], [ids[1], ids[2], ids[0], ids[3]], "every kept tier is drawn, big first")
+        self.assertEqual([d["block"] for d in draws], ["M-02", "M-03", "M-04", "M-05"])
+
+    def test_a_moved_catalogue_changes_what_live_publishing_compares(self):  # T-3047 review 3
+        from sampo import rune
+        self.many(5)
+        out = os.path.join(self.tmp, "site")
+        rune.export(self.p, out)
+        gj = os.path.join(out, "genesis.json")
+        before = rune._body(gj)
+        self.assertEqual(rune._body(gj), before, "a second read is the same")
+        with open(os.path.join(out, "moons-catalogue-001.json"), "a") as f:
+            f.write("\n")
+        self.assertNotEqual(rune._body(gj), before, "genesis.json is the same, the shard is not")
+
+    def test_a_refused_put_and_a_title_already_in_the_catalogue_are_recorded_as_drawn(self):  # T-3047 review 2
+        ids = Families.survive(self, (Families.MUTATE, "massive", 5), (moon("Market for lane time", "x a.", "y b."), "high", 2))
+        self.build_families()
+        with mock.patch.object(self.rune, "put", side_effect=ValueError("cold read refused")):
+            r, seen = self.promote()
+        self.assertIn("cold read refused", r["error"])
+        r, seen = self.promote()
+        self.assertEqual((r["blocks"], r["error"], seen), ([], "", []), "no second paid call")
+        d = {x["id"]: x["block"] for e in self.c.ledger_events(self.p, ["moons_drawn"]) for x in e["data"]["draws"]}
+        self.assertEqual(d, {ids[0]: "", ids[1]: ""}, "the refused draw and the duplicate title are both spent")
+
+    def test_a_promote_run_while_another_holds_the_store_draws_nothing(self):  # T-3047 review 11
+        Families.survive(self, (Families.MUTATE, "massive", 5))
+        self.build_families()
+        with self.ms.store_lock(self.p):
+            r, seen = self.promote()
+        self.assertEqual((r["blocks"], seen), ([], []))
+        self.assertIn("another funnel", r["error"])
+
+    def test_a_draw_that_gave_no_kill_test_is_recorded_and_not_paid_for_again(self):
+        ids = Families.survive(self, (Families.MUTATE, "massive", 5))
+        self.build_families()
+        self.reply = "Kill: try it and see\n"
+        r, seen = self.promote()
+        self.assertEqual((r["blocks"], len(r["skipped"])), ([], 1))
+        r, seen = self.promote()
+        self.assertEqual((r["skipped"], seen), ([], []), "the second run draws nothing and calls no model")
+        d = [d for e in self.c.ledger_events(self.p, ["moons_drawn"]) for d in e["data"]["draws"]]
+        self.assertEqual([(x["id"], x["block"]) for x in d], [(ids[0], "")])
+
+    def test_the_catalogue_marks_a_drawn_moon_with_its_block(self):
+        ids = Families.survive(self, (Families.MUTATE, "massive", 5))
+        self.build_families()
+        self.promote()
+        out = os.path.join(self.tmp, "site")
+        self.ms.export(self.p, out)
+        self.assertEqual(self.load_cat(out)[0]["drawn"], "M-02")
 
 
 class PromoteDomain(_Moons):

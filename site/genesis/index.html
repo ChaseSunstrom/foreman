@@ -114,6 +114,21 @@ if(!matchMedia("(prefers-reduced-motion: reduce)").matches)d.classList.add("anim
   <div id="moonshots" role="region" aria-labelledby="moonshots-label"></div>
   <h3 class="sc-h" id="moons-scale-label">The Moons at scale: every candidate through the funnel, then the families it left</h3>
   <div id="moons-scale" role="region" aria-labelledby="moons-scale-label"></div>
+  <div id="moons-all" class="cat" role="region" aria-labelledby="cat-label" hidden>
+    <h3 class="sc-h" id="cat-label">Every kept moon</h3>
+    <p class="tally" id="cat-status" aria-live="polite">Loading the kept moons…</p>
+    <button type="button" id="cat-retry" hidden>Try again</button>
+    <div id="cat-ui">
+      <div class="cat-bar">
+        <label>Search<input id="cat-q" type="search" placeholder="a title or its line" autocomplete="off"></label>
+        <label>Grid<select id="cat-grid"><option value="">Any grid</option><option value="user">User grid</option><option value="sampo">Sampo grid</option></select></label>
+        <label>Tier<select id="cat-tier"><option value="">Any tier</option></select></label>
+        <label>Family<input id="cat-fam" type="search" placeholder="F-000123" autocomplete="off"></label>
+      </div>
+      <div id="cat-rows" class="cat-list"></div>
+      <div class="cat-pager"><button type="button" id="cat-prev">Previous</button><span id="cat-page"></span><button type="button" id="cat-next">Next</button></div>
+    </div>
+  </div>
 </section>
 
 <section class="gsec" id="louhi" aria-labelledby="e-label" style="--accent:var(--violet)">

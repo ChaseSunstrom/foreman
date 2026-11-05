@@ -441,6 +441,125 @@
     });
   }
 
+  /* T-3047: every kept moon (D.moons_scale.catalogue names the file beside genesis.json), fetched once the section nears the
+     screen, then searched, filtered by grid, tier and family and paged 50 at a time. textContent only */
+  function moonsCatalogue() {
+    var S = D.moons_scale, C = S && S.catalogue, box = $("moons-all"), q = $("cat-q"), gridSel = $("cat-grid"), tierSel = $("cat-tier"),
+      fam = $("cat-fam"), body = $("cat-rows"), status = $("cat-status"), prev = $("cat-prev"), next = $("cat-next"), pageEl = $("cat-page"), ui = $("cat-ui"),
+      head = $("cat-label"), retry = $("cat-retry"), PER = 50, TIMEOUT = 20000, idx = null, cache = {}, seq = 0, shown = 0, page = 0, timer = null, started = false;
+    if (!S) { box.hidden = true; return; }
+    box.hidden = false;
+    if (!C || typeof C.file !== "string" || !/^[\w.-]+\.json$/.test(C.file) || !(C.total > 0)) {
+      ui.hidden = true; status.textContent = "No kept-moon catalogue yet: the next Genesis export writes every kept moon beside genesis.json."; return;
+    }
+    function mk(parent, tag, cls, text) {
+      var e = parent.appendChild(document.createElement(tag));
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+    /* list: this page's rows; total: how many match; nf: how many families they span, or null when the page hasn't read them all */
+    function render(list, total, nf) {
+      var from = page * PER, last = from + list.length, i, r, card, top, b, wi, d, k, pages = Math.max(1, Math.ceil(total / PER));
+      body.textContent = "";
+      for (i = 0; i < list.length; i++) {
+        r = list[i]; wi = typeof r.wild === "number" && r.wild >= 1 && r.wild <= 5 ? Math.round(r.wild) : 0;
+        card = mk(body, "article", "mc w" + wi); top = mk(card, "div", "mc-top");
+        mk(top, "b", "mc-id", String(r.id));
+        mk(top, "span", "chip mtier mtier-" + String(r.tier || "none").replace(/[^\w-]/g, ""), String(r.tier || "?"));
+        d = mk(top, "span", "dots"); d.setAttribute("role", "img"); d.setAttribute("aria-label", wi ? "wildness " + wi + " of 5" : "wildness unscored");
+        for (k = 1; k <= 5; k++) mk(d, "i", k <= wi ? "on" : "");
+        mk(top, "span", "gtag", String(r.grid || "user"));
+        if (r.family) {
+          b = mk(top, "button", "chip fam", String(r.family)); b.type = "button"; b.setAttribute("data-fam", String(r.family));
+          b.setAttribute("title", "Show only this family");
+          if (r.lead) { b = mk(top, "span", "lead"); b.setAttribute("title", "the family's lead"); b.setAttribute("aria-label", "family lead"); }
+        }
+        if (r.drawn) {
+          b = mk(top, "button", "mid", String(r.drawn)); b.type = "button"; b.setAttribute("data-moon", String(r.drawn));
+        } else mk(top, "span", "drawn", r.drawn === "" ? "no kill test" : "queued");
+        mk(card, "h4", "mc-title", String(r.title || ""));
+        if (r.today) mk(card, "p", "mc-line", String(r.today));
+        if (r.with_this) mk(card, "p", "mc-line with", String(r.with_this));
+      }
+      if (!total) mk(body, "p", "empty", "No kept moon matches. Clear a filter or search a shorter word.");
+      /* the status is the one live region: it speaks the range and the page together */
+      status.textContent = total ? "Showing " + (from + 1) + "–" + last + " of " + num(total) + " kept moon" + (total === 1 ? "" : "s")
+        + (total === idx.total ? "" : " (" + num(idx.total) + " in all)") + (nf === null ? "" : " · " + num(nf) + " famil" + (nf === 1 ? "y" : "ies")) + ". Page " + (page + 1) + " of " + num(pages) + "." : "No kept moon matches.";
+      pageEl.textContent = total ? "Page " + (page + 1) + " of " + num(pages) : "";
+      shown = total; prev.disabled = page === 0; next.disabled = last >= total;
+    }
+    /* one file, once, with a timeout that also aborts the request; prep turns a shard's rows into searchable ones */
+    function getJson(f, prep) {
+      var ac = typeof AbortController === "function" ? new AbortController() : null, t, late;
+      if (cache[f]) return Promise.resolve(cache[f]);
+      if (typeof f !== "string" || !/^[\w.-]+\.json$/.test(f)) return Promise.reject(new Error("bad file name"));
+      late = new Promise(function (_, no) { t = setTimeout(function () { if (ac) ac.abort(); no(new Error("timed out")); }, TIMEOUT); });
+      return Promise.race([fetch(f, { cache: "no-cache", signal: ac ? ac.signal : undefined }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }), late]).then(function (d) {
+        clearTimeout(t); return (cache[f] = prep ? prep(d) : d);
+      }, function (e) { clearTimeout(t); throw e; });
+    }
+    function rowsOf(d) {
+      return (Array.isArray(d) ? d : []).filter(function (r) { return r && typeof r === "object"; }).map(function (r) {
+        r._h = (String(r.id) + " " + String(r.title || "") + " " + String(r.today || "") + " " + String(r.with_this || "")).toLowerCase(); return r;
+      });
+    }
+    function fail(e) {
+      status.textContent = "The kept moons didn't load (" + (e && e.message ? e.message : "offline") + ")."; retry.hidden = false; body.textContent = "";
+    }
+    /* the index says where each page lives: with no search, grid or family filter a page is one or two shards of 500; otherwise
+       the shards the tier filter leaves are read (once) and filtered here */
+    function refresh(scroll) {
+      var s = q.value.toLowerCase().trim(), g = gridSel.value, t = tierSel.value, f = fam.value.trim().toLowerCase(), exact = /^f-\d+$/.test(f),
+        plain = !s && !g && !f, my = ++seq, start = 0, count = idx.total, from, end, k0, files = [], k;
+      retry.hidden = true; status.textContent = "Loading the kept moons…";
+      if (plain) {
+        if (t) { count = idx.tiers[t] || 0; for (k in idx.tiers) { if (k === t) break; start += idx.tiers[k]; } }
+        from = start + page * PER; end = Math.min(start + count, from + PER); k0 = Math.floor(from / idx.per);
+        for (k = k0; count && k <= Math.floor((end - 1) / idx.per); k++) if (idx.shards[k]) files.push(idx.shards[k].file);
+      } else files = idx.shards.filter(function (x) { return !t || x.tiers.indexOf(t) >= 0; }).map(function (x) { return x.file; });
+      Promise.all(files.map(function (x) { return getJson(x, rowsOf); })).then(function (parts) {
+        var all = [].concat.apply([], parts), view, fams = {}, nf = 0;
+        if (my !== seq) return;
+        if (plain) render(all.slice(from - k0 * idx.per, from - k0 * idx.per + (end - from)), count, t ? null : idx.families);
+        else {
+          view = all.filter(function (r) {
+            return (!g || (r.grid || "user") === g) && (!t || r.tier === t) && (!s || r._h.indexOf(s) >= 0)
+              && (!f || (exact ? String(r.family).toLowerCase() === f : String(r.family).toLowerCase().indexOf(f) >= 0));
+          });
+          view.forEach(function (r) { if (r.family && !fams[r.family]) { fams[r.family] = 1; nf++; } });
+          render(view.slice(page * PER, page * PER + PER), view.length, nf);
+        }
+        if (scroll && head.scrollIntoView) head.scrollIntoView({ block: "start" });  // the list's top, not wherever the pager was
+      }).catch(function (e) { if (my === seq) fail(e); });
+    }
+    function apply() { page = 0; refresh(false); }
+    function later() { clearTimeout(timer); timer = setTimeout(apply, 120); }
+    function load() {
+      if (started) return; started = true;
+      retry.hidden = true; status.textContent = "Loading the kept moons…";
+      getJson(C.file).then(function (d) {
+        if (!d || typeof d !== "object" || !Array.isArray(d.shards) || !(d.per > 0) || !(d.total > 0) || !d.tiers || typeof d.tiers !== "object") throw new Error("unreadable index");
+        idx = d; delete cache[C.file];
+        Object.keys(d.tiers).forEach(function (t) { if (t) tierSel.appendChild(document.createElement("option")).textContent = t; });
+        apply();
+      }).catch(function (e) { started = false; fail(e); });
+    }
+    retry.addEventListener("click", function () { if (idx) refresh(false); else load(); });
+    q.addEventListener("input", later); fam.addEventListener("input", later);
+    body.addEventListener("click", function (e) {
+      var t = e.target && e.target.closest ? e.target.closest("button.fam") : null;
+      if (t && idx) { fam.value = t.getAttribute("data-fam") || ""; apply(); }
+    });
+    gridSel.addEventListener("change", apply); tierSel.addEventListener("change", apply);
+    prev.addEventListener("click", function () { if (idx && page > 0) { page--; refresh(true); } });
+    next.addEventListener("click", function () { if (idx && (page + 1) * PER < shown) { page++; refresh(true); } });
+    if (typeof IntersectionObserver === "function") {
+      var io = new IntersectionObserver(function (es) { if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); load(); } }, { rootMargin: "800px" });
+      io.observe(box);
+    } else load();
+  }
+
   /* T-2625: the steer-expansion exam: raw words expanded into standing rules, a stronger judge, held-out coverage */
   function steerRow() {
     var box = $("steer"), S = D.steer, p, pct = function (v) { return typeof v === "number" ? Math.round(v * 100) + "%" : "?"; };
@@ -1491,6 +1610,7 @@
     try { steerRow(); } catch (e) {}
     try { moonshotTable(); } catch (e) {}
     try { moonsScale(); } catch (e) {}
+    try { moonsCatalogue(); } catch (e) {}
     try { scorecard(); } catch (e) {}  // a odd scorecard row costs its table, never the docs or the route below
     docs();
     try { scene(); } catch (e) { if (typeof console !== "undefined") console.warn("the scene kept its still: " + e); }  // the art never costs the data

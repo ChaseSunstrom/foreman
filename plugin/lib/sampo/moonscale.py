@@ -1307,25 +1307,49 @@ def _block_families(b):
     return re.findall(r"\bF-\d+\b", b["f"].get("family", ""))
 
 
+def _drawn(p):
+    """{moon id: the M-NN block it was drawn into, or '' when its kill test failed}, from the moons_drawn events."""
+    return {d["id"]: str(d.get("block") or "") for e in c.ledger_events(p, ["moons_drawn"])
+            for d in (e.get("data") or {}).get("draws", []) if isinstance(d, dict) and isinstance(d.get("id"), str)}
+
+
 def promote(p, max_n=3):
     """Write up to max_n extreme and massive family leads not yet in moonshot.md as M-NN blocks, best first, each kill
     test designed by the strongest model, through rune.put's cold read; then moons.rate tiers them blind."""
     if not isinstance(max_n, int) or max_n < 0:
         raise ValueError("--max can't be negative")
     out = {"promoted": [], "blocks": [], "skipped": [], "rated": 0, "error": ""}
+    try:
+        with store_lock(p):  # T-3047: two runs never draw the same moon
+            return _promote(p, max_n, out)
+    except Busy as e:
+        out["error"] = c.fit(_norm(e), 300)
+        return out
+
+
+def _promote(p, max_n, out):
     byid, doc = {x.get("id"): x for x in rows(p)}, moons._doc(p)
     have = moons.parse(doc)
     done, titles = {i for b in have for i in _block_families(b)}, {b["title"].lower() for b in have}
     n, blocks, paid = max((_num(b["id"]) for b in have), default=0), [], 0
-    leads = sorted((x for x in _families(p) or [] if x.get("tier") in moons.BIG and x["lead"] in byid),
-                   key=lambda x: (-_rank(x["tier"]), -_wild(x.get("wild")), -x["size"], _num(x["id"])))
-    for fam in leads:
-        x = byid[fam["lead"]]
-        if len(blocks) >= max_n:
+    drawn, fates = set(_drawn(p)), fate(p)
+    queue = []  # T-3047: every kept moon: extreme and massive first, then the rest; leads before variants, best first
+    for fam in _families(p) or []:
+        for i in [fam["lead"], *fam["variants"]]:
+            e = fates.get(i) or {}
+            tier, wild = (fam.get("tier"), fam.get("wild")) if i == fam["lead"] else (e.get("tier"), e.get("wild"))
+            if tier in moons.TIERS and i in byid and i not in drawn and not (i == fam["lead"] and fam["id"] in done):
+                queue.append((tier not in moons.BIG, i != fam["lead"], -_rank(tier), -_wild(wild), -fam["size"], _num(i),
+                              fam, i, tier, wild))
+    draws, spent = [], []  # spent: a title the catalogue already holds, drawn for nothing so it isn't queued forever
+    for *_, fam, i, tier, wild in sorted(queue, key=lambda q: q[:6]):
+        x = byid[i]
+        if len(draws) >= max_n:  # a skipped draw counts: the paid calls of one run stay bounded
             break
-        if fam["id"] in done or _norm(x.get("title")).lower() in titles:
+        if _norm(x.get("title")).lower() in titles:
+            spent.append({"id": i, "family": fam["id"], "block": ""})
             continue
-        variants = [_safe(byid[v].get("title")) for v in fam["variants"][:10] if v in byid]
+        variants = [_safe(byid[v].get("title")) for v in fam["variants"][:10] if v in byid] if i == fam["lead"] else []
         prompt = (_moons_prompt([x], ("today", "with_this", "what", "kill", "prior_art"))
                   + (f"\nVariants of it: {'; '.join(variants)}" if variants else ""))
         try:
@@ -1340,27 +1364,33 @@ def promote(p, max_n=3):
         kill = c.fit(got.get("kill", ""), 400)
         if not _CONDITION.search(kill):
             out["skipped"].append(f"{fam['id']}: {model} gave no kill test with a pass or fail bar")
+            draws.append({"id": i, "family": fam["id"], "block": ""})
             continue
         nov = re.search(r"[1-5]", got.get("novelty", ""))
         cell, k, n = x.get("cell") or {}, fam["size"] - 1, n + 1
+        draws.append({"id": i, "family": fam["id"], "block": f"M-{n:02d}"})
         blocks.append(
-            f"### M-{n:02d} · {_norm(x.get('title'))}\n- Tier: {fam['tier']}\n- Domain: {_domain(cell)}\n- Lens: "
+            f"### M-{n:02d} · {_norm(x.get('title'))}\n- Tier: {tier}\n- Domain: {_domain(cell)}\n- Lens: "
             f"{_norm(cell.get('mechanism'))}\n- What: {_norm(x.get('today'))} {_norm(x.get('with_this'))} "
             f"{_norm(x.get('what'))}\n- Prior art: {_norm(x.get('prior_art')) or 'none named'}\n- Better by: "
             f"{c.fit(got.get('better by') or _norm(x.get('with_this')), 300)}\n- Novelty: "
-            f"{nov.group(0) if nov else min(5, max(1, _wild(fam.get('wild')) or 3))}\n- Needs: "
+            f"{nov.group(0) if nov else min(5, max(1, _wild(wild) or 3))}\n- Needs: "
             f"{c.fit(got.get('needs') or 'none', 200)}\n- Unblocks: none\n- Kill: {kill}\n- Stage: idea\n- Family: "
-            f"{fam['id']} ({k} variant{'' if k == 1 else 's'})\n")
+            f"{fam['id']} ({'a variant' if i != fam['lead'] else f'{k} variant' + ('' if k == 1 else 's')})\n")
         out["promoted"].append(fam["id"])
         out["blocks"].append(f"M-{n:02d}")
     if not blocks:
+        if draws or spent:
+            c.log_event(p, "moons_drawn", data={"draws": draws + spent})
         return out
     try:
         rune.put(p, "moonshot.md", (doc or "# Moonshot catalogue\n").rstrip("\n") + "\n\n" + "\n".join(blocks))
-    except ValueError as e:
+    except ValueError as e:  # the calls were paid: record them with no block, as a failed kill test is, so none re-pays
         out.update(promoted=[], blocks=[], error=c.fit(_norm(e), 300))
+        c.log_event(p, "moons_drawn", data={"draws": [dict(d, block="") for d in draws] + spent})
         return out
     c.log_event(p, "moons_promote", data={"blocks": out["blocks"], "families": out["promoted"]})
+    c.log_event(p, "moons_drawn", data={"draws": draws + spent})  # T-3047: a moon drawn is never drawn again
     try:
         out["rated"] = moons.rate(p)["rated"]
     except (OSError, ValueError) as e:
@@ -1375,9 +1405,52 @@ def promote_line(r):
             + (f"; {r['error']}" if r["error"] else ""))
 
 
-def export(p):
+def catalogue(p, rs=None, f=None, drawn=None):
+    """T-3047: every kept moon, best tier then wildest first, with its grid (a row with none is the user's), its family
+    and whether it leads it, and the block it was drawn into. The page pages and filters it; nothing is cut here. Only
+    these fields leave the store: a cell's problem and source text come from the project's own records and stay in it."""
+    rs, f = rows(p) if rs is None else rs, fate(p) if f is None else f
+    drawn = _drawn(p) if drawn is None else drawn
+    fam = {i: (x["id"], i == x["lead"]) for x in _families(p) or [] for i in [x["lead"], *x["variants"]]}
+    out = []
+    for r in _at(rs, f, ("novelty",), ("kept",)):
+        i, e = r["id"], f[r["id"]]
+        out.append({"id": i, "title": c.fit(_norm(r.get("title")), 160), "today": c.fit(_norm(r.get("today")), 200),
+                    "with_this": c.fit(_norm(r.get("with_this")), 200), "grid": str(r.get("grid") or "user"),
+                    "tier": e.get("tier"), "wild": e.get("wild"), "family": fam.get(i, ("", False))[0],
+                    "lead": fam.get(i, ("", False))[1], "drawn": drawn.get(i)})
+    return sorted(out, key=lambda x: (-_rank(x["tier"]), -_wild(x["wild"]), _num(x["id"])))
+
+
+CATALOGUE, SHARD = "moons-catalogue.json", 500
+
+
+def _write_catalogue(out, cat, scrub):
+    """T-3047: shards of SHARD rows in the catalogue's order, then a small index the page reads first (the total, each
+    tier's count, each shard's file, size and tiers) so a visitor fetches only the shards its filter and page need. The
+    index is written last and a shard a smaller catalogue no longer has is removed."""
+    dump = lambda x: json.dumps(scrub(x) if scrub else x, ensure_ascii=False, separators=(",", ":")) + "\n"  # noqa: E731
+    shards, tiers = [], {}
+    for k, at in enumerate(range(0, len(cat), SHARD), 1):
+        part = cat[at:at + SHARD]
+        name = f"moons-catalogue-{k:03d}.json"
+        c.write_atomic(os.path.join(out, name), dump(part))
+        shards.append({"file": name, "n": len(part), "tiers": list(dict.fromkeys(r["tier"] or "" for r in part))})
+    for r in cat:
+        tiers[r["tier"] or ""] = tiers.get(r["tier"] or "", 0) + 1
+    for x in os.listdir(out):
+        if re.fullmatch(r"moons-catalogue-\d+\.json", x) and x not in {s["file"] for s in shards}:
+            os.remove(os.path.join(out, x))
+    c.write_atomic(os.path.join(out, CATALOGUE), dump(
+        {"total": len(cat), "per": SHARD, "tiers": tiers, "families": len({r["family"] for r in cat if r["family"]}),
+         "shards": shards}))
+
+
+def export(p, out=None, scrub=None):
     """genesis.json's moons_scale: each candidate counted by its fate, and the top EXPORT_TOP families with their lead's
-    lines, the funnel's tier, the cold tier and stage of the block it was promoted to, and that block's evidence."""
+    lines, the funnel's tier, the cold tier and stage of the block it was promoted to, and that block's evidence. Given
+    out, every kept moon goes to out/ as moons-catalogue-NNN.json shards behind a small moons-catalogue.json index
+    (scrub cleans every string) and the page is told where."""
     rs, f = rows(p), fate(p)
     x = {"generated": len(rs), "write": {}, "dups": {"exact": 0, "embed": 0, "shingle": 0},
          "rejected": {"kill": 0, "tier": 0, "novelty": 0}, "merged": 0, "kept": 0, "pending": 0}
@@ -1398,7 +1471,7 @@ def export(p):
         elif v == "rejected" and st in x["rejected"]:
             x["rejected"][st] += 1
     if not rs:
-        return {"funnel": x, "families": [], "families_total": 0}
+        return {"funnel": x, "families": [], "families_total": 0}  # nothing stored: no catalogue to write
     byid, blocks = {row.get("id"): row for row in rs}, {}
     for b in moons.rows(p):
         for i in _block_families(b):
@@ -1410,7 +1483,12 @@ def export(p):
                     "with_this": lead.get("with_this", ""), "tier": fam.get("tier"), "cold": b.get("reviewer"),
                     "wild": fam.get("wild"), "block": b.get("id"), "stage": b.get("stage") or "candidate",
                     "evidence": c.fit(_norm((b.get("f") or {}).get("evidence")), 300), "kinds": fam.get("kinds", [])})
-    return {"funnel": x, "families": top, "families_total": len(fams)}
+    res = {"funnel": x, "families": top, "families_total": len(fams)}
+    if out:
+        cat = catalogue(p, rs, f)
+        _write_catalogue(out, cat, scrub)
+        res["catalogue"] = {"file": CATALOGUE, "total": len(cat)}
+    return res
 
 
 def scale_problems(p):

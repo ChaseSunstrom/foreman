@@ -314,6 +314,33 @@ class GenesisExport(ForemanTestCase):
                                                          "tiers": True, "stage": True, "evidence": True, "more": True,
                                                          "none": True, "jarvis": True}, out.stderr)
 
+    def test_the_moons_page_lists_every_kept_moon_paged_searched_and_filtered(self):
+        """T-3047: 10,000 kept moons from the catalogue file: 50 a page, search, grid (a row with none is the user's),
+        tier and family filters, hostile text only as text, and a filter that stays fast."""
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("no node to run the page")
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        gdir = os.path.join(root, "site", "genesis")
+        html = read_text(os.path.join(gdir, "index.html"))
+        for i in ("moons-all", "cat-q", "cat-grid", "cat-tier", "cat-fam", "cat-rows", "cat-prev", "cat-next"):
+            self.assertIn(f'id="{i}"', html)
+        body = re.search(r"function moonsCatalogue\(\)(.*?)\n  }\n", read_text(os.path.join(gdir, "genesis.js")), re.S)
+        self.assertTrue(body and "innerHTML" not in body.group(1))
+        sect = html[html.index('id="moons-all"'):]
+        sect = sect[:sect.index("</section>")]
+        self.assertEqual(sect.count("aria-live"), 1, "one live region, not one per piece of the pager")
+        out = subprocess.run([node, os.path.join(root, "plugin", "tests", "genesis_page.js"), gdir, "catalogue"],
+                             capture_output=True, text=True, timeout=120)
+        self.assertEqual(json.loads(out.stdout or "{}"), {"total": True, "markup": False, "rows": 50, "index_first": True,
+                                                         "search": True, "grid": True, "user": True, "tier": True,
+                                                         "tier_shard": True, "scroll": True, "family": True,
+                                                         "page": True, "famclick": True, "page_of": True, "empty": True,
+                                                         "nolabel": True, "fast": True, "timeout": True, "retry": True,
+                                                         "down": True}, out.stderr)
+
 
 LIVE_WAIT_FLOOR = 200  # seconds: well inside the 300 s window
 

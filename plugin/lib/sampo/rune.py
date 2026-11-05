@@ -1203,8 +1203,9 @@ def export(p, out):
     if (ms := moons.export(p))["total"]:  # T-2626: the moonshot catalogue, both tiers, stage, asked or not
         data["moonshots"] = ms
     from sampo import moonscale
-    if (sc := moonscale.export(p))["funnel"]["generated"]:  # T-2869: the funnel's counts and the top families
-        data["moons_scale"] = sc
+    os.makedirs(out, exist_ok=True)
+    if (sc := moonscale.export(p, out, scrub))["funnel"]["generated"]:  # T-2869: the funnel's counts and the top families
+        data["moons_scale"] = sc  # T-3047: and where every kept moon is
     if st := ssteer.latest(p, held=True):  # T-2625: the steer-expansion exam's newest run, its held-out rate on the page
         data["steer"] = {k: st.get(k) for k in ("run", "at", "model", "judge", "cases", "failed", "harmful", "holdout",
                                                 "train")}
@@ -1292,9 +1293,18 @@ def _wait(p):
 
 
 def _body(path):
+    """genesis.json less what changes every export, plus a hash of the moons catalogue files beside it (T-3047): a
+    catalogue that moved while genesis.json's counts did not still publishes."""
     import json
     with open(path, encoding="utf-8") as f:
-        return {k: v for k, v in json.load(f).items() if k not in ("updated", "rev")}  # these change every export
+        body = {k: v for k, v in json.load(f).items() if k not in ("updated", "rev")}  # these change every export
+    here, h = os.path.dirname(path), hashlib.sha256()
+    for name in sorted(os.listdir(here)):
+        if re.fullmatch(r"moons-catalogue(-\d+)?\.json", name):
+            with open(os.path.join(here, name), "rb") as f:
+                h.update(name.encode() + b"\0" + f.read())
+    body["_catalogue"] = h.hexdigest()
+    return body
 
 
 def _record(p, result, digest=None, sha=None, stats_day=None):
@@ -1424,6 +1434,9 @@ def publish(p, settle=False):
                 if old == new and not fresh:
                     return _record(p, "up to date" + tail, digest, stats_day=day)
                 if old != new:
+                    for x in os.listdir(dest) if os.path.isdir(dest) else ():  # a shard the catalogue no longer has
+                        if re.fullmatch(r"moons-catalogue(-\d+)?\.json", x):
+                            os.remove(os.path.join(dest, x))
                     shutil.copytree(out, dest, dirs_exist_ok=True)
                 git(wt, "add", "--", "site/genesis", *([STATS] if fresh else []))
                 git(wt, "commit", "-q", "-m", "Genesis: tower update (fm genesis live)" if old != new
