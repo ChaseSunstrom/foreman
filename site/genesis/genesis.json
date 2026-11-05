@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T17:38:58Z",
- "rev": "397e14be",
+ "updated": "2026-11-05T17:47:07Z",
+ "rev": "daf01510",
  "capabilities": [
   {
    "n": 1,
@@ -2113,7 +2113,7 @@
       {
        "id": "T-2261",
        "title": "Guard (for the user's review, touches the guard): the interpreter-code rule blocks a…",
-       "status": "active",
+       "status": "done",
        "type": "FIX",
        "tier": "M",
        "steps": 3,
@@ -36247,16 +36247,16 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 835,
+ "unproven": 837,
  "unproven_kinds": {
-  "meaning-notes": 363,
+  "meaning-notes": 364,
   "meaning-user": 248,
   "research-uncited": 33,
   "perf-typed": 58,
   "typed": 37,
   "red": 77,
   "tui-unshot": 11,
-  "docs": 119,
+  "docs": 120,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 37,
@@ -37465,7 +37465,7 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 17489,
+   "generated": 17559,
    "write": {
     "title": 136,
     "line": 1399,
@@ -37484,8 +37484,8 @@
     "novelty": 58
    },
    "merged": 111,
-   "kept": 794,
-   "pending": 8
+   "kept": 802,
+   "pending": 70
   },
   "families": [
    {
@@ -40716,7 +40716,7 @@
   "families_total": 723,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 794
+   "total": 802
   }
  },
  "steer": {
