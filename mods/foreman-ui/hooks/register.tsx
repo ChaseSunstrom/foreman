@@ -70,7 +70,7 @@ const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
 const reviewing = atom({ plugin: 'foreman-ui', key: 'reviewing' } as const, null as string | null) // T-0989: a waiting plan shown in the Task section
-import { TREE_INDENT, agentOut, agentRow, bars, branch, editChanges, editRow, gapTop, liveTree, mascotTree, meter, miniRail, ownsResult, rail, railBox, sectionHead, shellRow, spark, toolRow, treeOn } from './rows'
+import { TREE_INDENT, agentOut, agentRow, bars, branch, editChanges, editRow, gapTop, crestTree, liveTree, mascotTree, meter, miniRail, ownsResult, rail, railBox, sectionHead, shellRow, spark, toolRow, treeOn } from './rows'
 import type { Motion } from './rows'
 
 // Sampo inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
@@ -299,7 +299,7 @@ let seenOptions = ''
 const OPTION_OK: Record<string, (v: unknown) => boolean> = {
   freshAt: v => typeof v === 'number',
   freshTokens: v => typeof v === 'number',
-  mascot: v => typeof v === 'string' && (v === 'off' || v in MASCOT_COLORS),
+  mascot: v => typeof v === 'string' && (v === 'off' || v === 'sampo' || v in MASCOT_COLORS),
   motion: v => v === 'full' || v === 'reduced' || v === 'calm' || v === 'off',
   chat: v => v === 'full' || v === 'tree',
   palette: v => v === 'default' || v === 'cb' || v === 'riso',
@@ -610,7 +610,7 @@ function captureBox($: EngineInterface, e: ResolveInput) {
 function applyOptions(options: Record<string, unknown>) {
   cfg.freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
   cfg.freshTokens = typeof options.freshTokens === 'number' ? options.freshTokens : 200000
-  cfg.mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
+  cfg.mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot === 'sampo' || options.mascot in MASCOT_COLORS) ? options.mascot : 'sampo' // T-3113: the crest is the default
   // T-0912: full = 30 fps charts by blit; reduced = the 8 fps frame clock only; off = no clocks, a still pane.
   // T-1496: reduced is fm code's word too; the old calm still means it
   cfg.motion = options.motion === 'reduced' || options.motion === 'calm' ? 'reduced' : options.motion === 'off' ? 'off' : 'full'
@@ -1584,7 +1584,10 @@ export const register: Register = (on, options) => {
           ...(g.child ? [{ ...g.child, prefix: `${last ? '  ' : '│ '}└─`, lineColor: line }] : [])]
       }),
     ]
-    const L = layout(H, [
+    // T-3113: the crest takes the pane's top rows; every section is placed in what is left under it
+    const mood = live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle'
+    const crestTop = crestTree(ui, e, W, H, mood, live ? (f ?? 0) : idleBeat, subs)
+    const L = layout(H - crestTop.rows, [
       { key: 'task', want: taskWant, cap: Math.max(4, Math.round(H * 0.4)), min: Math.min(taskWant, 4), bare: true },
       { key: 'activity', want: 1, fixed: nLanes + axis, grow: KINDS.length - nLanes }, // spare rows: every lane
       { key: 'today', want: 1, fixed: T, grow: Math.max(0, 8 - T) }, // then taller charts
@@ -1674,7 +1677,7 @@ export const register: Register = (on, options) => {
     const leftParts = work.slice(1).filter(x => x.n)
     const doneWord = `${work[0]!.n} done today`
     const leftWord = `${leftParts.reduce((n, x) => n + x.n, 0)} left`
-    const mascotW = cfg.mascot === 'off' ? 0 : 12 + Math.min(4, subs.filter(x => !x.done).length) * 8 // and its minis
+    const mascotW = cfg.mascot === 'off' || cfg.mascot === 'sampo' ? 0 : 12 + Math.min(4, subs.filter(x => !x.done).length) * 8 // and its minis
     // done on the bar's filled side, left on its track side; the breakdown after them gives way first
     const workW = Math.max(0, Math.min(28, W - mascotW - doneWord.length - leftWord.length - 4 - 22))
     const head = (
@@ -1709,7 +1712,7 @@ export const register: Register = (on, options) => {
           </Box>
           {attention}
         </Box>
-        {mascotTree(ui, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
+        {mascotTree(ui, e, mood, live ? (f ?? 0) : idleBeat, subs)}
       </Box>
     )
 
@@ -2081,6 +2084,7 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" key="fm-pane" paddingX={1}>
+        {crestTop.el}
         {head}
         {L.gap ? <Box key="gap-head" height={1} flexShrink={0} /> : null}
         <Box key="task" flexDirection="column" height={R.task!} overflow="hidden" flexShrink={0}>

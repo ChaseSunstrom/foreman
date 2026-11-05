@@ -22,15 +22,16 @@
     "mascot": {
       "type": "string",
       "title": "Mascot",
-      "description": "The animated Claude in the Sampo pane's top-right corner.",
+      "description": "The Sampo pane's top: 'sampo' is the crest (the mark ringed by runes, a hammer per running subagent); a colour is the animated Claude in the top-right corner.",
       "options": [
+        "sampo",
         "blue",
         "orange",
         "purple",
         "green",
         "off"
       ],
-      "default": "blue"
+      "default": "sampo"
     },
     "motion": {
       "type": "string",

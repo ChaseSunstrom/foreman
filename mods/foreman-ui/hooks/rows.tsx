@@ -1,6 +1,6 @@
 import type { EngineInterface, RenderElement, ResolveInput } from 'claude-code'
 import type { LiveAgent } from '../types'
-import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, clawd, clean, diffRows, elapsed, ganttCells, hex, spin, miniClawd, mix, outputSummary, progressCells, ruleCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
+import { C, MASCOT_COLORS, cells, crest, crestText, TONE_COLOR, activityCells, agentColor, barCells, changedLines, clawd, clean, diffRows, elapsed, ganttCells, hex, spin, miniClawd, mix, outputSummary, progressCells, ruleCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
 import type { DiffRow, LabelRun } from './kit'
 import { OUT_LINES, TINY_OUT, TREE_MS, cfg, diffCap, took } from './state'
 import type { FeedItem, Said, ToolUseRender } from './state'
@@ -192,7 +192,7 @@ export function bars(ui: UI, e: ResolveInput, key: string, values: readonly numb
 
 /** The mascot: Claude Code's own Claude, dancing while work runs, with a mini Claude per running subagent. */
 export function mascotTree(ui: UI, e: ResolveInput, state: 'work' | 'idle' | 'happy', n: number, subs: LiveAgent[]) {
-  if (cfg.mascot === 'off') return null
+  if (cfg.mascot === 'off' || cfg.mascot === 'sampo') return null
   const color = MASCOT_COLORS[cfg.mascot] ?? MASCOT_COLORS.blue!
   const { Box, Text } = ui
   if (e.surface !== 'terminal')
@@ -219,6 +219,18 @@ export function mascotTree(ui: UI, e: ResolveInput, state: 'work' | 'idle' | 'ha
       </Box>
     </Box>
   )
+}
+
+/** T-3113: the crest across the pane's top (mascot 'sampo'): its rows (0 when not drawn) and the element. A terminal
+ * gets the Raster, any other surface one line of text. */
+export function crestTree(ui: UI, e: ResolveInput, width: number, height: number, state: 'work' | 'idle' | 'happy', n: number, subs: LiveAgent[]) {
+  if (cfg.mascot !== 'sampo' || height < 28) return { rows: 0, el: null } // a short dock keeps every row for the work
+  const running = subs.filter(s => !s.done)
+  const { Raster, Text } = ui
+  if (e.surface !== 'terminal')
+    return { rows: 1, el: <Text key="fm-crest" color={hex(C.accent)} wrap="truncate-end">{crestText(state, running.length, n)}</Text> }
+  const g = crest(width, state, n, running.map(s => s.id), cfg.motion !== 'full', height)
+  return { rows: g.rows, el: <Raster key="fm-crest" columns={g.cols} rows={g.rows} cells={cells(g.grid)} /> }
 }
 
 /** T-1031: a diff as Sampo text: a line of context dim, a ┄ break between hunks, the line number dim, the +/- sign

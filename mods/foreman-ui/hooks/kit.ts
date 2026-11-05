@@ -600,6 +600,115 @@ export function agentColor(id: string): number {
   return MINI_COLORS[(h >>> 0) % MINI_COLORS.length]!
 }
 
+// T-3113: the crest, the pane's full-width top. design/sampo/logo/mark-simple.svg (halo dropped, cropped to the art)
+// rasterised once into half-block cells: '.' is empty, else glyph + fg hex [+ bg hex] (12 px = 6 rows; 6 px = 3 rows).
+const MARK_TOKENS: Record<number, string[]> = {
+  12: [
+    '. . . . . ▄ffba39 ▀ffb846ff6e22 . . . . .',
+    '. . . . ▀ff892cfdb24e ▀ff9d3ccda489 ▀f09842c29f90 ▀ff822afdbc5a . . . .',
+    '. . . ▀fff4cd6f7888 ▀cab088565a68 ▀bd9674505561 ▀bd9473505561 ▀c9b18b585d6a ▀ffffd1757c8c ▄c5cae6 . .',
+    '. . ▄ffffff ▄fb916b ▄604837 ▀34394560554b ▀343b45605a57 ▄604f3f ▄d17f53 ▄ffd9b4 . .',
+    '. ▀727279d5a898 ▀47474e7c6565 ▀3f3e45776364 ▀38373e554242 ▀3b3b424c3d3f ▀36353d453a3e ▀30303741383e ▀3031382d262c ▀373942262127 ▄423c49 .',
+    '. ▀f2bca7 ▀806866d1a7a3 ▀7a6463a68782 ▀5642416a514e ▀4f3e3f5e4b4c ▀483b3e554447 ▀42393e4a3f46 ▀31272f3a2f36 ▀272227342e34 ▀57525c .',
+  ],
+  6: [
+    '. . ▄ffa95a ▀fff14ef7a35b . .',
+    '. ▀fff5f5 ▀8f80716f6059 ▀8f81736d6561 ▀f1e1e1 .',
+    '. ▀5e5357957876 ▀443b3f594545 ▀3b363c493c41 ▀2e2c33302a2f .',
+  ],
+}
+type Cell = [string, number, number]
+const MARK: Record<number, (Cell | null)[][]> = Object.fromEntries(
+  Object.entries(MARK_TOKENS).map(([k, rows]) => [k, rows.map(r => r.split(' ').map((t): Cell | null =>
+    t === '.' ? null : [t[0]!, parseInt(t.slice(1, 7), 16), t.length > 7 ? parseInt(t.slice(7, 13), 16) : DEFAULT_BG]))]))
+
+/** Elder Futhark, U+16A0 to U+16EA: the ring around the mark */
+export const RUNES = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ'
+const RING_DIM = mix(C.track, C.dim, 0.55)
+const CREST_ROWS = 8 // wide: a rune row, six rows of mark, a rune row
+const CREST_WIDE = 60
+const CREST_TALL = 32 // a dock shorter than this keeps the compact crest
+
+/** A rune's colour: the fire runs round the ring while work runs (a head and a fading tail), all dim at rest, all
+ * gold in a flare when a task finishes. `still` (motion reduced or off) holds work as an even glow. */
+function runeColor(i: number, n: number, state: 'work' | 'idle' | 'happy', beat: number, still: boolean): number {
+  if (state === 'idle') return RING_DIM
+  if (state === 'happy') return still || beat % 2 ? C.accent : C.white
+  if (still) return mix(RING_DIM, C.accent, 0.45)
+  const d = (((beat % n) - i) % n + n) % n // how far behind the head
+  return d < 7 ? mix(RING_DIM, d ? C.accent : C.white, d ? 1 - d / 7 : 1) : RING_DIM
+}
+
+/** The crest as cells: the mark, the rune ring, a hammer per running subagent (its colour, striking on its own beat).
+ * `shown` hammers drawn, `more` left out ("+k" is drawn in their place). Under 60 columns, a 3-row compact mark. */
+export function crest(width: number, state: 'work' | 'idle' | 'happy', beat: number, running: readonly string[], still: boolean, height = 99) {
+  const cols = Math.max(1, Math.floor(width))
+  const wide = cols >= CREST_WIDE && height >= CREST_TALL
+  const rows = wide ? CREST_ROWS : 3
+  const grid: Cell[] = Array.from({ length: rows * cols }, () => [' ', C.track, DEFAULT_BG] as Cell)
+  const put = (x: number, y: number, c: Cell) => { if (x >= 0 && x < cols && y >= 0 && y < rows) grid[y * cols + x] = c }
+  const text = (x: number, y: number, s: string, fg: number) => [...s].forEach((ch, i) => put(x + i, y, [ch, fg, DEFAULT_BG]))
+  const mark = MARK[wide ? 12 : 6]!
+  const mw = wide ? 12 : 6
+  const mx = wide ? Math.floor((cols - mw) / 2) : 0
+  const my = wide ? 1 : 0
+  if (wide || cols >= 14) mark.forEach((r, j) => r.forEach((c, i) => c && put(mx + i, my + j, c)))
+  // the ring, clockwise from the top left
+  const ring: [number, number][] = []
+  if (wide) {
+    for (let x = 0; x < cols; x += 2) ring.push([x, 0])
+    for (let y = 1; y < rows - 1; y++) ring.push([cols - 1, y])
+    for (let x = cols - 1 - ((cols - 1) % 2); x >= 0; x -= 2) ring.push([x, rows - 1])
+    for (let y = rows - 2; y >= 1; y--) ring.push([0, y])
+    for (let x = 1; x < cols; x += 2) { put(x, 0, ['·', C.track, DEFAULT_BG]); put(x, rows - 1, ['·', C.track, DEFAULT_BG]) }
+  } else {
+    for (let x = mw + 1; x < cols; x += 2) ring.push([x, 0])
+  }
+  const seen = new Set<string>()
+  const uniq = ring.filter(([x, y]) => !seen.has(`${x},${y}`) && seen.add(`${x},${y}`))
+  uniq.forEach(([x, y], i) => put(x, y, [RUNES[i % RUNES.length]!, runeColor(i, uniq.length, state, beat, still), DEFAULT_BG]))
+  // hammers
+  const n = running.length
+  let shown = 0
+  if (wide) {
+    const R = Math.max(0, Math.floor((cols - (mx + mw + 1) - 3) / 6))
+    const L = Math.max(0, Math.floor((mx - 1 - 3) / 6))
+    const slots: number[] = [] // left edges, nearest the mark first, right then left
+    for (let k = 0; k < Math.max(R, L); k++) {
+      if (k < R) slots.push(mx + mw + 1 + k * 6)
+      if (k < L) slots.push(mx - 1 - 5 - k * 6)
+    }
+    shown = n > slots.length ? Math.max(0, slots.length - 1) : n
+    for (let i = 0; i < shown; i++) {
+      const x = slots[i]!, color = agentColor(running[i]!)
+      const struck = !still && state === 'work' && (beat + 2 * i) % 5 === 4
+      const iron = mix(C.track, color, 0.4)
+      text(x, 6, '▃▃▃▃▃', iron)
+      if (struck) { text(x, 4, '· * ·', C.accent); text(x, 5, '▄███▄', color) }
+      else { text(x, 4, '▄███▄', color); put(x + 2, 5, ['█', mix(color, C.dim, 0.5), DEFAULT_BG]) }
+    }
+    if (n > shown) text(slots.length ? slots[shown]! : mx + mw + 1, 5, `+${n - shown}`, C.muted)
+  } else {
+    const x0 = mw + 1
+    const room = Math.max(0, Math.floor((cols - x0) / 2))
+    shown = n > room ? Math.max(0, room - 1) : n
+    text(x0, 1, 'Sampo', C.accent)
+    for (let i = 0; i < shown; i++) {
+      const struck = !still && state === 'work' && (beat + 2 * i) % 5 === 4
+      put(x0 + i * 2, 2, [struck ? '╧' : '╤', agentColor(running[i]!), DEFAULT_BG])
+    }
+    if (n > shown) text(x0 + shown * 2, 2, `+${n - shown}`, C.muted)
+  }
+  return { rows, cols, grid, shown, more: n - shown }
+}
+
+/** The crest for a surface without Raster: one line of text */
+export function crestText(state: 'work' | 'idle' | 'happy', hammers: number, beat: number): string {
+  const at = state === 'work' ? (beat % 8) * 3 : 0
+  const three = (k: number) => [0, 1, 2].map(i => RUNES[(k + i) % RUNES.length]).join('')
+  return `${three(at)} Sampo ${three(at + 12)}${hammers ? ` · ${hammers} hammer${hammers > 1 ? 's' : ''}` : ''}`
+}
+
 // T-0123: a shell command's output as a summary. A line's tone: failures, warnings, passes, the rest.
 export type Tone = 'err' | 'warn' | 'ok' | 'plain'
 // T-0144: every escape sequence, C0/C1 controls, bidi overrides and zero-width or direction marks

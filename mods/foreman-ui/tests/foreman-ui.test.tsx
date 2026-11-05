@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, mix, changedLines, clawd, diffRows, clean, customColors, elapsed, PALETTES, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
+import { crest, crestText, RUNES, activityCells, agentColor, barCells, bucketize, C, mix, changedLines, clawd, diffRows, clean, customColors, elapsed, PALETTES, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
 import { askNote, closeCard, economyText, guardReason, lastLine, readSummary, signalLine, summaryText, toasts, usable } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
@@ -842,7 +842,7 @@ test('a paused hook shows in the band and, before anything else, in the pane (T-
   await pane.unmount()
 })
 
-test('the pane wears the mascot top-right; the size legend is gone (T-0909: noise)', async ($, on) => {
+test('the pane wears the mascot top-right; the size legend is gone (T-0909: noise)', { options: { mascot: 'blue' } }, async ($, on) => {
   world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
@@ -930,7 +930,7 @@ test('a background shell shows while Claude waits on it, and leaves on its notif
   await ui.unmount()
 })
 
-test('each running subagent gets a mini Claude of its own color beside the mascot', async ($, on) => {
+test('each running subagent gets a mini Claude of its own color beside the mascot', { options: { mascot: 'blue' } }, async ($, on) => {
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
@@ -943,7 +943,7 @@ test('each running subagent gets a mini Claude of its own color beside the masco
   await pane.unmount()
 })
 
-test('a killed subagent sends no turn.complete; the engine list retires its mini Claude', async ($, on) => {
+test('a killed subagent sends no turn.complete; the engine list retires its mini Claude', { options: { mascot: 'blue' } }, async ($, on) => {
   const { clock, agentStatus } = world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const inSubagent = { tool: 'Read' as const, file_path: '/repo/a.py', agentId: 'ag2' }
@@ -1476,7 +1476,8 @@ test('the pane reads top-down: head with the attention row, task, Activity, Up n
   const order = ['fm-pane-head', 'fm-pane-attention', 'task', 'activity', 'queue', 'history', 'today', 'fm-pane-controls']
   expect(order.map(at).every(i => i >= 0)).toBe(true)
   expect([...order.map(at)].sort((x, y) => x - y)).toEqual(order.map(at))
-  let rows = 4 + (await ui.find({ key: 'task' }))?.props.height as number // head 3 (attention its third row), controls
+  const crestRaster = (await ui.findAll({ type: 'Raster' })).find(r => r.key === 'fm-crest') // T-3113: the crest's rows come off the dock
+  let rows = 4 + (crestRaster?.props.rows as number) + (await ui.find({ key: 'task' }))?.props.height as number // head 3 (attention its third row), controls
   for (const key of ['head', 'controls']) if (await ui.find({ key: `gap-${key}` })) rows += 1
   for (const key of ['activity', 'agents', 'queue', 'sessions', 'history', 'today']) {
     const h = (await ui.find({ key: `${key}-body` }))?.props.height as number | undefined
@@ -2603,4 +2604,108 @@ test('economy mode (T-3049): a project with the weekly lean off ignores weekly u
   expect(economyText(week, false)).toBeNull()
   expect(economyText([...week, { kind: 'five_hour', percentUsed: 95 }], false)).toContain('5-hour usage is past 90%')
   expect(economyText([...week, { kind: 'five_hour', percentUsed: 95 }], false)).not.toContain('weekly')
+})
+
+// T-3113: the crest, the pane's full-width top
+const runeCells = (g: { grid: [string, number, number][] }) => g.grid.filter(([ch]) => RUNES.includes(ch))
+const litCount = (g: { grid: [string, number, number][] }) => new Set(runeCells(g).map(c => c[1])).size
+const dimRune = runeCells(crest(100, 'idle', 0, [], false))[0]![1]
+
+test('crest: the mark in half blocks, ringed by Elder Futhark runes, 8 rows wide and 3 rows under 60 columns', () => {
+  const wide = crest(100, 'idle', 0, [], false)
+  expect([wide.rows, wide.cols, wide.grid.length]).toEqual([8, 100, 800])
+  expect(runeCells(wide).length).toBeGreaterThan(30)
+  for (const [ch] of runeCells(wide)) expect(ch.codePointAt(0)!).toBeGreaterThanOrEqual(0x16a0), expect(ch.codePointAt(0)!).toBeLessThanOrEqual(0x16ea)
+  expect(wide.grid.some(([ch]) => ch === '▀' || ch === '▄')).toBe(true) // the mark
+  const narrow = crest(50, 'idle', 0, [], false)
+  expect([narrow.rows, narrow.cols, narrow.grid.length]).toEqual([3, 50, 150])
+  expect(crest(5, 'idle', 0, [], false).grid.length).toBe(15) // never wider than asked, however small
+  expect(crest(100, 'idle', 0, [], false, 24).rows).toBe(3) // a short dock keeps its rows for the work
+})
+
+test('crest: runes light in turn while work runs, rest dim, flare on a finish; reduced motion holds still', () => {
+  expect(litCount(crest(100, 'idle', 0, [], false))).toBe(1) // all one dim colour
+  expect(litCount(crest(100, 'idle', 5, [], false))).toBe(1)
+  const a = crest(100, 'work', 0, [], false), b = crest(100, 'work', 4, [], false)
+  expect(litCount(a)).toBeGreaterThan(1)
+  expect(runeCells(a).map(c => c[1])).not.toEqual(runeCells(b).map(c => c[1])) // the light moved
+  expect(runeCells(crest(100, 'work', 0, [], true)).map(c => c[1])).toEqual(runeCells(crest(100, 'work', 4, [], true)).map(c => c[1]))
+  const flare = crest(100, 'happy', 1, [], false)
+  expect(runeCells(flare).every(c => c[1] !== dimRune)).toBe(true)
+})
+
+test('crest: a hammer per running subagent in its own color, striking on its own beat; +k past the room', () => {
+  const ids = ['a1', 'b2', 'c3']
+  const g = crest(100, 'work', 0, ids, false)
+  for (const id of ids) expect(g.grid.some(c => c[1] === agentColor(id) && c[0] !== ' ')).toBe(true)
+  expect(g.shown).toBe(3)
+  expect(crest(100, 'work', 1, ids, false).grid).not.toEqual(g.grid) // the strike
+  expect(crest(100, 'work', 1, ids, true).grid).toEqual(crest(100, 'work', 0, ids, true).grid)
+  const many = Array.from({ length: 40 }, (_, i) => `ag${i}`)
+  const m = crest(100, 'work', 0, many, false)
+  expect(m.shown).toBeLessThan(40)
+  expect(m.shown + m.more).toBe(40)
+  expect(m.grid.map(c => c[0]).join('')).toContain(`+${m.more}`)
+  const small = crest(50, 'work', 0, ids, false) // compact: a hammer glyph each
+  expect(small.grid.filter(c => c[0] === '╤' || c[0] === '╧').length).toBe(small.shown)
+  expect(small.grid.length).toBe(150)
+})
+
+test('crest: a surface without Raster gets a one-line text mark', () => {
+  expect(crestText('idle', 0, 0)).toMatch(/^[ᚠ-ᛪ]+ Sampo [ᚠ-ᛪ]+$/)
+  expect(crestText('work', 2, 3)).toContain('2 hammers')
+  expect(crestText('work', 0, 3)).not.toContain('hammer')
+})
+
+test('the pane opens with the crest by default; blue keeps the Clawd, off draws nothing', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'fm-crest')).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /▐▛███▜▌/ })).toBeUndefined()
+  await ui.unmount()
+  const desk = await $.ui.mount({ plugin: 'foreman-ui', surface: 'desktop', ...PANE })
+  expect(await desk.find({ type: 'Text', text: /[ᚠ-ᛪ]+ Sampo [ᚠ-ᛪ]+/ })).toBeDefined()
+  await desk.unmount()
+})
+
+test('mascot blue draws no crest', { options: { mascot: 'blue' } }, async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'fm-crest')).toBe(false)
+  expect(await ui.find({ type: 'Text', text: /▐▛███▜▌/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('mascot off draws no crest', { options: { mascot: 'off' } }, async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'fm-crest')).toBe(false)
+  await ui.unmount()
+})
+
+test('a running subagent adds a hammer to the crest', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  await $.tool.call({ tool: 'Read' as const, file_path: '/repo/src/parse.py', agentId: 'ag1' })
+  const r = (await pane.findAll({ type: 'Raster' })).find(x => x.key === 'fm-crest')!
+  expect(decode(r.props.cells as string).some(c => c.fg === agentColor('ag1') && c.ch !== ' ')).toBe(true)
+  await pane.unmount()
+})
+
+test('the crest gives way on a short dock, shrinks under 60 columns and holds still with motion off (T-3113)', { options: { motion: 'off' } }, async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const crestOf = async (props: object) => {
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE, props: { ...PANE.props, ...props } })
+    const r = (await ui.findAll({ type: 'Raster' })).find(x => x.key === 'fm-crest')
+    await ui.unmount()
+    return r
+  }
+  expect(await crestOf({ scroll: { offset: 0, bodyRows: 20 } })).toBeUndefined()
+  expect((await crestOf({ bodyColumns: 50 }))?.props.rows).toBe(3)
+  expect((await crestOf({}))?.props.rows).toBe(8)
 })
