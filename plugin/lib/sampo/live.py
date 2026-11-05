@@ -314,6 +314,25 @@ def _progress_files(alive):
     return out
 
 
+PY_VALUE_OPTS = ("-X", "-W", "--check-hash-based-pycs")  # T-3199: python3 options whose next word is their value
+
+
+def _program_at(words):
+    """The index of the program in a python command (python3 [options] PROGRAM ...): an option's value is skipped, -m
+    MODULE names the module, -c CODE runs no program (None)."""
+    i = 1
+    while i < len(words):
+        w = words[i]
+        if w == "-c":
+            return None
+        if w == "-m":
+            return i + 1 if i + 1 < len(words) else None
+        if not w.startswith("-"):
+            return i
+        i += 2 if w in PY_VALUE_OPTS else 1
+    return None
+
+
 def jobs(p):
     out = []
     procs = _procs()
@@ -323,8 +342,7 @@ def jobs(p):
         if not words or os.path.basename(words[0]) not in ("sampo", "fm") and not os.path.basename(words[0]).startswith("python"):
             continue
         # the program: sampo itself, or python3 [-u] PROGRAM ..., never a word in its args (T-3044 review: "fix jeff-train")
-        at = 0 if os.path.basename(words[0]) in ("sampo", "fm") else next(
-            (i for i, w in enumerate(words[1:], 1) if not w.startswith("-")), None)
+        at = 0 if os.path.basename(words[0]) in ("sampo", "fm") else _program_at(words)
         prog = os.path.basename(words[at]) if at is not None else ""
         at = at if prog in ("sampo", "fm") else None
         rest = " ".join(words[at + 1:]) if at is not None else cmd

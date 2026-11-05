@@ -202,7 +202,11 @@ class Snapshot(ForemanTestCase):
                 # review: a word in the args is no train job; -p SLUG anywhere names no verb
                 'sampo task new "fix jeff-train"': None, 'python3 plugin/bin/sampo capture "jeffexport is slow"': None,
                 "python3 /x/jeff-train --profile decide": "train", "/v/bin/python3 -u /v/bin/jeff-train --profile d": "train",
-                "sampo moons -p x funnel": "funnel", "fm genesis --project=x moonshot grow 50": "grow"}
+                "sampo moons -p x funnel": "funnel", "fm genesis --project=x moonshot grow 50": "grow",
+                # T-3199: an option's value is no program
+                "python3 -X dev plugin/bin/sampo moons grow 10": "grow", "python3 -W ignore /x/jeff-train --p d": "train",
+                "python3 -X importtime -u plugin/bin/sampo louhi run s5": "exam",
+                "python3 -m sampo moons grow 5": "grow", "python3 -c 'import sampo' moons grow": None}
         for cmd, kind in cmds.items():
             with mock.patch.object(live, "_procs", return_value=[(4242, cmd)]):
                 got = live.jobs(self.p)
