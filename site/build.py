@@ -595,7 +595,7 @@ CARD_BLOCK = 250
 CARD_PAGE = 2000
 CARD_GRIDS = {"general": ("kind", "stack", "stage", "surface"), "ui": ("component", "platform", "concern", "stage"),
               "variants": ("playbook", "profile")}
-CARD_FILE = re.compile(r"(?:[a-z0-9]+-|index\.)\d+")  # what the export writes, the only names it ever removes
+CARD_FILE = re.compile(r"(?:[a-z0-9]+-|index\.)\d+|kit")  # what the export writes, the only names it ever removes
 
 
 def _card(r):
@@ -628,10 +628,12 @@ def _lines(head, rows, tail):
     return head + ("\n" + ",\n".join(rows) + "\n" if rows else "") + tail + "\n"
 
 
-def export_cards(rows, dest, block=CARD_BLOCK, page=CARD_PAGE):
+def export_cards(rows, dest, block=CARD_BLOCK, page=CARD_PAGE, examples=None, kit=None, frame=None):
     """Write rows (smallcards.rows()) to dest as the index.json manifest, index.<n>.json pages and <grid>-<n>.json body
     shards, each only when its text changes; a file the last export wrote that nothing fills any more goes.
-    (cards exported, files written or removed)."""
+    T-3102: given the kit ({component: {"html", "h"}}), each UI card's body gets a "demo": its own kept example
+    (examples, {card: {"html", "h"}}) else {"kit": its component}; kit.json holds the kit and the frame, the page an
+    example sits in (smallcards.doc). (cards exported, files written or removed)."""
     sys.path.insert(0, os.path.join(HERE, "tools"))
     from writeif import write_if_changed
     seen, cards = set(), []
@@ -656,6 +658,10 @@ def export_cards(rows, dest, block=CARD_BLOCK, page=CARD_PAGE):
         cells = {f: {} for f in fields}
         for i, (_, entry, body) in enumerate(mine):
             entry["shard"] = f"{g}-{i // block + 1}"
+            if kit and g == "ui":
+                own, comp = (examples or {}).get(entry["id"]), entry["cell"].get("component")
+                if own or comp in kit:
+                    body["demo"] = own or {"kit": comp}
             shards.setdefault(entry["shard"], []).append(dump({entry["id"]: body})[1:-1])
             for f in fields:
                 v = entry["cell"].get(f)
@@ -669,6 +675,8 @@ def export_cards(rows, dest, block=CARD_BLOCK, page=CARD_PAGE):
                            "grids": {g: k for g in order if (k := sum(c[0] == g for c in chunk))}}))
     for name, bodies in shards.items():
         files[name] = _lines("{", bodies, "}")
+    if kit and "ui" in grids:
+        files["kit"] = dump({"frame": frame or "", "kit": kit}) + "\n"
     wrote = sum(write_if_changed(os.path.join(dest, name + ".json"), text) for name, text in files.items())
     sums = {name: hashlib.sha256(text.encode()).hexdigest()[:8] for name, text in files.items()}  # the page's ?v=
     wrote += write_if_changed(os.path.join(dest, "index.json"), _lines(
@@ -810,7 +818,8 @@ if __name__ == "__main__":
         sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
         from sampo import smallcards
         dest = sys.argv[2] if len(sys.argv) == 3 else os.path.join(HERE, "cards")
-        n, wrote = export_cards(smallcards.rows(), dest)
+        n, wrote = export_cards(smallcards.rows(), dest, examples=smallcards.examples(), kit=smallcards.kit(),
+                                frame=smallcards.doc("", "light"))
         print(f"{dest}: {n} cards, {wrote} files written")
         sys.exit()
     if target.startswith("-"):  # its options are --tokens and --cards: `--check` once became a folder that got committed

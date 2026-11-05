@@ -156,7 +156,8 @@ footer .fine { font: 500 11.5px/1.6 var(--font-mono); letter-spacing: .06em; }
 .kchip.kgrid { color: var(--bronze); border-color: var(--rule-2); letter-spacing: .12em; text-transform: uppercase; }
 .kbody { display: grid; gap: 20px 32px; margin: 0 18px; padding: 18px 0; border-top: 1px solid var(--rule); }
 .kbody:empty { display: none; }
-@media (min-width: 900px) { .kbody { grid-template-columns: 1fr 1fr; } .kbody > .ksteps, .kbody > .kex, .kbody > p { grid-column: 1 / -1; } }
+@media (min-width: 900px) { .kbody { grid-template-columns: 1fr 1fr; } .kbody > .ksteps, .kbody > .kex, .kbody > .kdemo-sec, .kbody > p { grid-column: 1 / -1; } }
+.kdemo { display: block; width: 100%; max-width: 390px; border: 1px solid var(--rule); border-radius: 2px; background: var(--sunken); }  /* the 390 px the check measured */
 .kbody .ksec { padding: 0; }  /* not .feature section's 40px */
 .ksec h3 { margin: 0 0 10px; }
 .ksec ol, .ksec ul { display: grid; gap: 14px; margin: 0; padding-left: 1.3em; }

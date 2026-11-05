@@ -454,6 +454,16 @@ def _rgb(word):
     return tuple(v / 255 for v in word.to_bytes(4, sys.byteorder)[:3])
 
 
+def _text_ratio(words, without):
+    """Text's contrast: each pixel the text changed, as (with text, without), the commonest pairs' lowest ratio; None
+    when the text changed none."""
+    from sampo import design
+    pairs = collections.Counter((a, b) for a, b in zip(words, memoryview(without.rgba).cast("I")) if a != b)
+    total = sum(pairs.values())
+    chosen = [k for k, n in pairs.items() if n >= SHARE * total] or [k for k, _ in pairs.most_common(1)]
+    return min((design.contrast(_rgb(a), _rgb(b)) for a, b in chosen), default=None)
+
+
 def _measure(work, shots, bg):
     """One theme's numbers from its renders: painted share, pixels past the viewBox, the contrast, the centre."""
     from sampo import design
@@ -470,11 +480,9 @@ def _measure(work, shots, bg):
         outside += len(row) - row.count(bg)
     ink = collections.Counter(v for v in centre if v != bg)
     share = 100 * sum(ink.values()) / len(centre)
-    if "N" in shots:  # text: each pixel the text changed, as (with text, without): the commonest pairs' contrast
-        pairs = collections.Counter((a, b) for a, b in zip(words, memoryview(shots["N"].rgba).cast("I")) if a != b)
-        total = sum(pairs.values())
-        chosen = [k for k, n in pairs.items() if n >= SHARE * total] or [k for k, _ in pairs.most_common(1)]
-        ratio = min((design.contrast(_rgb(a), _rgb(b)) for a, b in chosen), default=1.0)
+    if "N" in shots:
+        ratio = _text_ratio(words, shots["N"])
+        ratio = 1.0 if ratio is None else ratio
     elif work["type"] == "icon":
         ratio = design.contrast(_rgb(ink.most_common(1)[0][0]), _rgb(bg)) if ink else None
     else:
@@ -579,55 +587,263 @@ def _browser(path):
     return shot.Browser(path, (640, 480), env={k: os.environ[k] for k in ENV_KEEP if k in os.environ}, args=NET_OFF)
 
 
-def _render_all(path, works, out):
-    from sampo import shot
-    todo = [w for w in works if w["svg"]]
+FAILS = (OSError, RuntimeError, EOFError, ValueError, ArithmeticError)  # TimeoutError is an OSError
+
+
+def _each(path, todo, do, fail):
+    """do(browser, item, n) for each item, in one browser that holds no secrets. A FAILS error costs its item only:
+    fail(item, why, error), error set when the browser hung or died, None when it never started or the item went
+    untried. After a hang a fresh browser takes the next item, unless HANGS in a row leave the rest untried."""
     if not todo:
         return
-    fails = (OSError, RuntimeError, EOFError, ValueError, ArithmeticError)  # TimeoutError is an OSError
     try:
         b = _browser(path)
-    except fails as e:
-        for w in todo:
-            _unrendered(w, f"the browser ({path}) did not start: {e}")
+    except FAILS as e:
+        for x in todo:
+            fail(x, f"the browser ({path}) did not start: {e}", None)
         return
-    kept, taken, dead, hung = [], set(), None, 0
+    dead, hung = None, 0
     try:
-        for n, w in enumerate(todo):
+        for n, x in enumerate(todo):
             if dead:
-                _unrendered(w, dead)
+                fail(x, dead, None)
                 continue
-            before = len(w["gates"])
             try:
-                m = _render(b, w, n)
-                _judge(w, m, kept)
-            except fails as e:
-                del w["gates"][before:]  # a judgement cut short counts for nothing
-                _unrendered(w, _say(str(e), 300))
-                if not isinstance(e, (EOFError, TimeoutError)):
+                do(b, x, n)
+            except FAILS as e:
+                hang = isinstance(e, (EOFError, TimeoutError))
+                fail(x, _say(str(e), 300), e if hang else None)
+                if not hang:
                     continue
-                # hung or killed the browser: this work fails; a fresh browser takes the next, unless it keeps happening
-                w["gates"].append({"gate": "render", "ok": False, "got": _say(f"{type(e).__name__}: {e}", 200),
-                                   "bar": "bar a render within the browser's time"})
                 b.close()
                 hung += 1
                 if hung >= HANGS:
-                    dead = f"not tried: the browser hung or died on {HANGS} works in a row"
+                    dead = f"not tried: the browser hung or died on {HANGS} in a row"
                     continue
                 try:
                     b = _browser(path)
-                except fails as e2:
+                except FAILS as e2:
                     dead = f"not tried: the browser did not restart: {_say(str(e2), 200)}"
                 continue
             hung = 0
-            w["rendered"] = True
-            if out:
-                try:
-                    _save(out, w, m, taken)
-                except OSError as e:  # a full disk loses this work's pictures, not the batch's verdicts
-                    w["error"] = f"its renders were not saved: {_say(str(e), 200)}"
     finally:
         b.close()
+
+
+def _hung(e):
+    return {"gate": "render", "ok": False, "got": _say(f"{type(e).__name__}: {e}", 200),
+            "bar": "bar a render within the browser's time"}
+
+
+def _render_all(path, works, out):
+    kept, taken = [], set()
+
+    def do(b, w, n):
+        before = len(w["gates"])
+        try:
+            m = _render(b, w, n)
+            _judge(w, m, kept)
+        except FAILS:
+            del w["gates"][before:]  # a judgement cut short counts for nothing
+            raise
+        w["rendered"] = True
+        if out:
+            try:
+                _save(out, w, m, taken)
+            except OSError as e:  # a full disk loses this work's pictures, not the batch's verdicts
+                w["error"] = f"its renders were not saved: {_say(str(e), 200)}"
+
+    def fail(w, why, hang):
+        _unrendered(w, why)
+        if hang:  # hung or killed the browser: this work fails
+            w["gates"].append(_hung(hang))
+
+    _each(path, [w for w in works if w["svg"]], do, fail)
+
+
+# T-3102: a UI card's example, an HTML fragment shown at phone width
+HTML_W, HTML_H, HTML_KB = 390, 800, 12
+HTML_TAGS = frozenset("""div span p a button input label select option optgroup textarea form fieldset legend table
+thead tbody tfoot tr th td caption colgroup col ul ol li dl dt dd nav header footer main section article aside h1 h2 h3 h4
+h5 h6 strong em b i u s small code pre kbd mark abbr time hr br img figure figcaption blockquote sup sub del ins details
+summary progress meter output style svg g path circle rect line polyline polygon ellipse defs lineargradient
+radialgradient stop title text tspan""".split())
+HTML_VOID = frozenset("input br hr img col".split())
+HTML_GONE = frozenset("""script iframe object embed template noscript frame frameset applet base link meta head noembed
+noframes xmp plaintext math foreignobject use image animate set animatemotion animatetransform portal""".split())
+HTML_QUIET = frozenset(("html", "body"))
+HTML_URLS = frozenset("""href src action formaction srcset xlink:href poster background ping data srcdoc codebase cite
+longdesc manifest lowsrc dynsrc usemap""".split())
+HTML_ATTRS = frozenset("""class id style title role type value name placeholder checked disabled selected readonly
+required for alt width height colspan rowspan scope open min max step low high optimum lang dir tabindex hidden datetime
+rows cols maxlength multiple label size autocomplete inputmode viewbox d x y x1 y1 x2 y2 cx cy r rx ry points fill stroke
+stroke-width stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset transform offset stop-color stop-opacity
+opacity fill-opacity fill-rule clip-rule preserveaspectratio xmlns gradientunits focusable font-size font-weight
+text-anchor dominant-baseline vector-effect""".split()) | HTML_URLS
+HTML_FREE = frozenset("title value placeholder alt label".split())  # free text: not CSS
+
+
+def sanitise_html(text):
+    """(clean HTML, offences) of an untrusted fragment: re-serialised from Python's parse with only known elements and
+    attributes, text escaped, no script or handler and no URL but "#..." (and data:image/ for an img). Anything
+    stripped that could run or reach out is an offence; a work with any fails `safe`."""
+    import html
+    import html.parser
+
+    out, offences, skip = [], [], []
+
+    class P(html.parser.HTMLParser):
+        def tag(self, name, attrs, close):
+            if skip:
+                if name == skip[0]:
+                    skip.append(name)
+                return
+            if name in HTML_GONE:
+                offences.append(f"{name} element")
+                if not close and name not in HTML_VOID:
+                    skip.append(name)
+                return
+            if name not in HTML_TAGS:
+                if name not in HTML_QUIET:
+                    offences.append(f"{_say(name, 40)} element (unknown)")
+                return
+            kept = []
+            for k, v in attrs:
+                v = v or ""
+                if k.startswith("on"):
+                    offences.append(f"{_say(k, 40)} handler")
+                elif k in HTML_URLS:
+                    ok = v.strip().startswith("#") and k in ("href", "xlink:href") or \
+                        k == "src" and name == "img" and v.strip().lower().startswith("data:image/")
+                    if ok:
+                        kept.append((k, v))
+                    else:
+                        offences.append(f"{k} {_say(v, 60) or '(empty)'}")
+                elif k in HTML_ATTRS or k.startswith(("aria-", "data-")):
+                    bad = None if k in HTML_FREE or k.startswith("aria-") else _bad_css(v)
+                    if bad:
+                        offences.append(f"{k}: {bad}")
+                    else:
+                        kept.append((k, v))
+            out.append(f"<{name}" + "".join(f' {k}="{html.escape(v)}"' for k, v in kept)
+                       + ("/>" if close and name not in HTML_VOID else ">"))
+            if name == "style":
+                self.style = []
+
+        def handle_starttag(self, name, attrs):
+            self.tag(name, attrs, False)
+
+        def handle_startendtag(self, name, attrs):
+            self.tag(name, attrs, True)
+
+        def handle_endtag(self, name):
+            if skip:
+                if name == skip[-1]:
+                    skip.pop()
+                return
+            if name == "style" and getattr(self, "style", None) is not None:
+                css, self.style = "".join(self.style), None
+                why = "a < in it" if "<" in css else _bad_css(css)
+                if why:  # the open tag goes too: an empty element is harmless, its rules are what reach out
+                    offences.append(f"style element: {why}")
+                    out.append("</style>")
+                    return
+                out.append(css)
+            if name in HTML_TAGS and name not in HTML_VOID:
+                out.append(f"</{name}>")
+
+        def handle_data(self, data):
+            if skip:
+                return
+            if getattr(self, "style", None) is not None:
+                self.style.append(data)
+            else:
+                out.append(html.escape(data, quote=False))
+
+    p = P(convert_charrefs=True)
+    p.style = None
+    p.feed(text)
+    p.close()
+    if getattr(p, "style", None) is not None:  # a style never closed
+        p.handle_endtag("style")
+    return "".join(out), offences
+
+
+def html_doc(css, body, theme):
+    """One page around an HTML fragment: nothing may load or run (the CSP), its theme on the root."""
+    return (f'<!doctype html><html lang="en" data-theme="{theme}"><head><meta charset="utf-8">'
+            f'<meta http-equiv="Content-Security-Policy" content="{CSP}">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1"><style>{css}</style></head>'
+            f'<body>{body}</body></html>')
+
+
+HIDE_TEXT = ("*,*::before,*::after,::placeholder{-webkit-text-fill-color:transparent!important;"
+             "text-shadow:none!important;text-decoration-color:transparent!important}")
+SIZE_JS = ("(() => { const d = document.documentElement; return [d.scrollWidth, "
+           "Math.ceil(document.body.getBoundingClientRect().bottom), Math.max(0, ...Array.from("
+           "document.body.querySelectorAll('*'), e => Math.ceil(e.getBoundingClientRect().width)))]; })()")
+
+
+def _style(b, css):
+    expr = f"document.head.appendChild(Object.assign(document.createElement('style'), {{textContent: {css!r}}})) && 1"
+    b.call("Runtime.evaluate", b.sid, expression=expr, returnByValue=True)
+
+
+def _html_shots(b, doc, n, theme):
+    """One theme of a page: (with text, without, scroll width, height, its widest box's width)."""
+    from sampo import img as simg
+    page = os.path.join(b.profile.name, f"html-{n}-{theme}.html")
+    with open(page, "w", encoding="utf-8") as f:
+        f.write(doc)
+    b.emulate((HTML_W, 1), 1, theme)
+    _load(b, pathlib.Path(page).as_uri())
+    _style(b, STATIC_CSS + "*{caret-color:transparent!important}")
+    got = b.call("Runtime.evaluate", b.sid, expression=SIZE_JS, returnByValue=True)["result"].get("value") or [0, 0, 0]
+    sw, h, box = int(got[0]), max(1, int(got[1])), int(got[2])
+    b.emulate((HTML_W, min(h, HTML_H)), 1, theme)
+    shot = simg.decode(_capture(b, 0, HTML_W, min(h, HTML_H)))
+    _style(b, HIDE_TEXT)
+    return shot, simg.decode(_capture(b, 0, HTML_W, min(h, HTML_H))), sw, h, box
+
+
+def _html_gates(shots):
+    gates = []
+
+    def gate(name, ok, got, bar):
+        gates.append({"gate": name, "ok": ok, "got": got, "bar": bar})
+
+    shares, ratios = [], []
+    for theme, (with_, without, *_) in shots.items():
+        words, bg = memoryview(with_.rgba).cast("I").tolist(), _word(THEMES[theme][0])
+        shares.append(100 * (len(words) - words.count(bg)) / max(1, len(words)))
+        ratios.append(_text_ratio(words, without))
+    share = min(shares)
+    wide, h, box = (max(s[i] for s in shots.values()) for i in (2, 3, 4))
+    gate("blank", share >= BLANK_PCT, f"{share:.1f}% painted", f"bar ≥ {BLANK_PCT}% painted")
+    gate("overflow", wide <= HTML_W, f"{wide} px wide, its widest box {box} px", f"bar ≤ {HTML_W} px")
+    gate("height", h <= HTML_H, f"{h} px tall", f"bar ≤ {HTML_H} px")
+    if None in ratios:
+        gate("contrast", False, "no text", f"bar {TEXT_BAR:g}:1 in both themes")
+    else:
+        gate("contrast", min(ratios) >= TEXT_BAR, f"{min(ratios):.2f}:1", f"bar {TEXT_BAR:g}:1 in both themes")
+    return gates, h
+
+
+def check_html(path, docs):
+    """Render each page ({theme: document}, untrusted HTML) HTML_W px wide, light and dark, in a browser that holds no
+    secrets and reaches nothing: [{"gates", "h"}] in order. Gates: blank, overflow, height, contrast; a page that
+    couldn't render has one failed render gate and an "error"."""
+    res = [{"gates": [], "h": 0} for _ in docs]
+
+    def do(b, i, n):
+        res[i]["gates"], res[i]["h"] = _html_gates({t: _html_shots(b, docs[i][t], n, t) for t in THEMES})
+
+    def fail(i, why, hang):
+        res[i].update(gates=[_hung(hang) if hang else {"gate": "render", "ok": False, "got": _say(why, 200),
+                                                       "bar": "bar a render"}], error=why)
+
+    _each(path, list(range(len(docs))), do, fail)
+    return res
 
 
 def _read(path):

@@ -475,6 +475,37 @@ class CardsExport(unittest.TestCase):
             self.assertEqual(json.loads(read_text(os.path.join(dest, "index.json")))["count"], 6)
 
 
+EXAMPLES = {"K-000003": {"html": '<button type="button">Save draft</button>', "h": 64}}
+KIT = {"button": {"html": "<button>Kit button</button>", "h": 60},
+       "table": {"html": "<table><tr><td>Kit table</td></tr></table>", "h": 70}}
+
+
+class CardsDemo(unittest.TestCase):
+    """T-3102: each UI card's example, resolved at export: its own kept one, else its component's kit demo."""
+
+    def test_a_ui_card_gets_its_example_or_its_components_kit_demo(self):
+        build = site("build")
+        with tempfile.TemporaryDirectory() as d:
+            build.export_cards(CARDS, d, block=1, examples=EXAMPLES, kit=KIT, frame="<html data-theme=\"light\">"
+                               "<head></head><body></body></html>")
+            index, cards = card_pages(d)
+            body = {c["id"]: json.loads(read_text(os.path.join(d, c["shard"] + ".json")))[c["id"]] for c in cards}
+            self.assertEqual(body["K-000003"]["demo"], EXAMPLES["K-000003"])
+            self.assertEqual(body["K-000004"]["demo"], {"kit": "table"})
+            self.assertNotIn("demo", body["K-000001"], "a general card has none")
+            kit = json.loads(read_text(os.path.join(d, "kit.json")))
+            self.assertEqual(kit["kit"], KIT)
+            self.assertIn("data-theme", kit["frame"])
+            self.assertIn("kit", index["files"], "the kit is versioned like every file")
+            build.export_cards(CARDS[:2], d)
+            self.assertFalse(os.path.exists(os.path.join(d, "kit.json")), "no UI cards, no kit: the stale one goes")
+
+    def test_the_cards_export_resolves_the_store_and_the_kit(self):
+        src = read_text(os.path.join(ROOT, "site", "build.py"))
+        self.assertIn("smallcards.examples()", src)
+        self.assertIn("smallcards.kit()", src)
+
+
 class CardsPage(unittest.TestCase):
     """T-3101: site/cards.html, built from the committed export: search, grid tabs, cell filters with counts, a card
     opened in place, a #K-id permalink; light and dark, and 390 px with no sideways scroll; newest first, the index
@@ -489,7 +520,12 @@ class CardsPage(unittest.TestCase):
         if p.returncode:
             raise AssertionError(p.stderr)
         # the fixture in place of the committed export, two cards a page so every test crosses pages
-        site("build").export_cards(CARDS, os.path.join(cls.out, "cards"), page=2)
+        sys.path.insert(0, os.path.join(PLUGIN, "lib"))
+        from sampo import smallcards
+        examples = dict(EXAMPLES, **{"K-000003": {"html": EXAMPLES["K-000003"]["html"] + '<img src="x" '
+                                                           'onerror="parent.__pwned=1">', "h": 64}})
+        site("build").export_cards(CARDS, os.path.join(cls.out, "cards"), page=2, examples=examples, kit=KIT,
+                                   frame=smallcards.doc("", "light"))
 
     @classmethod
     def tearDownClass(cls):
@@ -596,6 +632,25 @@ class CardsPage(unittest.TestCase):
         self.assertFalse(everything["pwned"], "a card's title is text, never markup")
         self.assertIn("<img src=x", everything["text"])
 
+    def test_a_ui_cards_example_shows_in_a_sandbox_with_no_scripts_in_the_readers_theme(self):
+        frame = "document.querySelector('#K-000003 iframe')"
+        got = self.browse((390, 844), hash="#K-000003", steps=[
+            ("", f"{frame} && {frame}.srcdoc.includes('Save draft')"),
+            ("document.documentElement.setAttribute('data-theme', 'dark')",
+             f"{frame}.srcdoc.includes('data-theme=\"dark\"')"),
+            ("location.hash = '#K-000004'", "document.querySelector('#K-000004 iframe')")])
+        light, dark, kit = got
+        demo = light["demos"][0]
+        self.assertEqual(demo["sandbox"], "", "sandboxed with nothing allowed: no scripts, no same origin")
+        self.assertIn("Content-Security-Policy", demo["doc"])
+        self.assertIn("default-src 'none'", demo["doc"])
+        self.assertEqual(demo["h"], "64")
+        self.assertIn("Buttons keep a focus ring", demo["title"])
+        self.assertIn('data-theme="dark"', dark["demos"][0]["doc"], "the example follows the page's theme")
+        self.assertIn("Kit table", kit["demos"][0]["doc"], "a card with no example shows its component's kit demo")
+        self.assertFalse(any(g["pwned"] for g in got), "an example's markup never runs in the page")
+        self.assertLessEqual(light["wide"], 390, "the example fits a phone")
+
     def test_a_permalink_opens_its_card(self):
         got = self.browse((1280, 900), hash="#K-000002", steps=[
             ("", "(document.querySelector('#K-000002 .kbody') || {}).textContent.includes('shellcheck run.sh')")])
@@ -660,6 +715,8 @@ PROBE_CARDS = """(() => {
     q: (document.getElementById('cards-q') || {}).value,
     body: list.filter(d => d.open).map(d => d.textContent).join(' | '), text: (document.getElementById('cards-list') || {}).textContent || '',
     pwned: !!window.__pwned || !!document.querySelector('#cards-list img'),
+    demos: [...document.querySelectorAll('#cards-list iframe')].map(f => ({sandbox: f.getAttribute('sandbox'),
+      doc: f.srcdoc, h: f.getAttribute('height'), title: f.title})),
     empty: empty && !empty.hidden ? empty.textContent : '', wide: document.documentElement.scrollWidth,
     bg: getComputedStyle(document.body).backgroundColor,
     status: (document.getElementById('cards-status') || {}).textContent || '',

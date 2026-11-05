@@ -258,8 +258,48 @@
     return b;
   }
 
-  function body(c, k) {
+  // T-3102: a UI card's example, its own kept one else its component's kit demo, in a sandboxed frame: sandbox=""
+  // runs no script and the frame's CSP loads nothing, so the markup only ever paints inside its own box.
+  var kitP = null, dark = matchMedia("(prefers-color-scheme: dark)");
+  function kitFile() {
+    if (!files.kit) return Promise.resolve(null);
+    return kitP || (kitP = get(url("kit")).catch(function (e) { kitP = null; throw e; }));
+  }
+  function theme() {
+    var t = document.documentElement.getAttribute("data-theme");
+    return t === "dark" || t === "light" ? t : dark.matches ? "dark" : "light";
+  }
+  function srcdoc(frame, html) {
+    var at = frame.indexOf("<body></body>");
+    if (at < 0) return "";
+    return frame.slice(0, at).split('data-theme="light"').join('data-theme="' + theme() + '"') + "<body>" + html +
+      "</body>" + frame.slice(at + 13);
+  }
+  function retheme() {
+    list.querySelectorAll("iframe.kdemo").forEach(function (f) { f.srcdoc = srcdoc(f._frame, f._html); });
+  }
+  new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  if (dark.addEventListener) dark.addEventListener("change", retheme);
+
+  function demo(c, d, kit) {  // the Example section, or null when there's nothing safe to show
+    var it = d && typeof d.kit === "string" ? obj(obj(kit).kit)[d.kit] : d;
+    if (!kit || typeof kit.frame !== "string" || !it || typeof it.html !== "string") return null;
+    var f = el("iframe", "kdemo"), s = section(d.kit ? "Example · the " + d.kit + " kit" : "Example", "kdemo-sec");
+    f.setAttribute("sandbox", "");
+    f.setAttribute("loading", "lazy");
+    f.title = "Example: " + c.title;
+    f.height = String(Math.max(40, Math.min(800, +it.h || 200)));
+    f._frame = kit.frame;
+    f._html = it.html;
+    f.srcdoc = srcdoc(kit.frame, it.html);
+    s.append(f);
+    return s;
+  }
+
+  function body(c, k, kit) {
     var out = [], steps = section("Steps", "ksteps"), ol = el("ol");
+    var ex0 = k.demo ? demo(c, k.demo, kit) : null;
+    if (ex0) out.push(ex0);
     (k.steps || []).forEach(function (st) {
       var li = el("li");
       li.append(el("p", null, st.do));
@@ -298,7 +338,9 @@
     shard(c.shard).then(function (all) {
       var k = all && all[c.id];
       if (!k) throw new Error("its shard doesn't hold it");
-      box.replaceChildren.apply(box, body(c, k));
+      return k.demo ? kitFile().then(function (kit) { return [k, kit]; }, function () { return [k, null]; }) : [k, null];
+    }).then(function (got) {
+      box.replaceChildren.apply(box, body(c, got[0], got[1]));
       box.setAttribute("data-state", "ok");
     }).catch(function (e) {
       delete shards[c.shard];  // the next open asks again

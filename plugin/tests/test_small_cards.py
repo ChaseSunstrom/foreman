@@ -4,9 +4,10 @@ with two workers, and coverage by cells. Every model call is mocked."""
 import json
 import os
 import threading
+import unittest
 from unittest import mock
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, headless_chrome
 
 
 def good(**kw):
@@ -274,3 +275,156 @@ class UiGrid(_Cards):
             ms._ask(self.p, "s", "p", writer="local")
         with self.assertRaises(ValueError):
             ms._ask(self.p, "s", "p", writer="gpt")
+
+
+# T-3102: a UI card's live example, written by a local model and kept only when its render check passes
+SAFE = ('<div class="row"><button class="primary" type="button">Save draft</button>'
+        '<a href="#">Cancel</a></div>')
+
+
+def gate(name, ok, got="", bar=""):
+    return {"gate": name, "ok": ok, "got": got, "bar": bar}
+
+
+class Examples(_Cards):
+    def setUp(self):
+        super().setUp()
+        from sampo import works
+        self.works = works
+        cards = [ui_card(title=f"Check button contrast in React, case {i}") for i in range(3)]
+        self.ids = [i for i, v, _ in self.sc.add(self.p, cards, ui_cell(), "haiku", 1) if v == "kept"]
+        self.assertEqual(len(self.ids), 3)
+
+    def test_the_sanitiser_drops_scripts_handlers_and_every_outside_url(self):
+        dirty = ('<div onclick="steal()" style="color:red"><script>alert(1)</script>'
+                 '<a href="https://evil.example/x">go</a><a href="&#106;avascript:alert(1)">js</a>'
+                 '<img src="http://evil.example/p.png" alt="p"><img src="data:image/png;base64,AAAA" alt="ok">'
+                 '<style>@import url(http://evil.example/a.css); .x{color:red}</style>'
+                 '<p style="background:url(http://evil.example/a)">hi</p><iframe src="/x"></iframe>'
+                 '<form action="https://evil.example"><input formaction="//evil.example" value="v"></form>'
+                 '<svg viewBox="0 0 4 4"><use href="https://evil.example/s.svg#a"/><rect width="4" height="4"/></svg>'
+                 '<style>a{}</style ><script>x()</script></div>')
+        clean, offences = self.works.sanitise_html(dirty)
+        for bad in ("script", "onclick", "evil", "javascript", "iframe", "@import", "<use", "http"):
+            self.assertNotIn(bad, clean.lower(), clean)
+        for kept in ("hi", "go", "js", "data:image/png;base64,AAAA", "<rect", 'style="color:red"', 'value="v"'):
+            self.assertIn(kept, clean)
+        self.assertGreaterEqual(len(offences), 9, offences)
+        self.assertTrue(any("onclick" in o for o in offences), offences)
+        self.assertEqual(self.works.sanitise_html(SAFE), (SAFE, []), "a clean fragment passes unchanged")
+        clean, offences = self.works.sanitise_html("<p>1 &lt; 2 &amp; <b>bold</b></p>")
+        self.assertEqual((clean, offences), ("<p>1 &lt; 2 &amp; <b>bold</b></p>", []), "text stays text")
+
+    def fake_ask(self, replies, seen):
+        def ask(p, system, prompt, cheap=True, paid=0, feature=None, writer=None):
+            seen.append((prompt, writer))
+            title = next(t for t in replies if t in prompt)
+            return replies[title], "gemma-local"
+        return ask
+
+    def run_examples(self, replies, verdict, **kw):
+        seen = []
+
+        def check(path, docs):
+            return [{"gates": verdict(d["light"]), "h": 120} for d in docs]
+        with mock.patch.object(self.sc.ms, "_ask", side_effect=self.fake_ask(replies, seen)), \
+                mock.patch.object(self.works, "check_html", side_effect=check), \
+                mock.patch("sampo.shot.find_browser", return_value=("/usr/bin/chromium", "chromium")):
+            r = self.sc.write_examples(self.p, **kw)
+        return r, seen
+
+    def test_kept_only_when_every_gate_passes_and_each_rejection_says_why(self):
+        titles = [r["title"] for r in self.sc.rows()]
+        replies = {titles[0]: "```html\n" + SAFE + "\n```", titles[1]: SAFE.replace("Save draft", "LOW contrast"),
+                   titles[2]: SAFE + '<script>fetch("https://evil.example")</script>'}
+
+        def verdict(doc):
+            low = "LOW contrast" in doc
+            return [gate("blank", True), gate("overflow", True),
+                    gate("contrast", not low, "3.1:1" if low else "7.2:1", "bar 4.5:1")]
+        r, seen = self.run_examples(replies, verdict, max_calls=5, workers=1, writer="local")
+        self.assertEqual((r["calls"], r["kept"], r["rejected"]), (3, 1, 2), r)
+        self.assertEqual(r["stopped"], "done")
+        self.assertTrue(all(w == "local" for _, w in seen), "a local model writes them")
+        for word in ("button", "react", "4.5:1", "390", "12 KB"):
+            self.assertIn(word, seen[0][0])
+        got = self.sc.examples()
+        self.assertEqual(list(got), [self.ids[0]])
+        self.assertEqual(got[self.ids[0]]["html"], SAFE, "the fence is stripped, the html kept as checked")
+        self.assertEqual(got[self.ids[0]]["h"], 120)
+        rows = list(self.sc.ms._read(os.path.join(self.sc.home(), "examples.jsonl")))
+        why = {x["card"]: x.get("why", "") for x in rows if not x["kept"]}
+        self.assertIn("contrast: 3.1:1 (bar 4.5:1)", why[self.ids[1]])
+        self.assertIn("safe: script", why[self.ids[2]], "an unsafe one is refused before any render")
+        self.assertEqual(r["reasons"], {"contrast": 1, "safe": 1})
+        again, seen = self.run_examples(replies, verdict, max_calls=5, workers=1, writer="local")
+        self.assertNotIn(self.ids[0], " ".join(p for p, _ in seen), "a card with a kept example isn't asked again")
+        self.assertIn("1 kept", self.sc.examples_line(r))
+
+    def test_over_12_kb_is_refused_unrendered(self):
+        big = '<div class="row">' + "<p>Row of text in a list</p>" * 600 + "</div>"
+        titles = [r["title"] for r in self.sc.rows()]
+        r, _ = self.run_examples({t: big for t in titles}, lambda d: self.fail("rendered"), max_calls=1, workers=1,
+                                 writer="local")
+        self.assertEqual((r["kept"], r["reasons"]), (0, {"size": 1}))
+
+    def test_no_browser_means_no_model_calls(self):
+        with mock.patch.object(self.sc.ms, "_ask") as ask, \
+                mock.patch("sampo.shot.find_browser", return_value=(None, "no browser here")), \
+                self.assertRaises(ValueError):
+            self.sc.write_examples(self.p, max_calls=2, writer="local")
+        ask.assert_not_called()
+
+    def test_a_stored_example_is_re_sanitised_on_read(self):
+        os.makedirs(self.sc.home(), exist_ok=True)
+        with open(os.path.join(self.sc.home(), "examples.jsonl"), "w", encoding="utf-8") as f:
+            for card, html in ((self.ids[0], SAFE + "<script>x()</script>"), (self.ids[1], SAFE)):
+                f.write(json.dumps({"card": card, "kept": True, "html": html, "h": 90}) + "\n")
+        self.assertEqual(list(self.sc.examples()), [self.ids[1]], "an edited store can't smuggle a script out")
+
+    def test_the_cli_verb_needs_the_ui_grid(self):
+        import types
+        from sampo import cli
+        args = types.SimpleNamespace(name="examples", rest=[], grid=None, writer=None, max_calls=2, workers=None,
+                                     project=None)
+        with self.assertRaises(cli.UsageError):
+            self.sc.cmd(args)
+        args.grid = "ui"
+        with mock.patch.object(self.sc, "write_examples", return_value={"calls": 0, "kept": 0, "rejected": 0,
+                                                                         "reasons": {}, "stopped": "done", "error": "",
+                                                                         "models": {}}) as w, \
+                mock.patch.object(cli, "out"):
+            self.sc.cmd(args)
+        self.assertEqual(w.call_args.kwargs.get("writer"), "local", "the local model is the default writer")
+
+
+@unittest.skipUnless(headless_chrome(), "no headless Chromium here")
+class ExamplesRendered(_Cards):
+    """The render check on a real browser: its verdicts, and the 16-component kit in both themes."""
+
+    def check(self, *fragments):
+        from sampo import works
+        docs = [{t: self.sc.doc(f, t) for t in works.THEMES} for f in fragments]
+        return [{g["gate"]: g for g in r["gates"]} | {"h": r["h"]} for r in works.check_html(headless_chrome(), docs)]
+
+    def test_blank_overflow_and_faint_text_fail_and_a_good_one_passes(self):
+        good, blank, wide, faint = self.check(
+            SAFE, "<div></div>", '<div style="width:640px;background:var(--surface)">Too wide for a phone</div>',
+            '<p style="color:#c8c8c8">Faint grey text on white</p>')
+        self.assertTrue(all(good[g]["ok"] for g in ("blank", "overflow", "contrast", "height")), good)
+        self.assertLess(good["h"], 200)
+        self.assertFalse(blank["blank"]["ok"])
+        self.assertFalse(wide["overflow"]["ok"])
+        self.assertIn("640", wide["overflow"]["got"])
+        self.assertFalse(faint["contrast"]["ok"], faint["contrast"])
+
+    def test_every_component_has_a_kit_demo_that_passes_in_both_themes(self):
+        kit = self.sc.kit()
+        self.assertEqual(set(kit), set(self.sc.COMPONENTS))
+        from sampo import works
+        for comp, got in zip(kit, self.check(*(k["html"] for k in kit.values()))):
+            with self.subTest(comp):
+                self.assertEqual(works.sanitise_html(kit[comp]["html"])[1], [], "the kit is clean as written")
+                self.assertEqual([g for g, v in got.items() if g != "h" and not v["ok"]], [], got)
+                self.assertLessEqual(got["h"], kit[comp]["h"], "its declared height holds it")
+                self.assertLessEqual(kit[comp]["h"] - got["h"], 40, "and isn't far taller")
