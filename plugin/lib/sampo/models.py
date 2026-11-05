@@ -873,8 +873,10 @@ def secrets_path():
     """$SAMPO_SECRETS, else secrets.env under the account's own home (T-3080: from the password database, not $HOME,
     which an exam or a sandbox points at a throwaway)."""
     import pwd
-    if os.environ.get("SAMPO_SECRETS"):
-        return os.environ["SAMPO_SECRETS"]
+    # T-3173: core moves a SAMPO_ name set at launch to FOREMAN_ at import, so read both (SAMPO_ wins, as in mirror_env)
+    given = os.environ.get("SAMPO_SECRETS") or os.environ.get("FOREMAN_SECRETS")
+    if given:
+        return given
     try:
         home = pwd.getpwuid(os.getuid()).pw_dir
     except KeyError:  # a uid with no account entry (some containers): $HOME is all there is

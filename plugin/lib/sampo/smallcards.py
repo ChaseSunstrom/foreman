@@ -58,7 +58,7 @@ SYSTEM = ("You write cards for small language models (4B to 27B parameters): sho
 
 def home():
     """Sampo's own state, shared by every project and never inside the plugin's install folder or its git tree.
-    T-3101: core's mirror_env moves an inherited SAMPO_CARDS to FOREMAN_CARDS at import, so a child read neither."""
+    T-3101, T-3173: core's mirror_env moves an inherited SAMPO_CARDS to FOREMAN_CARDS at import, so read both."""
     return os.environ.get("SAMPO_CARDS") or os.environ.get("FOREMAN_CARDS") or os.path.join(c.state_dir(), "cards")
 
 

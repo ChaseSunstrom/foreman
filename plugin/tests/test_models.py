@@ -269,6 +269,18 @@ class OpenAIShape(Base):
             m.complete(p, [{"role": "user", "content": "hi"}])
         self.assertIn("FM_TEST_KEY", str(cm.exception))
 
+    def test_a_launch_time_SAMPO_name_and_the_FOREMAN_name_both_reach_secrets_path(self):
+        # T-3173: core moves SAMPO_SECRETS to FOREMAN_SECRETS at import; a fixture path only, never the real file
+        import subprocess
+        import sys
+        lib = os.path.dirname(os.path.dirname(m.__file__))
+        code = f"import sys; sys.path.insert(0, {lib!r}); from sampo import models as mm; print(mm.secrets_path())"
+        for name in ("SAMPO_SECRETS", "FOREMAN_SECRETS"):
+            env = {k: v for k, v in os.environ.items() if not k.endswith("_SECRETS")}
+            env[name] = "/x/secrets.env"
+            r = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+            self.assertEqual(r.stdout.strip(), "/x/secrets.env", name + r.stderr[-200:])
+
     def test_the_secrets_file_is_found_under_the_accounts_home_not_HOME(self):
         # T-3080: an exam sets HOME to a throwaway, and the 27B arm then read "LLM_API_KEY is not set"
         import pwd

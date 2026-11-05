@@ -31,6 +31,20 @@ def lake(n=6):
     return rows
 
 
+class JeffHomeEnv(SampoTestCase):
+    def test_a_launch_time_SAMPO_name_and_the_FOREMAN_name_both_reach_jeff_home(self):
+        # T-3173: core moves SAMPO_JEFF_HOME to FOREMAN_JEFF_HOME at import, so a process started with it saw the default
+        import subprocess
+        import sys
+        lib = os.path.dirname(os.path.dirname(jx.__file__))
+        code = f"import sys; sys.path.insert(0, {lib!r}); from sampo import jeffexport as j; print(j.jeff_home())"
+        for name in ("SAMPO_JEFF_HOME", "FOREMAN_JEFF_HOME"):
+            env = {k: v for k, v in os.environ.items() if not k.endswith("JEFF_HOME")}
+            env[name] = "/x/jeff"
+            r = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+            self.assertEqual(r.stdout.strip(), "/x/jeff", name + r.stderr[-200:])
+
+
 class Export(SampoTestCase):
     def split(self, **kw):
         return jx.examples(lake(), **kw)

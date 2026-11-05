@@ -41,7 +41,8 @@ class Refused(ValueError):  # a ValueError: `sampo exam` turns it into a usage e
 
 
 def jeff_home():
-    return os.environ.get("SAMPO_JEFF_HOME") or os.path.expanduser("~/.local/share/sampo/jeff")
+    # T-3173: core moves a launch-time SAMPO_ name to FOREMAN_ at import, so read both
+    return os.environ.get("SAMPO_JEFF_HOME") or os.environ.get("FOREMAN_JEFF_HOME") or os.path.expanduser("~/.local/share/sampo/jeff")
 
 
 def tier_of(files):

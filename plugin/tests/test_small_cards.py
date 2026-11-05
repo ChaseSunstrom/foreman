@@ -101,6 +101,18 @@ def cell(kind="bugs", stack="python", stage="verify", surface="code"):
 
 
 class Store(_Cards):
+    def test_a_launch_time_SAMPO_CARDS_and_FOREMAN_CARDS_both_reach_home(self):
+        # T-3173: core moves SAMPO_CARDS to FOREMAN_CARDS at import, so a fill started with SAMPO_CARDS wrote elsewhere
+        import subprocess
+        import sys
+        lib = os.path.dirname(os.path.dirname(self.sc.__file__))
+        code = f"import sys; sys.path.insert(0, {lib!r}); from sampo import smallcards; print(smallcards.home())"
+        for name in ("SAMPO_CARDS", "FOREMAN_CARDS"):
+            env = {k: v for k, v in os.environ.items() if not k.endswith("_CARDS")}
+            env[name] = os.path.join(self.tmp, "c")
+            r = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+            self.assertEqual(r.stdout.strip(), os.path.join(self.tmp, "c"), name + r.stderr[-200:])
+
     def test_add_stores_only_admitted_cards_and_skips_a_repeat(self):
         out = self.sc.add(self.p, [good(), good(example=""), good()], cell(), "gpu-qwen9", 1)
         self.assertEqual([v for _, v, _ in out], ["kept", "rejected", "dup"])
