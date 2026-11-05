@@ -4,6 +4,7 @@ and the LoRA runner: refuses a busy GPU (fake nvidia-smi), runs a fake jeff-trai
 import json
 import os
 import stat
+from unittest import mock
 
 from helpers import SampoTestCase
 from test_lake import Lake
@@ -63,6 +64,12 @@ class Export(SampoTestCase):
         self.assertEqual(len(h), 4 * 4)  # 4 train projects x (held, reverted, regret, held); settling skipped
         self.assertEqual(h[0]["state"]["features"], {"files": h[0]["state"]["features"]["files"], "criteria": 2, "tests_run": 3})
 
+    def test_projects_with_no_examples_never_take_a_fold(self):  # T-2970 live: temperature came out empty
+        rows = lake(4) + [row(f"zz{k}", 0, "untagged words only", "settling", files=0) for k in range(6)]
+        sp, info = jx.examples(rows, holdout="proj0")
+        self.assertTrue(all(sp[k] for k in ("train", "dev", "temperature")), {k: len(v) for k, v in sp.items()})
+        self.assertFalse(any(p.startswith("zz") for ps in info["projects"].values() for p in ps))
+
     def test_no_agent_or_tool_text_reaches_any_state(self):
         sp, _ = self.split()
         every = [e for part in sp.values() for e in part]
@@ -108,7 +115,9 @@ class Train(SampoTestCase):
 
     def jeff(self):
         d = os.path.join(self.tmp, "jeff")
-        os.makedirs(d)
+        os.makedirs(os.path.join(d, "jeff-base-v1.3"))
+        with open(os.path.join(d, "jeff-base-v1.3", "decision_config.json"), "w") as f:  # what jeff-train checks
+            json.dump({"format_version": 1, "base_model": "Qwen/Qwen3.5-0.8B", "revision": "abc123"}, f)
         return d
 
     def smi(self, used, total=24000):
@@ -134,8 +143,11 @@ class Train(SampoTestCase):
                                  'out=""; while [ $# -gt 0 ]; do [ "$1" = --output ] && out=$2; shift; done\n'
                                  'mkdir -p "$out/step-00010" "$out/step-00020"; echo a > "$out/step-00010/w"; echo b > "$out/step-00020/w"\n')
         res = jx.train(j, self.data(), smi=[self.smi(2000)], cmd=[fake])
+        self.assertEqual(res["step"], "step-00020")  # no selected link: the last step
         argv = open(log).read()
-        for want in ("--lora-rank 16", "--initial-checkpoint jeff-base-v1.3", "--train ", "--development ", "--temperature "):
+        for want in ("--lora-rank 16", "--initial-checkpoint jeff-base-v1.3", "--train ", "--development ", "--temperature ",
+                     "--lr 0.0001", "--effective-batch-size 16", "--epochs 3",  # a small-data LoRA, not full-SFT defaults
+                     "--base-model Qwen/Qwen3.5-0.8B", "--revision abc123"):  # the base's own identity (T-2970 live)
             self.assertIn(want, argv)
         self.assertIn("events", argv.splitlines()[1])  # JEFF_EVENTS is set: jeff-train refuses to start without it
         with open(os.path.join(j, "adapters", "sampo-decide", "w")) as f:
@@ -146,6 +158,21 @@ class Train(SampoTestCase):
         # a second run keeps the old adapter until the new one has landed, then replaces it
         jx.train(j, self.data(), smi=[self.smi(2000)], cmd=[fake])
         self.assertEqual(sorted(os.listdir(os.path.join(j, "adapters"))), ["sampo-decide"])
+        # the new adapter is staged outside adapters/ (the server loads every dir there, so a killed copy would serve)
+        staged, real = [], jx.shutil.copytree
+        with mock.patch.object(jx.shutil, "copytree", lambda s, d, **kw: (staged.append(d), real(s, d, **kw))[1]):
+            jx.train(j, self.data(), smi=[self.smi(2000)], cmd=[fake])
+        self.assertFalse(any(os.path.dirname(d) == os.path.join(j, "adapters") for d in staged), staged)
+
+    def test_the_step_jeff_selected_on_dev_loss_is_kept_over_the_last(self):
+        j = self.jeff()
+        fake = self.script("jt2", 'out=""; while [ $# -gt 0 ]; do [ "$1" = --output ] && out=$2; shift; done\n'
+                                  'mkdir -p "$out/step-00010" "$out/step-00020"; echo a > "$out/step-00010/w"; '
+                                  'echo b > "$out/step-00020/w"; ln -s step-00010 "$out/selected"\n')
+        res = jx.train(j, self.data(), smi=[self.smi(2000)], cmd=[fake])
+        self.assertEqual(res["step"], "step-00010")
+        with open(os.path.join(j, "adapters", "sampo-decide", "w")) as f:
+            self.assertEqual(f.read().strip(), "a")
 
     def test_a_failed_train_keeps_the_old_adapter_and_raises(self):
         j = self.jeff()

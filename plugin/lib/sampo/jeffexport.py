@@ -27,7 +27,11 @@ PROFILE = "jeff-sampo-decide"
 META = os.path.join("research", "models", PROFILE + ".json")  # in the project's state dir: what the adapter held out
 TIER_S, TIER_M = 2, 7  # scope files: up to 2 is S ("one or two files"), up to 7 M ("several"), more L
 RANK, BASE = 16, "jeff-base-v1.3"
+# jeff-train's defaults are full fine-tuning on ~65k rows (lr 2e-6, effective batch 256): on Sampo's ~1.5k that is
+# about 6 steps that barely move an adapter. A small-data LoRA instead; dev loss picks the checkpoint every 10 steps.
+RECIPE = ("--lr", "0.0001", "--batch-size", "8", "--effective-batch-size", "16", "--epochs", "3", "--eval-every", "10")
 GPU_SHARE = 0.5  # another process holding more than this share of the card's memory blocks the train
+SHARE = {"train": 0.7, "dev": 0.15, "temperature": 0.15}  # each fold's target share of the Examples, by whole projects
 HOLDS = {"instructions": "Will this finished task hold: not reverted and not fixed later?",
          "type": "noul", "criteria": {"true": "it holds", "false": "it was reverted or needed a fix later"}}
 
@@ -104,9 +108,16 @@ def examples(rows, holdout=None):
     projs = sorted({_project(r) for r in rows if _project(r)})
     if holdout is not None and holdout not in projs:
         raise ValueError(f"holdout {holdout!r} is not a project in the lake ({len(projs)} projects)")
-    rest = [p for p in projs if p != holdout]
-    k = max(1, len(rest) // 5) if len(rest) >= 3 else 0
-    part = {p: "temperature" if i >= len(rest) - k else "dev" if i >= len(rest) - 2 * k else "train" for i, p in enumerate(rest)}
+    # T-2970 live: only projects that give Examples take a fold (an empty one left temperature empty). Largest first,
+    # each goes to the fold furthest below its share (70/15/15), so dev and temperature get rows when 3+ projects do
+    size = {p: sum(len(_rows_of(r)) for r in rows if _project(r) == p and not r.get("canary")) for p in projs}
+    rest = sorted((p for p in projs if p != holdout and size[p]), key=lambda p: (-size[p], p))
+    total, have, part = sum(size[p] for p in rest), {"train": 0, "dev": 0, "temperature": 0}, {}
+    for i, p in enumerate(rest):
+        fold = "train" if len(rest) < 3 or i == 0 else (
+            "dev" if not have["dev"] else "temperature" if not have["temperature"] else
+            max(have, key=lambda f: SHARE[f] * total - have[f]))
+        part[p], have[fold] = fold, have[fold] + size[p]
     out = {"train": [], "dev": [], "temperature": []}
     for r in rows:
         if r.get("canary") or _project(r) not in part:
@@ -177,6 +188,19 @@ def profile():
     return {"name": PROFILE, "kind": "systemone", "base_url": "http://127.0.0.1:8766", "model": NAME, "key_env": None}
 
 
+def _identity(jeff):
+    """--base-model and --revision as the base checkpoint records them: jeff-train refuses a start whose requested
+    model differs (its defaults name a 27B), so they come from BASE/decision_config.json (T-2970 live)."""
+    try:
+        with open(os.path.join(jeff, BASE, "decision_config.json"), encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (OSError, ValueError) as e:
+        raise Refused(f"no readable {BASE}/decision_config.json under {jeff}: {e}") from None
+    if not (isinstance(cfg.get("base_model"), str) and isinstance(cfg.get("revision"), str)):
+        raise Refused(f"{BASE}/decision_config.json names no base_model and revision")
+    return ["--base-model", cfg["base_model"], "--revision", cfg["revision"]]
+
+
 def train(jeff, data, smi=("nvidia-smi",), cmd=None, timeout=6 * 3600, rank=RANK):
     """Run jeff-train on DATA's folds (a LoRA of `rank` on the v1.3 base), then keep its last step as JEFF/adapters/
     sampo-decide (the old one stays until the new one has landed). Refused when a fold is empty, the GPU is held or
@@ -192,7 +216,8 @@ def train(jeff, data, smi=("nvidia-smi",), cmd=None, timeout=6 * 3600, rank=RANK
     out = os.path.join(run, "out")
     cmd = list(cmd or ["uv", "run", "--no-default-groups", "--extra", "lora", "--extra", "cuda", "jeff-train"])
     argv = [*cmd, "--train", paths["train"], "--development", paths["dev"], "--temperature", paths["temperature"],
-            "--run", os.path.join(run, "state"), "--output", out, "--initial-checkpoint", BASE, "--lora-rank", str(rank)]
+            "--run", os.path.join(run, "state"), "--output", out, "--initial-checkpoint", BASE, "--lora-rank", str(rank),
+            *RECIPE, *_identity(jeff)]
     os.makedirs(run, exist_ok=True)
     env = dict(os.environ, JEFF_EVENTS=os.path.join(run, "events.jsonl"))  # jeff-train won't start from a checkpoint without it
     try:
@@ -202,13 +227,18 @@ def train(jeff, data, smi=("nvidia-smi",), cmd=None, timeout=6 * 3600, rank=RANK
     steps = sorted(d for d in os.listdir(out) if d.startswith("step-")) if os.path.isdir(out) else []
     if r.returncode or not steps:
         raise Refused(f"jeff-train exited {r.returncode} with {len(steps)} checkpoints: {(r.stderr or r.stdout)[-400:]}")
+    # jeff-train links out/selected to the step with the lowest dev loss; the last step only when it made no link
+    sel = os.path.join(out, "selected")
+    pick = os.path.basename(os.path.realpath(sel)) if os.path.islink(sel) else steps[-1]
+    pick = pick if pick in steps else steps[-1]
     dest = os.path.join(jeff, "adapters", NAME)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    tmp = tempfile.mkdtemp(prefix=NAME + ".", dir=os.path.dirname(dest))
+    # staged in the run, not adapters/: the server loads every dir there, so a killed copy would be served
+    tmp = tempfile.mkdtemp(prefix=NAME + ".", dir=run)
     try:
-        shutil.copytree(os.path.join(out, steps[-1]), tmp, dirs_exist_ok=True)
+        shutil.copytree(os.path.join(out, pick), tmp, dirs_exist_ok=True)
         shutil.rmtree(dest, ignore_errors=True)
         os.rename(tmp, dest)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return {"adapter": dest, "run": run, "step": steps[-1], "profile": profile()}
+    return {"adapter": dest, "run": run, "step": pick, "profile": profile()}
