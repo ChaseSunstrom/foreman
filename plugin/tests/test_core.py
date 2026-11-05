@@ -14,6 +14,13 @@ from sampo import core as c
 
 
 class PathsAndProjects(ForemanTestCase):
+    def setUp(self):
+        super().setUp()
+        # T-3222: run.py --sandbox turns the state fallback off for every class; these tests are about the fallback
+        was = os.environ.pop("FOREMAN_STATE_FALLBACK", None)
+        if was is not None:
+            self.addCleanup(os.environ.__setitem__, "FOREMAN_STATE_FALLBACK", was)
+
     def test_foreman_home_honours_env(self):
         self.assertEqual(c.foreman_home(), self.home)
         self.assertEqual(c.state_dir(), os.path.join(self.home, "state"))
@@ -28,6 +35,21 @@ class PathsAndProjects(ForemanTestCase):
             self.assertTrue(p.dir.startswith(os.path.join(self.tmp, "xdg", "foreman")))
         finally:
             os.chmod(self.home, 0o700)
+
+    def test_a_sandboxed_job_never_copies_state_to_a_fallback(self):
+        # T-3222: inside sampo sandbox run the real state is read-only by design; copying all of it (361k files) into
+        # the job's /tmp each time ran /tmp out of inodes. FOREMAN_STATE_FALLBACK=0 keeps the default, read-only.
+        from unittest import mock
+        os.environ["XDG_STATE_HOME"] = os.path.join(self.tmp, "xdg")
+        default = os.path.join(self.home, "state")
+        os.makedirs(default, exist_ok=True)
+        os.chmod(default, 0o500)
+        try:
+            with mock.patch.dict(os.environ, {"FOREMAN_STATE_FALLBACK": "0"}):
+                self.assertEqual(c.state_dir(), default)
+            self.assertFalse(os.path.exists(os.path.join(self.tmp, "xdg", "foreman")), "nothing copied")
+        finally:
+            os.chmod(default, 0o700)
 
     def test_fallback_is_sticky_and_shared_and_migrates_existing_state(self):
         # A sandboxed fm (default read-only) and the hooks (default writable) must end up in the same place.

@@ -166,8 +166,21 @@ TMP_PREFIX = "fmtest-"  # not fm-: fm tidy reads ~/.claude/projects/-tmp-fm-* as
 # orphan spun a core for a day. Like -m unittest after that; off Linux the prctl is a no-op.
 BOOT = ("import ctypes, os, signal, sys, unittest\n"
         "try:\n    ctypes.CDLL(None).prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG\nexcept Exception:\n    pass\n"
-        "if os.getppid() != int(sys.argv[1]):\n    os._exit(1)  # run.py was gone before the prctl\n"
+        "if sys.argv[1] != '0' and os.getppid() != int(sys.argv[1]):\n    os._exit(1)  # run.py was gone before the prctl\n"
         "unittest.main(module=None, argv=['python -m unittest', *sys.argv[2:]])\n")
+
+
+SANDBOX = []  # T-3222: run.py --sandbox, once its job sandbox is known to work here
+
+
+def sandboxed(argv, tmp, env):
+    """T-3222: argv and env for a class in Sampo's job sandbox: the repo read-only, only its own temp folder
+    writable, no network, credential folders empty, secret variables gone."""
+    lib = os.path.join(os.path.dirname(HERE), "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    from sampo import sandbox
+    return sandbox.argv(argv, tmp, cwd=HERE, nest=True), sandbox.job_env(env, tmp)  # tests that run bwrap need nesting
 
 
 def run_one(cid, k, timeout=480, deadline=None):
@@ -183,11 +196,17 @@ def run_one(cid, k, timeout=480, deadline=None):
             timeout = round(deadline - t0)
             why = f"still running at the run's deadline ({timeout}s in): killed (T-1809)"
     extra = [a for x in k for a in ("-k", x)]
-    tmp = tempfile.mkdtemp(prefix=f"{TMP_PREFIX}{os.getpid()}-")  # T-2019: whatever the class leaks goes with it
-    p = subprocess.Popen([sys.executable, "-X", "faulthandler", "-c", BOOT, str(os.getpid()), "-q", cid, *extra],
-                         cwd=HERE,
+    try:
+        tmp = tempfile.mkdtemp(prefix=f"{TMP_PREFIX}{os.getpid()}-")  # T-2019: whatever the class leaks goes with it
+    except OSError as e:  # T-3236: /tmp out of space or inodes fails this class by name, not the whole run
+        return cid, 1, f"run.py: couldn't make the class's temp folder: {e}\n", 0, 0.0
+    argv, env =[sys.executable, "-X", "faulthandler", "-c", BOOT, "0" if SANDBOX else str(os.getpid()), "-q", cid,
+                 *extra], child_env(tmp)
+    if SANDBOX:  # its own pid namespace: it dies with bwrap (--die-with-parent), not by a parent pid check
+        argv, env = sandboxed(argv, tmp, env)
+    p = subprocess.Popen(argv, cwd=HERE,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL,
-                         start_new_session=True, env=child_env(tmp))
+                         start_new_session=True, env=env)
     try:
         _, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -274,6 +293,8 @@ def parse(argv=None):
     ap.add_argument("--shard", metavar="K/N",
                     help="run only the Kth of N interleaved slices of the classes (T-1842: CI splits the suite "
                          "across N jobs; biggest-first order keeps the slices even)")
+    ap.add_argument("--sandbox", action="store_true", help="run each class in Sampo's job sandbox (T-3222): the repo "
+                    "read-only, only its own temp folder writable, no network; plain, with a note, where it can't run")
     ap.add_argument("names", nargs="*", help="test module names (T-0808: fm check affected's {names}); with -k, only "
                                              "their tests that match a -k (T-1994)")
     a = ap.parse_intermixed_args(argv)  # names may sit on either side of -k
@@ -293,6 +314,15 @@ def main():
     ap = a
     if any(re.search(r"\s", k) for k in a.k + a.names):  # T-0357: '-k "a or b"' matched nothing and failed only at the end
         ap.error("-k matches a substring of test ids; repeat -k for each pattern (-k test_guard -k test_cli)")
+    if a.sandbox:
+        lib = os.path.join(os.path.dirname(HERE), "lib")
+        sys.path.insert(0, lib)
+        from sampo import sandbox
+        ok, why = sandbox.available()
+        if ok:
+            SANDBOX.append(why)
+        else:
+            sys.stderr.write(f"run.py: --sandbox: not available here ({why}); running plain\n")
     t0 = time.time()
     sweep()
     hit, ids = set(), []

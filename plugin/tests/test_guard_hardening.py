@@ -367,6 +367,7 @@ LANDLOCK = landlock.available()[0]
 class Landlock(unittest.TestCase):
     """T-1607: an fm code worker's process tree can't write outside its tree, scratch and Claude's own folders."""
 
+    @unittest.skipUnless(os.access(os.path.expanduser("~"), os.W_OK), "the home isn't writable here (a sandbox)")
     def test_a_confined_child_cannot_write_outside_its_set(self):
         from sampo import smith
         import tempfile
@@ -429,6 +430,7 @@ class LandlockBounds(unittest.TestCase):
             self.assertNotIn(common, real, "never the whole common dir: hooks and config live there")
             self.assertTrue(any(p.startswith(os.path.join(common, "worktrees")) for p in real))
 
+    @unittest.skipUnless(os.access(os.path.expanduser("~"), os.W_OK), "the home isn't writable here (a sandbox)")
     def test_renames_truncation_and_file_rules_behave(self):
         from sampo import smith
         import tempfile

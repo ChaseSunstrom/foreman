@@ -520,6 +520,13 @@ class Briefs(ForemanTestCase):
 
 
 class RestoreState(ForemanTestCase):
+    def setUp(self):
+        super().setUp()
+        # T-3222: run.py --sandbox turns the state fallback off for every class; this one is about the fallback
+        was = os.environ.pop("FOREMAN_STATE_FALLBACK", None)
+        if was is not None:
+            self.addCleanup(os.environ.__setitem__, "FOREMAN_STATE_FALLBACK", was)
+
     def test_restore_state_moves_a_fallback_back_once_the_default_is_writable(self):
         self.fm("init")
         default = os.path.join(self.home, "state")

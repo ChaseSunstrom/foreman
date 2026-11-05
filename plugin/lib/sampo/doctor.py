@@ -2621,6 +2621,13 @@ def check_landlock():
                   else f"not available ({why}): fm code workers run unconfined, as before")
 
 
+def check_sandbox():
+    """T-3222: which layers confine work here (job, session, landlock, docker); a note, never a failure."""
+    from sampo import sandbox
+    return Result("sandbox", "PASS", "; ".join(f"{n}: {'live' if ok else 'off'}" for n, ok, _ in sandbox.status())
+                  + " (sampo sandbox status says what each confines)")
+
+
 def check_headless():
     """T-1638: whether fm shot can render headlessly (a Chromium and its version); a note, never a failure."""
     from sampo import shot
@@ -2737,6 +2744,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_fsck(projects))
     results.append(check_cut_off_lanes(projects, getattr(c.find_project(os.getcwd()), "slug", None)))
     results.append(check_landlock())
+    results.append(check_sandbox())
     results.append(check_headless())
     t0 = time.perf_counter()  # T-2279: these two rows are built here, so each is timed over its own section
     brief_results = [check_briefs(p) for p in projects]

@@ -523,8 +523,9 @@ class PreviewApp(unittest.TestCase):
         self.assertEqual(read_text(path), mine, "nothing written")
 
 
-class Unknown(unittest.TestCase):
-    """T-1723: set_key refuses a key no surface has, so fm code's :set line and fm settings serve say so."""
+class Unknown(ForemanTestCase):
+    """T-1723: set_key refuses a key no surface has, so fm code's :set line and fm settings serve say so. Its own
+    FOREMAN_HOME (T-3222: it locked the real state's settings, found when run.py --sandbox made that read-only)."""
     def test_an_unknown_key_is_refused_by_name(self):
         done, refused = settings.set_key("no.such.setting", "1")
         self.assertEqual(done, [])

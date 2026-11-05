@@ -207,6 +207,16 @@ class Tmp(unittest.TestCase):
         self.assertFalse(os.path.exists(made))
         self.assertFalse(os.path.exists(os.path.dirname(made)))
 
+    def test_tmp_a_class_whose_folder_cant_be_made_fails_alone(self):  # T-3236: ENOSPC (inodes) crashed the run
+        import errno
+        from unittest import mock
+        full = OSError(errno.ENOSPC, "No space left on device")
+        with mock.patch.object(run.tempfile, "mkdtemp", side_effect=full):
+            cid, code, err, _, _ = run.run_one("test_x.C", [])
+        self.assertEqual((cid, code), ("test_x.C", 1))
+        self.assertIn("No space left on device", err)
+        self.assertIn("temp folder", err)
+
     def test_tmp_a_dead_runs_dirs_are_swept_and_a_live_ones_kept(self):
         import subprocess
         import tempfile

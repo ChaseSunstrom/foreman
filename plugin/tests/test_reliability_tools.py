@@ -113,8 +113,13 @@ class Fsck(ForemanTestCase):
         self.assertEqual(read_text(self.ledger), self.ledger_bytes, "the hash-chained ledger is never rewritten")
         self.assertIn(("torn journal", "cut.jsonl"), self.kinds(res))
         write(whole, '{"c": 3}')
-        text = self.fm("fsck", "--fix", check=False).stdout
-        self.assertIn("its whole last record got its newline", text)
+        p = self.fm("fsck", "--fix", check=False)
+        text = p.stdout
+        from sampo import doctor
+        if doctor._pid_ns_doubt():  # T-3222: in a sandbox (run.py --sandbox) --fix refuses by design: say so instead
+            self.assertIn("PID namespace", p.stderr)
+            return
+        self.assertIn("its whole last record got its newline", text, p.stderr[-600:])
         self.assertNotIn("score.jsonl: a stale lock", text)
 
     def test_fix_keeps_a_lock_younger_than_an_hour(self):

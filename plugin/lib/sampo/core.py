@@ -245,8 +245,8 @@ def state_dir():
     for alt in state_fallbacks():
         if _marker_default(alt) == default:
             return alt
-    if _writable(default):
-        return default
+    if _writable(default) or os.environ.get("FOREMAN_STATE_FALLBACK") == "0":  # T-3222: a sandboxed job's stays
+        return default  # read-only by design; copying all of it into the job's /tmp ran it out of inodes
     for alt in state_fallbacks():
         if _writable(alt) and _activate_fallback(alt, default):
             return alt

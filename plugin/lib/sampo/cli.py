@@ -8435,10 +8435,28 @@ def _build_parser(only=None):
     s.add_argument("--all-projects", action="store_true", help="work every Sampo project's queue in turn with "
                    "these options (each with its own run lock); a project with nothing queued is skipped")
     s.add_argument("--save", action="store_true", help="keep --models for later runs")
-    s = add("sandbox", lazy("sampo.serve", "cmd_sandbox"), tier=("Project and settings", 900), help="sampo run's sandbox as a project setting: on, off, allow "
-                                                           "DOMAIN, show (T-1086)")
-    s.add_argument("action", nargs="?", default="show", choices=["on", "off", "allow", "show"])
-    s.add_argument("domains", nargs="*")
+    s = add("sandbox", lazy("sampo.sandbox", "cmd_sandbox"), tier=("Project and settings", 900), help="confine work: "
+            "on, off, allow DOMAIN, show set sampo run's Claude Code sandbox as a project setting (T-1086); status names "
+            "each layer (job, session, landlock, docker) and whether it is live; run -- CMD runs a command in its own "
+            "namespaces through bwrap: the system read-only, only the project and --write folders writable, credential "
+            "folders empty, secret variables gone, the network off, an allowlist (--net allow) or on; exit 3 when it "
+            "can't here (T-3222)")
+    s.add_argument("action", nargs="?", default="show", choices=["on", "off", "allow", "show", "status", "run"])
+    s.add_argument("rest", nargs="*", metavar="DOMAIN… | -- CMD",
+                   help="allow: the domains; run: after --, the command and its arguments")
+    s.add_argument("--session", action="store_true", help="on/off: Claude Code's own sandbox for your sessions' Bash "
+                   "commands (settings.json: credential folders read-denied, ssh git and sampo ship excluded, the "
+                   "learned domains allowed), with a backup that off restores")
+    s.add_argument("--net", choices=["off", "allow", "on"], default="off", help="run: the network: off (default); allow: only "
+                   "--allow hosts and the project's list (sampo sandbox allow; else its git remote and package registries), "
+                   "through a filtering proxy, link-local never, loopback or private only by name with its port; on")
+    s.add_argument("--allow", action="append", metavar="HOST[:PORT]", help="run --net allow: one more host (*.suffix "
+                   "matches subdomains; repeatable)")
+    s.add_argument("--write", action="append", metavar="DIR", help="run: another folder the job may write (repeatable)")
+    s.add_argument("--root", metavar="DIR", help="run: the job's writable project folder (default: the current folder; "
+                   "never /, a home folder or ~/.claude)")
+    s.add_argument("--image", metavar="IMAGE", help="run: in this docker image instead (a local one; no capabilities, a "
+                   "read-only filesystem, only the project mounted, --net off or on)")
     s = add("notify", lazy("sampo.serve", "cmd_notify"), tier=("Project and settings", 810), help="command sampo run uses to tell you a task finished or blocked")
     s.add_argument("command", nargs="*", help="gets the message as $1, e.g. notify-send Sampo \"$1\"")
     s.add_argument("--off", action="store_true")
