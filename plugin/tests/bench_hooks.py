@@ -90,7 +90,7 @@ def run_bench(runs=30, only=None):  # only: a predicate on fixture names (T-2359
     with open(os.path.join(HERE, "fixtures", "hook_payloads.json")) as f:
         fixtures = json.load(f)
     results = {}
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         repo, env = _scratch_project(tmp)
         env["CLAUDE_ENV_FILE"] = os.path.join(tmp, "envfile")
         for name, payload in fixtures.items():
@@ -127,9 +127,10 @@ def hook_modules(only=None):
     with open(os.path.join(HERE, "fixtures", "hook_payloads.json")) as f:
         fixtures = json.load(f)
     got = {}
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         repo, env = _scratch_project(tmp)
         env["CLAUDE_ENV_FILE"] = os.path.join(tmp, "envfile")
+        env["FOREMAN_NO_BACKGROUND"] = "1"  # T-3241: imports only; a late background writer raced the cleanup
         for name, payload in fixtures.items():
             if only and not only(name):
                 continue
@@ -157,7 +158,7 @@ def injection_sizes():
     record measures the shipped tree's hooks through --inject)."""
     import tempfile
     sizes = {}
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         repo, env = _scratch_project(tmp)
         env["CLAUDE_ENV_FILE"] = os.path.join(tmp, "envfile")
         for event, extra in (("SessionStart", {"source": "startup"}),
