@@ -3287,6 +3287,19 @@ class GenesisExam(ForemanTestCase):
             saved = json.loads(read_text(os.path.join(louhi.root(self.p), "genesis-s0", "oracle", lost + ".json")))
             self.assertTrue(any(x in saved["line"] for x in rune.PLANT[0]))
 
+    def test_a_genesis_exam_writes_its_place_in_the_scenarios_and_ends_it(self):
+        # T-3086: one c.progress per scenario (done of total, unit scenarios), ended after
+        from unittest import mock
+        from sampo import core as c
+        from sampo import rune
+        with mock.patch.object(c, "progress") as prog, mock.patch.object(c, "progress_end") as end:
+            rune.exam(self.p, "oracle", "all", 3)
+        calls = [x.args[:3] for x in prog.call_args_list]
+        self.assertTrue(calls and calls[-1][0] == calls[-1][1], calls)
+        self.assertEqual([x[0] for x in calls], list(range(1, len(calls) + 1)))
+        self.assertEqual({x[2] for x in calls}, {"scenarios"})
+        end.assert_called()
+
     def test_the_oracle_closes_every_scenario_and_empty_none(self):
         from sampo import rune
         r = self.exam("--arm", "oracle", "--per-kind", "3", "--split", "all")

@@ -26,6 +26,18 @@ class ExamGen(ForemanTestCase):
     def gen(self, *args):
         return self.fm_json("exam", "gen", *args)
 
+    def test_an_exam_run_writes_its_place_in_the_scenarios_and_ends_it(self):
+        # T-3086: the live page's jobs list shows a bar for the run: 1/3, 2/3, 3/3 scenarios, then the file goes
+        from unittest import mock
+        from sampo import louhi
+        g = self.gen("--seed", "8", "--per-kind", "1", "--lang", "python", "--kind", "bug,vuln,slow")
+        self.assertEqual(len(g["scenarios"]), 3)
+        with mock.patch.object(c, "progress") as prog, mock.patch.object(c, "progress_end") as end:
+            louhi.run_agent(c.find_project(self.repo), g["run"], "oracle", jobs=1)
+        self.assertEqual(sorted(x.args[:3] for x in prog.call_args_list),
+                         [(1, 3, "scenarios"), (2, 3, "scenarios"), (3, 3, "scenarios")])
+        end.assert_called()
+
     def test_exists_parts_and_trigger_scenarios_render_check_and_grade(self):
         # T-2216: #2 exists (the module already does what's asked: name it, add nothing), #9 parts (three defects in
         # one request), #11 trigger (the tests must run on a schedule); the oracle closes each and empty closes none

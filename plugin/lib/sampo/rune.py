@@ -2051,9 +2051,11 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0, author="self", m
             given[s["split"]].append(s["id"])
         print(f"{i}/{len(picked)} {s['id']}: " + (f"{source}, not graded" if not ok else f"{len(m)} missed" if m else
                                                   "closed"), file=sys.stderr, flush=True)
+        c.progress(i, len(picked), "scenarios", arm)  # T-3086: the live page's jobs bar
         c.write_atomic(os.path.join(out, s["id"] + ".md"), text)
         c.write_atomic(os.path.join(out, s["id"] + ".json"), json.dumps(
             {"kind": s["kind"], "line": line, "defect": defect, "source": source, "misses": m, "given": mine}, indent=1))
+    c.progress_end()  # ponytail: an exception skips this; the file is per pid and live.py drops a dead pid's
     # ponytail: spend matched by feature, project and time, so a genesis child in another session meanwhile counts too
     cost = round(sum(e.get("usd") or 0 for e in budget.ledger() if e.get("feature") in ("genesis", "genesis-plain")
                      and e.get("project") == p.slug and str(e.get("ts", "")) >= t0), 4)
