@@ -10,6 +10,7 @@
 
 ### Everything else
 
+- Moons count what's kept: `sampo moons grow --keep N` runs grow and funnel rounds until N moons survive (stopping after three rounds that raise no survivor), the night grows while kept moons are under 10,000, and families union links the novelty scan already computes, so 10,000 survivors group in about a second instead of ten minutes (T-3046).
 - Exam runs reach keyed models: the secrets file's default path comes from the account's home, not `$HOME`, which an exam sandbox points at a throwaway, so the 27B arm no longer scores 0 on "LLM_API_KEY is not set" (T-3080).
 - `sampo drive on --pace off` now turns off every weekly-usage lean for its project: past 80% weekly the budget caps no longer halve, subagents and builder lanes keep running, and the pane's economy mode stays off; the 5-hour window keeps its 90% rule, and other projects lean as before (T-3049).
 - A model profile's key is found without a login shell: when its `key_env` isn't in the environment, Sampo reads it from `~/.config/sampo/secrets.env` (or `$SAMPO_SECRETS`), a private file it trusts only at mode 600, so hooks, the night job and the live service reach keyed models such as the 27B on Jarvis (T-3036).
