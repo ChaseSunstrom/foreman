@@ -57,10 +57,11 @@ def _human(n):
 _TS = re.compile(r'"timestamp":\s*"([^"]{19})')
 
 
-def _entries(folder, since):
+def _entries(folder, since, need=None):
     """(file path, entry) for each transcript line on or after the cutoff. T-1116: a file not written since the
     cutoff is skipped unopened, and a line is parsed only when one of its timestamps reaches the cutoff (the newest
-    counts: a nested older one can't hide the entry's own)."""
+    counts: a nested older one can't hide the entry's own). T-3193: `need`, a substring a wanted line always holds,
+    skips the rest before any regex or parse."""
     try:
         cut = datetime.datetime.strptime(since[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc).timestamp()
     except ValueError:
@@ -73,6 +74,8 @@ def _entries(folder, since):
                     continue
                 with open(path, encoding="utf-8", errors="replace") as f:
                     for line in f:
+                        if need and need not in line:
+                            continue
                         stamps = _TS.findall(line)
                         if stamps and max(stamps) < since[:19]:
                             continue
@@ -180,7 +183,7 @@ def burn_findings(folder=None, days=2, forecast=None):
     statusline's usage reading. Each cause comes with its fix, so nobody has to ask."""
     folder = folder or os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects")
     ctx, by, hours, seen = [], collections.Counter(), collections.defaultdict(set), set()
-    for path, e in _entries(folder, _since(days)):
+    for path, e in _entries(folder, _since(days), need='"usage"'):  # only an assistant reply's line holds it
         m = e.get("message")
         if e.get("type") != "assistant" or not isinstance(m, dict) or not isinstance(m.get("usage"), dict) \
                 or m.get("id") in seen:

@@ -42,8 +42,9 @@ class ClockWindows(ForemanTestCase):
         self.assertEqual(row(at(30, -1))["survival"], "settling")
 
     def test_digest_week_includes_a_close_exactly_seven_days_old_not_one_a_second_older(self):
-        def seen(now):
-            return self.tid in self.fm("digest", "--days", "7", env={"FOREMAN_NOW": now}).stdout
+        def seen(now):  # T-3193: never the user's ~/.claude (digest's burn scan read a month of real transcripts, 25 s)
+            env = {"FOREMAN_NOW": now, "CLAUDE_CONFIG_DIR": os.path.join(self.tmp, "nocc")}
+            return self.tid in self.fm("digest", "--days", "7", env=env).stdout
         self.assertTrue(seen(at(7)))
         self.assertFalse(seen(at(7, 1)))
 

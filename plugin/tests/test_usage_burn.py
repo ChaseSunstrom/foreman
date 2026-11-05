@@ -51,6 +51,18 @@ class UsageBurn(ForemanTestCase):
             text = "\n".join(f"{a} → {b}" for a, b in cost.burn_findings(folder, forecast={}))
         self.assertNotIn("fm install-user", text, "Foreman's window is already set: the advice is /compact")
 
+    def test_only_lines_carrying_usage_are_parsed(self):
+        # T-3193: a month of transcripts is ~1.3M lines; parsing each one made fm digest take 24-33 s
+        from unittest import mock
+        ts = self._now()
+        tool = json.dumps({"type": "user", "timestamp": ts, "message": {"content": [{"type": "tool_result", "content": "x"}]}})
+        self._write("-p/a.jsonl", [_msg(i, "a", "claude-sonnet-5-5", 300_000, ts) for i in range(30)] + [tool] * 50)
+        real = json.loads
+        with mock.patch.object(cost.json, "loads", side_effect=real) as loads:
+            found = cost.burn_findings(os.path.join(self.tmp, "projects"), forecast={})
+        self.assertEqual([c for c in loads.call_args_list if "tool_result" in str(c.args[:1])], [])
+        self.assertIn("context per reply averages 300k", "\n".join(a for a, _ in found))
+
     def test_a_lean_week_says_nothing(self):
         self._write("-p/a.jsonl", [_msg(i, "a", "claude-sonnet-5-5", 60_000, self._now()) for i in range(30)])
         self.assertEqual(cost.burn_findings(os.path.join(self.tmp, "projects"), forecast={}), [])
