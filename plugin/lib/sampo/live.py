@@ -24,6 +24,7 @@ import os
 import re
 import secrets
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -41,6 +42,7 @@ STREAM_S = 2
 STREAMS_MAX = 8  # open streams at once: a thread each
 FLOW_S, CALL_S = 60, 300
 NET_TIMEOUT = 1.0
+TAIL_B = 1 << 20  # jeff-train's events: the last megabyte holds the steps and, usually, the latest start
 OLLAMA, JEFF = "http://127.0.0.1:11434/api/ps", "http://127.0.0.1:8766/v1/models"
 TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".png": "image/png",
          ".json": "application/json", ".woff2": "font/woff2", ".html": "text/html"}
@@ -138,13 +140,177 @@ def closed_today(p):
 
 
 def lanes(p):
-    return [{"task": b.id, "title": b.title, "model": b.meta.get("builder_model"), "since": b.meta.get("updated")}
-            for b in _briefs(p) if b.status not in c.CLOSED and b.meta.get("lane")]
+    out = []
+    for b in _briefs(p):
+        if b.status in c.CLOSED or not b.meta.get("lane"):
+            continue
+        steps = b.steps()
+        out.append({"task": b.id, "title": b.title, "model": b.meta.get("builder_model"), "since": b.meta.get("updated"),
+                    "step": f"{sum(s.done for s in steps)}/{len(steps)}", "stage": c.stage(b, c.effective_autonomy(p))})
+    return out
+
+
+def _ticks(pid):
+    """Process pid's start time in clock ticks since boot (field 22 of /proc/PID/stat; the comm field may hold spaces
+    and parens, so count from the last ')'), or None. Unlike /proc/PID's ctime it is the real start."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return int(f.read(4096).rsplit(")", 1)[1].split()[19])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _started(pid):
+    """Epoch seconds the process started (start ticks + boot time from /proc/stat), or None."""
+    t = _ticks(pid)
+    try:
+        with open("/proc/stat") as f:
+            boot = next(int(x.split()[1]) for x in f if x.startswith("btime "))
+        return boot + t / os.sysconf("SC_CLK_TCK") if t is not None else None
+    except (OSError, StopIteration, ValueError, IndexError):
+        return None
+
+
+def _mine(pid):
+    try:
+        return os.stat(f"/proc/{pid}").st_uid == os.getuid()
+    except OSError:
+        return False
+
+
+def _environ(pid):
+    if not _mine(pid):
+        return {}
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as f:  # the kernel lets only the same uid read it
+            return dict(x.split("=", 1) for x in f.read(65536).decode("utf-8", "replace").split("\0") if "=" in x)
+    except OSError:
+        return {}
+
+
+def _open_mine(path, cap=None):
+    """A binary file object on a regular file this uid owns, or None: no symlink at the end (O_NOFOLLOW), no waiting on
+    a FIFO (O_NONBLOCK), and the type and owner are read from the open fd, so nothing swaps in after the check."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except (OSError, TypeError, ValueError):
+        return None
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or (cap and st.st_size > cap):
+        os.close(fd)
+        return None
+    return os.fdopen(fd, "rb")
+
+
+def _num(x):
+    return x if type(x) in (int, float) and x == x and abs(x) < 1e15 else None
+
+
+def _shape(done, total, unit, note, rate):
+    """The progress dict a job carries; None when done or total isn't a sane count."""
+    done, total = _num(done), _num(total)
+    if done is None or not total or total <= 0 or done < 0:
+        return None
+    eta = round((total - done) / rate) if rate and rate > 0 and done < total else None
+    return {"done": done, "total": total, "unit": str(unit or "")[:20], "note": str(note or "")[:80],
+            "rate": rate, "eta_s": eta}
+
+
+def _file_progress(pid, rec):
+    try:
+        have = _ticks(pid)
+        if have is None or rec.get("start") != have:  # the pid was reused (or can't be told): not this process's file
+            return None
+        t0, t, d0 = float(rec["t0"]), float(rec["t"]), float(rec["d0"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    rate = (_num(rec.get("done")) or 0) - d0
+    rate = rate / (t - t0) if t > t0 and rate > 0 else None
+    return _shape(rec.get("done"), rec.get("total"), rec.get("unit"), rec.get("note"), rate)
+
+
+def _train_progress(pid):
+    """jeff-train's own events (JEFF_EVENTS in its environment): the last step of total_steps, loss, and a rate over the
+    steps still in the tail. Only a regular file this uid owns is read, through one fd.
+    Events (one JSON object a line): {"kind": "training_started", "total_steps": N, ...} once per start, and a resumed
+    run appends another; {"kind": "training_step", "step": i, "loss": x, "process_elapsed_seconds": s, ...} each step."""
+    path = _environ(pid).get("JEFF_EVENTS")
+    if not path:
+        return None
+    try:
+        if not os.path.isabs(path):  # relative to the trainer's own directory
+            path = os.path.join(os.readlink(f"/proc/{pid}/cwd"), path)
+    except OSError:
+        return None
+    f = _open_mine(path)
+    if not f:
+        return None
+    with f:
+        try:
+            size = f.seek(0, 2)
+            f.seek(max(0, size - TAIL_B))
+            rows = []
+            for line in f.read(TAIL_B).splitlines()[1 if size > TAIL_B else 0:]:  # the cut first line is partial
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    pass
+            if not any(isinstance(e, dict) and e.get("kind") == "training_started" for e in rows):
+                f.seek(0)  # the start fell out of the tail: its line is the file's first
+                try:
+                    rows.insert(0, json.loads(f.readline(1 << 20)))
+                except ValueError:
+                    pass
+        except OSError:
+            return None
+    started = [e for e in rows if isinstance(e, dict) and e.get("kind") == "training_started"]
+    total = started[-1].get("total_steps") if started else None  # the latest start: a resume appends its own
+    steps = [e for e in rows if isinstance(e, dict) and e.get("kind") == "training_step"][-40:]
+    if not steps:
+        return None
+    a, b = steps[0], steps[-1]
+    try:
+        dt, ds = b["process_elapsed_seconds"] - a["process_elapsed_seconds"], b["step"] - a["step"]
+        rate = ds / dt if dt > 0 and ds > 0 else None
+    except (KeyError, TypeError):
+        rate = None
+    loss = _num(b.get("loss"))
+    return _shape(b.get("step"), total, "steps", f"loss {loss:.3g}" if loss is not None else "", rate)
+
+
+def _progress_files(alive):
+    """{pid: parsed progress file} for live pids; a file whose pid is gone is removed."""
+    d, out = os.path.join(c.state_dir(), "progress"), {}
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return out
+    for n in names:
+        pid = int(n[:-5]) if n.endswith(".json") and n[:-5].isascii() and n[:-5].isdecimal() else None
+        if pid is None:
+            continue
+        if pid not in alive:
+            try:
+                os.unlink(os.path.join(d, n))
+            except OSError:
+                pass
+            continue
+        f = _open_mine(os.path.join(d, n), 4096)  # not a symlink, FIFO or big file
+        if f:
+            with f:
+                try:
+                    rec = json.loads(f.read(4096))
+                except (OSError, ValueError):
+                    continue
+            out[pid] = rec if isinstance(rec, dict) else None
+    return out
 
 
 def jobs(p):
     out = []
-    for pid, cmd in _procs():
+    procs = _procs()
+    files = _progress_files({pid for pid, _ in procs})
+    for pid, cmd in procs:
         words = cmd.split()
         if not words or os.path.basename(words[0]) not in ("sampo", "fm") and not os.path.basename(words[0]).startswith("python"):
             continue
@@ -156,12 +322,11 @@ def jobs(p):
         if not kind:
             continue
         m = re.search(r"--(?:profile|model)[ =](\S+)", cmd)
-        try:
-            since = c.iso(os.stat(f"/proc/{pid}").st_ctime)
-        except OSError:
-            since = None
+        since = _started(pid)
+        since = c.iso(since) if since else None
         out.append({"name": c.fit(rest, 60), "kind": kind, "pid": pid, "since": since, "model": m and m.group(1),
-                    "progress": None, "line": c.fit(cmd, 100)})
+                    "progress": _train_progress(pid) if kind == "train" else
+                    _file_progress(pid, files[pid]) if files.get(pid) else None, "line": c.fit(cmd, 100)})
     return out
 
 

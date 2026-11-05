@@ -364,6 +364,7 @@ def grow(p, target=None, batch=6, seed=0, max_calls=None, workers=None, think=No
                 n = sum(v == "kept" for _, v, _ in out)
                 cnt[_key(cell)] += n
                 total += n
+                c.progress(min(total, target), target, "cards", "grow")
                 r["added"] += len(out)
                 r["models"][model] += 1
                 for _, verdict, why in out:
@@ -391,6 +392,7 @@ def grow(p, target=None, batch=6, seed=0, max_calls=None, workers=None, think=No
     finally:
         pool.shutdown()
         ms._THINK = None
+        c.progress_end()
     r.update(total=total, reasons=dict(r["reasons"]), models=dict(r["models"]))
     if r["calls"]:
         c.log_event(p, "cards_grow", data={k: r[k] for k in ("calls", "added", "kept", "rejected", "stopped", "models")})

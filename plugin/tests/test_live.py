@@ -33,6 +33,15 @@ class Snapshot(ForemanTestCase):
         self.assertEqual(s["focus"]["title"], "Show the live page")
         self.assertEqual([q["title"] for q in s["queue"]], ["Show the live page"])
 
+    def test_a_builder_lane_carries_its_steps_done_of_total_and_stage(self):  # T-3083
+        b = c.load_briefs(self.p)[0]
+        with mock.patch.object(live, "_briefs", return_value=[b]):
+            b.meta["lane"] = "agent-x"
+            row = live.lanes(self.p)[0]
+        self.assertEqual((row["task"], row["step"]), (b.id, "0/1"))
+        self.assertTrue(row["stage"])
+        self.assertEqual(live.focus(self.p)["step"], "0/1")
+
     def test_a_failing_collector_leaves_its_field_empty_the_rest_stand(self):
         def boom(p):
             raise RuntimeError("down")

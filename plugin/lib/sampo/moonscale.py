@@ -693,6 +693,7 @@ def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=No
                 out = add(p, objs, cell, model, batch_no)
                 _bump(cnt, cell, len(out))
                 total += len(out)
+                c.progress(min(total, target), target, "moons", "grow")
                 r["added"] += len(out)
                 r["models"][model] += 1
                 for _, verdict, why in out:
@@ -702,6 +703,7 @@ def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=No
     finally:
         pool.shutdown()
         _THINK, _LOCAL_ONLY = None, False
+        c.progress_end()
     with _lock:
         r["cut"] = dict(_cuts)
     r.update(total=total, reasons=dict(r["reasons"]), models=dict(r["models"]))
@@ -1174,11 +1176,14 @@ def funnel(p, stage=None, max_calls=None, local_only=False):
                 break
             rs, f = rows(p), fate(p)
             r["stages"][st] = {}
-            run[st](p, r, rs, f, _at(rs, f, (ORDER[ORDER.index(st) - 1],), ("kept",)), max_calls)
+            todo = _at(rs, f, (ORDER[ORDER.index(st) - 1],), ("kept",))
+            c.progress(0, len(todo), "rows", st)  # rows waiting at this stage; no rate: a stage reports only when it ends
+            run[st](p, r, rs, f, todo, max_calls)
         if stage is None and not r["stopped"]:  # last, on what the cap leaves; a one-stage run (a benchmark) never repairs
             _repair(p, r, rows(p), fate(p), max_calls)
     finally:
         _LOCAL_ONLY = False
+        c.progress_end()
     r["stopped"] = r["stopped"] or "done"
     if r["stages"].get("novelty"):
         r["families"] = len(families(p)["families"])

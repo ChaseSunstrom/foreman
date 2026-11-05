@@ -1084,6 +1084,49 @@ def append_line(path, text):
         f.write(data)
 
 
+def _progress_t():
+    return time.time()
+
+
+_PROG = {}  # (pid, unit, note) -> (t0, d0): a loop's first sample, kept in memory, never read back from the file
+
+
+def _self_ticks():
+    """This process's start time in clock ticks (field 22 of /proc/self/stat), the id a pid reuse can't share; None off Linux."""
+    try:
+        with open("/proc/self/stat") as f:
+            return int(f.read().rsplit(")", 1)[1].split()[19])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _progress_path():
+    return os.path.join(state_dir(), "progress", f"{os.getpid()}.json")
+
+
+def progress(done, total=None, unit="", note=""):
+    """T-3083: this process's place in a long loop, state/progress/<pid>.json, for the live page's jobs. The first sample
+    per (unit, note) is kept in memory, so a rate runs over one loop (a new unit or note starts a new one) and a reused
+    pid inherits nothing; "start" is this process's start ticks, which the reader must find equal. Best effort."""
+    try:
+        now = _progress_t()
+        t0, d0 = _PROG.setdefault((os.getpid(), str(unit), str(note)), (now, float(done)))
+        write_atomic(_progress_path(), json.dumps({"done": done, "total": total, "unit": str(unit)[:20], "note": str(note)[:80],
+                                                   "t0": t0, "d0": d0, "t": now, "start": _self_ticks()}))
+    except (OSError, ValueError, TypeError):
+        pass
+
+
+def progress_end():
+    """A loop ended: its numbers leave the row (the file goes, the next loop's rate starts fresh)."""
+    for k in [k for k in _PROG if k[0] == os.getpid()]:
+        del _PROG[k]
+    try:
+        os.unlink(_progress_path())
+    except OSError:
+        pass
+
+
 def write_atomic(path, text):
     d = os.path.dirname(path) or "."  # T-1784 review: a bare name has no dirname, and makedirs("") raises
     os.makedirs(d, exist_ok=True)
