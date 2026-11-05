@@ -39,5 +39,24 @@ class GitEnvIsolation(unittest.TestCase):
         self.assertNotEqual(self.real_config("core.bare"), "true")
 
 
+class GateKeyIsolation(unittest.TestCase):
+    def test_an_in_process_gate_signs_with_the_tests_own_key_not_the_users(self):
+        # T-3195: test_lanes.SelfChangeGate read the real ~/.config/sampo/selfgate.key
+        sys.path.insert(0, HERE)
+        from helpers import SampoTestCase
+        from sampo import selfgate
+
+        class T(SampoTestCase):
+            def runTest(self):
+                pass
+        t = T()
+        t.setUp()
+        try:
+            self.assertTrue(selfgate._keyfile().startswith(t.tmp + os.sep), selfgate._keyfile())
+        finally:
+            t.doCleanups()
+            t.tearDown()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1834,6 +1834,10 @@ class SelfChangeGate(ForemanTestCase):
         bench = bench or (lambda tree: ({"Stop": {"p95": 100.0, "budget": 500}}, {"SessionStart": 2000}))
         files = self.git("diff", "--name-only", "HEAD...foreman/x").split()
         b = c.find_brief(self.p, self.tid)
+        # T-3195: each call fakes its own base verdicts and bench, so none reuses the last call's cached base half
+        # (test_selfgate.BaseCache tests the cache)
+        if os.path.exists(os.path.join(self.p.dir, "selfgate-base.json")):
+            os.remove(os.path.join(self.p.dir, "selfgate-base.json"))
         with mock.patch.object(self.g, "_verdicts", verdicts), mock.patch.object(self.g, "_bench", bench), \
                 mock.patch.object(self.g, "_corpus", lambda: []):
             return self.g.gate(self.p, b, self.repo, "foreman/x", files)

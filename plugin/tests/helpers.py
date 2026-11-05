@@ -320,6 +320,14 @@ class SampoTestCase(unittest.TestCase):
             pass
         # T-1197: a temp repo has no plugin/, so fm guard wrong fell back to the real checkout's corpus
         os.environ["FOREMAN_GUARD_CASES"] = os.path.join(self.tmp, "guard_cases.jsonl")
+        try:  # T-3195: an in-process gate signs its base cache with this test's own key, never the user's
+            from unittest import mock as _mock
+            from sampo import selfgate as _selfgate
+            key = _mock.patch.object(_selfgate, "_keyfile", lambda: os.path.join(self.tmp, "selfgate.key"))
+            key.start()
+            self.addCleanup(key.stop)
+        except (ImportError, AttributeError):
+            pass
         self.repo = git_repo(self.tmp)
 
     def tearDown(self):
