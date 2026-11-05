@@ -25,7 +25,7 @@
  ],
  "lanes": [
   {"task": "T-2999", "title": "The live page: the forge scene and panels", "model": "opus", "since": "2026-11-04T18:02:05Z", "steps": {"done": 2, "total": 5}},
-  {"task": "T-2961", "title": "Bench the embed models on the UI card grid", "model": null, "since": null}
+  {"task": "T-2961", "waiting": true, "title": "Bench the embed models on the UI card grid", "model": null, "since": null}
  ],
  "jobs": [
   {"name": "moons funnel --batch 200 --stages kill,tier", "kind": "funnel", "pid": 41822, "since": "2026-11-04T16:50:00Z", "model": "qwen3:14b", "progress": {"done": 430, "total": 1220, "unit": "cards", "rate": 0.5, "eta_s": 1580}, "line": "tier: 430 kept, 790 waiting"},

@@ -1408,9 +1408,11 @@ function renderCounters(s, first) {
   for (const m of models) if ((num(m.calls_5m) || 0) > (busy ? num(busy.calls_5m) : 0)) busy = m;
   bump("c-calls", fmt(calls));
   setText($("c-calls-sub"), busy ? "busiest " + str(busy.name) : "across every model");
-  const lanes = arr(s.lanes).length, jobs = arr(s.jobs).length;
+  const lanes = arr(s.lanes).filter(l => obj(l).waiting !== true).length, jobs = arr(s.jobs).length;  // T-3170: a returned or merged lane isn't at work
+  const waiting = arr(s.lanes).length - lanes;
   bump("c-work", fmt(lanes + jobs));
-  setText($("c-work-sub"), lanes + (lanes === 1 ? " builder · " : " builders · ") + jobs + (jobs === 1 ? " job" : " jobs"));
+  setText($("c-work-sub"), lanes + " at work · " + waiting + " waiting to merge");  // the big number adds the jobs: too long to name here
+  $("c-work-sub").title = lanes + " builders + " + jobs + " jobs at work; " + waiting + " finished lanes wait on a merge";
 }
 
 // ---------- the charts (T-3092): drawn by charts.js from the snapshot and from what this page has seen since it opened ----------
@@ -1435,7 +1437,7 @@ function sample(s) {  // at most one reading a second, and a different project s
   sp("general", num(obj(st.cards).general)); sp("ui", num(obj(st.cards).ui));
   sp("closed", num(st.closed_today) != null ? num(st.closed_today) : arr(s.closed_today).length);
   sp("calls", models.reduce((a, m) => a + (num(m.calls_5m) || 0), 0));
-  sp("work", arr(s.lanes).length + arr(s.jobs).length);
+  sp("work", arr(s.lanes).filter(l => obj(l).waiting !== true).length + arr(s.jobs).length);
 }
 function renderCharts(s) {
   if (!modern || !window.Charts) return;
@@ -1799,7 +1801,7 @@ function netBuild() {
   const addA = (label, key, on) => { if (label && !aseen.has(key)) { aseen.add(key); A.push({key, label, on}); } };
   const fid = str(foc.id);
   if (fid && fid !== "—") addA(fid, "a:" + fid, true);
-  for (const l of arr(s.lanes).slice(0, 10)) { const k = str(obj(l).task); if (k) addA(k, "a:" + k, true); }
+  for (const l of arr(s.lanes).slice(0, 10)) { const k = str(obj(l).task); if (k) addA(k, "a:" + k, obj(l).waiting !== true); }  // T-3170: a waiting lane is dim
   const quiet = new Set(arr(mm.projects).map(obj).filter(p => p.sensitive === true).map(p => str(p.slug)));
   for (const x of arr(mm.sessions).map(obj).filter(x => str(x.id)).slice(0, 40)) {
     if (quiet.has(str(x.project))) addA("private", "a:private:" + str(x.id), false);

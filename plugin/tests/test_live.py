@@ -48,6 +48,19 @@ class Snapshot(ForemanTestCase):
         self.assertTrue(row["stage"])
         self.assertEqual(live.focus(self.p)["step"], "0/1")
 
+    def test_a_returned_or_merged_lane_is_waiting_not_at_work(self):  # T-3170
+        b = c.load_briefs(self.p)[0]
+        with mock.patch.object(live, "_briefs", return_value=[b]):
+            b.meta["lane"] = "agent-x"
+            self.assertFalse(live.lanes(self.p)[0]["waiting"])
+            b.meta["builder_returned"] = "now"
+            self.assertTrue(live.lanes(self.p)[0]["waiting"])
+            del b.meta["builder_returned"]
+            with mock.patch("sampo.lanes._stop", return_value=("merged", 0.0, "")):
+                self.assertTrue(live.lanes(self.p)[0]["waiting"])
+        js = open(os.path.join(os.path.dirname(live.__file__), "..", "..", "web", "live", "live.js")).read()
+        self.assertIn("waiting to merge", js)
+
     def test_a_failing_collector_leaves_its_field_empty_the_rest_stand(self):
         def boom(p):
             raise RuntimeError("down")

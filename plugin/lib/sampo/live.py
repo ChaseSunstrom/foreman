@@ -140,12 +140,18 @@ def closed_today(p):
 
 
 def lanes(p):
-    out = []
-    for b in _briefs(p):
+    from sampo import lanes as lanes_mod
+    out, briefs = [], _briefs(p)
+    try:  # T-3170: count builders the way lanes.builder_brief's cap does; a lane waiting on a merge isn't at work
+        done = set(c.finished_lanes(p, briefs, quiet_min=0))
+    except Exception:
+        done = set()
+    for b in briefs:
         if b.status in c.CLOSED or not b.meta.get("lane"):
             continue
         steps = b.steps()
-        out.append({"task": b.id, "title": b.title, "model": b.meta.get("builder_model"), "since": b.meta.get("updated"),
+        wait = b.id in done or bool(b.meta.get("builder_returned")) or lanes_mod._stop(b)[0] == "merged"
+        out.append({"task": b.id, "waiting": wait, "title": b.title, "model": b.meta.get("builder_model"), "since": b.meta.get("updated"),
                     "step": f"{sum(s.done for s in steps)}/{len(steps)}", "stage": c.stage(b, c.effective_autonomy(p))})
     return out
 

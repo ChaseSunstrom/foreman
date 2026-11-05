@@ -185,6 +185,7 @@ main{display:grid;grid-template-rows:minmax(320px,1fr) auto auto var(--deck-h);g
 .cl{margin:0 0 7px;font:500 9.5px/1 var(--font-mono);letter-spacing:.2em;text-transform:uppercase;color:var(--brass);white-space:nowrap}
 .cv{margin:0;font:500 clamp(25px,1.9vw,34px)/1 var(--font-display);font-variant-numeric:lining-nums tabular-nums;color:var(--brass-2);
   -webkit-text-fill-color:transparent;background:var(--engrave);background-size:100% 1em;-webkit-background-clip:text;background-clip:text}
+#c-work-sub{white-space:normal}  /* T-3170: "N at work · M waiting to merge" wraps rather than clip */
 .cs{margin:6px 0 0;font:400 10.5px/1.2 var(--font-mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .meter{position:absolute;left:18px;right:18px;bottom:6px;height:2px;
   background:linear-gradient(90deg,var(--green) 0 var(--f),rgba(144,151,188,.2) 0);transition:--f var(--dur-stage) var(--ease-move)}
