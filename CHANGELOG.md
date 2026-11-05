@@ -10,6 +10,7 @@
 
 ### Everything else
 
+- Moons yield more and can be about Sampo itself: a payoff line missing only "With this," is fixed at write and 847 old rejects are re-admitted; a Sampo grid (problem solving, memory, efficiency and every coverage area) is read thinnest first beside the user grid and accepts Sampo's own parts as the payoff; a moon whose kill test needs more than one person and one day gets one rewritten test as a child row; each cell's prompt carries its kind's top reject reasons and two kept moons (T-3045).
 - Moons count what's kept: `sampo moons grow --keep N` runs grow and funnel rounds until N moons survive (stopping after three rounds that raise no survivor), the night grows while kept moons are under 10,000, and families union links the novelty scan already computes, so 10,000 survivors group in about a second instead of ten minutes (T-3046).
 - Exam runs reach keyed models: the secrets file's default path comes from the account's home, not `$HOME`, which an exam sandbox points at a throwaway, so the 27B arm no longer scores 0 on "LLM_API_KEY is not set" (T-3080).
 - `sampo drive on --pace off` now turns off every weekly-usage lean for its project: past 80% weekly the budget caps no longer halve, subagents and builder lanes keep running, and the pane's economy mode stays off; the 5-hour window keeps its 90% rule, and other projects lean as before (T-3049).
