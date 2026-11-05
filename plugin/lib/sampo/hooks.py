@@ -4427,6 +4427,7 @@ def lanes_free(briefs, p=None):
         done = set(c.finished_lanes(p, briefs, quiet_min=0)) if p else set()
     except Exception:
         done = set()
+    done |= {b.id for b in briefs if b.meta.get("builder_returned")}  # T-3145
     out = [b for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED]
     return sum(1 for b in out if b.id not in done) < cap and len(out) - sum(1 for b in out if b.id not in done) \
         < slanes.UNMERGED_MAX and not c.host_strain()  # T-0465: a strained host takes no builder lane
@@ -4500,7 +4501,30 @@ def task_completed(pl):
 def subagent_start(pl):
     _event({"kind": "subagent_start", "session_id": pl.get("session_id"), "agent_id": pl.get("agent_id"),
             "agent_type": pl.get("agent_type")})
+    _mark_builder(pl, False)  # T-3145: a resumed builder works again
     return None
+
+
+def _mark_builder(pl, returned):
+    """T-3145: a foreman:fm-builder's own start or stop marks the task whose lane is its worktree (agent-<id>), so the
+    builder cap sees a returned builder even while the session that launched it (builder_proc) lives on."""
+    aid = str(pl.get("agent_id") or "")
+    if pl.get("agent_type") != "foreman:fm-builder" or not re.fullmatch(r"[\w-]{4,64}", aid):
+        return
+    try:
+        p = c.find_project(_cwd(pl))
+        if not p:
+            return
+        with c.lock(p.dir, timeout=LOCK_QUICK):
+            for b in c.load_briefs(p):
+                if b.status not in c.CLOSED and str(b.meta.get("lane") or "").rstrip("/").endswith(f"agent-{aid}"):
+                    if returned:
+                        b.meta["builder_returned"] = c.now()
+                    else:
+                        b.meta.pop("builder_returned", None)
+                    c.save_brief(p, b)
+    except Exception:  # bookkeeping: never the subagent's own event
+        log_error("builder mark", _tb())
 
 
 def subagent_stop(pl):
@@ -4515,6 +4539,7 @@ def subagent_stop(pl):
                                 detail=pl.get("agent_id") or "")
         except Exception:  # the ledger is bookkeeping: never the subagent's log event
             log_error("SubagentStop", _tb())
+    _mark_builder(pl, True)  # T-3145
     p = c.find_project(_cwd(pl))
     if p and pl.get("agent_type"):
         act = c.active_brief_fast(p, p.lane)

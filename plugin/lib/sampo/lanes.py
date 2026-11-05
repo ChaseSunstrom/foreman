@@ -1655,6 +1655,7 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
         done = set(c.finished_lanes(p, briefs, quiet_min=0))
     except Exception:  # unreadable lanes count as working: the cap errs toward fewer builders
         done = set()
+    done |= {x.id for x in briefs if x.meta.get("builder_returned")}  # T-3145: the builder's own stop says so
     working, waiting = [i for i in out if i not in done], [i for i in out if i in done]
     cap = builders_cap(p)
     if len(working) >= cap:

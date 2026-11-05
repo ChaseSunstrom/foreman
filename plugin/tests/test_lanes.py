@@ -542,6 +542,29 @@ class Lanes(ForemanTestCase):
         from sampo import lanes as slanes
         self.assertGreaterEqual(slanes.BUILDERS_MAX, 10, "the ceiling fm lane max may set")
 
+    def test_a_builders_own_stop_frees_its_slot_while_the_launcher_lives(self):
+        # T-3145: builder_proc is the launching session (alive), so finished_lanes never saw these lanes as done
+        from sampo import bus
+        tid, path = self.stopped_builder(proc=f"{bus.host_id()}|{os.getpid()}|{bus._proc(os.getpid())[1]}")
+        self.fm("lane", "max", "1")
+        nxt = first(self.fm("task", "new", "Next", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step",
+                            "s", "--json").stdout)["id"]
+        self.fm("task", "set", nxt, "approved=true")
+        self.assertNotEqual(self.fm("lane", "brief", nxt, check=False).returncode, 0, "the builder still counts")
+        agent = "a1b2c3d4e5f6"  # a real builder's lane is .claude/worktrees/agent-<its agent id>
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, tid)
+        b.meta["lane"] = os.path.join(os.path.dirname(path), f"agent-{agent}")
+        os.makedirs(b.meta["lane"], exist_ok=True)
+        c.save_brief(p, b)
+        self.hook("SubagentStop", {"agent_type": "foreman:fm-builder", "agent_id": agent,
+                                   "last_assistant_message": "Branch x, commit y."})
+        self.assertTrue(c.find_brief(c.find_project(self.repo), tid).meta.get("builder_returned"))
+        r = self.fm("lane", "brief", nxt, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.hook("SubagentStart", {"agent_type": "foreman:fm-builder", "agent_id": agent})
+        self.assertFalse(c.find_brief(c.find_project(self.repo), tid).meta.get("builder_returned"), "resumed: working")
+
     def test_too_many_unmerged_lanes_refuse_a_new_one_and_say_so(self):
         from sampo import lanes as slanes
         with mock.patch.object(slanes, "UNMERGED_MAX", 2):
