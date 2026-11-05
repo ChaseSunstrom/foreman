@@ -67,7 +67,7 @@ def jobs(p):
     from sampo import moonscale
     ready = moonscale.night_ready(p)  # T-2916: free: a local model answers; grow under the target, funnel while rows wait
     if "grow" in ready:
-        out.append(("moons grow", ["moons", "grow", "--target", str(moonscale.TARGET), "--max-calls", "250",
+        out.append(("moons grow", ["moons", "grow", "--keep", str(moonscale.TARGET), "--max-calls", "250",
                                    "--local-only"], 0.0))
     if "funnel" in ready:
         out.append(("moons funnel", ["moons", "funnel", "--max-calls", "400", "--local-only"], 0.0))

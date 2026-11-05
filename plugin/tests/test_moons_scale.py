@@ -866,3 +866,191 @@ class StoreLock(_Funnel):
         self.assertEqual(s["stages"]["embed"]["waiting"], 1)
         self.assertEqual(s["total"], 2)
         self.assertIn("exact 1 kept", self.fm("moons", "funnel", "--status").stdout)
+
+
+class KeepGrow(_Moons):  # T-3046: the goal counts kept moons, so grow and the funnel take turns until N survive
+    def run_keep(self, keep, per_funnel=3, grow_stop="target", fun_calls=2, grow_add=5, **kw):
+        st, seen = {"s": 0, "n": 0}, []
+
+        def funnel(p, stage=None, max_calls=None, local_only=False):
+            seen.append(("funnel", max_calls, local_only))
+            st["s"] += per_funnel
+            return {"stages": {"novelty": {"kept": per_funnel} if per_funnel else {}}, "calls": fun_calls,
+                    "stopped": "done", "error": "", "models": {}}
+
+        def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=None, local_only=False):
+            seen.append(("grow", max_calls, local_only))
+            st["n"] += grow_add
+            return {"calls": 4, "added": grow_add, "kept": grow_add, "rejected": 0, "stopped": grow_stop, "error": "",
+                    "models": {"jarvis": 4}, "total": st["n"], "reasons": {}}
+        with mock.patch.object(self.ms, "survivors", side_effect=lambda p: st["s"]), \
+                mock.patch.object(self.ms, "funnel", funnel), mock.patch.object(self.ms, "grow", grow):
+            return self.ms._keep(self.p, keep, **kw), seen
+
+    def test_rounds_of_funnel_then_grow_run_until_the_survivors_reach_keep(self):
+        r, seen = self.run_keep(10, local_only=True)
+        self.assertEqual((r["stopped"], r["survivors"], r["rounds"]), ("keep", 12, 4))
+        self.assertEqual([s[0] for s in seen], ["funnel", "grow"] * 3 + ["funnel"])
+        self.assertTrue(all(s[2] for s in seen), "--local-only reaches both jobs")
+        self.assertIn("12 kept of 10", self.ms.grow_line(r))
+
+    def test_max_calls_is_one_budget_for_both_jobs_and_a_failure_stops_the_loop(self):
+        r, seen = self.run_keep(1000, max_calls=7)
+        self.assertEqual(r["stopped"], "max_calls")
+        self.assertEqual([s[1] for s in seen], [7, 5, 1], "each job gets what the run has left")
+        for stop in ("budget", "failed", "local"):
+            r, _ = self.run_keep(1000, grow_stop=stop)
+            self.assertEqual(r["stopped"], stop)
+
+    def test_three_rounds_that_raise_no_survivor_stop_as_stalled(self):
+        r, seen = self.run_keep(1000, per_funnel=0, grow_add=0)
+        self.assertEqual((r["stopped"], len(seen)), ("stalled", 6))
+        r, seen = self.run_keep(1000, per_funnel=0, grow_add=5)  # rows are added, none survive
+        self.assertEqual((r["stopped"], r["rounds"]), ("stalled", 3))
+
+    def test_a_model_whose_rows_all_fail_admit_stalls_with_no_max_calls(self):  # review: rows added but never kept looped forever
+        calls = []
+
+        def ask(p, system, prompt, cheap=True, paid=0, **kw):
+            calls.append(1)
+            self.assertLess(len(calls), 2000, "looped")  # 3 flat rounds of ROUND rows at 4 a call
+            return reply(4, bad=4), "jarvis"
+        from sampo import models
+        with mock.patch.object(self.ms, "_ask", side_effect=ask), mock.patch.object(self.ms, "_embedder", return_value=None), \
+                mock.patch.object(models, "embed", side_effect=AssertionError):
+            r = self.ms.grow(self.p, keep=100, local_only=True)
+        self.assertEqual((r["stopped"], r["survivors"], r["rounds"]), ("stalled", 0, 3))
+
+    def test_keep_with_target_is_refused(self):
+        r = self.fm("moons", "grow", "--keep", "5", "--target", "9", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("give one", r.stderr)
+
+    def test_one_real_round_funnels_and_grows_so_the_survivors_rise(self):
+        from sampo import models
+        judge = Judge(self.ms)
+
+        def ask(p, system, prompt, cheap=True, paid=0, **kw):
+            return (reply(3), "jarvis") if system == self.ms.SYSTEM else judge(p, system, prompt, cheap, paid)
+        with mock.patch.object(self.ms, "_ask", side_effect=ask), \
+                mock.patch.object(self.ms, "_embedder", return_value=dict(PROFILE)), \
+                mock.patch.object(models, "embed", side_effect=lambda pr, texts, timeout=120: [[1.0, 0.0, 0.0, 0.0]] * len(texts)):
+            r = self.ms.grow(self.p, keep=1, local_only=True)
+        self.assertEqual(r["stopped"], "keep")
+        self.assertGreaterEqual(self.ms.survivors(self.p), 1)
+        self.assertGreater(r["added"], 0)
+
+    def test_the_verb_takes_keep_and_counts_survivors_not_rows(self):
+        self.assertEqual(self.fm_json("moons", "grow", "--keep", "0", "--local-only")["stopped"], "keep")
+        r = self.fm("moons", "grow", "--keep", "-1", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--keep can't be negative", r.stderr)
+        self.assertEqual(self.ms.survivors(self.p), 0)
+
+
+class FamilyLinks(_Funnel):  # T-3046: the novelty scan stores each survivor's links; families unions them, no all-pairs
+    def groups(self, r):
+        return sorted(sorted([f["lead"]] + f["variants"]) for f in r["families"])
+
+    def all_pairs(self, ids):
+        """The old grouping: every pair, single link at the family bar, by the cached vectors."""
+        from sampo import models
+        rs, f = {x["id"]: x for x in self.ms.rows(self.p)}, self.ms.fate(self.p)
+        ids = [i for i in ids if f.get(i, {}).get("stage") == "novelty" and f[i]["verdict"] == "kept"]
+        self.assertGreater(len(ids), 4, "the fixture's survivors")
+        with mock.patch.object(self.ms, "_embedder", return_value=dict(PROFILE)), \
+                mock.patch.object(models, "embed", side_effect=self.embed):
+            method, rep = self.ms._reps(self.p, [rs[i] for i in ids])
+        up = {i: i for i in ids}
+
+        def root(i):
+            while up[i] != i:
+                i = up[i]
+            return i
+        for a in ids:
+            for b in ids:
+                if b < a and self.ms._sim(method, rep[a], rep[b]) >= self.ms._bar("family", method):
+                    up[root(a)] = root(b)
+        out = {}
+        for i in ids:
+            out.setdefault(root(i), []).append(i)
+        return sorted(sorted(g) for g in out.values())
+
+    def fixture(self):
+        return self.seed(FLAKY, DEPLOY, Families.MUTATE, SECRET, Families.LEAK, REVIEW, NUDGE)
+
+    def test_links_stored_at_novelty_give_the_all_pairs_groups_with_no_similarity_call(self):
+        from sampo import models
+        ids = self.fixture()
+        r, _ = self.go()
+        self.assertEqual(r["stopped"], "done")
+        want = self.all_pairs(ids)
+        self.assertIn(sorted([ids[0], ids[2]]), want, "mutate links to flaky (0.80)")
+        self.assertTrue(os.path.exists(os.path.join(self.ms._dir(self.p), self.ms.LINKS)))
+        with mock.patch.object(self.ms, "_sim", side_effect=AssertionError("families scanned pairs")), \
+                mock.patch.object(models, "embed", side_effect=AssertionError("families embedded")):
+            got = self.ms.families(self.p)
+        self.assertEqual(self.groups(got), want)
+
+    def test_survivors_with_no_stored_links_are_backfilled_in_chunks_then_stay_stored(self):
+        ids = self.fixture()
+        evs = [self.ms._event(i, "novelty", "kept", "", "jarvis", tier="high", wild=3) for i in ids]
+        self.c.append_line(os.path.join(self.ms._dir(self.p), self.ms.FUNNEL), "\n".join(json.dumps(e) for e in evs))
+        with mock.patch.object(self.ms, "BACKFILL", 2):
+            got = self.build_families()
+        self.assertEqual(self.groups(got), self.all_pairs(ids))
+        with open(os.path.join(self.ms._dir(self.p), self.ms.LINKS)) as f:
+            self.assertEqual(len([line for line in f if line.strip()]), len(ids))
+        with mock.patch.object(self.ms, "_sim", side_effect=AssertionError("backfilled again")):
+            self.assertEqual(self.groups(self.ms.families(self.p)), self.groups(got))
+
+    def test_a_down_embedder_backfills_nothing_and_a_changed_bar_counts_as_no_record(self):  # review: no second method's records
+        ids = self.fixture()
+        self.go()
+        path = os.path.join(self.ms._dir(self.p), self.ms.LINKS)
+        with open(path) as g:
+            before = g.read()
+        os.remove(os.path.join(self.ms._dir(self.p), self.ms.VECTORS))  # no cached vectors: a down embedder means shingles
+        rs, f = self.ms.rows(self.p), self.ms.fate(self.p)
+        surv = sorted(self.ms._at(rs, f, ("novelty",), ("kept",)), key=lambda x: self.ms._num(x["id"]))
+        recs = [json.loads(x) for x in before.splitlines() if x.strip()]
+        self.assertTrue(recs and all(x["method"] == "embed" and "bar" in x for x in recs), recs)
+        gone = recs[-1]["id"]
+        with open(path, "w") as g:  # one survivor lost its record
+            g.write("".join(json.dumps(x) + "\n" for x in recs if x["id"] != gone))
+        with mock.patch.object(self.ms, "_embedder", return_value=None):  # embedder down: shingles
+            method, have = self.ms._links(self.p, surv)
+        self.assertEqual(method, "embed")
+        self.assertNotIn(gone, have)
+        self.assertEqual(len(open(path).read().splitlines()), len(recs) - 1, "nothing written under shingles")
+        with open(path, "w") as g:  # a record under another bar is no record
+            g.write("".join(json.dumps(dict(x, bar=0.99)) + "\n" for x in recs))
+        with mock.patch.object(self.ms, "_embedder", return_value=None):
+            self.assertEqual(self.ms._links(self.p, surv)[0], "shingle")  # none counted, so it rescans afresh
+
+    def build_families(self):
+        from sampo import models
+        with mock.patch.object(self.ms, "_embedder", return_value=dict(PROFILE)), \
+                mock.patch.object(models, "embed", side_effect=self.embed):
+            return self.ms.families(self.p)
+
+    def test_ten_thousand_synthetic_survivors_group_in_under_ten_seconds(self):
+        import time
+        n, d = 10000, self.ms._dir(self.p)
+        os.makedirs(d, exist_ok=True)
+        cell = {"kind": "bugs", "mechanism": "law"}
+        with open(os.path.join(d, self.ms.CANDIDATES), "w") as f:
+            f.write("".join(json.dumps({"id": f"C-{i:06d}", "title": f"t{i}", "cell": cell}) + "\n" for i in range(1, n + 1)))
+        with open(os.path.join(d, self.ms.FUNNEL), "w") as f:
+            f.write("".join(json.dumps(self.ms._event(f"C-{i:06d}", "novelty", "kept", "", "m", tier="high", wild=i % 5))
+                            + "\n" for i in range(1, n + 1)))
+        with open(os.path.join(d, self.ms.LINKS), "w") as f:  # pairs 1-2, 3-4 ...; and a chain through every 100th
+            f.write("".join(json.dumps({"id": f"C-{i:06d}", "method": "embed", "bar": self.ms._bar("family", "embed"),
+                                        "links": [f"C-{i - 1:06d}"] * (i % 2 == 0) + [f"C-{i - 100:06d}"] * (i % 100 == 1 and i > 100)})
+                            + "\n" for i in range(1, n + 1)))
+        t = time.time()
+        r = self.ms.families(self.p)
+        took = time.time() - t
+        self.assertLess(took, 10, f"{took:.1f}s")
+        self.assertEqual(r["survivors"], n)
+        self.assertEqual(len(r["families"]), 5000 - 99)  # 5000 pairs, the 100th-links join 99 of the later ones to the first

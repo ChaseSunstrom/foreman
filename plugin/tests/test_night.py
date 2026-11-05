@@ -312,7 +312,8 @@ class NightMoons(ForemanTestCase):  # T-2916: zero-dollar Moons jobs on the loca
         self.assertEqual(list(got), ["moons grow", "moons funnel"])
         grow, funnel = got["moons grow"][0], got["moons funnel"][0]
         self.assertEqual(grow[:2], ["moons", "grow"])
-        self.assertEqual(grow[grow.index("--target") + 1], str(self.ms.TARGET))
+        self.assertEqual(grow[grow.index("--keep") + 1], str(self.ms.TARGET), "T-3046: the goal counts kept moons")
+        self.assertNotIn("--target", grow)
         for argv in (grow, funnel):
             self.assertIn("--local-only", argv)
             self.assertTrue(int(argv[argv.index("--max-calls") + 1]) > 0)
@@ -321,9 +322,14 @@ class NightMoons(ForemanTestCase):  # T-2916: zero-dollar Moons jobs on the loca
             self.assertEqual(self.names(), {})
         with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}), \
                 mock.patch.object(self.ms, "rows", return_value=[{}] * self.ms.TARGET):
-            self.assertEqual(list(self.names()), ["moons funnel"], "the target is met: nothing to grow, rows to judge")
+            self.assertEqual(list(self.names()), ["moons grow", "moons funnel"], "rows alone don't meet the goal: kept moons do")
+        with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}), \
+                mock.patch.object(self.ms, "rows", return_value=[{}] * 5), \
+                mock.patch.object(self.ms, "TARGET", 2), mock.patch.object(self.ms, "survivors", return_value=2):
+            self.assertEqual(list(self.names()), ["moons funnel"], "the kept target is met: nothing to grow, rows to judge")
         with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}), \
                 mock.patch.object(self.ms, "rows", return_value=[{"id": "C-1"}] * self.ms.TARGET), \
+                mock.patch.object(self.ms, "TARGET", 0), \
                 mock.patch.object(self.ms, "fate", return_value={"C-1": {"stage": "kill", "verdict": "rejected"}}):
             self.assertEqual(self.names(), {}, "every row judged and the target met: nothing to do")
 

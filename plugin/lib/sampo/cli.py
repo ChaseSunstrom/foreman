@@ -7786,6 +7786,8 @@ def _build_parser(only=None):
                                                        "among equally thin cells")
     s.add_argument("--target", type=int, help="moonshot grow: stop when the candidate store holds N (default: one batch "
                                               "more)")
+    s.add_argument("--keep", type=int, help="moonshot grow: funnel and grow in rounds until N moons are kept at novelty "
+                                            "(--max-calls counts both jobs)")
     s.add_argument("--batch", type=int, default=8, help="moonshot grow: moons asked of each call (default 8, at most 50)")
     s.add_argument("--max-calls", type=int, help="moonshot grow/funnel: stop after M model calls")
     s.add_argument("--workers", type=int, help="moonshot grow: calls at once (default: the local profile's slots)")

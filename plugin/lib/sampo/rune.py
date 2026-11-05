@@ -4052,9 +4052,15 @@ def cmd_genesis(args):
             if verb in ("grow", "coverage", "funnel", "families", "promote"):  # T-2868/T-2869: Moonscale
                 from sampo import moonscale
                 if verb == "grow":
-                    r = moonscale.grow(p, args.target, args.batch, args.seed, args.max_calls,
-                                       args.workers, None if args.think is None else args.think == "on",
-                                       args.local_only)
+                    import contextlib
+                    try:
+                        with moonscale.store_lock(p) if args.keep is not None else contextlib.nullcontext():  # T-3046: --keep funnels
+                            r = moonscale.grow(p, args.target, args.batch, args.seed, args.max_calls,
+                                               args.workers, None if args.think is None else args.think == "on",
+                                               args.local_only, args.keep)
+                    except moonscale.Busy as e:
+                        print(e, file=sys.stderr)
+                        return 1
                     return scli.out(args, r, moonscale.grow_line(r))
                 if getattr(args, "status", False) and verb != "funnel":  # T-2865 review: families --status rewrote families.json
                     raise scli.UsageError("--status is the funnel's (sampo moons funnel --status)")

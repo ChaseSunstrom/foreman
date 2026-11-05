@@ -458,9 +458,14 @@ class LocalOnly(ValueError):
     """A --local-only call that no local model answered."""
 
 
+def survivors(p, f=None):
+    """T-3046: how many moons are kept at novelty, the last stage: the count TARGET and grow --keep are about."""
+    return sum(1 for e in (fate(p) if f is None else f).values() if e.get("stage") == "novelty" and e.get("verdict") == "kept")
+
+
 def night_ready(p):
     """T-2916: which of the night's free moons jobs may run ({"grow", "funnel"}, empty for none): a plain project and an
-    answering own or loopback model; grow while the store is under TARGET, funnel while a row waits on a stage (the
+    answering own or loopback model; grow while the survivors are under TARGET (T-3046), funnel while a row waits on a stage (the
     10k store sat at its target with 4,000 rows unjudged)."""
     sensitive = bool(c.read_meta(p).get("sensitive"))
     if sensitive or _local(sensitive) is None:
@@ -468,7 +473,7 @@ def night_ready(p):
     rs, f = rows(p), fate(p)
     waits = any(not f.get(r.get("id")) or (f[r["id"]].get("verdict") == "kept" and f[r["id"]].get("stage") != "novelty")
                 for r in rs)
-    grow = len(rs) < TARGET
+    grow = survivors(p, f) < TARGET  # T-3046: the goal counts kept moons, not stored rows
     return ({"grow"} if grow else set()) | ({"funnel"} if waits or grow else set())  # grown rows funnel the same night
 
 
@@ -512,11 +517,17 @@ def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE, writer=None):
     return ideas.run_child(feature, system, prompt, model, TIMEOUT, project=p.slug), model
 
 
-def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=None, local_only=False):
+def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=None, local_only=False, keep=None):
     """Ask for `batch` moons per call, one thin cell at a time, until the store holds `target` rows (default: one batch
     more), max_calls calls are made, the budget says no, or FAILS calls in a row fail or bring nothing back.
     T-2893: `workers` calls run at once (default: the local profile's slots, else 1); only this thread writes rows.
-    think False/True overrides the local profile's reasoning switch for the run."""
+    think False/True overrides the local profile's reasoning switch for the run.
+    T-3046 `keep` N: rounds of funnel and grow until N moons are kept at novelty (see _keep)."""
+    if keep is not None:
+        if target is not None:
+            raise ValueError("--keep counts kept moons and --target counts stored rows: give one")
+        return _keep(p, keep, batch=batch, seed=seed, max_calls=max_calls, workers=workers, think=think,
+                     local_only=local_only)
     global _THINK, _LOCAL_ONLY
     if not isinstance(batch, int) or not 1 <= batch <= MAX_BATCH:
         raise ValueError(f"--batch takes 1 to {MAX_BATCH}")
@@ -594,7 +605,61 @@ def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=No
     return r
 
 
+ROUND, STALL = 400, 3  # T-3046: rows a keep round grows before the funnel judges them; flat rounds before "stalled"
+_STOPS = ("budget", "failed", "local")  # a job stopping for one of these ends a keep run; "done", "target" end only a round
+
+
+def _keep(p, keep, **kw):
+    """T-3046: funnel what waits, then grow ROUND rows, again and again until `keep` moons are kept at novelty (stopped
+    "keep"), max_calls calls (both jobs' together) are made, the budget, the local model or FAILS failures stop a job, or
+    STALL rounds in a row raise no survivor count ("stalled"). Only the survivors count: the store grows past TARGET to make them."""
+    if keep < 0:
+        raise ValueError("--keep can't be negative")
+    cap, local_only = kw.pop("max_calls", None), kw.get("local_only", False)
+    if cap is not None and cap < 0:
+        raise ValueError("--max-calls can't be negative")
+    r = {"calls": 0, "added": 0, "kept": 0, "rejected": 0, "rounds": 0, "stopped": "", "error": "", "keep": keep,
+         "models": collections.Counter(), "reasons": {}, "target": keep, "total": len(rows(p))}
+    flat, last = 0, survivors(p)
+    while True:
+        r["survivors"] = survivors(p)
+        flat = flat + 1 if r["rounds"] and r["survivors"] <= last else 0  # rounds in a row that kept nothing new
+        last = r["survivors"]
+        if r["survivors"] >= keep:
+            r["stopped"] = "keep"
+        elif cap is not None and r["calls"] >= cap:
+            r["stopped"] = "max_calls"
+        elif flat >= STALL:  # rows that all fail admit() are "added" but never survive: count survivors, not rows
+            r["stopped"] = "stalled"
+        if r["stopped"]:
+            break
+        r["rounds"] += 1
+        for job in ("funnel", "grow"):
+            left = None if cap is None else cap - r["calls"]
+            if job == "funnel":
+                g = funnel(p, max_calls=left, local_only=local_only)
+            else:
+                if survivors(p) >= keep or (left is not None and left <= 0):
+                    break
+                g = grow(p, r["total"] + ROUND, max_calls=left, **kw)
+                r["total"] = g["total"]
+                for k in ("added", "kept", "rejected"):
+                    r[k] += g[k]
+                r["models"].update(g["models"])
+            r["calls"] += g["calls"]
+            if g["stopped"] in _STOPS:
+                r["stopped"], r["error"] = g["stopped"], g["error"]
+                break
+    r["models"] = dict(r["models"])
+    return r
+
+
 def grow_line(r):
+    if "survivors" in r:  # a --keep run
+        return (f"Moons grow: {r['rounds']} round(s), {r['calls']} call(s), {r['added']} added; {r['survivors']} kept of "
+                f"{r['keep']} ({r['total']} in the store); stopped: {r['stopped']}"
+                + (f" ({r['error']})" if r["error"] else "")
+                + ("; " + ", ".join(f"{m} {n}" for m, n in r["models"].items()) if r["models"] else ""))
     return (f"Moons grow: {r['calls']} call(s), {r['added']} added ({r['kept']} kept, {r['rejected']} rejected), "
             f"{r['total']} of {r['target']} in the store; stopped: {r['stopped']}"
             + (f" ({r['error']})" if r["error"] and r["stopped"] != "target" else "")
@@ -917,14 +982,20 @@ def _novelty(p, r, rs, f, todo, cap):
     names = {b["id"]: b["title"] for b in blocks} | {x["id"]: _norm(x.get("title")) for x in seen + todo}
     method, rep = _reps(p, seen + todo, {b["id"]: f"{b['title']}. {b['f'].get('what', '')}" for b in blocks})
     pool, evs, fresh = [b["id"] for b in blocks] + [x["id"] for x in seen], [], []
+    surv, bar, recs = {x["id"] for x in seen}, _bar("family", method), []
     for x in todo:  # the catalogue and the survivors first: no model call for a near copy
-        sim, near = _nearest(method, rep, x["id"], pool)
+        # T-3046: the same scan stores the survivors at the family bar: families() unions these, no all-pairs
+        sims = [(_sim(method, rep[x["id"]], rep[y]), y) for y in pool]
+        sim, near = max(sims, key=lambda t: t[0], default=(0.0, None))
         if near and sim >= _bar("novel", method):
             evs.append(_event(x["id"], "novelty", "rejected", f"novelty: near {near} ({c.fit(names[near], 80)})",
                               near=near, sim=round(sim, 3), method=method))
         else:
+            recs.append({"id": x["id"], "method": method, "bar": bar, "links": [y for s, y in sims if s >= bar and y in surv]})
+            surv.add(x["id"])
             pool.append(x["id"])
             fresh.append(x)
+    _store_links(p, recs)
     _log(p, evs, r, "novelty")
     for batch in _batches(fresh):
         got = _judge(p, r, cap, NOVEL_SYSTEM, batch, ("today", "with_this", "what", "prior_art"), _yesno)
@@ -986,13 +1057,58 @@ def _families(p):
             and type(x.get("size")) is int and isinstance(x.get("variants"), list)] if isinstance(got, list) else None
 
 
+LINKS, BACKFILL = "links.jsonl", 500  # T-3046: {id, method, links: earlier survivors at the family bar}; survivors per chunk
+
+
+def _store_links(p, recs):
+    if recs:
+        with c.lock(p.dir):
+            os.makedirs(_dir(p), exist_ok=True)
+            c.append_line(os.path.join(_dir(p), LINKS), "\n".join(json.dumps(r) for r in recs))
+
+
+def _links(p, surv):
+    """(method, {id: ids it links to}) for the survivors (id order): the links the novelty scan stored, which are exact
+    for single link because each survivor was compared with every earlier one; a record counts only under the method
+    most records use and today's family bar. A survivor with none (an old one) is compared with the survivors before it
+    here, BACKFILL of them at a time, each chunk stored before the next so a stopped run resumes; while the similarity
+    method differs from the stored one (the embedder down) such survivors stay unlinked rather than rescanned under a
+    second method. ponytail: a backfill is O(n²) once; the scan keeps it from ever running again."""
+    got, methods = collections.defaultdict(lambda: collections.defaultdict(set)), collections.Counter()
+    for e in _read(os.path.join(_dir(p), LINKS)):
+        if isinstance(e.get("id"), str) and e.get("method") in ("embed", "shingle") and isinstance(e.get("links"), list) \
+                and e.get("bar") == _bar("family", e["method"]):  # a record under another bar counts as none
+            got[e["method"]][e["id"]].update(y for y in e["links"] if isinstance(y, str))
+            methods[e["method"]] += 1
+    if not surv:
+        return "", {}
+    method = methods.most_common(1)[0][0] if methods else ""
+    have = got[method] if method else {}
+    todo = [i for i, x in enumerate(surv) if x["id"] not in have]
+    if not todo:
+        return method, have
+    now, rep = _reps(p, surv)
+    if method and now != method:  # the embedder is down (or changed): those survivors stay unlinked until it returns
+        return method, have
+    method, have = now, dict(have)
+    for k in range(0, len(todo), BACKFILL):
+        recs = []
+        for i in todo[k:k + BACKFILL]:
+            a, bar = rep[surv[i]["id"]], _bar("family", method)
+            recs.append({"id": surv[i]["id"], "method": method, "bar": bar,
+                         "links": [y["id"] for y in surv[:i] if _sim(method, a, rep[y["id"]]) >= bar]})
+        _store_links(p, recs)
+        have.update((r["id"], r["links"]) for r in recs)
+    return method, have
+
+
 def families(p):
     """Group the survivors (kept at novelty) by single link at BAR["family"]; a family's lead is its highest tier, then
     its wildest, then its earliest, and its id is F- plus the lead's digits, so the same survivors always write the
     same moons/families.json."""
     rs, f = rows(p), fate(p)
     surv = sorted(_at(rs, f, ("novelty",), ("kept",)), key=lambda x: _num(x["id"]))
-    method, rep = _reps(p, surv) if surv else ("", {})
+    method, links = _links(p, surv)  # T-3046: the novelty scan's links; the survivors it never scanned are backfilled
     up = list(range(len(surv)))
 
     def root(i):
@@ -1000,10 +1116,11 @@ def families(p):
             up[i] = up[up[i]]
             i = up[i]
         return i
-    for i in range(len(surv)):  # ponytail: every pair, O(n²); block by cell or an ANN index past ~5k survivors
-        for j in range(i):
-            if _sim(method, rep[surv[i]["id"]], rep[surv[j]["id"]]) >= _bar("family", method):
-                up[root(i)] = root(j)
+    at = {x["id"]: i for i, x in enumerate(surv)}
+    for i, x in enumerate(surv):
+        for j in links.get(x["id"], ()):
+            if j in at:
+                up[root(i)] = root(at[j])
     groups, fams = collections.defaultdict(list), []
     for i, x in enumerate(surv):
         groups[root(i)].append(x)
