@@ -190,6 +190,80 @@ def _verbs(plugin):
     return []
 
 
+def _hook_modules(plugin):
+    """T-3139: {fixture: [plugin files that hook's process imported]} from the base's bench over this tree's hooks."""
+    with tempfile.TemporaryDirectory(prefix="fm-gate-state-", ignore_cleanup_errors=True) as state:
+        r = subprocess.run([sys.executable, "-I", os.path.join(plugin, "tests", "bench_hooks.py"), "--modules"],
+                           cwd=plugin, capture_output=True, text=True, timeout=600, env=_env(state))
+    got = json.loads(r.stdout or "null")
+    if not isinstance(got, dict):
+        raise RuntimeError(f"hook modules: {r.stderr.strip()[-160:]}")
+    return {k: sorted(v) for k, v in got.items() if isinstance(v, list) and v and all(isinstance(x, str) for x in v)}
+
+
+def _changed(main, a, b):
+    r = _git(main, "diff", "--name-only", "--no-renames", "-z", a, b, "--", "plugin", "CHANGELOG.md")
+    if r.returncode:
+        raise RuntimeError(f"git diff {a[:12]} {b[:12]}")
+    return [f.decode("utf-8", "replace") for f in r.stdout.split(b"\0") if f]
+
+
+def needs_timing(files, hmap):
+    """T-3139: whether the hook timing bench must run for these changed files. Yes for an empty map (unknown), a hook
+    entry, hooks.json, a lib module some hook process imported, and any file a hook might read as data; a page script
+    under plugin/web or a lib module no hook imported can't slow a hook."""
+    mapped = {f for v in hmap.values() for f in v}
+    if not mapped:
+        return True
+    for f in files:
+        if not _benched(f) or f.startswith("plugin/web/"):
+            continue
+        # only plugin/lib/sampo/ is imported absolutely; a top-level lib/*.py can shadow the stdlib (lib/ leads sys.path)
+        if f.startswith("plugin/lib/sampo/") and f.endswith(".py") and f not in mapped:
+            continue
+        return True
+    return False
+
+
+def _refresh(files, hmap):
+    """T-3139: whether the cached map is stale: a timing-relevant file changed, or the bench that builds it did.
+    CHANGELOG.md is a timing input (SessionStart shows it) but no hook imports it."""
+    return any(f.startswith("plugin/tests/fixtures/") or f == "plugin/tests/bench_hooks.py" for f in files) or \
+        needs_timing([f for f in files if f != "CHANGELOG.md"], hmap)
+
+
+def hook_map(p, main, head, base):
+    """T-3139: {fixture: [files]}, the union over runs of what each hook process imported, in the project's
+    hook-modules.json keyed by the base commit it was last true for. Kept when the commits between touched no hook entry,
+    hooks.json or mapped module; otherwise the base is run again and merged in. {} (time as today) when it can't run."""
+    path = os.path.join(p.dir, "hook-modules.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            prev = json.load(f)
+        old = {k: v for k, v in prev["map"].items() if isinstance(v, list)}
+        if old and prev["sha"] == head:
+            return old
+        if old and not _refresh(_changed(main, prev["sha"], head), old):
+            got = old
+        else:
+            got = None
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError):
+        old, got = {}, None
+    if got is None:
+        try:
+            fresh = _hook_modules(base)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            return {}
+        got = {k: sorted(set(old.get(k, [])) | set(fresh.get(k, []))) for k in set(old) | set(fresh)}
+    try:
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            json.dump({"sha": head, "map": got}, f)
+        os.replace(path + ".tmp", path)
+    except OSError:
+        pass
+    return got
+
+
 def approved(p, b, sha):
     """The user's yes to `fm ask ID core` on this task, given after its last self-change refusal of this commit."""
     last, yes = None, False
@@ -244,7 +318,13 @@ def gate(p, b, main, ref, files):
                     out.append(f"guard: {c.fit(c.redact(' '.join(cmd.split())), 100)}: base {a}, branch {z}")
         from sampo import doctor
         f0, f1 = _footprint(base, {}), _footprint(new, {})
-        if any(_benched(f) for f in files) or doctor.grown(f0, f1):  # timings, and the injected chars a cut needs
+        grown = doctor.grown(f0, f1)
+        benched = [f for f in files if _benched(f)]
+        # T-3139: timings run when a hook could be slower (a file some hook process imported, a hook entry, a data file)
+        timed = bool(grown) or (bool(benched) and needs_timing(files, hook_map(p, main, head, base)))
+        if benched and not timed:
+            c.log_event(p, "self_gate_timing_skipped", task=b.id, data={"sha": sha, "files": benched[:20]})
+        if timed:  # timings, and the injected chars a cut needs
             slow, s0, s1 = _paired(base, new)
             out += list(slow.values())
             f0, f1 = _footprint(base, s0), _footprint(new, s1)

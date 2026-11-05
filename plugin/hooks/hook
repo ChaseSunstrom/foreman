@@ -15,6 +15,24 @@ PLUGIN = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 LIB = os.path.join(PLUGIN, "lib")
 sys.path.insert(0, LIB)
 STDIN = None
+def _temp_path(path):
+    import tempfile
+    return os.path.realpath(path).startswith(os.path.realpath(tempfile.gettempdir()) + os.sep)
+
+
+if os.environ.get("SAMPO_HOOK_MODULES") and _temp_path(os.environ["SAMPO_HOOK_MODULES"]):  # T-3139: the bench asks
+    import atexit  # which plugin files this process imported (only into a temp-dir file)
+
+    def _dump_modules(out=os.environ["SAMPO_HOOK_MODULES"]):
+        try:
+            top = os.path.dirname(PLUGIN) + os.sep
+            files = sorted({f[len(top):] for f in (getattr(m, "__file__", None) for m in list(sys.modules.values()))
+                            if isinstance(f, str) and f.startswith(PLUGIN + os.sep)})
+            with open(out, "a", encoding="utf-8") as fh:
+                fh.write(__import__("json").dumps(files) + "\n")
+        except Exception:
+            pass
+    atexit.register(_dump_modules)
 try:  # T-0368: below Python 3.12.7, run this hook under a supported Python. A child, not exec: only its answer (exit 0
     from sampo import py  # or 2) is relayed; if it crashes, the hook runs here as before, so a broken interpreter never opens
     _exe = py.target(sys.version_info)  # the guard (Claude Code reads exit 1 as allow)

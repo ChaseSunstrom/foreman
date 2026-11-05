@@ -26,5 +26,31 @@ class ScriptBudget(unittest.TestCase):  # T-1777
                          bench_hooks.BUDGET_MS["default"] + round(fmguard._script_budget() * 1000))
 
 
+class Modules(unittest.TestCase):  # T-3139
+    def test_a_hook_run_records_the_plugin_files_its_process_imported(self):
+        got = bench_hooks.hook_modules(only=lambda n: n == "Stop")
+        self.assertEqual(list(got), ["Stop"])
+        self.assertIn("plugin/lib/sampo/hooks.py", got["Stop"])
+        self.assertTrue(all(f.startswith("plugin/") for f in got["Stop"]), got["Stop"])
+
+    def test_the_hook_dumps_nothing_unless_asked(self):
+        src = open(os.path.join(bench_hooks.HOOK), encoding="utf-8").read()
+        self.assertIn("SAMPO_HOOK_MODULES", src)
+
+    def test_the_hook_writes_only_under_the_temp_dir(self):
+        import json
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            ok = os.path.join(t, "ok.jsonl")
+            subprocess.run([bench_hooks.HOOK, "Stop"], input="{}", text=True, capture_output=True,
+                           env=dict(os.environ, SAMPO_HOOK_MODULES=ok))
+            self.assertTrue(json.loads(open(ok).readline()))
+        bad = os.path.expanduser("~/.sampo-modules-dump-test")
+        subprocess.run([bench_hooks.HOOK, "Stop"], input="{}", text=True, capture_output=True,
+                       env=dict(os.environ, SAMPO_HOOK_MODULES=bad))
+        self.assertFalse(os.path.exists(bad))
+
+
 if __name__ == "__main__":
     unittest.main()

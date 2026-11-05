@@ -121,6 +121,37 @@ def run_bench(runs=30, only=None):  # only: a predicate on fixture names (T-2359
     return results
 
 
+def hook_modules(only=None):
+    """T-3139: {fixture: [plugin files the hook's process imported]}, one untimed run per fixture, the hook entry
+    dumping its sys.modules into the file SAMPO_HOOK_MODULES names (the gate's map of which diffs can slow a hook)."""
+    with open(os.path.join(HERE, "fixtures", "hook_payloads.json")) as f:
+        fixtures = json.load(f)
+    got = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, env = _scratch_project(tmp)
+        env["CLAUDE_ENV_FILE"] = os.path.join(tmp, "envfile")
+        for name, payload in fixtures.items():
+            if only and not only(name):
+                continue
+            event = name.split(":")[0]
+            body = json.dumps(dict({"session_id": "bench", "cwd": repo, "hook_event_name": event},
+                                   **json.loads(json.dumps(payload).replace("{cwd}", repo))))
+            out = os.path.join(tmp, "modules.jsonl")
+            if name.endswith(":script"):
+                _write_script(repo, 0)
+            for _ in range(2):  # state-gated lazy imports show on a later run
+                subprocess.run([HOOK, event], input=body, capture_output=True, text=True, cwd=repo, timeout=120,
+                               env=dict(env, SAMPO_HOOK_MODULES=out))
+            files = set()
+            if os.path.isfile(out):
+                with open(out, encoding="utf-8") as fh:
+                    for ln in fh:
+                        files.update(json.loads(ln))
+                os.remove(out)
+            got[name] = sorted(files)
+    return got
+
+
 def injection_sizes():
     """Chars SessionStart and UserPromptSubmit inject in a scratch project (fm doctor's budget; T-2358: fm ship's
     record measures the shipped tree's hooks through --inject)."""
@@ -142,6 +173,9 @@ def injection_sizes():
 
 
 def main():
+    if "--modules" in sys.argv:  # T-3139
+        print(json.dumps(hook_modules()))
+        return 0
     runs = int(sys.argv[sys.argv.index("--runs") + 1]) if "--runs" in sys.argv else 30
     res = run_bench(runs)
     if "--inject" in sys.argv:  # T-2358: fm ship's footprint record, both in one JSON
