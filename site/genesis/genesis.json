@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T11:28:19Z",
- "rev": "738524a9",
+ "updated": "2026-11-05T11:34:49Z",
+ "rev": "ac225cad",
  "capabilities": [
   {
    "n": 1,
@@ -37480,12 +37480,12 @@
    },
    "rejected": {
     "kill": 7649,
-    "tier": 3953,
+    "tier": 4024,
     "novelty": 39
    },
-   "merged": 44,
+   "merged": 45,
    "kept": 347,
-   "pending": 1756
+   "pending": 1684
   },
   "families": [
    {
