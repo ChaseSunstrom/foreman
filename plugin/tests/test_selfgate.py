@@ -358,5 +358,39 @@ class BaseCache(unittest.TestCase):  # T-3176: the base tree's bench and guard r
         self.assertEqual(g._load(self.p, g._key(self.base)), {})
 
 
+class KeyPath(unittest.TestCase):  # T-3192: the MAC key lives in the account's own ~/.config/sampo, whatever SAMPO_SECRETS says
+    def setUp(self):
+        import os
+        import tempfile
+        from types import SimpleNamespace
+        home, elsewhere = tempfile.TemporaryDirectory(), tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.addCleanup(elsewhere.cleanup)
+        self.home, self.elsewhere = home.name, elsewhere.name
+        fake_pw = SimpleNamespace(pw_dir=self.home)
+        env = {"SAMPO_SECRETS": os.path.join(self.elsewhere, "secrets.env"),
+               "FOREMAN_SECRETS": os.path.join(self.elsewhere, "secrets.env")}
+        for m in (mock.patch("pwd.getpwuid", lambda uid: fake_pw), mock.patch.dict(os.environ, env)):
+            m.start()
+            self.addCleanup(m.stop)
+
+    def test_the_key_path_is_the_account_home_whatever_the_env_says(self):
+        import os
+        from sampo import selfgate as g
+        self.assertEqual(g._keyfile(), os.path.join(self.home, ".config", "sampo", "selfgate.key"))
+
+    def test_an_env_redirected_run_neither_reads_nor_writes_a_key_there(self):
+        import os
+        from sampo import selfgate as g
+        planted = os.path.join(self.elsewhere, "selfgate.key")  # an agent-written key where the env points
+        with open(planted, "wb") as f:
+            f.write(b"k" * 32)
+        key = g._secret()
+        self.assertEqual(len(key), 32)
+        self.assertNotEqual(key, b"k" * 32)
+        self.assertTrue(os.path.isfile(os.path.join(self.home, ".config", "sampo", "selfgate.key")))
+        self.assertEqual(os.listdir(self.elsewhere), ["selfgate.key"])
+
+
 if __name__ == "__main__":
     unittest.main()
