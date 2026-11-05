@@ -24,6 +24,7 @@
 - Back-to-back merges onto one main bench the base tree once: the self-change gate caches the base side's bench and guard replay by the base tree's content hash, signed with a key only the user's account can read, and reuses the bench only at a similar machine load (T-3176).
 - Ward treats every file under `~/.config/sampo` as a credential (secrets.env, selfgate.key and any later key), not only by file name, with a replay case for each (T-3188).
 - Smith no longer lets a model quit early: a done with no edit made while the plan's verify command fails gets that failure back as the next turn, at most twice, and early-done stops are counted per model (T-3180).
+- Briefs, criteria templates and playbooks name `claude plugin test mods/foreman-ui` for the UI mod, never `npx vitest`, which can't run in a fresh lane and refused a merge (T-3143).
 - A full `sampo check`'s suite gate gets at least 30 min, scaled by load per CPU and capped at 2 h, and a gate that times out says the load and deadline it had (T-3174).
 - Job progress, the data half: Sampo's long loops write a per-pid progress file and the live page's jobs show done, total, rate and ETA (T-3083).
 - The site's Benchmarks page has a Models section: a $0 rerun of the model bench every Rune generation and the promotion rule with its decision rows (T-3093).
