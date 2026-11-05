@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-05T03:58:50Z",
+ "updated": "2026-11-05T04:03:58Z",
  "rev": "afbd9bf8",
  "capabilities": [
   {
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 6290,
+    "kill": 6298,
     "tier": 2255,
     "novelty": 36
    },
    "merged": 13,
    "kept": 292,
-   "pending": 334
+   "pending": 326
   },
   "families": [
    {
