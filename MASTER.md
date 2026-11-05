@@ -262,6 +262,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmverifier` (T-2977: the close-holds verifier, `sampo exam models --verifier`: a text-free logistic head on lake… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmwatch` (`sampo ui --demo`: a canned view from `ui-demo.json` with every key… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmwhich` (T-1699: `sampo which TASK`, the skills, playbooks and commands that… [→ files-lib-3](docs/map/files-lib-3.md)
+- `fmworks` (T-3106: `sampo works check FILE...`: each SVG sanitised, rendered headless in light… [→ files-lib-3](docs/map/files-lib-3.md)
 
 ### mods/, site/ and demo/
 

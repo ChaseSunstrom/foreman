@@ -265,7 +265,8 @@ def _px(value, js=False):
 
 
 def _rgb(text):
-    """(r, g, b) in 0..1 for a hex, rgb(), hsl() or named colour; None when it isn't one."""
+    """(r, g, b) clamped to 0..1 for a hex, rgb(), hsl() or named colour; None when it isn't one, or a number in it
+    is endless (rgb(-9…400 digits) is -inf, which no hex holds: T-3106)."""
     t = text.strip().lower()
     t = NAMED.get(t, t)
     if t.startswith("#"):
@@ -273,16 +274,22 @@ def _rgb(text):
         if len(h) in (3, 4):
             h = "".join(c * 2 for c in h[:3])
         return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)) if len(h) in (6, 8) else None
-    nums = re.findall(r"-?\d*\.?\d+%?", t[t.find("(") + 1:])
-    if t.startswith("rgb") and len(nums) >= 3:
-        return tuple(min(1.0, float(n[:-1]) / 100 if n.endswith("%") else float(n) / 255) for n in nums[:3])
-    if t.startswith("hsl") and len(nums) >= 3:
-        hue, s, li = (float(n.rstrip("%")) for n in nums[:3])
-        return colorsys.hls_to_rgb((hue % 360) / 360, li / 100, s / 100)
-    return None
+    if not t.startswith(("rgb", "hsl")):
+        return None
+    nums = re.findall(r"-?\d*\.?\d+%?", t[t.find("(") + 1:])[:3]
+    vals = [float(n.rstrip("%")) for n in nums]
+    if len(vals) < 3 or not all(map(math.isfinite, vals)):
+        return None
+    if t.startswith("rgb"):
+        rgb = [v / 100 if n.endswith("%") else v / 255 for v, n in zip(vals, nums)]
+    else:
+        rgb = colorsys.hls_to_rgb((vals[0] % 360) / 360, vals[2] / 100, vals[1] / 100)
+    return tuple(min(max(v, 0.0), 1.0) for v in rgb) if all(map(math.isfinite, rgb)) else None
 
 
-COLOUR = re.compile(r"#[0-9a-fA-F]{3,8}(?![\w-])|(?:rgba?|hsla?)\([^)]*\)|(?<![\w-])(?:" + "|".join(NAMED) + r")(?![\w-])")
+# an rgb()/hsl() body is bounded: rgb(rgb(rgb(… with no ) would scan to the end from every start (T-3106)
+COLOUR = re.compile(r"#[0-9a-fA-F]{3,8}(?![\w-])|(?:rgba?|hsla?)\([^)]{0,200}\)|(?<![\w-])(?:" + "|".join(NAMED) +
+                    r")(?![\w-])")
 
 
 def _colours(value):

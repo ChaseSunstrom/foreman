@@ -6407,6 +6407,14 @@ def _build_parser(only=None):
     s.add_argument("--events", metavar="FILE", help="zine, vase: the run (sampo code … --json > FILE records one); "
                    "default: the sample run")
     s.add_argument("--out", help="the file to write (default zine.svg, vase.stl, cursor.svg)")
+    s = add("works", lazy("sampo.works", "cmd_works"), tier=("Every task", 167), help="check SVG works: each is "
+            "sanitised, rendered headless in light and dark and held to its type's measured gates (xml, safe, size, "
+            "shapes, palette, grid, set, loop, blank, clip, contrast, motion, unique); exit 1 when one fails (T-3106)")
+    s.add_argument("action", choices=["check"])
+    s.add_argument("files", nargs="+", metavar="FILE")
+    s.add_argument("--type", choices=["icon", "spot", "card", "scene"],
+                   help="the gates' type (default: a square viewBox of 64 or less is an icon, else a card)")
+    s.add_argument("--out", metavar="DIR", help="save each work's renders here as NAME-light.png and NAME-dark.png")
     s = add("new", lazy("sampo.new", "cmd_new"), tier=("Finding your way", 385), help="strict-by-default templates: a web "
             "page, a 3D scene, a sampo code panel (list; NAME [DIR] copies one; check PATH holds a copy to its rules)")
     s.add_argument("words", nargs="*", metavar="list|NAME [DIR]|check PATH", help="web, scene or panel; a panel lands "
