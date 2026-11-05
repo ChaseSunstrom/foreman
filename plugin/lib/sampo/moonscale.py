@@ -766,35 +766,39 @@ def _keep(p, keep, **kw):
     r = {"calls": 0, "added": 0, "kept": 0, "rejected": 0, "rounds": 0, "stopped": "", "error": "", "keep": keep,
          "models": collections.Counter(), "reasons": {}, "target": keep, "total": len(rows(p))}
     flat, last = 0, survivors(p)
-    while True:
-        r["survivors"] = survivors(p)
-        flat = flat + 1 if r["rounds"] and r["survivors"] <= last else 0  # rounds in a row that kept nothing new
-        last = r["survivors"]
-        if r["survivors"] >= keep:
-            r["stopped"] = "keep"
-        elif cap is not None and r["calls"] >= cap:
-            r["stopped"] = "max_calls"
-        elif flat >= STALL:  # rows that all fail admit() are "added" but never survive: count survivors, not rows
-            r["stopped"] = "stalled"
-        if r["stopped"]:
-            break
-        r["rounds"] += 1
-        for job in ("funnel", "grow"):
-            left = None if cap is None else cap - r["calls"]
-            if job == "funnel":
-                g = funnel(p, max_calls=left, local_only=local_only)
-            else:
-                if survivors(p) >= keep or (left is not None and left <= 0):
-                    break
-                g = grow(p, r["total"] + ROUND, max_calls=left, **kw)
-                r["total"] = g["total"]
-                for k in ("added", "kept", "rejected"):
-                    r[k] += g[k]
-                r["models"].update(g["models"])
-            r["calls"] += g["calls"]
-            if g["stopped"] in _STOPS:
-                r["stopped"], r["error"] = g["stopped"], g["error"]
+    try:
+        while True:
+            r["survivors"] = survivors(p)
+            c.progress(min(r["survivors"], keep), keep, "moons", "kept", outer=True)  # T-3044: shows between its jobs' bars
+            flat = flat + 1 if r["rounds"] and r["survivors"] <= last else 0  # rounds in a row that kept nothing new
+            last = r["survivors"]
+            if r["survivors"] >= keep:
+                r["stopped"] = "keep"
+            elif cap is not None and r["calls"] >= cap:
+                r["stopped"] = "max_calls"
+            elif flat >= STALL:  # rows that all fail admit() are "added" but never survive: count survivors, not rows
+                r["stopped"] = "stalled"
+            if r["stopped"]:
                 break
+            r["rounds"] += 1
+            for job in ("funnel", "grow"):
+                left = None if cap is None else cap - r["calls"]
+                if job == "funnel":
+                    g = funnel(p, max_calls=left, local_only=local_only)
+                else:
+                    if survivors(p) >= keep or (left is not None and left <= 0):
+                        break
+                    g = grow(p, r["total"] + ROUND, max_calls=left, **kw)
+                    r["total"] = g["total"]
+                    for k in ("added", "kept", "rejected"):
+                        r[k] += g[k]
+                    r["models"].update(g["models"])
+                r["calls"] += g["calls"]
+                if g["stopped"] in _STOPS:
+                    r["stopped"], r["error"] = g["stopped"], g["error"]
+                    break
+    finally:
+        c.progress_end(outer=True)
     r["models"] = dict(r["models"])
     return r
 
@@ -1012,6 +1016,8 @@ def _log(p, evs, r, stage):
             c.append_line(os.path.join(_dir(p), FUNNEL), "\n".join(json.dumps(e, ensure_ascii=False) for e in evs))
     for e in evs:
         r["stages"][stage][e["verdict"]] = r["stages"][stage].get(e["verdict"], 0) + 1
+    if n := r.get("waiting", {}).get(stage):  # T-3044: rows done of the stage's, for the live page's rate and ETA
+        c.progress(min(sum(r["stages"][stage].values()), n), n, "rows", stage)
 
 
 def _at(rs, f, stages, verdicts=None):
@@ -1131,10 +1137,15 @@ def _repair(p, r, rs, f, cap):
     todo = [dict(x, why=re.sub(r"^kill:\s*", "", f[x["id"]].get("reason") or "")) for x in rs
             if (f.get(x.get("id")) or {}).get("stage") == "kill" and f[x["id"]].get("verdict") == "rejected"
             and not x.get("repair") and x["id"] not in done and not f[x["id"]].get("repaired")]
+    k = 0  # T-3044 review: repairs have their own bar; the last stage's stood at n of n while they ran
+    if todo:
+        c.progress(0, len(todo), "rows", "repair")
     for batch, got in _judged(p, r, cap, REPAIR_SYSTEM, todo, ("what", "kill", "why"), _lines):
         if not got:
             return
         said, model = got
+        k += len(batch)
+        c.progress(k, len(todo), "rows", "repair")
         for n, x in enumerate(batch, 1):
             if n in said and not said[n]:  # asked, no test can exist: the same fate again, marked so a rerun skips it
                 _log(p, [_event(x["id"], "kill", "rejected", f[x["id"]].get("reason", ""), model, repaired="none")],
@@ -1246,7 +1257,8 @@ def funnel(p, stage=None, max_calls=None, local_only=False):
         raise ValueError(f"--stage is one of {', '.join(STAGES)}")
     if max_calls is not None and max_calls < 0:
         raise ValueError("--max-calls can't be negative")
-    r = {"stages": {}, "calls": 0, "models": {}, "method": "", "stopped": "", "error": "", "paid": 0, "fails": 0}
+    r = {"stages": {}, "calls": 0, "models": {}, "method": "", "stopped": "", "error": "", "paid": 0, "fails": 0,
+         "waiting": {}}  # rows each stage started with: its progress total (T-3044)
     run = {"exact": _exact, "embed": _dedupe, "kill": _kill, "tier": _tier, "novelty": _novelty}
     global _LOCAL_ONLY, _PICK
     _LOCAL_ONLY = bool(local_only)
@@ -1259,7 +1271,8 @@ def funnel(p, stage=None, max_calls=None, local_only=False):
             rs, f = rows(p), fate(p)
             r["stages"][st] = {}
             todo = _at(rs, f, (ORDER[ORDER.index(st) - 1],), ("kept",))
-            c.progress(0, len(todo), "rows", st)  # rows waiting at this stage; no rate: a stage reports only when it ends
+            r["waiting"][st] = len(todo)
+            c.progress(0, len(todo), "rows", st)  # rows waiting at this stage; _log moves it as each batch lands
             run[st](p, r, rs, f, todo, max_calls)
         if stage is None and not r["stopped"]:  # last, on what the cap leaves; a one-stage run (a benchmark) never repairs
             _repair(p, r, rows(p), fate(p), max_calls)

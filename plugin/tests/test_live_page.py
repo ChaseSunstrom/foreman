@@ -47,9 +47,9 @@ class Files(unittest.TestCase):
         keys = {"at", "project", "focus", "queue", "closed_today", "lanes", "jobs", "models", "gpu", "flows", "events",
                 "stats"}
         self.assertTrue([s for s in got if s["flows"]], "some snapshot carries flows")
-        last = got[-1]  # bench rows don't exist yet; one job reports progress (T-3083's shape), the rest report none
+        last = got[-1]  # bench rows don't exist yet; the funnel and training report progress (T-3083, T-3044), the rest none
         self.assertEqual(last["stats"]["bench"], [])
-        self.assertEqual(sorted(j["progress"] is None for j in last["jobs"]), [False, True, True, True, True])
+        self.assertEqual(sorted(j["progress"] is None for j in last["jobs"]), [False, False, True, True, True])
         for s in got:
             self.assertEqual(set(s), keys)
             self.assertLessEqual({f["kind"] for f in s["flows"]}, KINDS)
@@ -240,7 +240,7 @@ PROBE = """(() => { const $ = id => document.getElementById(id), n = (id, sel) =
     counters: $("counters") ? $("counters").textContent : "",
     gpuModels: n("gpu", "[data-model]"), jobs: n("jobs", "li"), queue: n("queue", "li"), closes: n("closes", "li"),
     bench: n("bench", "tbody tr"), ticker: n("ticker", "li"),
-    nodes: +(c && c.dataset.nodes || 0), sparks: +(c && c.dataset.sparks || 0), flown: +(c && c.dataset.flown || 0),
+    benches: c ? c.dataset.benches || "" : "", nodes: +(c && c.dataset.nodes || 0), sparks: +(c && c.dataset.sparks || 0), flown: +(c && c.dataset.flown || 0),
     lit: +(c && c.dataset.lit || 0), scene: [Math.round(r.width), Math.round(r.height)], canvas: c ? [c.width, c.height] : [0, 0],
     hash: location.hash, sessions: n("sessions-list", "li"), projects: n("projects-list", "li"),
     picks: n("rail", "button[data-project]"), rail: $("rail") ? $("rail").textContent : "",
@@ -761,11 +761,23 @@ class Page(unittest.TestCase):
                 self.assertIn("ETA 26m", joined, where)
                 self.assertIn("no progress reported", joined, where)
                 self.assertIn("2 of 5 steps", joined, f"a lane's steps show on its task {where}")
+                self.assertRegex(joined, r"396 of 1,?200 steps · 15/min · ETA 54m · loss 0\.401", f"a training run's bar {where}")  # T-3044
+                self.assertIn("2 of 5 steps · executing", joined, f"an active task's stage {where}")
+                self.assertIn("1 of 4 steps · verifying", joined, where)
                 if scheme == "light":
                     self.assertIsNotNone(got["netbg"], where)
                     self.assertGreater(sum(got["netbg"][:3]) / 3, 200, f"the network canvas is light too {where}")
                 else:
                     self.assertLess(sum(got["netbg"][:3]) / 3, 80, where)
+
+    def test_forge_shows_steps_stage_rate_and_eta_too(self):  # T-3044 review: they were modern-only
+        got, errs = self.watch((1440, 900), True, lambda g: g.get("nodes", 0) > 0 and any("430 of" in t for t in g.get("pgt", [])), theme="forge")
+        self.assertEqual(errs, [])
+        joined = " | ".join(got["pgt"])
+        self.assertRegex(joined, r"396 of 1,?200 steps · 15/min · ETA 54m · loss 0\.401")
+        self.assertIn("2 of 5 steps · executing", joined)
+        self.assertIn("1 of 4 steps · verifying", joined)
+        self.assertIn("T-2999 2/5 · executing", got["benches"], "a lane's bench carries its steps and stage")
 
     def test_forge_hides_the_charts_and_keeps_its_tank(self):  # T-3092
         got, errs = self.watch((1440, 900), True, lambda g: g.get("nodes", 0) > 0 and g.get("ticker", 0) > 0, theme="forge")

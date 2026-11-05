@@ -46,8 +46,9 @@ TAIL_B = 1 << 20  # jeff-train's events: the last megabyte holds the steps and, 
 OLLAMA, JEFF = "http://127.0.0.1:11434/api/ps", "http://127.0.0.1:8766/v1/models"
 TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".png": "image/png",
          ".json": "application/json", ".woff2": "font/woff2", ".html": "text/html"}
-JOBS = ((r"moons funnel", "funnel"), (r"playbooks small grow", "grow"), (r"exam run", "exam"), (r"exam models", "bench"),
-        (r"\bcheck\b", "check"))
+JOBS = ((r"(?:moons|genesis moonshot) funnel", "funnel"), (r"(?:playbooks small|moons|genesis moonshot) grow", "grow"),
+        (r"(?:exam|louhi) run|(?:genesis|rune) exam", "exam"), (r"(?:exam|louhi) models", "bench"),
+        (r"\bcheck\b", "check"))  # T-3044: each loop by its verb and its old name (louhi, rune, moons)
 FLOW_OF = {"cards_grow": ("card grow", "write"), "moons_grow": ("moon grow", "write"),
            "moons_funnel": ("moon funnel", "judge"), "run_session": ("session run", "act"),
            "genesis_confirm": ("genesis", "review"), "genesis_review": ("genesis", "review")}
@@ -123,8 +124,9 @@ def focus(p):
 
 
 def queue(p):
-    open_ = sorted((b for b in _briefs(p) if b.status in c.RUNNABLE), key=c._key)[:12]
-    return [{"id": b.id, "title": b.title, "type": b.type, "tier": b.tier, "status": b.status} for b in open_]
+    open_, a = sorted((b for b in _briefs(p) if b.status in c.RUNNABLE), key=c._key)[:12], c.effective_autonomy(p)
+    return [{"id": b.id, "title": b.title, "type": b.type, "tier": b.tier, "status": b.status,
+             "step": f"{sum(s.done for s in b.steps())}/{len(b.steps())}", "stage": c.stage(b, a)} for b in open_]  # T-3044
 
 
 def _closed_today(p):
@@ -320,11 +322,14 @@ def jobs(p):
         words = cmd.split()
         if not words or os.path.basename(words[0]) not in ("sampo", "fm") and not os.path.basename(words[0]).startswith("python"):
             continue
-        at = next((i for i, w in enumerate(words) if os.path.basename(w) in ("sampo", "fm")), None)
+        # the program: sampo itself, or python3 [-u] PROGRAM ..., never a word in its args (T-3044 review: "fix jeff-train")
+        at = 0 if os.path.basename(words[0]) in ("sampo", "fm") else next(
+            (i for i, w in enumerate(words[1:], 1) if not w.startswith("-")), None)
+        prog = os.path.basename(words[at]) if at is not None else ""
+        at = at if prog in ("sampo", "fm") else None
         rest = " ".join(words[at + 1:]) if at is not None else cmd
-        kind = next((k for rx, k in JOBS if at is not None and re.match(rx, rest)), None)
-        if "jeff-train" in cmd or "jeffexport" in cmd:
-            kind = "train"
+        rest = re.sub(r"(?:^|\s)(?:-p|--project)(?:\s+|=)\S+", "", rest).strip()  # -p SLUG anywhere: the verb names the job
+        kind = "train" if prog == "jeff-train" else next((k for rx, k in JOBS if at is not None and re.match(rx, rest)), None)
         if not kind:
             continue
         m = re.search(r"--(?:profile|model)[ =](\S+)", cmd)

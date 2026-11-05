@@ -4212,19 +4212,25 @@ def _run_agent(p, run, agent, split, limit, budget, model, timeout, request, job
             shutil.copytree(src, work, ignore=shutil.ignore_patterns(".git"))
             _carry_runs(src, work)
         c.write_atomic(os.path.join(_answers(p, run, agent), f"{s['id']}.json"), json.dumps(answer, indent=1))
-        with plock:  # T-3086: scenarios finish in any order; the count is what is done
-            finished.append(s["id"])
-            c.progress(len(finished), len(picked), "scenarios", agent)
 
-    finished, plock = [], threading.Lock()
+    done, lk = [0], threading.Lock()  # T-3086's count, kept in counted() so a failed answer counts too (T-3044)
+
+    def counted(s):  # T-3044: scenarios answered of those picked, for the live page's bar
+        try:
+            one(s)
+        finally:
+            with lk:
+                done[0] += 1
+                c.progress(done[0], len(picked), "scenarios", f"exam {agent}", outer=True)
+    c.progress(0, len(picked), "scenarios", f"exam {agent}", outer=True)  # outer: a loop nested in an answer keeps its rate
     try:
         if agent in SESSIONS + LOCAL:  # T-2292: up to `jobs` sessions at once, each in its own temp copy; answers are per-scenario files
             with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
-                list(pool.map(one, picked))
+                list(pool.map(counted, picked))
         else:
-            _pool(one, picked)
+            _pool(counted, picked)
     finally:
-        c.progress_end()
+        c.progress_end(outer=True)
     return grade(p, run, agent)
 
 

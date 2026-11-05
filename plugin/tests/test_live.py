@@ -193,6 +193,141 @@ class Snapshot(ForemanTestCase):
             live.snapshot(self.p)
         self.assertEqual(g.call_count, 1)
 
+    def test_each_loop_is_named_by_its_verb_or_its_old_name(self):  # T-3044: moons grow and genesis exam never showed
+        cmds = {"sampo moons grow 200": "grow", "python3 plugin/bin/sampo genesis moonshot grow": "grow",
+                "fm genesis moonshot funnel --stage kill": "funnel", "sampo -p foreman-4a056f moons funnel": "funnel",
+                "sampo --project=x exam run s5 --agent smith": "exam", "sampo louhi run s5": "exam",
+                "sampo genesis exam --arm oracle": "exam", "sampo rune exam": "exam", "sampo louhi models": "bench",
+                "sampo playbooks small grow": "grow", "sampo genesis moonshot steer": None, "sampo task list": None,
+                # review: a word in the args is no train job; -p SLUG anywhere names no verb
+                'sampo task new "fix jeff-train"': None, 'python3 plugin/bin/sampo capture "jeffexport is slow"': None,
+                "python3 /x/jeff-train --profile decide": "train", "/v/bin/python3 -u /v/bin/jeff-train --profile d": "train",
+                "sampo moons -p x funnel": "funnel", "fm genesis --project=x moonshot grow 50": "grow"}
+        for cmd, kind in cmds.items():
+            with mock.patch.object(live, "_procs", return_value=[(4242, cmd)]):
+                got = live.jobs(self.p)
+            self.assertEqual(got[0]["kind"] if got else None, kind, cmd)
+        with mock.patch.object(live, "_procs", return_value=[(4242, "sampo moons funnel -p foreman-4a056f --stage kill")]):
+            self.assertEqual(live.jobs(self.p)[0]["name"], "moons funnel --stage kill")
+
+    def test_each_queued_task_carries_its_steps_done_of_total_and_stage(self):  # T-3044
+        q = live.queue(self.p)[0]
+        self.assertEqual((q["step"], q["stage"]), ("0/1", "executing"))
+
+
+class JobProgress(ForemanTestCase):  # T-3044: the loops the page shows write done of total as they go
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        c._PROG.clear()
+
+    def _prog(self):
+        try:
+            with open(os.path.join(c.state_dir(), "progress", f"{os.getpid()}.json")) as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return None
+
+    def test_a_funnel_stage_reports_rows_done_as_each_batch_lands(self):
+        from test_moons_scale import reply
+        from sampo import moonscale as ms
+        with mock.patch.object(ms, "_ask", return_value=(reply(4), "jarvis")):
+            ms.grow(self.p, 8, batch=4)
+        seen, n = [], []
+
+        def stage(p, r, rs, f, todo, cap):  # two batches, as a judged stage logs them
+            n.append(len(todo))
+            for part in (todo[:3], todo[3:]):
+                ms._log(p, [ms._event(x["id"], "exact", "kept") for x in part], r, "exact")
+                seen.append(self._prog())
+        with mock.patch.dict(ms.__dict__, {"_exact": stage}):
+            ms.funnel(self.p, stage="exact")
+        self.assertGreater(n[0], 3)
+        self.assertEqual([(x["done"], x["total"], x["unit"], x["note"]) for x in seen],
+                         [(3, n[0], "rows", "exact"), (n[0], n[0], "rows", "exact")])
+        self.assertIsNone(self._prog())
+
+    def test_an_exam_run_counts_scenarios_answered_and_clears_at_the_end(self):
+        from sampo import louhi
+        src, seen, after = os.path.join(self.tmp, "answer-src"), [], []
+        os.makedirs(src)
+        os.makedirs(louhi._answers(self.p, "r1", "fake"))
+
+        def fake(base, key):
+            seen.append(self._prog())
+            c.progress(1, 1, "rows", "grow")  # a loop nested in the exam (review: it reset the exam's bar and rate)
+            c.progress_end()
+            after.append(self._prog())
+            return {"found": []}, src
+        picked = [{"id": f"s{i}", "kind": "bug", "split": "holdout"} for i in range(3)]
+        with mock.patch.dict(louhi.AGENTS, {"fake": fake}), \
+                mock.patch.object(louhi, "load", return_value={"scenarios": picked}), \
+                mock.patch.object(louhi, "_key", return_value={}), mock.patch.object(louhi, "grade", return_value={}), \
+                mock.patch.object(louhi, "_pool", lambda fn, items: [fn(x) for x in items]):
+            louhi._run_agent(self.p, "r1", "fake", "all", None, None, None, 20, None, 1, None, None)
+        self.assertEqual([(x["done"], x["total"], x["unit"], x["note"]) for x in seen],
+                         [(k, 3, "scenarios", "exam fake") for k in range(3)])
+        self.assertEqual([(x["done"], x["note"]) for x in after], [(k, "exam fake") for k in range(3)])
+        self.assertEqual(len({x["t0"] for x in seen + after}), 1, "one rate over the exam")
+        self.assertIsNone(self._prog())
+
+    def _genesis(self):
+        from sampo import louhi
+        g0 = os.path.join(self.tmp, "g0.md")
+        with open(g0, "w") as f:
+            f.write("super improve it\n\nMUST: full autonomy.\n")
+        self.fm("genesis", "init", "--file", g0)
+        return louhi
+
+    def test_a_genesis_exam_counts_its_drafts_and_clears_at_the_end(self):
+        from sampo import rune
+        louhi = self._genesis()
+        seen, after, render = [], [], louhi.render
+
+        def fake(*a):
+            seen.append(self._prog())
+            c.progress(1, 1, "rows", "funnel")  # nested, as above
+            c.progress_end()
+            after.append(self._prog())
+            return render(*a)
+        with mock.patch.object(louhi, "render", side_effect=fake):
+            r = rune.exam(self.p, arm="empty", per_kind=3)
+        self.assertEqual([(x["done"], x["total"], x["unit"], x["note"]) for x in seen],
+                         [(k, r["scenarios"], "scenarios", "genesis empty") for k in range(r["scenarios"])])
+        self.assertEqual([(x["done"], x["note"]) for x in after], [(k, "genesis empty") for k in range(r["scenarios"])])
+        self.assertEqual(len({x["t0"] for x in seen + after}), 1)
+        self.assertIsNone(self._prog())
+
+    def test_a_genesis_exam_that_raises_leaves_no_bar(self):  # review: the file stayed until the pid was gone
+        from sampo import rune
+        louhi = self._genesis()
+        with mock.patch.object(louhi, "render", side_effect=OSError("disk full")), self.assertRaises(OSError):
+            rune.exam(self.p, arm="empty", per_kind=3)
+        self.assertIsNone(self._prog())
+        self.assertEqual(c._OUTER, {})
+
+    def test_a_keep_run_keeps_its_own_bar_after_the_funnel_inside_it_ends(self):  # the 10,000-moons fill
+        from sampo import moonscale as ms
+        seen, n, inner = [], [0], []
+
+        def grow(p, target=None, **kw):  # a round as the real one writes it; called right after the real funnel ends
+            seen.append(self._prog())
+            n[0] += 5
+            c.progress(5, 5, "moons", "grow")
+            inner.append(self._prog()["note"])
+            c.progress_end()
+            return {"calls": 1, "added": 5, "kept": 5, "rejected": 0, "stopped": "target", "error": "",
+                    "models": {}, "total": n[0], "reasons": {}}
+        with mock.patch.object(ms, "grow", grow), mock.patch.object(ms, "_embedder", return_value=None):
+            r = ms._keep(self.p, 2)
+        self.assertEqual(r["stopped"], "stalled")
+        self.assertEqual([(x["done"], x["total"], x["unit"], x["note"]) for x in seen if x], [(0, 2, "moons", "kept")] * 3)
+        self.assertEqual(len(seen), 3, "the keep bar is there each time the funnel hands over")
+        self.assertEqual(len({x["t0"] for x in seen}), 1, "one rate over the whole run: an inner end doesn't restart it")
+        self.assertEqual(inner, ["kept 0/2 · grow"] * 3, "review: the keep count shows while the inner bar runs too")
+        self.assertIsNone(self._prog())
+
 
 class Serve(ForemanTestCase):
     def setUp(self):

@@ -3,8 +3,8 @@
  "project": {"slug": "foreman-4a056f", "drive": true, "autonomy": "standard"},
  "focus": {"id": "T-2995", "title": "Exam keeps green Smith run journals and sampo exam models --traces exports them", "step": "3/3", "stage": "verifying"},
  "queue": [
-  {"id": "T-2999", "title": "The live page: a forge-themed scene of the session, builders, jobs and models", "type": "FEATURE", "tier": "M", "status": "active"},
-  {"id": "T-2961", "title": "Bench the embed models on the UI card grid", "type": "PERF", "tier": "S", "status": "active"},
+  {"id": "T-2999", "title": "The live page: a forge-themed scene of the session, builders, jobs and models", "type": "FEATURE", "tier": "M", "status": "active", "stage": "executing"},
+  {"id": "T-2961", "title": "Bench the embed models on the UI card grid", "type": "PERF", "tier": "S", "status": "active", "step": "1/4", "stage": "verifying"},
   {"id": "T-2927", "title": "Baseline red: test_guard_fuzz times out under load", "type": "FIX", "tier": "S", "status": "open"},
   {"id": "T-2954", "title": "Run the M-02 slice live and keep its journal", "type": "RESEARCH", "tier": "M", "status": "open"},
   {"id": "T-2907", "title": "Read the hot files no session has read", "type": "CLEAN", "tier": "S", "status": "open"},
@@ -24,14 +24,14 @@
   {"id": "T-2981", "title": "Ledger logs model, caller and kind per call", "at": "2026-11-04T12:18:44Z"}
  ],
  "lanes": [
-  {"task": "T-2999", "title": "The live page: the forge scene and panels", "model": "opus", "since": "2026-11-04T18:02:05Z", "steps": {"done": 2, "total": 5}},
+  {"task": "T-2999", "title": "The live page: the forge scene and panels", "model": "opus", "since": "2026-11-04T18:02:05Z", "steps": {"done": 2, "total": 5}, "stage": "executing"},
   {"task": "T-2961", "waiting": true, "title": "Bench the embed models on the UI card grid", "model": null, "since": null}
  ],
  "jobs": [
   {"name": "moons funnel --batch 200 --stages kill,tier", "kind": "funnel", "pid": 41822, "since": "2026-11-04T16:50:00Z", "model": "qwen3:14b", "progress": {"done": 430, "total": 1220, "unit": "cards", "rate": 0.5, "eta_s": 1580}, "line": "tier: 430 kept, 790 waiting"},
   {"name": "cards grow --ui --writer haiku", "kind": "grow", "pid": 42017, "since": "2026-11-04T17:10:00Z", "model": null, "progress": null, "line": ""},
   {"name": "exam run --models jeff/exam-smith", "kind": "exam", "pid": 43001, "since": null, "model": "jeff/exam-smith", "progress": null, "line": "scenario 18: fix a failing doctest"},
-  {"name": "jeff train", "kind": "train", "pid": 39950, "since": "2026-11-04T15:05:00Z", "model": "jeff", "progress": null, "line": "step 396, loss 0.401"},
+  {"name": "jeff train", "kind": "train", "pid": 39950, "since": "2026-11-04T15:05:00Z", "model": "jeff", "progress": {"done": 396, "total": 1200, "unit": "steps", "note": "loss 0.401", "rate": 0.25, "eta_s": 3216}, "line": "step 396, loss 0.401"},
   {"name": "bench embed --grid ui", "kind": "bench", "pid": 43420, "since": "2026-11-04T18:30:03Z", "model": "nomic-embed-text", "progress": null, "line": "embed bench: 9 of 12 pairs"}
  ],
  "models": [

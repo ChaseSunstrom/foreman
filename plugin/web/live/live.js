@@ -374,7 +374,11 @@ function mk(key, kind, data, delay) {
 }
 function dress(n) {
   const d = obj(n.data);
-  if (n.place === "lane") { n.label = str(d.task); n.sub = str(d.model) || "builder"; return; }
+  if (n.place === "lane") {  // T-3044 review: the bench says how far its builder is, "2/5 · executing"
+    const sp = stepsOf(d);
+    n.label = str(d.task); n.sub = [sp ? sp.done + "/" + sp.total : "", str(d.stage)].filter(Boolean).join(" · ") || str(d.model) || "builder";
+    return;
+  }
   if (n.place === "job") {
     const p = obj(d.progress), done = num(p.done), total = num(p.total);
     n.prog = done != null && total ? clamp(done / total, 0, 1) : null;
@@ -416,6 +420,7 @@ function sceneTake(s, first) {
   if (G) layout();
   flowsIn(s.flows, t);
   cnt.nodes = [...nodes.values()].filter(n => n.ta > 0).length;
+  cnt.benches = [...nodes.values()].filter(n => n.place === "lane" && n.ta > 0).map(n => n.label + " " + n.sub).join(" | ");
   publish();
   if (still()) paintStill();
 }
@@ -891,7 +896,7 @@ function drawBench(n, t, still) {
   cx.globalCompositeOperation = "source-over";
   cx.globalAlpha = 1;
   label(x, y + 14 * s, n.label, 10.5 * U, rgba([238, 240, 250], 0.95), 8, a);
-  label(x, y + 26 * s, cut(n.sub, 14), 9 * U, rgba([144, 151, 188], 1), 4, a);
+  label(x, y + 26 * s, cut(n.sub, 16), 9 * U, rgba([144, 151, 188], 1), 4, a);
 }
 
 function drawHearth(t, still, ig) {
@@ -1312,9 +1317,9 @@ function renderJobs(s, first) {
     const kind = JOBC[str(j.kind)] ? str(j.kind) : "other", p = obj(j.progress), done = num(p.done), tot = num(p.total);
     const frac = done != null && tot ? clamp(done / tot, 0, 1) : null;
     el.className = "job"; el.style.setProperty("--c", kv(JOBC[kind]));
-    const bits = [str(j.model), j.since ? "for " + since(j.since, s.at) : "", frac != null && !modern ? fmt(done) + " of " + fmt(tot) : ""].filter(Boolean);
+    const bits = [str(j.model), j.since ? "for " + since(j.since, s.at) : ""].filter(Boolean);
     let bar = h("div", frac != null ? "jbar" : "jbar heat");
-    if (modern && window.Charts) bar = Charts.progress({done, total: tot, unit: str(p.unit), rate: num(p.rate), eta: num(p.eta_s != null ? p.eta_s : p.eta), label: "Progress of " + str(j.name)});
+    if (window.Charts) bar = Charts.progress({done, total: tot, unit: str(p.unit), rate: num(p.rate), eta: num(p.eta_s != null ? p.eta_s : p.eta), note: str(p.note), label: "Progress of " + str(j.name)});
     else { const fill = h("span", "jfill"); if (frac != null) fill.style.setProperty("--p", frac.toFixed(4)); bar.append(fill); }
     const parts = [h("span", "jd"), h("span", "jn", str(j.name)), h("span", "jk", frac != null ? Math.round(frac * 100) + "%" : kind),
       h("p", "jm", bits.join(" · ") || "pid " + str(j.pid))];
@@ -1340,8 +1345,9 @@ function renderQueue(s, first) {
     const ty = str(t.type).toUpperCase(), chip = h("span", "qt", ty.toLowerCase() || "task");
     chip.style.setProperty("--c", kv(TYPEC[ty] || "#BAC0DD"));
     const kids = [h("span", "qs"), h("span", "qid", str(t.id)), chip, h("span", "qtier", str(t.tier)), h("p", "qn", str(t.title))];
-    const sp = modern && window.Charts ? stepsOf(t) || stepsOf(lanes.get(str(t.id))) : null;  // a task's steps, or its builder lane's
-    if (sp) kids.push(Charts.progress({done: sp.done, total: sp.total, unit: "steps", label: "Steps of " + str(t.id)}));
+    const sp = window.Charts ? stepsOf(t) || stepsOf(lanes.get(str(t.id))) : null;  // a task's steps, or its builder lane's
+    if (sp) kids.push(Charts.progress({done: sp.done, total: sp.total, unit: "steps", note: str(t.stage) || str(obj(lanes.get(str(t.id))).stage),
+      label: "Steps of " + str(t.id)}));  // T-3044: and its stage
     el.replaceChildren(...kids);
   }, first);
   $("queue-empty").hidden = q.length > 0;

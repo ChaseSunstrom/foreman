@@ -34,8 +34,8 @@ class ExamGen(ForemanTestCase):
         self.assertEqual(len(g["scenarios"]), 3)
         with mock.patch.object(c, "progress") as prog, mock.patch.object(c, "progress_end") as end:
             louhi.run_agent(c.find_project(self.repo), g["run"], "oracle", jobs=1)
-        self.assertEqual(sorted(x.args[:3] for x in prog.call_args_list),
-                         [(1, 3, "scenarios"), (2, 3, "scenarios"), (3, 3, "scenarios")])
+        self.assertEqual(sorted(x.args[:3] for x in prog.call_args_list),  # T-3044: 0/3 first, so the bar shows at once
+                         [(0, 3, "scenarios"), (1, 3, "scenarios"), (2, 3, "scenarios"), (3, 3, "scenarios")])
         end.assert_called()
 
     def test_exists_parts_and_trigger_scenarios_render_check_and_grade(self):

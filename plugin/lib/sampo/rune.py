@@ -2003,59 +2003,63 @@ def exam(p, arm="genesis", split="holdout", per_kind=9, seed=0, author="self", m
     if bad := [x for x in langs if x not in louhi.LANGS]:
         raise ValueError(f"unknown language: {', '.join(bad)} (languages: {', '.join(louhi.LANGS)})")
     picked = [s for s in louhi.draw(seed, GEN_KINDS, langs, per_kind) if split in ("all", s["split"])]
-    for i, s in enumerate(picked, 1):
-        line, planted, defect = _ask(s)
-        kind, defects = defect, _defects(s, defect)
-        if len(defects) > 1:  # a sweep: three defects, graded one by one; its repo is fmexam's 'rank' one
-            kind, defect = "rank", defects
-        with tempfile.TemporaryDirectory() as tmp:
-            louhi.render(tmp, dict(s, kind=kind))
-            if author == "child":  # T-2215: what the drafts read, from outside Foreman
-                readme = os.path.join(tmp, "repo", "README.md")
-                try:
-                    with open(readme, encoding="utf-8") as f:
-                        mine, lines = _author_project(p, run, s, f.read(), model)
-                except (ValueError, OSError, subprocess.SubprocessError) as e:
-                    print(f"{s['id']}: the child author failed ({c.fit(c.plain(str(e)), 120)}); Rune's own instead",
-                          file=sys.stderr)
-                else:  # written only once vetted, so a failed one leaves the template whole
-                    c.write_atomic(readme, mine)
-                    if lines:
-                        planted, line = lines, "\n".join([REQUEST["line"]] + lines)
-                    made += 1
-                    kids += [s["id"]] * (s["split"] == "holdout")
-            chk = "\n".join([ref] + planted)
-            q = c.Project(p.slug, os.path.join(tmp, "repo"), os.path.join(tmp, "state"))
-            c.write_meta(q, {})
-            if arm == "genesis":
-                d = draft(q, line)
-                text, source = d["text"], d["source"]
-            elif arm == "plain":
-                try:
-                    text, source = sideas.run_child("genesis-plain", PLAIN % ", ".join(louhi.KINDS),
-                                                     f"{line}\n<project>\n{facts(q)['readme']}\n</project>", "sonnet",
-                                                     180, project=p.slug), "child"
-                except ValueError:
-                    text, source = "", "error"
-            else:
-                text, source = (_oracle(chk, defect) if arm == "oracle" else ""), arm
-        ok = source not in ("fallback", "error")
-        errors += not ok
-        if s["split"] == "holdout":
-            held.append(s["id"])
-        misses[s["id"]] = m = _misses(chk, text, s["kind"], defect)
-        mine = [x for x in m if x not in set(cover(ref, text)) and not x.startswith("standing intent:")]  # handed
-        if ok and not m:
-            closed[s["split"]].append(s["id"])
-        if ok and not mine:
-            given[s["split"]].append(s["id"])
-        print(f"{i}/{len(picked)} {s['id']}: " + (f"{source}, not graded" if not ok else f"{len(m)} missed" if m else
-                                                  "closed"), file=sys.stderr, flush=True)
-        c.progress(i, len(picked), "scenarios", arm)  # T-3086: the live page's jobs bar
-        c.write_atomic(os.path.join(out, s["id"] + ".md"), text)
-        c.write_atomic(os.path.join(out, s["id"] + ".json"), json.dumps(
-            {"kind": s["kind"], "line": line, "defect": defect, "source": source, "misses": m, "given": mine}, indent=1))
-    c.progress_end()  # ponytail: an exception skips this; the file is per pid and live.py drops a dead pid's
+    # T-3044: drafts done of picked, for the live page; outer: a loop nested in a draft leaves this one's rate alone
+    c.progress(0, len(picked), "scenarios", f"genesis {arm}", outer=True)
+    try:
+        for i, s in enumerate(picked, 1):
+            line, planted, defect = _ask(s)
+            kind, defects = defect, _defects(s, defect)
+            if len(defects) > 1:  # a sweep: three defects, graded one by one; its repo is fmexam's 'rank' one
+                kind, defect = "rank", defects
+            with tempfile.TemporaryDirectory() as tmp:
+                louhi.render(tmp, dict(s, kind=kind))
+                if author == "child":  # T-2215: what the drafts read, from outside Foreman
+                    readme = os.path.join(tmp, "repo", "README.md")
+                    try:
+                        with open(readme, encoding="utf-8") as f:
+                            mine, lines = _author_project(p, run, s, f.read(), model)
+                    except (ValueError, OSError, subprocess.SubprocessError) as e:
+                        print(f"{s['id']}: the child author failed ({c.fit(c.plain(str(e)), 120)}); Rune's own instead",
+                              file=sys.stderr)
+                    else:  # written only once vetted, so a failed one leaves the template whole
+                        c.write_atomic(readme, mine)
+                        if lines:
+                            planted, line = lines, "\n".join([REQUEST["line"]] + lines)
+                        made += 1
+                        kids += [s["id"]] * (s["split"] == "holdout")
+                chk = "\n".join([ref] + planted)
+                q = c.Project(p.slug, os.path.join(tmp, "repo"), os.path.join(tmp, "state"))
+                c.write_meta(q, {})
+                if arm == "genesis":
+                    d = draft(q, line)
+                    text, source = d["text"], d["source"]
+                elif arm == "plain":
+                    try:
+                        text, source = sideas.run_child("genesis-plain", PLAIN % ", ".join(louhi.KINDS),
+                                                         f"{line}\n<project>\n{facts(q)['readme']}\n</project>", "sonnet",
+                                                         180, project=p.slug), "child"
+                    except ValueError:
+                        text, source = "", "error"
+                else:
+                    text, source = (_oracle(chk, defect) if arm == "oracle" else ""), arm
+            ok = source not in ("fallback", "error")
+            errors += not ok
+            if s["split"] == "holdout":
+                held.append(s["id"])
+            misses[s["id"]] = m = _misses(chk, text, s["kind"], defect)
+            mine = [x for x in m if x not in set(cover(ref, text)) and not x.startswith("standing intent:")]  # handed
+            if ok and not m:
+                closed[s["split"]].append(s["id"])
+            if ok and not mine:
+                given[s["split"]].append(s["id"])
+            print(f"{i}/{len(picked)} {s['id']}: " + (f"{source}, not graded" if not ok else f"{len(m)} missed" if m else
+                                                      "closed"), file=sys.stderr, flush=True)
+            c.write_atomic(os.path.join(out, s["id"] + ".md"), text)
+            c.write_atomic(os.path.join(out, s["id"] + ".json"), json.dumps(
+                {"kind": s["kind"], "line": line, "defect": defect, "source": source, "misses": m, "given": mine}, indent=1))
+            c.progress(i, len(picked), "scenarios", f"genesis {arm}", outer=True)
+    finally:
+        c.progress_end(outer=True)
     # ponytail: spend matched by feature, project and time, so a genesis child in another session meanwhile counts too
     cost = round(sum(e.get("usd") or 0 for e in budget.ledger() if e.get("feature") in ("genesis", "genesis-plain")
                      and e.get("project") == p.slug and str(e.get("ts", "")) >= t0), 4)

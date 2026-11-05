@@ -3296,7 +3296,7 @@ class GenesisExam(ForemanTestCase):
             rune.exam(self.p, "oracle", "all", 3)
         calls = [x.args[:3] for x in prog.call_args_list]
         self.assertTrue(calls and calls[-1][0] == calls[-1][1], calls)
-        self.assertEqual([x[0] for x in calls], list(range(1, len(calls) + 1)))
+        self.assertEqual([x[0] for x in calls], list(range(len(calls))))  # T-3044: 0 of N first, then each done
         self.assertEqual({x[2] for x in calls}, {"scenarios"})
         end.assert_called()
 

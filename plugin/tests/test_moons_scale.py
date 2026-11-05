@@ -1194,6 +1194,19 @@ class Yield(_Funnel):
         self.assertEqual(self.fates()[kid["id"]], ("novelty", "kept"), "dedupe does not call the child its parent's copy")
         self.assertEqual(len([r for r in self.ms.rows(self.p) if r.get("parent")]), 1)
 
+    def test_repairs_show_their_own_bar_not_the_last_stage_at_n_of_n(self):  # T-3044 review
+        from sampo import core as c
+        self.seed(DEPLOY, REVIEW)
+        judge, seen = self.kill_no(), []
+
+        def ask(p, system, *a, **kw):
+            if system == self.ms.REPAIR_SYSTEM:
+                with open(c._progress_path()) as f:
+                    seen.append(json.load(f))
+            return judge(p, system, *a, **kw)
+        self.go(ask)
+        self.assertEqual([(x["done"], x["total"], x["unit"], x["note"]) for x in seen], [(0, 1, "rows", "repair")])
+
     def test_a_repair_that_the_kill_judge_refuses_is_never_repaired_again(self):
         self.seed(DEPLOY)
         judge = Judge(self.ms, kill={DEPLOY["title"]: "no | needs a team"},

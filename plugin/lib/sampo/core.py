@@ -1109,25 +1109,44 @@ def _progress_path():
     return os.path.join(state_dir(), "progress", f"{os.getpid()}.json")
 
 
-def progress(done, total=None, unit="", note=""):
+_OUTER = {}  # pid -> (key, text, label): the last sample of a loop that runs others inside it, which their progress_end
+# puts back; label ("kept 40/10,000") leads their notes, so the outer count shows while they run too
+
+
+def progress(done, total=None, unit="", note="", outer=False):
     """T-3083: this process's place in a long loop, state/progress/<pid>.json, for the live page's jobs. The first sample
     per (unit, note) is kept in memory, so a rate runs over one loop (a new unit or note starts a new one) and a reused
-    pid inherits nothing; "start" is this process's start ticks, which the reader must find equal. Best effort."""
+    pid inherits nothing; "start" is this process's start ticks, which the reader must find equal. Best effort.
+    outer: this loop runs others inside it (T-3044: grow --keep runs the funnel); theirs show while they run, under its
+    count, then this one's."""
     try:
-        now = _progress_t()
-        t0, d0 = _PROG.setdefault((os.getpid(), str(unit), str(note)), (now, float(done)))
-        write_atomic(_progress_path(), json.dumps({"done": done, "total": total, "unit": str(unit)[:20], "note": str(note)[:80],
-                                                   "t0": t0, "d0": d0, "t": now, "start": _self_ticks()}))
+        now, key = _progress_t(), (os.getpid(), str(unit), str(note))
+        t0, d0 = _PROG.setdefault(key, (now, float(done)))
+        held = None if outer else _OUTER.get(key[0])
+        text = json.dumps({"done": done, "total": total, "unit": str(unit)[:20],
+                           "note": (f"{held[2]} · {note}" if held else str(note))[:80],
+                           "t0": t0, "d0": d0, "t": now, "start": _self_ticks()})
+        write_atomic(_progress_path(), text)
+        if outer:
+            _OUTER[key[0]] = (key, text, f"{note} {done:,}/{total:,}" if total else f"{note} {done:,}")
     except (OSError, ValueError, TypeError):
         pass
 
 
-def progress_end():
-    """A loop ended: its numbers leave the row (the file goes, the next loop's rate starts fresh)."""
-    for k in [k for k in _PROG if k[0] == os.getpid()]:
+def progress_end(outer=False):
+    """A loop ended: its numbers leave the row (the file goes, the next loop's rate starts fresh). An inner loop's end
+    writes back the outer loop's last sample, whose rate goes on; outer=True ends the outer loop too."""
+    pid = os.getpid()
+    if outer:
+        _OUTER.pop(pid, None)
+    held = _OUTER.get(pid)
+    for k in [k for k in _PROG if k[0] == pid and not (held and k == held[0])]:
         del _PROG[k]
     try:
-        os.unlink(_progress_path())
+        if held:
+            write_atomic(_progress_path(), held[1])
+        else:
+            os.unlink(_progress_path())
     except OSError:
         pass
 

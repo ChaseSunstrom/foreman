@@ -287,7 +287,7 @@ main{display:grid;grid-template-rows:minmax(320px,1fr) auto auto var(--deck-h);g
 .ch-sw{width:10px;height:10px;border-radius:3px;background:var(--c,var(--muted));flex:none}
 .ch-empty{margin:18px 0;color:var(--muted);font:400 12.5px var(--font-text)}
 .pg{grid-column:1/-1;min-width:0}
-.pg-bar{height:6px;border-radius:3px;background:var(--track)}
+[data-theme="modern"] .pg-bar{height:6px;border-radius:3px;background:var(--track)}
 [data-theme="modern"] .pg-bar .jfill{background:var(--k-blue)}
 [data-theme="modern"] .pg-bar.heat .jfill{background:linear-gradient(90deg,transparent,var(--muted),transparent);opacity:.5}
 .pg-t{margin:4px 0 0;font:400 11.5px var(--font-text);color:var(--muted)}

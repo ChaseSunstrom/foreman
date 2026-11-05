@@ -125,13 +125,14 @@ function spark(host, vals, o) {
 }
 
 const dur = sec => !fin(sec) || sec < 0 ? "" : sec < 90 ? Math.round(sec) + "s" : sec < 5400 ? Math.round(sec / 60) + "m" : Math.floor(sec / 3600) + "h " + String(Math.round(sec % 3600 / 60)).padStart(2, "0") + "m";
-// progress({done, total, unit, rate (per second), eta (seconds)}): a bar and its words: percent, count, rate, ETA.
+// progress({done, total, unit, rate (per second), eta (seconds), note}): a bar and its words: percent, count, rate, ETA, note.
 function progress(o) {
   o = o || {};
   const known = fin(o.done) && fin(o.total) && o.total > 0, frac = known ? Math.min(1, Math.max(0, o.done / o.total)) : null;
   const bits = known ? [Math.round(frac * 100) + "%", fnum(o.done) + " of " + fnum(o.total) + (o.unit ? " " + o.unit : "")] : ["no progress reported"];
   if (known && fin(o.rate) && o.rate > 0) bits.push(o.rate >= 1 ? fnum(o.rate) + "/s" : fnum(o.rate * 60) + "/min");
   if (known && fin(o.eta) && frac < 1) bits.push("ETA " + dur(o.eta));
+  if (o.note) bits.push(String(o.note));  // T-3044: a run's loss, a task's stage
   const wrap = html("div", "pg"), bar = html("div", frac != null ? "jbar pg-bar" : "jbar pg-bar heat"), fill = html("span", "jfill");
   bar.setAttribute("role", "progressbar"); bar.setAttribute("aria-valuemin", "0"); bar.setAttribute("aria-valuemax", "100");
   if (frac != null) { bar.setAttribute("aria-valuenow", String(Math.round(frac * 100))); fill.style.setProperty("--p", frac.toFixed(4)); }
