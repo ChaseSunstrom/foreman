@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-05T07:42:58Z",
+ "updated": "2026-11-05T07:48:04Z",
  "rev": "c1d6c544",
  "capabilities": [
   {
@@ -37465,7 +37465,7 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 14433,
+   "generated": 14606,
    "write": {
     "title": 113,
     "line": 623,
@@ -37485,7 +37485,7 @@
    },
    "merged": 17,
    "kept": 347,
-   "pending": 4275
+   "pending": 4448
   },
   "families": [
    {
