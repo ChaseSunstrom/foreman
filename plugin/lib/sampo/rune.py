@@ -1372,6 +1372,49 @@ def _refresh_stats(p, wt):
     return _file_text(os.path.join(wt, STATS)) != before, ""
 
 
+CARDS = "site/cards"  # T-3101: the cards page's export of the card store (build.py --cards), refreshed with the stats
+
+
+def _refresh_cards(p, wt):
+    """Run main's site/build.py --cards against this machine's card store, under the same trust and byte-for-byte rule
+    as the stats; (changed, why not). A tree without the script says nothing; a store smaller than main's export
+    (another machine, a fresh state) never replaces it."""
+    import json
+    import subprocess
+    import sys
+    from sampo import release, smallcards
+    script = os.path.join(wt, "site", "build.py")
+    if not os.path.isfile(script):
+        return False, ""
+    if _file_text(script) != _file_text(os.path.join(p.root, "site", "build.py")):
+        return False, "cards not refreshed: main's site/build.py differs from this tree's"
+    index = os.path.join(wt, CARDS, "index.json")
+    try:
+        with open(index, encoding="utf-8") as f:
+            before = int(json.load(f).get("count") or 0)
+    except (OSError, ValueError, AttributeError, TypeError):
+        before = 0
+    store = smallcards.home()
+    try:
+        r = subprocess.run([sys.executable, script, "--cards"], cwd=wt, capture_output=True, text=True, timeout=300,
+                           stdin=subprocess.DEVNULL, env=dict(os.environ, SAMPO_CARDS=store, FOREMAN_CARDS=store))
+    except subprocess.TimeoutExpired:
+        return False, "cards refresh failed: over 300 s"
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, f"cards refresh failed: {c.fit(c.plain(str(e)), 120)}"
+    if r.returncode:
+        last = (r.stderr or r.stdout or "").strip().splitlines()[-1:]
+        return False, f"cards refresh failed: exit {r.returncode}" + (f": {c.fit(c.redact(c.plain(last[0])), 120)}" if last else "")
+    try:
+        with open(index, encoding="utf-8") as f:
+            after = int(json.load(f).get("count") or 0)
+    except (OSError, ValueError, AttributeError, TypeError):
+        return False, "cards refresh failed: no index.json written"
+    if after < before:  # the scratch worktree and its edits go with the publish
+        return False, f"cards not refreshed: this store has {after} cards, main's export {before}"
+    return bool(release._git(wt, "status", "--porcelain", "--", CARDS).strip()), ""
+
+
 def _file_text(path):
     try:
         with open(path, encoding="utf-8") as f:
@@ -1381,7 +1424,8 @@ def _file_text(path):
 
 
 def publish(p, settle=False):
-    """Push the tower's export to the remote's main as one data-only commit (site/genesis only), from a scratch
+    """Push the tower's export to the remote's main as one data-only commit (site/genesis, plus once a day the stats
+    and the card export), from a scratch
     worktree at the fetched main, when it differs from what main has (the per-export updated/rev fields aside).
     One run at a time; an unchanged tower costs one export and no network. settle: the detached form kick starts,
     which first waits out the window, then frees the next kick, so a change from then on schedules its own."""
@@ -1424,28 +1468,30 @@ def publish(p, settle=False):
                     old = _body(os.path.join(dest, "genesis.json"))
                 except (OSError, ValueError):
                     old = None
-                fresh, note, day = False, "", None
+                fresh, note, day, cards, why = False, "", None, False, ""
                 if stats and not _stats_stale(wt):
                     day = today  # main's is today's already
                 elif stats:
                     fresh, note = _refresh_stats(p, wt)
                     day = today if fresh else None
-                tail = f"; {note}" if note else ""
-                if old == new and not fresh:
+                if stats:
+                    cards, why = _refresh_cards(p, wt)
+                tail = "".join(f"; {x}" for x in (note, why) if x)
+                if old == new and not fresh and not cards:
                     return _record(p, "up to date" + tail, digest, stats_day=day)
                 if old != new:
                     for x in os.listdir(dest) if os.path.isdir(dest) else ():  # a shard the catalogue no longer has
                         if re.fullmatch(r"moons-catalogue(-\d+)?\.json", x):
                             os.remove(os.path.join(dest, x))
                     shutil.copytree(out, dest, dirs_exist_ok=True)
-                git(wt, "add", "--", "site/genesis", *([STATS] if fresh else []))
+                git(wt, "add", "--", "site/genesis", *([STATS] if fresh else []), *([CARDS] if cards else []))
                 git(wt, "commit", "-q", "-m", "Genesis: tower update (fm genesis live)" if old != new
-                    else "Site: daily stats refresh (fm genesis live)")
+                    else "Site: daily data refresh (fm genesis live)")
                 sha = git(wt, "rev-parse", "HEAD").strip()
                 stray = [f for f in git(wt, "diff", "--name-only", base, sha).splitlines()
-                         if not f.startswith("site/genesis/") and f != STATS]
+                         if not f.startswith(("site/genesis/", CARDS + "/")) and f != STATS]
                 if stray:
-                    raise ValueError(f"refusing to push: the commit touches {stray[:3]} outside site/genesis")
+                    raise ValueError(f"refusing to push: the commit touches {stray[:3]} outside the site's data")
                 git(p.root, "push", "-q", remote, f"{sha}:refs/heads/main")
             finally:
                 git(p.root, "worktree", "remove", "--force", wt, ok=True)

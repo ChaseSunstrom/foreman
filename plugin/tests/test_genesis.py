@@ -475,6 +475,64 @@ class GenesisLive(ForemanTestCase):
         r = self.fm_json("genesis", "publish")
         self.assertIn("main's site/stats.py differs from this tree's", r["result"])
 
+    def test_publish_reexports_the_card_store_once_a_day_and_never_shrinks_mains(self):
+        # T-3101: the site's cards page reads the committed site/cards export, which only a hand run refreshed
+        from sampo import core as c
+        from sampo import prove
+        stats = ("import datetime, json, os\nroot = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n"
+                 "with open(os.path.join(root, 'site', 'data', 'stats.json'), 'w') as f:\n"
+                 "    json.dump({'generated': datetime.date.today().isoformat()}, f)\n")
+        build = ("import json, os, sys\nroot = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n"
+                 "assert sys.argv[1:] == ['--cards'], sys.argv\n"
+                 "store = os.environ.get('SAMPO_CARDS') or os.environ['FOREMAN_CARDS']\n"
+                 "n = len(open(os.path.join(store, 'cards.jsonl')).read().splitlines())\n"
+                 "os.makedirs(os.path.join(root, 'site', 'cards'), exist_ok=True)\n"
+                 "with open(os.path.join(root, 'site', 'cards', 'index.json'), 'w') as f:\n"
+                 "    json.dump({'v': 2, 'count': n}, f)\n")
+        os.makedirs(os.path.join(self.repo, "site", "data"), exist_ok=True)
+        for name, text in (("stats.py", stats), ("build.py", build), ("data/stats.json", '{"generated": "2000-01-01"}\n')):
+            with open(os.path.join(self.repo, "site", name), "w") as f:
+                f.write(text)
+        self.git("add", "site")
+        self.git("commit", "-qm", "site with a card export script")
+        self.git("push", "-q", "origin", "main")
+        store = os.path.join(self.tmp, "cardstore")
+        os.makedirs(store)
+
+        def cards(n):
+            with open(os.path.join(store, "cards.jsonl"), "w") as f:
+                f.write('{"id": "K-1"}\n' * n)
+
+        def next_day():
+            p = c.find_project(self.repo)
+            meta = c.read_meta(p)
+            meta["genesis_live"]["stats_day"] = "2000-01-01"
+            c.write_meta(p, meta)
+
+        def count():
+            return json.loads(self.git("show", "main:site/cards/index.json", at=self.origin))["count"]
+
+        cards(3)
+        prove.remember(self.repo)
+        self.granted()
+        self.fm("genesis", "live", "on")
+        env = {"SAMPO_CARDS": store}
+        self.assertEqual(self.fm_json("genesis", "publish", env=env)["result"], "pushed")
+        files = self.git("diff", "--name-only", "main~1", "main", at=self.origin).split()
+        self.assertIn("site/cards/index.json", files)
+        self.assertEqual(count(), 3)
+        cards(5)
+        self.assertEqual(self.fm_json("genesis", "publish", env=env)["result"], "up to date")  # once a day
+        next_day()
+        self.assertEqual(self.fm_json("genesis", "publish", env=env)["result"], "pushed")
+        self.assertEqual(self.git("diff", "--name-only", "main~1", "main", at=self.origin).split(), ["site/cards/index.json"])
+        self.assertEqual(count(), 5)
+        next_day()
+        cards(2)  # another machine's smaller store never replaces main's export
+        r = self.fm_json("genesis", "publish", env=env)
+        self.assertEqual(r["result"], "up to date; cards not refreshed: this store has 2 cards, main's export 5")
+        self.assertEqual(count(), 5)
+
     def test_kick_schedules_one_trailing_publish_per_window(self):
         from sampo import core as c
         from sampo import rune

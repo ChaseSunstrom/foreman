@@ -378,11 +378,15 @@ def dials(items, note):
     return f'<div class="proof"><p>{note}</p><dl>{cells}</dl></div>'
 
 
-def layout(title, desc, body, pages, here, depth=1):
+def layout(title, desc, body, pages, here, depth=1, script=""):
+    """A section page. pages=None: one wide column with no side list of feature pages (site/cards.html); script: its own JS."""
     up = "../" * depth
     current = ' aria-current="page"'
     nav = "".join(f'<a href="{up}features/{p["slug"]}.html"{current if p["slug"] == here else ""}>{esc(p["nav"])}</a>'
-                  for p in pages)
+                  for p in pages or ())
+    shell = (f'<div class="wrap feature-shell">\n  <nav class="side" aria-label="Features">{nav}</nav>\n  '
+             f'<main class="feature">{body}</main>\n</div>') if pages else f'<main class="wrap feature wide">{body}</main>'
+    script = f'\n<script src="{up}{script}" defer></script>' if script else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -405,6 +409,7 @@ def layout(title, desc, body, pages, here, depth=1):
     <a class="brand" href="{up}index.html"><img src="{up}{ICON}" alt="" width="28" height="28">Sampo</a>
     <nav class="nav" aria-label="Main">
       <a class="hide-sm" href="{up}features/index.html">Features</a>
+      <a href="{up}cards.html"{current if here == "cards.html" else ""}>Cards</a>
       <a href="{up}index.html#install">Install</a>
       <a href="https://github.com/ChaseSunstrom/sampo">GitHub</a>
       <button class="theme" type="button" aria-label="Switch between light and dark" title="Light or dark">
@@ -413,10 +418,7 @@ def layout(title, desc, body, pages, here, depth=1):
     </nav>
   </div>
 </header>
-<div class="wrap feature-shell">
-  <nav class="side" aria-label="Features">{nav}</nav>
-  <main class="feature">{body}</main>
-</div>
+{shell}
 <footer>
   <div class="wrap">
     <a class="brand" href="{up}index.html"><img src="{up}{ICON}" alt="" width="22" height="22">Sampo</a>
@@ -428,7 +430,7 @@ def layout(title, desc, body, pages, here, depth=1):
     <p class="fine">A community project for coding agents. Not made by or affiliated with Anthropic or any agent's maker. Charts are drawn from Sampo's own record of building itself.</p>
   </div>
 </footer>
-<script src="{up}{JS}"></script>
+<script src="{up}{JS}"></script>{script}
 </body>
 </html>
 """
@@ -584,6 +586,101 @@ def roles(v):
     return v
 
 
+# T-3101: the card store (plugin/lib/sampo/smallcards.py) as site/cards/. index.json is a small manifest: the counts per
+# grid and cell (the page's facet counts, exact before a page loads) and the files. index.<n>.json are pages of CARD_PAGE
+# cards in id order, each card's id, grid, cell, title, when line and commands, which the page searches (~420 B a card);
+# <grid>-<n>.json hold the bodies (steps, example, check, traps) in blocks of CARD_BLOCK cards per grid, fetched when a
+# card opens. Ids only grow, so a new card rewrites the manifest, the last page and its own block, nothing else.
+CARD_BLOCK = 250
+CARD_PAGE = 2000
+CARD_GRIDS = {"general": ("kind", "stack", "stage", "surface"), "ui": ("component", "platform", "concern", "stage"),
+              "variants": ("playbook", "profile")}
+CARD_FILE = re.compile(r"(?:[a-z0-9]+-|index\.)\d+")  # what the export writes, the only names it ever removes
+
+
+def _card(r):
+    """(grid, index entry, body) of one stored card; None for a row that isn't one."""
+    if not isinstance(r, dict) or not re.fullmatch(r"K-\d{1,9}", str(r.get("id") or "")) or not str(r.get("title") or "").strip():
+        return None
+    cell = r.get("cell")
+    if isinstance(cell, dict):
+        grid = str(cell.get("grid") or "general")
+        grid = grid if re.fullmatch(r"[a-z0-9]{1,20}", grid) else "other"  # it names files: never a path
+        cell = {str(k): str(v) for k, v in cell.items() if k != "grid"}
+    elif r.get("playbook"):  # T-2917: a playbook's small-model variant fills no cell; its playbook by name, never a path
+        book = str(r["playbook"]).replace("\\", "/")
+        book = book.rsplit("references/", 1)[-1] if "references/" in book else book.rsplit("/", 1)[-1]
+        grid, cell = "variants", {"playbook": book.removesuffix(".md"), "profile": str(r.get("profile") or "")}
+    else:
+        grid, cell = "other", {}
+    steps = [{"do": str(s.get("do") or ""), "cmd": str(s.get("cmd") or "")} for s in r.get("steps") or []
+             if isinstance(s, dict)]
+    entry = {"id": r["id"], "grid": grid, "cell": cell, "title": str(r["title"]), "when": str(r.get("when") or ""),
+             "cmds": "\n".join(s["cmd"] for s in steps if s["cmd"])}
+    traps = r.get("traps")
+    body = {"steps": steps, "example": str(r.get("example") or ""), "check": str(r.get("check") or ""),
+            "traps": [str(t) for t in traps] if isinstance(traps, list) else []}
+    return grid, entry, body
+
+
+def _lines(head, rows, tail):
+    """JSON with one row per line, so a new card is a new line in git and not a rewritten one."""
+    return head + ("\n" + ",\n".join(rows) + "\n" if rows else "") + tail + "\n"
+
+
+def export_cards(rows, dest, block=CARD_BLOCK, page=CARD_PAGE):
+    """Write rows (smallcards.rows()) to dest as the index.json manifest, index.<n>.json pages and <grid>-<n>.json body
+    shards, each only when its text changes; a file the last export wrote that nothing fills any more goes.
+    (cards exported, files written or removed)."""
+    sys.path.insert(0, os.path.join(HERE, "tools"))
+    from writeif import write_if_changed
+    seen, cards = set(), []
+    for r in rows:
+        got = _card(r)
+        if got and got[1]["id"] not in seen:
+            seen.add(got[1]["id"])
+            cards.append(got)
+    cards.sort(key=lambda g: int(g[1]["id"][2:]))
+    order = [g for g in CARD_GRIDS if any(c[0] == g for c in cards)] + sorted({c[0] for c in cards} - set(CARD_GRIDS))
+    shards, grids, files, pages = {}, {}, {}, []
+    dump = lambda v: json.dumps(v, ensure_ascii=False, separators=(",", ":"))  # noqa: E731
+    try:  # the files the last export wrote: the only ones a stale file can be (dest may be any folder)
+        with open(os.path.join(dest, "index.json"), encoding="utf-8") as f:
+            last = json.load(f)
+        before = set(last.get("files") or ()) | {c.get("shard") for c in last.get("cards") or ()}  # v1 named shards only
+    except (OSError, ValueError, TypeError, AttributeError):
+        before = set()
+    for g in order:
+        mine = [c for c in cards if c[0] == g]
+        fields = CARD_GRIDS.get(g) or sorted({k for c in mine for k in c[1]["cell"]})
+        cells = {f: {} for f in fields}
+        for i, (_, entry, body) in enumerate(mine):
+            entry["shard"] = f"{g}-{i // block + 1}"
+            shards.setdefault(entry["shard"], []).append(dump({entry["id"]: body})[1:-1])
+            for f in fields:
+                v = entry["cell"].get(f)
+                if v:
+                    cells[f][v] = cells[f].get(v, 0) + 1
+        grids[g] = {"fields": list(fields), "count": len(mine), "cells": cells}
+    for n, at in enumerate(range(0, len(cards), page), 1):
+        chunk = cards[at:at + page]
+        files[f"index.{n}"] = _lines('{"cards":[', [dump(c[1]) for c in chunk], "]}")
+        pages.append(dump({"name": f"index.{n}", "count": len(chunk), "first": chunk[0][1]["id"], "last": chunk[-1][1]["id"],
+                           "grids": {g: k for g in order if (k := sum(c[0] == g for c in chunk))}}))
+    for name, bodies in shards.items():
+        files[name] = _lines("{", bodies, "}")
+    wrote = sum(write_if_changed(os.path.join(dest, name + ".json"), text) for name, text in files.items())
+    sums = {name: hashlib.sha256(text.encode()).hexdigest()[:8] for name, text in files.items()}  # the page's ?v=
+    wrote += write_if_changed(os.path.join(dest, "index.json"), _lines(
+        '{"v":2,"count":%d,"page":%d,"grids":%s,"files":%s,"pages":[' % (len(cards), page, dump(grids), dump(sums)),
+        pages, "]}"))
+    for name in sorted(n for n in before - set(files) if isinstance(n, str) and CARD_FILE.fullmatch(n)):
+        if os.path.isfile(os.path.join(dest, name + ".json")):
+            os.remove(os.path.join(dest, name + ".json"))
+            wrote += 1
+    return len(cards), int(wrote)
+
+
 def build(out):
     sys.path.insert(0, HERE)
     import pages as P
@@ -692,6 +789,14 @@ def build(out):
             f.write(render_page(p, stats, P.PAGES))
     with open(os.path.join(out, "features", "index.html"), "w", encoding="utf-8") as f:
         f.write(render_index(P.PAGES))
+    index = os.path.join(out, "cards", "index.json")  # T-3101: the committed export (build.py --cards); none yet → empty
+    if not os.path.isfile(index):
+        export_cards([], os.path.dirname(index))
+    with open(index, "rb") as f:
+        index_url = "cards/index.json?v=" + hashlib.sha256(f.read()).hexdigest()[:8]
+    with open(os.path.join(out, "cards.html"), "w", encoding="utf-8") as f:
+        f.write(layout("Cards", "Every small card Sampo has written: search them, filter by grid and cell, open one in place.",
+                       P.cards_page(index_url), None, "cards.html", depth=0, script=_v("cards.js")))
     return len(P.PAGES)
 
 
@@ -701,8 +806,16 @@ if __name__ == "__main__":
         write_tokens(os.path.join(HERE, "style.css"))
         print("site/style.css: tokens block written from design/sampo/tokens.json")
         sys.exit()
-    if target.startswith("-"):  # its one option is --tokens: `--check` once became a folder that got committed
-        print("usage: python3 site/build.py [OUTPUT_FOLDER] | --tokens (default _site)", file=sys.stderr)
+    if sys.argv[1:2] == ["--cards"] and len(sys.argv) <= 3:  # T-3101: the card store → site/cards, committed for CI
+        sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
+        from sampo import smallcards
+        dest = sys.argv[2] if len(sys.argv) == 3 else os.path.join(HERE, "cards")
+        n, wrote = export_cards(smallcards.rows(), dest)
+        print(f"{dest}: {n} cards, {wrote} files written")
+        sys.exit()
+    if target.startswith("-"):  # its options are --tokens and --cards: `--check` once became a folder that got committed
+        print("usage: python3 site/build.py [OUTPUT_FOLDER] | --tokens | --cards [FOLDER] (default _site, site/cards)",
+              file=sys.stderr)
         sys.exit(2)
     if not safe_out(target):
         sys.exit(f"build.py: refusing to wipe {target}: give a new or build-only folder, such as _site")

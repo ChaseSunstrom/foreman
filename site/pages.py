@@ -888,7 +888,7 @@ PAGES = [
           "</li><li><strong><code>sampo loop on</code></strong> keeps improving without being asked: build a round, "
           "review it, brainstorm on top, repeat.</li></ul>"),
          ("chart", lambda s: _totals(s, ["tasks_done", "commits", "captures", "subagents"]))]},
-    {"slug": "cards", "nav": "Stack cards", "title": "It knows your stack, and costs no context until it matters",
+    {"slug": "cards", "nav": "Stack library", "title":"It knows your stack, and costs no context until it matters",
      "desc": "Over a thousand stack cards with exact verify commands, failing-test recipes and the mistakes models make.",
      "lede": "Each card gives the commands that verify the work, a failing-test recipe, the mistakes models actually "
              "make and a review checklist. Cards cost nothing until a matching file is edited.",
@@ -897,7 +897,8 @@ PAGES = [
          ("text", "Picked by what you touch", "<p><code>sampo lib</code> picks the cards that match your repo's manifests "
           "and files. The first edit of a file a card covers brings in that card's pitfalls, once per session; a file "
           "that imports a framework gets that framework's card too. <code>sampo lib source add</code> indexes another "
-          "skills repo read-only.</p>")]},
+          "skills repo read-only.</p><p>These are the stack library's cards. The small cards Sampo writes as it works, "
+          "general and UI alike, have <a href=\"../cards.html\">their own searchable page</a>.</p>")]},
     {"slug": "panel", "nav": "The panel", "title": "Sampo, live inside Claude Code",
      "desc": "The Sampo pane draws the task, the stage rail, agents, activity and charts in the session itself.",
      "lede": "The Sampo pane shows Sampo's state as you work: a card above the prompt, a docked panel beside the "
@@ -1198,3 +1199,27 @@ PAGES = [
           "home.</li><li><strong>Your yes to push</strong>, spent by that one push.</li><li><strong>Resumable.</strong> "
           "A stop at any step continues from there with <code>--resume</code>.</li></ul>")]},
 ]
+
+
+def cards_page(index_url):
+    """T-3101: site/cards.html's body. cards.js fills it from index_url (build.export_cards writes it): the grid tabs and
+    cell filters from the index's grids, the list a page at a time, each card's steps from its shard when it opens."""
+    return f"""<header class="cards-head">
+<p class="eyebrow">Small cards</p>
+<h1 class="engraved">Every card Sampo has written</h1>
+<p class="lede">Each card is one small, checked recipe a small model can follow: when it applies, its steps and the
+commands to run, a worked example, the check that proves it and the traps. Search titles, when lines and commands,
+narrow by grid and by each cell of it, open a card in place and copy its link.</p>
+</header>
+<div class="cards-tools forged" id="cards" data-index="{esc(index_url)}">
+  <label class="cards-search"><span>Search</span>
+    <input id="cards-q" type="search" aria-label="Search the cards" placeholder="Title, when line or command" autocomplete="off" spellcheck="false"></label>
+  <div class="cards-grids" id="cards-grids" role="group" aria-label="Grid"></div>
+  <div class="cards-facets" id="cards-facets"></div>
+  <p class="cards-status" id="cards-status" role="status">Loading the cards…</p>
+</div>
+<p class="cards-empty" id="cards-empty" hidden></p>
+<div class="cards-list" id="cards-list"></div>
+<p class="cards-foot"><button class="cards-more" id="cards-more" type="button" hidden>Show more</button></p>
+<noscript><p class="cards-empty">Searching needs JavaScript; every card is listed in
+<a href="{esc(index_url.split("?")[0])}">the index</a>.</p></noscript>"""
