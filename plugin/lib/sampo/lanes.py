@@ -379,6 +379,8 @@ def _stalled(p, briefs, limit):
         if (not b.meta.get("builder_proc") or not path or b.status in c.CLOSED or not os.path.isdir(path)
                 or bus.proc_state(b.meta["builder_proc"]) != "alive"):
             continue
+        if b.meta.get("builder_returned") or _stop(b)[0] == "merged":  # T-3147: its builder said it's done (T-3145)
+            continue
         # builder_proc is the main session's, alive after the builder returns: a returned builder (commits ahead, clean
         # tree) or a merged lane waits on review, it isn't hung
         events = c.ledger_tail(p, 500) if events is None else events
@@ -386,8 +388,8 @@ def _stalled(p, briefs, limit):
         if mine and mine[-1].get("event") in ("lane_merge", "hollow_return"):
             continue
         ahead = git(path, "rev-list", "--count", "HEAD", "--not", base).stdout.strip()
-        if ahead not in ("", "0") and not git(path, "status", "--porcelain").stdout.strip():
-            continue
+        if ahead not in ("", "0") and not git(path, "status", "--porcelain", "--untracked-files=no").stdout.strip():
+            continue  # T-3147: untracked leftovers (an npm install's node_modules) don't make a returned lane hung
         newest = _newest(path, git)
         for e in mine:
             if t := c.parse_ts(e.get("ts")):

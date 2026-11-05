@@ -1113,6 +1113,30 @@ class LaneRecovery(ForemanTestCase):
             self.assertNotEqual(r.returncode, 0, extra)
             self.assertTrue(os.path.isdir(path), f"a live builder keeps its worktree ({extra})")
 
+    def test_a_returned_or_merged_lane_is_never_called_stalled(self):
+        """T-3147: commits ahead with only untracked leftovers (node_modules), the T-3145 return mark, or a merged
+        lane_stop mean the lane waits on a merge or is done; a quiet lane with nothing committed still reads stalled."""
+        from sampo import lanes as slanes
+        old = "2026-01-01T00:00:00"
+        leftover, lp = self.live_stalled_builder()
+        subprocess.run(["git", "-C", lp, "add", "wip.py"], check=True)
+        subprocess.run(["git", "-C", lp, "commit", "-qm", "built"], check=True,
+                       env={**os.environ, "GIT_AUTHOR_DATE": old, "GIT_COMMITTER_DATE": old})
+        os.makedirs(os.path.join(lp, "node_modules", "x"))
+        with open(os.path.join(lp, "node_modules", "x", "i.js"), "w") as f:
+            f.write("1\n")
+        t = time.time() - 3600
+        os.utime(os.path.join(lp, "node_modules", "x", "i.js"), (t, t))
+        returned = self.live_stalled_builder()[0]
+        merged = self.live_stalled_builder()[0]
+        hung = self.live_stalled_builder()[0]
+        self.mark(returned, None, builder_returned=c.now())
+        self.mark(merged, "merged", ago=3600)
+        idle = slanes._stalled(c.find_project(self.repo), None, 0.02)
+        self.assertIn(hung, idle)
+        for tid in (leftover, returned, merged):
+            self.assertNotIn(tid, idle)
+
     def test_a_stalled_builder_is_stopped_through_its_agent_first_and_never_forced(self):
         tid, path = self.live_stalled_builder()
         env = {"FM_STALL_MIN": "0.02", "FM_STALL_CACHE_S": "0"}
