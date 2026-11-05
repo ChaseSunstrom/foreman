@@ -1,0 +1,20 @@
+{
+  "name": "py-none-guard",
+  "kind": "py",
+  "deterministic": true,
+  "purpose": "Add an 'if PARAM is None:' guard as the first statement of a Python function (after its docstring) that returns a value, raises an error or sets a default, with the file's own indentation and line endings, and nothing else changed.",
+  "examples": ["handle None input in the function", "the function crashes when the argument is None", "return early if the parameter is None",
+               "TypeError: 'NoneType' object is not iterable", "AttributeError: 'NoneType' object has no attribute", "default the argument to an empty list when None",
+               "raise ValueError when the argument is missing"],
+  "inputs": {"type": "object", "required": ["path", "function", "param"], "properties": {
+    "path": {"type": "string", "format": "path", "pattern": ".*\\.py", "description": "the Python file, relative to the worktree"},
+    "function": {"type": "string", "pattern": "[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*", "maxLength": 200,
+                 "description": "the function (Class.method for a method)"},
+    "param": {"type": "string", "format": "identifier", "description": "the parameter that may be None"},
+    "mode": {"type": "string", "enum": ["return", "raise", "default"], "default": "return",
+               "description": "return VALUE (None when no value), raise VALUE (ValueError when no value), or set the parameter to VALUE"},
+    "value": {"type": "string", "maxLength": 200,
+              "description": "a Python expression: what to return, the exception to raise, or the default (needed for default)"}
+  }},
+  "files": ["$path"]
+}
