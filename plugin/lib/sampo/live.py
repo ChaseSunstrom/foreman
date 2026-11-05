@@ -442,7 +442,7 @@ def stats(p):
         cov, st = smallcards.coverage(), moonscale.status(p)
         return {"cards": {"general": cov["total"], "ui": cov["ui"].get("total", 0), "ui_cells": cov["ui"].get("filled", 0),
                           "grid_ui": cov["ui"].get("grid", 0)},
-                "moons": {"candidates": st["total"], "stages": st["stages"]},
+                "moons": {"candidates": st["total"], "stages": st["stages"], "pace": moonscale.pace(p)},
                 "spend": spend_today(), "bench": []}  # ponytail: the bench table is a model read away; the page shows none until a cheap one exists
     return dict(_cached(("stats", p.dir), SLOW_S, slow), closed_today=len(_closed_today(p)))
 

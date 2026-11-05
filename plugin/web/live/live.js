@@ -1381,6 +1381,11 @@ function renderCounters(s, first) {
   setText($("c-cells"), cells != null && grid ? fmt(cells) + " of " + fmt(grid) + " cells" : cells != null ? fmt(cells) + " cells" : "no grid yet");
   $("c-cellbar").style.setProperty("--f", (cells != null && grid ? clamp(cells / grid * 100, 0, 100) : 0) + "%");
   bump("c-moons", fmt(num(moons.candidates)));
+  const pace = obj(moons.pace), per = obj(pace.per_hour), fin = obj(pace.finish);
+  const rate = num(per["1h"]) || num(per["6h"]) || num(per["24h"]) || 0;
+  setText($("c-pace"), num(pace.kept) == null ? "kept per hour: —"
+    : fmt(rate) + " kept/hour · " + fmt(num(pace.kept)) + " of " + fmt(num(pace.target) || 10000) + " kept"
+      + (fin.from ? " · 10,000 by " + (fin.from === fin.to ? str(fin.from) : str(fin.from) + " to " + str(fin.to)) : ""));
   const stages = Object.entries(obj(moons.stages)).slice(0, 8).map(([k, v]) => {
     const o = obj(v), kept = num(o.kept) || 0, rej = num(o.rejected) || 0, wait = num(o.waiting) || 0;
     return {name: k, kept, rej, wait, total: kept + rej + wait};

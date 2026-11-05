@@ -33,6 +33,12 @@ class Snapshot(ForemanTestCase):
         self.assertEqual(s["focus"]["title"], "Show the live page")
         self.assertEqual([q["title"] for q in s["queue"]], ["Show the live page"])
 
+    def test_stats_carry_the_moons_pace_for_the_page(self):  # T-3122: kept per hour and the projected date for 10,000
+        pace = live.stats(self.p)["moons"]["pace"]
+        self.assertEqual((pace["kept"], pace["target"], pace["finish"]), (0, 10000, None))
+        self.assertEqual(set(pace["per_hour"]), {"1h", "6h", "24h"})
+        json.dumps(pace)
+
     def test_a_builder_lane_carries_its_steps_done_of_total_and_stage(self):  # T-3083
         b = c.load_briefs(self.p)[0]
         with mock.patch.object(live, "_briefs", return_value=[b]):

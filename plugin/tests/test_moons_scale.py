@@ -471,12 +471,13 @@ PROFILE = {"name": "jarvis", "kind": "openai", "base_url": "https://127.0.0.1:9/
 class Judge:
     """A fake _ask for the funnel's judges, routed on the system prompt; answers by title, a default otherwise."""
 
-    def __init__(self, ms, kill=None, tier=None, done=None, side=None, repair=None, fixed=None):
+    def __init__(self, ms, kill=None, tier=None, done=None, side=None, repair=None, fixed=None, wilder=None):
         from sampo import moons
         self.route = {ms.KILL_SYSTEM: ("kill", kill or {}, "yes | one person, one day, a clear bar"),
                       moons.RATE_SYSTEM: ("tier", tier or {}, "high | wild 3 | a new capability"),
                       ms.NOVEL_SYSTEM: ("novelty", done or {}, "no | nothing does this"),
-                      ms.REPAIR_SYSTEM: ("repair", repair or {}, "none")}
+                      ms.REPAIR_SYSTEM: ("repair", repair or {}, "none"),
+                      ms.WILDER_SYSTEM: ("wilder", wilder or {}, "none")}
         self.calls, self.side, self.fixed = [], side, fixed  # fixed: a kill test holding this passes the kill judge
 
     def __call__(self, p, system, prompt, cheap=True, paid=0, **kw):
@@ -1456,3 +1457,293 @@ class FamilyLinks(_Funnel):  # T-3046: the novelty scan stores each survivor's l
         self.assertLess(took, 10, f"{took:.1f}s")
         self.assertEqual(r["survivors"], n)
         self.assertEqual(len(r["families"]), 5000 - 99)  # 5000 pairs, the 100th-links join 99 of the later ones to the first
+
+
+# T-3122 -----------------------------------------------------------------------------------------------------
+
+WILDER_JSON = json.dumps({"title": "Roll back every deploy before it ships", "today": "Today you can't undo a release before it lands.",
+                          "with_this": "With this, you can ship a release that undoes itself the moment it hurts a user.",
+                          "what": "It replays the release against a shadow copy of traffic and reverts on a bad signal.",
+                          "kill": "Run it on 10 synthetic deploys on one laptop; if fewer than 8 are caught, it is dead."})
+
+
+class Wilder(_Funnel):
+    """A medium-tier moon gets one 'go wilder' rewrite as a child row (T-3122)."""
+
+    def medium(self, **kw):
+        return Judge(self.ms, tier={DEPLOY["title"]: "medium | wild 2 | tame"}, wilder={DEPLOY["title"]: WILDER_JSON}, **kw)
+
+    def test_a_medium_tier_moon_gets_one_rewrite_as_a_child_row_judged_by_tier_again(self):
+        a, b = self.seed(DEPLOY, REVIEW)
+        judge = self.medium()
+        self.go(judge)
+        rows = {r["id"]: r for r in self.ms.rows(self.p)}
+        kids = [r for r in rows.values() if r.get("parent") == a]
+        self.assertEqual(len(kids), 1)
+        self.assertEqual((kids[0]["repair"], kids[0]["title"]), ("wilder", "Roll back every deploy before it ships"))
+        self.assertEqual(self.fates()[a], ("tier", "rejected"))
+        self.assertFalse([r for r in rows.values() if r.get("parent") == b], "a high-tier moon is not rewritten")
+        self.assertEqual(self.ms.fate(self.p)[kids[0]["id"]]["stage"], "write")
+        self.go(judge)
+        self.assertEqual(self.fates()[kids[0]["id"]], ("novelty", "kept"), "the rewrite is rated by tier like any row")
+        self.assertEqual(judge.calls.count("wilder"), 1)
+        self.assertIn("rewritten wilder", self.ms.funnel_line({**self.go(judge)[0], "wilder": 1}))
+
+    def test_a_rewrite_is_never_rewritten_and_a_parent_never_twice(self):
+        a = self.seed(DEPLOY)[0]
+        judge = Judge(self.ms, tier={DEPLOY["title"]: "medium | wild 2 | tame",
+                                     "Roll back every deploy before it ships": "medium | wild 2 | still tame"},
+                      wilder={DEPLOY["title"]: WILDER_JSON})
+        for _ in range(4):
+            self.go(judge)
+        kids = [r for r in self.ms.rows(self.p) if r.get("parent")]
+        self.assertEqual([k["parent"] for k in kids], [a])
+        self.assertEqual(self.fates()[kids[0]["id"]], ("tier", "rejected"))
+        self.assertEqual(judge.calls.count("wilder"), 1)
+
+    def test_only_a_medium_rejection_is_rewritten_and_a_refusal_is_asked_once(self):
+        self.seed(DEPLOY, REVIEW)
+        judge = Judge(self.ms, tier={DEPLOY["title"]: "low | wild 1 | weekend", REVIEW["title"]: "medium | wild 2 | tame"})
+        for _ in range(3):
+            self.go(judge)
+        self.assertEqual(judge.calls.count("wilder"), 1, "the low one is not asked; the medium one answered none, once")
+        self.assertFalse([r for r in self.ms.rows(self.p) if r.get("parent")])
+
+    def test_the_rewrite_runs_after_the_stages_on_what_the_cap_leaves_and_never_in_a_single_stage_run(self):
+        self.seed(DEPLOY)
+        judge = self.medium()
+        self.go(judge, stage="tier")
+        self.assertNotIn("wilder", judge.calls)
+        r, judge = self.go(self.medium(), max_calls=2)
+        self.assertNotIn("wilder", judge.calls)
+
+    def test_a_model_cannot_name_the_rewrites_parent(self):
+        a, b = self.seed(DEPLOY, REVIEW)
+        wild = dict(json.loads(WILDER_JSON), parent=b, repair="kill")
+        self.go(Judge(self.ms, tier={DEPLOY["title"]: "medium | wild 2 | tame"}, wilder={DEPLOY["title"]: json.dumps(wild)}))
+        kid = [r for r in self.ms.rows(self.p) if r.get("parent")]
+        self.assertEqual([(k["parent"], k["repair"]) for k in kid], [(a, "wilder")])
+
+
+class Exemplars(_Funnel):
+    """A cell's prompt carries its kind's best kept moons, never a rejected one (T-3122)."""
+
+    def hints(self, *kept, rejected=()):
+        ids = self.seed(*[moon(f"Bug moon {i}", f"do thing {i}.", f"do thing {i} today.") for i in range(5)])
+        ev, evs = self.ms._event, []
+        for i, tier, wild in kept:
+            evs.append(ev(ids[i], "novelty", "kept", tier=tier, wild=wild))
+        for i in rejected:
+            evs.append(ev(ids[i], "tier", "rejected", "tier: low or medium", tier="medium"))
+        self.ms._log(self.p, evs, {"stages": {"tier": {}, "novelty": {}}}, "tier")
+        return self.ms._hints(self.ms.rows(self.p), self.ms.fate(self.p)).get("bugs", "")
+
+    def test_up_to_two_of_the_kinds_kept_high_tier_moons_are_exemplars_the_wildest_first(self):
+        text = self.hints((0, "high", 1), (1, "massive", 3), (2, "high", 5), (3, "high", 2), rejected=(4,))
+        self.assertEqual(text.count("Kept moon for reference"), 2)
+        self.assertIn("Bug moon 1", text)
+        self.assertIn("Bug moon 2", text)
+        self.assertNotIn("Bug moon 0", text)
+        self.assertNotIn("Bug moon 4", text, "a rejected moon is never an exemplar")
+
+    def test_a_rejected_moon_is_no_exemplar_even_when_it_was_once_kept(self):
+        ids = self.seed(DEPLOY, REVIEW)
+        ev = self.ms._event
+        self.ms._log(self.p, [ev(ids[0], "novelty", "kept", tier="high", wild=4),
+                              ev(ids[1], "novelty", "kept", tier="high", wild=4),
+                              ev(ids[1], "novelty", "rejected", "novelty: gone")],
+                     {"stages": {"novelty": {}}}, "novelty")
+        text = self.ms._hints(self.ms.rows(self.p), self.ms.fate(self.p))["bugs"]
+        self.assertIn(DEPLOY["title"], text)
+        self.assertNotIn(REVIEW["title"], text)
+
+    def test_grow_sends_the_exemplars_in_each_cells_write_prompt(self):
+        self.hints((0, "high", 4), (1, "high", 3))
+        seen = []
+
+        def ask(p, system, prompt, **kw):
+            seen.append(prompt)
+            return reply(2), "jarvis"
+        with mock.patch.object(self.ms, "_ask", side_effect=ask), \
+                mock.patch.object(self.ms, "_pick", side_effect=lambda cnt, probs, k, seed, areas: [
+                    {"kind": "bugs", "scale": "file", "surface": "terminal", "mechanism": "law", "problem": "p",
+                     "source": "pain"}] * k):
+            self.ms.grow(self.p, target=99, batch=2, max_calls=1, workers=1)
+        self.assertEqual(sum("Kept moon for reference" in x for x in seen), 1)
+        self.assertIn("Bug moon 0", seen[0])
+
+
+class Writers(_Funnel):
+    """sampo moons bench-writers: kept per call per stage for each writer, the fill using the best (T-3122)."""
+
+    A = {"label": "27b", "writer": "local", "profile": "p27"}
+    B = {"label": "haiku", "writer": "haiku", "profile": None}
+
+    def bench(self, tier_low=(), kill_no=(), bad=None, **kw):
+        asked = self.asked = []
+        ms = self.ms
+        names = {ms.SYSTEM: "write", ms.KILL_SYSTEM: "kill", ms.NOVEL_SYSTEM: "novelty",
+                 ms.REPAIR_SYSTEM: "repair", ms.WILDER_SYSTEM: "wilder", self.rate: "tier"}
+        bad = bad or {}
+
+        def ask(p, system, prompt, cheap=True, paid=0, feature=None, writer=None, profile=None):
+            who = profile or writer
+            stage = names[system]
+            asked.append((stage, who))
+            if stage == "write":
+                objs = [DEPLOY, REVIEW, SECRET, NUDGE]
+                objs = objs[:4 - bad.get(who, 0)] + [dict(x, kill="") for x in objs[4 - bad.get(who, 0):]]
+                return "```json\n" + "\n".join(json.dumps(x) for x in objs) + "\n```", who
+            out = []
+            for chunk in prompt.split("<moon n=")[1:]:
+                n = chunk.split(">")[0]
+                if stage == "kill":
+                    out.append(f"{n}: " + ("no | needs a team" if who in kill_no else "yes | one person, one day"))
+                elif stage == "tier":
+                    out.append(f"{n}: " + ("low | wild 1 | meh" if who in tier_low else "high | wild 3 | new"))
+                elif stage == "novelty":
+                    out.append(f"{n}: no | nothing does this")
+                else:
+                    out.append(f"{n}: none")
+            return "\n".join(out), who
+        from sampo import models
+        with mock.patch.object(ms, "_ask", side_effect=ask), mock.patch.object(ms, "_embedder", return_value=None), \
+                mock.patch.object(models, "embed", side_effect=self.embed):
+            return ms.bench_writers(self.p, cells=1, batch=4, writers=[self.A, self.B], **kw)
+
+    @property
+    def rate(self):
+        from sampo import moons
+        return moons.RATE_SYSTEM
+
+    def row(self, r, label, stage):
+        return next(x for x in r["rows"] if (x["writer"], x["stage"]) == (label, stage))
+
+    def test_each_writer_runs_the_same_cells_and_reports_kept_per_call_per_stage(self):
+        r = self.bench(bad={"haiku": 2})
+        w, h = self.row(r, "27b", "write"), self.row(r, "haiku", "write")
+        self.assertEqual((w["calls"], w["rows"], w["kept"], w["per_call"]), (1, 4, 4, 4.0))
+        self.assertEqual((h["calls"], h["rows"], h["kept"], h["per_call"]), (1, 4, 2, 2.0))
+        self.assertEqual([x["stage"] for x in r["rows"] if x["writer"] == "27b"], ["write", "kill", "tier", "novelty"])
+        self.assertEqual(self.row(r, "27b", "kill")["per_call"], 4.0)
+        self.assertTrue(all(x["arm"] == "moons-writers" for x in r["rows"]))
+
+    def test_each_stage_is_judged_by_the_writer_under_test_and_nothing_reaches_the_real_store(self):
+        self.bench()
+        by = {}
+        for stage, who in self.asked:
+            by.setdefault(who, []).append(stage)
+        self.assertEqual(by["p27"], ["write", "kill", "tier", "novelty"])
+        self.assertEqual(by["haiku"], ["write", "kill", "tier", "novelty"])
+        self.assertEqual(self.ms.rows(self.p), [])
+        self.assertEqual(self.ms.fate(self.p), {})
+
+    def test_the_best_per_stage_wins_a_tie_goes_to_the_free_writer_and_the_numbers_land_in_research(self):
+        r = self.bench(tier_low=("p27",))
+        self.assertEqual({s: v["label"] for s, v in r["best"].items()}, {"write": "27b", "kill": "27b", "tier": "haiku",
+                                                                         "novelty": "haiku"})
+        with open(os.path.join(self.p.dir, "research", "moons-writers.jsonl")) as f:
+            saved = [json.loads(x) for x in f]
+        self.assertEqual(saved, r["rows"])
+        self.assertEqual(self.ms.load_picks(self.p), {"write": ("local", "p27"), "kill": ("local", "p27"),
+                                                      "tier": ("haiku", None), "novelty": ("haiku", None)})
+
+    def test_a_local_only_or_sensitive_run_never_picks_a_paid_writer(self):
+        self.bench(tier_low=("p27",))
+        self.assertEqual(self.ms.load_picks(self.p, local_only=True),
+                         {"write": ("local", "p27"), "kill": ("local", "p27")})
+        self.fm("sensitive", "on")
+        self.assertEqual(set(self.ms.load_picks(self.p)), {"write", "kill"})
+
+    def test_a_writer_that_fails_is_a_row_not_the_end_of_the_run(self):
+        from sampo import models
+        real = self.ms.LocalOnly
+
+        def ask(p, system, prompt, writer=None, profile=None, **kw):
+            if profile == "p27":
+                raise real("down")
+            return reply(1), "haiku"
+        with mock.patch.object(self.ms, "_ask", side_effect=ask), mock.patch.object(self.ms, "_embedder", return_value=None), \
+                mock.patch.object(models, "embed", side_effect=self.embed):
+            r = self.ms.bench_writers(self.p, cells=1, batch=2, writers=[self.A, self.B])
+        self.assertTrue(self.row(r, "27b", "write")["error"])
+        self.assertEqual(self.row(r, "27b", "write")["kept"], 0)
+        self.assertNotIn("27b", {v["label"] for v in r["best"].values()})
+
+    def test_max_calls_caps_the_whole_bench(self):
+        r = self.bench(max_calls=3)
+        self.assertLessEqual(len(self.asked), 3)
+        self.assertLessEqual(sum(x["calls"] for x in r["rows"]), 3)
+
+    def test_the_fill_uses_the_picked_writer_for_the_write_and_each_judge_stage(self):
+        self.bench(tier_low=("p27",))
+        seen = []
+
+        def ask(p, system, prompt, cheap=True, paid=0, feature=None, writer=None, profile=None):
+            seen.append((system, writer, profile))
+            return reply(2), "jarvis"
+        with mock.patch.object(self.ms, "_ask", side_effect=ask):
+            self.ms.grow(self.p, target=99, batch=2, max_calls=1, workers=1)
+        self.assertEqual(seen[0][1:], ("local", "p27"))
+        judged = Judge(self.ms)
+        kws = []
+
+        def judge(p, system, prompt, **kw):
+            kws.append((judged.route[system][0], kw.get("writer"), kw.get("profile")))
+            return judged(p, system, prompt, **kw)
+        self.seed(DEPLOY)
+        self.go(judge)
+        self.assertIn(("kill", "local", "p27"), kws)
+        self.assertIn(("tier", "haiku", None), kws)
+        kws.clear()
+        self.go(judge, local_only=True)
+        self.assertTrue(all(k[1] != "haiku" for k in kws))
+
+    def test_the_verb_with_no_calls_allowed_runs_nothing(self):
+        r = self.fm_json("moons", "bench-writers", "--max-calls", "0")
+        self.assertEqual(r["rows"], [])
+
+
+class Pace(_Moons):
+    """The fill's kept per hour and the projected finish (T-3122)."""
+
+    NOW = 1_800_000_000
+
+    def log(self, hours_ago):
+        d = self.ms._dir(self.p)
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, self.ms.FUNNEL), "a") as f:
+            for n, h in enumerate(hours_ago):
+                e = {"id": f"C-{n + 1:06d}", "at": self.c.iso(self.NOW - h * 3600), "stage": "novelty", "verdict": "kept"}
+                f.write(json.dumps(e) + "\n")
+
+    def test_the_rate_per_window_and_a_range_of_finish_dates_while_the_rate_moves(self):
+        # 10 kept in the last hour, 30 in six, 60 in a day: 10, 5 and 2.5 an hour
+        self.log([0.5] * 10 + [3] * 20 + [12] * 30 + [23.9])
+        r = self.ms.pace(self.p, now=self.NOW)
+        self.assertEqual((r["kept"], r["target"], r["remaining"]), (61, 10000, 9939))
+        self.assertEqual([r["per_hour"][k] for k in ("1h", "6h", "24h")], [10.0, 5.0, 2.6])
+        self.assertFalse(r["steady"])
+        lo, hi = r["finish"]["from"], r["finish"]["to"]
+        self.assertLess(lo, hi)
+        self.assertEqual(lo, self.c.iso(self.NOW + 9939 / 10 * 3600)[:10])
+        self.assertEqual(hi, self.c.iso(self.NOW + 9939 / 2.6 * 3600)[:10])
+
+    def test_one_date_once_the_windows_agree(self):
+        self.log([h + 0.01 for h in range(24) for _ in range(5)])  # 5 an hour all day
+        r = self.ms.pace(self.p, now=self.NOW)
+        self.assertTrue(r["steady"])
+        self.assertEqual(r["finish"]["from"], r["finish"]["to"])
+
+    def test_no_kept_moons_no_projection_and_a_finished_fill_projects_nothing(self):
+        r = self.ms.pace(self.p, now=self.NOW)
+        self.assertEqual((r["kept"], r["finish"], r["per_hour"]["24h"]), (0, None, 0.0))
+        with mock.patch.object(self.ms, "TARGET", 3):
+            self.log([1, 2, 3, 4])
+            self.assertIsNone(self.ms.pace(self.p, now=self.NOW)["finish"])
+            self.assertEqual(self.ms.pace(self.p, now=self.NOW)["remaining"], 0)
+
+    def test_a_young_fill_is_not_averaged_over_a_day_it_has_not_run(self):
+        self.log([0.1, 0.2, 0.3, 0.4])  # four moons in the first 24 minutes
+        r = self.ms.pace(self.p, now=self.NOW)
+        self.assertGreater(r["per_hour"]["24h"], 4.0)
