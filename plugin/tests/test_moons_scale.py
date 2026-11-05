@@ -551,7 +551,7 @@ class _Funnel(_Moons):
         with open(os.path.join(bench, "bench.jsonl"), "w") as f:
             for name, rec in (("weak-embed", 0.5), ("bge-m3:567m", 0.9)):
                 f.write(json.dumps({"arm": "embedding", "use": "title-to-brief", "backend": name, "recall_at_1": rec}) + "\n")
-        env = {k: v for k, v in os.environ.items() if k != "MOONS_EMBED"}
+        env = {k: v for k, v in os.environ.items() if k not in ("MOONS_EMBED", "FOREMAN_NO_LOCAL_MODELS")}  # its own server
         with mock.patch.dict(os.environ, env, clear=True), \
                 mock.patch.object(models, "embedding_profiles", side_effect=lambda *a: real(url)), \
                 mock.patch.object(models, "_local", side_effect=lambda *a: iter(())):
@@ -690,7 +690,7 @@ class Funnel(_Funnel):
         self.assertEqual([f[i]["verdict"] for i in (ids[0], ids[2], ids[3])], ["kept"] * 3)
         self.assertEqual(f[ids[2]]["reason"], "shingle")
         self.assertEqual(self.embeds, [])
-        with mock.patch.object(self.ms, "_local", return_value=dict(PROFILE)), \
+        with mock.patch.object(self.ms, "_embedder", return_value=dict(PROFILE)), \
                 mock.patch.object(models, "embed", side_effect=models.ModelError("no /embeddings here")):
             self.assertEqual(self.ms._reps(self.p, self.ms.rows(self.p))[0], "shingle")
 
@@ -749,7 +749,8 @@ class Families(_Funnel):
     def build(self, local=True):
         from sampo import models
         with mock.patch.object(self.ms, "_local", return_value=dict(PROFILE) if local else None), \
-                mock.patch.object(models, "embed", side_effect=self.embed):
+                mock.patch.object(self.ms, "_embedder", return_value=dict(PROFILE) if local else None), \
+                mock.patch.object(models, "embed", side_effect=self.embed):  # T-3220: never the box's own embedders
             return self.ms.families(self.p)
 
     MUTATE = moon("Mutate the tests that never fail", "know which of your tests would catch a real bug.",

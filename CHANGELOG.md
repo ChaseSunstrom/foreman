@@ -10,6 +10,7 @@
 
 ### Everything else
 
+- The moons tests pin their embedding model instead of finding this box's Ollama ones, so they pass on CI runners with no local models (main's CI was red on Families and Promote since 2026-11-04) (T-3220).
 - Post-merge verify keeps a merge as inherited only when the commit before it names each of the same test classes failing; a class the merge added (the parent finds no such test) or a parent run that crashes leaves the red the merge's own, so it is reverted (T-3224).
 - The post-merge check no longer reverts a merge for a red its first parent already has: the record says inherited with the classes, and only the merge that brought the red is reverted (T-3213).
 - `sampo works check` counts the copies nested patterns, markers, masks, clips and filters make, through url(#id) in attributes, styles and stylesheet rules, toward its 5,000-copy cap, so an exponential pattern or marker bomb fails `xml` like a `<use>` bomb does; more than 64 stylesheet rules naming a url(#id) fail it too (T-3198).
