@@ -825,12 +825,33 @@ class HookClaudeShape(unittest.TestCase):
         self.assertEqual(self.find([outer, cc]), 5, "a shell whose -c doesn't start with the hook is no hook layer")
 
 
-class NoTaskGate(HookCase):
-    """No edits in a Foreman project without an active task (T-0012): the harness enforces the loop."""
+class NoTaskGateKit:
+    """No edits in a Foreman project without an active task (T-0012): the harness enforces the loop. The tests are
+    split over three classes so run.py runs them in parallel (T-3151); this holds what they share."""
 
     def pre(self, path, tool="Write"):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": {"file_path": path, "content": "x"},
                                         "scratchpad_dir": os.path.join(self.tmp, "scratch")})
+
+    def first_task_session(self, passing):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        os.makedirs(os.path.join(self.repo, "tests"), exist_ok=True)
+        with open(os.path.join(self.repo, "tests", "test_x.py"), "w") as f:
+            f.write("import unittest\nclass X(unittest.TestCase):\n    def test_x(self):\n        self.assertTrue(%s)\n"
+                    % passing)
+        for args in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "tests"]):
+            subprocess.run(["git", *args], cwd=self.repo, capture_output=True)
+        self.hook("UserPromptSubmit", {"prompt": "FEATURE: add x"})
+        self.pre(os.path.join(self.repo, "x.py"))  # the first edit makes the task
+        with open(os.path.join(self.repo, "x.py"), "w") as f:
+            f.write("X = 1\n")
+        return c.active_brief(c.load_briefs(self.project()))
+
+    HEADLESS = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}
+
+
+class NoTaskGate(NoTaskGateKit, HookCase):
 
     def test_edit_without_an_active_task_is_denied_with_a_one_command_fix(self):
         self.fm("init")
@@ -856,23 +877,6 @@ class NoTaskGate(HookCase):
         self.assertIn("--commit", out["additionalContext"], "one call tests, closes and commits")
         self.assertEqual((act.type, act.tier), ("FIX", "S"))
         self.assertIn("spaces between units parse", act.section("Acceptance criteria"))
-
-    def first_task_session(self, passing):
-        self.fm("init")
-        self.fm("autonomy", "full")
-        os.makedirs(os.path.join(self.repo, "tests"), exist_ok=True)
-        with open(os.path.join(self.repo, "tests", "test_x.py"), "w") as f:
-            f.write("import unittest\nclass X(unittest.TestCase):\n    def test_x(self):\n        self.assertTrue(%s)\n"
-                    % passing)
-        for args in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "tests"]):
-            subprocess.run(["git", *args], cwd=self.repo, capture_output=True)
-        self.hook("UserPromptSubmit", {"prompt": "FEATURE: add x"})
-        self.pre(os.path.join(self.repo, "x.py"))  # the first edit makes the task
-        with open(os.path.join(self.repo, "x.py"), "w") as f:
-            f.write("X = 1\n")
-        return c.active_brief(c.load_briefs(self.project()))
-
-    HEADLESS = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}
 
     def test_the_task_foreman_made_closes_itself_at_stop_when_the_tests_pass(self):
         # T-1231: the duel's last extra turn was the agent's own fm task finish
@@ -906,6 +910,8 @@ class NoTaskGate(HookCase):
         for b in briefs:
             self.assertIn(b.id, out["additionalContext"])
 
+
+class NoTaskGateMulti(NoTaskGateKit, HookCase):
     def test_a_long_multi_request_prompt_queues_every_request(self):
         # T-1242 smoke: the ledger keeps a prompt's first 2,000 characters, so eight long requests queued as two
         self.fm("init")
@@ -944,6 +950,8 @@ class NoTaskGate(HookCase):
         status = {b.id: b.status for b in c.load_briefs(self.project())}
         self.assertEqual([status[t] for t in ids], ["done", "done"], self.hooks_log()[-800:])
 
+
+class NoTaskGateClose(NoTaskGateKit, HookCase):
     def test_at_stop_the_requests_with_evidence_close_together(self):
         # T-1242 smoke: seven turns of fm focus so each stop could close one request
         self.first_task_session("True")  # one request, then three more queued the way _queue_requests does
@@ -1034,6 +1042,8 @@ class NoTaskGate(HookCase):
         self.assertEqual([r.splitlines()[0] for r in reqs], ["Add half().", "Add third()."], "titles stay the request's")
         self.assertTrue(all("NEVER touch tests/." in r for r in reqs))
 
+
+class NoTaskGateQueue(NoTaskGateKit, HookCase):
     def test_focusing_a_queued_request_prints_its_text_and_the_compaction_note_stays_small(self):
         # T-1231: the note after each compaction carried every open request (5-8 KB, three times a run), which itself
         # brought the next compaction sooner; fm focus showed no request text, so a chained finish && focus moved on
@@ -1098,6 +1108,8 @@ class NoTaskGate(HookCase):
                                 env=self.HEADLESS))
         self.assertNotIn("python3 -m unittest", (again or {}).get("reason", ""), "said once, not a loop")
 
+
+class NoTaskGateRefusals(NoTaskGateKit, HookCase):
     def test_an_interactive_session_is_never_closed_or_committed_at_stop(self):
         # review: an interactive user's half-done first request was closed and committed when the agent stopped to ask
         act = self.first_task_session("True")
@@ -1133,6 +1145,8 @@ class NoTaskGate(HookCase):
         self.assertEqual((act.type, act.tier), ("FEATURE", "S"))
         self.assertIn("LRUCache", act.title)
 
+
+class NoTaskGateKinds(NoTaskGateKit, HookCase):
     def test_a_security_request_gets_an_m_task_that_passes_the_plan_gate(self):
         # T-2335: the hook makes SECURITY briefs tier M; the gate's readings and outcomes must not leave them unfocused
         self.fm("init")
