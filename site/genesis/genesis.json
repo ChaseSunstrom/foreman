@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T13:36:09Z",
- "rev": "6b8fcfcb",
+ "updated": "2026-11-05T13:50:45Z",
+ "rev": "0b4ed540",
  "capabilities": [
   {
    "n": 1,
@@ -2117,7 +2117,7 @@
        "type": "FIX",
        "tier": "M",
        "steps": 3,
-       "done": 0,
+       "done": 2,
        "current": "failing tests: the filter-tail forms pass; the adversarial forms stay refused"
       },
       {
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 14606,
+   "generated": 14884,
    "write": {
-    "title": 113,
-    "line": 623,
+    "title": 128,
+    "line": 827,
     "payoff": 17,
     "kill test": 60,
     "code": 3
@@ -37484,8 +37484,8 @@
     "novelty": 42
    },
    "merged": 77,
-   "kept": 664,
-   "pending": 62
+   "kept": 726,
+   "pending": 59
   },
   "families": [
    {
@@ -40699,7 +40699,7 @@
   "families_total": 306,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 664
+   "total": 726
   }
  },
  "steer": {
