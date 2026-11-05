@@ -2558,32 +2558,11 @@ _PGREP = c.lazy(r"""(?:^|[;&|(`!{]|\b(?:while|until|if|then|do|else|sudo|exec|no
 _SELF_DROP = c.lazy(r"""[^;&|\n]*\|\s*grep\s+(?:-\w+\s+)*-\w*v\w*(?:\s+-e)?\s+['"]?[^|;\n]*(?:pgrep|pkill|bash|while)""")
 
 
-def _quoted_text(cmd, pos):
-    """T-3154: True when `pos` sits inside a quoted string that is data, not a script (`bash -c '…'`, `eval "…"`,
-    `sh -c`, `ssh host '…'` are scripts: their text runs, so the guard still reads it). A rough scan: backslash
-    escapes outside single quotes, no $(...) nesting; a miss errs toward refusing."""
-    q = start = None
-    i = 0
-    while i < pos:
-        ch = cmd[i]
-        if q is None and ch in "'\"":
-            q, start = ch, i
-        elif ch == "\\" and q != "'":
-            i += 1
-        elif ch == q:
-            q = None
-        i += 1
-    return q is not None and not re.search(r"(?:\b(?:sh|bash|zsh|dash)\s+(?:-\w+\s+)*-\w*c|\beval|\bssh\s+\S+)\s*$",
-                                           cmd[:start])
-
-
 def _self_match(pl):
     """T-1839 (a background `while pgrep -f "fm check"` waited on its own shell for hours; `pkill -f` killed its own
     shell): pgrep/pkill -f match whole command lines, and the shell running this text holds the pattern."""
     cmd = str((pl.get("tool_input") or {}).get("command") or "") if pl.get("tool_name") == "Bash" else ""
     for m in _PGREP.finditer(cmd):
-        if _quoted_text(cmd, m.start()):
-            continue  # T-3154: a mention inside another command's quoted argument runs nothing
         flags, pat = m.group(1).split(), next(g for g in m.group(2, 3, 4) if g is not None)
         short = "".join(f[1:] for f in flags if not f.startswith("--"))
         if not ("f" in short or "--full" in flags) or "x" in short or "--exact" in flags or _SELF_DROP.match(

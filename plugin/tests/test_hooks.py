@@ -1923,8 +1923,6 @@ class PreToolUse(HookCase):
                      "run_in_background": True},
                     {"command": 'pkill -f "while pgrep -f"; fm status'},
                     {"command": "until ! pgrep -af fm.check; do sleep 30; done", "run_in_background": True},
-                    {"command": 'pgrep -af "[t]2878|fm check"'},  # one unbracketed alternative still matches
-                    {"command": "bash -c 'while pgrep -f \"fm check\"; do sleep 1; done'"},  # quoted, but run
                     {"command": "pgrep --full 'npm run dev'"}, {"command": "cd /x\npgrep -f 'cd /x'"}):
             with self.subTest(cmd=bad["command"]):
                 p = self.pre("Bash", bad)
@@ -1934,10 +1932,7 @@ class PreToolUse(HookCase):
                    "pgrep -fx 'python3 serve.py'",  # -x: the whole command line must equal it
                    "pgrep -x node", "while kill -0 4242 2>/dev/null; do sleep 20; done", "ps -eo pid,args | grep fm",
                    "git commit -m \"refuse a pgrep -f 'fm check' that matches itself\"",  # a mention runs nothing
-                   "pgrep -af 'git push' | grep -v pgrep | head", "pgrep -af 'fm check' | grep -v -e pgrep -e while",
-                   # T-3154: every alternative bracketed; and a pgrep only quoted in another command's argument
-                   'pgrep -af "[t]2878|[s]mith|[l]ouhi"', 'pgrep -af "[f]m check|[g]it push"',
-                   "sampo task new 'x' --ac 'a; pgrep -f \"fm check\" is refused :: true'"):
+                   "pgrep -af 'git push' | grep -v pgrep | head", "pgrep -af 'fm check' | grep -v -e pgrep -e while"):
             with self.subTest(cmd=ok):
                 self.assertEqual(self.pre("Bash", {"command": ok, "run_in_background": True}).returncode, 0, ok)
 
