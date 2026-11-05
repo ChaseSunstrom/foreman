@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T18:09:34Z",
- "rev": "46c00bc4",
+ "updated": "2026-11-05T19:15:37Z",
+ "rev": "9c5aa472",
  "capabilities": [
   {
    "n": 1,
@@ -36247,19 +36247,19 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 841,
+ "unproven": 846,
  "unproven_kinds": {
-  "meaning-notes": 366,
+  "meaning-notes": 368,
   "meaning-user": 248,
   "research-uncited": 33,
   "perf-typed": 58,
   "typed": 37,
-  "red": 78,
+  "red": 81,
   "tui-unshot": 11,
-  "docs": 122,
+  "docs": 123,
   "perf-noise": 1,
   "infra": 9,
-  "ui-unshot": 38,
+  "ui-unshot": 39,
   "data": 6
  },
  "next": {
@@ -37465,13 +37465,13 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 17895,
+   "generated": 18589,
    "write": {
-    "title": 136,
-    "line": 1423,
+    "title": 138,
+    "line": 1457,
     "payoff": 17,
-    "kill test": 60,
-    "code": 5
+    "kill test": 64,
+    "code": 6
    },
    "dups": {
     "exact": 14,
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 8715,
-    "tier": 6171,
-    "novelty": 58
+    "kill": 9094,
+    "tier": 6488,
+    "novelty": 62
    },
-   "merged": 111,
-   "kept": 802,
-   "pending": 376
+   "merged": 137,
+   "kept": 819,
+   "pending": 286
   },
   "families": [
    {
@@ -38186,6 +38186,38 @@
     "evidence": "",
     "kinds": [
      "exhaustive thinking"
+    ]
+   },
+   {
+    "id": "F-017587",
+    "size": 1,
+    "lead": "Simulate the superposition of all possible architectural states",
+    "today": "Today you can't explore all architectural possibilities simultaneously to find the optimal one",
+    "with_this": "With this, Sampo can exist in a superposition of architectural states, allowing it to test all possible structures at once and collapse to the best one",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "calibrated judgment"
+    ]
+   },
+   {
+    "id": "F-018228",
+    "size": 1,
+    "lead": "Use acoustic resonance to verify binary asset integrity in-memory",
+    "today": "Today you can't verify a published image is a valid file without executing a shell command or spawning a separate process.",
+    "with_this": "With this, Sampo can validate binary assets by analyzing their frequency spectrum in RAM, eliminating the need for disk I/O or external validators during build tests.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "portability"
     ]
    },
    {
@@ -40679,44 +40711,12 @@
     "kinds": [
      "releases"
     ]
-   },
-   {
-    "id": "F-012721",
-    "size": 1,
-    "lead": "Derivative contracts for release quality guarantees",
-    "today": "Today you can't sell or buy guaranteed uptime or performance metrics directly from the release process itself.",
-    "with_this": "With this, you can monetize your release reliability by issuing 'contracts' to downstream teams that pay for guaranteed performance, creating a financial incentive to optimize the build pipeline.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-012722",
-    "size": 1,
-    "lead": "Arbitrage between manual and automated release paths",
-    "today": "Today you can't automatically switch between manual and automated release workflows based on which is currently cheaper and faster.",
-    "with_this": "With this, you can minimize total cost of ownership by having the system 'arbitrage' between human-driven and bot-driven release steps, choosing the path that offers the best price-to-speed ratio in real-time.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
    }
   ],
-  "families_total": 728,
+  "families_total": 739,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 802
+   "total": 819
   }
  },
  "steer": {
