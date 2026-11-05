@@ -320,6 +320,7 @@ def cmd_lane(args):
 
 BUILDERS = 2  # at once by default: each is a full session's worth of tokens, and every merge is reviewed here
 BUILDERS_MAX = 16  # T-1089: fm lane max N raises it; T-3135: 6 filled within minutes once finished lanes stopped counting
+LANE_HARD_BAR = 3.0  # T-3243: load per CPU past which not even a first lane starts (later lanes keep core.LOAD_BAR)
 UNMERGED_MAX = 20  # T-3135: finished lanes waiting on a merge hold no builder slot, but this many unmerged refuse a new lane
 
 
@@ -1723,7 +1724,9 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
     if len(waiting) >= UNMERGED_MAX:
         raise c.PolicyError(f"{len(waiting)} finished lanes wait unmerged ({', '.join(waiting[:8])}…): merge some first "
                             f"(fm lane merge ID)")
-    if strain := c.host_strain():  # T-2797: five lanes and a design agent drove load to 3.5 per core: gates timed out
+    # T-2797: five lanes and a design agent drove load to 3.5 per core: gates timed out. T-3243: but the first lane is
+    # never starved by moderate load (Sampo's own sweeps and fills held 1.7-3.7 per CPU for three hours, nothing built)
+    if strain := c.host_strain(None if working else LANE_HARD_BAR):
         raise c.PolicyError(f"{strain}: no new lane until it eases; "
                             f"{len(out)} builder(s) out{': ' + ', '.join(out) if out else ''}")
     try:

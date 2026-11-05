@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- The first builder lane is never starved by moderate load: with no builder working, `sampo lane brief` starts one unless the load is past 3 per CPU; further lanes keep the 1.5 per CPU bar. Sampo's own test sweeps and fills had held the load over the bar for three hours with nothing being built (T-3243).
 - The hook-imports bench runs its scratch project with background work off and tolerates a late writer when cleaning up, so its teardown no longer fails with 'Directory not empty' on CI (T-3241).
 - The live-jobs test that reads a real process's start time skips where there is no /proc (macOS), as the live page itself reads processes only through /proc (T-3240).
 - The calling-card tests skip where a card's call can't be confined (macOS has no Landlock), as the confinement tests already did, so CI on macOS isn't red for a refusal that is by design (T-3238).

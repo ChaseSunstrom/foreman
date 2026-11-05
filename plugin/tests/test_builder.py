@@ -50,6 +50,18 @@ class Brief(_Tasks):
         self.assertIn("foreman:fm-builder", res["agent"])
         self.assertIn("builder", self.fm("task", "show", tid).stdout)
 
+    def test_the_first_lane_is_never_starved_by_moderate_load(self):
+        # T-3243: Sampo's own sweeps and fills held load at 1.7-3.7 per CPU for three hours and no builder ran
+        first = self.task("First lane")
+        r = self.fm("lane", "brief", first, check=False, env={"FOREMAN_HOST": "load=60,cpus=16,mem_mb=8192"})
+        self.assertNotEqual(r.returncode, 0, "past the hard bar (3.75 per CPU) not even a first lane starts")
+        busy = {"FOREMAN_HOST": "load=28,cpus=16,mem_mb=8192"}  # 1.75 per CPU: past the soft bar, under the hard one
+        self.assertEqual(self.fm("lane", "brief", first, check=False, env=busy).returncode, 0, "the first lane starts")
+        second = self.task("Second lane")
+        r = self.fm("lane", "brief", second, check=False, env=busy)
+        self.assertNotEqual(r.returncode, 0, "a builder is out: the soft bar holds the next")
+        self.assertIn("the host is loaded", r.stderr)
+
     def test_an_under_planned_task_gets_no_brief(self):
         # T-0823: a builder launched for a task fm focus refuses (no Interpretation) could only stop and report
         tid = json.loads(self.fm("task", "new", "Half planned", "--type", "FIX", "--tier", "M", "--ac",

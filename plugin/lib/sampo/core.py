@@ -528,9 +528,9 @@ def wait_for_load(who, limit=None, out=None):
     return True
 
 
-def host_strain():
-    """T-0465: why this machine shouldn't take another lane (load over LOAD_BAR times its CPUs, or under 512 MB
-    available), or None. FOREMAN_HOST="load=…,cpus=…,mem_mb=…" stands in for /proc in tests; unreadable: None (never blocks)."""
+def host_strain(bar=None):
+    """T-0465: why this machine shouldn't take another lane (load over bar, default LOAD_BAR, times its CPUs, or under
+    512 MB available), or None. FOREMAN_HOST="load=…,cpus=…,mem_mb=…" stands in for /proc in tests; unreadable: None (never blocks)."""
     try:
         fake = dict(kv.split("=", 1) for kv in os.environ.get("FOREMAN_HOST", "").split(",") if "=" in kv)
         load = float(fake["load"]) if "load" in fake else os.getloadavg()[0]
@@ -542,7 +542,8 @@ def host_strain():
                 mem = next(int(x.split()[1]) for x in f if x.startswith("MemAvailable:")) / 1024
     except (OSError, ValueError, StopIteration, KeyError):
         return None
-    if load > LOAD_BAR * cpus and not load_gate_off():  # T-2822: the memory hold below still applies in a sandbox
+    if load > (LOAD_BAR if bar is None else bar) * cpus and not load_gate_off():  # T-2822: the memory hold below
+        # still applies in a sandbox
         return f"the host is loaded ({load:.1f} with {cpus} CPUs)"
     if mem < 512:
         return f"the host is low on memory ({mem:.0f} MB available)"
