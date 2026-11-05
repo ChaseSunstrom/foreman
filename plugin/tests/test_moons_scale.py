@@ -99,7 +99,7 @@ class Store(_Moons):
         probs = [{"text": "slow tests", "source": "pain"}, {"text": "late reviews", "source": "steer"}]
         with mock.patch.object(ms, "KINDS", ("bugs", "docs")), mock.patch.object(ms, "SCALES", ("file",)), \
                 mock.patch.object(ms, "SURFACES", ("terminal",)), mock.patch.object(ms, "MECHANISMS", ("biology", "law")), \
-                mock.patch.object(ms, "problems", return_value=probs):
+                mock.patch.object(ms, "problems", return_value=probs), mock.patch.object(ms, "sampo_areas", return_value=[]):
             ms.add(self.p, [good()], self.cell(), "haiku", 1)
             got = ms.pick(self.p, 1, 0)[0]
             self.assertEqual((got["kind"], got["mechanism"], got["problem"], got["source"]),
@@ -443,19 +443,23 @@ PROFILE = {"name": "jarvis", "kind": "openai", "base_url": "https://127.0.0.1:9/
 class Judge:
     """A fake _ask for the funnel's judges, routed on the system prompt; answers by title, a default otherwise."""
 
-    def __init__(self, ms, kill=None, tier=None, done=None, side=None):
+    def __init__(self, ms, kill=None, tier=None, done=None, side=None, repair=None, fixed=None):
         from sampo import moons
         self.route = {ms.KILL_SYSTEM: ("kill", kill or {}, "yes | one person, one day, a clear bar"),
                       moons.RATE_SYSTEM: ("tier", tier or {}, "high | wild 3 | a new capability"),
-                      ms.NOVEL_SYSTEM: ("novelty", done or {}, "no | nothing does this")}
-        self.calls, self.side = [], side
+                      ms.NOVEL_SYSTEM: ("novelty", done or {}, "no | nothing does this"),
+                      ms.REPAIR_SYSTEM: ("repair", repair or {}, "none")}
+        self.calls, self.side, self.fixed = [], side, fixed  # fixed: a kill test holding this passes the kill judge
 
     def __call__(self, p, system, prompt, cheap=True, paid=0, **kw):
         stage, said, default = self.route[system]
         self.calls.append(stage)
         if self.side:
             raise self.side
-        out = [f"{n}: {said.get(t, default)}" for n, t in re.findall(r"<moon n=(\d+)>\s*Title: (.*)", prompt)]
+        out = []
+        for chunk in prompt.split("<moon n=")[1:]:
+            n, t = chunk.split(">")[0], re.search(r"Title: (.*)", chunk).group(1)
+            out.append(f"{n}: {default if stage == 'kill' and self.fixed and self.fixed in chunk else said.get(t, default)}")
         return "\n".join(x for x in out if not x.endswith(": skip")), "jarvis"
 
 
@@ -605,8 +609,8 @@ class Funnel(_Funnel):
                             NUDGE["title"]: "medium | wild 2 | a reminder"},
                       done={REVIEW["title"]: "yes | GitHub's review reminders"})
         r, _ = self.go(judge)
-        self.assertEqual(judge.calls, ["kill", "tier", "novelty"], "cheapest first, one batch each")
-        self.assertEqual((r["stopped"], r["calls"], r["method"]), ("done", 3, "embed"))
+        self.assertEqual(judge.calls, ["kill", "tier", "novelty", "repair"], "cheapest first, one batch each")
+        self.assertEqual((r["stopped"], r["calls"], r["method"]), ("done", 4, "embed"))
         f = self.ms.fate(self.p)
         self.assertEqual(self.fates(), {
             ids[0]: ("novelty", "kept"), ids[1]: ("kill", "rejected"), ids[2]: ("novelty", "rejected"),
@@ -672,7 +676,7 @@ class Funnel(_Funnel):
                                         ids[2]: ("embed", "kept")})
         self.assertEqual(self.ms.fate(self.p)[ids[1]]["reason"], "kill: it needs ten engineers for a month")
         r, judge = self.go(stage="kill")
-        self.assertEqual((judge.calls, self.fates()[ids[2]]), (["kill"], ("kill", "kept")))
+        self.assertEqual((judge.calls, self.fates()[ids[2]]), (["kill"], ("kill", "kept")))  # T-3045: the reject's repair was asked once, in the run before
 
     def test_the_novelty_stage_rejects_a_near_catalogue_title_unasked(self):
         ids = self.seed(FLAKY, DEPLOY)
@@ -868,6 +872,172 @@ class StoreLock(_Funnel):
         self.assertIn("exact 1 kept", self.fm("moons", "funnel", "--status").stdout)
 
 
+# T-3045: yield (normalise and re-admit, the Sampo grid, kill repair, data-fed prompts) -------------------------------
+
+class Yield(_Funnel):
+    def test_with_this_missing_only_the_opening_is_normalised_at_write(self):
+        you = good(with_this="You can ship a release knowing which red tests in your code are noise.")
+        get = good(title="Another title", with_this="With this, you get a release with no noisy tests in your code.")
+        out = self.ms.add(self.p, [you, get, good(title="Third", with_this="Ship faster with your code.")],
+                          {"kind": "bugs", "scale": "file", "surface": "terminal"}, "haiku", 1)
+        self.assertEqual([v for _, v, _ in out], ["kept", "rejected", "rejected"])
+        self.assertTrue(self.ms.rows(self.p)[0]["with_this"].startswith("With this, you can ship"))
+
+    def test_old_write_rejects_that_now_pass_are_readmitted_by_a_new_event_and_a_rerun_adds_none(self):
+        row = dict(good(with_this="You can see which red tests in your code are noise."), id="C-000001", at="t",
+                   cell={"kind": "bugs", "scale": "file", "surface": "terminal"}, model="haiku", batch=1)
+        bad = dict(good(title="Bad", kill=""), id="C-000002", at="t", cell={}, model="haiku", batch=1)
+        d = self.ms._dir(self.p)
+        os.makedirs(d)
+        with open(os.path.join(d, self.ms.CANDIDATES), "w") as f:
+            f.write(json.dumps(row) + "\n" + json.dumps(bad) + "\n")
+        with open(os.path.join(d, self.ms.FUNNEL), "w") as f:
+            for i, why in (("C-000001", 'line: with_this must start "With this, you can"'), ("C-000002", "kill test: missing")):
+                f.write(json.dumps({"id": i, "at": "t", "stage": "write", "verdict": "rejected", "reason": why}) + "\n")
+        before = len(self.events())
+        self.assertEqual(self.ms.readmit(self.p, dry=True), 1)
+        self.assertEqual(len(self.events()), before, "a dry count writes nothing")
+        self.assertEqual(self.ms.readmit(self.p), 1)
+        self.assertEqual(self.fates()["C-000001"], ("write", "kept"))
+        self.assertEqual(self.fates()["C-000002"], ("write", "rejected"))
+        self.assertEqual(len(self.events()), before + 1)
+        self.assertEqual(self.ms.readmit(self.p), 0)
+        self.go()
+        self.assertEqual(self.fates()["C-000001"][0], "novelty", "the funnel takes it from there")
+
+    def sampo_cell(self, **kw):
+        return {"grid": "sampo", "kind": "memory", "scale": "one task", "surface": "", "mechanism": "biology",
+                "problem": "slow tests", "source": "pain", **kw}
+
+    def test_the_sampo_grid_is_coverage_headings_plus_three_read_thinnest_first_with_the_user_grid(self):
+        os.makedirs(self.ms.rune.home(self.p))
+        with open(os.path.join(self.ms.rune.home(self.p), "coverage.md"), "w") as f:
+            f.write("# Coverage\n\n## 1. Initiative\n- a\n\n## Docs\n- b\n")
+        self.assertEqual(self.ms.sampo_areas(self.p), ["initiative", "docs", "problem solving", "memory", "efficiency"])
+        cell = {"kind": "bugs", "scale": "file", "surface": "terminal", "mechanism": "law", "problem": "x", "source": "pain"}
+        with mock.patch.object(self.ms, "KINDS", ("bugs",)), mock.patch.object(self.ms, "SCALES", ("file",)), \
+                mock.patch.object(self.ms, "SURFACES", ("terminal",)):
+            self.ms.add(self.p, [good()], cell, "haiku", 1)
+            self.assertTrue(all(x["grid"] == "sampo" for x in self.ms.pick(self.p, 5, 0)))
+            last = self.ms.pick(self.p, 26, 0)
+            self.assertEqual(len({(x["kind"], x["scale"]) for x in last[:25]}), 25)
+            self.assertEqual(last[-1].get("grid"), None, "25 sampo cells, then the user cell that holds a row")
+
+    def test_a_sampo_cell_accepts_sampos_own_parts_and_sampo_can(self):
+        own = good(with_this="With this, Sampo can keep the ledger and the guard in step across every session.")
+        self.assertFalse(self.ms.admit(own)[0])
+        self.assertTrue(self.ms.admit(dict(own, cell={"grid": "sampo"}))[0])
+        out = self.ms.add(self.p, [dict(own, with_this="Sampo can remember a lane across sessions.")],
+                          self.sampo_cell(), "haiku", 1)
+        self.assertEqual(out[0][1], "kept")
+        self.assertTrue(self.ms.rows(self.p)[0]["with_this"].startswith("With this, Sampo can"))
+
+    def test_a_sampo_cells_prompt_asks_about_sampo_itself(self):
+        text = self.ms._prompt(self.sampo_cell(), 3)
+        self.assertIn("Sampo itself", text)
+        self.assertIn("With this, Sampo can", text)
+        self.assertNotIn("never on the harness's own parts", text)
+        self.assertIn("never on the harness's own parts", self.ms._prompt(dict(self.sampo_cell(), grid=""), 3))
+
+    def kill_no(self):
+        return Judge(self.ms, kill={DEPLOY["title"]: "no | needs real production data for weeks"}, fixed="synthetic",
+                     repair={DEPLOY["title"]: "Run it on 10 synthetic deploy logs on one laptop in a day; if fewer than 8 "
+                                              "are caught, it is dead."})
+
+    def test_a_kill_rejected_moon_gets_one_rewritten_kill_test_as_a_child_row_judged_like_any_row(self):
+        a, b = self.seed(DEPLOY, REVIEW)
+        judge = self.kill_no()
+        self.go(judge)
+        rows = {r["id"]: r for r in self.ms.rows(self.p)}
+        kids = [r for r in rows.values() if r.get("parent") == a]
+        self.assertEqual(len(kids), 1)
+        kid = kids[0]
+        self.assertEqual((kid["repair"], kid["title"], kid["with_this"]), ("kill", DEPLOY["title"], DEPLOY["with_this"]))
+        self.assertIn("synthetic deploy logs", kid["kill"])
+        self.assertEqual(self.fates()[a], ("kill", "rejected"))
+        self.assertFalse([r for r in rows.values() if r.get("parent") == b])
+        self.assertEqual(self.ms.fate(self.p)[kid["id"]]["stage"], "write")
+        self.go(judge)  # a rerun: the kid passes every stage like any row; nothing is repaired twice
+        self.assertEqual(self.fates()[kid["id"]], ("novelty", "kept"), "dedupe does not call the child its parent's copy")
+        self.assertEqual(len([r for r in self.ms.rows(self.p) if r.get("parent")]), 1)
+
+    def test_a_repair_that_the_kill_judge_refuses_is_never_repaired_again(self):
+        self.seed(DEPLOY)
+        judge = Judge(self.ms, kill={DEPLOY["title"]: "no | needs a team"},
+                      repair={DEPLOY["title"]: "Run it on 10 logs in a day; if fewer than 8 are caught, it is dead."})
+        for _ in range(3):
+            self.go(judge)
+        kids = [r for r in self.ms.rows(self.p) if r.get("parent")]
+        self.assertEqual(len(kids), 1)
+        self.assertEqual(self.fates()[kids[0]["id"]], ("kill", "rejected"))
+
+    def test_each_cells_prompt_carries_its_kinds_top_reject_reasons_and_two_kept_moons(self):
+        ids = self.seed(*[moon(f"Bug moon {i}", f"do thing {i}.", f"do thing {i} today.") for i in range(4)])
+        ev = self.ms._event
+        self.ms._log(self.p, [ev(ids[0], "kill", "rejected", "kill: needs real production data"),
+                              ev(ids[1], "kill", "rejected", "kill: needs a month of production data"),
+                              ev(ids[2], "novelty", "kept"), ev(ids[3], "novelty", "kept")],
+                     {"stages": {"kill": {}, "novelty": {}}}, "kill")
+        hints = self.ms._hints(self.ms.rows(self.p), self.ms.fate(self.p))
+        cell = {"kind": "bugs", "scale": "file", "surface": "terminal", "mechanism": "law", "problem": "p", "source": "pain"}
+        text = self.ms._prompt(cell, 2, hints.get("bugs", ""))
+        self.assertIn("needs real or production data (2)", text)
+        self.assertIn("Bug moon 2", text)
+        self.assertIn("Bug moon 3", text)
+        self.assertEqual(self.ms._prompt(dict(cell, kind="docs"), 2, hints.get("docs", "")).count("Bug moon"), 0)
+
+    # the reviewer's findings on 04a78cda -------------------------------------------------------------------------
+    def test_a_model_cannot_name_a_parent_or_repair_and_duplicates_are_still_caught(self):
+        a = self.seed(DEPLOY)[0]
+        self.seed(dict(DEPLOY, parent=["x"], repair="kill"), dict(DEPLOY, parent=a, repair="kill"))
+        self.assertFalse([x for x in self.ms.rows(self.p) if "parent" in x or "repair" in x])
+        self.go()  # no crash on the unhashable parent
+        self.assertEqual(self.fates()[a][0], "novelty")
+        self.assertEqual([v for _, v in list(self.fates().values())[1:]], ["dup", "dup"])
+
+    def test_with_this_you_get_is_not_the_users_line(self):
+        out = self.ms.add(self.p, [good(with_this="With this, you get a release with no noisy tests in your code.")],
+                          {"kind": "bugs", "scale": "file", "surface": "terminal"}, "haiku", 1)
+        self.assertEqual(out[0][1], "rejected")
+
+    def test_repair_runs_after_novelty_on_what_the_cap_leaves_and_never_in_a_single_stage_run(self):
+        self.seed(DEPLOY, REVIEW)
+        r, judge = self.go(self.kill_no(), max_calls=3)
+        self.assertEqual(judge.calls, ["kill", "tier", "novelty"], "the cap went to the stages first")
+        self.assertEqual(r["stopped"], "max_calls")
+        r, judge = self.go(self.kill_no(), stage="kill")
+        self.assertNotIn("repair", judge.calls)
+        r, judge = self.go(self.kill_no())
+        self.assertEqual(judge.calls[-1], "repair")
+        self.assertIn("wait for the next run", self.ms.funnel_line(r))
+
+    def test_a_readmitted_row_reads_with_its_normalised_line(self):
+        d = self.ms._dir(self.p)
+        os.makedirs(d)
+        with open(os.path.join(d, self.ms.CANDIDATES), "w") as f:
+            f.write(json.dumps(dict(good(with_this="You can see noise."), id="C-000001", cell={})) + "\n")
+        self.assertEqual(self.ms.rows(self.p)[0]["with_this"], "With this, you can see noise.")
+
+    def test_coverage_reports_the_sampo_grid(self):
+        self.ms.add(self.p, [good()], self.sampo_cell(), "haiku", 1)
+        r = self.ms.coverage(self.p)
+        n = len(self.ms.sampo_areas(self.p)) * len(self.ms.SAMPO_SCALES)
+        self.assertEqual((r["sampo_grid"], r["sampo_touched"], len(r["sampo_thinnest"])), (n, 1, min(10, n)))
+        self.assertIn(f"1 of {n} Sampo cells", self.ms.coverage_lines(r))
+
+    def test_themes_match_whole_words_and_name_other_stages_by_their_head(self):
+        t = self.ms._theme
+        self.assertEqual(t("kill: needs real data"), "needs real or production data")
+        self.assertNotEqual(t("kill: a realistic plan, delivered in a timeline"), "needs real or production data")
+        self.assertEqual(t("novelty: near C-000123 (Some title)"), "novelty: near")
+        self.assertEqual(t("tier: low or medium"), "tier: low or medium")
+
+    def test_a_sampo_scale_reads_in_plain_words_in_a_leads_domain(self):
+        self.assertEqual(self.ms._domain({"kind": "memory", "scale": "one task", "surface": ""}), "memory in one task")
+        self.assertEqual(self.ms._domain(self.sampo_cell(scale="every Sampo user", surface="")),
+                         "memory for every Sampo user")
+
+
 class KeepGrow(_Moons):  # T-3046: the goal counts kept moons, so grow and the funnel take turns until N survive
     def run_keep(self, keep, per_funnel=3, grow_stop="target", fun_calls=2, grow_add=5, **kw):
         st, seen = {"s": 0, "n": 0}, []
@@ -917,7 +1087,7 @@ class KeepGrow(_Moons):  # T-3046: the goal counts kept moons, so grow and the f
             return reply(4, bad=4), "jarvis"
         from sampo import models
         with mock.patch.object(self.ms, "_ask", side_effect=ask), mock.patch.object(self.ms, "_embedder", return_value=None), \
-                mock.patch.object(models, "embed", side_effect=AssertionError):
+                mock.patch.object(models, "embed", side_effect=AssertionError), mock.patch.object(self.ms, "sampo_areas", return_value=[]):  # T-3045: a Sampo cell accepts an internal payoff
             r = self.ms.grow(self.p, keep=100, local_only=True)
         self.assertEqual((r["stopped"], r["survivors"], r["rounds"]), ("stalled", 0, 3))
 
