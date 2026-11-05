@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T01:27:01Z",
- "rev": "53d75b0e",
+ "updated": "2026-11-05T01:58:17Z",
+ "rev": "11e77110",
  "capabilities": [
   {
    "n": 1,
@@ -3785,7 +3785,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -3868,7 +3868,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -3994,7 +3994,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -4133,7 +4133,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -4190,7 +4190,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "active",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -36247,19 +36247,19 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 812,
+ "unproven": 811,
  "unproven_kinds": {
   "meaning-notes": 362,
-  "meaning-user": 250,
+  "meaning-user": 249,
   "research-uncited": 33,
   "perf-typed": 51,
-  "typed": 38,
+  "typed": 36,
   "red": 75,
   "tui-unshot": 8,
   "docs": 109,
   "perf-noise": 1,
   "infra": 8,
-  "ui-unshot": 25,
+  "ui-unshot": 26,
   "data": 5
  },
  "next": {
@@ -37468,7 +37468,7 @@
    "generated": 10007,
    "write": {
     "title": 113,
-    "line": 1450,
+    "line": 623,
     "payoff": 17,
     "kill test": 31,
     "code": 3
@@ -37485,7 +37485,7 @@
    },
    "merged": 13,
    "kept": 292,
-   "pending": 0
+   "pending": 827
   },
   "families": [
    {
