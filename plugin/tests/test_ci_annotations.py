@@ -1,7 +1,9 @@
 """T-1248: on GitHub Actions, run.py turns each failing test into its own ::error annotation (a run's log needs a
 login; its annotations are public). One annotation per class showed only its last failure: a class with two failures
 hid one."""
+import os
 import unittest
+from unittest import mock
 
 import run
 
@@ -74,6 +76,19 @@ class Annotations(unittest.TestCase):
     def test_output_with_no_test_blocks_keeps_its_tail(self):
         lines = run.annotations("test_y", "ImportError: no module named z\n")
         self.assertEqual(lines, ["::error title=test_y::ImportError: no module named z"])
+
+
+
+class ChildEnv(unittest.TestCase):
+    """T-3229: every class runs with local models hidden, as on CI, unless the caller set the switch."""
+
+    def test_local_models_are_hidden_unless_the_caller_says(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("FOREMAN_NO_LOCAL_MODELS", None)
+            env = run.child_env("/tmp/x")
+            self.assertEqual((env["TMPDIR"], env["FOREMAN_NO_LOCAL_MODELS"]), ("/tmp/x", "1"))
+            os.environ["FOREMAN_NO_LOCAL_MODELS"] = ""
+            self.assertEqual(run.child_env("/tmp/x")["FOREMAN_NO_LOCAL_MODELS"], "")
 
 
 if __name__ == "__main__":

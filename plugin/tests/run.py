@@ -23,6 +23,12 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def child_env(tmp):
+    """A class's environment: its own TMPDIR, and local models hidden as on CI unless the caller set the switch
+    (T-3229: the moons tests leaned on this box's Ollama embedders, passed here and failed on every CI run)."""
+    return dict(os.environ, TMPDIR=tmp, FOREMAN_NO_LOCAL_MODELS=os.environ.get("FOREMAN_NO_LOCAL_MODELS", "1"))
+
+
 def skipped():
     """T-1101: the modules FOREMAN_SKIP_TESTS names (fm check: another open task's red-first test files)."""
     return {x.strip() for x in os.environ.get("FOREMAN_SKIP_TESTS", "").split(",") if x.strip()}
@@ -181,7 +187,7 @@ def run_one(cid, k, timeout=480, deadline=None):
     p = subprocess.Popen([sys.executable, "-X", "faulthandler", "-c", BOOT, str(os.getpid()), "-q", cid, *extra],
                          cwd=HERE,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL,
-                         start_new_session=True, env=dict(os.environ, TMPDIR=tmp))
+                         start_new_session=True, env=child_env(tmp))
     try:
         _, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:

@@ -11,7 +11,8 @@ import helpers  # noqa: F401  (puts plugin/lib on sys.path)
 from sampo import models as m
 
 KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY", "FM_TEST_KEY",
-        "TYPESAFE_BASE_URL", "TYPESAFE_API_KEY", "TYPESAFE_MODEL", "LLM_API_KEY")  # T-2494: the user's env never leaks in
+        "TYPESAFE_BASE_URL", "TYPESAFE_API_KEY", "TYPESAFE_MODEL", "LLM_API_KEY",  # T-2494: the user's env never leaks in
+        "FOREMAN_NO_LOCAL_MODELS")  # T-3229: run.py hides local models; these tests stand in their own fakes
 SECRET = "sk-test-SECRET-123"
 
 
