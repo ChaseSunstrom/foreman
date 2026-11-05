@@ -174,6 +174,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmforesight` (T-2554: `_requests(p, clean=True)` leaves out briefs a Genesis… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmfriction` (`sampo friction`: the self-improvement digest and trigger… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmgenesis`… [→ files-lib-2](docs/map/files-lib-2.md)
+- `fmkalevala` (`sampo kalevala [start|status|step [--dry-run] [--k N]]`, T-3081: one Rune tower per aspect with open coverage plus problem solving, memory, efficiency, each sealed from the root gen-0; `step` runs each tower's next spec/seed/select as a job, at most K at once from the local slots, inside Kalevala's share of the day budget, thinnest first [→ files-lib-2](docs/map/files-lib-2.md))
 - `fmgrants` (T-2374: the install-grant queue [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmgraph` (`sampo graph blast|pack|build`: one local sqlite graph of code… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmguard` [→ files-lib-2](docs/map/files-lib-2.md)

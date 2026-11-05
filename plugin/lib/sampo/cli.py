@@ -939,6 +939,13 @@ def cmd_task(args):
             logged.update(model=_session_model(), harness=c.harness(), type=b.type, tier=b.tier, verified=b.meta["verified"],  # T-2739
                           planned=len(b.meta.get("scope") or []), changed=len(files),  # T-0644
                           **({"unproven": b.meta["unproven"]} if b.meta.get("unproven") else {}))
+            try:  # T-3081 step 4: a close that changes behaviour is a capability (registry); a broken kalevala never blocks a close
+                from sampo import kalevala
+                areas = kalevala.behaviour(files)
+                if areas:
+                    logged.update(areas=areas, title=" ".join(b.title.split())[:120])  # not a list: a title cut at 120 characters
+            except Exception as e:
+                print(f"fm: kalevala's registry skipped for this close: {e}", file=sys.stderr)
             # T-1061: the plan as it was at first focus (scope, predictions) against what happened
             if b.meta.get("plan0_at") and b.meta.get("plan0_scope"):
                 logged["outside"] = len(c.scope_drift(types.SimpleNamespace(meta={"scope": b.meta["plan0_scope"]}), files))
@@ -7839,6 +7846,14 @@ def _build_parser(only=None):
                                                     "'dismissed: <reason>'; its filed task is dropped (T-2501)")
     s.add_argument("--settle", action="store_true", help="publish: wait out the rest of the window first (the detached "
                                                          "publish a tower change starts)")
+    s = add("kalevala", lazy("sampo.kalevala", "cmd_kalevala"), tier=("Finding your way", 459), help="Kalevala: one Genesis "
+            "tower per aspect with open coverage (plus problem solving, memory, efficiency), each sealed from the root gen-0 "
+            "and its aspect; status lists them; step runs each tower's next genesis step as a job; gen writes Kalevala's "
+            "next generation (its tower set and setup) and select N judges it by the towers' exam results (T-3081)")
+    s.add_argument("action", nargs="?", choices=("start", "status", "step", "gen", "select"))
+    s.add_argument("n", nargs="?", type=int, default=None, help="select: the generation to judge")
+    s.add_argument("--dry-run", action="store_true", help="step: name the jobs and the share; run none")
+    s.add_argument("--k", type=int, default=None, help="step: towers at once (default: the local model's slots)")
     s = add("find", lazy("sampo.find", "cmd_find"), tier=("Finding your way", 457), help="deterministic finders over a tree: "
             "untested functions, docs naming missing code, undeclared deps, SQL from a parameter, list membership in a loop, "
             "unseeded test randomness, credentials; exit 1 on findings (T-2121)")

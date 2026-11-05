@@ -1,7 +1,12 @@
 """Kalevala part 1 (T-3053): many Rune towers in one project. Each tower is its own home (research/genesis/towers/NAME);
 the root tower behaves as before; moons, exam scenarios and the user's steers stay at the root for every tower."""
+import contextlib
+import io
 import json
 import os
+import threading
+import time
+from unittest import mock
 
 from helpers import CLEAN_READER, ForemanTestCase, read_text
 from sampo import core as c
@@ -159,3 +164,678 @@ class Kalevala(ForemanTestCase):
         with open(os.path.join(louhi.root(p), "lean-start.json")) as f:
             book = json.load(f)
         self.assertEqual(sorted(book), ["0", "ahti/0"])
+
+
+def coverage_md(areas):
+    """coverage.md: each (area, open) as a '## <area>' section. An open area leaves one cell empty; a closed one fills
+    all 64 stage × surface cells with its own N/A reasons."""
+    from sampo import rune
+    out = []
+    for area, is_open in areas:
+        out.append(f"## {area}\n")
+        for st in rune.STAGES:
+            for sf in rune.SURFACES:
+                if is_open and (st, sf) != (rune.STAGES[0], rune.SURFACES[0]):
+                    continue
+                out.append(f"- {st} × {sf}: N/A: {area} on {sf} at {st} is out of scope\n")
+    return "".join(out)
+
+
+class KalevalaStart(ForemanTestCase):
+    """Kalevala part 2, step 1 (T-3081): sampo kalevala start opens a tower per aspect with open coverage plus the
+    fixed three, each sealed from the root gen-0 and its aspect; status lists them."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.root_text = "Sampo gen-0: the root tower's charter\n"
+        self.fm("genesis", "init", "--file", self.write("gen0.md", self.root_text))
+
+    def write(self, name, text):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w") as f:
+            f.write(text)
+        return path
+
+    def put_coverage(self, areas):
+        self.fm("genesis", "put", "coverage.md", "--file", self.write("cov.md", coverage_md(areas)))
+
+    def tower_dir(self, name):
+        return os.path.join(c.find_project(self.repo, create=False).dir, "research", "genesis", "towers", name)
+
+    def test_start_opens_a_tower_per_open_area_and_the_fixed_three(self):
+        self.put_coverage([("Open area", True), ("Done area", False)])
+        res = self.fm_json("kalevala", "start")
+        self.assertEqual({t["aspect"] for t in res["towers"]}, {"Open area", "problem solving", "memory", "efficiency"})
+        status = self.fm_json("kalevala", "status")
+        self.assertEqual({t["aspect"] for t in status["towers"]}, {t["aspect"] for t in res["towers"]})
+        self.assertTrue(all(t["sealed"] for t in status["towers"]))
+
+    def test_each_tower_gen0_is_the_root_gen0_plus_its_aspect_and_sealed(self):
+        import hashlib
+        from sampo import rune
+        self.put_coverage([("Open area", True)])
+        self.fm_json("kalevala", "start")
+        p = c.find_project(self.repo, create=False)
+        for name, aspect in (("open-area", "Open area"), ("memory", "memory")):
+            path = os.path.join(self.tower_dir(name), "gen-0.md")
+            text = read_text(path)
+            self.assertTrue(text.startswith(self.root_text), name)
+            self.assertIn(aspect, text)
+            self.assertEqual(self.fm_json("genesis", "--tower", name, "status")["seal"],
+                             hashlib.sha256(text.encode()).hexdigest()[:8])
+            self.assertEqual(os.stat(path).st_mode & 0o222, 0, f"{name} gen-0 is read-only")
+            rune.set_tower(name)
+            try:
+                self.assertEqual(rune.sealed(p), "")
+            finally:
+                rune.set_tower(None)
+
+    def test_a_second_start_opens_nothing_and_rewrites_no_gen0(self):
+        self.put_coverage([("Open area", True)])
+        first = self.fm_json("kalevala", "start")
+        path = os.path.join(self.tower_dir("memory"), "gen-0.md")
+        before = read_text(path)
+        second = self.fm_json("kalevala", "start")
+        self.assertEqual(second["opened"], [])
+        self.assertEqual(len(second["towers"]), len(first["towers"]))
+        self.assertEqual(len(self.fm_json("kalevala", "status")["towers"]), len(first["towers"]))
+        self.assertEqual(read_text(path), before)
+
+    def test_aspect_names_are_slugged_unique_and_never_root(self):
+        from sampo import rune
+        self.put_coverage([("Problem Solving", True), ("Root", True), ("Efficiency!!", True)])
+        res = self.fm_json("kalevala", "start")
+        names = [t["name"] for t in res["towers"]]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertTrue(all(rune._valid(n) for n in names), names)
+        self.assertEqual(set(names), {"problem-solving", "aspect-root", "efficiency", "memory"})
+        self.assertIn("Efficiency!!", {t["aspect"] for t in res["towers"]})  # the coverage area keeps its own text
+
+
+class KalevalaNoRootGen0(ForemanTestCase):
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+
+    def test_start_refuses_without_a_sealed_root_gen0_and_status_lists_nothing(self):
+        r = self.fm("kalevala", "start", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("genesis init", r.stderr + r.stdout)
+        self.assertFalse(os.path.exists(os.path.join(c.find_project(self.repo, create=False).dir, "research", "genesis", "towers")))
+        self.assertEqual(self.fm_json("kalevala", "status")["towers"], [])
+
+
+class KalevalaStep(ForemanTestCase):
+    """Kalevala part 2, step 2 (T-3081): sampo kalevala step runs each tower's next genesis step as a job, at most K
+    at once, one step per tower at a time, inside Kalevala's own budget share; the moons store is locked and the exam
+    scenarios are read-only for a tower job."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        root = "root charter\n\n## 2. Capabilities\n1. **Bugs.** finds and fixes broken code. Exam: bug.\n"
+        self.fm("genesis", "init", "--file", self.write("gen0.md", root))  # §2 gives each tower a spec job to run
+        self.fm("kalevala", "start")  # the fixed three: efficiency, memory, problem-solving
+        from sampo import budget
+        budget.RUN["usd"] = 0.0  # the in-process runs' spend never leaks into the next test's per-command cap
+
+    def write(self, name, text):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w") as f:
+            f.write(text)
+        return path
+
+    def project(self):
+        return c.find_project(self.repo, create=False)
+
+    def fake(self, rc=0):
+        calls = []
+
+        def run(argv, cwd, env):
+            calls.append((list(argv), dict(env)))
+            return rc
+        return run, calls
+
+    def hold_store(self, release):
+        """A thread holds the moons store until `release` is set; returns the thread once it holds the store."""
+        from sampo import moonscale
+        held = threading.Event()
+
+        def hold():
+            with moonscale.store_lock(self.project()):
+                held.set()
+                release.wait(10)
+        t = threading.Thread(target=hold)
+        t.start()
+        held.wait(10)
+        return t
+
+    def test_each_tower_runs_its_next_step_as_one_job_with_an_allowed_verb(self):
+        from sampo import kalevala
+        run, calls = self.fake()
+        res = kalevala.step(self.project(), runner=run)
+        ran = [r for r in res["results"] if r["status"] == "ran"]
+        self.assertTrue(ran, res)
+        self.assertEqual(len(calls), len(ran))
+        for argv, env in calls:  # genesis VERB [N] --tower NAME: seed and select take the generation the CLI needs
+            i = argv.index("genesis")
+            self.assertIn(argv[i + 1], {"spec", "seed", "select"})
+            if argv[i + 1] != "spec":
+                self.assertTrue(argv[i + 2].isdigit(), argv)
+            self.assertEqual(argv[-2], "--tower")
+            self.assertIn(argv[-1], {"problem-solving", "memory", "efficiency"})
+            self.assertEqual(env["FOREMAN_TOWER_READONLY_EXAM"], "1")
+            self.assertEqual(env["FOREMAN_NO_BACKGROUND"], "1")
+        self.assertEqual(sorted(argv[-1] for argv, _ in calls), sorted(r["tower"] for r in ran))
+
+    def test_a_stage_the_loop_does_not_run_is_left_to_the_main_thread(self):
+        from sampo import kalevala
+        self.assertIsNone(kalevala.job_argv("memory", {"stage": "build", "gen": 1, "command": "fm genesis build",
+                                                        "kind": "ok"}))
+        self.assertIsNone(kalevala.job_argv("memory", {"stage": "seed", "gen": 1, "kind": "fatal",
+                                                        "command": "fm genesis put gen-1/seed.md --file -"}))
+
+    def test_job_argv_takes_the_generation_the_command_names(self):
+        from sampo import kalevala
+
+        def argv(command, gen=3):  # the act's gen is the target: seed 3 writes gen-3/seed.md
+            return kalevala.job_argv("memory", {"stage": command.split()[2], "gen": gen, "command": command,
+                                                "kind": "ok"})
+        self.assertEqual(argv("fm genesis seed 3")[-5:], ["genesis", "seed", "3", "--tower", "memory"])
+        self.assertEqual(argv("fm genesis select 2", gen=2)[-5:], ["genesis", "select", "2", "--tower", "memory"])
+        self.assertEqual(argv("fm genesis spec", gen=1)[-4:], ["genesis", "spec", "--tower", "memory"])
+
+    def test_at_most_k_towers_run_at_once(self):
+        import threading
+        import time
+        from sampo import kalevala
+        lock, active, peak = threading.Lock(), [0], [0]
+
+        def slow(argv, cwd, env):
+            with lock:
+                active[0] += 1
+                peak[0] = max(peak[0], active[0])
+            time.sleep(0.3)
+            with lock:
+                active[0] -= 1
+            return 0
+        res = kalevala.step(self.project(), k=1, runner=slow)
+        self.assertEqual(res["k"], 1)
+        self.assertEqual(peak[0], 1)
+        self.assertGreater(len([r for r in res["results"] if r["status"] == "ran"]), 1)
+
+    def test_one_step_per_tower_at_a_time_and_a_held_tower_is_busy(self):
+        from sampo import kalevala
+        run, calls = self.fake()
+        p = self.project()
+        with kalevala.tower_lock(p, "memory"):
+            res = kalevala.step(p, runner=run)
+        self.assertEqual([r["tower"] for r in res["results"] if r["status"] == "busy"], ["memory"])
+        self.assertNotIn("memory", [argv[-1] for argv, _ in calls])
+
+    def test_plan_queues_the_rest_thinnest_first_and_refuses_with_no_share(self):
+        from sampo import budget, kalevala
+        rows = [{"name": "b", "generation": 3}, {"name": "a", "generation": 0}, {"name": "c", "generation": 1}]
+        self.assertEqual(kalevala.order(rows), ["a", "c", "b"])
+        self.assertEqual(kalevala.plan(["a", "c", "b"], slots=2, fit=2), (["a", "c"], ["b"], 2))
+        self.assertEqual(kalevala.plan(["a", "c", "b"], slots=4, fit=5)[2], 3)
+        with self.assertRaises(budget.BudgetError):
+            kalevala.plan(["a"], slots=1, fit=0)
+
+    def test_a_short_share_queues_the_thinnest_last(self):
+        from sampo import budget
+        budget.set_caps(day=1.0)  # Kalevala's share is half the day cap: two jobs at the fallback estimate
+        res = self.fm_json("kalevala", "step", "--dry-run")
+        self.assertEqual([r["tower"] for r in res["results"]], ["efficiency", "memory"])
+        self.assertEqual(res["queued"], ["problem-solving"])
+
+    def test_the_kalevala_share_is_its_own_and_refuses_past_it(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=1.0)
+        budget.record(kalevala.FEATURE, usd=0.5, runs=1, project=p.slug, detail="an earlier round")
+        run, calls = self.fake()
+        with self.assertRaises(budget.BudgetError):
+            kalevala.step(p, runner=run)
+        self.assertEqual(calls, [])
+
+    def test_a_tower_jobs_spend_is_charged_to_kalevala_once(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        envs = []
+
+        def child(argv, cwd, env):  # a tower's own run: its spend is recorded in its own process, under the tag
+            envs.append(dict(env))
+            with mock.patch.dict(os.environ, env):
+                budget.record("ideas", usd=0.2, runs=1, project=p.slug, detail="child run")
+            return 0
+        res = kalevala.step(p, runner=child)
+        ran = [r for r in res["results"] if r["status"] == "ran"]
+        self.assertTrue(ran)
+        self.assertTrue(all(e.get("FOREMAN_SPEND_AS") == kalevala.FEATURE for e in envs), envs)
+        self.assertEqual(kalevala.spent_today(), round(0.2 * len(ran), 4))
+
+    def test_the_day_cap_bounds_the_towers_a_round_starts(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=1.0)
+        budget.record("ideas", usd=0.6, runs=1, project=p.slug, detail="another feature today")
+        res = kalevala.step(p, dry_run=True)  # 0.4 of the day is left: one job at the fallback estimate
+        self.assertEqual([r["tower"] for r in res["results"] if r["status"] == "planned"], ["efficiency"])
+        self.assertEqual(res["queued"], ["memory", "problem-solving"])
+
+    def test_the_per_command_cap_bounds_the_towers_a_round_starts(self):
+        from sampo import budget, kalevala
+        budget.set_caps(run=0.3)  # one job at the fallback estimate fits the command's cap, two do not
+        res = kalevala.step(self.project(), dry_run=True)
+        self.assertEqual(len([r for r in res["results"] if r["status"] == "planned"]), 1)
+        self.assertEqual(len(res["queued"]), 2)
+
+    def test_a_high_usage_halves_kalevalas_share(self):
+        from sampo import budget, kalevala
+        budget.set_caps(day=1.0)  # share 0.5: two jobs fit
+        self.assertEqual(len(kalevala.step(self.project(), dry_run=True)["queued"]), 1)
+        with mock.patch.object(budget, "usage_high", return_value="weekly usage 85%"):
+            res = kalevala.step(self.project(), dry_run=True)  # halved share 0.25: one job
+        self.assertEqual(len([r for r in res["results"] if r["status"] == "planned"]), 1)
+        self.assertEqual(len(res["queued"]), 2)
+
+    def test_a_tower_is_locked_when_its_charge_is_taken(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        held = {}
+        real = budget.record
+
+        def spy(feature, **kw):
+            if feature == kalevala.FEATURE and kw.get("usd", 0) > 0:
+                held[kw["detail"].split(" ")[0]] = kalevala._held(p, kw["detail"].split(" ")[0])
+            return real(feature, **kw)
+        with mock.patch.object(budget, "record", side_effect=spy):
+            res = kalevala.step(p, runner=self.fake()[0])
+        ran = [r["tower"] for r in res["results"] if r["status"] == "ran"]
+        self.assertTrue(ran)
+        self.assertTrue(all(held.get(n) for n in ran), held)
+
+    def test_the_stages_are_read_under_the_kalevala_lock(self):
+        from sampo import core as c, kalevala
+        p = self.project()
+        seen = []
+        real = kalevala._stage
+
+        def spy(proj, name):  # held: another handle on the lock can't take it in the time a stage read needs
+            try:
+                with c.lock(proj.dir, timeout=0.05):
+                    seen.append(False)
+            except c.LockTimeout:
+                seen.append(True)
+            return real(proj, name)
+        with mock.patch.object(kalevala, "_stage", side_effect=spy):
+            kalevala.step(p, runner=self.fake()[0])
+        self.assertTrue(seen and all(seen), seen)
+
+    def test_kalevala_reads_the_exam_through_rune_public_wrappers(self):
+        from sampo import kalevala, rune
+        p = self.project()
+        with mock.patch.object(rune, "exam_lines", return_value=[]) as lines:
+            self.assertEqual(kalevala._tower_scores(p, ["memory"]), {"memory": None})
+        lines.assert_called_once_with(p, kalevala.AGENT)
+        self.assertEqual(rune.train_scenarios([]), [])
+
+    def test_the_manifest_keeps_each_round_and_its_steps(self):
+        from sampo import kalevala
+        p = self.project()
+        kalevala.step(p, runner=self.fake()[0])
+        m = kalevala.load(p)
+        self.assertEqual(m["rounds"], 1)
+        self.assertTrue(m["steps"])
+        self.assertTrue({"tower", "stage", "status", "rc", "at"}.issubset(m["steps"][0]), m["steps"][0])
+
+    def test_the_steps_log_is_bounded(self):
+        from sampo import kalevala
+        p = self.project()
+        old, kalevala.MAX_STEPS = kalevala.MAX_STEPS, 2
+        try:
+            kalevala.step(p, runner=self.fake()[0])
+            kalevala.step(p, runner=self.fake()[0])
+        finally:
+            kalevala.MAX_STEPS = old
+        self.assertLessEqual(len(kalevala.load(p)["steps"]), 2)
+
+    def test_a_dry_run_names_the_jobs_and_runs_none(self):
+        from sampo import kalevala
+        res = self.fm_json("kalevala", "step", "--dry-run")
+        self.assertTrue(res["dry_run"])
+        self.assertTrue(res["results"])
+        self.assertTrue(all(r["status"] == "planned" for r in res["results"]), res["results"])
+        self.assertEqual(kalevala.load(self.project()).get("rounds", 0), 0)
+
+    def test_exam_scenarios_are_read_only_for_a_tower_job(self):
+        from sampo import louhi
+        p = self.project()
+
+        def listing():
+            return sorted(os.listdir(louhi.root(p))) if os.path.isdir(louhi.root(p)) else []
+        before = listing()
+        os.environ["FOREMAN_TOWER_READONLY_EXAM"] = "1"
+        try:
+            with self.assertRaises(ValueError):
+                louhi.gen(p)
+        finally:
+            os.environ.pop("FOREMAN_TOWER_READONLY_EXAM", None)
+        self.assertEqual(listing(), before)
+
+    def test_moons_writes_refuse_while_another_funnel_holds_the_store(self):
+        from sampo import moonscale
+        p = self.project()
+        release = threading.Event()
+        t = self.hold_store(release)
+        try:
+            with mock.patch.object(moonscale, "LOCK_WAIT", 0.2):  # the bounded wait, then a refusal
+                r = moonscale.grow(p, target=3, max_calls=0)
+            self.assertIn("another funnel", r["error"])
+            with self.assertRaises(moonscale.Busy):
+                moonscale.add(p, [{"title": "x"}], {}, "model", 1)
+        finally:
+            release.set()
+            t.join()
+
+    def test_grow_waits_a_bounded_time_for_a_store_that_frees_up(self):
+        from sampo import moonscale
+        p = self.project()
+        release = threading.Event()
+        t = self.hold_store(release)
+        threading.Timer(0.3, release.set).start()
+        try:
+            with mock.patch.object(moonscale, "LOCK_WAIT", 5.0):
+                r = moonscale.grow(p, target=3, max_calls=0)
+        finally:
+            release.set()
+            t.join()
+        self.assertFalse(r.get("error"))
+
+    def test_a_grow_refused_by_the_store_exits_nonzero(self):
+        release = threading.Event()
+        t = self.hold_store(release)
+        try:
+            r = self.fm("moons", "grow", "--max-calls", "0", check=False)  # waits LOCK_WAIT (5 s), then refuses
+        finally:
+            release.set()
+            t.join()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("another funnel", r.stderr)
+
+
+class CloseWithoutKalevala(ForemanTestCase):
+    """Kalevala part 2 review (T-3081): the close's behaviour note is best effort. A Kalevala that cannot be imported
+    must not block the close: the task still closes and the failure goes to stderr."""
+
+    def test_a_close_still_runs_when_kalevala_cannot_be_imported(self):
+        self.fm("init")
+        with open(os.path.join(self.repo, "a.py"), "w") as f:
+            f.write("x = 1\n")
+        self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--scope", "a.py", "--step", "do it",
+                "--ac", "flag", "--focus")
+        self.fm("task", "evidence", "T-0001", "--ac", "1", "--run", "true")
+        self.fm("task", "ac", "T-0001", "check", "1")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true")
+        self.fm("task", "step", "T-0001", "done", "1")
+        self.fm("task", "audit", "T-0001", "self", "checked", "ok")
+        hide = os.path.join(self.tmp, "hide")
+        os.makedirs(hide)
+        with open(os.path.join(hide, "sitecustomize.py"), "w") as f:
+            f.write("import sys\nsys.modules['sampo.kalevala'] = None  # a broken Kalevala import\n")
+        path = os.pathsep.join([hide, os.environ.get("PYTHONPATH", "")])
+        r = self.fm("task", "done", "T-0001", env={"PYTHONPATH": path}, check=False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class KalevalaGen(ForemanTestCase):
+    """Kalevala part 2, step 3 (T-3081): Kalevala's own generations at research/genesis/kalevala/gen-N. Each gen picks
+    the tower set and its setup; select judges it by the towers' combined exam results against the parent gen on the
+    towers both scored, keeps it or reverts it, and writes Kalevala's own lineage.md (never a tower's)."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.fm("genesis", "init", "--file", self.write("gen0.md", "root charter\n"))
+        self.fm("kalevala", "start")  # efficiency, memory, problem-solving
+
+    def write(self, name, text):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w") as f:
+            f.write(text)
+        return path
+
+    def project(self):
+        return c.find_project(self.repo, create=False)
+
+    def grade(self, tower, run, train, holdout=()):
+        """One graded exam line in the tower's own home, as fm exam grade writes it."""
+        from sampo import rune
+        rune.set_tower(tower)
+        try:
+            path = os.path.join(rune.home(self.project()), "exam.jsonl")
+            with open(path, "a") as f:
+                f.write(json.dumps({"agent": "foreman", "run": run, "model": "sonnet", "split": "train",
+                                    "closed": {"train": list(train), "holdout": list(holdout)}}) + "\n")
+        finally:
+            rune.set_tower(None)
+
+    def test_gen_one_picks_every_sealed_tower_and_writes_its_setup(self):
+        from sampo import kalevala
+        r = kalevala.gen(self.project())
+        self.assertEqual(r["gen"], 1)
+        self.assertEqual(r["set"], ["efficiency", "memory", "problem-solving"])
+        gdir = os.path.join(kalevala.home(self.project()), "gen-1")
+        setup = read_text(os.path.join(gdir, "setup.md"))
+        for name in r["set"]:
+            self.assertIn(name, setup)
+        self.assertIn("Gen: 1", setup)
+        self.assertFalse(os.path.exists(os.path.join(kalevala.home(self.project()), "lineage.md")))  # select writes it
+
+    def test_the_gen_folders_live_under_kalevala_and_no_tower_gets_a_lineage(self):
+        from sampo import kalevala
+        self.fm("kalevala", "gen")
+        p = self.project()
+        self.assertTrue(os.path.isdir(os.path.join(p.dir, "research", "genesis", "kalevala", "gen-1")))
+        for name in ("efficiency", "memory", "problem-solving"):
+            self.assertFalse(os.path.exists(os.path.join(p.dir, "research", "genesis", "towers", name, "lineage.md")))
+        self.assertEqual(kalevala.load(p)["gens"]["1"]["set"], ["efficiency", "memory", "problem-solving"])
+
+    def test_the_next_gen_waits_for_the_parent_to_be_selected(self):
+        from sampo import kalevala
+        self.fm("kalevala", "gen")
+        with self.assertRaisesRegex(ValueError, "select 1 first"):
+            kalevala.gen(self.project())
+
+    def test_select_refuses_a_gen_with_no_setup_and_a_gen_no_tower_graded(self):
+        from sampo import kalevala
+        p = self.project()
+        with self.assertRaisesRegex(ValueError, "no kalevala gen 3"):
+            kalevala.select(p, 3)
+        kalevala.gen(p)
+        with self.assertRaisesRegex(ValueError, "has a graded exam line"):
+            kalevala.select(p, 1)
+
+    def test_the_towers_combined_results_keep_a_gen_that_closes_more_and_revert_one_that_does_not(self):
+        from sampo import kalevala
+        p = self.project()
+        self.grade("memory", "r1", ["a"])
+        self.grade("efficiency", "r1", ["a", "b"])
+        kalevala.gen(p)
+        g1 = kalevala.select(p, 1)
+        self.assertEqual((g1["verdict"], g1["base"]), ("baseline", "gen-1"))
+        self.grade("memory", "r2", ["a", "b", "c"])
+        self.grade("efficiency", "r2", ["a", "b"])
+        kalevala.gen(p)
+        g2 = kalevala.select(p, 2)
+        self.assertEqual(g2["scores"]["memory"], 3)
+        self.assertEqual((g2["verdict"], g2["base"]), ("kept", "gen-2"))  # 5 closed against gen 1's 3 on both towers
+        self.grade("memory", "r3", ["a"])
+        self.grade("efficiency", "r3", ["a"])
+        kalevala.gen(p)
+        g3 = kalevala.select(p, 3)
+        self.assertEqual((g3["verdict"], g3["base"]), ("reverted", "gen-2"))  # 2 closed against 5: reverted onto gen 2
+
+    def test_a_tower_that_never_graded_is_left_out_of_the_comparison(self):
+        from sampo import kalevala
+        p = self.project()
+        self.grade("memory", "r1", ["a"])
+        kalevala.gen(p)
+        kalevala.select(p, 1)
+        self.grade("memory", "r2", ["a", "b"])  # efficiency and problem-solving never graded
+        kalevala.gen(p)
+        g2 = kalevala.select(p, 2)
+        self.assertIsNone(g2["scores"]["efficiency"])
+        self.assertEqual(g2["verdict"], "kept")  # only memory is on both gens: 2 against 1
+
+    def test_lineage_holds_one_section_per_gen_and_select_is_idempotent(self):
+        from sampo import kalevala
+        p = self.project()
+        self.grade("memory", "r1", ["a"])
+        kalevala.gen(p)
+        kalevala.select(p, 1)
+        again = kalevala.select(p, 1)
+        self.assertEqual(again["verdict"], "baseline")
+        lin = read_text(os.path.join(kalevala.home(p), "lineage.md"))
+        self.assertEqual(lin.count("## gen-1"), 1)
+        self.assertIn("- baseline:", lin)
+        self.assertIn("- seed base: gen-1", lin)
+        select_md = read_text(os.path.join(kalevala.home(p), "gen-1", "select.md"))
+        self.assertIn("Verdict: baseline", select_md)
+
+    def test_the_cli_runs_gen_and_select_and_status_lists_the_verdict(self):
+        self.grade("memory", "r1", ["a"])
+        self.assertEqual(self.fm_json("kalevala", "gen")["gen"], 1)
+        r = self.fm_json("kalevala", "select", "1")
+        self.assertEqual(r["verdict"], "baseline")
+
+
+class KalevalaCapabilities(ForemanTestCase):
+    """Kalevala part 2, step 4 (T-3081): a closed task that changes how Sampo behaves is a capability. The next
+    Kalevala gen writes the registry into every set tower's capabilities.md, so the tower's next seed carries it; select
+    records, per tower, whether the towers that got the last gen's new capabilities improved."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.fm("genesis", "init", "--file", self.write("gen0.md", "root charter\n"))
+        self.fm("kalevala", "start")  # efficiency, memory, problem-solving
+
+    def write(self, name, text):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w") as f:
+            f.write(text)
+        return path
+
+    def project(self):
+        return c.find_project(self.repo, create=False)
+
+    def closed(self, task, areas=(), title=""):
+        """One task_done row, as cli's close logs it (areas and title only when the task changed behaviour)."""
+        data = {"areas": list(areas), "title": title} if areas else {"tier": "S"}
+        c.log_event(self.project(), "task_done", task=task, data=data)
+
+    def grade(self, tower, run, train):
+        from sampo import rune
+        rune.set_tower(tower)
+        try:
+            with open(os.path.join(rune.home(self.project()), "exam.jsonl"), "a") as f:
+                f.write(json.dumps({"agent": "foreman", "run": run, "model": "sonnet", "split": "train",
+                                    "closed": {"train": list(train), "holdout": []}}) + "\n")
+        finally:
+            rune.set_tower(None)
+
+    def caps_file(self, tower):
+        return os.path.join(self.project().dir, "research", "genesis", "towers", tower, "capabilities.md")
+
+    def test_a_task_names_the_behaviour_it_changed_and_tests_and_docs_name_none(self):
+        from sampo import kalevala
+        self.assertEqual(kalevala.behaviour(["plugin/lib/sampo/ideas.py", "plugin/tests/test_ideas.py",
+                                             "docs/map/review.md", "plugin/skills/fm-plan/SKILL.md",
+                                             "plugin/lib/sampo/cli.py"]),
+                         ["ideas", "plan", "skills"])
+        self.assertEqual(kalevala.behaviour(["plugin/lib/sampo/cli.py", "plugin/tests/test_cli.py"]), [])
+        self.assertEqual(kalevala.behaviour(["plugin/lib/sampo/planet.py"]), [])  # a name that holds "plan" isn't plan
+        self.assertEqual(kalevala.behaviour(["plugin/lib/sampo/prompts.py"]), ["prompt"])
+        self.assertEqual(kalevala.behaviour(["plugin/lib/sampo/plan.py"]), ["plan"])
+
+    def test_the_registry_holds_each_behaviour_task_once_in_the_order_closed(self):
+        from sampo import kalevala
+        self.closed("T-0001", ["ideas"], "rank ideas by novelty")
+        self.closed("T-0002")  # changes no behaviour: not a capability
+        self.closed("T-0001", ["ideas"], "rank ideas by novelty")  # a second close never doubles it
+        self.closed("T-0003", ["review"], "review the diff")
+        reg = kalevala.registry(self.project())
+        self.assertEqual([x["task"] for x in reg], ["T-0001", "T-0003"])
+        self.assertEqual((reg[1]["title"], reg[1]["areas"]), ("review the diff", ["review"]))
+
+    def test_gen_writes_the_registry_into_every_set_towers_capabilities_and_the_manifest_keeps_it(self):
+        from sampo import kalevala
+        p = self.project()
+        self.closed("T-0001", ["ideas"], "rank ideas")
+        self.grade("memory", "r1", ["a"])
+        r = kalevala.gen(p)
+        for name in r["set"]:
+            self.assertIn("T-0001 (rank ideas): ideas", read_text(self.caps_file(name)))
+        m1 = kalevala.load(p)["gens"]["1"]
+        self.assertEqual((m1["capabilities"], m1["new_capabilities"]), (["T-0001"], ["T-0001"]))
+        kalevala.select(p, 1)
+        self.closed("T-0002", ["memory"], "keep memory")
+        kalevala.gen(p)
+        m2 = kalevala.load(p)["gens"]["2"]
+        self.assertEqual((m2["capabilities"], m2["new_capabilities"]), (["T-0001", "T-0002"], ["T-0002"]))
+        self.assertIn("T-0002 (keep memory): memory", read_text(self.caps_file("memory")))
+
+    def test_the_towers_capabilities_file_keeps_the_newest_thirty(self):
+        from sampo import kalevala
+        for k in range(1, 32):
+            self.closed(f"T-{k:04d}", ["ideas"], f"idea {k}")
+        self.grade("memory", "r1", ["a"])
+        kalevala.gen(self.project())
+        text = read_text(self.caps_file("memory"))
+        self.assertEqual(text.count("\n- T-"), 30)
+        self.assertNotIn("T-0001 (", text)
+        self.assertIn("T-0031 (idea 31)", text)
+        self.assertEqual(len(kalevala.registry(self.project())), 31)  # the registry keeps all of them
+
+    def test_select_records_whether_the_last_gens_new_capabilities_helped_each_tower(self):
+        from sampo import kalevala
+        p = self.project()
+        self.closed("T-0001", ["ideas"], "rank ideas")
+        self.grade("memory", "r1", ["a"])
+        self.grade("efficiency", "r1", ["a", "b"])
+        kalevala.gen(p)
+        self.assertEqual(kalevala.select(p, 1)["helped"], {})  # gen 1 has no parent: nothing to test yet
+        self.closed("T-0002", ["review"], "review the diff")
+        self.grade("memory", "r2", ["a", "b", "c"])  # memory 1 -> 3
+        self.grade("efficiency", "r2", ["a"])  # efficiency 2 -> 1
+        kalevala.gen(p)  # gen 2 writes T-0002 for the next seeds; select 2 tests what gen 1 wrote (T-0001)
+        g2 = kalevala.select(p, 2)
+        self.assertEqual(g2["helped"]["memory"], {"new": ["T-0001"], "rose": True})
+        self.assertEqual(g2["helped"]["efficiency"], {"new": ["T-0001"], "rose": False})
+        self.assertNotIn("problem solving", g2["helped"])  # never graded: not compared
+        self.assertIn("Helped:", read_text(os.path.join(kalevala.home(p), "gen-2", "select.md")))
+
+    def test_a_towers_next_seed_carries_the_capabilities_as_a_section(self):
+        from sampo import kalevala, rune
+        p = self.project()
+        self.closed("T-0001", ["ideas"], "rank ideas")
+        self.grade("memory", "r1", ["a"])
+        kalevala.gen(p)
+        rune.set_tower("memory")
+        try:
+            home = rune.home(p)
+            os.makedirs(os.path.join(home, "gen-1"), exist_ok=True)
+            with open(os.path.join(home, "gen-1", "seed.md"), "w") as f:
+                f.write("# Seed — generation 1\n\n## Standing intent\n\nkeep it small\n")
+            with open(os.path.join(home, "lineage.md"), "w") as f:
+                f.write("# Lineage\n\n## gen-1\n- baseline: first\n- seed base: gen-1\n")
+            rune.seed(p, 2)
+            text = read_text(os.path.join(home, "gen-2", "seed.md"))
+        finally:
+            rune.set_tower(None)
+        self.assertIn("## Capabilities built since gen-0", text)
+        self.assertIn("T-0001 (rank ideas): ideas", text)
+        self.assertEqual(text.count("## Capabilities built since gen-0"), 1)

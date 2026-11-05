@@ -1033,8 +1033,21 @@ class Catalogue(_Funnel):
     def test_a_promote_run_while_another_holds_the_store_draws_nothing(self):  # T-3047 review 11
         Families.survive(self, (Families.MUTATE, "massive", 5))
         self.build_families()
-        with self.ms.store_lock(self.p):
+        import threading
+        held, done = threading.Event(), threading.Event()
+
+        def other():  # another funnel holds the store from its own thread: the lock is re-entrant per thread only (T-3081)
+            with self.ms.store_lock(self.p):
+                held.set()
+                done.wait(30)
+        t = threading.Thread(target=other)
+        t.start()
+        try:
+            held.wait(30)
             r, seen = self.promote()
+        finally:
+            done.set()
+            t.join()
         self.assertEqual((r["blocks"], seen), ([], []))
         self.assertIn("another funnel", r["error"])
 

@@ -478,8 +478,21 @@ class ModelBenchVisible(ForemanTestCase):  # T-3093: the Models section, the per
         os.makedirs(os.path.join(rune.home(self.p), "gen-4"))
         self.assertEqual(louhi.current_gen(self.p), 4)
         self.assertTrue(louhi.bench_due(self.p))
-        with moonscale.store_lock(self.p):  # a moons run holds the card
+        import threading  # the store lock is re-entrant per thread: another funnel holds it from its own thread
+        held, done = threading.Event(), threading.Event()
+
+        def other():
+            with moonscale.store_lock(self.p):
+                held.set()
+                done.wait(30)
+        t = threading.Thread(target=other)
+        t.start()
+        held.wait(30)
+        try:
             res = louhi.bench_night(self.p, decision=[], embedders=[])
+        finally:
+            done.set()
+            t.join()
         self.assertIn("another funnel", res["skipped"])
         rows = [json.loads(x) for x in open(os.path.join(self.p.root, louhi.BENCH))]
         self.assertEqual([(r["arm"], r["gen"]) for r in rows], [("skipped", 4)])

@@ -2657,6 +2657,8 @@ def _authored(p, run, s, model):
 
 
 def gen(p, seed=0, per_kind=9, langs=LANGS, kinds=KINDS, split="all", author="self", model="sonnet"):
+    if os.environ.get("FOREMAN_TOWER_READONLY_EXAM") == "1":  # T-3081: a Kalevala tower reads the exam, never writes it
+        raise ValueError("exam scenarios are read-only for a Kalevala tower: the root makes new ones by hand")
     bad = [x for x in langs if x not in LANGS] + [x for x in kinds if x not in KINDS]
     if bad or not langs or not kinds:
         raise ValueError(f"unknown: {', '.join(bad) or 'empty list'} (languages: {', '.join(LANGS)}; kinds: {', '.join(KINDS)})")

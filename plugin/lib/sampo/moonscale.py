@@ -104,22 +104,42 @@ class Busy(Exception):
     pass
 
 
+_HELD = threading.local()  # T-3081: the store dirs this thread holds; see store_lock
+LOCK_WAIT = 5.0  # T-3081 review: grow polls this long for a store another funnel holds, then refuses (Kalevala's towers wait on it)
+
+
 @contextlib.contextmanager
-def store_lock(p):
-    """T-2986: one funnel or families run at a time on a moons store: a non-blocking flock on its own .funnel.lock (not
-    core.lock's .lock, which every append takes), the holder's pid inside. The kernel drops it with the process, so a
-    crashed run never leaves it held. Busy names the holder."""
+def store_lock(p, wait=0.0):
+    """T-2986: one funnel or families run at a time on a moons store: a flock on its own .funnel.lock (not core.lock's
+    .lock, which every append takes), the holder's pid inside. The kernel drops it with the process, so a crashed run
+    never leaves it held. Busy names the holder. T-3081: re-entrant on the thread that holds it (grow's rows, a repair's
+    rows), so a run's own writes never refuse themselves; another thread or process gets Busy after `wait` seconds."""
+    if not hasattr(_HELD, "dirs"):
+        _HELD.dirs = set()
+    key = os.path.abspath(_dir(p))
+    if key in _HELD.dirs:
+        yield
+        return
     os.makedirs(_dir(p), exist_ok=True)
     fd = os.open(os.path.join(_dir(p), ".funnel.lock"), os.O_CREAT | os.O_RDWR, 0o600)
     try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            pid = os.pread(fd, 20, 0).decode("ascii", "replace").strip()
-            raise Busy(f"another funnel holds the moons store (pid {pid if pid.isdigit() else '?'})") from None
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    pid = os.pread(fd, 20, 0).decode("ascii", "replace").strip()
+                    raise Busy(f"another funnel holds the moons store (pid {pid if pid.isdigit() else '?'})") from None
+                time.sleep(0.05)
         os.ftruncate(fd, 0)
         os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
-        yield
+        _HELD.dirs.add(key)
+        try:
+            yield
+        finally:
+            _HELD.dirs.discard(key)
     finally:
         os.close(fd)  # closing the descriptor releases the flock
 
@@ -233,7 +253,7 @@ def add(p, objs, cell, model, batch, link=None):
     """Store each moon with its write-time verdict, a rejected one too: [(id, verdict, reason)]. `link` is the caller's
     {"parent", "repair"} for a repair row; a model's own parent or repair key is never read (T-3045)."""
     d, out, lines, events = _dir(p), [], [], []
-    with c.lock(p.dir):
+    with store_lock(p), c.lock(p.dir):  # T-3081: every row write holds the store, whichever run makes it
         os.makedirs(d, exist_ok=True)
         n, at = _last_id(d), c.now()
         for obj in objs:
@@ -667,6 +687,17 @@ def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=No
             raise ValueError("--keep counts kept moons and --target counts stored rows: give one")
         return _keep(p, keep, batch=batch, seed=seed, max_calls=max_calls, workers=workers, think=think,
                      local_only=local_only)
+    try:
+        with store_lock(p, wait=LOCK_WAIT):  # T-3081: the loop's rows are written under the store lock, as promote's are
+            return _grow(p, target, batch, seed, max_calls, workers, think, local_only)
+    except Busy as e:
+        return {"calls": 0, "added": 0, "kept": 0, "rejected": 0, "reasons": collections.Counter(),
+                "models": collections.Counter(), "stopped": "busy", "error": c.fit(_norm(e), 300), "target": target,
+                "workers": workers}
+
+
+def _grow(p, target, batch, seed, max_calls, workers, think, local_only):
+    """grow's loop, run under the moons store lock (T-3081)."""
     global _THINK, _LOCAL_ONLY, _PICK
     if not isinstance(batch, int) or not 1 <= batch <= MAX_BATCH:
         raise ValueError(f"--batch takes 1 to {MAX_BATCH}")

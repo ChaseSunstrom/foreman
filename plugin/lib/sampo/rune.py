@@ -2271,6 +2271,16 @@ def smoke(x):
     return bool(re.search(r"haiku", str(x.get("model") or ""), re.I))
 
 
+def exam_lines(p, agent):
+    """Public read for Kalevala (T-3081): the exam lines _exam reads, for the tower whose home is set."""
+    return _exam(p, agent)
+
+
+def train_scenarios(lines):
+    """Public read for Kalevala (T-3081): the closed train scenarios of these exam lines (_train)."""
+    return list(_train(lines))
+
+
 def _exam(p, agent):
     """exam.jsonl lines from one agent that carry closed ids (fm exam grade since T-2102)."""
     out = []
@@ -2468,9 +2478,10 @@ def _select(p, n, agent):
 
 STEERS = "The user's standing rules (steers)"  # T-2160: not "Standing rules", which the page reads for gen-1's numbered rules
 MOONSHOT = "Moonshot (one Mission a generation, from gen 2)"  # T-2187, steer 2026-10-30 #5
+CAPS = "Capabilities built since gen-0"  # T-3081 step 4: Kalevala writes the tower's capabilities.md; seeds carry it
 MADE = ("What this generation is for", "Missions", "Empty coverage cells (fill first)",
         "Not-yet items (each retried this generation)", "Exam", "Lineage", "Standing intent", STEERS,
-        MOONSHOT, "Order of work")  # seed() writes these (T-2482: a base's Order of work names its own Missions)
+        MOONSHOT, "Order of work", CAPS)  # seed() writes these (T-2482: a base's Order of work names its own Missions)
 FAR = ("immune systems", "markets and auctions", "ecology", "evolution", "epidemiology", "control theory",
        "logistics and supply chains", "game theory", "neuroscience", "materials and structures")
 COVER = 7  # coverage Missions a seed lists; the 8th row is the moonshot's
@@ -2522,6 +2533,12 @@ def frontier(p, n):
 def seed(p, n, agent="foreman"):
     with c.lock(os.path.join(p.dir, "genesis-lineage")):  # the exists check and the write are one step
         return _seed(p, n, agent)
+
+
+def _caps_lines(d):
+    """The seed's capabilities section, from the capabilities.md Kalevala wrote into this tower's home; [] when none."""
+    body = (_doc(d, "capabilities.md") or "").strip()
+    return [f"## {CAPS}", "", body, ""] if body else []
 
 
 def _seed(p, n, agent):
@@ -2599,7 +2616,8 @@ def _seed(p, n, agent):
            *[f"Top gap (cross-cutting review): {g}\n" for g in _review_gaps(p, n - 1)],  # T-2501: first of all
            *[f"Top gap: {g}\n" for g in free_beats(p, agent, "train")],  # T-2184: before any cell or Mission
            "Close the open coverage cells, most first, retry every not-yet item, and act on what the critiques asked; "
-           "the exam's train split decides whether this rewrite stays (fm genesis select).", "", "## Missions", "",
+           "the exam's train split decides whether this rewrite stays (fm genesis select).", "", *_caps_lines(d),
+           "## Missions", "",
            "| # | Mission file | Capabilities | Gaps closed (open cells) | Depends on |", "|---|---|---|---|---|", *table,
            *(["", f"Past the {COVER} coverage Missions (the 8th row is the moonshot's), open cells wait in: "
                   f"{', '.join(wait)}"] if wait else []), "",
@@ -4229,6 +4247,9 @@ def _cmd_genesis(args):
                                                args.local_only, args.keep)
                     except moonscale.Busy as e:
                         print(e, file=sys.stderr)
+                        return 1
+                    if r.get("stopped") == "busy":  # a refused store: grow returns its error, not a grow result
+                        print(r["error"], file=sys.stderr)
                         return 1
                     return scli.out(args, r, moonscale.grow_line(r))
                 if getattr(args, "status", False) and verb != "funnel":  # T-2865 review: families --status rewrote families.json
