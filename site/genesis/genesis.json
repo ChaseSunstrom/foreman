@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T04:19:33Z",
- "rev": "35f127cf",
+ "updated": "2026-11-05T04:42:06Z",
+ "rev": "7f5d1f67",
  "capabilities": [
   {
    "n": 1,
@@ -37480,14 +37480,33 @@
    },
    "rejected": {
     "kill": 6314,
-    "tier": 2443,
-    "novelty": 36
+    "tier": 2538,
+    "novelty": 38
    },
-   "merged": 15,
-   "kept": 292,
-   "pending": 120
+   "merged": 17,
+   "kept": 313,
+   "pending": 0
   },
   "families": [
+   {
+    "id": "F-001741",
+    "size": 5,
+    "lead": "Simulate the ecosystem's reaction to your patch before merge",
+    "today": "Today you can't know if your fix will break downstream dependents that are not in your repository",
+    "with_this": "With this, you can see a preview of which external teams' builds will fail and how their users are impacted before you press merge",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs",
+     "features",
+     "migrations",
+     "releases"
+    ]
+   },
    {
     "id": "F-000715",
     "size": 2,
@@ -37518,6 +37537,22 @@
     "evidence": "",
     "kinds": [
      "data"
+    ]
+   },
+   {
+    "id": "F-006261",
+    "size": 1,
+    "lead": "Turn release rollback into a time reversal of state",
+    "today": "Today you can't undo a release without manually reverting changes, which risks introducing new errors",
+    "with_this": "With this, you can instantly reverse the exact state of the entire system, returning it to the precise microsecond before the release, as if the time had never passed",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
     ]
    },
    {
@@ -38499,6 +38534,38 @@
     ]
    },
    {
+    "id": "F-007147",
+    "size": 1,
+    "lead": "Let the user steer the parallel briefs' priorities via a visual drag-and-drop",
+    "today": "Today you can't dynamically change the order or importance of parallel design tasks without stopping and restarting the agents.",
+    "with_this": "With this, you can drag and drop parallel briefs in a priority list, and the system re-routes their resources and execution order in real-time.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
+    "id": "F-007208",
+    "size": 1,
+    "lead": "Derivative contracts for cloud spend prediction and hedging",
+    "today": "Today you can't protect your budget from a surge in usage caused by a single heavy feature",
+    "with_this": "With this, you can lock in a fixed compute cost for a sprint by purchasing a futures contract against your average usage",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "design"
+    ]
+   },
+   {
     "id": "F-007307",
     "size": 1,
     "lead": "Auto-negotiate agent permission grants in PR comments",
@@ -38643,6 +38710,54 @@
     ]
    },
    {
+    "id": "F-008935",
+    "size": 1,
+    "lead": "Negotiate onboarding contracts via bidirectional pricing auction",
+    "today": "Today you can't see the cost of a missing field until the build breaks days later.",
+    "with_this": "With this, you can watch the onboarding cost drop in real-time as agents bid to fill gaps, saving hours of debugging.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
+    "id": "F-008936",
+    "size": 1,
+    "lead": "Price onboarding friction as liquid futures",
+    "today": "Today you can't hedge against the risk that a new user will abandon setup.",
+    "with_this": "With this, you can buy insurance against onboarding failure, ensuring your user base grows despite friction points.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
+    "id": "F-008941",
+    "size": 1,
+    "lead": "Pool onboarding risks into insurance pools",
+    "today": "Today you can't spread the risk of onboarding failures across multiple projects.",
+    "with_this": "With this, you can join a risk pool, reducing your liability for onboarding failures.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
     "id": "F-009128",
     "size": 1,
     "lead": "Simulate counterfactual migration paths to pick the least disruptive one",
@@ -38757,23 +38872,6 @@
     ]
    },
    {
-    "id": "F-007014",
-    "size": 2,
-    "lead": "Simulate the PR's impact on every dependent repository before merging",
-    "today": "Today you can't see how your API change breaks projects that depend on it until they file issues",
-    "with_this": "With this, you can know exactly which external projects will crash and fix the contract before code ships",
-    "tier": "high",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features",
-     "releases"
-    ]
-   },
-   {
     "id": "F-007434",
     "size": 2,
     "lead": "Generate rollback scripts from code diff and infrastructure state logs",
@@ -38806,11 +38904,11 @@
     ]
    },
    {
-    "id": "F-009639",
+    "id": "F-009738",
     "size": 2,
-    "lead": "Simulate ecosystem collapse before touching the production schema",
-    "today": "Today you can't predict how a schema change ripples through hundreds of downstream services before you deploy it.",
-    "with_this": "With this, you can see which user journeys break and which revenue streams stall before the first byte is written to disk.",
+    "lead": "Predict and preempt ecosystem-wide latency spikes in CI",
+    "today": "Today you can't predict that a new dependency version will cause a latency spike that affects multiple services downstream.",
+    "with_this": "With this, you can catch latency regressions before they hit production, preventing cascading outages and maintaining user experience.",
     "tier": "high",
     "cold": null,
     "wild": 4,
@@ -38818,8 +38916,7 @@
     "stage": "candidate",
     "evidence": "",
     "kinds": [
-     "migrations",
-     "releases"
+     "performance"
     ]
    },
    {
@@ -40597,105 +40694,9 @@
     "kinds": [
      "bugs"
     ]
-   },
-   {
-    "id": "F-002424",
-    "size": 1,
-    "lead": "Trace the origin of every data value through its history",
-    "today": "Today you can't figure out where a specific number in a file came from if it was copied, calculated, or imported",
-    "with_this": "With this, you can point to any value in a file and the chat will show you the exact lineage of how it was created or modified",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "data"
-    ]
-   },
-   {
-    "id": "F-002572",
-    "size": 1,
-    "lead": "Let a file rewrite its own slow paths safely",
-    "today": "Today you can't have a file get faster on its own, so speedups depend on someone noticing and rewriting it by hand.",
-    "with_this": "With this, you can ship code whose slow spots fix themselves from real usage, cutting cloud bills and user wait times.",
-    "tier": "high",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "performance"
-    ]
-   },
-   {
-    "id": "F-002607",
-    "size": 1,
-    "lead": "Predict ecosystem failure from early symptom clusters in logs",
-    "today": "Today you can't predict a full system failure from subtle, early warning signs in scattered log entries.",
-    "with_this": "With this, you can receive an alert 24 hours before a likely failure, with a specific list of components to check first.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
-   },
-   {
-    "id": "F-002641",
-    "size": 1,
-    "lead": "Optimize release size based on user dependency graphs",
-    "today": "Today you can't automatically determine the minimal set of files to release for a specific user segment.",
-    "with_this": "With this, you can generate custom, minimal release artifacts for different user cohorts, reducing download time and attack surface for each group.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-002653",
-    "size": 1,
-    "lead": "Let the editor swallow untrusted code safely",
-    "today": "Today you can't review a new file without first trusting that every snippet in it behaves normally.",
-    "with_this": "With this, you can ingest unfamiliar code into a project and get a digestible safety summary before it touches user data.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "security"
-    ]
-   },
-   {
-    "id": "F-002668",
-    "size": 1,
-    "lead": "Predictive Dependency Impact Heatmap in Chat",
-    "today": "Today you can't see the ripple effect of a function signature change until you break downstream services hours later.",
-    "with_this": "With this, you can describe a refactor in natural language and instantly see a visual map of which teams, projects, and API endpoints will be affected, ranked by breakage risk.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "refactors"
-    ]
    }
   ],
-  "families_total": 280
+  "families_total": 298
  },
  "steer": {
   "run": "steer-20261102T212604-3954",
