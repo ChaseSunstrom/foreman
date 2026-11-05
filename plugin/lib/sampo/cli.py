@@ -1055,6 +1055,8 @@ def cmd_task(args):
         reason = getattr(args, "reason", None) or ""
 
         def change(b):
+            if status == "dropped" and b.status in ("active", "verifying") and not getattr(args, "force", False):
+                raise UsageError(f"{b.id} is {b.status}: dropping the task in hand needs --force")  # T-3088
             if status != "dropped" and b.status in ("active", "verifying"):
                 c.pause_snapshot(p.root, b)  # T-0136
             b.meta["status"] = status
@@ -3320,6 +3322,9 @@ def task_new(p, args):
             b = need_brief(p, args.from_id)
             if b.status != "captured" and not (b.status == "planned" and not b.meta.get("base")):  # T-1862: never focused
                 raise UsageError(f"{b.id} is {b.status}, not captured or planned and never started")
+            if b.status == "planned" and b.acceptance() and not getattr(args, "replan", False):  # T-3087
+                raise UsageError(f"{b.id} is already planned with criteria; --from would overwrite its title, tier, "
+                                 f"criteria and steps. Pass --replan to re-plan it")
             b.meta.update(type=type_, tier=args.tier, status="planned")
             if args.scope:
                 b.meta["scope"] = _scope_paths(args.scope)
@@ -6593,6 +6598,7 @@ def _build_parser(only=None):
     t.add_argument("--raw")
     t.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
     t.add_argument("--from", dest="from_id")
+    t.add_argument("--replan", action="store_true", help="with --from: re-plan a planned task that already has criteria")
     t.add_argument("--redo", metavar="ID", help="recreate a dropped task: keep its start point and edited files")
     t.add_argument("--ac", action="append", help="acceptance criterion (repeatable): name its observable, what the "
                                                  "user will see, and give its check as 'TEXT :: CMD'")
@@ -6757,6 +6763,7 @@ def _build_parser(only=None):
     t.add_argument("id", help=some)
     t.add_argument("reason", nargs="?")
     t.add_argument("--done-in", metavar="ID", help="it was done as part of this other task (closed as done there)")
+    t.add_argument("--force", action="store_true", help="drop a task that is active or verifying")
     t = tadd("unblock")  # T-1877
     t.add_argument("id", help=some + "; back to planned, or captured while it has no criteria")
     t.add_argument("reason", nargs="?")
@@ -8177,7 +8184,8 @@ def _build_parser(only=None):
                  "--output-format json work too (T-1399)",
             conflict_handler="resolve")  # T-1399: -p after the verb is claude's --print; the project is --project
     s.add_argument("request", nargs="*", help="what to do (or: models, runners, config, why, bench, tui)")
-    s.add_argument("-p", "--print", dest="plain", action="store_true", help="claude's -p: the same as --plain (fm's "
+    s.add_argument("-p", "--print", dest="plain", action="store_true", help="claude's -p: the same as --plain and it "
+                   "creates a task (a one-off probe: --ask to ask, --dry-plan to plan with no task); fm's "
                    "own -p PROJECT goes before the verb, fm -p SLUG code …, or --project after it)")
     s.add_argument("-c", "--continue", dest="resume", action="store_const", const="", help="claude's -c: the same "
                    "as --resume with no ID (the newest unfinished run)")

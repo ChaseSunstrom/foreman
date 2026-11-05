@@ -171,6 +171,14 @@ class CaptureAndIntake(ForemanTestCase):
             self.assertIn("nope.", r.stderr, argv)
             self.assertNotEqual(r.returncode, 0)
 
+    def test_code_print_help_says_it_makes_a_task_and_names_the_probe_flags(self):
+        # T-3089: -p looked like a harmless print but creates a task
+        h = " ".join(self.fm("code", "--help").stdout.split())
+        i = h.index("claude's -p: ")
+        seg = h[i:i + 400]
+        for want in ("creates a task", "--ask", "--dry-plan"):
+            self.assertIn(want, seg)
+
     def test_capture_creates_captured_brief_and_inbox_view(self):
         out = self.fm("capture", "export report as CSV", "--type", "FEATURE", "--source", "discovered").stdout
         self.assertIn("T-0001", out)
@@ -346,11 +354,11 @@ class CaptureAndIntake(ForemanTestCase):
             self.fm("task", "ac", tid, "add", "old check", "--verify", "true")
             self.fm("task", "step", tid, "add", "old step")
         self.fm("task", "new", "make it so", "--type", "FIX", "--tier", "S", "--from", "T-0001",
-                "--ac", "new check :: true", "--step", "new step")
+                "--ac", "new check :: true", "--step", "new step", "--replan")  # T-3087: ac add made it planned
         got = json.loads(self.fm("task", "show", "T-0001", "--json").stdout)
         self.assertEqual([x["text"] for x in got["criteria"]], ["new check"])
         self.assertEqual([x["text"] for x in got["steps"]], ["new step"])
-        self.fm("task", "new", "keep mine", "--type", "FIX", "--tier", "S", "--from", "T-0002")
+        self.fm("task", "new", "keep mine", "--type", "FIX", "--tier", "S", "--from", "T-0002", "--replan")
         got = json.loads(self.fm("task", "show", "T-0002", "--json").stdout)
         self.assertEqual([x["text"] for x in got["criteria"]], ["old check"], "no --ac: the capture's own stay")
         self.assertEqual([x["text"] for x in got["steps"]], ["old step"])
@@ -415,8 +423,13 @@ class CaptureAndIntake(ForemanTestCase):
     def test_a_planned_task_never_started_can_be_planned_again(self):
         # T-1862: an M task whose --focus was refused stays planned; --from refused it, so only status=captured got out
         self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--ac", "old :: true", "--step", "old")
+        r = self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--from", "T-0001", "--ac", "new :: true",
+                    check=False)  # T-3087: a planned task with criteria is not re-planned by accident
+        self.assertEqual((r.returncode, "--replan" in r.stderr), (1, True), r.stderr)
+        got = json.loads(self.fm("task", "show", "T-0001", "--json").stdout)
+        self.assertEqual([x["text"] for x in got["criteria"]], ["old"])
         self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--from", "T-0001", "--ac", "new :: true",
-                "--step", "new", "--focus")
+                "--step", "new", "--focus", "--replan")
         got = json.loads(self.fm("task", "show", "T-0001", "--json").stdout)
         self.assertEqual(([x["text"] for x in got["criteria"]], got["status"]), (["new"], "active"))
         r = self.fm("task", "new", "big one", "--type", "FIX", "--tier", "S", "--from", "T-0001", check=False)
@@ -745,6 +758,17 @@ class TaskLifecycle(ForemanTestCase):
         self.fm("task", "defer", "T-0001")
         self.assertEqual(self.brief().status, "deferred")
         self.fm("task", "drop", "T-0001", "not needed")
+        self.assertEqual(self.brief().status, "dropped")
+
+    def test_drop_refuses_the_task_in_hand_unless_forced(self):
+        # T-3088: a cleanup loop must not drop an active task silently
+        self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
+        self.fm("task", "step", "T-0001", "add", "go")
+        self.fm("focus", "T-0001")
+        self.assertEqual(self.brief().status, "active")
+        r = self.fm("task", "drop", "T-0001", "tidy", check=False)
+        self.assertEqual((r.returncode, "--force" in r.stderr, self.brief().status), (1, True, "active"), r.stderr)
+        self.fm("task", "drop", "T-0001", "tidy", "--force")
         self.assertEqual(self.brief().status, "dropped")
 
     def test_log_appends_a_note_without_replacing_the_section(self):
@@ -1531,7 +1555,7 @@ class Redo(ForemanTestCase):
         r = self.fm("task", "new", "Again", "--type", "FIX", "--tier", "S", "--redo", live, check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("dropped", r.stderr)
-        self.fm("task", "drop", old, "wrong check")
+        self.fm("task", "drop", old, "wrong check", "--force")
         again = new("Second try", "--redo", old, "--focus")
         p = c.find_project(self.repo)
         b = c.find_brief(p, again)

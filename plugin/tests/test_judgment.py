@@ -272,7 +272,7 @@ class DoorPark(DoorBase):
         plain = self.brief("delete data/old.csv", raw="Delete data/old.csv, it is stale", tier="M", interp=one)
         self.fm("focus", plain, env={"FM_DOOR_CAP": "100"})
         self.assertIsNone(self.waits(plain), "one written reading, no split: it runs as a costly decision")
-        self.fm("task", "drop", plain, "next")
+        self.fm("task", "drop", plain, "next", "--force")
         self.data(text="x" * 400)
         tid = self.brief("delete data/old.csv", raw="Delete data/old.csv, it is stale", tier="M", interp=one)
         b = c.find_brief(self.p, tid)

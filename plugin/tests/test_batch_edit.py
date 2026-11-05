@@ -175,7 +175,7 @@ class BatchEdit(_Files):
         self.fm("checkpoint", "--note", "pause")
         st = self.fm_json("state")
         if st.get("active"):
-            self.fm("task", "drop", st["active"]["id"], "test")
+            self.fm("task", "drop", st["active"]["id"], "test", "--force")
         p = self.edit([{"file": "a.py", "old": "x = 1", "new": "x = 9"}], check=False)
         self.assertNotEqual(p.returncode, 0)
 

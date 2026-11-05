@@ -379,17 +379,17 @@ class ScoutDrive(ForemanTestCase):
         self.fm("task", "new", "Fix the login", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s",
                 "--focus")
         self.hook("Stop", {"session_id": "s1", "last_assistant_message": "working"}, env=env)  # the session had work
-        self.fm("task", "drop", "T-0001", "done in the test")  # ... and now the queue drains
+        self.fm("task", "drop", "T-0001", "done in the test", "--force")  # ... and now the queue drains
         out = json.loads(self.hook("Stop", {"session_id": "s1", "last_assistant_message": "done"}, env=env).stdout or "{}")
         self.assertEqual(out.get("decision"), "block")
         self.assertIn("scout", out.get("reason", "").lower())
         # within the gap a second drain doesn't run it again
         for t in json.loads(self.fm("state", "--json").stdout)["inbox"]:
-            self.fm("task", "drop", t["id"], "done in the test")
+            self.fm("task", "drop", t["id"], "done in the test", "--force")
         self.fm("task", "new", "Fix the logout", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s",
                 "--focus")
         self.hook("Stop", {"session_id": "s1", "last_assistant_message": "working"}, env=env)
-        self.fm("task", "drop", "T-0004", "done in the test")
+        self.fm("task", "drop", "T-0004", "done in the test", "--force")
         again = json.loads(self.hook("Stop", {"session_id": "s1", "last_assistant_message": "done"}, env=env).stdout or "{}")
         self.assertNotIn("scout", again.get("reason", "").lower())
 
@@ -421,7 +421,7 @@ class ScoutDrive(ForemanTestCase):
         self.fm("task", "new", "Fix the login", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s",
                 "--focus")
         self.hook("Stop", {"session_id": "s1", "last_assistant_message": "working"}, env=env)
-        self.fm("task", "drop", "T-0001", "done in the test")
+        self.fm("task", "drop", "T-0001", "done in the test", "--force")
         out = json.loads(self.hook("Stop", {"session_id": "s1", "last_assistant_message": "done"}, env=env).stdout or "{}")
         self.assertIn("sampo scout --slow", out.get("reason", ""))
 

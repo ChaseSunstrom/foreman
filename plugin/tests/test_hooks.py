@@ -980,7 +980,7 @@ class NoTaskGateClose(NoTaskGateKit, HookCase):
                                                  "Add lexer.tokenize: numbers may not run into a letter."})
         self.pre(os.path.join(self.repo, "calc.py"))
         first = c.active_brief(c.load_briefs(self.project()))
-        self.fm("task", "drop", first.id, "--reason", "done elsewhere")
+        self.fm("task", "drop", first.id, "--reason", "done elsewhere", "--force")
         ctx = self.ctx_of(self.hook("SessionStart", {"source": "compact"}))
         self.assertIn("keys are lowercased", ctx)
         self.assertIn("numbers may not run into a letter", ctx)
@@ -1014,7 +1014,7 @@ class NoTaskGateClose(NoTaskGateKit, HookCase):
                                                  "keys are lowercased."})
         self.pre(os.path.join(self.repo, "calc.py"))
         first = c.active_brief(c.load_briefs(self.project()))
-        self.fm("task", "drop", first.id, "--reason", "done")  # closed: nothing active now
+        self.fm("task", "drop", first.id, "--reason", "done", "--force")  # closed: nothing active now
         out = parse(self.pre(os.path.join(self.repo, "ini.py")))["hookSpecificOutput"]
         act = c.active_brief(c.load_briefs(self.project()))
         self.assertIsNotNone(act, out)
@@ -1028,7 +1028,7 @@ class NoTaskGateClose(NoTaskGateKit, HookCase):
         self.fm("autonomy", "full")
         self.hook("UserPromptSubmit", {"prompt": "Task: ## Request 1\nAdd half().\n\n## Request 2\nAdd third()."})
         self.pre(os.path.join(self.repo, "calc.py"))
-        self.fm("task", "drop", c.active_brief(c.load_briefs(self.project())).id, "--reason", "done")
+        self.fm("task", "drop", c.active_brief(c.load_briefs(self.project())).id, "--reason", "done", "--force")
         self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "t.py"),
                                                                       "content": "x"}}, env=self.slow_start())
         act = c.active_brief(c.load_briefs(self.project()))
@@ -1063,7 +1063,7 @@ class NoTaskGateQueue(NoTaskGateKit, HookCase):
         self.assertIn("rule 1.", ctx, "the active request whole")
         self.assertNotIn("rule 3.\n- a rule line", ctx, "the others by title only")
         self.assertIn(briefs[2].id, ctx)
-        self.fm("task", "drop", briefs[0].id, "--reason", "done")
+        self.fm("task", "drop", briefs[0].id, "--reason", "done", "--force")
         out = self.fm("focus", briefs[1].id).stdout
         self.assertIn("rule 2.", out)
         self.assertIn("- a rule line for this request", out)
@@ -3144,7 +3144,7 @@ class Stop(HookCase):
         self.hook("UserPromptSubmit", {"prompt": "what does fm relate do?", "session_id": "sess-1"})
         self.assertIsNone(self.decision(self.stop("It infers dependencies.")), "an answer isn't a drain (review)")
         self.hook("UserPromptSubmit", {"prompt": "fix the login", "session_id": "sess-1"})
-        self.fm("task", "drop", self.task("Fix the login"), "done in the test")
+        self.fm("task", "drop", self.task("Fix the login"), "done in the test", "--force")
         r = parse(self.stop("All done."))
         self.assertEqual(r.get("decision"), "block")
         self.assertIn("queue is empty", r["reason"])
@@ -3152,7 +3152,7 @@ class Stop(HookCase):
         self.assertNotIn("sampo smoke", r["reason"])
         self.assertIsNone(self.decision(self.stop("Checked: everything holds.")), "once per drain")
         tid = self.task("Found a defect")
-        self.fm("task", "drop", tid, "test")
+        self.fm("task", "drop", tid, "test", "--force")
         self.assertEqual(self.decision(self.stop("Fixed it.")), "block", "drained again: checks again")
 
     def test_drive_skips_work_already_under_way(self):

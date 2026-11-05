@@ -173,7 +173,7 @@ class Rival(_RivalBase):
     def test_a_one_way_step_needs_it_even_on_an_S_brief(self):
         tid = self.new("S", step="publish the release notes")
         self.assertIn(f"sampo second rival {tid}", self.focus(tid, False))
-        self.fm("task", "drop", tid, "not needed")
+        self.fm("task", "drop", tid, "not needed", "--force")
         self.focus(self.new("S", step="rename the cache key"), True)
 
     def test_an_S_push_or_a_verb_the_request_names_is_routine_and_waits_for_nothing(self):
@@ -181,7 +181,7 @@ class Rival(_RivalBase):
                    dict(step="publish the release notes", raw="publish the release notes")):
             tid = self.new("S", **kw)
             self.focus(tid, True)
-            self.fm("task", "drop", tid, "next")
+            self.fm("task", "drop", tid, "next", "--force")
         self.assertFalse(os.path.exists(self.log))
 
     def test_a_hand_typed_section_or_an_empty_reply_does_not_clear_the_gate(self):
@@ -210,7 +210,7 @@ class Rival(_RivalBase):
                 self.fm("task", "dissent", tid, "resolve", str(i), "adopted: noted", env=self.env)
             self.assertNotIn("second rival", self.fm("next", env=self.env).stdout)
             self.focus(tid, True)
-            self.fm("task", "drop", tid, "next")
+            self.fm("task", "drop", tid, "next", "--force")
 
     def test_answering_every_rival_line_unlocks_focus(self):
         tid = self.new("M", approach=self.SURE % 60)

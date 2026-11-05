@@ -51,7 +51,7 @@ class Hunks(_Case):
         self.write("my calc.py", "def h():\n    return 3\n")
         subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "more"], check=True)
-        self.fm("task", "drop", self.tid, "restart")
+        self.fm("task", "drop", self.tid, "restart", "--force")
         tid = json.loads(self.fm("task", "new", "Again", "--type", "FIX", "--tier", "S", "--ac", "x :: true",
                                  "--step", "x", "--json").stdout)["id"]
         self.fm("focus", tid)

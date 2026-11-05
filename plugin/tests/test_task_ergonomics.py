@@ -48,7 +48,7 @@ class TaskErgonomics(ForemanTestCase):
 
     def test_drop_block_and_defer_take_reason_as_an_option_too(self):
         tid = self.task()
-        self.fm("task", "drop", tid, "--reason", "not needed")
+        self.fm("task", "drop", tid, "--reason", "not needed", "--force")
         self.assertEqual(self.brief(tid).status, "dropped")
         self.assertIn("not needed", self.brief(tid).section("Log"))
 

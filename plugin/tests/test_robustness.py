@@ -69,7 +69,7 @@ class Robustness(ForemanTestCase):
 
     def test_the_brief_caches_do_not_depend_on_when_a_load_runs(self):
         """T-2324: a closed brief written moments ago is indexed the same as one written long ago."""
-        self.fm("task", "drop", "T-0001", "--reason", "no")  # closed, written this second
+        self.fm("task", "drop", "T-0001", "--reason", "no", "--force")  # closed, written this second
         keys = [os.path.join(self.p.dir, n) for n in ("briefs-closed.json", "briefs-index.json")]
         for k in keys:
             if os.path.exists(k):

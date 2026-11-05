@@ -93,6 +93,10 @@ class Rules(unittest.TestCase):
 
 
 class Skills(unittest.TestCase):
+    def test_next_skill_drop_line_carries_force(self):
+        # T-3088: dropping the task in hand needs --force; the close-out step must say so
+        self.assertIn('task drop ID "<why>" --force', read_text(os.path.join(PLUGIN, "skills", "next", "SKILL.md")))
+
     def test_every_spec_skill_exists_with_valid_frontmatter(self):
         for name in SKILLS:
             with self.subTest(skill=name):

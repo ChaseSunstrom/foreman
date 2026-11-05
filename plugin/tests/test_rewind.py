@@ -85,7 +85,7 @@ class Rewind(ForemanTestCase):
         p = c.find_project(self.repo)
         with mock.patch.object(c, "worktree_tree", side_effect=AssertionError("ran git")):
             self.assertIsNone(c.reconcile_rewind(p))
-        self.fm("task", "drop", tid, "test")
+        self.fm("task", "drop", tid, "test", "--force")
         tid = self.two_steps_done()
         os.remove(os.path.join(self.repo, "b.py"))
         briefs = c.load_briefs(p)

@@ -2037,7 +2037,7 @@ def _conflict_brief(p, b, main, branch, files):
         f"{b.id} is active or verifying there):\n```\ncd {path_of}\n```\n"
         f"3. then, as separate commands: `git merge {head}`; fix the files above (keep both sides' intent); run the "
         f"task's tests; `git commit -am \"Merge {head} into {branch}\"`. If the guard says no active task, drop and "
-        f"redo: `fm task drop {b.id} <why>`, `fm lane rm {b.id}`, recapture on the new main.\n"
+        f"redo: `fm task drop {b.id} <why> --force`, `fm lane rm {b.id}`, recapture on the new main.\n"
         f"4. From the main checkout: fm lane merge {b.id}",
         "## Conflict hunks\n```diff\n" + hunks[:60_000] + "\n```"])) + "\n"
     out = os.path.join(p.dir, "audits", f"{b.id}.conflict.md")
@@ -2081,7 +2081,7 @@ def remove(p, b, main, drop=None, keep=False):
         if tip and _git(main, "merge-base", "--is-ancestor", tip, "HEAD").returncode:
             raise c.PolicyError(f"{b.id}'s last merge conflicted and its branch isn't merged ({conflict}): resolve it "
                                 f"on the branch and run fm lane merge {b.id}; to abandon the lane, fm task drop "
-                                f"{b.id} first (the branch is kept either way)")
+                                f"{b.id} --force first (the branch is kept either way)")
     wreck = ""
     if cut_off(main, path, branches):  # T-2257: an interrupted worktree creation holds nothing: move it aside
         if drop is None:

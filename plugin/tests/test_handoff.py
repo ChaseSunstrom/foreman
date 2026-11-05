@@ -36,7 +36,7 @@ class Tour(_Task):
     def test_a_rename_is_a_delete_and_an_add(self):
         self.write("tokencache.py", "CACHE = {}\n")
         self.fm("task", "evidence", self.tid, "--step", "1", "--run", "git add -A && git commit -qm base")
-        self.fm("task", "drop", self.tid, "restart from the commit")
+        self.fm("task", "drop", self.tid, "restart from the commit", "--force")
         tid = json.loads(self.fm("task", "new", "Rename it", "--type", "CLEAN", "--tier", "S", "--ac", "x :: true",
                                  "--step", "x", "--json").stdout)["id"]
         self.fm("focus", tid)

@@ -131,7 +131,7 @@ class Progress(VisibilityCase):
         self.assertLessEqual(len(line), 40)
 
     def test_idle_without_asks_has_no_progress_line(self):
-        self.fm("task", "drop", "T-0001", "not needed")
+        self.fm("task", "drop", "T-0001", "not needed", "--force")
         self.assertEqual(c.progress_line(self.sd()), "")
         self.assertNotIn("▸", self.statusline().stdout)
 

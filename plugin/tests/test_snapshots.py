@@ -111,7 +111,7 @@ class Snapshots(ForemanTestCase):
         # T-0895: a dropped task's half-done work survives a later checkout, and its brief says where
         with open(os.path.join(self.repo, "README.md"), "a") as f:
             f.write("half-done work\n")
-        self.fm("task", "drop", "T-0001", "wrong approach")
+        self.fm("task", "drop", "T-0001", "wrong approach", "--force")
         self.assertEqual(len(self.refs()), 1)
         log = self.fm("task", "show", "T-0001").stdout
         self.assertIn("work at drop saved", log)

@@ -110,7 +110,7 @@ class Contract(HookCase):
         self.assertEqual((parse(self.stop()) or {}).get("decision"), "block")
 
     def test_an_ended_contract_turns_off_the_loops_next_round_in_fm_next(self):
-        self.fm("task", "drop", self.tid, "not needed")
+        self.fm("task", "drop", self.tid, "not needed", "--force")
         self.fm("loop", "on")
         self.assertIn("forever loop", self.fm("next").stdout)
         self.fm("contract", "--usd", "0")
