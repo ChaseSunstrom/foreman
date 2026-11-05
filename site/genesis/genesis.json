@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-05T15:26:56Z",
+ "updated": "2026-11-05T15:31:51Z",
  "rev": "cdac8696",
  "capabilities": [
   {
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 16181,
+   "generated": 16277,
    "write": {
     "title": 136,
-    "line": 1313,
+    "line": 1321,
     "payoff": 17,
     "kill test": 60,
     "code": 4
@@ -37485,7 +37485,7 @@
    },
    "merged": 78,
    "kept": 744,
-   "pending": 281
+   "pending": 369
   },
   "families": [
    {
