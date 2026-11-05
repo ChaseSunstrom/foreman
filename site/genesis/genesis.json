@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T04:42:06Z",
- "rev": "7f5d1f67",
+ "updated": "2026-11-05T04:54:54Z",
+ "rev": "409b5588",
  "capabilities": [
   {
    "n": 1,
@@ -37329,7 +37329,7 @@
     "novelty": "5",
     "stage": "idea",
     "unblocks": [],
-    "asked": "no"
+    "asked": "T-3138"
    },
    {
     "id": "M-53",
@@ -37465,7 +37465,7 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 10009,
+   "generated": 10049,
    "write": {
     "title": 113,
     "line": 623,
@@ -37485,7 +37485,7 @@
    },
    "merged": 17,
    "kept": 313,
-   "pending": 0
+   "pending": 40
   },
   "families": [
    {
