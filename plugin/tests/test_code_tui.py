@@ -1311,7 +1311,7 @@ class Settings(unittest.TestCase):
         from sampo import settings as ssettings
         keys = {e["key"] for e in ssettings.app_schema()}
         T = tui()
-        names = {"preset": "theme", "motion": "motion", "border": "border"}
+        names = {"preset": "theme", "motion": "motion", "border": "border", "live_theme": "live_theme"}  # T-3055
         for k in T.DEFAULTS:
             if k in names:
                 self.assertIn(names[k], keys, k)

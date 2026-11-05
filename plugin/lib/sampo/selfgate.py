@@ -22,7 +22,9 @@ HARNESS = ("lib/sampo/replay.py", "tests/bench_hooks.py", "tests/fixtures/hook_p
 RISE = 0.15  # a hook's p95 rise that refuses (T-2358's latency band)
 FLOOR_MS = 5.0  # under this, a rise is jitter whatever its share
 RUNS = 10  # bench runs per tree per pair
-PAIRS, HOLD = 3, 2  # T-2992: base and branch benched in turn this many times; a rise must show in HOLD of them
+PAIRS = 3  # T-2992: base and branch benched in turn this many times
+HOLD = PAIRS  # T-3131: a rise must show in every pair (2 of 3 across 16 hooks held identical trees by chance)
+TAIL_RISE, TAIL_FLOOR_MS = 0.5, 25.0  # T-3131 review: a p95 rise this big, in every pair, is a tail slowdown, not noise
 WALL_RISE, WALL_FLOOR_MS = 1.0, 100.0  # T-2363: on a loaded bench, a wall-time rise this big is a hook that waits
 CORPUS = 2000  # recent real commands replayed, newest first (fmreplay.corpus)
 _RUNNER = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nfrom sampo import replay as r\n"
@@ -140,21 +142,34 @@ def _slower(base, branch):
     tight = min((v["budget"] for v in base.values() if isinstance(v.get("budget"), (int, float))), default=None)
     rows = {}
     for k, v in branch.items():
-        b1, b0 = _ms(v, loaded), _ms(base.get(k) or {}, loaded)
-        budget = (base.get(k) or {}).get("budget", tight)
+        bk = base.get(k) or {}
+        p1, p0 = _ms(v, loaded), _ms(bk, loaded)
+        tag = "CPU p95" if loaded else "p95"
+        # T-3131: a rise is judged on the median CPU time when both benches have it (the p95 of 10 runs is the slowest
+        # run: +78% between identical trees); the budget stays a p95 budget, and a tail-only rise has its own loose bar
+        both = all(isinstance(x.get("cpu_p50"), (int, float)) and not isinstance(x.get("cpu_p50"), bool) for x in (v, bk))
+        b1, b0 = (v["cpu_p50"], bk["cpu_p50"]) if both else (p1, p0)
+        budget = bk.get("budget", tight)
         if b1 is None:
             continue
-        over = isinstance(budget, (int, float)) and b1 > budget and not (b0 is not None and b0 > budget)
+        over = isinstance(budget, (int, float)) and p1 is not None and p1 > budget and not (p0 is not None and p0 > budget)
         rise = b0 is not None and b0 > 0 and b1 > b0 * (1 + RISE) and b1 - b0 >= FLOOR_MS
-        if over or rise:
-            rows[k] = f"hook {k} p95 {b0} -> {b1} ms" + (f" (past its {budget} ms budget)" if over else
-                                                          f" (+{(b1 - b0) * 100 / b0:.0f}%)")
-        elif loaded:  # CPU time misses a hook that sleeps or waits on I/O: a doubling past 100 ms of wall is no load noise
-            q = "p50" if (base.get(k) or {}).get("p50") and v.get("p50") else "p95"  # T-2605: load spikes inflate p95
-            w1, w0 = v.get(q), (base.get(k) or {}).get(q)
-            if isinstance(w0, (int, float)) and isinstance(w1, (int, float)) and w0 and w1 >= w0 * (1 + WALL_RISE) \
-                    and w1 - w0 >= WALL_FLOOR_MS:
-                rows[k] = f"hook {k} {q} {w0} -> {w1} ms wall (+{(w1 - w0) * 100 / w0:.0f}%; its CPU time didn't rise: it waits)"
+        tail = both and p0 and p1 is not None and p1 > p0 * (1 + TAIL_RISE) and p1 - p0 >= TAIL_FLOOR_MS
+        q = "p50" if bk.get("p50") and v.get("p50") else "p95"  # T-2605: load spikes inflate p95
+        w1, w0 = v.get(q), bk.get(q)
+        walls = isinstance(w0, (int, float)) and isinstance(w1, (int, float)) and w0 > 0
+        # CPU time misses a hook that sleeps or waits on I/O: loaded, a doubling past 100 ms of wall isn't load noise;
+        # quiet (T-3131 review), the wall median rising past RISE and FLOOR_MS is a wait
+        waits = walls and ((loaded and w1 >= w0 * (1 + WALL_RISE) and w1 - w0 >= WALL_FLOOR_MS) or
+                           (not loaded and both and q == "p50" and w1 > w0 * (1 + RISE) and w1 - w0 >= FLOOR_MS))
+        if over:
+            rows[k] = f"hook {k} {tag} {p0} -> {p1} ms (past its {budget} ms budget)"
+        elif rise:
+            rows[k] = f"hook {k} {'median CPU' if both else tag} {b0} -> {b1} ms (+{(b1 - b0) * 100 / b0:.0f}%)"
+        elif waits:
+            rows[k] = f"hook {k} {q} {w0} -> {w1} ms wall (+{(w1 - w0) * 100 / w0:.0f}%; its CPU time didn't rise: it waits)"
+        elif tail:
+            rows[k] = f"hook {k} {tag} {p0} -> {p1} ms (+{(p1 - p0) * 100 / p0:.0f}%: a slowdown in the tail alone)"
     return rows
 
 

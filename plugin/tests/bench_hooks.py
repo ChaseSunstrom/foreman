@@ -115,6 +115,7 @@ def run_bench(runs=30, only=None):  # only: a predicate on fixture names (T-2359
             at = min(len(times) - 1, int(len(times) * 0.95))
             p95, cpu95, load = times[at], cpus[at], load_per_core()
             results[name] = {"p50": round(statistics.median(times), 1), "p95": round(p95, 1), "cpu_p95": round(cpu95, 1),
+                             "cpu_p50": round(statistics.median(cpus), 1),  # T-3131: the gate's steady basis
                              "budget": budget, "load": round(load, 2), "ok": within(p95, cpu95, budget, load),
                              "exit_codes": sorted(codes)}
     return results
