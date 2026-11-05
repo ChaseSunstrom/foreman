@@ -10,6 +10,7 @@
 
 ### Everything else
 
+- The crest's Sampo mark is hand-drawn pixel art in four flat tones (fire, steel, stone) instead of a blurry downscale, and shot.py draws half blocks exactly (T-3210).
 - Calling cards: `sampo card list|show|call|test|rank|bench` runs verified, confined generators a small model calls by name, with seed cards, an embedding ranker offered through fm code, and a paired with-versus-without measurement (T-3160).
 - Kalevala part 2: `sampo kalevala start`, `step`, `gen` and `select` run each aspect's Rune tower as a sealed job, at most K at once and charged once inside Kalevala's own daily share, keep Kalevala's own generations, and carry closed behaviour changes into every tower's next seed as capabilities (T-3081).
 - Guard: a python heredoc followed by `2>&1` and read-only filter pipes (head, tail without follow, cut, wc, sort without -o/-T, flag-only uniq, grep with literal args) is judged as python, not shell text, unless the shell text could make a filter's name run something else (T-2261).
