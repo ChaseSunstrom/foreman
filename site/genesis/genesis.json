@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T08:34:23Z",
- "rev": "c1d6c544",
+ "updated": "2026-11-05T08:39:33Z",
+ "rev": "a2dfd36a",
  "capabilities": [
   {
    "n": 1,
@@ -36247,7 +36247,7 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 813,
+ "unproven": 814,
  "unproven_kinds": {
   "meaning-notes": 359,
   "meaning-user": 248,
@@ -36256,7 +36256,7 @@
   "typed": 36,
   "red": 75,
   "tui-unshot": 10,
-  "docs": 112,
+  "docs": 113,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 30,
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 6610,
+    "kill": 6631,
     "tier": 2620,
     "novelty": 39
    },
    "merged": 17,
    "kept": 347,
-   "pending": 4155
+   "pending": 4134
   },
   "families": [
    {
