@@ -7,13 +7,18 @@ rewrite the judge; trees are built from git's blobs, not git archive (whose .git
 A refusal names the numbers. Only the user's yes to `fm ask ID core` given after a refusal of the same commit passes
 it: never the standing yes, never a decision, never a yes for an earlier commit. A gate that can't run refuses with the
 reason, and the same yes passes that too."""
+import hashlib
+import hmac
 import json
 import os
+import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 from sampo import core as c
 
@@ -30,7 +35,8 @@ CORPUS = 2000  # recent real commands replayed, newest first (fmreplay.corpus)
 _RUNNER = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nfrom sampo import replay as r\n"
            "cmds = [(x, r.resolve_cwd(y) if y else y) for x, y in json.load(sys.stdin)]\nv = r.verdicts(cmds)\n"
            "print(json.dumps([v.get(r._key(x, y or os.path.expanduser('~'))) for x, y in cmds]))\n")
-# ponytail: base's replay and bench are rerun on every gated merge (2-4 min); cache them by HEAD sha if merges queue up
+LOAD_BAND = 1.5  # T-3176: a cached base bench is reused only when the load per CPU now is within this factor of its own
+CACHE_S = 86400  # T-3176: the base's bench and replay, kept per base tree hash, are good for a day
 
 
 def _git(main, *a, text=False, input=None):
@@ -120,10 +126,132 @@ def _bench(plugin):
     return got.get("bench") or {}, got.get("injected") or {}
 
 
-def _paired(base, new):
+def _key(base):
+    """T-3176: what the base's cached half is true for: its content (not tests/ or __pycache__), the bench script and
+    payloads, the bench settings and this machine."""
+    h = hashlib.sha256(json.dumps([RUNS, PAIRS, platform.node(), os.cpu_count()]).encode())
+    for dp, dns, fns in os.walk(base):  # in-place dns pruning and sorting keeps the order stable
+        dns[:] = sorted(d for d in dns if d not in ("tests", "__pycache__"))
+        for fn in sorted(fns):
+            h.update(os.path.relpath(os.path.join(dp, fn), base).encode())
+            with open(os.path.join(dp, fn), "rb") as f:
+                h.update(f.read())
+    for rel in ("tests/bench_hooks.py", "tests/fixtures/hook_payloads.json"):
+        if os.path.isfile(os.path.join(base, rel)):
+            with open(os.path.join(base, rel), "rb") as f:
+                h.update(f.read())
+    return h.hexdigest()
+
+
+def _keyfile():
+    """The MAC key's path: selfgate.key beside secrets.env in the user's credential area (Ward guards *.key files)."""
+    from sampo import models
+    return os.path.join(os.path.dirname(models.secrets_path()), "selfgate.key")
+
+
+def _secret():
+    """The 32-byte MAC key, created 0600 (O_EXCL, O_NOFOLLOW) when missing; None when the file is a symlink, someone
+    else's, group/world-accessible or unreadable. An agent that can write the state folder can't forge a cache without it."""
+    path = _keyfile()
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.write(os.urandom(32))
+        except FileExistsError:
+            pass
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as f:
+            st = os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode) or st.st_mode & 0o077 or st.st_uid != os.getuid():
+                return None
+            key = f.read()
+        return key if len(key) == 32 else None
+    except OSError:
+        return None
+
+
+def _mac(secret, body):
+    return hmac.new(secret, json.dumps(body, sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256).hexdigest()
+
+
+def _load_pc():
+    """1-minute load per CPU, or None when unreadable."""
+    got = c.host_load()
+    return got[0] / max(got[1], 1) if got else None
+
+
+def _near(a, b):
+    """T-3176: two loads per CPU within a factor of LOAD_BAND of each other (a floor keeps an idle host comparable)."""
+    if a is None or b is None:
+        return False
+    a, b = max(a, 0.05), max(b, 0.05)
+    return max(a, b) <= min(a, b) * LOAD_BAND
+
+
+def _load(p, key):
+    """The saved base half when its MAC verifies under the user's key, it is for this key and under a day old, else {}.
+    The bench is dropped (the replay kept) when the host's load now is not within LOAD_BAND of the load it ran at."""
+    path = os.path.join(p.dir, "selfgate-base.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        secret = _secret()
+        with open(path, encoding="utf-8") as f:
+            got = json.load(f)
+        mac = got.pop("mac", None)
+        if secret is None or not isinstance(mac, str) or not hmac.compare_digest(mac, _mac(secret, got)):
+            raise ValueError("no valid MAC")
+        if got["key"] == key and 0 <= time.time() - got["at"] < CACHE_S:
+            out = {"at": got["at"], "bench": got.get("bench"), "verdicts": got.get("verdicts") or {}}
+            if _near(got.get("load"), _load_pc()):
+                out["load"] = got["load"]
+            else:
+                out["bench"] = None
+            return out
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        c.log_event(p, "self_gate_cache_ignored", data={"why": c.fit(str(e), 100)})
+    return {}
+
+
+def _save(p, key, cache):
+    cache.setdefault("at", time.time())
+    cache.setdefault("load", _load_pc())
+    path = os.path.join(p.dir, "selfgate-base.json")
+    secret = _secret()
+    if secret is None:
+        return
+    body = dict(cache, key=key)
+    try:
+        fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(dict(body, mac=_mac(secret, body)), f)
+        os.replace(path + ".tmp", path)
+    except OSError:
+        pass
+
+
+def _base_verdicts(base, cmds, cache):
+    """The base's verdict for each command; only those not in the cache are replayed."""
+    seen = cache.setdefault("verdicts", {})
+    miss = [x for x in cmds if json.dumps(x) not in seen]
+    if miss:
+        seen.update(zip(map(json.dumps, miss), _verdicts(base, miss)))
+    return [seen[json.dumps(x)] for x in cmds]
+
+
+def _paired(base, new, cache=None):
     """T-2992: (held rows, base's injected chars, branch's) from PAIRS benches of base then branch in turn, so load that
-    comes and goes lands on both; a hook's rise holds when it shows in HOLD pairs (a one-off spike doesn't)."""
-    runs = [(_bench(base), _bench(new)) for _ in range(PAIRS)]
+    comes and goes lands on both; a hook's rise holds when it shows in HOLD pairs (a one-off spike doesn't).
+    T-3176: with a cache the base's PAIRS benches are reused (or kept after a fresh run); the branch always runs."""
+    old = (cache or {}).get("bench")
+    if isinstance(old, list) and len(old) == PAIRS:
+        runs = [(a, _bench(new)) for a in old]
+    else:
+        runs = [(_bench(base), _bench(new)) for _ in range(PAIRS)]
+        if cache is not None:
+            cache["bench"], cache["load"] = [a for a, _ in runs], _load_pc()
     seen = [_slower(a[0], z[0]) for a, z in runs]
     rows = {k: next(s[k] for s in seen if k in s) for k in {k for s in seen for k in s}
             if sum(k in s for s in seen) >= HOLD}
@@ -306,12 +434,14 @@ def gate(p, b, main, ref, files):
             if os.path.isfile(src):
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copyfile(src, dst)
+        key = _key(base)
+        cache = _load(p, key)  # T-3176: the base half, rerun only when the base, settings, machine or a day changed
         was, now = _cases(main, head), _cases(main, sha)
         out += [f"guard case {i or '?'} removed or changed by the branch: {c.fit(c.redact(cmd), 100)}"
                 for (cmd, cwd), i in was.items() if (cmd, cwd) not in now]
         if any(_judged(f) for f in files) or was != now:
             cmds = list(dict.fromkeys(list(was) + list(now) + _corpus()))
-            v0, v1 = _verdicts(base, [list(x) for x in cmds]), _verdicts(new, [list(x) for x in cmds])
+            v0, v1 = _base_verdicts(base, [list(x) for x in cmds], cache), _verdicts(new, [list(x) for x in cmds])
             for (cmd, _), a, z in zip(cmds, v0, v1):
                 broke = not isinstance(z, str) or (z.startswith("error:") and not str(a).startswith("error:"))
                 if (a != "allow" and z == "allow") or broke:
@@ -325,11 +455,13 @@ def gate(p, b, main, ref, files):
         if benched and not timed:
             c.log_event(p, "self_gate_timing_skipped", task=b.id, data={"sha": sha, "files": benched[:20]})
         if timed:  # timings, and the injected chars a cut needs
-            slow, s0, s1 = _paired(base, new)
+            slow, s0, s1 = _paired(base, new, cache)
             out += list(slow.values())
             f0, f1 = _footprint(base, s0), _footprint(new, s1)
         out += [f"footprint {k} {w} -> {cur} (+{int((cur - w) * 100 // w)}%) with no always-on cut to pay for it"
                 for k, w, cur in doctor.grown(f0, f1) if not k.endswith(" ms")]
+        if cache.get("bench") or cache.get("verdicts"):
+            _save(p, key, cache)
         v0, v1 = _verbs(base), _verbs(new)  # T-2363: a verb added with none removed is growth too (gen-0 §6)
         added = [v for v in v1 if v not in v0]
         if added and not [v for v in v0 if v not in v1]:

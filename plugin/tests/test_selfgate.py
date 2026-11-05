@@ -214,5 +214,149 @@ class GateEndToEnd(unittest.TestCase):  # T-3139: git-built trees, the timing be
         self.assertNotIn("self_gate_timing_skipped", events)
 
 
+class BaseCache(unittest.TestCase):  # T-3176: the base tree's bench and guard replay are kept per base tree hash
+    def setUp(self):
+        import os
+        import tempfile
+        from types import SimpleNamespace
+        from sampo import selfgate as g
+        self.p, self.base = SimpleNamespace(dir=tempfile.mkdtemp()), tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.base, "lib"))
+        self.put("lib/a.py", "x = 1\n")
+        self.keyfile, self.load, self.logged = os.path.join(tempfile.mkdtemp(), "selfgate.key"), 0.5, []
+        for m in (mock.patch.object(g, "_keyfile", lambda: self.keyfile),
+                  mock.patch.object(g, "_load_pc", lambda: self.load),
+                  mock.patch.object(g.c, "log_event", lambda p, ev, **k: self.logged.append(ev))):
+            m.start()
+            self.addCleanup(m.stop)
+
+    def cache_path(self):
+        import os
+        return os.path.join(self.p.dir, "selfgate-base.json")
+
+    def edit_cache(self, fn):
+        import json
+        with open(self.cache_path()) as f:
+            d = json.load(f)
+        fn(d)
+        with open(self.cache_path(), "w") as f:
+            json.dump(d, f)
+
+    def test_the_cache_and_key_files_are_private(self):
+        import os
+        self.gate_side()
+        self.assertEqual(os.stat(self.cache_path()).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(self.keyfile).st_mode & 0o777, 0o600)
+        self.assertEqual(len(open(self.keyfile, "rb").read()), 32)
+
+    def test_a_forged_cache_reruns_the_base_half(self):
+        def slow(d):
+            d["bench"][0][0]["Stop"]["p95"] = 1.0
+        for name, forge in (("a tampered bench value", slow), ("a tampered key", lambda d: d.update(key="x")),
+                            ("a missing MAC", lambda d: d.pop("mac")), ("a bad MAC", lambda d: d.update(mac="0" * 64))):
+            with self.subTest(name):
+                import os
+                if os.path.exists(self.cache_path()):
+                    os.remove(self.cache_path())
+                self.gate_side()
+                self.edit_cache(forge)
+                self.assertEqual(self.gate_side()[0], 3)
+        self.assertIn("self_gate_cache_ignored", self.logged)
+
+    def test_a_cache_written_with_another_key_reruns_it(self):
+        import os
+        self.gate_side()
+        os.remove(self.keyfile)
+        self.assertEqual(self.gate_side()[0], 3)
+
+    def test_an_unsafe_key_file_ignores_the_cache(self):
+        import os
+        self.gate_side()
+        os.chmod(self.keyfile, 0o644)
+        self.assertEqual(self.gate_side()[0], 3)
+        real = self.keyfile + ".real"
+        os.rename(self.keyfile, real)
+        os.symlink(real, self.keyfile)
+        self.assertEqual(self.gate_side()[0], 3)
+
+    def test_the_bench_is_reused_only_within_a_load_band_of_1_5(self):
+        self.gate_side()  # benched at load 0.5 per CPU
+        for load, reused in ((0.74, True), (0.34, True), (0.80, False), (0.32, False)):
+            with self.subTest(load=load):
+                self.load = load
+                self.assertEqual(self.gate_side()[0], 0 if reused else 3)
+                self.load = 0.5
+                self.gate_side()
+
+    def put(self, rel, text):
+        import os
+        with open(os.path.join(self.base, rel), "w") as f:
+            f.write(text)
+
+    def gate_side(self, key=None):
+        """One gate's base half with a fake bench and replay; returns (bench calls on base, replayed cmds, rows)."""
+        from sampo import selfgate as g
+        key = key or g._key(self.base)
+        cache = g._load(self.p, key)
+        seen = {"base": 0, "cmds": []}
+
+        def bench(tree):
+            seen["base"] += tree == "base"
+            return {"Stop": {"p95": 100.0, "load": 0, "budget": 500}}, {}
+
+        def verdicts(tree, cmds):
+            seen["cmds"] += cmds
+            return ["allow"] * len(cmds)
+        with mock.patch.object(g, "_bench", bench), mock.patch.object(g, "_verdicts", verdicts):
+            rows = g._paired("base", "new", cache)[0]
+            g._base_verdicts(self.base, [["ls", ""], ["pwd", ""]], cache)
+        g._save(self.p, key, cache)
+        return seen["base"], seen["cmds"], rows
+
+    def test_a_second_gate_on_the_same_base_skips_the_base_half(self):
+        self.assertEqual(self.gate_side()[:2], (3, [["ls", ""], ["pwd", ""]]))
+        self.assertEqual(self.gate_side()[:2], (0, []))
+
+    def test_a_changed_base_or_setting_reruns_it(self):
+        self.gate_side()
+        self.put("lib/a.py", "x = 2\n")
+        self.assertEqual(self.gate_side()[0], 3)
+        from sampo import selfgate as g
+        with mock.patch.object(g, "RUNS", 5):
+            self.assertEqual(self.gate_side()[0], 3)
+
+    def test_tests_and_pycache_do_not_change_the_key(self):
+        import os
+        from sampo import selfgate as g
+        k = g._key(self.base)
+        os.makedirs(os.path.join(self.base, "tests"))
+        os.makedirs(os.path.join(self.base, "lib", "__pycache__"))
+        self.put("tests/test_x.py", "1\n")
+        self.put("lib/__pycache__/a.pyc", "1\n")
+        self.assertEqual(g._key(self.base), k)
+
+    def test_a_cache_older_than_a_day_reruns_it(self):
+        import time
+        from sampo import selfgate as g
+        self.gate_side()
+        with mock.patch.object(time, "time", return_value=time.time() + 86500):
+            self.assertEqual(g._load(self.p, g._key(self.base)), {})
+
+    def test_a_new_command_is_replayed_alone(self):
+        from sampo import selfgate as g
+        self.gate_side()
+        cache = g._load(self.p, g._key(self.base))
+        with mock.patch.object(g, "_verdicts", lambda t, cmds: ["deny"] * len(cmds)) as _:
+            got = g._base_verdicts(self.base, [["ls", ""], ["rm", ""]], cache)
+        self.assertEqual(got, ["allow", "deny"])
+
+    def test_a_corrupt_cache_is_empty(self):
+        import os
+        from sampo import selfgate as g
+        with open(os.path.join(self.p.dir, "selfgate-base.json"), "w") as f:
+            f.write("{")
+        self.assertEqual(g._load(self.p, g._key(self.base)), {})
+
+
 if __name__ == "__main__":
     unittest.main()
