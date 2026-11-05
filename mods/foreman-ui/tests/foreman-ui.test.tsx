@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { activityCells, agentColor, barCells, bucketize, C, mix, changedLines, clawd, diffRows, clean, customColors, elapsed, PALETTES, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, setPalette, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace, typeColor } from '../hooks/kit'
-import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts, usable } from '../hooks/register'
+import { askNote, closeCard, economyText, guardReason, lastLine, readSummary, signalLine, summaryText, toasts, usable } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
 
@@ -684,6 +684,21 @@ test('past 80% weekly usage Claude is told to work leaner, and a toast says so o
   await clock.advance(2000)
   await clock.advance(2000)
   expect(toasted.filter(t => /economy/i.test(t)).length).toBe(1)
+})
+
+test('a project with the weekly lean off gets no economy mode for weekly usage, only for the 5-hour window (T-3049)', async ($, on) => {
+  // "remove the weekly usage 80% lean on this project specifically"
+  const { toasted, clock, usage } = world(on, [{ ...VIEW, weekly_lean: false }])
+  on('prompt.compose', async () => ({ sections: [{ id: 'intro', text: 'You are Claude.', scope: 'shared' as const }] }))
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(2000)
+  const economy = async () => (await $.prompt.compose(FACTS)).sections.find(s => s.id === 'foreman-ui:economy')
+  usage.limits = [{ kind: 'seven_day', percentUsed: 85 }, { kind: 'five_hour', percentUsed: 6 }]
+  expect(await economy()).toBeUndefined()
+  await clock.advance(2000)
+  expect(toasted.filter(t => /economy/i.test(t)).length).toBe(0)
+  usage.limits = [{ kind: 'seven_day', percentUsed: 85 }, { kind: 'five_hour', percentUsed: 95 }]
+  expect((await economy())?.text).toMatch(/5-hour usage is past 90%/)
 })
 
 test('ghost text offers /foreman:next only when nothing waits on the person', async ($, on) => {
@@ -2580,4 +2595,12 @@ test('review (T-1090): the tap is cheap on a long one-line step, the session kee
   expect(words).toBeLessThanOrEqual(4) // one line each with four agents, never two
   await ui.unmount()
   expect(steps).toBe(46)
+})
+
+test('economy mode (T-3049): a project with the weekly lean off ignores weekly usage, the 5-hour window still counts', () => {
+  const week = [{ kind: 'seven_day', percentUsed: 85 }]
+  expect(economyText(week, true)).toContain('weekly usage is past 80%')
+  expect(economyText(week, false)).toBeNull()
+  expect(economyText([...week, { kind: 'five_hour', percentUsed: 95 }], false)).toContain('5-hour usage is past 90%')
+  expect(economyText([...week, { kind: 'five_hour', percentUsed: 95 }], false)).not.toContain('weekly')
 })

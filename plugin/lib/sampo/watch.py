@@ -397,12 +397,17 @@ def _unproven(p):
     return {"n": got["n"], "top": max(counts, key=lambda k: (counts[k], k)) if counts else None}
 
 
-def _budget():
+def _weekly_lean(p):
+    from sampo import budget
+    return budget.weekly_lean(p)
+
+
+def _budget(p=None):
     """T-0228: today's spend against the caps (fm budget), for the pane."""
     from sampo import budget
     rows = budget.ledger()
     usd, tokens = budget.spent(rows)
-    cur, high = budget.effective()
+    cur, high = budget.effective(p)
     by = {}
     for e in rows:
         f = by.setdefault(str(e.get("feature")), {"feature": str(e.get("feature")), "usd": 0.0, "runs": 0, "tokens": 0})
@@ -411,7 +416,7 @@ def _budget():
         f["tokens"] += e.get("tokens") or 0
     top = sorted(by.values(), key=lambda f: -(f["usd"] + f["tokens"] / 1e6))[:4]
     return {"today_usd": usd, "subagent_tokens": tokens, "caps": cur, "halved": high,
-            "subagents_paused": budget.subagent_pause(), "top": top}
+            "subagents_paused": budget.subagent_pause(p), "top": top}
 
 
 def _bench(p, events):
@@ -637,7 +642,7 @@ def view(p):
         "brainstorm": bs,
         "loop": _guarded(lambda: __import__("sampo.loop").loop.view(p)),  # T-1057: the forever loop's round
         "worktrees": _guarded(lambda: _worktrees(p, briefs)) or [],  # T-1023
-        "budget": _guarded(_budget),  # T-0228
+        "budget": _guarded(lambda: _budget(p)),  # T-0228
         "unproven": _guarded(lambda: _unproven(p)) or {"n": 0, "top": None},  # T-2395: the band's proof line
         "bench": _guarded(lambda: _bench(p, events)),
         "research": _guarded(lambda: _research_asks(events)) or [],
@@ -654,6 +659,7 @@ def view(p):
         + ([os.path.join(p.dir, "research", bs["name"])] if bs and bs["running"] else []),  # each lens answer moves it
         "latency": [round(ms) for ms in d["series"]],
         "palette_custom": _guarded(c.pane_palette) or {},  # T-1717: fm design tokens --to pane --save
+        "weekly_lean": _guarded(lambda: _weekly_lean(p)) is not False,  # T-3049: false: the pane's economy mode ignores weekly usage here
         "checks": d["checks"] and {"at": d["checks"].get("ts"), "results": [
             {"cmd": c.plain(str(r.get("cmd")))[:200], "exit": r.get("exit"), "s": r.get("s"), "note": r.get("note")}
             for r in (d["checks"].get("data") or {}).get("results") or []]},

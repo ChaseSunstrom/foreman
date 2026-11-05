@@ -4273,7 +4273,7 @@ def _drive(p, sd, briefs, pl, g):
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], made=sorted(made | {f"{offer['id']}:{st.get(offer['id'])}"}),
                      count=d.get("count", 0) + 1, marks=_marks(p))
-            how = _start_how(offer, lanes_free(briefs, p), _economy())
+            how = _start_how(offer, lanes_free(briefs, p), _economy(p))
             _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
                     "offer": offer["id"], "how": how})
             return (f"Sampo drive: background work is still running ({c.joinmore(running, 3)}); don't idle on it. "
@@ -4427,12 +4427,12 @@ def lanes_free(briefs, p=None):
         not c.host_strain()  # T-0465: a strained host takes no builder lane
 
 
-def _economy():
+def _economy(p=None):
     """T-2495: fmbudget.usage_high() (weekly usage past 80%, economy mode's threshold), which forbids subagents; unread
-    usage is not economy."""
+    usage is not economy; a project that turned the weekly lean off (T-3049) only feels the 5-hour window."""
     try:
         from sampo import budget as sbudget
-        return bool(sbudget.usage_high())
+        return bool(sbudget.usage_high(p))
     except Exception:
         return False
 

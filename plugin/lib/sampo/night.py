@@ -117,11 +117,11 @@ def jobs(p):
     return out
 
 
-def _usage():
+def _usage(p=None):
     """(why usage is high, or None; whether it is known): a snapshot older than STALE_H hours is not knowledge."""
     snaps = glob.glob(os.path.join(c.state_dir(), "sessions", "*.json"))
     fresh = any(time.time() - os.path.getmtime(s) < STALE_H * 3600 for s in snaps)
-    return budget.usage_high(), fresh
+    return budget.usage_high(p), fresh
 
 
 def units(p, max_usd=2.0):
@@ -543,13 +543,13 @@ def cmd_night(args):
     bad = [n for n in args.only or [] if n not in NAMES]
     if bad:
         raise cli.UsageError(f"no such night job: {', '.join(bad)} (jobs: {', '.join(NAMES)})")
-    high, known = _usage()
+    high, known = _usage(p)
     if high:  # T-2593: a deliberate skip is a success to systemd, not a failed run doctor and foresight flag
         return cli.out(args, {"skipped": f"usage is high ({high})", "ran": []},
                          f"usage is high ({high}): nothing runs tonight — the user's own work comes first")
     if not args.max_usd >= 0:  # NaN too
         raise cli.UsageError("--max-usd must be a number ≥ 0")
-    cur, _ = budget.effective()
+    cur, _ = budget.effective(p)
     start, _ = budget.spent()
     limit = max(0.0, min(args.max_usd, cur["day"] - start)) / (1 if known else 2)
     limit = round(limit, 4)
@@ -575,8 +575,8 @@ def cmd_night(args):
         if night_usd >= limit and ran:
             stopped = f"spend ${night_usd:.2f} reached the limit ${limit:.2f}"
             break
-        if budget.usage_high():
-            stopped = f"usage climbed ({budget.usage_high()})"
+        if budget.usage_high(p):
+            stopped = f"usage climbed ({budget.usage_high(p)})"
             break
         if c.panicked():
             stopped = c.PAUSED

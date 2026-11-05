@@ -859,8 +859,8 @@ def stranger(p, plugin, model=None, budget=3.0, timeout=20):
     instructions. (findings, cost): the guard blocks it hit, the fm calls that failed, and whether it finished."""
     if not has_guard(plugin):  # a replay in bypass mode, like every other
         raise ValueError(f"{plugin} doesn't ship Sampo's guard; replays run in bypass mode, so they never run without it")
-    if sbudget.usage_high():  # review: a paid replay waits while the user's own usage is high
-        raise ValueError(f"usage is high ({sbudget.usage_high()}): the stranger test waits")
+    if sbudget.usage_high(p):  # review: a paid replay waits while the user's own usage is high
+        raise ValueError(f"usage is high ({sbudget.usage_high(p)}): the stranger test waits")
     sbudget.check("bench", sbudget.estimate("bench", 1, min(budget, 0.5)), "a smaller --budget")
     readme = next((open(f, encoding="utf-8", errors="replace").read() for f in
                    (os.path.join(os.path.dirname(plugin), "README.md"), os.path.join(plugin, "README.md"))

@@ -130,6 +130,33 @@ class Budget(ForemanTestCase):
         self.fm("drive", "on", "--pace", "on")
         self.assertIn("5-hour usage 95%", bud.degrade(c.find_project(self.repo)) or "")
 
+    def test_a_project_can_turn_the_weekly_lean_off(self):
+        # T-3049: "remove the weekly usage 80% lean on this project specifically" - the 5-hour window keeps its rule
+        p = c.find_project(self.repo)
+        self.usage(seven_day=(85, 2 * 86400))
+        self.assertIn("weekly usage 85%", bud.usage_high(p) or "")
+        self.assertIn("weekly usage 85%", bud.subagent_pause(p) or "")
+        self.fm("drive", "on", "--pace", "off")
+        self.assertIsNone(bud.usage_high(p))
+        self.assertIsNone(bud.subagent_pause(p))
+        self.assertIsNone(bud.effective(p)[1], "no halved caps")
+        self.assertIs(json.loads(self.fm("ui", "--json").stdout)["weekly_lean"], False, "the pane reads it")
+        agent = {"tool_name": "Agent", "tool_input": {"subagent_type": "foreman:fm-recon", "prompt": "x"}}
+        self.assertEqual(self.hook("PreToolUse", agent).returncode, 0, "the hook lets subagents run past 80% weekly")
+        self.assertNotIn("halved", self.fm("budget").stdout)
+        old = os.getcwd()
+        os.chdir(self.repo)  # no project given: the one holding the cwd
+        try:
+            self.assertIsNone(bud.usage_high())
+        finally:
+            os.chdir(old)
+        self.usage(seven_day=(85, 2 * 86400), five_hour=(95, 3600))
+        self.assertIn("5-hour usage 95%", bud.usage_high(p) or "")
+        self.assertIn("5-hour usage 95%", bud.subagent_pause(p) or "")
+        self.fm("drive", "on", "--pace", "on")
+        self.usage(seven_day=(85, 2 * 86400))
+        self.assertIn("weekly usage 85%", bud.usage_high(p) or "")
+
     def usage(self, **windows):
         """A statusline snapshot: window=(used %, seconds until it resets)."""
         folder = os.path.join(c.state_dir(), "sessions")

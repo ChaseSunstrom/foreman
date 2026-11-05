@@ -179,18 +179,29 @@ def forecast(now=None):
     return {}
 
 
-def usage_high():
+def weekly_lean(p=None):
+    """T-3049: whether weekly usage leans the project (p, else the one holding the cwd): False once the user turned its
+    pace off (sampo drive on --pace off: "remove the weekly usage 80% lean on this project specifically"); the 5-hour
+    window and the spend caps still hold. No project, or an unreadable one, leans as before."""
+    try:
+        p = p or c.find_project(os.getcwd())
+        return not (p and c.read_meta(p).get("pace_drops") is False)
+    except Exception:
+        return True
+
+
+def usage_high(p=None):
     """'weekly usage 85%' when the newest statusline snapshot is past 80% weekly or 90% of the 5-hour window, else
-    None: the same thresholds as foreman-ui's economy mode (T-0198)."""
+    None: the same thresholds as foreman-ui's economy mode (T-0198). The weekly rule skips a project that turned it off."""
     u = rate_limits()
-    if u.get("seven_day", 0) >= 80:
+    if u.get("seven_day", 0) >= 80 and weekly_lean(p):
         return f"weekly usage {u['seven_day']:g}%"
     if u.get("five_hour", 0) >= 90:
         return f"5-hour usage {u['five_hour']:g}%"
     return None
 
 
-def subagent_pause():
+def subagent_pause(p=None):
     """Why subagents should wait, or None (T-0320): the 5-hour window at 90%+, or weekly usage ahead of the week's
     pace — more than 10 points past the share of the week gone by, never before 75% (the user, T-0364: "the budget
     stuff shouldn't matter until 75% usage") and never past 90%. Unknown usage never pauses."""
@@ -198,7 +209,8 @@ def subagent_pause():
     if u.get("five_hour", 0) >= 90:
         return f"5-hour usage {u['five_hour']:g}%"
     week, gone = u.get("seven_day"), u.get("week_gone")
-    if week is not None and week >= max(PACE_FLOOR, min(90, 100 * gone + 10 if gone is not None else 80)):
+    if week is not None and week >= max(PACE_FLOOR, min(90, 100 * gone + 10 if gone is not None else 80)) \
+            and weekly_lean(p):  # the project lookup only once past the bar
         return f"weekly usage {week:g}%" + (f" with {100 * gone:.0f}% of the week gone" if gone is not None else "")
     return None
 
@@ -207,16 +219,16 @@ def degrade(p=None):
     """T-0449: why optional work (the drive's side tasks, the friction pass, brainstorm deepening) is dropped, or None:
     the pace subagents wait on, or (T-1080, given a project) its spent risk budget. Never a cap: check() still refuses
     what's over one, and required gates still run."""
-    pace = None if p is not None and c.read_meta(p).get("pace_drops") is False else subagent_pause()  # T-2327
+    pace = None if p is not None and c.read_meta(p).get("pace_drops") is False else subagent_pause(p)  # T-2327
     if pace or p is None:
         return pace
     from sampo import risk
     return risk.slowed(p)
 
 
-def effective():
+def effective(p=None):
     """(caps after economy, why they were halved or None)."""
-    cur, high = caps(), usage_high()
+    cur, high = caps(), usage_high(p)
     if high:
         cur = {k: v / 2 for k, v in cur.items()}
     return cur, high
@@ -300,14 +312,14 @@ def cmd_budget(args):
     rows = ledger(args.days)
     today = [e for e in rows if e.get("day") == _today()]
     usd, tokens = spent(today)
-    cur, high = effective()
+    cur, high = effective(p)
     by = {}
     for e in rows:
         f = by.setdefault(e.get("feature"), {"usd": 0.0, "runs": 0, "tokens": 0})
         f["usd"] += e.get("usd") or 0
         f["runs"] += e.get("runs") or 0
         f["tokens"] += e.get("tokens") or 0
-    pause = subagent_pause()
+    pause = subagent_pause(p)
     lines = [f"today: ${usd:.2f} of ${cur['day']:.2f} · per command ≤ ${cur['run']:.2f}" + (f" (halved: {high})" if high else ""),
              f"subagents: {tokens:,} tokens today · " + (f"waiting: {pause}" if pause else "running (usage on pace)")]
     lines += [f"  {k}: ${v['usd']:.2f} over {v['runs']} run(s)" + (f", {v['tokens']:,} tokens" if v["tokens"] else "")

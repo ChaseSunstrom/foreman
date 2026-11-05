@@ -7281,7 +7281,8 @@ def _build_parser(only=None):
 
     s = add("drive", cmd_drive, tier=("Project and settings", 690), help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
-    s.add_argument("--pace", choices=["on", "off"], help="off: usage pace never drops work (a spent risk budget still slows)")
+    s.add_argument("--pace", choices=["on", "off"], help="off: weekly usage never leans this project: no dropped work, halved caps, paused subagents or economy "
+                   "mode (the 5-hour window and a spent risk budget still slow it)")
     s.add_argument("--round-first", choices=["on", "off"],
                    help="on: no new maintenance Sampo filed itself until the open Genesis round's next seed is filed")
 

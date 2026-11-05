@@ -186,6 +186,7 @@ let clock: { cancel: () => void } | null = null
 let lastActive = 0 // the frame of the last turn or tool activity
 let checkpointed = false
 let economyOn = false
+let weeklyLean = true // T-3049: fm ui's weekly_lean: false once the project turned the weekly lean off
 let happyUntil = 0 // the mascot jumps for a few seconds after a task closes
 let bgLive = 0 // background shells still running: the clock keeps a calm pace for the waiting row
 let treeTall = 0 // T-1039: the band tree's height this turn: it grows when it must and never shrinks mid-turn
@@ -229,6 +230,7 @@ async function refresh($: EngineInterface): Promise<boolean> {
     if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n').at(-1) || `fm ui exited ${r.exitCode}`)
     const next = cleanDeep(JSON.parse(r.stdout)) as FmView // T-1679: no title or name draws a control or bidi override
     savedPalette = next.palette_custom // T-1780: kept, so an options change paints it too
+    weeklyLean = next.weekly_lean !== false // T-3049
     if (cfg.palette === 'default') setPalette('default', savedPalette) // T-1717: a saved palette paints over
     const prev = await read($, view)
     const was = prev?.active
@@ -381,7 +383,7 @@ async function tick($: EngineInterface) {
 // The context meter; at CHECKPOINT_AT% Sampo checkpoints the active task once, so a compaction loses nothing.
 async function gauge($: EngineInterface) {
   const u = await $.session.usage().catch(() => null)
-  const eco = economyText(u?.rateLimits ?? [])
+  const eco = economyText(u?.rateLimits ?? [], weeklyLean)
   if (eco && !economyOn) $.ui.toast('Usage is high · Sampo economy mode: leaner work until the window resets', { timeoutMs: 10000 })
   economyOn = !!eco
   const percent = u?.context.percent
@@ -407,8 +409,9 @@ const ECONOMY: Record<string, [number, string]> = { seven_day: [80, 'weekly'], f
 
 // The economy section, or null: it names the threshold, not the live figure, so the prompt (and its cache) changes
 // only when a window crosses it.
-function economyText(limits: readonly { kind: string; percentUsed: number }[]): string | null {
-  const hot = limits.filter(l => ECONOMY[l.kind] && l.percentUsed >= ECONOMY[l.kind][0])
+// T-3049: weekly false: the project turned the weekly lean off (sampo drive on --pace off); the 5-hour window still counts.
+export function economyText(limits: readonly { kind: string; percentUsed: number }[], weekly = true): string | null {
+  const hot = limits.filter(l => ECONOMY[l.kind] && l.percentUsed >= ECONOMY[l.kind][0] && (weekly || l.kind !== 'seven_day'))
   if (!hot.length) return null
   const what = hot.map(l => `${ECONOMY[l.kind][1]} usage is past ${ECONOMY[l.kind][0]}%`).join(' and ')
   return (
@@ -828,7 +831,7 @@ export const register: Register = (on, options) => {
   // T-0198: economy mode, one session section after the engine's while a usage window is past its threshold.
   on('prompt.compose', async ($, e, next) => {
     const r = await next(e)
-    const text = economyText((await $.session.usage().catch(() => null))?.rateLimits ?? [])
+    const text = economyText((await $.session.usage().catch(() => null))?.rateLimits ?? [], weeklyLean)
     return text ? { ...r, sections: [...r.sections, { id: 'foreman-ui:economy', text, scope: 'session' }] } : r
   })
 
