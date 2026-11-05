@@ -1806,9 +1806,19 @@ def _python_units(cmd):
         if run and (re.search(r"\bset\s+-\w*a|allexport", cmd) or any(  # set -a exports them all
                 _PRE_DENY.match(n) or n in os.environ for n in re.findall(r"([A-Za-z_]\w*)=", run["pre"]))):
             run = None
+        # T-2261: `2>&1 | tail -5` after the heredoc only filters what python prints: dropped before the checks below,
+        # unless the shell text could make a filter's name run something else (a function, PATH, alias, eval, source).
+        # The tail's own words are filter arguments; the rest of the shell text (this line up to the tail, every other
+        # line) is checked with heredoc delimiter quotes removed, so any other quote or backslash refuses the widening
+        py = run["py"] if run else ""
+        if py and (tail := _READ_TAIL.search(py)).group():
+            head = line[:len(line) - len(py) + tail.start()]
+            shell = _DELIM_QUOTES.sub("", _strip_heredocs(cmd).replace(line, head, 1))
+            if not _FILTER_REDEFINED.search(shell):
+                py = py[:tail.start()]
         # review (T-0286): bash must read the body the guard parses — no continued line (`\`), no second `<<` form
         # the heredoc scan doesn't know (`<<\E`: the last redirect wins)
-        fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", run["py"]) and \
+        fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", py) and \
             len(re.findall(r"(?<!<)<<(?!<)", line)) == 1
         if fed:
             lead = list(rest)
@@ -1825,6 +1835,20 @@ def _python_units(cmd):
     return units, rest, starters, lead
 
 
+# T-2261: what may follow a heredoc fed to python on its line: a stderr merge, then pipes into filters that write no
+# file and run nothing, each word literal (no $, backtick, glob, redirect). sort loses -o/--output, -T and
+# --compress-program (any short cluster holding o or T, any --o/--c/--t abbreviation); uniq takes flags only, never `--`
+# or a lone `-` (its second file is an output, and after `--` even -name is one); tail never follows (-f/-F/--follow
+# never ends). Bare words only for sort and uniq: a quoted '-o' is still -o.
+_TAIL_ARG = r"""(?:[\w.,:=+/@%^-]+|'[^'\n]*'|"[^"$`\\\n!]*")"""
+_READ_TAIL = lazy(r"(?:\s+2>&1)?(?:\s*\|\s*(?:(?:head|cut|wc|grep)(?:\s+" + _TAIL_ARG + r")*"
+                  r"|tail(?:\s+(?!['\"]?(?:-\w*[fF]|--f))" + _TAIL_ARG + r")*"
+                  r"|sort(?:\s+(?!-[^-\s]*[oT]|--[oct])[\w.,:=+/@%^-]+)*|uniq(?:\s+-(?!-)[\w.,:=+/@%^-]+)*))*\s*$")
+# shell text that could make a filter's name run something else (the guard reads `tail` as the coreutil); a quote or a
+# backslash outside a heredoc's own delimiter refuses too: e\val, ev""al, s\ource and '.' run the builtin all the same
+_FILTER_REDEFINED = lazy(r"\b(?:PATH|alias|hash|enable|function|eval|source|trap|shopt|BASH_ENV|BASH_CMDS|BASH_ALIASES)\b"
+                         r"|(?:^|[\s;&|(])\.\s|\b(?:head|tail|cut|wc|grep|sort|uniq)\s*\(|[\\'\"]")
+_DELIM_QUOTES = lazy(r"""<<-?\s*(['"])\w+\1""")
 # T-1887: names python, the loader, bash or Foreman read: never a plain prefix of a heredoc the guard parses
 _PRE_DENY = lazy(r"(?:PATH|HOME|IFS|CDPATH|ENV|BASH_ENV|TMPDIR|GCONV_PATH|LOCPATH|NLSPATH|GLIBC_TUNABLES|LD_\w*"
                        r"|MALLOC_\w*|PYTHON\w*|CLAUDE\w*|FOREMAN\w*|SAMPO\w*|FM_\w*|XDG_\w*|CODEX_\w*)$")
