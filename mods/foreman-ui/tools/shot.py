@@ -119,7 +119,8 @@ def _palette(n):
 _SGR = re.compile(r"\x1b\[([0-9;:]*)m")
 _OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")  # hyperlinks and titles: not drawn
 FALLBACK = ["/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf", "/usr/share/fonts/noto/NotoSansMono-Regular.ttf",
-            "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf", "/usr/share/fonts/noto/NotoSans-Regular.ttf"]
+            "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf", "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/noto/NotoSansRunic-Regular.ttf"]  # T-3113: the crest's rune ring (Konsole falls back to it)
 
 
 def cells(line):

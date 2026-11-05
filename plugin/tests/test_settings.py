@@ -156,7 +156,7 @@ class Command(ForemanTestCase):
         self.assertEqual((by["plugin", "motion"]["value"], by["plugin", "motion"]["default"]), ("reduced", "full"))
         self.assertIn(self.settings, by["plugin", "motion"]["where"])
         self.assertIn("foreman-ui@foreman", by["plugin", "motion"]["where"])
-        self.assertEqual(by["plugin", "mascot"]["value"], "blue", "unset: the default")
+        self.assertEqual(by["plugin", "mascot"]["value"], "sampo", "unset: the default (T-3113: the crest)")
         text = self.fm("settings", "list", env=self.env).stdout
         self.assertIn("app", text)
         self.assertIn("plugin", text)
