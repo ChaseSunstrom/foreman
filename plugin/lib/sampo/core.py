@@ -5474,7 +5474,6 @@ def lint_verify(cmd, root):
     if re.search(r"plugin/tests/run\.py\b.*\s-k\s+(['\"])[^'\"]*\s[^'\"]*\1", cmd or ""):  # T-0357: a substring
         problems.append("run.py -k matches a substring, so a pattern with a space matches nothing: repeat -k")
     problems += _run_py_misses(cmd, root)
-    problems += _node_dir_misses(cmd, root)
     if re.search(r"(?<!\|)\|(?!\|)", cmd or "") and "pipefail" not in cmd:
         problems.append("its exit status is the last piped program's (add set -o pipefail or drop the pipe)")
     live = sorted({m.group(1) for seg in re.split(r"&&|\|\||;|\|", cmd or "") for m in [_LIVE.match(seg.strip())] if m})
@@ -5487,19 +5486,6 @@ def lint_verify(cmd, root):
         problems.append("it names state/projects/ relative to the repo: a builder lane has no state, so fm lane merge "
                         "reads it red; give the absolute path")
     return problems
-
-
-def _node_dir_misses(cmd, root):
-    """T-3189: `cd DIR && npx|npm|yarn|pnpm ...` where git tracks no package.json or lockfile in DIR: a fresh lane has
-    none (T-3113's vitest passed only in a lane with an untracked node_modules). Local git only; unknown stays quiet."""
-    out = []
-    for d in dict.fromkeys(re.findall(r"\bcd\s+([\w./-]+)\s*&&[^;|]*?\b(?:npx|npm|yarn|pnpm)\b", cmd or "")):
-        files = [os.path.join(d, f) for f in ("package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml")]
-        r = _git(root, "ls-files", "--", *files, proc=True)
-        if r.returncode == 0 and not r.stdout.strip():
-            out.append(f"cd {d} then npx/npm/yarn: no committed package.json or lockfile in {d}, so a fresh lane "
-                       f"can't run it (an untracked node_modules or package.json only exists in one lane)")
-    return out
 
 
 def _run_py_misses(cmd, root):
