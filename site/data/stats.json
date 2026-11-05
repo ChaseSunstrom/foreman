@@ -1,17 +1,17 @@
 {
- "generated": "2026-11-04",
+ "generated": "2026-11-05",
  "totals": {
-  "tasks_done": 290,
-  "evidence": 1221,
-  "proofs": 168,
-  "commits": 222,
-  "gate_runs": 188,
-  "subagents": 211,
-  "lanes_merged": 77,
-  "findings": 57,
-  "guard_blocks": 107,
-  "captures": 286,
-  "lessons_shown": 510
+  "tasks_done": 385,
+  "evidence": 1788,
+  "proofs": 228,
+  "commits": 289,
+  "gate_runs": 222,
+  "subagents": 438,
+  "lanes_merged": 134,
+  "findings": 208,
+  "guard_blocks": 166,
+  "captures": 453,
+  "lessons_shown": 710
  },
  "daily": [
   {
@@ -49,71 +49,82 @@
   },
   {
    "day": "2026-11-04",
-   "FEATURE": 12,
-   "FIX": 13,
+   "FEATURE": 53,
+   "FIX": 41,
+   "CLEAN": 2,
+   "PERFORMANCE": 2,
+   "SECURITY": 2,
+   "RESEARCH": 3,
+   "lanes": 58,
+   "evidence": 472
+  },
+  {
+   "day": "2026-11-05",
+   "FEATURE": 7,
+   "FIX": 9,
    "CLEAN": 1,
    "PERFORMANCE": 0,
    "SECURITY": 0,
-   "RESEARCH": 0,
-   "lanes": 8,
-   "evidence": 95
+   "RESEARCH": 1,
+   "lanes": 7,
+   "evidence": 190
   }
  ],
  "tiers": {
-  "S": 170,
-  "M": 112,
-  "L": 8
+  "S": 210,
+  "M": 161,
+  "L": 14
  },
  "types": {
-  "FEATURE": 128,
-  "FIX": 122,
-  "CLEAN": 27,
-  "PERFORMANCE": 2,
-  "SECURITY": 2,
-  "RESEARCH": 9
+  "FEATURE": 176,
+  "FIX": 159,
+  "CLEAN": 29,
+  "PERFORMANCE": 4,
+  "SECURITY": 4,
+  "RESEARCH": 13
  },
  "guard": {
-  "brief": 44,
-  "core": 27,
-  "system": 11,
-  "state-direct": 7,
+  "brief": 66,
+  "core": 50,
+  "system": 15,
+  "state-direct": 12,
   "rm-outside": 6,
-  "credentials": 4,
-  "plugin": 3,
-  "confine": 2
+  "pipe-shell": 6,
+  "credentials": 5,
+  "plugin": 3
  },
  "findings": {
   "lenses": {
-   "design": 17,
-   "edge": 12,
-   "adversary": 8,
-   "intent": 6,
-   "maintainer": 6,
-   "self": 5
+   "edge": 46,
+   "adversary": 42,
+   "design": 39,
+   "intent": 32,
+   "maintainer": 23,
+   "operator": 13
   },
   "severity": {
-   "LOW": 37,
-   "MEDIUM": 14,
-   "HIGH": 6
+   "LOW": 116,
+   "MEDIUM": 77,
+   "HIGH": 15
   }
  },
  "subagents": {
-  "fm-builder": 130,
-  "general-purpose": 46,
-  "fm-recon": 19,
-  "fm-reviewer": 12,
+  "fm-builder": 295,
+  "general-purpose": 70,
+  "fm-reviewer": 42,
+  "fm-recon": 26,
   "claude-code-guide": 3,
-  "fm-scout": 1
+  "fm-scout": 2
  },
  "gate_seconds": {
-  "runs": 188,
-  "median": 323.8
+  "runs": 222,
+  "median": 328.9
  },
  "tools": {
   "misses": 6,
   "resolved": 0,
   "proved": 0,
-  "searches": 26,
+  "searches": 38,
   "queued": 3,
   "refused": 0
  },
@@ -231,16 +242,16 @@
   "hardware": 8
  },
  "code": {
-  "model_tests": 65,
+  "model_tests": 70,
   "endpoints": 9,
-  "tests": 6044
+  "tests": 6243
  },
  "calibration": {
-  "scored": 25,
-  "pending": 177,
+  "scored": 26,
+  "pending": 260,
   "brier": {
-   "stated": 0.05620000000000001,
-   "base": 0.0384
+   "stated": 0.08182692307692307,
+   "base": 0.072964
   },
   "bars": {
    "research": 70,
@@ -256,11 +267,11 @@
     {
      "lo": 80,
      "hi": 94,
-     "n": 1,
+     "n": 2,
      "held": 0,
      "pct": 0,
-     "stated": 90,
-     "gap": 90
+     "stated": 88,
+     "gap": 88
     }
    ],
    "ship": [
@@ -296,19 +307,20 @@
   "interim": {}
  },
  "proof": {
-  "n": 766,
+  "n": 810,
   "counts": {
-   "meaning": 598,
-   "research-uncited": 30,
-   "perf-typed": 49,
-   "typed": 32,
+   "meaning-notes": 359,
+   "meaning-user": 247,
+   "research-uncited": 33,
+   "perf-typed": 51,
+   "typed": 36,
    "red": 75,
-   "tui-unshot": 7,
-   "docs": 87,
+   "tui-unshot": 9,
+   "docs": 112,
    "perf-noise": 1,
-   "infra": 7,
-   "ui-unshot": 16,
-   "data": 2
+   "infra": 8,
+   "ui-unshot": 29,
+   "data": 5
   },
   "history": [
    {
@@ -326,6 +338,10 @@
    {
     "day": "2026-11-04",
     "n": 766
+   },
+   {
+    "day": "2026-11-05",
+    "n": 810
    }
   ]
  },
@@ -333,38 +349,44 @@
   "triggers": [
    {
     "trigger": "discovered",
-    "fired": 713,
-    "precision": 0.774,
+    "fired": 773,
+    "precision": 0.772,
     "route": "inbox"
    },
    {
     "trigger": "followup",
-    "fired": 264,
+    "fired": 279,
     "precision": 0.779,
     "route": "inbox"
    },
    {
     "trigger": "self",
-    "fired": 203,
-    "precision": 0.772,
+    "fired": 193,
+    "precision": 0.767,
     "route": "inbox"
    },
    {
     "trigger": "genesis-review",
-    "fired": 47,
-    "precision": 0.244,
+    "fired": 70,
+    "precision": 0.208,
     "route": "inbox"
    },
    {
     "trigger": "ci",
-    "fired": 36,
-    "precision": 0.371,
+    "fired": 37,
+    "precision": 0.361,
+    "route": "inbox"
+   },
+   {
+    "trigger": "steer",
+    "fired": 34,
+    "precision": 0.389,
     "route": "inbox"
    },
    {
     "trigger": "baseline",
-    "fired": 27,
-    "precision": 0.731,
+    "fired": 29,
+    "precision": 0.724,
     "route": "inbox"
    },
    {
@@ -374,27 +396,21 @@
     "route": "inbox"
    },
    {
-    "trigger": "steer",
+    "trigger": "scout",
     "fired": 15,
-    "precision": 0.7,
+    "precision": 0.6,
     "route": "inbox"
    },
    {
-    "trigger": "scout",
-    "fired": 13,
-    "precision": 0.6,
+    "trigger": "ci-red",
+    "fired": 6,
+    "precision": 0.8,
     "route": "inbox"
    },
    {
     "trigger": "foresight-cochange",
     "fired": 5,
     "precision": 0.2,
-    "route": "inbox"
-   },
-   {
-    "trigger": "ci-red",
-    "fired": 4,
-    "precision": 1.0,
     "route": "inbox"
    },
    {
@@ -405,8 +421,26 @@
    },
    {
     "trigger": "cold",
-    "fired": 1,
+    "fired": 2,
+    "precision": 0.5,
+    "route": "inbox"
+   },
+   {
+    "trigger": "friction",
+    "fired": 2,
     "precision": 0.0,
+    "route": "inbox"
+   },
+   {
+    "trigger": "sentinel reverify",
+    "fired": 2,
+    "precision": 1.0,
+    "route": "inbox"
+   },
+   {
+    "trigger": "did-not-hold",
+    "fired": 1,
+    "precision": null,
     "route": "inbox"
    },
    {
@@ -436,14 +470,14 @@
   "predictions": [
    {
     "kind": "next-request",
-    "n": 57,
-    "hit": 0.439,
-    "base_hit": 0.368,
+    "n": 94,
+    "hit": 0.436,
+    "base_hit": 0.33,
     "muted": false,
-    "shown_n": 21,
-    "shown_hit": 0.476,
-    "overlap": 0.172,
-    "base_overlap": 0.166
+    "shown_n": 47,
+    "shown_hit": 0.426,
+    "overlap": 0.103,
+    "base_overlap": 0.097
    }
   ],
   "lean": [
@@ -500,6 +534,454 @@
   }
  },
  "decisions": [
+  {
+   "date": "2026-11-05",
+   "text": "read T-3156: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "fast-merge build order (plan review): T-3139 runtime hook map, T-3141 land-then-verify with revert (the safety net before the cache), T-3140 content-hashed test cache, T-3119 parallel checks and train",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3137: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3136: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "builder order once slots free (user asks first): T-3081 Kalevala part 2 (as soon as T-3053 merges), T-3122 moons yield, T-3113 the pane crest, T-3101 the site Cards page, T-3086 exam and genesis progr",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "builder order revised: T-3091 (the self-change gate's noise filter) goes first when a slot frees, before T-3113 and T-3101; 9 holds in a day on diffs that touch none of the held hooks block every merg",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "standing (user 2026-11-05): self-checks before every reply: stalled asks, unfiled workarounds, unmeasured waits, invisible outputs, unreachable goals, unused capabilities, dead or silent jobs; act on ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3121: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "merge speed order: T-3118 (bench only the hook path) first, the biggest cut; then T-3109 (closes yield to a waiting merge), T-3120 (closes reuse a gate run across changelog-only changes), T-3119 (merg",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "standing (user 2026-11-05): local models work real queue tasks beside the Claude builders, one local lane at a time to start (T-3108 on the 27B first); each run's diff is reviewed like a builder's and",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3116: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "builder order (user-visible first): T-3092 live charts, T-3113 the pane crest, T-3101 site Cards page, T-3106 works harness, T-3103 card grids, then the rest",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3100/T-3104 order: after T-3092 (live charts) the builders take T-3101 (site Cards page), T-3106 (render-and-check harness), T-3103 (grids as data), then T-3102, T-3110, T-3105, T-3111, T-3112; targ",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3104: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3099: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "standing (T-3054 miss): the merge queue puts the lanes the user is waiting to see first (the live page before internals), and while a merge waits for a quiet window no close or suite starts; the chain",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "Parked T-3006 at a one-way, ambiguous step: failing tests with a fake model: the state message, the deliberate trigger, the check-before-edit ask, a stateless reply unchanged, the exam arm",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "standing (T-3001): commands handed to the user are a script with set -euo pipefail and a check before every irreversible step, never a paste block that ends in rm; better still, run them yourself (the",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-2904: port.py is kept as a record that stops with a clear message, not rebuilt, since port_css.py is lost and the port was one-time",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "Recommendation: keep the notes as the cold read for these files; the fm*.py aliases point at plugin/lib/sampo, so a session reading them should open the sampo module named in the note; would change if",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-2994: grow UI cards on with --batch 2 toward 6,500 so most of the 3,840 UI cells hold a card (today 660 cells, 17%), writer Haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-2879: rename the plugins inside the existing 'foreman' marketplace with a renames map (foreman\u2192sampo, foreman-ui\u2192sampo-ui, foreman-design\u2192sampo-design); no shims; the marketplace keeps the name 'for",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "Snapshot before a one-way step: probe first: in a scratch CLAUDE_CONFIG_DIR, install foreman@foreman from a local marketplace copy; then try (a) a renames map inside the marketplace, (b) shims with de",
+   "later": null,
+   "confidence": 90,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-2878's Claude baseline is the foreman agent (a Claude Code session) on Haiku, not Smith on Haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "A single model verdict that blocks work is confirmed by a second, independent read before it blocks",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "A change that improves how Sampo thinks is registered when it closes and reaches every tower's next seed without anyone carrying it",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "A brand theme dresses brand surfaces; a working tool defaults to a plain, modern look and carries the brand only as a setting",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "A rule derived from the user's circumstances names them and is revisited when Sampo sees them change",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "A run whose answers all carry a setup error (a missing key, an unreachable model) is reported as not run, never as a score",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "A setting the user gives once is checked from every context Sampo runs in (login shell, hook, night job, service, exam sandbox) before it is called done",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "A target counts the outcome the user named (kept, closed, passing, used), never an upstream count that feeds it",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "Every feature the user asks for that a generator never proposed is traced to the prompt line or rule that excluded it, and that line changes in the same generation",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "Kalevala (T-3050): namespaced Rune towers per aspect run at once, V\u00e4in\u00e4m\u00f6inen oversees against the user's intent, Kalevala's own generations evolve the tower set, every behaviour gain registered and s",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3052: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3048: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3042 plan: raise the funnel's yield (normalise, re-admit, kill repair, data-fed prompts), add a Sampo grid, count kept moons, export all",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "genesis select gen-4: keep (seed base gen-4)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-3043: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-3041: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Parked T-3036 at a one-way, ambiguous step: write the env file and the ~/.bashrc line",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-3035: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-3033: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Snapshot before a one-way step: ground (done by recon: mods/foreman-ui kit.ts/register.tsx/rows.tsx, smithtui.py, tokens.json, pane-glyph.txt) and pin the baseline before any edit: commit cb, riso and",
+   "later": null,
+   "confidence": 90,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "T-2876: the heat language applies to the default (forge) palette and the TUI's night/paper only; cb, riso, signal and custom palettes render exactly as today",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Approve T-2876 (forge re-skin of the pane and the Smith TUI) after the rival read and the second plan read, with all six review points folded in (baseline fixtures first, one token source test, 256-co",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "T-3006's arm comparison runs on local models (gemma 12B, MiMo 9B) instead of the 27B: the Jarvis profiles need LLM_API_KEY, which is never stored, so those calls fail before any turn",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "T-3022 plan self-approved and split into three M children",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "T-3006 builder on sonnet, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-3012: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-3009: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-3000: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "T-2971 (L) approved without the user, per their standing 'decide everything, ask nothing': the distilled actor is built as an expert-iteration loop on local-model runs verified by tests",
+   "later": null,
+   "confidence": 70,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Sampo's trained models learn only from outcomes, user-written text and labels, and local-model traces graded by tests, never from Claude-written text or Claude's own decisions as labels: intake type i",
+   "later": null,
+   "confidence": 85,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Recommendation: build Sampo's own model family generic across every Sampo project in this order \u2014 the training lake (T-2974), a retrieval baseline decider (T-2975), leave-one-project-out measurement a",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "model brainstorm slate: lake, retrieval baseline, LOO adoption, decider heads, close verifier, scenario minting, then the distilled actor; the user is away and asked not to be asked",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-2972: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Recommendation: keep all eight gen-4 not-yet items open; seven blockers hold on fresh readings, and the one whose unblock condition is now met (the theme port, T-2852 closed) moves to gen-5's build li",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Local profiles serve 32k context with reasoning off as the default for Smith (T-2935/T-2938 make it automatic); small-model scaffolds for plan and close (T-2936, T-2937) come next; below ~9B, plan wit",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Gen-4's Mission 8 spikes M-02's slice (sampo regen on Sampo's own leaf modules, the local 27B first, Haiku second) rather than M-26's kill test",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Filed gen-4's Missions 2-8 past rune step's 'build: Mission 1, focus T-2910' line instead of stopping there; the main thread builds the eight tasks in parallel lanes",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "The gen-4 Mission brainstorms ran without their --deepen rounds: sampo ideas dropped them on its own because today's risk budget is spent (8 of 6: 6 destructive blocks, 1 failed close); the lens round",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "Gen-4 Mission 1 (exhaustive thinking) reuses brainstorm-20261102-184150, the fm ideas run already made for this same gen-4 seed row (542 ideas, 4 rounds, deepen 3, cross-bred, kill tests); Missions 2-",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-2905: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-04",
+   "text": "read T-2902: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
   {
    "date": "2026-11-04",
    "text": "Moon growth runs both endpoint slots with reasoning off; reasoning on stays an A/B sample (32 rows) judged by the funnel",
@@ -1514,513 +1996,17 @@
    "later": null,
    "confidence": null,
    "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Friction pass deferred while round 1 runs (standing rule 2: no new maintenance or friction tasks until round 1 is done); T-2343 built in the main tree while all 6 lane slots are busy",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Merge order across lanes: a ready lane from a higher Mission waits only for lower-Mission lanes already in review or fixes, not for ones still building, so slots don't idle (user steer: merge in missi",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Tower filing waits for the user's call on the cold-read rule: Missions 5-8's files and the Mission 3-4 critiques stay unfiled after 4-12 puts each, because the reader doesn't converge (passed sections",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Mission 6 (tools, #5) approach A: wire the parts Foreman has into one loop on the active task (T-2270's hook notices the miss; fm which, fm lib and fm plugins find; fm new and fm mcp new build; fm tas",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Mission 7 (proof, #6 #10) approach A: grow fm prove into the one proof verb with a kind per domain (--docs, --infra, --migration, --data, --release; each pass, fail or unproven as exit 0/1/2); perf st",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "T-2373 (user-only install category in the guard) waits for the user, not a lane: its adversarial cases would enumerate install-command variants, which the standing stop on guard-bypass enumeration rul",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Mission-order merging, revised: lanes that are ready merge lowest Mission first; a ready lane doesn't wait for an earlier Mission's lane still building (holding finished branches stalled every slot)",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Mission-order merging (user steer 2026-10-31): ready lanes merge lowest Mission first (5, 6, 7, 8); a later Mission's lane waits only for earlier-Mission lanes launched before it, so a finished branch",
-   "later": {
-    "date": "2026-10-31",
-    "how": "reversed"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Cold read clarification: a line that reports a requirement as unmet, open or unproven doesn't break it; the reader fails only what a line claims or hides (a MUST or NEVER the plan itself breaks, progr",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Parallel Missions 5-8 (user steer 2026-10-31): fm lane refuses an L task, so each Mission's L plan (its Mission file) stays in the main thread, drafted by one agent per Mission in parallel and filed t",
-   "later": {
-    "date": "2026-10-31",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Standing rule (user steer 2026-10-31): run the remaining independent Missions in parallel lanes \u2014 5, 6 and 8 have no dependency on each other and 7 needs only the exam, which is done \u2014 each in its own",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "budget raised: day 100 \u2192 200, run 100 \u2192 200",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "budget raised: day 40 \u2192 100, run 35 \u2192 100",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Raise the fm budget daily cap (now $40/day, $35 per command) so Genesis cold reads and exam arms can run today? It resets at local midnight otherwise. \u2192 keep $40/day and wait for the reset",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Standing rule (user steer 2026-10-31 #3): don't stop or skip work for budget, pace or 'optional work dropped'; wait out real usage limits and resume where stopped; if a cap only the user can raise is ",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Standing rule (user steer 2026-10-31 #2): finish round 1 completely, in order: Mission 4's remaining work, then write and build Missions 5-8, then every Mission's critique, the drift check over all mi",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Standing rule (user steer 2026-10-31 #1): pause every long-horizon exam run now; keep the tier as built and run it again only at the end of the whole run, or for one capability when a free or Haiku ar",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "User's blanket approval (13:2xZ) applied: T-2246 (cold-read FAILs block only when they quote the clause they break), T-2247 (steer provenance) and T-2252 (guard fm mandate set/off as user-only) unbloc",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Forever loop round 24 brainstorm deferred to tomorrow: fm ideas bills the $40/day fm budget (fmideas.py:834 fmbudget.check) and today's spend is $42.36, so it would be refused; waiting out the limit, ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "l002 long tier result recorded as measured: foreman = plain on hidden checks (4/20 each), foreman 0/6 vs plain 1/6 true done, 2x wall time; no Foreman advantage shown on long goals, a top gap (capture",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Forever loop round 22: did the review (2 tasks captured: T-2322 pinned-literal check for long goals, T-2323 affected pre-check in fm ship); steps 2-4 (fm mission + fm ideas, which bill headless runs t",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Long tier l001's foreman 0/6 is an exam defect, not a score: hidden checks need private names the goal never states (fmwatch._shown, fmlong.KILL_T) and include tests from other tasks interleaved in th",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Deferred scout captures T-2301 (stack cards for other projects' deps) and T-2302 (upstream voltagent source moved) under gen-0's MUST (tokens into Foreman's code and tests) and NEVER (no sweeping outs",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Narrow the code freeze during the long-tier runs: lanes off the session path (T-2294 builder doc, T-2156 ci-watch, T-2279 doctor, T-2296 friction digest, T-2293 ui tests) merge now; T-2297 changes wha",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Long tier: run the foreman arm (6 goals, all four faults, jobs 3, production default model) before the plain arm, sequentially, so the first arm's real cost sizes the second within the $40/day cap; li",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "End-of-run exam: one fresh child-authored draw (seed 70, 18 per kind, all six languages, 6 held out per kind), the zero-token arms on all, then the foreman and plain session arms on the held-out split",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Mission 6's install-grant queue is the capability-miss captures (one durable task per missing tool, filed once ever by the hook, the tool rung and the tree-sitter rung) plus fm ask ID plugin at the en",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "While the Genesis tower waits on T-2221 (Mission 3's critique; the cold-read rule change is the user's steer-2 call, T-2246), build the gap map's Mission 5-8 gaps (#2 thinking, #5 tools, #6 proof, #7 ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Genesis self-start (gen-0 #13, reconciling T-2105): under full autonomy, a drained queue in a project with a track record and no tower starts Genesis by itself only when a standing goal or mandate hol",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Mission 4 as built: the goal ledger lives on fm mandate's record (one standing goal: text, clauses, until, usd, items with a guarded done-when and linked tasks); fm goal set/plan/item/link/show/verdic",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Standing rule from gen 2 on (steer #6): gen-0 never changes; Genesis may add capabilities, areas, surfaces, stages, lenses, sources and exam kinds to frame.md through fm genesis grow, each with eviden",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Standing rule from gen 2 on: one Mission per generation is a moonshot (ideas that fit no coverage.md cell and no gen-0 \u00a72 capability, judged only on novelty and value), with a far-domain lens, a front",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "fm goal: open work outside the goal is read from each brief's created time against the goal's set_at, not a goal: stamp on every new brief; only an explicit link or --goal stamps goal: N (nothing infe",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "fm find --rank's proof lift is up to 1.25x, capped at 0.98x the lowest unproven score of any more severe kind in the run, so a proven lead never passes one; the lift can shrink when a more severe lead",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Genesis gen 1's tower step waits on Mission 3's critique (T-2221, blocked: the cold read doesn't converge on it after 18 puts; proposal T-2246 goes to the user in the final report). Meanwhile the run ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "T-2059 dropped: fm next's second finished_lanes call reads a 60 s disk cache, and 5 timed runs each way showed no difference beyond noise (median 0.205 s before, 0.229 s after); an extra next_for para",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Mission 4's deepen rounds rerun now that the risk budget reset (fm ideas --rounds 1 --deepen 3 --seen the earlier ideas.md); new ideas merge into mission-finish.md through fm genesis put",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Cold reads converge by per-line acceptance (keyed on line text + charter hash), not by majority reads or diff-only reads: every line still gets a whole-file Haiku read; advisories print",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "fm prove's yes is the user's --yes-run, kept per tree path in Foreman state; no Foreman-home or author-email exception. A session that points FOREMAN_STATE at a list it wrote is set on running the cod",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule: the user's standing intent (templates/standing-intent.md, one source) sits under gen-0 and over every steer, for every project fm genesis runs on; every cold read's charter fences it, e",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "The Genesis line and the exam_scorecard MCP tool show the held-out scorecard to sessions: aggregate N/M pass on the shared line, per-capability counts and top gaps only through the tool",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule (user 2026-10-30: 'I approve all changes btw, you don't need to ask for my approval'): an L plan is approved on this yes once its brief is complete (criteria, steps, build vs reuse); nev",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "fm genesis select keeps reading Haiku-graded lines and names the model on its provisional line; fm exam scorecard (the done gate) skips them",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Until the end-of-run exam, selection between rewritten Seeds and mission templates uses the free arms, the Haiku smoke run, fm outcomes and cold fm second reads, and lineage.md marks each choice provi",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "The user's standing intent (on top of every earlier steer, under gen-0, for every project fm genesis runs on): a harness that figures out and does everything itself; his only jobs are gen-0's goals an",
-   "later": {
-    "date": "2026-10-30",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule from gen 2 on: the Genesis frame may grow, never shrink, and gen-0 stays fixed as the constitution; a generation may add a capability as spec.md \u00a72+N, coverage areas, surfaces or stages,",
-   "later": {
-    "date": "2026-10-31",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule from gen 2 on: one Mission per generation is a moonshot (ideas that fit no coverage.md cell and no gen-0 \u00a72 capability, judged only on novelty and value), with a far-domain lens, a front",
-   "later": {
-    "date": "2026-10-31",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule: a capability whose free arm beats the session arm on the same scenarios is a top gap: fm exam scorecard prints it first (held out) and the next seed opens with it (train only)",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule: every capability Genesis builds must be called by a real session path (session start, fm next, the drive, a skill or a hook), not only exist as a verb: fm genesis check's reach names a ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule: exam recall for #1 is reported per language and per bug type, with child-authored scenarios in languages and kinds fm find wasn't written for",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule for #1 Initiative: fm find stays the free first pass, and detection beyond it is never hand-written per language. In order: the repo's own and the ecosystem's standard tools found from m",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule: a capability whose free arm beats the session arm on the same scenarios is a top gap in the next Seed",
-   "later": {
-    "date": "2026-10-30",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule: every capability Genesis builds must be called by a real session path (session start, fm next, the drive, a skill or a hook), not only exist as a verb a session might never run",
-   "later": {
-    "date": "2026-10-30",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Until the end-of-run exam, selection between rewritten Seeds and mission templates uses the free arms, the Haiku smoke run, fm outcomes and cold fm second reads, and lineage.md marks each choice provi",
-   "later": {
-    "date": "2026-10-30",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Long-horizon tier is the deciding end-of-run score for every capability except pure finders: replayed real repos rolled back to a past commit with the change that followed as the goal; planted faults ",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Defer the full foreman-vs-plain exam and the long-horizon tier to the end of the run, on the production model, once Missions 1-8 are built, then repeat after any fixes they trigger; a capability the H",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Testing cadence: every task keeps red-first unit tests, fm check and fm task finish audits; every generation runs only the zero-token arms (finders, oracle, empty) on all scenarios plus at most a Haik",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule: Foreman isn't specific to Claude Code: install.sh, fm, fm doctor and the task loop work with no claude on PATH, and the docs call it the discipline layer for coding agents",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule: the site follows Genesis on its own: every tower change publishes site/genesis data to main (fm genesis live), so the page is always current",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Push grant: the user said \"feel free to push to main at any time without asking me!\"; each push still goes through fm ship, gated by the full suite, with a publish grant set on the one task and spent ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Every user steer becomes a standing rule plus an automatic check in the same task: fm decide --check stores it, fm genesis sweep runs it, fm doctor names a missing one",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Every tower file gets a cold Haiku fm second read when written, against gen-0's MUSTs and NEVERs and for metric-gaming; a failure goes back to the writer and nothing is filed",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Coverage must be real: a coverage.md cell counts only when it names a concrete capability grounded in a file or a real gap, with no phrasing reused across rows; a templated cell (the same words with t",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-30",
-   "text": "Standing rule: weakness-finding uses signals Foreman didn't author: outcome survival, cold reviews by a different model, foreman vs plain on the same held-out scenarios; exam scenarios come from a sep",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
   }
  ],
  "louhi": {
-  "trials": 89,
+  "trials": 134,
   "runs": [
    {
     "run": "s0-001",
-    "trials": 11,
-    "scenarios": 505,
-    "keyed": 550,
-    "found": 298
+    "trials": 29,
+    "scenarios": 671,
+    "keyed": 684,
+    "found": 300
    },
    {
     "run": "genesis-s0",
@@ -2101,23 +2087,48 @@
    },
    {
     "run": "s32-015",
+    "trials": 7,
+    "scenarios": 21,
+    "keyed": 21,
+    "found": 18
+   },
+   {
+    "run": "s4-018",
     "trials": 4,
-    "scenarios": 12,
-    "keyed": 12,
-    "found": 12
+    "scenarios": 14,
+    "keyed": 14,
+    "found": 0
+   },
+   {
+    "run": "s5-019",
+    "trials": 20,
+    "scenarios": 61,
+    "keyed": 61,
+    "found": 0
    }
   ],
   "agents": [
    {
+    "agent": "smith",
+    "trials": 43,
+    "scenarios": 244,
+    "keyed": 212,
+    "found": 2,
+    "false_alarms": 11,
+    "fixable": 212,
+    "fixed": 15,
+    "brier": 0.25
+   },
+   {
     "agent": "foreman",
-    "trials": 29,
-    "scenarios": 167,
-    "keyed": 104,
-    "found": 75,
+    "trials": 31,
+    "scenarios": 173,
+    "keyed": 110,
+    "found": 81,
     "false_alarms": 26,
-    "fixable": 104,
-    "fixed": 90,
-    "brier": 0.178
+    "fixable": 110,
+    "fixed": 96,
+    "brier": 0.144
    },
    {
     "agent": "oracle",
@@ -2257,6 +2268,12 @@
    {
     "gen": 3,
     "trials": 11,
+    "keyed": 6,
+    "found": 6
+   },
+   {
+    "gen": 4,
+    "trials": 2,
     "keyed": 6,
     "found": 6
    }
@@ -2701,6 +2718,29 @@
    "tier": "high",
    "stage": "idea",
    "needs": []
+  },
+  {
+   "id": "M-59",
+   "title": "Fuse two small models into a lichen that outthinks the frontier model neither can match",
+   "tier": "xhigh",
+   "stage": "idea",
+   "needs": []
+  },
+  {
+   "id": "M-60",
+   "title": "Grow a mycorrhizal network under every repo on the machine, trading failure shapes as nutrients",
+   "tier": "massive",
+   "stage": "idea",
+   "needs": [
+    "M-22"
+   ]
+  },
+  {
+   "id": "M-61",
+   "title": "Breed a Red Queen: a predator that evolves new bugs against Sampo's own detectors every night",
+   "tier": "massive",
+   "stage": "idea",
+   "needs": []
   }
  ],
  "underworld": [
@@ -2708,56 +2748,56 @@
    "idea": "selfjev-4b",
    "blocker": "unevaluated: no exam arm has run it against a path it would replace",
    "tries": 0,
-   "rechecks": 1,
+   "rechecks": 2,
    "added": "gen-2"
   },
   {
    "idea": "jeff",
    "blocker": "unevaluated: no exam arm has run it against a path it would replace",
    "tries": 0,
-   "rechecks": 1,
+   "rechecks": 2,
    "added": "gen-2"
   },
   {
    "idea": "Jevlike",
    "blocker": "unevaluated: no task-specific model has been trained from Foreman's own history yet",
    "tries": 0,
-   "rechecks": 1,
+   "rechecks": 2,
    "added": "gen-2"
   },
   {
    "idea": "Von",
    "blocker": "unevaluated: intent routing has no exam arm yet",
    "tries": 0,
-   "rechecks": 1,
+   "rechecks": 2,
    "added": "gen-2"
   },
   {
    "idea": "Byte-stable goal card in the cached prefix",
    "blocker": "no measurable win: the goal card is about 120 characters",
    "tries": 2,
-   "rechecks": 1,
+   "rechecks": 2,
    "added": "gen-2"
   },
   {
    "idea": "Proofs expire when the thing proved changes",
    "blocker": "its kill test found no stale proof",
    "tries": 2,
-   "rechecks": 0,
+   "rechecks": 1,
    "added": "gen-3"
   },
   {
    "idea": "Plan-time example confirmation",
    "blocker": "its kill test needs the user present",
    "tries": 2,
-   "rechecks": 0,
+   "rechecks": 1,
    "added": "gen-3"
   },
   {
    "idea": "M-12 \u00b7 Weight deciders by a scored market on whether a close survives",
    "blocker": "no decider beats chance on whether a close survives 14 days unfixed, so a pool has nothing to weight",
    "tries": 3,
-   "rechecks": 0,
+   "rechecks": 1,
    "added": "gen-3"
   }
  ],
