@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T13:20:26Z",
- "rev": "76bebce4",
+ "updated": "2026-11-05T13:25:33Z",
+ "rev": "919d8139",
  "capabilities": [
   {
    "n": 1,
@@ -2113,7 +2113,7 @@
       {
        "id": "T-2261",
        "title": "Guard (for the user's review, touches the guard): the interpreter-code rule blocks a…",
-       "status": "blocked",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "M",
        "steps": 0,
@@ -37480,12 +37480,12 @@
    },
    "rejected": {
     "kill": 7649,
-    "tier": 5225,
+    "tier": 5294,
     "novelty": 39
    },
-   "merged": 73,
+   "merged": 77,
    "kept": 347,
-   "pending": 455
+   "pending": 382
   },
   "families": [
    {
