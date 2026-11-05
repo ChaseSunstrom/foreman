@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T05:11:53Z",
- "rev": "6876ccc3",
+ "updated": "2026-11-05T05:45:47Z",
+ "rev": "ad751f96",
  "capabilities": [
   {
    "n": 1,
@@ -36247,16 +36247,16 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 811,
+ "unproven": 810,
  "unproven_kinds": {
-  "meaning-notes": 362,
+  "meaning-notes": 360,
   "meaning-user": 247,
   "research-uncited": 34,
   "perf-typed": 51,
   "typed": 36,
   "red": 75,
   "tui-unshot": 9,
-  "docs": 111,
+  "docs": 112,
   "perf-noise": 1,
   "infra": 8,
   "ui-unshot": 28,
@@ -37465,7 +37465,7 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 10049,
+   "generated": 10089,
    "write": {
     "title": 113,
     "line": 623,
@@ -37480,12 +37480,12 @@
    },
    "rejected": {
     "kill": 6317,
-    "tier": 2538,
+    "tier": 2588,
     "novelty": 38
    },
    "merged": 17,
-   "kept": 313,
-   "pending": 37
+   "kept": 321,
+   "pending": 19
   },
   "families": [
    {
@@ -38819,6 +38819,38 @@
     "evidence": "",
     "kinds": [
      "design"
+    ]
+   },
+   {
+    "id": "F-010013",
+    "size": 1,
+    "lead": "Select migrations by live speed and cost, not just passing tests.",
+    "today": "Today you can't tell which schema design runs faster or cheaper in production until after you've shipped it.",
+    "with_this": "With this, you can pick the cheaper, faster database design before it reaches users, lowering your cloud bill and page-load times.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-010045",
+    "size": 1,
+    "lead": "Stop one blocked step from silently stalling the whole org",
+    "today": "Today you can't see that one blocked step is holding up a dozen downstream deliverables until someone notices a week later.",
+    "with_this": "With this, you can pull the emergency stop on any blocked step and watch the dependent work pause, reroute, or restart on its own, so your team's days stop leaking into waiting.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
     ]
    },
    {
@@ -40662,41 +40694,13 @@
     "kinds": [
      "docs"
     ]
-   },
-   {
-    "id": "F-002389",
-    "size": 1,
-    "lead": "Let the code argue with itself in a debate ring",
-    "today": "Today you can't resolve ambiguous logic by having the system propose conflicting interpretations.",
-    "with_this": "With this, you can force two AI agents to debate a bug's root cause, locking the winner as the truth.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "bugs"
-    ]
-   },
-   {
-    "id": "F-002390",
-    "size": 1,
-    "lead": "Render the bug's life cycle as a 3D timeline",
-    "today": "Today you can't see how a bug evolves across multiple commits over time.",
-    "with_this": "With this, you can visualize the exact moment a bug was introduced, propagated, and masked.",
-    "tier": "high",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "bugs"
-    ]
    }
   ],
-  "families_total": 298
+  "families_total": 306,
+  "catalogue": {
+   "file": "moons-catalogue.json",
+   "total": 321
+  }
  },
  "steer": {
   "run": "steer-20261102T212604-3954",
