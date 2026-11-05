@@ -1905,18 +1905,31 @@ class LeanKind(JudgmentStub, ForemanTestCase):  # T-2363: #12, Foreman's own ove
         self.answer(r["run"], s, "foreman", dict(lean, inject_chars_per_turn=905.0))  # +0.6%: inside the 2% band
         self.assertEqual(self.closed(self.fm_json("exam", "grade", r["run"], "--agent", "foreman")), [s["id"]])
 
-    def test_the_self_change_gate_refuses_each_planted_growth_by_its_metric_and_dropping_a_check_flips_it(self):
+
+class GateGrowth:  # T-3171: one class (so one process, run.py's unit) per planted growth: the floor is one growth's benches
+    name = None
+
+    def test_the_self_change_gate_refuses_the_planted_growth_by_its_metric_and_dropping_a_check_flips_it(self):
         from sampo import louhi
-        rows = {x["name"]: x for x in louhi.gate_mutations(runs=2)}
-        self.assertEqual(set(rows), {m[0] for m in louhi.GATE_MUTATIONS})
-        for name, x in rows.items():
-            with self.subTest(name=name):
-                if x["metric"]:
-                    self.assertTrue(x["refused"], x)
-                    self.assertTrue(any(x["metric"] in ln for ln in x["rows"]), x)
-                    self.assertFalse(x["dropped_refused"], x)  # the metric's own check is what refused it
-                else:
-                    self.assertFalse(x["refused"], x)  # a control passes
+        rows = {x["name"]: x for x in louhi.gate_mutations(runs=2, only=(self.name,))}
+        self.assertEqual(set(rows), {self.name})
+        x = rows[self.name]
+        if x["metric"]:
+            self.assertTrue(x["refused"], x)
+            self.assertTrue(any(x["metric"] in ln for ln in x["rows"]), x)
+            self.assertFalse(x["dropped_refused"], x)  # the metric's own check is what refused it
+        else:
+            self.assertFalse(x["refused"], x)  # a control passes
+
+
+def _planted_growths():
+    from sampo import louhi
+    for m in louhi.GATE_MUTATIONS:
+        cls = "LeanKindGate" + "".join(w.title() for w in m[0].split("-"))
+        globals()[cls] = type(cls, (GateGrowth, JudgmentStub, ForemanTestCase), {"name": m[0], "__module__": __name__})
+
+
+_planted_growths()
 
 
 class ForecastKind(JudgmentStub, ForemanTestCase):  # T-2409 (#3): the next request predicted from the stream before it

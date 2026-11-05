@@ -3753,25 +3753,54 @@ GATE_MUTATIONS = (
     ("control-test", None, None, [("plugin/tests/test_zz_lean_control.py", None, "def test_x():\n    pass\n")]),
     ("control-cut", None, None, [("plugin/rules/foreman.md", "\n## Precedence\n", "\n")]),
 )
-_GATE_RUNNER = """import json, sys, types
+# T-3171: one process runs a growth plain and again with its check dropped, and a tree already benched or replayed (the
+# base, and the branch the second run shares) is not run again; one pair per bench, since a planted rise is large
+_GATE_RUNNER = """import hashlib, json, os, sys, types
 sys.path.insert(0, sys.argv[1])
 from sampo import core as c, doctor, selfgate as g
-main, ref, runs, drop, files = sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5], json.loads(sys.argv[6])
-g.RUNS = runs
-if drop == "footprint":
-    doctor.grown = lambda a, b: []
-if drop == "hook":
-    g._slower = lambda a, b: {}
-if drop == "guard":
-    g._verdicts = lambda plugin, cmds: ["same"] * len(cmds)
-if drop == "verbs":
-    g._verbs = lambda plugin: []
+main, ref, runs, drops, files = sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5].split(","), json.loads(sys.argv[6])
+g.RUNS, g.PAIRS, g.HOLD = runs, 1, 1
+def key(plugin):
+    h = hashlib.sha1()
+    for d, ds, fs in os.walk(plugin):
+        ds[:] = sorted(x for x in ds if x != "__pycache__" and not (d == plugin and x == "tests"))
+        for f in sorted(fs):
+            q = os.path.join(d, f)
+            h.update(q.encode())
+            try:
+                with open(q, "rb") as fh:
+                    h.update(fh.read())
+            except OSError:
+                pass
+    return h.hexdigest()
+def memo(fn):
+    seen = {}
+    def run(plugin, *a):
+        k = key(plugin), json.dumps(a)
+        if k not in seen:
+            seen[k] = fn(plugin, *a)
+        return seen[k]
+    return run
+g._bench, g._verdicts = memo(g._bench), memo(g._verdicts)
+orig = g._slower, g._verdicts, g._verbs, doctor.grown
 p = c.find_project(main)
-print(json.dumps(g.gate(p, types.SimpleNamespace(id="T-0000", meta={"created": ""}), main, ref, files)))
+out = {}
+for drop in drops:
+    g._slower, g._verdicts, g._verbs, doctor.grown = orig
+    if drop == "footprint":
+        doctor.grown = lambda a, b: []
+    if drop == "hook":
+        g._slower = lambda a, b: {}
+    if drop == "guard":
+        g._verdicts = lambda plugin, cmds: ["same"] * len(cmds)
+    if drop == "verbs":
+        g._verbs = lambda plugin: []
+    out[drop] = g.gate(p, types.SimpleNamespace(id="T-0000", meta={"created": ""}), main, ref, files)
+print(json.dumps(out))
 """
 
 
-def gate_mutations(runs=2):
+def gate_mutations(runs=2, only=None):
     """T-2363: GATE_MUTATIONS through fmselfgate.gate, each as a branch of a throwaway repo holding a copy of plugin/
     (a throwaway Louhi home, so no refusal reaches a real ledger), the refusals read, then each growth again with its
     own check dropped: [{name, metric, refused, rows, dropped_refused}]. dropped_refused is whether a refusal still
@@ -3794,6 +3823,8 @@ def gate_mutations(runs=2):
                        capture_output=True, timeout=300)
         jobs = []
         for name, metric, check, edits in GATE_MUTATIONS:
+            if only and name not in only:  # T-3171: the exam's tests run one growth each
+                continue
             wt = os.path.join(tmp, name)
             git(src, "worktree", "add", "-q", "-b", f"mut/{name}", wt, "main")
             for rel, old, new in edits:
@@ -3806,29 +3837,26 @@ def gate_mutations(runs=2):
             git(wt, "add", "-A")
             git(wt, "commit", "-qm", name)
             files = sorted({rel for rel, _, _ in edits})
-            jobs.append((name, metric, check, files, ""))
-            if check:
-                jobs.append((name, metric, check, files, check))
+            jobs.append((name, metric, check, files))
 
         def run(job):
-            name, _, _, files, drop = job
+            name, _, check, files = job
             r = subprocess.run([sys.executable, "-c", _GATE_RUNNER, os.path.join(c.PLUGIN_ROOT, "lib"), src, f"mut/{name}",
-                                str(runs), drop or "-", json.dumps(files)], cwd=src, env=env, capture_output=True,
-                               text=True, timeout=1200)
+                                str(runs), f"-,{check}" if check else "-", json.dumps(files)], cwd=src, env=env,
+                               capture_output=True, text=True, timeout=1200)
             try:
                 return json.loads(r.stdout.strip().splitlines()[-1])
             except (ValueError, IndexError):
-                return [f"the gate runner failed: {c.fit(c.plain(r.stderr.strip()[-300:]), 300)}"]
-        with concurrent.futures.ThreadPoolExecutor(4) as pool:
+                return {"-": [f"the gate runner failed: {c.fit(c.plain(r.stderr.strip()[-300:]), 300)}"]}
+        with concurrent.futures.ThreadPoolExecutor(len(jobs)) as pool:  # T-3171: all at once, the test's floor is its slowest growth
             got = list(pool.map(run, jobs))
-        out = {}
-        for (name, metric, _, _, drop), rows in zip(jobs, got):
-            x = out.setdefault(name, {"name": name, "metric": metric, "refused": None, "rows": [], "dropped_refused": None})
-            if drop:
-                x["dropped_refused"] = any(metric in ln for ln in rows)
-            else:
-                x["rows"], x["refused"] = rows, bool(rows) if metric is None else any(metric in ln for ln in rows)
-        return list(out.values())
+        out = []
+        for (name, metric, check, _), res in zip(jobs, got):
+            rows = res.get("-", [])
+            out.append({"name": name, "metric": metric, "rows": rows,
+                        "refused": bool(rows) if metric is None else any(metric in ln for ln in rows),
+                        "dropped_refused": any(metric in ln for ln in res.get(check, [])) if check else None})
+        return out
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
