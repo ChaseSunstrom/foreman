@@ -26,6 +26,7 @@
 - Smith no longer lets a model quit early: a done with no edit made while the plan's verify command fails gets that failure back as the next turn, at most twice, and early-done stops are counted per model (T-3180).
 - Briefs, criteria templates and playbooks name `claude plugin test mods/foreman-ui` for the UI mod, never `npx vitest`, which can't run in a fresh lane and refused a merge (T-3143).
 - `sampo lane brief` refuses a task whose own commits are already in main and says to re-run its criteria and finish it, so a merged task never gets a second builder; a revert reopens it (T-3168).
+- `sampo exam run` and each `sampo genesis` step report their progress (scenarios or items done of total), so the live page shows a bar for them (T-3086).
 - Kalevala part 1: `sampo genesis --tower NAME` gives each Rune tower its own home under one project, while the moons store, exam scenarios and your steers stay shared at the root; `sampo genesis towers` lists each tower's aspect, generation and last verdicts (T-3053).
 - The self-change gate's planted-growth test runs as one test per growth over shared benches: its slowest part takes 51 s instead of 238-390 s, so it no longer sets the full suite's floor (T-3171).
 - A close that spans another lane's merge counts audits made both before and after the merge; an adversary audit recorded after the merge no longer reads as stale (T-3200).
