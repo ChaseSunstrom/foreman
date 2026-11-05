@@ -653,6 +653,23 @@ def check_flaky_rates(p, top=3):
         for r, _, n, e in rows[:top]))
 
 
+def check_served_context():
+    """T-3164: a models.json profile on loopback Ollama declares more context than Ollama loads the model with (mimo-v2.6:9b
+    ran at 4096 against 32768 for hours, long prompts cut silently): WARN naming profile, both numbers. Unknown or
+    unreachable is quiet; remote profiles are never asked (models.served_context checks loopback, sends no key)."""
+    from sampo import models
+    try:
+        profs = list(models.configured()[1].values())
+        bad = [(x, n) for x in profs if (n := models.served_context(x)) and n < x["context"]]
+    except Exception:  # noqa: BLE001  a bad models.json is check_model_backends's note
+        return Result("served context", "PASS", "not checked")
+    if not bad:
+        return Result("served context", "PASS", "each local profile's context matches what Ollama loads")
+    return Result("served context", "WARN", "; ".join(
+        f"{c.plain(str(x['name']))[:40]} ({c.plain(str(x.get('model')))[:40]}): Ollama loads {n}, models.json declares "
+        f"{x['context']}: set num_ctx {x['context']} in its Modelfile (long prompts are cut at {n})" for x, n in bad))
+
+
 EMBED_PINS = ("bge-m3:567m", "nomic-embed-text:v1.5")  # T-2880: install.sh's EMBED_PINS (a test keeps them equal)
 
 
@@ -2743,6 +2760,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_anergy())
     results.append(check_predictions(here))
     results.append(check_model_backends(here))
+    results.append(check_served_context())
     if not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-2643: a test's doctor run never spends real model calls
         results.append(check_model_pins())
     results.append(check_self_fixes(here))

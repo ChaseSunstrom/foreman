@@ -1303,6 +1303,31 @@ class LocalEmbedders(ForemanTestCase):  # T-2880: the backends line names local 
             self.assertEqual(d.check_model_backends(None).status, "PASS")
 
 
+class ServedContextCheck(unittest.TestCase):  # T-3164: a local profile's declared context against what Ollama loads
+    def test_warns_when_ollama_serves_less_than_models_json_declares(self):
+        from unittest import mock
+        from sampo import models
+        from test_served_context import Ollama
+        o = Ollama(show={"parameters": "num_ctx 4096"})
+        self.addCleanup(o.close)
+        prof = o.profile(name="gpu-mimo9", model="mimo-v2.6:9b", context=32768)
+        remote = dict(prof, name="far", base_url="http://example.com/v1")
+        with mock.patch.object(models, "configured", return_value=(None, {"gpu-mimo9": prof, "far": remote})):
+            r = d.check_served_context()
+            self.assertEqual(r.status, "WARN")
+            for word in ("gpu-mimo9", "4096", "32768"):
+                self.assertIn(word, r.detail)
+            self.assertNotIn("far", r.detail)  # a remote profile is never asked
+        o.show = {"parameters": "num_ctx 32768"}  # matching: quiet
+        with mock.patch.object(models, "configured", return_value=(None, {"gpu-mimo9": prof})):
+            self.assertEqual(d.check_served_context().status, "PASS")
+        o.close()  # unreachable: quiet
+        with mock.patch.object(models, "configured", return_value=(None, {"gpu-mimo9": prof})):
+            self.assertEqual(d.check_served_context().status, "PASS")
+        with mock.patch.object(models, "configured", side_effect=models.ModelError("bad")):
+            self.assertEqual(d.check_served_context().status, "PASS")
+
+
 class SelfFixWeek(ForemanTestCase):  # T-2365: the week's self-fix trials on one doctor line, held against not held
     def test_the_week_s_self_fix_trials_held_against_not_held_and_none_when_none(self):
         import datetime
