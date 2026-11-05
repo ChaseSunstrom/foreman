@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T17:47:22Z",
- "rev": "daf01510",
+ "updated": "2026-11-05T17:52:38Z",
+ "rev": "300e0783",
  "capabilities": [
   {
    "n": 1,
@@ -36247,20 +36247,20 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 837,
+ "unproven": 839,
  "unproven_kinds": {
-  "meaning-notes": 364,
+  "meaning-notes": 365,
   "meaning-user": 248,
   "research-uncited": 33,
   "perf-typed": 58,
   "typed": 37,
   "red": 77,
   "tui-unshot": 11,
-  "docs": 120,
+  "docs": 121,
   "perf-noise": 1,
   "infra": 9,
-  "ui-unshot": 37,
-  "data": 5
+  "ui-unshot": 38,
+  "data": 6
  },
  "next": {
   "stage": "sweep",
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 17599,
+   "generated": 17782,
    "write": {
     "title": 136,
-    "line": 1399,
+    "line": 1423,
     "payoff": 17,
     "kill test": 60,
     "code": 5
@@ -37485,7 +37485,7 @@
    },
    "merged": 111,
    "kept": 802,
-   "pending": 110
+   "pending": 269
   },
   "families": [
    {
@@ -40713,7 +40713,7 @@
     ]
    }
   ],
-  "families_total": 723,
+  "families_total": 728,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 802
