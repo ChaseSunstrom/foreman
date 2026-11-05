@@ -67,6 +67,8 @@ class Brief(_Tasks):
         head = git(self.repo, "rev-parse", "HEAD").strip()
         self.assertIn(head, brief)
         self.assertIn("merge --ff-only", brief)
+        # T-3142: main moved between the brief and the launch: a worktree ahead of BASE (BASE its ancestor) builds
+        self.assertIn("is-ancestor <BASE> HEAD", read_text(os.path.join(PLUGIN, "agents", "fm-builder.md")))
         self.assertIn("isolated in the worktree", brief)
         self.assertIn("main thread", brief)
         # T-1196: builders hit the isolation refusal 31 times by cd-ing into the main checkout: name it, and pwd

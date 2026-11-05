@@ -16,7 +16,8 @@ The contract — break none of it:
 (The brief's own contract section repeats these rules with the real ids; a test in test_lanes.py keeps the two in step: T-1151.)
 - Start from the main checkout's commit <BASE>: Claude Code makes your worktree from the default branch, which can be
   older. If `git rev-parse HEAD` isn't <BASE>: when `git merge-base --is-ancestor HEAD <BASE>` succeeds, run
-  `git merge --ff-only <BASE>`; otherwise stop and report the two commits (T-0379).
+  `git merge --ff-only <BASE>`; when `git merge-base --is-ancestor <BASE> HEAD` succeeds (main moved on after the
+  brief was written), build on HEAD and say so in your report (T-3142); otherwise stop and report the two commits (T-0379).
 - Then, in your worktree: `sampo focus <ID>`. Refused → stop and report why.
 - Stay in your worktree, the folder you start in (`pwd` prints it): never cd into the main checkout (<MAIN>), name a
   path under it or point `git -C` at it, and never touch other worktrees or Sampo's state except through fm. sampo verbs
