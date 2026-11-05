@@ -42,6 +42,8 @@ NET_OFF = ("--host-resolver-rules=MAP * ~NOTFOUND", "--proxy-server=127.0.0.1:9"
 PAD = 0.25  # a render's margin, of each side: what a work paints there is clipped where it is used
 FRAMES, FRAME_S = 4, 0.15
 BLANK_PCT, TEXT_BAR, INK_BAR, SHARE = 0.5, 4.5, 3.0, 0.10
+MIN_TEXT, NEAR = 12, 0.03  # T-3226: pixels of one text colour on one background before its contrast is read (a glyph
+# or two); a colour within NEAR per channel of a commoner one is that colour's hinting variant
 GRID, LEVEL = 24, 96  # thumb: a 24×24 grid of grey means stretched to 0-255; a cell off by over LEVEL differs
 # cells, measured on the 48 px clock: a hair wider, recoloured or thinner 0; its hand turned 16, a knob added 12, a
 # plus 224. A 544-bit dHash couldn't split them at any grid (hair wider 22 bits, hand turned 16): T-3106.
@@ -454,14 +456,36 @@ def _rgb(word):
     return tuple(v / 255 for v in word.to_bytes(4, sys.byteorder)[:3])
 
 
+def _shade(x, bg, y, tol=0.06):
+    """Whether colour x lies between bg and y: an antialiasing shade of y's text over bg, not a text colour of its own."""
+    i = max(range(3), key=lambda k: abs(y[k] - bg[k]))
+    if abs(y[i] - bg[i]) < 1e-9:
+        return False
+    t = (x[i] - bg[i]) / (y[i] - bg[i])
+    return -tol < t < 1 - tol / 2 and all(abs(bg[k] + t * (y[k] - bg[k]) - x[k]) <= tol for k in range(3))
+
+
 def _text_ratio(words, without):
-    """Text's contrast: each pixel the text changed, as (with text, without), the commonest pairs' lowest ratio; None
-    when the text changed none."""
+    """Text's contrast: each pixel the text changed, as (with text, without), grouped by the background it covered.
+    In each group a text colour with at least MIN_TEXT pixels counts unless it lies between the background and another
+    of the group's colours (antialiasing); the lowest ratio of all (T-3226: a small badge or one faint line under SHARE
+    of the text went unread). The commonest pair when no colour reaches MIN_TEXT; None when the text changed none."""
     from sampo import design
     pairs = collections.Counter((a, b) for a, b in zip(words, memoryview(without.rgba).cast("I")) if a != b)
-    total = sum(pairs.values())
-    chosen = [k for k, n in pairs.items() if n >= SHARE * total] or [k for k, _ in pairs.most_common(1)]
-    return min((design.contrast(_rgb(a), _rgb(b)) for a, b in chosen), default=None)
+    groups = collections.defaultdict(list)
+    for (a, b), n in pairs.items():
+        groups[b].append((n, a))
+    ratios = []
+    for b, cols in groups.items():  # ponytail: the group's 64 commonest colours, compared pairwise
+        bg = _rgb(b)
+        top = [_rgb(a) for n, a in sorted(cols, reverse=True)[:64] if n >= MIN_TEXT]
+        ratios += [design.contrast(x, bg) for i, x in enumerate(top)  # a hinting variant of a commoner one is that one
+                   if not any(y is not x and _shade(x, bg, y) for y in top)
+                   and not any(max(abs(x[k] - y[k]) for k in range(3)) <= NEAR for y in top[:i])]
+    if not ratios and pairs:
+        (a, b), _ = pairs.most_common(1)[0]
+        ratios = [design.contrast(_rgb(a), _rgb(b))]
+    return min(ratios, default=None)
 
 
 def _measure(work, shots, bg):

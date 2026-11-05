@@ -386,6 +386,15 @@ class Rendered(ForemanTestCase):
         self.assertIn("safe", failed(got["scripted.svg"]))
         self.assertEqual(got["card.svg"]["type"], "card")
 
+    def test_a_faint_badge_or_a_faint_line_fails_beside_clear_body_text(self):  # T-3226
+        chip = '<rect x="200" y="88" width="64" height="24" rx="6" fill="#ffd166"/>' \
+               '<text x="208" y="105" font-size="12" font-family="sans-serif" fill="#fff3c4">NEW</text></svg>'
+        note = '<text x="16" y="104" font-size="11" font-family="sans-serif" fill="#3a1f1f">a faint note</text></svg>'
+        got = self.check(("badge.svg", CARD.replace("</svg>", chip)), ("note.svg", CARD.replace("</svg>", note)))
+        for name in ("badge.svg", "note.svg"):
+            with self.subTest(name):
+                self.assertEqual(failed(got[name]), ["contrast"], json.dumps(gates(got[name]), indent=1))
+
     def test_the_text_report_names_each_gate_with_its_number(self):
         good, faint = self.put("card.svg", CARD), self.put("faint.svg", FAINT)
         r = self.fm("works", "check", good, faint, "--out", os.path.join(self.tmp, "renders"), check=False,

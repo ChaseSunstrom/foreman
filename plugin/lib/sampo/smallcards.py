@@ -651,7 +651,7 @@ UI_CSS = """:root{color-scheme:light;--bg:#ffffff;--fg:#1b1f24;--muted:#59636e;-
 html{background:var(--bg);color:var(--fg)}
 body{margin:0;padding:16px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--fg);
 background:var(--bg);-webkit-font-smoothing:antialiased}
-button,input,select,textarea{font:inherit;color:inherit}
+button,input,select,textarea{font:inherit;color:inherit;background-color:var(--surface);border-color:var(--line)}
 a{color:var(--link)}
 h1,h2,h3,h4{margin:0;line-height:1.25}
 p{margin:0}
