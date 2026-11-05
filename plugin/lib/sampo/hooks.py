@@ -1375,6 +1375,9 @@ def user_prompt_submit(pl):
                                            "mode": pl.get("permission_mode")}, session=sid)
     except Exception:
         log_error("UserPromptSubmit", _tb())
+    if logged and not r.overrides:  # T-3126: a message that points something out is a miss, filed with its class
+        from sampo import selfaware
+        selfaware.note(p, text, session=sid)
     hc = None
     try:
         hc = _hook_claude()
