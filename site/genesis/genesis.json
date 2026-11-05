@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T01:16:03Z",
- "rev": "da1f7414",
+ "updated": "2026-11-05T01:21:07Z",
+ "rev": "53d75b0e",
  "capabilities": [
   {
    "n": 1,
@@ -3785,7 +3785,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -3868,7 +3868,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -3994,7 +3994,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -4133,7 +4133,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -4190,7 +4190,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "active",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -36059,13 +36059,13 @@
  "unproven": 812,
  "unproven_kinds": {
   "meaning-notes": 362,
-  "meaning-user": 251,
+  "meaning-user": 250,
   "research-uncited": 33,
   "perf-typed": 51,
   "typed": 38,
   "red": 75,
   "tui-unshot": 8,
-  "docs": 108,
+  "docs": 109,
   "perf-noise": 1,
   "infra": 8,
   "ui-unshot": 25,
