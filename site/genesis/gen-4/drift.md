@@ -1,10 +1,10 @@
 # Drift — gen-4
 
-Verdict: drifted
+Verdict: clean
 
-Checked seed.md, mission-anticipation.md, mission-exhaustive-thinking.md, mission-getting-the-tools-it-lacks.md, mission-goal-to-finish.md, mission-moonshot.md, mission-self-triggering.md, mission-staying-lean-and-safe.md, mission-verifying-anything.md against gen-0's 6 MUST/NEVER line(s); cold read: 1 drifted line(s).
+Checked seed.md, mission-anticipation.md, mission-exhaustive-thinking.md, mission-getting-the-tools-it-lacks.md, mission-goal-to-finish.md, mission-moonshot.md, mission-self-triggering.md, mission-staying-lean-and-safe.md, mission-verifying-anything.md against gen-0's 6 MUST/NEVER line(s); cold read: clean.
 
-- seed.md (cold read): Close the open coverage cells, most first, retry every not-yet item, and act on what the critiques asked; the exam's train split decides whether this rewrite stays (fm genesis select).
+Nothing drifted.
 
 Advisory (not a failure):
 - new since this seed (2026-11-03): Rename Foreman to Sampo per SAMPO.md: aliases first, then the migration (move with backup, manifest and undo), then int…
@@ -19,5 +19,3 @@ Advisory (not a failure):
 - new since this seed (2026-11-04): Moonshots must be wild: the cold reviewer scores wildness 1-5, an extreme or massive below 4 counts as xhigh, the gener…
 - new since this seed (2026-11-04): Never interrupt the user mid-run: no AskUserQuestion and no fm ask permission prompt while the standing core yes and tr…
 - new since this seed (2026-11-04): Moons at scale (standing rule), now enforced: the write rules, the grid, the cheap-first funnel, families and the cost …
-
-Undo the lines named here (a generation never rewrites the user's MUSTs or NEVERs), then rerun fm genesis drift 4.
