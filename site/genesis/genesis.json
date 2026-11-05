@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-05T07:14:54Z",
+ "updated": "2026-11-05T07:19:59Z",
  "rev": "c1d6c544",
  "capabilities": [
   {
@@ -36247,10 +36247,10 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 811,
+ "unproven": 812,
  "unproven_kinds": {
   "meaning-notes": 359,
-  "meaning-user": 247,
+  "meaning-user": 248,
   "research-uncited": 33,
   "perf-typed": 52,
   "typed": 36,
@@ -37465,12 +37465,12 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 12989,
+   "generated": 13479,
    "write": {
     "title": 113,
     "line": 623,
     "payoff": 17,
-    "kill test": 33,
+    "kill test": 60,
     "code": 3
    },
    "dups": {
@@ -37485,7 +37485,7 @@
    },
    "merged": 17,
    "kept": 347,
-   "pending": 2858
+   "pending": 3321
   },
   "families": [
    {
