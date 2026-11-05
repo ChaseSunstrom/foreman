@@ -6933,23 +6933,6 @@ def _build_parser(only=None):
     s.add_argument("--convert", action="store_true", help="with --apply: rewrite the residual lines with a cheap child")
     s.add_argument("--model", default="haiku")
     s.add_argument("--timeout", type=int, default=180)
-    s = add("card", lazy("sampo.callcards", "cmd_card"), tier=("Finding your way", 645),
-            help="calling cards: verified generators called by name with typed inputs, run confined, applied only "
-                 "when their checker passes (list, show, call NAME key=value..., test [NAME], rank \"<task>\", "
-                 "bench [RUN]: fm code on one local model with cards off and on over an exam run's scenarios, "
-                 "paired, with a sign test; no RUN sums --out)")
-    s.add_argument("action", nargs="?", choices=["list", "show", "call", "test", "rank", "bench"])
-    s.add_argument("name", nargs="?")
-    s.add_argument("rest", nargs="*", help="call: key=value inputs; rank: the task's words")
-    s.add_argument("--inputs", metavar="JSON", help="call: the inputs as one JSON object")
-    s.add_argument("--root", help="call: the worktree the card works in (default: this checkout)")
-    s.add_argument("--no-cache", action="store_true", help="call: run even when a verified result is cached")
-    s.add_argument("--model", default="jarvis-nothink,gpu-gemma12-32k,gpu-mimo9",
-                   help="bench: model profiles, the first that answers runs both arms")
-    s.add_argument("--limit", type=int, default=10, help="bench: scenarios")
-    s.add_argument("--kind", default="bug", help="bench: the scenario kinds, comma-separated")
-    s.add_argument("--lang", default="python", help="bench: the scenarios' language")
-    s.add_argument("--out", help="bench: the rows (jsonl; default research/callcards/bench.jsonl)")
     s = add("bisect", cmd_bisect, tier=("Finding your way", 600), help="the first commit where a check started failing, and its files (T-0612)")
     s.add_argument("--run", required=True, metavar="CMD")
     s.add_argument("--good", metavar="REF", help="a commit where it passed (default: the active task's start)")

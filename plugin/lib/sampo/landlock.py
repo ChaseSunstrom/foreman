@@ -6,9 +6,8 @@ working folders (never its settings, hooks, plugins or Sampo's code), Sampo's st
 The ruleset is built in the parent (prepare); the child only locks itself (enter), so nothing is loaded after fork.
 Inherited by everything the worker starts and impossible to undo from inside. Optional: on another OS, an older
 kernel or with the LSM off, available() says why and nothing changes.
-ponytail: enter() guards against a worker writing where it shouldn't by mistake, not against a hostile one: its reads,
-the network and AF_UNIX sockets in /tmp (tmux, X11, systemd) aren't restricted. prepare_jail with syscall_filter is the
-hostile-child jail (T-3160): reads and writes only where named, no socket, no signal or ptrace beyond its own domain."""
+ponytail: it guards against a worker writing where it shouldn't by mistake, not against a hostile one: reads, the
+network and AF_UNIX sockets in /tmp (tmux, X11, systemd) aren't restricted; ABI 4+/6+ can add ports and scoping."""
 import ctypes
 import os
 import platform
@@ -108,20 +107,26 @@ def writable_for(root):
     return seen
 
 
-def _ruleset(attr, rules):
-    """A ruleset fd from a packed landlock_ruleset_attr and (path, rights on a dir, rights on a file) rules."""
-    nr = _NR.get(platform.machine())
+def prepare(paths):
+    """In the parent: a Landlock ruleset fd allowing writes only beneath paths (close it after starting the child).
+    Raises OSError when it can't, so a caller never starts a worker it believes confined without confinement."""
+    nr, v = _NR.get(platform.machine()), abi()
+    if not nr or v < 1:
+        raise OSError("Landlock isn't available")
+    handled = _writes(v)
+    attr = struct.pack("Q", handled)
     rs = _LIBC.syscall(nr[0], ctypes.c_char_p(attr), ctypes.c_size_t(len(attr)), ctypes.c_uint32(0))
     if rs < 0:
         raise OSError(ctypes.get_errno(), "landlock_create_ruleset failed")
     try:
-        for p, on_dir, on_file in rules:
+        for p in paths:
             try:
                 fd = os.open(p, os.O_PATH | os.O_CLOEXEC)
             except OSError:
                 continue  # gone since the set was made: nothing to allow
             try:
-                allowed = on_dir if stat.S_ISDIR(os.fstat(fd).st_mode) else on_file  # a file rule: file rights only
+                allowed = handled if stat.S_ISDIR(os.fstat(fd).st_mode) else \
+                    handled & (_A["WRITE_FILE"] | _A["TRUNCATE"])  # a file rule takes file rights only
                 rule = struct.pack("=Qi", allowed, fd)  # struct landlock_path_beneath_attr is packed
                 if _LIBC.syscall(nr[1], ctypes.c_int(rs), ctypes.c_int(_RULE_PATH_BENEATH), ctypes.c_char_p(rule),
                                  ctypes.c_uint32(0)) < 0:
@@ -132,98 +137,6 @@ def _ruleset(attr, rules):
         os.close(rs)
         raise
     return rs
-
-
-def prepare(paths):
-    """In the parent: a Landlock ruleset fd allowing writes only beneath paths (close it after starting the child).
-    Raises OSError when it can't, so a caller never starts a worker it believes confined without confinement."""
-    nr, v = _NR.get(platform.machine()), abi()
-    if not nr or v < 1:
-        raise OSError("Landlock isn't available")
-    handled = _writes(v)
-    return _ruleset(struct.pack("Q", handled), [(p, handled, handled & (_A["WRITE_FILE"] | _A["TRUNCATE"]))
-                                                for p in paths])
-
-
-_READS = _A["EXECUTE"] | _A["READ_FILE"] | _A["READ_DIR"]
-NET_ABI, SCOPE_ABI = 4, 6  # TCP bind/connect rules; abstract unix sockets and signals scoped to the domain
-
-
-def prepare_jail(reads, writes):
-    """T-3160: a ruleset for a hostile child: it reads and runs only beneath reads, writes only beneath writes, and from
-    ABI 4 binds and connects no TCP port; from ABI 6 its abstract unix sockets and signals stay inside. Raises OSError
-    when Landlock isn't there (the caller then refuses to run anything)."""
-    nr, v = _NR.get(platform.machine()), abi()
-    if not nr or v < 1:
-        raise OSError("Landlock isn't available")
-    handled = _writes(v) | _READS
-    attr = struct.pack("Q", handled) + (struct.pack("Q", 3) if v >= NET_ABI else b"") + \
-        (struct.pack("Q", 3) if v >= SCOPE_ABI else b"")  # no net rule follows: every TCP bind and connect is refused
-    files = _A["EXECUTE"] | _A["READ_FILE"]
-    wfiles = (files | _A["WRITE_FILE"] | _A["TRUNCATE"]) & handled
-    return _ruleset(attr, [(p, _READS, files) for p in reads] + [(p, handled, wfiles) for p in writes])
-
-
-# T-3160: seccomp refuses with EPERM: socket(2) and io_uring_setup(2) (its ops open sockets too); ptrace and reading or
-# writing another process's memory; setsid and setpgid (a run can't leave the process group killpg ends); setpriority,
-# and prlimit64 on another process; and below SCOPE_ABI, where Landlock doesn't scope signals, every syscall that
-# signals another process, and fcntl F_SETOWN. ponytail: sched_setaffinity and ioprio_set on another process of the
-# uid still pass (a slowdown, never a kill); deny them here if that matters. Another syscall ABI
-# (i386 through int 0x80) kills the process, and x32 numbers are refused. (audit arch, {syscall: nr}) per CPU.
-_GENERIC = {"socket": 198, "ptrace": 117, "process_vm_readv": 270, "process_vm_writev": 271, "pidfd_getfd": 438,
-            "setsid": 157, "setpgid": 154, "kill": 129, "tkill": 130, "tgkill": 131, "rt_sigqueueinfo": 138,
-            "rt_tgsigqueueinfo": 240, "pidfd_send_signal": 424, "io_uring_setup": 425, "setpriority": 140,
-            "prlimit64": 261, "fcntl": 25}  # asm-generic/unistd.h
-_SECCOMP_ARCH = {"x86_64": (0xC000003E, {"socket": 41, "ptrace": 101, "process_vm_readv": 310, "process_vm_writev": 311,
-                                         "pidfd_getfd": 438, "setsid": 112, "setpgid": 109, "kill": 62, "tkill": 200,
-                                         "tgkill": 234, "rt_sigqueueinfo": 129, "rt_tgsigqueueinfo": 297,
-                                         "pidfd_send_signal": 424, "io_uring_setup": 425, "setpriority": 141,
-                                         "prlimit64": 302, "fcntl": 72}),
-                 "aarch64": (0xC00000B7, _GENERIC), "riscv64": (0xC00000F3, _GENERIC)}
-_DENY = ("socket", "io_uring_setup", "ptrace", "process_vm_readv", "process_vm_writev", "pidfd_getfd", "setsid",
-         "setpgid", "setpriority")
-_SIGNALS = ("kill", "tkill", "tgkill", "rt_sigqueueinfo", "rt_tgsigqueueinfo", "pidfd_send_signal")
-
-
-class _FProg(ctypes.Structure):
-    _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.c_void_p)]
-
-
-def syscall_filter():
-    """In the parent: a seccomp program for enter_jail, or None when this CPU's numbers aren't known. Below SCOPE_ABI
-    it refuses signals too: a run can't even kill its own children then (killpg from the parent still ends them)."""
-    arch = _SECCOMP_ARCH.get(platform.machine())
-    if not arch:
-        return None
-    nr, scoped = arch[1], abi() >= SCOPE_ABI
-    # (code, jt, jf, k): a jump is an offset or "ok"/"no", resolved below. ld 0x20, jeq 0x15, jge 0x35, ret 0x06.
-    ins = [(0x20, 0, 0, 4), (0x15, 1, 0, arch[0]), (0x06, 0, 0, 0x80000000),  # arch: same ABI or kill the process
-           (0x20, 0, 0, 0), (0x35, "no", 0, 0x40000000)]  # the syscall number; x32's are refused
-    ins += [(0x15, "no", 0, nr[s]) for s in _DENY + (() if scoped else _SIGNALS)]
-    # prlimit64 on itself only (pid 0, as glibc's setrlimit calls it): another process's RLIMIT_CPU kills it at any
-    # ABI. The args sit at offset 16, 8 bytes each, low word first (all three CPUs are little-endian).
-    ins += [(0x15, 0, 4, nr["prlimit64"]), (0x20, 0, 0, 16), (0x15, 0, "no", 0), (0x20, 0, 0, 20),
-            (0x15, "ok", "no", 0)]
-    if not scoped:  # F_SETOWN and F_SETOWN_EX aim SIGIO, any signal with F_SETSIG, at another process
-        ins += [(0x15, 0, 3, nr["fcntl"]), (0x20, 0, 0, 24), (0x15, "no", 0, 8), (0x15, "no", "ok", 15)]
-    ins += [(0x06, 0, 0, 0x7FFF0000), (0x06, 0, 0, 0x00050000 | 1)]  # ok: allow; no: SECCOMP_RET_ERRNO | EPERM
-    to = {"ok": len(ins) - 2, "no": len(ins) - 1}
-    ins = [(op, *(to[j] - i - 1 if isinstance(j, str) else j for j in (jt, jf)), k) for i, (op, jt, jf, k) in
-           enumerate(ins)]
-    buf = ctypes.create_string_buffer(b"".join(struct.pack("=HBBI", *i) for i in ins))
-    prog = _FProg(len(ins), ctypes.cast(buf, ctypes.c_void_p))
-    prog.buf = buf  # kept alive with the program
-    return prog
-
-
-def enter_jail(rs, prog):
-    """In the child: no new privileges, the seccomp program (when there is one), then the Landlock ruleset."""
-    if _LIBC.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-        raise OSError(ctypes.get_errno(), "PR_SET_NO_NEW_PRIVS failed")
-    if prog is not None and _LIBC.prctl(22, 2, ctypes.byref(prog), 0, 0) != 0:  # PR_SET_SECCOMP, MODE_FILTER
-        raise OSError(ctypes.get_errno(), "seccomp failed")
-    if _LIBC.syscall(_NR[platform.machine()][2], ctypes.c_int(rs), ctypes.c_uint32(0)) < 0:
-        raise OSError(ctypes.get_errno(), "landlock_restrict_self failed")
 
 
 def enter(rs):
