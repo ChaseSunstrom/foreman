@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-05T00:57:22Z",
+ "updated": "2026-11-05T01:02:40Z",
  "rev": "5de167c7",
  "capabilities": [
   {
@@ -4094,8 +4094,8 @@
        "type": "FEATURE",
        "tier": "L",
        "steps": 5,
-       "done": 2,
-       "current": "generation arm: ideas yield per model and Smith seeds with timeouts sized to the model (lane B)"
+       "done": 3,
+       "current": "site Models section on the Benchmarks page and the per-generation $0 rerun (GPU lock, never beside grow, last good rows kept)"
       }
      ]
     },
@@ -32787,6 +32787,446 @@
    "model": "jarvis-nothink",
    "reason": "off",
    "at": "2026-11-05T00:46:45Z",
+   "gen": 4,
+   "split": "all",
+   "kinds": [
+    "bug"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s32-015",
+   "agent": "smith",
+   "keyed": 3,
+   "found": 0,
+   "false_alarms": 1,
+   "exam_defects": 0,
+   "fixable": 3,
+   "fixed": 0,
+   "tf_keyed": 1,
+   "tf_first": 0,
+   "readings_keyed": 0,
+   "readings_hit": 0,
+   "missing_keyed": 0,
+   "missing_hit": 0,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 3,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 3,
+   "conf_missing": 3,
+   "brier_sum": 0.75,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      2
+     ],
+     "rust": [
+      0,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      1
+     ],
+     "untested": [
+      0,
+      1
+     ],
+     "docs": [
+      0,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 3,
+    "found": 0,
+    "false_alarms": 1,
+    "exam_defects": 0,
+    "fixable": 3,
+    "fixed": 0,
+    "tf_keyed": 1,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 3,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 3,
+    "conf_missing": 3,
+    "brier_sum": 0.75,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       2
+      ],
+      "rust": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ],
+      "untested": [
+       0,
+       1
+      ],
+      "docs": [
+       0,
+       1
+      ]
+     }
+    },
+    "false_by_kind": {
+     "bug": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "train": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "cost": 0,
+   "closed": {
+    "train": [],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [
+     "bug-c-62ac07",
+     "docs-rust-10df91",
+     "untested-c-a3afef"
+    ],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "bug": 1
+   },
+   "brier": 0.25,
+   "closed_share": 0.0,
+   "tokens": 131401,
+   "fix_rate": 0.0,
+   "tokens_per_fix": null,
+   "model": "gpu-gemma12-32k",
+   "at": "2026-11-05T00:58:21Z",
+   "gen": 4,
+   "split": "holdout",
+   "kinds": [
+    "bug",
+    "docs",
+    "untested"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s5-019",
+   "agent": "smith",
+   "keyed": 3,
+   "found": 0,
+   "false_alarms": 1,
+   "exam_defects": 0,
+   "fixable": 3,
+   "fixed": 1,
+   "tf_keyed": 0,
+   "tf_first": 0,
+   "readings_keyed": 0,
+   "readings_hit": 0,
+   "missing_keyed": 0,
+   "missing_hit": 0,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 3,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 3,
+   "conf_missing": 3,
+   "brier_sum": 0.75,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "python": [
+      0,
+      3
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      3
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 1,
+    "found": 0,
+    "false_alarms": 1,
+    "exam_defects": 0,
+    "fixable": 1,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 1,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 1,
+    "conf_missing": 1,
+    "brier_sum": 0.25,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ]
+     }
+    },
+    "false_by_kind": {
+     "bug": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "train": {
+    "keyed": 2,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 2,
+    "fixed": 1,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 2,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 2,
+    "conf_missing": 2,
+    "brier_sum": 0.5,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "python": [
+       0,
+       2
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       2
+      ]
+     }
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "cost": 0,
+   "closed": {
+    "train": [],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [
+     "s5-019-m03"
+    ],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "bug": 1
+   },
+   "brier": 0.25,
+   "closed_share": 0.0,
+   "tokens": 452333,
+   "fix_rate": 0.0,
+   "tokens_per_fix": null,
+   "model": "jarvis-nothink",
+   "reason": "state",
+   "at": "2026-11-05T01:00:34Z",
    "gen": 4,
    "split": "all",
    "kinds": [
