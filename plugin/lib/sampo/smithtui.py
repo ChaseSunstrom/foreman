@@ -110,9 +110,11 @@ PRESETS = {"night": lambda: _theme(PALETTES["night"]), "paper": lambda: _theme(P
            "classic_paper": lambda: _theme(PALETTES["classic_paper"])}
 THEME = PRESETS["night"]()
 BORDERS = {"rounded": "╭╮╰╯─│", "square": "┌┐└┘─│", "heavy": "┏┓┗┛━┃", "double": "╔╗╚╝═║", "ascii": "++++-|"}
+LIVE_THEMES = ("modern", "forge")
 DEFAULTS = {
     "preset": "night",
     "motion": "full",
+    "live_theme": "modern",
     "palette": "default",
     "theme": THEME,
     "border": "rounded",
@@ -4419,6 +4421,11 @@ def _apply(cfg, user, bad):
                 cfg["motion"] = settings.canon("motion", val)
             else:
                 bad(f"motion = {val!r}: one of {', '.join(MOTIONS)}")
+        elif key == "live_theme":  # T-3055: the live page's default look; a viewer's own pick wins
+            if val in LIVE_THEMES:
+                cfg["live_theme"] = val
+            else:
+                bad(f"live_theme = {val!r}: one of {', '.join(LIVE_THEMES)}")
         elif key == "border":
             if isinstance(val, str) and val in BORDERS:
                 cfg["border"] = val

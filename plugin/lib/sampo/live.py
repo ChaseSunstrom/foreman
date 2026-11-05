@@ -461,6 +461,13 @@ class Handler(settingsserve.Handler):
                 body = f.read().replace("__NONCE__", nonce)
         except OSError:
             body = PLACEHOLDER
+        try:  # T-3055: the setting live_theme is the look a browser gets until its viewer picks one
+            from sampo import smithtui
+            theme = smithtui.load_config()[0].get("live_theme")
+        except Exception:
+            theme = None
+        if theme == "forge":
+            body = body.replace('data-theme="modern"', 'data-theme="forge"', 1)
         meta = f'<meta name="sampo-act" content="{act_token(self.server)}">'  # T-3026: the page sends it as X-Sampo-Nonce
         body = body.replace("</head>", meta + "</head>", 1) if "</head>" in body else meta + body
         self._send(200, body, nonce, csp=(f"default-src 'none'; script-src 'self' 'nonce-{nonce}'; style-src 'self' "

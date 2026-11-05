@@ -213,6 +213,16 @@ class Serve(ForemanTestCase):
         self.assertIn("default-src 'none'", h["Content-Security-Policy"])
         self.assertNotIn("unsafe", h["Content-Security-Policy"])
 
+    def test_the_live_theme_setting_sets_the_look_the_page_is_sent_with(self):  # T-3055
+        from sampo import smithtui
+        self.login()
+        for want, cfg in (("modern", {}), ("forge", {"live_theme": "forge"}), ("modern", {"live_theme": "modern"})):
+            with mock.patch.object(smithtui, "load_config", return_value=(cfg, [])):
+                page = self.req("/")[1]
+            self.assertIn(f'data-theme="{want}"', page if isinstance(page, str) else page.decode())
+        with mock.patch.object(smithtui, "load_config", side_effect=OSError("no")):
+            self.assertIn('data-theme="modern"', (lambda p: p if isinstance(p, str) else p.decode())(self.req("/")[1]))
+
     def test_a_collector_that_raises_is_not_a_500(self):
         self.login()
 

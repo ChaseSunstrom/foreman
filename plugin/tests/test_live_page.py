@@ -88,7 +88,7 @@ class Files(unittest.TestCase):
 
     def test_every_panel_has_its_element(self):
         page = text("index.html")
-        for panel in PANELS + ("link", "motion"):
+        for panel in PANELS + ("link", "motion", "net", "view-forge", "view-net"):
             self.assertRegex(page, rf'\bid="{panel}"', panel)
 
     def test_scrolling_lists_take_the_keyboard(self):  # T-2999 review: keyboard users could not scroll long lists
@@ -245,7 +245,27 @@ PROBE = """(() => { const $ = id => document.getElementById(id), n = (id, sel) =
     hash: location.hash, sessions: n("sessions-list", "li"), projects: n("projects-list", "li"),
     picks: n("rail", "button[data-project]"), rail: $("rail") ? $("rail").textContent : "",
     railhtml: $("rail") ? $("rail").innerHTML : "", project: $("project") ? $("project").textContent : "",
-    wide: document.documentElement.scrollWidth}; })()""" % json.dumps(list(PANELS))
+    view: document.documentElement.getAttribute("data-view"), store: (() => { try { return localStorage.getItem("sampo-live-view"); } catch (e) { return "x"; } })(),
+    net: (() => { const q = $("net"); if (!q) return null; const r = q.getBoundingClientRect(), d = q.dataset;
+      let cols = []; try { cols = JSON.parse(d.cols || "[]"); } catch (e) {}
+      return {cols, nodes: +(d.nodes || 0), edges: +(d.edges || 0), pulses: +(d.pulses || 0), lit: +(d.lit || 0),
+              size: [Math.round(r.width), Math.round(r.height)], shown: r.width > 0, painted: d.painted === "1", frames: +(d.frames || 0)}; })(),
+    netlinks: Array.from(document.querySelectorAll("#net-list li")).map(x => x.textContent), stagelabel: $("stage") ? $("stage").getAttribute("aria-label") : "",
+    scrolly: Math.round(window.scrollY), stagetop: $("stage") ? Math.round($("stage").getBoundingClientRect().top) : -1, vh: window.innerHeight,
+    wide: document.documentElement.scrollWidth,
+    theme: document.documentElement.getAttribute("data-theme"), text: document.body.innerText,
+    fonts: ["h2", ".word", ".cv", "body"].map(q => (document.querySelector(q) ? getComputedStyle(document.querySelector(q)).fontFamily : "")).join("|"),
+    shown: Object.fromEntries(["scene", "views", "theme-btn", "focus", "net"].map(id => [id, !!$(id) && getComputedStyle($(id)).display !== "none"])),
+    bg: getComputedStyle(document.body).backgroundColor, ink: getComputedStyle(document.body).color,
+    stheme: (() => { try { return localStorage.getItem("sampo-live-theme"); } catch (e) { return "x"; } })(),
+    themepressed: $("theme-btn") ? $("theme-btn").getAttribute("aria-pressed") : null, title: document.title,
+    themelabel: $("theme-btn") ? $("theme-btn").textContent.trim() : "", active: document.activeElement ? document.activeElement.id : "",
+    say: $("theme-say") ? $("theme-say").textContent : "", nettop: $("net") ? Math.round($("net").getBoundingClientRect().top) : -1,
+    barh: Math.round(document.querySelector(".bar").getBoundingClientRect().height),
+    ktok: Object.fromEntries(["amber", "violet", "green", "orange", "blue", "red", "pale", "other", "dflt"].map(k => [k, getComputedStyle(document.documentElement).getPropertyValue("--k-" + k).trim()])),
+    plate: getComputedStyle(document.documentElement).getPropertyValue("--plate").trim(),
+    night: getComputedStyle(document.documentElement).getPropertyValue("--night").trim(),
+    tankflat: (() => { const s = document.querySelector("#tank-fill .seg"); return s ? getComputedStyle(s).backgroundImage : "none"; })()}; })()""" % json.dumps(list(PANELS))
 
 
 class Page(unittest.TestCase):
@@ -258,7 +278,7 @@ class Page(unittest.TestCase):
         sys.path.insert(0, os.path.join(PLUGIN, "lib"))
         self.last = snaps()[-1]
 
-    def watch(self, size, reduced, done, within=45, step=None, hash=""):
+    def watch(self, size, reduced, done, within=45, step=None, hash="", theme="forge", scheme=None):
         """Load the page at size, poll PROBE until done(got) or `within` s; (got, errors). step(b, got), if given, runs
         on every poll (it clicks, reloads); got["reqs"] lists the requests the server saw.
         A green run returns in about 8 s; the long ceiling is for a loaded machine (the gates run 16 at a time)."""
@@ -274,6 +294,11 @@ class Page(unittest.TestCase):
             b.call("Runtime.enable", b.sid)
             b.call("Log.enable", b.sid)
             b.call("Page.addScriptToEvaluateOnNewDocument", b.sid, source=WATCH)
+            if theme:  # T-3055: the page is modern by default; the older tests look at the forge (the viewer's remembered choice)
+                b.call("Page.addScriptToEvaluateOnNewDocument", b.sid, source=f"try {{ if (!sessionStorage.getItem('t')) {{ "
+                       f"sessionStorage.setItem('t', '1'); localStorage.setItem('sampo-live-theme', '{theme}'); }} }} catch (e) {{}}")
+            if scheme:
+                b.call("Emulation.setEmulatedMedia", b.sid, features=[{"name": "prefers-color-scheme", "value": scheme}])
             shot.load(b, f"http://127.0.0.1:{srv.server_address[1]}/" + hash)
             deadline = time.monotonic() + within
             while True:
@@ -496,6 +521,294 @@ class Page(unittest.TestCase):
         self.assertIn("reload", ctx["status9"].lower())
         self.assertIn("bad nonce", ctx["status9"])
         self.assertEqual(got["hash"], "", "a control press never switches the project")
+
+    def netsee(self, g):
+        return bool(g.get("net")) and g["net"]["nodes"] > 0 and g["net"]["painted"] and self.back(g)
+
+    def test_the_network_view_draws_three_columns_and_pulses_on_a_new_flow_at_both_widths(self):  # T-3034
+        for size in ((1440, 900), (390, 844)):
+            ctx = {}
+
+            def step(b, got):
+                if got.get("net") and got["net"]["nodes"] > 0 and "p0" not in ctx:
+                    ctx["p0"] = got["net"]["pulses"]  # what the first snapshot started; the stream adds more
+            got, errs = self.watch(size, False, lambda g: self.netsee(g) and g["net"]["pulses"] > ctx.get("p0", 99),
+                                   step=step, hash="#view=net")
+            self.assertEqual(errs, [], f"console at {size}")
+            net = got["net"]
+            self.assertEqual(got["view"], "net")
+            self.assertTrue(net["shown"], size)
+            self.assertGreaterEqual(net["size"][1], 300, size)
+            self.assertLessEqual(got["wide"], size[0], f"no sideways scroll at {size}")
+            agents, tools, models = net["cols"]
+            for lab in ("T-2995", "T-2999", "T-2961", "T-9001", "private"):  # the focus, the lanes, the machine's sessions
+                self.assertIn(lab, agents, size)
+            for lab in ("exam run", "jeff train", "card grow", "audit prep"):  # running jobs and the verbs that called
+                self.assertIn(lab, tools, size)
+            for lab in ("haiku", "qwen3:14b", "claude"):
+                self.assertIn(lab, models, size)
+            self.assertTrue(all(len(c) <= 9 for c in net["cols"]), "a column is capped at 8 nodes and a +N group")
+            self.assertTrue(any(m.startswith("+") for m in models), "the models past the cap are grouped")
+            self.assertGreater(net["edges"], 4)
+            self.assertGreater(net["pulses"], ctx["p0"], f"a new flow on the stream fired a pulse at {size}")
+            self.assertEqual(got["hash"], "#view=net")
+            self.assertGreater(got["filled"]["ticker"], 0, "the ledger keeps working in this view")
+            self.assertEqual(got["ticker"], len(self.last["events"]), size)
+
+    def test_the_net_reads_as_several_agents_not_one_hub_and_lists_its_edges_as_text(self):  # T-3034 review
+        got, errs = self.watch((1440, 900), False, lambda g: self.netsee(g) and len(g["netlinks"]) > 4, hash="#view=net")
+        self.assertEqual(errs, [])
+        links = got["netlinks"]
+        self.assertIn("network", got["stagelabel"].lower(), "the stage names the view it shows")
+        self.assertTrue(any(l.startswith("T-2999 to opus") for l in links), links)  # a caller named by its T-id
+        self.assertFalse([l for l in links if " to moon funnel" in l or " to card grow" in l or " to unknown" in l],
+                         "a flow with no session id draws no agent edge, and no tool is called 'session' by default")
+        self.assertGreaterEqual(len({l.split(" to ")[0] for l in links if l.split(" to ")[0].startswith("T-")}), 3)
+        self.assertTrue(any("moon funnel to qwen3:14b" in l and "call" in l for l in links), "who called what, how many")
+        tools = got["net"]["cols"][1]
+        running = {"moon funnel", "card grow", "exam run", "jeff train", "bench embed"}
+        self.assertEqual(set(tools[:5]), running, "running jobs come first, so none falls into the group")
+
+    def test_the_net_redraws_only_while_something_moves(self):  # T-3034 review
+        seen = []
+
+        def step(b, got):
+            if got.get("net") and got["net"]["painted"]:
+                seen.append((time.monotonic(), got["net"]["frames"]))
+        t0 = time.monotonic()
+
+        def idle(g):  # some 1 s window drew at most 25 frames (60 fps is 60)
+            return any(t2 - t1 >= 1 and f2 - f1 <= 25 for i, (t1, f1) in enumerate(seen) for t2, f2 in seen[i + 1:])
+        got, errs = self.watch((1440, 900), False, idle, step=step, hash="#view=net", within=60)
+        self.assertEqual(errs, [])
+        self.assertTrue(idle(got), seen[-6:])
+
+    def test_a_phone_pressing_network_scrolls_the_net_into_view(self):  # T-3034 review
+        ctx = {}
+
+        def step(b, got):
+            if "clicked" not in ctx and got.get("picks", 0) >= 3 and got.get("net"):
+                ctx["top0"] = got["stagetop"]
+                b.call("Runtime.evaluate", b.sid, expression="document.getElementById('view-net').click()")
+                ctx["clicked"] = 1
+        got, errs = self.watch((390, 844), False, lambda g: "clicked" in ctx and g["net"]["shown"] and g["stagetop"] < ctx["top0"] - 100,
+                               step=step, within=40)
+        self.assertEqual(errs, [])
+        self.assertLess(got["stagetop"], ctx["top0"] - 100, "it scrolled the stage up")
+
+    def test_the_net_labels_have_a_halo_a_width_fit_and_a_legend(self):  # T-3034 review
+        js, html, css = text("live.js"), text("index.html"), text("live.css")
+        self.assertIn("strokeText", js)
+        self.assertIn("measureText", js[js.index("function netDraw") - 900:])
+        self.assertIn("rgba(HEADC, 0.7)", js)
+        self.assertIn("title", js[js.index("function netHover"):][:900])
+        self.assertRegex(html, r"thickness[^<]*calls[^<]*running[^<]*dashed|dashed[^<]*running")
+        self.assertIn("scroll-snap-type:x proximity", css)
+
+    def test_the_toggle_keeps_the_view_in_the_hash_beside_the_project_and_remembers_it(self):  # T-3034
+        ctx = {"s": 0}
+
+        def step(b, got):
+            ev = lambda js: b.call("Runtime.evaluate", b.sid, expression=js, returnByValue=True)["result"].get("value")
+            s = ctx["s"]
+            if s == 0 and got.get("picks", 0) >= 3:
+                ev("document.getElementById('view-net').click()"); ctx["s"] = 1
+            elif s == 1 and got.get("view") == "net":
+                ctx["hash1"], ctx["store1"] = got["hash"], got["store"]
+                ev("document.querySelector('#projects-list button[data-project=\"other-1b2c3d\"]').click()"); ctx["s"] = 2
+            elif s == 2 and "T-9001" in got.get("focus", "") and got.get("view") == "net":
+                ctx["hash2"], ctx["streams2"] = got["hash"], len([r for r in got["reqs"] if r.startswith("/api/stream")])
+                b.call("Page.reload", b.sid); ctx["s"] = 3
+            elif s == 3 and got.get("picks", 0) >= 3 and "T-9001" in got.get("focus", ""):
+                ctx["view3"] = got["view"]
+                ev("document.getElementById('view-forge').click()"); ctx["s"] = 4
+            elif s == 4 and got.get("view") == "forge":
+                ctx["hash4"], ctx["store4"], ctx["pressed"] = got["hash"], got["store"], ev(
+                    "document.getElementById('view-forge').getAttribute('aria-pressed')")
+                ctx["scene"] = got["scene"]; ctx["s"] = 5
+        got, errs = self.watch((1440, 900), False, lambda g: ctx["s"] == 5, step=step, within=70)
+        self.assertEqual(errs, [])
+        self.assertEqual(ctx["s"], 5, ctx)
+        self.assertEqual((ctx["hash1"], ctx["store1"]), ("#view=net", "net"))
+        self.assertEqual(ctx["hash2"], "#project=other-1b2c3d&view=net", "a project pick keeps the view")
+        self.assertEqual(ctx["streams2"] <= 3, True, "switching views never reconnects the stream: only the project pick does")
+        self.assertEqual(ctx["view3"], "net", "the hash survives a reload")
+        self.assertEqual(ctx["hash4"], "#project=other-1b2c3d", "forge drops view= and keeps the project")
+        self.assertEqual((ctx["store4"], ctx["pressed"]), ("forge", "true"))
+        self.assertGreaterEqual(ctx["scene"][1], 300, "the forge scene is back")
+
+    def test_the_view_is_remembered_without_a_hash(self):  # T-3034
+        ctx = {"s": 0}
+
+        def step(b, got):
+            ev = lambda js: b.call("Runtime.evaluate", b.sid, expression=js, returnByValue=True)["result"].get("value")
+            if ctx["s"] == 0 and got.get("picks", 0) >= 3:
+                ev("document.getElementById('view-net').click()"); ctx["s"] = 1
+            elif ctx["s"] == 1 and got.get("view") == "net":
+                ev("history.replaceState(null, '', '/')"); b.call("Page.reload", b.sid); ctx["s"] = 2
+            elif ctx["s"] == 2 and got.get("view") == "net" and got.get("picks", 0) >= 3:
+                ctx["s"] = 3
+        got, errs = self.watch((1440, 900), False, lambda g: ctx["s"] == 3, step=step, within=60)
+        self.assertEqual(errs, [])
+        self.assertEqual((ctx["s"], got["store"]), (3, "net"))
+
+    def test_reduced_motion_in_the_network_view_starts_no_pulses_and_lights_the_edges(self):  # T-3034
+        got, errs = self.watch((1440, 900), True, lambda g: self.netsee(g) and g["net"]["lit"] > 0, hash="#view=net")
+        self.assertEqual(errs, [])
+        self.assertEqual(got["net"]["pulses"], 0)
+        self.assertGreater(got["net"]["lit"], 0, "a called edge is lit")
+        self.assertEqual(got["motion"], "still")
+
+    def test_network_shots(self):  # T-3034: the two pictures for a human; skipped unless asked for
+        out = os.environ.get("SAMPO_NET_SHOTS") or os.environ.get("NET_SHOTS")  # a Claude Code shell strips SAMPO_*
+        if not out:
+            self.skipTest("SAMPO_NET_SHOTS=dir (or NET_SHOTS=dir) saves t3034-desk.png and t3034-phone.png")
+        from sampo import shot
+        for size, name in (((1440, 900), "t3034-desk.png"), ((390, 844), "t3034-phone.png")):
+            srv = serve()
+            b = shot.Browser(self.browser, size, reduced=False)
+            try:
+                shot.load(b, f"http://127.0.0.1:{srv.server_address[1]}/#view=net")
+                b.wait("live-test.never", 6)
+                with open(os.path.join(out, name), "wb") as f:
+                    f.write(b.png())
+            finally:
+                b.close(); srv.stop.set(); srv.shutdown(); srv.server_close()
+
+    # ---- T-3055: the modern theme is the page's default; the forge look is a setting ----
+    FORGE_WORDS = re.compile(r"furnace|anvil|ember|quench|struck|lantern|banked", re.I)
+
+    def modern(self, size, scheme="dark", **kw):
+        got, errs = self.watch(size, True, lambda g: g.get("net") and g["net"]["painted"] and g.get("ticker", 0) > 0,
+                               theme=None, scheme=scheme, **kw)
+        self.assertEqual(errs, [], f"console at {size}")
+        return got
+
+    def test_modern_is_the_default_a_clean_dashboard_with_the_network_as_hero_in_dark_and_light(self):
+        for size in ((1440, 900), (390, 844)):
+            for scheme in ("dark", "light"):
+                where = f"{size} {scheme}"
+                got = self.modern(size, scheme)
+                self.assertEqual(got["theme"], "modern", where)
+                self.assertEqual(got["view"], "net", where)
+                self.assertTrue(got["shown"]["net"] and not got["shown"]["scene"], f"the net is the hero, no scene {where}")
+                self.assertFalse(got["shown"]["views"], f"no Forge|Network toggle without a scene {where}")
+                self.assertTrue(got["shown"]["theme-btn"], where)
+                self.assertEqual(got["themepressed"], "false", where)
+                self.assertEqual(got["themelabel"], "Forge look", f"one fixed name, pressed = forge on {where}")
+                self.assertEqual(got["tankflat"], "none", f"flat tank segments {where}")
+                lin = lambda h: [(int(h[i:i + 2], 16) / 255) for i in (1, 3, 5)]
+                lum2 = lambda h: sum(w * (c / 12.92 if c <= .03928 else ((c + .055) / 1.055) ** 2.4) for w, c in zip((.2126, .7152, .0722), lin(h)))
+                for k, hx in got["ktok"].items():  # kind text is AA on the plate and on the page ground
+                    for ground in (got["plate"], got["night"]):
+                        a, b = sorted((lum2(hx), lum2(ground)))
+                        self.assertGreaterEqual((b + .05) / (a + .05), 4.5, f"--k-{k} {hx} on {ground} {where}")
+                if size[0] < 700:
+                    self.assertLess(got["nettop"], 340, f"the network starts near the top on a phone {where}")
+                t = got["text"].replace("Forge look", "")
+                m = self.FORGE_WORDS.search(t)
+                self.assertIsNone(m, f"{where} ...{repr(t[max(0, m.start() - 70):m.end() + 40]) if m else ''}")  # the toggle names the other look
+                self.assertNotIn("forge", got["title"].lower(), where)
+                self.assertNotRegex(got["fonts"].lower(), r"bodoni|didot|georgia|martian", f"no serif, no forge faces {where}")
+                self.assertRegex(got["fonts"].lower(), r"system-ui|sans-serif", where)
+                for panel in PANELS[1:]:
+                    self.assertGreater(got["filled"].get(panel, -1), 0, f"{panel} {where}")
+                self.assertGreaterEqual(got["net"]["nodes"], 3, where)
+                self.assertGreater(got["net"]["size"][1], 280, f"the hero has room {where}")
+                self.assertLessEqual(got["wide"], size[0], f"no sideways scroll {where}")
+                lum = lambda rgb: sum(map(int, re.findall(r"\d+", rgb)[:3])) / 3
+                if scheme == "light":
+                    self.assertGreater(lum(got["bg"]), 200, f"a light page {where}")
+                    self.assertLess(lum(got["ink"]), 90, where)
+                else:
+                    self.assertLess(lum(got["bg"]), 50, f"a dark page {where}")
+                    self.assertGreater(lum(got["ink"]), 200, where)
+
+    def test_forge_brings_back_the_scene_the_words_and_the_serif(self):
+        for size in ((1440, 900), (390, 844)):
+            got, errs = self.watch(size, True, lambda g: g.get("nodes", 0) > 0 and g.get("ticker", 0) > 0, theme="forge")
+            self.assertEqual(errs, [], size)
+            self.assertEqual(got["theme"], "forge")
+            self.assertEqual(got["view"], "forge")
+            self.assertTrue(got["shown"]["scene"] and got["shown"]["views"], size)
+            self.assertEqual(got["themepressed"], "true")
+            self.assertEqual(got["themelabel"], "Forge look")
+            if size[0] < 700:
+                self.assertLessEqual(got["barh"], 150, "the forge header keeps its rows on a phone")
+            for word in ("Furnaces", "At the anvil", "Ledger", "burning"):
+                self.assertIn(word.lower(), got["text"].lower(), f"{word} {size}")  # innerText carries the CSS caps
+            self.assertRegex(got["fonts"], r"Bodoni Moda", size)
+            self.assertIn("forge", got["title"])
+            self.assertLessEqual(got["wide"], size[0], f"no sideways scroll {size}")
+
+    def test_the_header_toggle_keeps_the_viewers_choice_across_a_reload(self):
+        ctx = {"s": 0}
+
+        def step(b, got):
+            ev = lambda js: b.call("Runtime.evaluate", b.sid, expression=js, returnByValue=True)["result"].get("value")
+            if ctx["s"] == 0 and got.get("net") and got["net"]["painted"]:
+                ctx["first"] = got["theme"]; ev("document.getElementById('theme-btn').click()"); ctx["s"] = 1
+            elif ctx["s"] == 1 and got.get("theme") == "forge" and got.get("nodes", 0) > 0:
+                ctx["second"], ctx["kept"] = got["stheme"], got["stheme"]; ev("document.getElementById('theme-btn').click()"); ctx["s"] = 2
+            elif ctx["s"] == 2 and got.get("theme") == "modern" and got["net"] and got["net"]["painted"] and got["stheme"] == "modern" and got["say"]:
+                ctx["after"] = (got["active"], got["say"]); ctx["s"] = 3
+        got, errs = self.watch((1440, 900), True, lambda g: ctx["s"] == 3, step=step, theme=None)
+        self.assertEqual(errs, [])
+        self.assertEqual((ctx.get("first"), ctx.get("second"), ctx["s"]), ("modern", "forge", 3), ctx)
+        self.assertEqual(ctx["after"], ("theme-btn", "Forge look off"), "focus returns to the toggle and the switch is announced")
+
+    def test_modern_keeps_the_rail_the_actions_and_the_stream_and_a_pick_switches_the_project(self):
+        ctx = {"s": 0}
+
+        def step(b, got):
+            ev = lambda js: b.call("Runtime.evaluate", b.sid, expression=js, returnByValue=True)["result"].get("value")
+            if ctx["s"] == 0 and got.get("picks", 0) >= 3:
+                ev("document.getElementById('act-pause').focus()")
+                for t in ("keyDown", "keyUp"):  # the keyboard: Enter on a focused control arms it (pause now confirms twice)
+                    b.call("Input.dispatchKeyEvent", b.sid, type=t, key="Enter", code="Enter", windowsVirtualKeyCode=13,
+                           **({"text": "\r"} if t == "keyDown" else {}))
+                ctx["armed"] = ev("document.getElementById('act-pause').className")
+                ev("document.querySelector('#projects-list button.pick[data-project=\"other-1b2c3d\"]').click()")
+                ctx["s"] = 1
+        got, errs = self.watch((1440, 900), True, lambda g: ctx["s"] == 1 and "other-1b2c3d" in g.get("hash", "")
+                               and "The other project" in g.get("focus", "") and g.get("net") and g["net"]["painted"],
+                               step=step, theme=None)
+        self.assertEqual(errs, [])
+        self.assertEqual(got["view"], "net", "the pick keeps the net")
+        self.assertIn("other-1b2c3d", got["hash"])
+        self.assertTrue([r for r in got["reqs"] if r.startswith("/api/stream?project=other-1b2c3d")], got["reqs"])
+
+    def test_the_theme_file_and_the_two_looks_are_in_the_page(self):
+        page, css, js = text("index.html"), text("live.css"), text("live.js")
+        self.assertIn('data-theme="modern"', page, "modern is what the file says by default")
+        self.assertRegex(page, r'<script src="/static/theme\.js" nonce="__NONCE__"></script>', "applied before the first paint")
+        self.assertLess(page.index("theme.js"), page.index("live.css"))
+        self.assertIn('id="theme-btn"', page)
+        self.assertIn('[data-theme="modern"]', css)
+        self.assertIn("sampo-live-theme", text("theme.js"))
+        self.assertIn("sampo-live-theme", js)
+        self.assertRegex(css, r"prefers-color-scheme:\s*light")
+
+    def test_theme_shots(self):  # T-3055: the pictures for a human; skipped unless asked for
+        out = os.environ.get("THEME_SHOTS")
+        if not out:
+            self.skipTest("THEME_SHOTS=dir saves t3055-{modern,forge}-{1440,390}-{dark,light}.png")
+        from sampo import shot
+        for theme in ("modern", "forge"):
+            for scheme in ("dark", "light"):
+                for w, h in ((1440, 900), (390, 844)):
+                    srv = serve()
+                    b = shot.Browser(self.browser, (w, h), reduced=False)
+                    try:
+                        b.call("Emulation.setEmulatedMedia", b.sid, features=[{"name": "prefers-color-scheme", "value": scheme}])
+                        b.call("Page.addScriptToEvaluateOnNewDocument", b.sid,
+                               source=f"try {{ localStorage.setItem('sampo-live-theme', '{theme}'); }} catch (e) {{}}")
+                        shot.load(b, f"http://127.0.0.1:{srv.server_address[1]}/")
+                        b.wait("live-test.never", 6)
+                        with open(os.path.join(out, f"t3055-{theme}-{w}-{scheme}.png"), "wb") as f:
+                            f.write(b.png())
+                    finally:
+                        b.close(); srv.stop.set(); srv.shutdown(); srv.server_close()
 
     def test_the_controls_fit_a_phone(self):
         got, errs = self.watch((390, 844), False, lambda g: g.get("picks", 0) >= 3)

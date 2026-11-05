@@ -101,7 +101,9 @@ def app_schema():
                aliases=SHARED["motion"]["aliases"]),
            app("palette", "choice", D["palette"], SHARED["palette"]["help"], "look",
                choices=SHARED["palette"]["choices"]),
-           app("border", "choice", D["border"], "panel borders", "look", choices=T.BORDERS)]
+           app("border", "choice", D["border"], "panel borders", "look", choices=T.BORDERS),
+           app("live_theme", "choice", D["live_theme"], "the live page's look when a browser has no choice of its own: "
+               "modern (a clean dashboard) or forge (the forge scene)", "look", choices=T.LIVE_THEMES)]
     out += [app(f"colors.{n}", "style", spec, f"the {n} style: a colour (#rrggbb or 0-255) or {{ fg, bg, bold, "
                 f"italic, reverse }}", "colors") for n, spec in D["theme"].items()]
     out += [app(f"layout.{k}", _LAYOUT_HELP[k][0], v, _LAYOUT_HELP[k][1], "layout",

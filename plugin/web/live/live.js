@@ -8,6 +8,7 @@
 
 const $ = id => document.getElementById(id);
 const root = document.documentElement;
+const modern = root.getAttribute("data-theme") !== "forge";  // theme.js set it before this ran
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, f) => a + (b - a) * f;
@@ -47,6 +48,11 @@ const EVC = [[/close|done|finish/, "#45E0A0"], [/funnel|moon|judge/, "#BC8BFF"],
   [/exam|plan|lane|brief/, "#6E9BFF"], [/train/, "#FF9440"], [/session|act|run/, "#FF6A4A"],
   [/check|test|review|audit/, "#EAF2FF"], [/embed|bench|model/, "#45E0A0"]];
 const VRAMC = ["#FFC24D", "#FF9440", "#F0D392", "#E07A3A"];
+// the kind colours as CSS tokens: the forge defines them as the hexes above, the modern look per scheme (T-3055)
+const HEXK = {"#FFC24D": "amber", "#BC8BFF": "violet", "#45E0A0": "green", "#FF9440": "orange", "#6E9BFF": "blue", "#FF6A4A": "red",
+  "#EAF2FF": "pale", "#BAC0DD": "other", "#D4AE66": "dflt"};
+const kv = hex => "var(--k-" + (HEXK[hex] || "dflt") + ")";
+const VRAMK = ["var(--k-blue)", "var(--k-amber)", "var(--k-red)", "var(--k-orange)"];
 const HOT = [[120, 30, 16], [226, 72, 26], [255, 148, 64], [255, 194, 77], [255, 240, 200], [234, 242, 255]];
 const EMBER = [255, 148, 64], GOLD = [255, 194, 77], WARM = [255, 214, 150], PALE = [255, 240, 214], BRASS = [240, 211, 146];
 const rgba = (c, a) => "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + clamp(a, 0, 1).toFixed(3) + ")";
@@ -431,6 +437,7 @@ function row(list, seg, gap) {
 }
 
 function layout() {
+  if (!G) return;  // the forge canvas has no size while the network view is up
   const groups = {lane: [], job: [], sky: [], hang: [], jeff: [], hill: []};
   for (const n of nodes.values()) if (n.ta > 0 && groups[n.place]) groups[n.place].push(n);
   row(groups.lane, G.lanes, 92 * U);
@@ -1128,6 +1135,16 @@ function frame() {
   raf = requestAnimationFrame(frame);
   const t = now(), dt = lastT ? Math.min(0.05, t - lastT) : 0.016;
   lastT = t;
+  if (view === "net") {  // the forge canvas is hidden: only the network draws (the ledger still scrolls)
+    pending.length = 0;
+    if (NW) {  // draw while something moves; running jobs breathe at 10 fps; otherwise the last picture stands
+      const mv = netStep(t, dt);
+      if (mv || ndirty || (t - nlast > 0.1 && nedges.some(e => e.dim))) { netDraw(t, false); nlast = t; ndirty = false; }
+    }
+    tickerStep(dt);
+    netPublish();
+    return;
+  }
   if (!G) return;
   const ig = intro ? clamp((t - introAt - 0.3) / 1.2, 0, 1) : 1;
   step(t, dt, ig);
@@ -1142,6 +1159,7 @@ function start() {
 }
 function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
 function paintStill() {
+  if (view === "net") { netPaint(); return; }
   if (!cx || !G) return;
   const t = now();
   for (const [k, n] of nodes) {
@@ -1198,7 +1216,7 @@ function sync(list, items, key, build, first) {
 
 function evItem(el, e) {
   const kind = str(e.kind), k = h("span", "tk-k", kind.replace(/_/g, " "));
-  k.style.setProperty("--c", evColour(kind.toLowerCase()));
+  k.style.setProperty("--c", kv(evColour(kind.toLowerCase())));
   el.replaceChildren(h("span", "tk-t", clock(e.at, false)), k, h("span", null, evText(e)));
 }
 function renderTicker(evs, first) {
@@ -1240,7 +1258,7 @@ function renderFocus(s, first) {
   setText($("focus-id"), id || "—");
   setText($("focus-stage"), f ? str(f.stage) || "working" : "idle");
   setText($("focus-step"), f && f.step ? "step " + str(f.step) : "");
-  setText($("focus-title"), f ? str(f.title) || "Untitled task" : "No task at the anvil");
+  setText($("focus-title"), f ? str(f.title) || "Untitled task" : modern ? "No task in focus" : "No task at the anvil");
   const m = /^(\d+)\s*\/\s*(\d+)$/.exec(f ? str(f.step).trim() : ""), pips = $("focus-pips");
   const total = m ? Math.min(12, +m[2]) : 0, on = m ? Math.min(total, +m[1]) : 0;
   if (pips.children.length !== total || pips.querySelectorAll(".on").length !== on) {
@@ -1258,7 +1276,7 @@ function renderGpu(s) {
   let sum = 0;
   const segs = [], rows = [];
   mods.forEach((m, i) => {
-    const mb = num(m.vram_mb), c = str(m.family) === "embed" ? "#45E0A0" : str(m.family) === "jeff" ? "#BC8BFF" : VRAMC[i % VRAMC.length];
+    const mb = num(m.vram_mb), c = str(m.family) === "embed" ? kv("#45E0A0") : str(m.family) === "jeff" ? kv("#BC8BFF") : modern ? VRAMK[i % VRAMK.length] : VRAMC[i % VRAMC.length];
     sum += mb;
     const seg = h("div", "seg"); seg.style.setProperty("--h", String(clamp(mb / cap, 0, 1))); seg.style.setProperty("--c", c);
     segs.push(seg);
@@ -1269,7 +1287,7 @@ function renderGpu(s) {
   const other = used != null ? Math.max(0, used - sum) : 0;
   if (other > 64) {
     const seg = h("div", "seg seg-other"); seg.style.setProperty("--h", String(clamp(other / cap, 0, 1))); segs.push(seg);
-    const li = h("li"); li.style.setProperty("--c", "rgba(144,151,188,.5)");
+    const li = h("li"); li.style.setProperty("--c", modern ? "var(--muted)" : "rgba(144,151,188,.5)");
     li.append(h("span", "vn", "other processes"), h("span", "vg", gb(other))); rows.push(li);
   }
   if (total != null && used != null) {
@@ -1291,7 +1309,7 @@ function renderJobs(s, first) {
   sync($("jobs-list"), jobs, j => num(j.pid) != null ? "pid" + j.pid : str(j.name), (el, j) => {
     const kind = JOBC[str(j.kind)] ? str(j.kind) : "other", p = obj(j.progress), done = num(p.done), tot = num(p.total);
     const frac = done != null && tot ? clamp(done / tot, 0, 1) : null;
-    el.className = "job"; el.style.setProperty("--c", JOBC[kind]);
+    el.className = "job"; el.style.setProperty("--c", kv(JOBC[kind]));
     const bits = [str(j.model), j.since ? "for " + since(j.since, s.at) : "", frac != null ? fmt(done) + " of " + fmt(tot) : ""].filter(Boolean);
     const bar = h("div", frac != null ? "jbar" : "jbar heat"), fill = h("span", "jfill");
     if (frac != null) fill.style.setProperty("--p", frac.toFixed(4));
@@ -1303,7 +1321,7 @@ function renderJobs(s, first) {
     el.replaceChildren(...parts);
   }, first);
   $("jobs-empty").hidden = jobs.length > 0;
-  setText($("jobs-sub"), jobs.length ? jobs.length + " burning" : "banked");
+  setText($("jobs-sub"), jobs.length ? jobs.length + (modern ? " running" : " burning") : modern ? "idle" : "banked");
 }
 
 function renderQueue(s, first) {
@@ -1311,7 +1329,7 @@ function renderQueue(s, first) {
   sync($("queue-list"), q, t => str(t.id), (el, t) => {
     el.className = "q"; el.dataset.status = str(t.status);
     const ty = str(t.type).toUpperCase(), chip = h("span", "qt", ty.toLowerCase() || "task");
-    chip.style.setProperty("--c", TYPEC[ty] || "#BAC0DD");
+    chip.style.setProperty("--c", kv(TYPEC[ty] || "#BAC0DD"));
     el.replaceChildren(h("span", "qs"), h("span", "qid", str(t.id)), chip, h("span", "qtier", str(t.tier)), h("p", "qn", str(t.title)));
   }, first);
   $("queue-empty").hidden = q.length > 0;
@@ -1325,14 +1343,14 @@ function renderCloses(s, first) {
     el.replaceChildren(h("span", "dt", clock(t.at, false)), h("span", "did", str(t.id)), h("span", "dn", str(t.title)));
   }, first);
   $("closes-empty").hidden = c.length > 0;
-  setText($("closes-sub"), c.length ? c.length + " struck and quenched" : "struck and quenched");
+  setText($("closes-sub"), c.length ? c.length + (modern ? " finished" : " struck and quenched") : modern ? "finished" : "struck and quenched");
 }
 
 function renderBench(s, first) {
   const rows = arr(obj(s.stats).bench).map(obj).slice(0, 30);
   sync($("bench-rows"), rows, r => str(r.use) + "|" + str(r.contestant), (el, r) => {
     const use = str(r.use), acc = num(r.accuracy), cov = num(r.coverage), pct = v => v == null ? "—" : Math.round(v <= 1 ? v * 100 : v) + "%";
-    const u = h("td", "bu", use); u.style.setProperty("--c", USEC[use] || "#BAC0DD");
+    const u = h("td", "bu", use); u.style.setProperty("--c", kv(USEC[use] || "#BAC0DD"));
     const a = h("td", null, pct(acc)), bar = h("span", "acc");
     bar.style.setProperty("--f", acc == null ? "0%" : clamp(acc <= 1 ? acc * 100 : acc, 0, 100) + "%");
     a.append(bar);
@@ -1411,17 +1429,26 @@ function take(s) {
   renderCounters(s, first);
   renderTicker(arr(s.events).map(obj).slice(0, 60), first);
   sceneTake(s, first);
+  netIngest(s);
 }
 
 // ---------- the machine: sessions, projects, and the pick (kept in #project=SLUG) ----------
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+function hashParts() {  // #project=SLUG&view=net: the keys in any order
+  const o = {};
+  for (const kv of location.hash.replace(/^#/, "").split("&")) {
+    const i = kv.indexOf("=");
+    if (i > 0) { try { o[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); } catch (err) { /* a bad escape is no value */ } }
+  }
+  return o;
+}
 function fromHash() {
-  const m = /^#project=([^&]*)/.exec(location.hash);
-  let v = "";
-  try { v = m ? decodeURIComponent(m[1]) : ""; } catch (err) { v = ""; }
+  const v = hashParts().project || "";
   return SLUG.test(v) ? v : "";
 }
-let currentProject = fromHash(), loadId = 0, machine = null, machineGone = false, machineTimer = 0;
+const hashFor = (p, v) => [p ? "project=" + encodeURIComponent(p) : "", v === "net" && !modern ? "view=net" : ""].filter(Boolean).join("&");
+let hashProject = fromHash();  // the project the hash named last: a view change leaves it alone, so the stream stays
+let currentProject = hashProject, loadId = 0, machine = null, machineGone = false, machineTimer = 0;
 const qs = () => currentProject ? "?project=" + encodeURIComponent(currentProject) : "";
 const rail = $("rail"), topRow = rail ? rail.parentElement : null;
 const picked = () => currentProject || str(obj(snap && snap.project).slug);
@@ -1572,6 +1599,7 @@ function renderMachine(m) {
   setText($("sessions-n"), sessions.length ? String(sessions.length) : "");
   setText($("projects-n"), projects.length ? String(projects.length) : "");
   markCurrent();
+  netBuild();
 }
 function pollMachine() {
   clearTimeout(machineTimer);
@@ -1585,7 +1613,7 @@ if (rail) {
     const a = ev.target.closest ? ev.target.closest("button[data-act]") : null;  // a control never also picks the project
     if (a) { press(a); return; }
     const b = ev.target.closest ? ev.target.closest("button[data-project]") : null;
-    if (b && b.dataset.project !== picked()) location.hash = "project=" + encodeURIComponent(b.dataset.project);
+    if (b && b.dataset.project !== picked()) location.hash = hashFor(b.dataset.project, view);  // the pick keeps the view
   });
   rail.addEventListener("keydown", ev => {
     const f = ev.target;
@@ -1605,8 +1633,9 @@ if (rail) {
     if (btn) btn.focus();
   });
   window.addEventListener("hashchange", () => {  // the one way in: a click, the back button and a typed link all arrive here
-    const p = fromHash();
-    if (p !== currentProject) { currentProject = p; load(); }
+    const p = fromHash(), v = modern || hashParts().view === "net" ? "net" : "forge";
+    if (v !== view) { showView(v); keep(v); }  // Back returns to the other view; no reconnect
+    if (p !== hashProject) { hashProject = currentProject = p; load(); }
   });
 }
 
@@ -1638,6 +1667,348 @@ function connect() {
   });
 }
 
+// ---------- the network view (T-3034) ----------
+// The same snapshot drawn as a net: agents, tools and jobs, models in three columns; an edge for each recent call (thickness
+// by count, colour by kind); a bead runs the edge when a new call arrives. Held still, a called edge is lit instead.
+const nv = $("net"), nx = nv && nv.getContext ? nv.getContext("2d") : null;
+const vForge = $("view-forge"), vNet = $("view-net");
+const VKEY = "sampo-live-view", NCAP = 8, NLIT = 6;
+const NCOL = modern ? [[122, 162, 255], [150, 180, 255], [176, 196, 232]] : [WARM, EMBER, BRASS], NHEAD = ["AGENTS", "TOOLS · JOBS", "MODELS"];
+const JKIND = {funnel: "judge", grow: "write", exam: "plan", train: "train", bench: "embed", check: "review"};
+const store = (v) => { try { return v === undefined ? localStorage.getItem(VKEY) : localStorage.setItem(VKEY, v); } catch (err) { return null; } };
+const keep = v => store(v);
+let view = "forge";
+{
+  const hv = hashParts().view;
+  view = modern || hv === "net" ? "net" : hv === "forge" ? "forge" : store() === "net" ? "net" : "forge";
+  if (!modern && view === "net" && hv !== "net" && window.history && history.replaceState) {  // the remembered view goes into the address
+    try { history.replaceState(null, "", location.pathname + location.search + "#" + hashFor(hashProject, "net")); } catch (err) { /* keep the view without the hash */ }
+  }
+}
+let nflows = [], nsnap = null, nnodes = new Map(), nedges = [], npulses = [];
+const nseen = new Map(), nlitE = new Map(), nlitN = new Map(), nglowE = new Map(), ncnt = {pulses: 0, lit: 0, frames: 0}, nshown = {};
+let NW = 0, NH = 0, ndpr = 1, npainted = false, nlitTimer = 0, ncols = [[], [], []];
+
+function toolName(s) {  // "cards grow --ui --writer haiku" and "card grow" are one tool
+  const w = str(s).toLowerCase().replace(/\bt-\d+\b/g, " ").split(/\s+/).filter(x => x && x[0] !== "-");
+  if (w[0] && w[0].length > 3 && /[^su]s$/.test(w[0])) w[0] = w[0].slice(0, -1);
+  return w.slice(0, 2).join(" ") || "unknown";
+}
+const tidOf = s => { const m = /\bT-\d+\b/i.exec(str(s)); return m ? m[0].toUpperCase() : ""; };
+// who made a call: its own T-id, or the focus session when the caller says "session"; otherwise nobody (no guess at the lead)
+const callerOf = (s, foc) => tidOf(s) || (/^\s*session\b/i.test(str(s)) ? str(obj(foc).id).replace("—", "") : "");
+const toolOf = s => /[a-z]/i.test(str(s).replace(/\bT-\d+\b/gi, "").replace(/(^|\s)-\S*/g, "")) ? toolName(s) : "";  // "T-2998" alone names no tool
+const nat = (key, col) => !key ? "" : nnodes.has(key) ? key : nnodes.has("g:" + col) ? "g:" + col : "";  // a hidden node is its "+N" group
+const nroute = f => ({a: f.tid ? nat("a:" + f.tid, 0) : "", tl: f.tool ? nat("t:" + f.tool, 1) : "", m: nat("m:" + f.to, 2)});
+let ndirty = true, nlast = 0;
+
+function netPublish() {
+  if (!nv) return;
+  const o = {cols: JSON.stringify(ncols.map(c => c.map(n => n.label))), nodes: nnodes.size, edges: nedges.length,
+    pulses: ncnt.pulses, lit: ncnt.lit};
+  o.frames = ncnt.frames;
+  for (const k of Object.keys(o)) if (nshown[k] !== o[k]) { nshown[k] = o[k]; nv.dataset[k] = String(o[k]); }
+}
+function netList() {  // the edges as text for a screen reader: who called what, how many
+  const ul = $("net-list");
+  if (!ul) return;
+  const name = k => { const n = nnodes.get(k); return n ? n.label : k; };
+  const rows = nedges.slice(0, 80).map(e => name(e.a) + " to " + name(e.b) + ": " + (e.dim ? "running" : e.w + (e.w === 1 ? " call" : " calls")));
+  const sig = rows.join("\n");
+  if (sig === nshown.list) return;
+  nshown.list = sig;
+  ul.textContent = "";
+  for (const r of rows) { const li = document.createElement("li"); li.textContent = r; ul.appendChild(li); }
+}
+
+function netBuild() {
+  if (!nx) return;
+  const s = obj(nsnap), foc = obj(s.focus), mm = obj(machine);
+  const taken = (list, cap, col) => {  // the first NCAP stay as nodes, the rest become one "+N" group
+    const shown = list.slice(0, cap).map(e => Object.assign({col}, e));
+    const rest = list.slice(cap);  // the group lights when a hidden member is running (models: was called)
+    if (rest.length) shown.push({col, key: "g:" + col, label: "+" + rest.length + " more", group: true, on: rest.some(e => col === 2 ? e.n > 0 : e.on)});
+    return shown;
+  };
+  // agents: the focus, each lane, the machine's other live sessions (a sensitive project's session is only "private")
+  const A = [], aseen = new Set();
+  const addA = (label, key, on) => { if (label && !aseen.has(key)) { aseen.add(key); A.push({key, label, on}); } };
+  const fid = str(foc.id);
+  if (fid && fid !== "—") addA(fid, "a:" + fid, true);
+  for (const l of arr(s.lanes).slice(0, 10)) { const k = str(obj(l).task); if (k) addA(k, "a:" + k, true); }
+  const quiet = new Set(arr(mm.projects).map(obj).filter(p => p.sensitive === true).map(p => str(p.slug)));
+  for (const x of arr(mm.sessions).map(obj).filter(x => str(x.id)).slice(0, 40)) {
+    if (quiet.has(str(x.project))) addA("private", "a:private:" + str(x.id), false);
+    else { const k = str(x.task) || str(x.id).slice(0, 6); addA(k, "a:" + k, false); }
+  }
+  // tools: the verbs that called, then the jobs running
+  const T = new Map(), tool = (name, kind) => { let e = T.get(name); if (!e) T.set(name, e = {key: "t:" + name, label: name, n: 0, on: false, kind}); return e; };
+  for (const f of nflows) if (f.tool) { const e = tool(f.tool, f.kind); e.n++; e.kind = f.kind; }
+  const J = arr(s.jobs).map(obj).slice(0, 12);
+  for (const j of J) { const nm = toolName(j.name); if (nm) { const e = tool(nm, JKIND[str(j.kind)] || "review"); e.on = true; } }
+  // models: those that were called, then the snapshot's, busiest first
+  const M = new Map(), mdl = (name) => { let e = M.get(name); if (!e) M.set(name, e = {key: "m:" + name, label: name, n: 0, calls: 0, on: false}); return e; };
+  for (const m of arr(s.models).slice(0, 40)) { const o = obj(m), nm = str(o.name); if (nm) { const e = mdl(nm); e.calls = num(o.calls_5m) || 0; e.on = o.loaded === true; } }
+  for (const f of nflows) { const e = mdl(f.to); e.n++; e.kind = f.kind; }
+  const byN = (p, q) => q.n - p.n || (q.calls || 0) - (p.calls || 0) || (q.on ? 1 : 0) - (p.on ? 1 : 0) || (p.label < q.label ? -1 : 1);
+  const toolL = [...T.values()].sort((p, q) => (q.on ? 1 : 0) - (p.on ? 1 : 0) || q.n - p.n || (p.label < q.label ? -1 : 1));  // running first
+  const cols = [taken(A, NCAP, 0), taken(toolL, NCAP, 1), taken(arr([...M.values()]).sort(byN), NCAP, 2)];
+  const old = nnodes;
+  nnodes = new Map();
+  for (const c of cols) for (const e of c) {
+    const o = old.get(e.key);
+    const n = Object.assign(o || {glow: 0, seed: hash(e.key) % 1000 / 100, x: 0, y: 0}, e);
+    nnodes.set(e.key, n);
+  }
+  ncols = cols.map(c => c.map(e => nnodes.get(e.key)));
+  // edges: a call is agent → tool → model; a running job is a dim edge
+  const E = new Map();
+  const edge = (a, b, kind, dim, t) => {
+    if (!a || !b || a === b) return;
+    const id = a + "|" + b;
+    let e = E.get(id);
+    if (!e) E.set(id, e = {id, a, b, w: 0, kind, dim, t: 0});
+    if (!dim) { if (e.dim) { e.dim = false; e.w = 0; } e.w++; e.kind = kind; e.t = Math.max(e.t, t); } else if (e.dim) e.w++;
+  };
+  for (const f of nflows) {  // an unattributed call draws tool → model only; a caller with no tool goes straight to the model
+    const r = nroute(f);
+    if (r.tl) { edge(r.a, r.tl, f.kind, false, f.t); edge(r.tl, r.m, f.kind, false, f.t); } else edge(r.a, r.m, f.kind, false, f.t);
+  }
+  for (const l of arr(s.lanes).map(obj)) {  // a lane runs on its model
+    if (str(l.task) && str(l.model)) edge(nat("a:" + str(l.task), 0), nat("m:" + str(l.model), 2), "act", true);
+  }
+  for (const j of J) {
+    const t = nat("t:" + toolName(j.name), 1), kind = JKIND[str(j.kind)] || "review", c = tidOf(j.name);
+    if (c) edge(nat("a:" + c, 0), t, kind, true);
+    const md = str(j.model);
+    if (md) edge(t, nat("m:" + md, 2), kind, true);
+  }
+  nedges = [...E.values()];
+  for (const k of nglowE.keys()) if (!E.has(k)) nglowE.delete(k);
+  netLayout();
+  netPublish(); netList();
+  ndirty = true;
+  if (still() && view === "net") netPaint();
+}
+
+function netLayout() {
+  if (!NW) return;
+  // the legend sits along the bottom edge (two rows when narrow); on a phone it is under the canvas
+  const px = clamp(NW * 0.13, 52, 150), xs = [px, NW / 2, NW - px], top = 38, bot = NH - (NW <= 700 ? 26 : NW < 1000 ? 82 : 50);
+  ncols.forEach((c, ci) => c.forEach((n, i) => { n.x = xs[ci]; n.y = c.length === 1 ? (top + bot) / 2 : top + (bot - top) * (i + 0.5) / c.length; }));
+}
+
+function netIngest(s) {
+  nsnap = s;
+  const t = now(), fresh = [];
+  for (const f of arr(s.flows).slice(0, 120)) {
+    const o = obj(f), to = str(o.to).trim();
+    if (!to) continue;
+    const k = str(o.from) + "|" + to + "|" + str(o.kind) + "|" + str(o.at);
+    if (nseen.has(k)) continue;
+    nseen.set(k, 1);
+    fresh.push({tool: toolOf(o.from), tid: callerOf(o.from, s.focus), to, kind: KIND[str(o.kind)] ? str(o.kind) : "review", t});
+  }
+  while (nseen.size > 600) nseen.delete(nseen.keys().next().value);
+  nflows = nflows.concat(fresh.slice().reverse()).filter(f => t - f.t < 300).slice(-120);  // oldest first
+  netBuild();
+  if (!fresh.length || document.hidden) return;
+  // the legs of a call: caller → tool → model; with no tool the caller goes straight to the model, with no caller it starts at the tool
+  const legs = f => { const r = nroute(f); return r.tl ? [[r.a, r.tl], [r.tl, r.m]] : [[r.a, r.m]]; };
+  if (still()) {
+    fresh.forEach(f => {
+      for (const [p, q] of legs(f)) { if (p && q) nlitE.set(p + "|" + q, t + NLIT); for (const k of [p, q]) if (k) nlitN.set(k, t + NLIT); }
+      ncnt.lit++;
+    });
+    netPublish();
+    if (view === "net") netPaint();
+    return;
+  }
+  if (view !== "net") return;
+  const base = Math.max(t, npulses.length ? npulses[npulses.length - 1].t0 : t);
+  const gap = Math.min(0.5, 2.2 / Math.max(1, fresh.length));
+  fresh.slice().reverse().forEach((f, i) => {  // oldest first, so a burst plays in the order it happened
+    const t0 = base + gap * i;
+    if (npulses.length > 150) return;
+    legs(f).forEach(([p, q], j) => { if (p && q && p !== q) { npulses.push({a: p, b: q, kind: f.kind, t0: t0 + 0.95 * j, dur: 1.0 + 0.1 * j}); ncnt.pulses++; } });
+  });
+  ndirty = true;
+  netPublish();
+}
+
+function netReset() {
+  nflows = []; nsnap = null; npulses.length = 0;
+  nseen.clear(); nlitE.clear(); nlitN.clear(); nglowE.clear();
+  netBuild();
+}
+
+function netStep(t, dt) {
+  const k = Math.exp(-dt * 1.3);
+  let moving = npulses.length > 0;
+  for (const n of nnodes.values()) { n.glow = n.glow < 0.01 ? 0 : n.glow * k; if (n.glow) moving = true; }
+  for (const [id, v] of nglowE) { if (v < 0.02) nglowE.delete(id); else { nglowE.set(id, v * k); moving = true; } }
+  for (let i = npulses.length - 1; i >= 0; i--) {
+    const p = npulses[i];
+    if (t < p.t0 + p.dur) continue;
+    const n = nnodes.get(p.b);
+    if (n) n.glow = Math.min(1.4, n.glow + 0.85);
+    nglowE.set(p.a + "|" + p.b, 1);
+    npulses.splice(i, 1);
+    moving = true;
+  }
+  return moving;
+}
+
+function nbez(a, b, u) {  // the synapse: leaves and lands level, like a wire between columns
+  const mx = (a.x + b.x) / 2, v = 1 - u;
+  return [v * v * v * a.x + 3 * v * v * u * mx + 3 * v * u * u * mx + u * u * u * b.x,
+    v * v * v * a.y + 3 * v * v * u * a.y + 3 * v * u * u * b.y + u * u * u * b.y];
+}
+function nglow(c, x, y, r, col, a) {
+  const g = c.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, rgba(col, a)); g.addColorStop(0.4, rgba(col, a * 0.35)); g.addColorStop(1, rgba(col, 0));
+  c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
+}
+
+function nfit(c, s, w) {  // cut by width, in the middle, so both ends of "jeff/exam-smith" show
+  if (c.measureText(s).width <= w) return s;
+  for (let k = s.length - 2; k > 2; k--) {
+    const f = s.slice(0, Math.ceil(k / 2)) + "…" + s.slice(s.length - Math.floor(k / 2));
+    if (c.measureText(f).width <= w) return f;
+  }
+  return s.slice(0, 2) + "…";
+}
+function netHover(ev) {  // the canvas's own tooltip names the node under the pointer in full
+  const r = nv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+  let best = "", d = 20;
+  for (const n of nnodes.values()) { const e = Math.hypot(n.x - x, n.y - y); if (e < d) { d = e; best = n.label; } }
+  if (nv.title !== best) nv.title = best;
+}
+
+function netDraw(t, st) {
+  const c = nx;
+  c.setTransform(ndpr, 0, 0, ndpr, 0, 0);
+  const bgd = c.createLinearGradient(0, 0, 0, NH);
+  if (modern) { bgd.addColorStop(0, "#1D2640"); bgd.addColorStop(1, "#161D32"); } else { bgd.addColorStop(0, "#080A18"); bgd.addColorStop(1, "#04050E"); }
+  c.fillStyle = bgd; c.fillRect(0, 0, NW, NH);
+  if (!modern) {
+    c.globalCompositeOperation = "lighter";
+    nglow(c, NW / 2, NH * 0.9, Math.max(NW, NH) * 0.55, EMBER, 0.05);  // the forge's warmth under the net
+    c.globalCompositeOperation = "source-over";
+  }
+  const HEADC = modern ? [150, 168, 205] : BRASS, INKC = modern ? [226, 232, 244] : PALE;
+  ncnt.frames++;
+  const P = nnodes;  // nodes hold still: the net redraws only while something moves
+  const font = s => modern ? "500 " + s + "px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" : "500 " + s + "px \"Martian Mono\", ui-monospace, Menlo, monospace";
+  c.font = font(11); c.textAlign = "center"; c.textBaseline = "alphabetic";
+  NHEAD.forEach((head, i) => {
+    const x = i === 0 ? clamp(NW * 0.13, 52, 150) : i === 1 ? NW / 2 : NW - clamp(NW * 0.13, 52, 150);
+    c.fillStyle = rgba(HEADC, 0.7); c.fillText(head, x, 20);
+    const g = c.createLinearGradient(0, 30, 0, NH);
+    g.addColorStop(0, rgba(HEADC, 0.10)); g.addColorStop(1, rgba(HEADC, 0));
+    c.fillStyle = g; c.fillRect(x - 0.5, 30, 1, NH - 30);
+  });
+  // the synapses
+  c.lineCap = "round";
+  for (const e of nedges) {
+    const a = P.get(e.a), b = P.get(e.b);
+    if (!a || !b) continue;
+    const col = KIND[e.kind] || KIND.review, lit = (nlitE.get(e.id) || 0) > t, g = nglowE.get(e.id) || 0;
+    // a running job: dashed, steady (breathing when animated); a past call: solid, fading with its age over the 5 minutes
+    const base = e.dim ? 0.4 + (st ? 0 : 0.1 * Math.sin(t * 1.6)) : 0.3 * (1 - 0.6 * clamp((t - e.t) / 300, 0, 1));
+    const al = clamp(base + 0.5 * g + (lit ? 0.55 : 0), 0, 1);
+    const lw = 0.8 + clamp(e.w, 1, 10) * 0.45, mx = (a.x + b.x) / 2;
+    c.setLineDash(e.dim ? [5, 5] : []);
+    c.beginPath(); c.moveTo(a.x, a.y); c.bezierCurveTo(mx, a.y, mx, b.y, b.x, b.y);
+    c.strokeStyle = rgba(col, al * 0.22); c.lineWidth = lw * 3.2; c.stroke();  // the soft bloom
+    c.strokeStyle = rgba(col, al); c.lineWidth = lw; c.stroke();
+  }
+  c.setLineDash([]);
+  // the beads: a head with a short trail
+  c.globalCompositeOperation = "lighter";
+  for (const p of npulses) {
+    if (t < p.t0) continue;
+    const a = P.get(p.a), b = P.get(p.b);
+    if (!a || !b) continue;
+    const u = clamp((t - p.t0) / p.dur, 0, 1), col = KIND[p.kind] || KIND.review;
+    for (let i = 7; i >= 1; i--) {
+      const q = nbez(a, b, clamp(u - i * 0.03, 0, 1)), f = 1 - i / 8;
+      nglow(c, q[0], q[1], 3 + 6 * f, col, 0.38 * f);
+    }
+    const h = nbez(a, b, u);
+    nglow(c, h[0], h[1], 14, col, 0.9); nglow(c, h[0], h[1], 4, PALE, 0.95);
+  }
+  c.globalCompositeOperation = "source-over";
+  // the nodes
+  for (const [k, n] of nnodes) {
+    const q = P.get(k), lit = (nlitN.get(k) || 0) > t;
+    const a = clamp(Math.max(n.glow, n.on ? 0.5 : 0.18, lit ? 1 : 0), 0, 1.4);
+    const col = n.kind && KIND[n.kind] && n.col !== 0 ? KIND[n.kind] : NCOL[n.col], r = n.group ? 4 : n.col === 0 ? 6.5 : 5;
+    c.globalCompositeOperation = "lighter";
+    nglow(c, q.x, q.y, 12 + 22 * a, col, 0.18 + 0.4 * a);
+    c.globalCompositeOperation = "source-over";
+    if (!n.group) { c.fillStyle = rgba(INKC, 0.35 + 0.6 * Math.min(1, a)); c.beginPath(); c.arc(q.x, q.y, r - 1.2, 0, TAU); c.fill(); }
+    c.strokeStyle = rgba(col, 0.45 + 0.5 * Math.min(1, a)); c.lineWidth = lit ? 2.2 : 1.4;
+    c.beginPath(); c.arc(q.x, q.y, r, 0, TAU); c.stroke();
+    c.font = font(11);
+    const lab = nfit(c, n.label, NW / 3 - 14), hw = c.measureText(lab).width / 2, lx = clamp(q.x, hw + 4, NW - hw - 4), ly = q.y + r + 14;
+    c.lineJoin = "round"; c.lineWidth = 3; c.strokeStyle = modern ? "rgba(22,29,50,.85)" : "rgba(4,5,14,.85)"; c.strokeText(lab, lx, ly);  // a halo, so a line behind it doesn't cut the name
+    c.fillStyle = rgba(INKC, 0.5 + 0.45 * Math.min(1, a)); c.fillText(lab, lx, ly);
+  }
+  // the vignette, as the scene has
+  if (!modern) {
+    const v = c.createRadialGradient(NW / 2, NH * 0.5, Math.min(NW, NH) * 0.4, NW / 2, NH * 0.5, Math.max(NW, NH) * 0.75);
+    v.addColorStop(0, "rgba(2,3,10,0)"); v.addColorStop(1, "rgba(2,3,10,.5)");
+    c.fillStyle = v; c.fillRect(0, 0, NW, NH);
+  }
+  if (!npainted) { npainted = true; nv.dataset.painted = "1"; }
+}
+
+function netPaint() {  // held still: one frame now, and one more when the lit edges go out
+  if (!nx || !NW) return;
+  const t = now();
+  for (const m of [nlitE, nlitN]) for (const [k, u] of m) if (u <= t) m.delete(k);
+  netDraw(t, true);
+  netPublish();
+  clearTimeout(nlitTimer);
+  let next = 0;
+  for (const u of nlitE.values()) next = Math.max(next, u);
+  for (const u of nlitN.values()) next = Math.max(next, u);
+  if (next > t && view === "net") nlitTimer = setTimeout(netPaint, (next - t) * 1000 + 50);
+}
+
+function netResize() {
+  if (!nx) return;
+  const r = nv.getBoundingClientRect();
+  if (r.width < 2 || r.height < 2) return;
+  NW = Math.round(r.width); NH = Math.round(r.height);
+  ndpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(2.6e6 / (NW * NH))));
+  nv.width = Math.round(NW * ndpr); nv.height = Math.round(NH * ndpr);
+  netLayout();
+  ndirty = true;
+  if (view === "net" && still()) netPaint();
+}
+
+const stageEl = $("stage"), stageLabel = stageEl ? stageEl.getAttribute("aria-label") : "";
+function showView(v) {
+  view = v === "net" ? "net" : "forge";
+  root.setAttribute("data-view", view);
+  if (stageEl) stageEl.setAttribute("aria-label", view === "net" ? "The network: agents, tools and jobs, and models, with a line for each recent call; the calls are listed as text after the picture" : stageLabel);
+  ndirty = true;
+  if (vForge) vForge.setAttribute("aria-pressed", String(view === "forge"));
+  if (vNet) vNet.setAttribute("aria-pressed", String(view === "net"));
+  if (view === "net") { netResize(); netBuild(); } else resize();
+  if (still()) paintStill(); else start();
+}
+function pickView(v) {
+  if (v === view) return;
+  showView(v); keep(v);
+  if (stageEl && stageEl.scrollIntoView && stageEl.getBoundingClientRect().bottom > window.innerHeight) {  // below 1400 px the stage sits under the rail's strips
+    stageEl.scrollIntoView({block: "nearest", behavior: still() ? "auto" : "smooth"});
+  }
+  location.hash = hashFor(hashProject, v);  // its hashchange finds the view already set: no reload, no reconnect
+}
+
 // ---------- modes and start ----------
 const btn = $("motion");
 function applyMode() {
@@ -1653,16 +2024,30 @@ function applyMode() {
   if (s) {
     stop();
     sparks.length = 0; pending.length = 0; embers.length = 0; streaks.length = 0; smoke.length = 0; flares.length = 0;
+    npulses.length = 0;
     intro = false;
     paintStill();
   } else start();
   if (tkList) { tkList.replaceChildren(); tkOff = 0; tkList.style.transform = ""; renderTicker(ticker, true); }
 }
 if (btn) btn.addEventListener("click", () => { userStill = !userStill; applyMode(); });
+const themeBtn = $("theme-btn");
+if (themeBtn) {  // the viewer's look is kept in this browser; a reload applies it before the first paint
+  themeBtn.setAttribute("aria-pressed", String(!modern));  // one fixed name; pressed means the forge look is on
+  try {  // after the switch's reload: focus is back on the button and the status line says what happened
+    const said = sessionStorage.getItem("sampo-live-said");
+    if (said) { sessionStorage.removeItem("sampo-live-said"); themeBtn.focus(); setTimeout(() => setText($("theme-say"), said), 80); }
+  } catch (err) { /* no session storage: no announcement */ }
+  themeBtn.addEventListener("click", () => {
+    try { localStorage.setItem("sampo-live-theme", modern ? "forge" : "modern"); } catch (err) { /* no storage: the switch lasts this load only */ }
+    try { sessionStorage.setItem("sampo-live-said", modern ? "Forge look on" : "Forge look off"); } catch (err) { /* nothing to announce */ }
+    location.reload();
+  });
+}
 if (reduce.addEventListener) reduce.addEventListener("change", applyMode);
 else if (reduce.addListener) reduce.addListener(applyMode);
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) { stop(); sparks.length = 0; pending.length = 0; }
+  if (document.hidden) { stop(); sparks.length = 0; pending.length = 0; npulses.length = 0; }
   else if (!still()) start();
   else paintStill();
 });
@@ -1676,6 +2061,14 @@ if (cx) {
 }
 cnt.nodes = nodes.size;
 publish();
+if (nx) {
+  if (window.ResizeObserver) new ResizeObserver(netResize).observe(nv); else window.addEventListener("resize", netResize);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(netResize);
+  nv.addEventListener("mousemove", netHover);
+}
+if (vForge) vForge.addEventListener("click", () => pickView("forge"));
+if (vNet) vNet.addEventListener("click", () => pickView("net"));
+showView(view);
 applyMode();
 setInterval(age, 1000);
 // (re)load the scene for currentProject: fetch its state, reopen its stream; a late answer for a project we left is dropped
@@ -1684,6 +2077,7 @@ function load() {
   if (es) { es.close(); es = null; }
   clearTimeout(retry);
   backoff = 1; snapAt = -Infinity; firstRender = true; unknown = false;
+  netReset();
   if (topRow) topRow.setAttribute("data-swap", "");
   markCurrent();
   fetch("/api/state" + qs(), {cache: "no-store"}).then(r => r.status === 404 ? 404 : r.ok ? r.json() : null).then(s => {

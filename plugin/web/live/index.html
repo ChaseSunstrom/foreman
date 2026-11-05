@@ -1,36 +1,45 @@
 <!doctype html>
-<html lang="en" data-link="connecting" data-motion="full">
+<html lang="en" data-theme="modern" data-link="connecting" data-motion="full">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <meta name="referrer" content="no-referrer">
-<title>Sampo · the live forge</title>
+<title>Sampo · live</title>
 <link rel="icon" href="data:,">
+<script src="/static/theme.js" nonce="__NONCE__"></script>
 <link rel="stylesheet" href="/static/live.css" nonce="__NONCE__">
 <script src="/static/live.js" nonce="__NONCE__" defer></script>
 </head>
 <body>
 <header class="bar">
-  <p class="brand"><span class="word">Sampo</span><span class="tag">the live forge</span></p>
+  <p class="brand"><span class="word">Sampo</span><span class="tag"><span class="f-only">the live forge</span><span class="m-only">live</span></span></p>
   <p class="where" id="project">waiting for the first snapshot</p>
   <p class="link" id="link" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="link-label">Connecting</span></p>
   <p class="clock"><span class="clock-k">as of</span> <time id="clock">--:--:--</time> <span class="clock-age" id="clock-age"></span></p>
+  <div class="views" id="views" role="group" aria-label="View">
+    <button class="vbtn" id="view-forge" type="button" aria-pressed="true" title="The forge scene">Forge</button>
+    <button class="vbtn" id="view-net" type="button" aria-pressed="false" title="Agents, tools and models as a network">Network</button>
+  </div>
+  <button class="motion" id="theme-btn" type="button" aria-pressed="false" title="The forge look: the old night-forge scene and words (kept in this browser)">Forge look</button>
+  <p class="vh" id="theme-say" role="status" aria-live="polite"></p>
   <button class="motion" id="motion" type="button" aria-pressed="false" title="Hold the scene still: no sparks, changes shown by highlight">Still</button>
 </header>
 <main>
   <div class="top">
   <section class="stage" id="stage" aria-label="The forge: the session at the anvil, builders at their benches, jobs as furnaces, models as lanterns">
     <canvas id="scene" role="img" aria-label="The forge scene; the panels below carry the same figures as text">The forge scene needs canvas support; every figure is in the panels below.</canvas>
+    <canvas id="net" role="img" aria-label="The network view: agents on the left, tools and jobs in the middle, models on the right, a line for each call; the calls are listed as text just after it">The network view needs canvas support; every figure is in the panels.</canvas>
+    <ul class="vh" id="net-list" aria-label="Network calls: who called what, and how many"></ul>
     <p class="drop" aria-hidden="true">The stream dropped · reconnecting</p>
     <article class="focus" id="focus" aria-live="polite">
-      <p class="eyebrow">At the anvil</p>
+      <p class="eyebrow"><span class="f-only">At the anvil</span><span class="m-only">Focus</span></p>
       <p class="fid"><span id="focus-id">—</span><span class="chip" id="focus-stage">idle</span><span class="fstep" id="focus-step"></span></p>
-      <h1 class="ftitle" id="focus-title">No task at the anvil</h1>
+      <h1 class="ftitle" id="focus-title">No task in focus</h1>
       <ol class="pips" id="focus-pips" aria-hidden="true"></ol>
     </article>
     <ul class="kinds" aria-label="Spark colours by kind of call">
-      <li class="kd-write">write</li><li class="kd-judge">judge</li><li class="kd-embed">embed</li><li class="kd-train">train</li><li class="kd-plan">plan</li><li class="kd-act">act</li><li class="kd-review">review</li>
+      <li class="kd-write">write</li><li class="kd-judge">judge</li><li class="kd-embed">embed</li><li class="kd-train">train</li><li class="kd-plan">plan</li><li class="kd-act">act</li><li class="kd-review">review</li><li class="kd-net">thickness = calls · bright node = running or loaded · dashed = a running job</li>
     </ul>
   </section>
 
@@ -54,7 +63,7 @@
   </div>
 
   <section class="ticker" id="ticker" aria-label="Events">
-    <p class="tk-h">Ledger</p>
+    <p class="tk-h"><span class="f-only">Ledger</span><span class="m-only">Events</span></p>
     <div class="tk-band" id="tk-band" tabindex="0" aria-label="Recent events; hover or focus to pause">
       <ul class="tk-list" id="tk-list"></ul>
       <p class="empty tk-empty" id="tk-empty">No events yet</p>
@@ -83,25 +92,25 @@
     </section>
 
     <section class="panel p-jobs" id="jobs" aria-labelledby="jobs-h">
-      <header class="ph"><h2 id="jobs-h">Furnaces</h2><p class="sub" id="jobs-sub">jobs running</p></header>
+      <header class="ph"><h2 id="jobs-h"><span class="f-only">Furnaces</span><span class="m-only">Jobs</span></h2><p class="sub" id="jobs-sub">jobs running</p></header>
       <ul class="rows" id="jobs-list" tabindex="0" aria-label="Jobs running"></ul>
-      <p class="empty" id="jobs-empty">No jobs running<span>the furnaces are banked</span></p>
+      <p class="empty" id="jobs-empty">No jobs running<span class="f-only">the furnaces are banked</span><span class="m-only">nothing is running</span></p>
     </section>
 
     <section class="panel p-queue" id="queue" aria-labelledby="queue-h">
       <header class="ph"><h2 id="queue-h">Queue</h2><p class="sub" id="queue-sub">next up</p></header>
       <ul class="rows" id="queue-list" tabindex="0" aria-label="Queue"></ul>
-      <p class="empty" id="queue-empty">The queue is clear<span>nothing waits for the anvil</span></p>
+      <p class="empty" id="queue-empty">The queue is clear<span class="f-only">nothing waits for the anvil</span><span class="m-only">nothing is waiting</span></p>
     </section>
 
     <section class="panel p-closes" id="closes" aria-labelledby="closes-h">
-      <header class="ph"><h2 id="closes-h">Closed today</h2><p class="sub" id="closes-sub">struck and quenched</p></header>
+      <header class="ph"><h2 id="closes-h">Closed today</h2><p class="sub" id="closes-sub">finished</p></header>
       <ul class="rows" id="closes-list" tabindex="0" aria-label="Closed today"></ul>
       <p class="empty" id="closes-empty">Nothing closed yet today<span>the first close lands here</span></p>
     </section>
 
     <section class="panel p-bench" id="bench" aria-labelledby="bench-h">
-      <header class="ph"><h2 id="bench-h">Bench</h2><p class="sub" id="bench-sub">model trials by use</p></header>
+      <header class="ph"><h2 id="bench-h"><span class="f-only">Bench</span><span class="m-only">Benchmarks</span></h2><p class="sub" id="bench-sub">model trials by use</p></header>
       <table class="bench" id="bench-table">
         <thead><tr><th scope="col">Use</th><th scope="col">Contestant</th><th scope="col">Accuracy</th><th scope="col">Cover</th></tr></thead>
         <tbody id="bench-rows"></tbody>
