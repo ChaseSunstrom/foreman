@@ -7420,11 +7420,6 @@ def _build_parser(only=None):
     s.add_argument("--draft", action="store_true", help="write a playbook draft from steps 3+ finished tasks took in "
                                                         "the same order (T-0734; adopting it is asked first)")
 
-    s = add("misses", lazy("sampo.selfaware", "cmd_misses"), tier=("Reports", 1031),
-            help="what the user had to point out: logged misses by class and per day (T-3126)")
-    s.add_argument("--days", type=int, default=30, help="how far back to count")
-    s.add_argument("--sweep", action="store_true", help="ask the local model about recent unmatched questions first")
-
     s = add("sync", lazy("sampo.sync", "cmd_sync"), tier=("Project and settings", 790),
             help="opt-in mirror of this project's briefs, decisions and research in the repo (.foreman/)")
     s.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "import", "export"])
