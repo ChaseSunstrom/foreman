@@ -10,6 +10,7 @@
 
 ### Everything else
 
+- A model profile's key is found without a login shell: when its `key_env` isn't in the environment, Sampo reads it from `~/.config/sampo/secrets.env` (or `$SAMPO_SECRETS`), a private file it trusts only at mode 600, so hooks, the night job and the live service reach keyed models such as the 27B on Jarvis (T-3036).
 - The live page manages every Sampo session on the machine from one address: http://127.0.0.1:46459/ opens with no link for your own user (the server checks the connection's uid through /proc/net/tcp, matching the full address and port pair; anyone else still needs the link). A Sessions rail and a Projects strip list every live session and project, and picking one switches the scene to it (T-3022, T-3023, T-3024, T-3027).
 - The live page steers sessions. Each project plate has drive on/off, checkpoint and resume, and each session row has a note. In the rail, pause now (a second press confirms it) and pause off sit beside a status line that shows each result. Every action runs a fixed `sampo` verb and is logged in that project's ledger, behind JSON-only, own-Origin, Sec-Fetch-Site and page-token checks. A port forward you run (ssh -L and the like) makes its remote clients look like your uid, so they are stopped only by the token (T-3026).
 - On the live page, a local model that is called but not loaded right now hangs on the gantry, not on Jarvis's hill: each call row records whether it went to a local or a remote endpoint (T-3017).

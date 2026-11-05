@@ -412,7 +412,7 @@ def _up(prof, key):
 def _usable(prof, sensitive):
     """prof when its key is set, it is allowed (a sensitive project's only on loopback) and its server answers."""
     env = prof.get("key_env")
-    key = (os.environ.get(env) or "").strip() if env else None
+    key = models.secret(env) if env else None
     if env and not key:
         return None
     if sensitive and not models.is_loopback(urllib.parse.urlsplit(prof.get("base_url") or "").hostname or ""):

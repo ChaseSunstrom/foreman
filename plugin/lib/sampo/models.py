@@ -869,11 +869,33 @@ def _cli(profile, messages, timeout):
             "stop": "end", "usd": got.get("total_cost_usd")}
 
 
+def secret(env):
+    """T-3036: env's value, else its line in the user's private secrets file ($SAMPO_SECRETS, default
+    ~/.config/sampo/secrets.env: KEY=VALUE lines, export and quotes allowed), so hooks, the night job and sampo-live,
+    which no login shell starts, find a key the user stored once. A file others can read is not trusted (as ssh)."""
+    got = (os.environ.get(env) or "").strip()
+    if got:
+        return got
+    path = os.environ.get("SAMPO_SECRETS") or os.path.expanduser("~/.config/sampo/secrets.env")
+    try:
+        st = os.stat(path)
+        if st.st_mode & 0o077 or st.st_uid != os.getuid():
+            return ""
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                k, eq, v = line.strip().removeprefix("export ").partition("=")
+                if eq and k.strip() == env:
+                    return v.strip().strip("'\"").strip()
+    except (OSError, UnicodeDecodeError):
+        pass
+    return ""
+
+
 def _key(profile):
     """The profile's key from its key_env, None when it names none; unset or holding control characters raises."""
     env, key = profile.get("key_env"), None
     if env:
-        key = (os.environ.get(env) or "").strip()
+        key = secret(env)
         if not key:
             raise ModelError(f"profile {profile.get('name')!r}: {env} is not set")
         if any(ord(ch) < 32 or ord(ch) == 127 for ch in key):

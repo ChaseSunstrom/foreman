@@ -63,10 +63,11 @@ def oa_reply(text="hi", tool_calls=None, finish="stop"):
 class Base(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self._env = {k: os.environ.get(k) for k in KEYS + ("FOREMAN_HOME",)}
+        self._env = {k: os.environ.get(k) for k in KEYS + ("FOREMAN_HOME", "SAMPO_SECRETS")}
         for k in KEYS:
             os.environ.pop(k, None)
         os.environ["FOREMAN_HOME"] = self._tmp.name
+        os.environ["SAMPO_SECRETS"] = os.path.join(self._tmp.name, "secrets.env")  # T-3036: never the user's file
         self.slept = []
         self._sleep, m._sleep = m._sleep, self.slept.append
         self._local, m.LOCAL = m.LOCAL, []
@@ -252,6 +253,21 @@ class OpenAIShape(Base):
         with self.assertRaises(m.ModelError):
             m.complete(self.profile(f), [{"role": "user", "content": "hi"}])
         self.assertEqual(len(f.seen), 1)
+
+    def test_an_unset_key_env_is_read_from_the_private_secrets_file(self):
+        # T-3036: hooks, the night job and sampo-live aren't login shells, so ~/.bashrc never reaches them
+        f = self.fake((200, oa_reply(), None))
+        p = self.profile(f)
+        os.environ.pop("FM_TEST_KEY")
+        path = os.environ["SAMPO_SECRETS"]
+        with open(os.open(path, os.O_WRONLY | os.O_CREAT, 0o600), "w") as fh:
+            fh.write("# keys\nOTHER=x\nexport FM_TEST_KEY='%s'\n" % SECRET)
+        m.complete(p, [{"role": "user", "content": "hi"}])
+        self.assertEqual(f.seen[0][2]["Authorization"], f"Bearer {SECRET}")
+        os.chmod(path, 0o644)  # readable by others: not trusted, as ssh does with a loose key
+        with self.assertRaises(m.ModelError) as cm:
+            m.complete(p, [{"role": "user", "content": "hi"}])
+        self.assertIn("FM_TEST_KEY", str(cm.exception))
 
     def test_missing_key_env_raises(self):
         f = self.fake((200, oa_reply(), None))
