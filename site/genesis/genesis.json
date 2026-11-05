@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T13:30:55Z",
- "rev": "0b4ed540",
+ "updated": "2026-11-05T13:36:09Z",
+ "rev": "6b8fcfcb",
  "capabilities": [
   {
    "n": 1,
@@ -37481,11 +37481,11 @@
    "rejected": {
     "kill": 7649,
     "tier": 5294,
-    "novelty": 39
+    "novelty": 42
    },
    "merged": 77,
-   "kept": 347,
-   "pending": 382
+   "kept": 664,
+   "pending": 62
   },
   "families": [
    {
@@ -40699,7 +40699,7 @@
   "families_total": 306,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 347
+   "total": 664
   }
  },
  "steer": {

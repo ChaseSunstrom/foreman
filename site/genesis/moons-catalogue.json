@@ -1,1 +1,1 @@
-{"total":347,"per":500,"tiers":{"extreme":10,"xhigh":94,"high":243},"families":306,"shards":[{"file":"moons-catalogue-001.json","n":347,"tiers":["extreme","xhigh","high"]}]}
+{"total":664,"per":500,"tiers":{"massive":2,"extreme":32,"xhigh":184,"high":446},"families":306,"shards":[{"file":"moons-catalogue-001.json","n":500,"tiers":["massive","extreme","xhigh","high"]},{"file":"moons-catalogue-002.json","n":164,"tiers":["high"]}]}
