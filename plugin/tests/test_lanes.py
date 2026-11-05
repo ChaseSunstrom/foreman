@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import time
 import unittest
+import unittest.mock
 from unittest import mock
 
 from helpers import ForemanTestCase, read_text, valid_m_plan
@@ -2325,6 +2326,159 @@ class LaneReexec(unittest.TestCase):
         e = {k: v for k, v in os.environ.items() if k != "SAMPO_LANE_CHILD"}
         r = subprocess.run([self.sys.executable, lane_bin], cwd=self.wt, env=e, capture_output=True, text=True, timeout=30)
         self.assertEqual((r.stdout.strip(), r.stderr), ("MAIN", ""))
+
+
+class PostMergeVerify(ForemanTestCase):
+    """T-3141: a lane lands after its fast checks; the full suite runs on the merge afterwards. All in temp repos."""
+    RED = "if ls bad*.txt >/dev/null 2>&1; then echo 'FAIL: test_x (test_mod.Cls.test_x)'; exit 1; fi"
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+        os.environ["FM_POSTMERGE_CMD"] = self.RED
+        self.addCleanup(os.environ.pop, "FM_POSTMERGE_CMD", None)
+        self.tid = first(self.fm("task", "new", "Landed", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                                 "--step", "s", "--json").stdout)["id"]
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", self.repo, *args], capture_output=True, text=True).stdout.strip()
+
+    def land(self, name, bad=False):
+        """A --no-ff merge commit on main, recorded as pending the way merge() records it."""
+        self.git("checkout", "-qb", f"b-{name}")
+        with open(os.path.join(self.repo, (bad if isinstance(bad, str) else "bad.txt") if bad else f"{name}.txt"), "w") as f:
+            f.write(name)
+        self.git("add", "-A")
+        self.git("commit", "-qm", name)
+        self.git("checkout", "-q", "-")
+        self.git("merge", "-q", "--no-ff", "-m", f"Merge {name}", f"b-{name}")
+        sha = self.git("rev-parse", "HEAD")
+        with unittest.mock.patch.object(slanes, "pm_spawn"):
+            slanes.pm_record(self.p, sha, self.tid, self.repo)
+        return sha
+
+    def state(self, sha):
+        return slanes.pm_records(self.p)[sha]["state"]
+
+    def test_green_suite_marks_the_lane_verified(self):
+        sha = self.land("a")
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "green")
+        self.assertEqual(c.find_brief(self.p, self.tid).meta.get("lane_verified"), sha)
+
+    def test_red_suite_reverts_exactly_that_merge_and_reopens_the_lane(self):
+        sha = self.land("a", bad=True)
+        head = self.git("rev-parse", "HEAD")
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "reverted")
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "bad.txt")))
+        self.assertEqual(self.git("rev-list", "--count", f"{head}..HEAD"), "1", "one revert commit, no rewrite")
+        self.assertEqual(subprocess.run(["git", "-C", self.repo, "merge-base", "--is-ancestor", sha, "HEAD"]).returncode, 0)
+        meta = c.find_brief(self.p, self.tid).meta
+        self.assertTrue(meta["lane_stop"].startswith("refused "), meta["lane_stop"])
+        self.assertIn("test_mod.Cls", meta["postmerge_red"])
+        self.assertIn("test_mod.Cls", slanes.recovery_after(self.p, c.find_brief(self.p, self.tid)))
+
+    def test_a_second_run_reverts_nothing_more(self):
+        sha = self.land("a", bad=True)
+        slanes.pm_run(self.p, self.repo)
+        head = self.git("rev-parse", "HEAD")
+        slanes.pm_run(self.p, self.repo)
+        slanes.pm_verify(self.p, self.repo, sha)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+
+    def test_a_red_verify_holds_further_merges_until_reverted(self):
+        sha = self.land("a", bad=True)
+        slanes.pm_set(self.p, sha, state="red")
+        with self.assertRaises(c.PolicyError):
+            slanes.pm_wait(self.p, self.repo)
+        slanes.pm_set(self.p, sha, state="reverted")
+        slanes.pm_wait(self.p, self.repo)
+
+    def test_a_revert_requeues_the_merges_stacked_on_it(self):
+        a = self.land("a", bad=True)
+        b = self.land("b")
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual((self.state(a), self.state(b)), ("reverted", "green"))
+        self.assertEqual(len(re.findall(r"Revert", self.git("log", "--format=%s"))), 1, "b is not reverted for a's fault")
+        self.assertTrue(slanes.pm_records(self.p)[b].get("requeued"), "b was verified again on the reverted main")
+
+    def test_a_revert_that_conflicts_stops_and_is_marked(self):
+        sha = self.land("a", bad=True)
+        with open(os.path.join(self.repo, "bad.txt"), "w") as f:
+            f.write("later edit\n")
+        self.git("commit", "-qam", "edit on top")
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "conflict")
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=no"), "")
+        with self.assertRaises(c.PolicyError):
+            slanes.pm_wait(self.p, self.repo)
+
+    def test_a_running_record_of_a_dead_verifier_is_reclaimed(self):
+        sha = self.land("a")
+        slanes.pm_set(self.p, sha, state="running", pid=2 ** 22 + 12345)
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "green")
+        self.assertTrue(c.ledger_events(self.p, ("postmerge_stuck",)))
+
+    def test_a_timeout_is_no_red_and_is_retried_once(self):
+        sha = self.land("a")
+        head = self.git("rev-parse", "HEAD")
+        with unittest.mock.patch.object(c, "run_command", return_value=(124, "timed out")) as run:
+            slanes.pm_run(self.p, self.repo)
+        self.assertEqual((self.state(sha), run.call_count), ("timeout", 2))
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        slanes.pm_wait(self.p, self.repo)
+
+    def test_a_requeued_merge_is_judged_without_the_merges_that_landed_after_it(self):
+        x = self.land("x", bad=True)
+        g = self.land("g")
+        z = self.land("z", bad="bad2.txt")
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual((self.state(x), self.state(g), self.state(z)), ("reverted", "green", "reverted"))
+
+    def test_a_dirty_index_leaves_the_red_retryable_not_a_conflict(self):
+        sha = self.land("a", bad=True)
+        with open(os.path.join(self.repo, "other.txt"), "w") as f:
+            f.write("staged")
+        self.git("add", "other.txt")
+        head = self.git("rev-parse", "HEAD")
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual((self.state(sha), self.git("rev-parse", "HEAD")), ("red", head))
+        self.git("reset", "-q")
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "reverted")
+
+    def test_reset_clears_a_conflict_after_a_forward_fix(self):
+        sha = self.land("a", bad=True)
+        slanes.pm_set(self.p, sha, state="conflict")
+        slanes.pm_reset(self.p, sha[:9])
+        self.assertEqual(self.state(sha), "reverted")
+        slanes.pm_wait(self.p, self.repo)
+
+    def test_no_suite_is_logged_once(self):
+        os.environ.pop("FM_POSTMERGE_CMD")
+        for _ in range(2):
+            slanes.pm_record(self.p, "a" * 40, self.tid, self.repo)
+        self.assertEqual(len(c.ledger_events(self.p, ("postmerge_none",))), 1)
+
+    def test_next_names_a_pending_verify_older_than_half_an_hour(self):
+        slanes.pm_record(self.p, "b" * 40, self.tid, self.repo)
+        self.assertEqual(slanes.pm_stuck_line(self.p), "")
+        slanes.pm_set(self.p, "b" * 40, at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 7200)))
+        self.assertIn("bbbbbbbbb", slanes.pm_stuck_line(self.p))
+
+    def test_the_real_detached_runner_verifies_a_landed_merge(self):
+        os.environ.pop("FOREMAN_NO_BACKGROUND")
+        self.addCleanup(os.environ.__setitem__, "FOREMAN_NO_BACKGROUND", "1")
+        sha = self.land("a", bad=True)
+        slanes.pm_spawn(self.p, self.repo)
+        end = time.time() + 50
+        while time.time() < end and self.state(sha) != "reverted":
+            time.sleep(0.5)
+        self.assertEqual(self.state(sha), "reverted", slanes.pm_records(self.p)[sha])
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "bad.txt")))
 
 
 if __name__ == "__main__":

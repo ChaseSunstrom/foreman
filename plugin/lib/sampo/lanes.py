@@ -183,6 +183,14 @@ def cmd_lane(args):
             f"{r['size']}: {r['landed']} of {r['briefs']} briefs landed ({r['pct']}%)" for r in rows)
             + ("\n(unsized: a brief a later one overwrote, so that row leans toward lanes that were re-briefed)"
                if any(r["size"] == "unsized" for r in rows) else "") or "No builder briefs on record yet.")
+    if args.action == "verify":  # T-3141: the detached process pm_spawn starts: the full suite on each landed merge
+        if getattr(args, "reset", None):
+            if not pm_reset(p, args.reset):
+                raise cli.UsageError(f"no conflict or red record starts with {args.reset}")
+        else:
+            pm_run(p, main)
+        return cli.out(args, {"records": pm_records(p)}, "\n".join(
+            f"{s[:9]} {r['task']}: {r['state']}" for s, r in pm_records(p).items()) or "No landed merge awaits a verify.")
     if args.action == "list":
         briefs = c.load_briefs(p)
         rows, lines = [], []
@@ -527,7 +535,39 @@ def stop_causes(p, briefs=None, fresh=False):
     return out
 
 
+def pm_stuck_line(p, minutes=30):
+    """T-3141: landed merges whose background verify has waited longer than this: they are unverified on main."""
+    d, idx = _pm_dir(p), os.path.join(p.dir, "postmerge.idx")  # hook path: stat the folder, rescan only when it changed
+    try:
+        m = os.stat(d).st_mtime_ns
+    except OSError:
+        return ""
+    try:
+        with open(idx) as f:
+            seen = json.load(f)
+    except (OSError, ValueError):
+        seen = {}
+    if seen.get("m") == m:
+        if seen.get("oldest") is None or time.time() - seen["oldest"] <= minutes * 60:
+            return ""
+    else:
+        ts = [(c.parse_ts(r.get("at")) or c.parse_ts(c.now())).timestamp()
+              for r in pm_records(p).values() if r["state"] in ("pending", "running")]
+        try:
+            c.write_atomic(idx, json.dumps({"m": m, "oldest": min(ts) if ts else None}))
+        except OSError:
+            pass
+    old = [f"{r['task']} ({s[:9]})" for s, r in pm_records(p).items() if r["state"] in ("pending", "running")
+           and (time.time() - (c.parse_ts(r.get("at")) or c.parse_ts(c.now())).timestamp()) > minutes * 60]
+    return ("Landed merge(s) still unverified after " + str(minutes) + "+ min: " + ", ".join(old)
+            + ". Start the suite: fm lane verify") if old else ""
+
+
 def recovery_line(p, briefs, full):
+    return " ".join(x for x in (_recovery_line(p, briefs, full), pm_stuck_line(p)) if x)
+
+
+def _recovery_line(p, briefs, full):
     """T-2354: what fm next and the drive say about lanes stopped before their merge: each one's cause and its one
     recovery. In full autonomy it is an order with the Agent line; in standard it names the recovery. A lane that only
     waits on a merge (no_report) is fm next's finished-lane note."""
@@ -623,7 +663,7 @@ def recover(p, b, main, args):
                  f"the clash keeping both sides' intent, run the task's tests and commit."
                  + (f" What clashed: {brief}" if os.path.exists(brief) else ""))
     elif cause == "red_after_merge":
-        after = f"The merge was refused: {_last_refusal(p, b.id) or 'a criterion was red'}\nFix it, re-run every criterion, commit."
+        after = recovery_after(p, b)
     elif cause == "stalled":
         after = f"The previous builder stalled (no edit, commit or event for {_stall_limit():g}+ min) and its agent was stopped."
     else:
@@ -1932,6 +1972,7 @@ def merge(p, b, main, unverified=None):
     if b.meta.get("lane_spike"):  # T-0732, T-2340: a spike answers a question; its code is thrown away, by every caller
         raise c.PolicyError(f"{b.id}'s lane is a spike: it is never merged. Note what it found (fm task note "
                             f"{b.id} fact \"…\"), then fm lane rm {b.id}")
+    pm_wait(p, main)  # T-3141: verify before landing while an earlier merge's suite is red
     branch = b.meta.get("lane_branch") or f"foreman/{b.id}"
     if not _ref_ok(main, branch):
         raise cli.UsageError(f"{b.id}: there is no branch {branch} to merge")
@@ -2006,7 +2047,10 @@ def merge(p, b, main, unverified=None):
             x.meta.update({"base": pre_merge}, **({"base_tree": pre_tree} if pre_tree else {}))
         return old
     _, old = cli.mutate(p, b.id, based, "lane_merge_base", {"branch": branch, "base": pre_merge})
-    r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", tip)
+    os.makedirs(_pm_dir(p), exist_ok=True)
+    with c.lock(_pm_dir(p)):  # T-3141: checked again right before git merge, and no record turns red between
+        _pm_check(p, main)
+        r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", tip)
     if r.returncode:
         clashed = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0") if f]
         brief = _conflict_brief(p, b, main, branch, clashed)  # T-0446: what clashed, and how to resolve it on the branch
@@ -2027,7 +2071,242 @@ def merge(p, b, main, unverified=None):
     cli.mutate(p, b.id, lambda x: (x.append_log(f"merged {branch} ({len(files)} file(s))"),
                                      x.meta.update(lane_stop=f"merged {c.now()}")), "lane_merge",
                  {"branch": branch, "files": files[:50]})
+    pm_record(p, c.git_head(main), b.id, main)  # T-3141: the full suite runs on this merge, in the background
     return files
+
+
+# ---- T-3141: a merge lands after its fast checks; the full suite runs on that merge afterwards, in a separate process
+# (a thread would share the GIL), and a red suite reverts exactly that merge commit. One record per merge sha under the
+# project's postmerge/ folder: state pending | running | green | red | reverted | conflict. Records are read and
+# written under one lock, so a second runner finds the state settled and does nothing.
+
+def _pm_dir(p):
+    return os.path.join(p.dir, "postmerge")
+
+
+def pm_records(p):
+    """{merge sha: record}, oldest landing first (dict order)."""
+    rows = []
+    for name in os.listdir(_pm_dir(p)) if os.path.isdir(_pm_dir(p)) else ():
+        try:
+            with open(os.path.join(_pm_dir(p), name)) as f:
+                row = json.load(f)
+        except (OSError, ValueError):
+            continue  # a half-written or foreign file is no record
+        if isinstance(row, dict):
+            rows.append(row)
+    return {r["sha"]: r for r in sorted(rows, key=lambda r: r.get("n", 0)) if r.get("sha")}
+
+
+def pm_set(p, sha, **kv):
+    with c.lock(_pm_dir(p)):
+        r = pm_records(p).get(sha)
+        if r:
+            r.update(kv)
+            c.write_atomic(os.path.join(_pm_dir(p), f"{sha}.json"), json.dumps(r))
+        return r
+
+
+def pm_cmd(main):
+    """The full suite's command: FM_POSTMERGE_CMD, else this repo's own runner, else none (no verify is recorded)."""
+    return os.environ.get("FM_POSTMERGE_CMD") or (
+        "python3 plugin/tests/run.py" if os.path.exists(os.path.join(main, "plugin", "tests", "run.py")) else "")
+
+
+def pm_record(p, sha, tid, main):
+    """A landed merge waits for its verify; start the runner. No suite command, no record."""
+    os.makedirs(_pm_dir(p), exist_ok=True)
+    if not pm_cmd(main):
+        if not os.path.exists(os.path.join(_pm_dir(p), ".nosuite")):  # once
+            c.write_atomic(os.path.join(_pm_dir(p), ".nosuite"), "1")
+            c.log_event(p, "postmerge_none", task=tid, data={"why": "no post-merge suite: merges land unverified"})
+        return
+    if os.environ.get("FM_POSTMERGE_CMD"):
+        c.log_event(p, "postmerge_cmd_override", task=tid, data={"cmd": os.environ["FM_POSTMERGE_CMD"][:200]})
+    with c.lock(_pm_dir(p)):
+        c.write_atomic(os.path.join(_pm_dir(p), f"{sha}.json"), json.dumps(
+            {"sha": sha, "task": tid, "state": "pending", "run_at": sha, "n": time.time_ns(), "at": c.now()}))
+    pm_spawn(p, main)
+
+
+def pm_spawn(p, main):
+    """Detached `fm lane verify`: its own session, so the merge's caller exits without it."""
+    if os.environ.get("FOREMAN_NO_BACKGROUND"):
+        c.log_event(p, "postmerge_skipped", data={"why": "FOREMAN_NO_BACKGROUND is set: the merge stays pending"})
+        return
+    bin_ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bin", "sampo")
+    try:
+        with open(os.path.join(_pm_dir(p), "runner.err"), "ab") as err:
+            subprocess.Popen([sys.executable, bin_, "lane", "verify"], cwd=main, start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err)
+    except OSError as e:
+        c.log_event(p, "postmerge_spawn_failed", data={"error": str(e)[:200]})
+
+
+def _pm_reverted(main, sha):
+    return bool(_git(main, "log", "-1", "--format=%H", f"--grep=This reverts commit {sha}", "HEAD").stdout.strip())
+
+
+def pm_wait(p, main):
+    """Verify before landing: refuse a merge while a landed merge is red or its revert failed. A revert someone made by
+    hand settles the record. Under the lock: merge() calls _pm_check again right before git merge."""
+    with c.lock(_pm_dir(p)):
+        _pm_check(p, main)
+
+
+def _pm_check(p, main):
+    bad = []
+    for sha, r in pm_records(p).items():
+        if r["state"] in ("red", "conflict"):
+            if _pm_reverted(main, sha):
+                r["state"] = "reverted"
+                c.write_atomic(os.path.join(_pm_dir(p), f"{sha}.json"), json.dumps(r))
+            else:
+                bad.append(f"{r['task']} ({sha[:9]}, {r['state']}: {r.get('classes') or 'see the ledger'})")
+    if bad:
+        raise c.PolicyError("merges wait: the full suite is red on a landed merge: " + "; ".join(bad)
+                            + ". It is reverted automatically, or revert it by hand (git revert -m 1 <sha>)")
+
+
+_FAILED = re.compile(r"^(?:FAIL|ERROR): \w+ \(([\w.]+)\)", re.M)
+
+
+def pm_classes(out, code):
+    """The failing test classes (module.Class) a unittest run names, or the exit code."""
+    got = sorted({m.rpartition(".")[0] or m for m in _FAILED.findall(out)})
+    return got or [f"suite exit {code}"]
+
+
+def _pm_claim(p, sha):
+    """The record when this process may verify it now (pending, or running under a dead pid); marks it running."""
+    with c.lock(_pm_dir(p)):
+        recs = pm_records(p)
+        r = recs.get(sha)
+        if not r:
+            return None
+        if r["state"] == "running":
+            if not _pm_dead(r):
+                return None
+            c.log_event(p, "postmerge_stuck", task=r["task"], data={"sha": sha, "pid": r.get("pid")})
+        elif r["state"] != "pending":
+            return None
+        if any(o["state"] in ("red", "conflict") or (o["state"] in ("pending", "running") and o["n"] < r["n"])
+               for o in recs.values() if o["sha"] != sha):
+            return None  # settle the red one, and the older merges, first: a red here might be theirs
+        r.update(state="running", pid=os.getpid())
+        c.write_atomic(os.path.join(_pm_dir(p), f"{sha}.json"), json.dumps(r))
+        return r
+
+
+def pm_verify(p, main, sha):
+    """Run the full suite on the merge in a throwaway worktree; green records it, red reverts that commit."""
+    from sampo import cli
+    r = _pm_claim(p, sha)
+    if not r:
+        return
+    tmp = tempfile.mkdtemp(prefix="fm-verify-")
+    wt = os.path.join(tmp, "wt")
+    tries = r.get("tries", 0) + 1
+    try:
+        if _git(main, "worktree", "add", "--detach", wt, sha).returncode:
+            c.log_event(p, "postmerge_unrunnable", task=r["task"], data={"sha": sha, "tries": tries})
+            pm_set(p, sha, state="pending" if tries < 3 else "unverified", tries=tries)
+            return False  # the next runner tries again, three times
+        # a requeued merge is judged as main was after the revert plus that merge, with none of the later ones in it
+        gone = r.get("after_reverts") or []
+        if gone and _git(wt, "revert", "-m", "1", "--no-commit", "--no-edit", *reversed(gone)).returncode:
+            _git(wt, "revert", "--abort")  # ours: this worktree's own revert
+            pm_set(p, sha, state="conflict", note="could not rebuild the tree to re-verify on")
+            c.log_event(p, "lane_revert_conflict", task=r["task"], data={"sha": sha, "reverts": gone})
+            return True
+        code, out = c.run_command(wt, pm_cmd(main), c.load_scaled(3600))
+    finally:
+        _git(main, "worktree", "remove", "--force", wt)
+        shutil.rmtree(tmp, ignore_errors=True)
+    if code == 124:  # a timeout proves nothing: no revert; once more, then unverified
+        c.log_event(p, "postmerge_timeout", task=r["task"], data={"sha": sha, "tries": tries})
+        pm_set(p, sha, state="pending" if tries < 2 else "timeout", tries=tries)
+        return True
+    if not code:
+        pm_set(p, sha, state="green")
+        cli.mutate(p, r["task"], lambda x: (x.append_log(f"verified: the full suite is green on {sha[:9]}"),
+                                            x.meta.update(lane_verified=sha)), "lane_verified", {"sha": sha})
+        return True
+    pm_set(p, sha, state="red", classes=pm_classes(out, code))
+    return _pm_revert(p, main, sha) or True
+
+
+def _pm_revert(p, main, sha):
+    """Revert a red merge on main. False when the tree is not clean for it (the record stays red; retried)."""
+    from sampo import cli
+    r = pm_records(p)[sha]
+    if _git(main, "merge-base", "--is-ancestor", sha, "HEAD").returncode:  # not in main's history: nothing to undo
+        pm_set(p, sha, state="reverted", note="not in main")
+        return True
+    touched = set(_git(main, "diff", "--name-only", "-z", f"{sha}^1", sha).stdout.split("\0"))
+    for line in _git(main, "status", "--porcelain", "-z", "--untracked-files=no").stdout.split("\0"):
+        if len(line) > 3 and (line[0] not in " ?" or line[3:] in touched):
+            c.log_event(p, "postmerge_revert_waiting", task=r["task"], data={"sha": sha, "dirty": line[3:]})
+            return False
+    classes = r.get("classes") or []
+    if _git(main, "revert", "-m", "1", "--no-edit", sha).returncode:
+        if _git(main, "rev-parse", "-q", "--verify", "REVERT_HEAD").stdout.strip():  # ours, started just above
+            _git(main, "revert", "--abort")
+        pm_set(p, sha, state="conflict")
+        c.log_event(p, "lane_revert_conflict", task=r["task"], data={"sha": sha, "classes": classes})
+        return True
+    pm_set(p, sha, state="reverted")
+    with c.lock(_pm_dir(p)):  # the merges stacked on it are verified again, on main as it is without this one
+        for o in pm_records(p).values():
+            if o["n"] > r["n"] and o["state"] in ("green", "pending", "running", "red", "timeout", "unverified"):
+                o.update(state="pending", requeued=True, tries=0, after_reverts=(o.get("after_reverts") or []) + [sha])
+                c.write_atomic(os.path.join(_pm_dir(p), f"{o['sha']}.json"), json.dumps(o))
+    why = ", ".join(classes)
+    cli.mutate(p, r["task"], lambda x: (x.append_log(f"red after merge: {why}; {sha[:9]} reverted"),
+                                        x.meta.update(lane_stop=f"refused {c.now()}", postmerge_red=why,
+                                                      postmerge_sha=sha)),
+               "lane_red_after_merge", {"sha": sha, "classes": classes})
+    return True
+
+
+def pm_reset(p, prefix):
+    """fm lane verify --reset SHA: settle a conflict or red record after a forward fix by hand."""
+    hit = [s for s, r in pm_records(p).items() if s.startswith(prefix) and r["state"] in ("conflict", "red")]
+    for s in hit:
+        pm_set(p, s, state="reverted", note="reset by hand")
+    return hit
+
+
+def _pm_dead(r):
+    try:
+        os.kill(int(r.get("pid") or 0), 0)
+        return False
+    except (OSError, ValueError):
+        return True
+
+
+def pm_run(p, main):
+    """Settle every red merge, then verify every pending one, oldest first (the detached process's whole job)."""
+    for _ in range(1000):  # bounded: a requeue loop can't spin forever
+        recs = pm_records(p)
+        red = [s for s, r in recs.items() if r["state"] == "red"]
+        if red:
+            if not _pm_revert(p, main, red[0]):
+                return
+            continue
+        todo = [s for s, r in recs.items() if r["state"] == "pending" or (r["state"] == "running" and _pm_dead(r))]
+        if not todo or not pm_verify(p, main, todo[0]):
+            return
+
+
+def recovery_after(p, b):
+    """What a resumed builder is told about why its lane came back red."""
+    why = b.meta.get("postmerge_red")
+    if why:
+        return (f"The merge landed, the full suite went red ({why}) and {str(b.meta.get('postmerge_sha'))[:9]} was "
+                f"reverted on main. Merge main into your branch, then `git revert <the revert commit>` so the work comes "
+                f"back (a plain re-merge would not bring it), fix the failing tests, re-run every criterion, commit.")
+    return f"The merge was refused: {_last_refusal(p, b.id) or 'a criterion was red'}\nFix it, re-run every criterion, commit."
 
 
 def _conflict_brief(p, b, main, branch, files):
