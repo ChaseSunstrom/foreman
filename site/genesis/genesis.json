@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T17:29:54Z",
- "rev": "203d8e17",
+ "updated": "2026-11-05T17:38:58Z",
+ "rev": "397e14be",
  "capabilities": [
   {
    "n": 1,
@@ -2117,8 +2117,8 @@
        "type": "FIX",
        "tier": "M",
        "steps": 3,
-       "done": 2,
-       "current": "failing tests: the filter-tail forms pass; the adversarial forms stay refused"
+       "done": 3,
+       "current": ""
       },
       {
        "id": "T-2068",
@@ -36247,7 +36247,7 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 833,
+ "unproven": 835,
  "unproven_kinds": {
   "meaning-notes": 363,
   "meaning-user": 248,
@@ -36255,11 +36255,11 @@
   "perf-typed": 58,
   "typed": 37,
   "red": 77,
-  "tui-unshot": 10,
-  "docs": 118,
+  "tui-unshot": 11,
+  "docs": 119,
   "perf-noise": 1,
   "infra": 9,
-  "ui-unshot": 36,
+  "ui-unshot": 37,
   "data": 5
  },
  "next": {
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 8491,
-    "tier": 6018,
+    "kill": 8710,
+    "tier": 6171,
     "novelty": 58
    },
-   "merged": 104,
+   "merged": 111,
    "kept": 794,
-   "pending": 387
+   "pending": 8
   },
   "families": [
    {
