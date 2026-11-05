@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T14:34:11Z",
- "rev": "0a1f4fba",
+ "updated": "2026-11-05T14:47:25Z",
+ "rev": "1c691625",
  "capabilities": [
   {
    "n": 1,
@@ -37465,13 +37465,13 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 15467,
+   "generated": 15703,
    "write": {
-    "title": 128,
-    "line": 1262,
+    "title": 129,
+    "line": 1284,
     "payoff": 17,
     "kill test": 60,
-    "code": 3
+    "code": 4
    },
    "dups": {
     "exact": 14,
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 7681,
-    "tier": 5294,
+    "kill": 7741,
+    "tier": 5383,
     "novelty": 42
    },
    "merged": 77,
-   "kept": 726,
-   "pending": 161
+   "kept": 738,
+   "pending": 212
   },
   "families": [
    {
@@ -40712,10 +40712,10 @@
     ]
    }
   ],
-  "families_total": 663,
+  "families_total": 675,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 726
+   "total": 738
   }
  },
  "steer": {
