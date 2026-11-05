@@ -188,6 +188,38 @@ def _models(s):
          two(v.get("brier")), v.get("ms") if isinstance(v.get("ms"), (int, float)) else "n/a") for u, v in sorted(rep.items())])
 
 
+def _model_bench(s):
+    """T-3093: the model bench (louhi.models_view over research/models/bench.jsonl): per use, each backend's latest
+    complete run beside the rules path and the majority baseline; 'stale since gen N' once a later run failed or skipped."""
+    mb = (s.get("model_bench") or {}).get("uses") or {}
+    if not mb:
+        return "<p>No model bench run yet: it runs once per Rune generation, on this machine, at no cost.</p>"
+    pct = lambda x: f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "n/a"  # noqa: E731
+    two = lambda x: f"{x:.3f}" if isinstance(x, (int, float)) else "n/a"  # noqa: E731
+    ms = lambda x: f"{x:.0f} ms" if isinstance(x, (int, float)) else "n/a"  # noqa: E731
+    out = ""
+    for use, d in sorted(mb.items()):
+        rows = []
+        for b in d["backends"]:
+            v = b.get("verdict") or {}
+            rows.append((esc(b["backend"]) + (f' <em>stale since {esc(b["stale_since"])}</em>' if b.get("stale_since") else "")
+                         + ("" if b.get("complete") else " <em>no complete run</em>"),
+                         pct(b.get("accuracy")), two(b.get("brier")), ms(b.get("p50_ms")), ms(b.get("p95_ms")),
+                         b.get("n", 0), b.get("errors", 0), f'{b.get("frozen_n", 0)} frozen, {b.get("rolling_n", 0)} rolling',
+                         "passes" if v.get("pass") else esc(v.get("why") or "not judged")))
+        for label, k in (("rules path", "path"), ("majority baseline", "majority")):
+            r = d.get(k) or {}
+            rows.append((label, pct(r.get("accuracy")), two(r.get("brier")), "-", "-", r.get("n", 0), "-", "-", "-"))
+        ceil = d.get("ceiling")
+        head = ["Backend", "accuracy", "Brier", "p50", "p95", "rows", "timeouts", "held-out set", "promotion"]
+        body = "".join("<tr>" + "".join(f"<td>{c if i == 0 and k < len(d['backends']) else esc(str(c))}</td>" for i, c in enumerate(r))
+                       + "</tr>" for k, r in enumerate(rows))
+        out += (f"<h3>{esc(use)}</h3>" + '<div class="verdicts"><table><thead><tr>' + "".join(f"<th>{h}</th>" for h in head)
+                + f"</tr></thead><tbody>{body}</tbody></table></div>"
+                + f"<p>Noise ceiling {pct(ceil)}: re-tiered tasks show where even the truth shifts.</p>")
+    return out
+
+
 def _say(text):
     """T-2767: the tower's records still use the old name; the site says Sampo."""
     text = re.sub(r"\bfm\b", "sampo", str(text))
@@ -1074,6 +1106,12 @@ PAGES = [
           "on its own stops when the asked work is done. The hidden tests still grade the end state, so work found "
           "later can't quietly break what was asked for.</p>"),
          ("chart", lambda s: _long(s, "marathon")),
+         ("text", "Models: do the local models beat the rules?", "<p>Each Rune generation reruns a $0 bench of the local "
+          "models on this machine's own closed tasks. A model goes live only on at least 200 rows of a frozen held-out "
+          "set, beating both the rules path and the majority baseline by 5 points (paired p under 0.05) with Brier no "
+          "worse; a later run that falls under demotes it. The last good run stays, marked stale, when a later one fails "
+          "or is skipped.</p>"),
+         ("chart", _model_bench),
          ("text", "Where Sampo loses", "<p>Generated from the same results as the tables above: every row where "
           "Claude Code passed and Sampo didn't, or Sampo cost or took 25% more. Each one reruns on its own with "
           "<code>sampo bench repro</code>, both sides, with that run's model and settings.<!-- rule --></p>"),

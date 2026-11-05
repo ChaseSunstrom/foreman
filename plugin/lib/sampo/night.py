@@ -24,7 +24,7 @@ from sampo import serve
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
 _LEASE = None  # T-0921: the open lock file of a running night
-NAMES = ("scout", "dream", "cold files", "guard cases", "steer checks", "compost", "consolidate", "sentinel", "moons grow", "moons funnel", "next request", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue", "draft")
+NAMES = ("scout", "dream", "cold files", "guard cases", "steer checks", "compost", "consolidate", "sentinel", "moons grow", "moons funnel", "model bench", "next request", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue", "draft")
 
 
 def current_model(p):
@@ -71,6 +71,9 @@ def jobs(p):
                                    "--local-only"], 0.0))
     if "funnel" in ready:
         out.append(("moons funnel", ["moons", "funnel", "--max-calls", "400", "--local-only"], 0.0))
+    from sampo import louhi
+    if not meta.get("sensitive") and moonscale._local(False) and louhi.bench_due(p):  # T-3093: free: once a Rune generation
+        out.append(("model bench", ["exam", "models", "run", "--night"], 0.0))  # under the moons store lock, never beside grow
     if not meta.get("sensitive") and moonscale._local(False):  # T-2912: free: the local model's next-request guess
         out.append(("next request", ["outcomes", "--predictions", "--ask-local"], 0.0))
     smoke = meta.get("smoke") or {}

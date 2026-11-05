@@ -333,6 +333,26 @@ class NightMoons(ForemanTestCase):  # T-2916: zero-dollar Moons jobs on the loca
                 mock.patch.object(self.ms, "fate", return_value={"C-1": {"stage": "kill", "verdict": "rejected"}}):
             self.assertEqual(self.names(), {}, "every row judged and the target met: nothing to do")
 
+    def test_the_model_bench_is_a_free_night_job_once_per_rune_generation(self):  # T-3093
+        from sampo import louhi, night, rune
+        names = lambda: [n for n, _, _ in night.jobs(self.p)]  # noqa: E731
+        with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}):
+            got = {n: (argv, usd) for n, argv, usd in night.jobs(self.p)}
+            self.assertEqual(got["model bench"], (["exam", "models", "run", "--night"], 0.0))
+            self.assertIn("model bench", night.NAMES)
+            row = {"run": "m1", "arm": "decision", "backend": "kev", "use": "intake-type", "gen": 0, "n": 5, "errors": 0}
+            os.makedirs(os.path.join(self.p.root, "research", "models"))
+            with open(os.path.join(self.p.root, louhi.BENCH), "w") as f:
+                f.write(json.dumps(row) + "\n")
+            self.assertNotIn("model bench", names(), "this generation has its run")
+            os.makedirs(os.path.join(rune.home(self.p), "gen-1"))
+            self.assertIn("model bench", names(), "a new generation is due")
+            c.write_meta(self.p, {**c.read_meta(self.p), "sensitive": True})
+            self.assertNotIn("model bench", names())
+        with mock.patch.object(self.ms, "_local", return_value=None):
+            c.write_meta(self.p, {**c.read_meta(self.p), "sensitive": False})
+            self.assertNotIn("model bench", names(), "no local model answers")
+
     def test_the_local_next_request_guess_is_a_free_night_job(self):  # T-2912: local_tick had no caller
         from sampo import foresight, night
         with mock.patch.object(self.ms, "_local", return_value={"name": "jarvis"}):

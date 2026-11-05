@@ -53,6 +53,23 @@ class Reproducible(unittest.TestCase):
                     self.assertTrue(a.read() == b.read(), f"{rel} differs between two builds")
 
 
+class ModelBench(unittest.TestCase):
+    def test_the_models_section_shows_the_last_good_run_stale_beside_the_baselines(self):  # T-3093
+        sys.path.insert(0, os.path.join(PLUGIN, "lib"))
+        from sampo import louhi
+        pages = site("pages")
+        row = lambda run, gen, backend, acc, **kw: {"run": run, "gen": gen, "arm": "decision", "use": "intake-type",  # noqa: E731
+                                                    "backend": backend, "accuracy": acc, "brier": 0.2, "p50_ms": 120,
+                                                    "p95_ms": 900, "n": 250, "errors": 0, **kw}
+        rows = [row("m1", 4, "kev", 0.8), row("m1", 4, "orchestrator", 0.6), row("m1", 4, "majority", 0.5, ceiling=0.9),
+                row("m2", 5, "kev", 0.1, errors=200, n=3), {"arm": "skipped", "use": "*", "backend": "*", "gen": 6, "run": "m3"}]
+        html = pages._model_bench({"model_bench": louhi.models_view(rows, {})})
+        for want in ("80.0%", "stale since gen 5", "rules path", "majority baseline", "Noise ceiling 90.0%", "120 ms", "900 ms"):
+            self.assertIn(want, html)
+        self.assertNotIn("10.0%", html, "a failed run never replaces the last good one")
+        self.assertIn("No model bench run yet", pages._model_bench({}))
+
+
 class Stories(unittest.TestCase):
     def test_a_case_study_renders_from_a_fixture_ledger(self):
         build = site("build")

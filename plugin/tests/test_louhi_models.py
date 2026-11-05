@@ -5,7 +5,7 @@ import json
 import os
 import threading
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, read_text
 
 from sampo import core as c
 from sampo import louhi
@@ -353,3 +353,183 @@ class LouhiLoo(ForemanTestCase):
         text = louhi.flip_report(self.p, r1, r2)
         self.assertRegex(text, r"FLIP intake-type m: shadow -> live")
         self.assertIn("no change", louhi.flip_report(self.p, r2, r2))
+
+
+def _row(run, backend, use="intake-type", gen=None, acc=0.6, n=48, err=0, ok=None, **kw):
+    r = {"run": run, "at": "2026-11-04T00:00:00Z", "arm": "decision", "use": use, "backend": backend, "accuracy": acc,
+         "brier": 0.2, "p50_ms": 10, "p95_ms": 20, "n": n, "errors": err, "held": n, **kw}
+    if gen is not None:
+        r["gen"] = gen
+    if ok is not None:
+        r["ok"] = ok
+    return r
+
+
+def _oks(hits, ids, p, flat=False, right=None):
+    """{task: [hit, probability]}: the first `hits` of `ids` (or `right`) right, said with p when right and 1-p when wrong
+    (every answer at p when `flat`)."""
+    right = set(right if right is not None else ids[:hits])
+    return {t: [int(t in right), None if p is None else p if flat or t in right else round(1 - p, 3)] for t in ids}
+
+
+class ModelBenchVisible(ForemanTestCase):  # T-3093: the Models section, the per-generation rerun, the promotion rule
+    IDS = [f"T-{i:04d}" for i in range(1, 261)]
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def write(self, rows, frozen=None):
+        path = os.path.join(self.p.root, louhi.BENCH)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+        if frozen:
+            with open(os.path.join(self.p.root, louhi.FROZEN), "w") as f:
+                json.dump({"gen": 4, "ids": frozen}, f)
+
+    def runs(self, model_hits=150, path_hits=100, maj_hits=90, run="m20261104-000000001", gen=5, ids=None, p=0.8, flat=False,
+             right=None):
+        ids = ids or self.IDS[:200]
+        return [_row(run, "orchestrator", gen=gen, n=len(ids), acc=path_hits / len(ids), ok=_oks(path_hits, ids, None)),
+                _row(run, "majority", gen=gen, n=len(ids), acc=maj_hits / len(ids), ok=_oks(maj_hits, ids, None), ceiling=0.9),
+                _row(run, "kev", gen=gen, n=len(ids), acc=model_hits / len(ids), ok=_oks(model_hits, ids, p, flat, right))]
+
+    def decisions(self):
+        return read_text(os.path.join(self.p.dir, "decisions.md")) if os.path.exists(os.path.join(self.p.dir, "decisions.md")) else ""
+
+    def test_the_section_keeps_the_last_complete_run_and_says_stale_since(self):
+        rows = [_row("r1", "kev", gen=4, acc=0.7), _row("r1", "majority", gen=4, acc=0.5), _row("r1", "orchestrator", gen=4, acc=0.6),
+                _row("r1", "d3", gen=4, acc=0.45),
+                _row("r2", "kev", gen=5, acc=None, n=0, err=48),  # a failed run
+                _row("r2", "d3", gen=5, acc=0.4, n=20, err=3)]  # a partial run
+        v = louhi.models_view(rows)["uses"]["intake-type"]
+        by = {b["backend"]: b for b in v["backends"]}
+        self.assertEqual((by["kev"]["accuracy"], by["kev"]["run"], by["kev"]["stale_since"]), (0.7, "r1", "gen 5"))
+        self.assertEqual(by["kev"]["p95_ms"], 20)
+        self.assertEqual(by["d3"]["accuracy"], 0.45, "the partial run never replaces the complete one")
+        self.assertEqual((v["path"]["accuracy"], v["majority"]["accuracy"]), (0.6, 0.5))
+        skip = {"run": "r3", "at": "x", "arm": "skipped", "use": "*", "backend": "*", "why": "busy", "gen": 6}
+        by = {b["backend"]: b for b in louhi.models_view(rows[:4] + [skip])["uses"]["intake-type"]["backends"]}
+        self.assertEqual(by["kev"]["stale_since"], "gen 6", "a skipped run marks every backend stale")
+        by = {b["backend"]: b for b in louhi.models_view(rows[:4])["uses"]["intake-type"]["backends"]}
+        self.assertIsNone(by["kev"]["stale_since"])
+        self.assertEqual(louhi.models_view([])["uses"], {})
+
+    def test_a_backend_goes_live_only_on_200_frozen_rows_beating_both_baselines_by_5_points(self):
+        ids = self.IDS[:200]
+        rows = self.runs()
+        base = {"path": rows[0], "majority": rows[1]}
+        v = louhi.promote_verdict(rows[2], base, ids)
+        self.assertTrue(v["pass"], v)
+        self.assertLess(v["p_path"], 0.05)
+        self.assertFalse(louhi.promote_verdict(self.runs(model_hits=104)[2], base, ids)["pass"], "4 points over the path")
+        short = louhi.promote_verdict(rows[2], base, ids[:199])
+        self.assertFalse(short["pass"])
+        self.assertIn("199", short["why"])
+        loud = louhi.promote_verdict(self.runs(p=0.99, flat=True)[2], base, ids)
+        self.assertFalse(loud["pass"], "no sense of which answers are right: Brier worse than a flat guess")
+        self.assertIn("Brier", loud["why"])
+        # 5 points over the path (110 v 100 right) by winning 60 tasks and losing 50: not significant
+        noisy = louhi.promote_verdict(self.runs(right=ids[50:160])[2], base, ids)
+        self.assertFalse(noisy["pass"])
+        self.assertGreaterEqual(noisy["p_path"], 0.05)
+        self.assertEqual(noisy["gain_path"], 0.05)
+        wide = {t: [0, 0.8] for t in self.IDS[200:]}  # rows closed since are rolling only
+        r = dict(rows[2], ok={**rows[2]["ok"], **wide})
+        self.assertEqual(louhi.promote_verdict(r, base, ids), v)
+
+    def test_the_rule_writes_a_decision_row_citing_the_run_and_demotes_on_a_later_fall(self):
+        from sampo import models
+        ids = self.IDS[:200]
+        self.write(self.runs(), frozen={"intake-type": ids})
+        self.assertEqual(louhi.apply_promotion(self.p)["intake-type"][0], "live")
+        self.assertTrue(models.live(self.p, "intake-type"))
+        text = self.decisions()
+        self.assertIn("m20261104-000000001", text)
+        self.assertIn("backend kev", text)
+        self.assertEqual(louhi.apply_promotion(self.p)["intake-type"][0], "live")
+        self.assertEqual(self.decisions(), text, "a second call writes nothing")
+        later = self.runs(model_hits=101, run="m20261105-000000001", gen=6)
+        self.write(self.runs() + later, frozen={"intake-type": ids})
+        self.assertEqual(louhi.apply_promotion(self.p)["intake-type"][0], "shadow")
+        self.assertFalse(models.live(self.p, "intake-type"))
+        self.assertIn("m20261105-000000001", self.decisions())
+
+    def test_a_later_run_too_thin_to_judge_leaves_a_live_backend_alone(self):
+        from sampo import models
+        ids = self.IDS[:200]
+        self.write(self.runs(), frozen={"intake-type": ids})
+        louhi.apply_promotion(self.p)
+        thin = self.runs(model_hits=10, run="m20261105-000000001", gen=6, ids=ids[:50])
+        self.write(self.runs() + thin, frozen={"intake-type": ids})
+        louhi.apply_promotion(self.p)
+        self.assertTrue(models.live(self.p, "intake-type"))
+
+    def test_no_frozen_set_no_promotion(self):
+        from sampo import models
+        self.write(self.runs())
+        louhi.apply_promotion(self.p)
+        self.assertFalse(models.live(self.p, "intake-type"))
+
+    def test_a_busy_card_is_a_skipped_row_and_the_generation_stays_due(self):
+        from sampo import moonscale, rune
+        os.makedirs(os.path.join(rune.home(self.p), "gen-4"))
+        self.assertEqual(louhi.current_gen(self.p), 4)
+        self.assertTrue(louhi.bench_due(self.p))
+        with moonscale.store_lock(self.p):  # a moons run holds the card
+            res = louhi.bench_night(self.p, decision=[], embedders=[])
+        self.assertIn("another funnel", res["skipped"])
+        rows = [json.loads(x) for x in open(os.path.join(self.p.root, louhi.BENCH))]
+        self.assertEqual([(r["arm"], r["gen"]) for r in rows], [("skipped", 4)])
+        self.assertTrue(louhi.bench_due(self.p), "a skip leaves the generation due")
+        self.assertEqual(louhi.models_view(rows)["uses"], {})
+        self.assertNotIn("skipped", louhi.bench_show(self.p).lower().replace("no model bench", ""))
+
+    def test_a_rerun_stamps_its_gen_and_per_task_hits_and_pins_the_frozen_set_once(self):
+        from sampo import rune
+        for i in range(12):
+            title, typ, tier = TASKS[i % 2]
+            b = c.find_brief(self.p, json.loads(self.fm("capture", title % i, "--json").stdout)["id"])
+            b.meta.update(type=typ, tier=tier, status="done")
+            c.save_brief(self.p, b)
+        os.makedirs(os.path.join(rune.home(self.p), "gen-3"))
+        srv = Server("FIX")
+        self.addCleanup(srv.close)
+        prof = srv.profile("kev", "systemone")
+        res = louhi.bench_night(self.p, decision=[prof], embedders=[])
+        self.assertFalse(os.path.exists(os.path.join(self.p.root, louhi.FROZEN)), "nothing is pinned before gen 4")
+        os.makedirs(os.path.join(rune.home(self.p), "gen-4"))
+        res = louhi.bench_night(self.p, decision=[prof], embedders=[])
+        self.assertNotIn("skipped", res)
+        kev = next(r for r in res["rows"] if r["backend"] == "kev" and r["use"] == "intake-type")
+        self.assertEqual(kev["gen"], 4)
+        self.assertEqual(len(kev["ok"]), kev["n"])
+        self.assertTrue(all(len(v) == 2 for v in kev["ok"].values()))
+        fz = json.load(open(os.path.join(self.p.root, louhi.FROZEN)))
+        self.assertEqual(fz["gen"], 4)
+        self.assertEqual(sorted(fz["ids"]["intake-type"]), sorted(kev["ok"]))
+        maj = next(r for r in res["rows"] if r["backend"] == "majority" and r["use"] == "intake-type")
+        self.assertEqual(maj["ceiling"], 1.0)
+        self.assertFalse(louhi.bench_due(self.p), "this generation has its run")
+        os.makedirs(os.path.join(rune.home(self.p), "gen-5"))
+        self.assertTrue(louhi.bench_due(self.p))
+        self.fm("capture", "a new held out thing 99")
+        louhi.bench_night(self.p, decision=[], embedders=[])
+        self.assertEqual(json.load(open(os.path.join(self.p.root, louhi.FROZEN))), fz, "pinned once, never rewritten")
+
+    def test_a_backend_that_keeps_failing_is_cut_and_the_rest_count_as_errors(self):
+        from unittest import mock
+        rows = [("T-%d" % i, "text", "FIX", None) for i in range(10)]
+        with mock.patch.object(models, "systemone", side_effect=models.ModelError("down")) as m:
+            got = louhi._bench_decide({"name": "x"}, rows, "intake-type", 1)
+        self.assertEqual((m.call_count, got["errors"], got["n"]), (louhi.BENCH_GIVE_UP, 10, 0))
+
+    def test_the_noise_ceiling_is_the_share_of_tasks_never_re_tiered(self):
+        for t in ("T-1", "T-2"):
+            c.log_event(self.p, "task_set", task=t, data={"changes": {"tier": "M"}})
+        c.log_event(self.p, "task_set", task="T-3", data={"changes": {"cost_cap": "5"}})
+        self.assertEqual(louhi.noise_ceiling(self.p, "intake-tier", ["T-1", "T-2", "T-3", "T-4"]), 0.5)
+        self.assertEqual(louhi.noise_ceiling(self.p, "intake-type", ["T-1"]), 1.0)
+        self.assertIsNone(louhi.noise_ceiling(self.p, "intake-tier", []))

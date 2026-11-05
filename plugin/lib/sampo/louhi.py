@@ -891,6 +891,9 @@ BENCH = os.path.join("research", "models", "bench.jsonl")  # one metrics row per
 BENCH_USES = ("intake-type", "intake-tier")
 BENCH_CAP = 200  # held-out rows asked per use (and briefs embedded); the rest are left out and counted
 BUSY_WAIT, BUSY_TRIES = 2.0, 4  # a backend answering 529 'busy' (one request at a time): wait, then ask again
+BENCH_GIVE_UP = 3  # T-3093: this many failed rows in a row and the backend is down: the rest count as errors, unasked
+FROZEN = os.path.join("research", "models", "frozen.json")  # {gen, at, ids: {use: [task ids]}}: pinned once, at FREEZE_GEN
+FREEZE_GEN, PROMOTE_MIN, PROMOTE_POINTS, PROMOTE_P = 4, 200, 0.05, 0.05
 GEN_K, TIER_SAMPLE = 16, 8  # moons grown per generative profile, and how many of the survivors the review model tiers
 
 
@@ -920,7 +923,7 @@ def _raw(b):
                           for x in b.section("Raw request").splitlines() if x.strip()), 800)
 
 
-def _bench_data(p, cap):
+def _bench_data(p, cap, pinned=None):
     """The held-out (task-id hash) closed tasks: {use: (rows, held, train)} with rows (task, raw request, truth, the
     orchestrator's own shadow-path call or None) and train the labels of the other closed tasks, and the embedding
     arm's (title, brief) pairs. Only the request text goes into a prompt, never a label."""
@@ -937,7 +940,10 @@ def _bench_data(p, cap):
         attr = "type" if use == "intake-type" else "tier"
         last = {r["task"]: r.get("path") for r in shadow if r.get("use") == use and r.get("task") in briefs}
         rows = [(t, _raw(b), getattr(b, attr), last.get(t)) for t, b in sorted(briefs.items()) if _raw(b)]
-        out[use] = (rows[:cap], len(rows), [getattr(b, attr) for b in done if not holdout(b.id)])
+        pin = set((pinned or {}).get(use) or ())  # T-3093: the frozen set is asked first, the cap bounds the rest
+        rows = [r for r in rows if r[0] in pin] + [r for r in rows if r[0] not in pin][:cap]
+        out[use] = (rows, len([1 for t, b in briefs.items() if _raw(b)]), [getattr(b, attr) for b in done if not holdout(b.id)])
+        out.setdefault("ids", {})[use] = [t for t, b in sorted(briefs.items()) if _raw(b)]
     pairs = []
     for t, b in sorted(briefs.items()):
         text = (b.section("Interpretation").strip() or b.section("Raw request").strip())[:600]
@@ -1054,8 +1060,11 @@ def _bench_retrieval(p, data, stamp, profiles, timeout_of):
 def _bench_decide(profile, rows, use, timeout):
     from sampo import models
     choices = models.shadow_uses()[use]  # with descriptions: the same for every backend
-    hits, brier, ms, errors = 0, [], [], 0
-    for _, text, truth, _ in rows:
+    hits, brier, ms, errors, ok, streak = 0, [], [], 0, {}, 0
+    for i, (task, text, truth, _) in enumerate(rows):
+        if streak >= BENCH_GIVE_UP:  # T-3093: down or hung: stop asking, count the rest as errors
+            errors += len(rows) - i
+            break
         t0 = time.monotonic()
         ans = None
         for k in range(BUSY_TRIES):
@@ -1067,15 +1076,17 @@ def _bench_decide(profile, rows, use, timeout):
                     break
                 time.sleep(BUSY_WAIT)
         if ans is None:
-            errors += 1
+            errors, streak = errors + 1, streak + 1
             continue
+        streak = 0
         ms.append(int((time.monotonic() - t0) * 1000))
         hit = ans["choice"] == truth
         hits += hit
         brier.append((ans["probability"] - hit) ** 2)
+        ok[task] = [int(hit), round(ans["probability"], 3)]
     n = len(ms)
     return {"accuracy": round(hits / n, 3) if n else None, "brier": round(sum(brier) / n, 3) if n else None,
-            "p50_ms": _pct(ms, 0.5), "p95_ms": _pct(ms, 0.95), "n": n, "errors": errors}
+            "p50_ms": _pct(ms, 0.5), "p95_ms": _pct(ms, 0.95), "n": n, "errors": errors, "ok": ok}
 
 
 def _bench_embed(profile, pairs, timeout):
@@ -1208,17 +1219,19 @@ def bench_models(p, decision=None, embedders=None, cap=BENCH_CAP, serving=None, 
     embedders = models.embedding_profiles() if embedders is None else list(embedders)
     sensitive = bool(c.read_meta(p).get("sensitive"))
     jobs = [("decision", x) for x in decision] + [("embedding", x) for x in embedders]
-    data, run, rows = _bench_data(p, cap), time.strftime("m%Y%m%d-%H%M%S") + f"{time.time_ns() // 1_000_000 % 1000:03d}", []
-    stamp = {"run": run, "at": c.now()}
+    data, run, rows = _bench_data(p, cap, frozen_ids(p)), time.strftime("m%Y%m%d-%H%M%S") + f"{time.time_ns() // 1_000_000 % 1000:03d}", []
+    stamp = {"run": run, "at": c.now(), "gen": current_gen(p)}
     for use in BENCH_USES:
         got, held, train = data[use]
         top = max(sorted(set(train)), key=train.count) if train else None
         base = {**stamp, "arm": "decision", "use": use, "brier": None, "p50_ms": None, "p95_ms": None, "errors": 0, "held": held}
         seen = [r for r in got if r[3] is not None]
         rows.append({**base, "backend": "majority", "n": len(got), "accuracy": round(sum(r[2] == top for r in got) / len(got), 3)
-                     if got and top else None, "note": f"always {top}, the most common class of {len(train)} train tasks"})
+                     if got and top else None, "note": f"always {top}, the most common class of {len(train)} train tasks",
+                     "ok": {r[0]: [int(r[2] == top), None] for r in got}, "ceiling": noise_ceiling(p, use, data["ids"][use])})
         rows.append({**base, "backend": "orchestrator", "n": len(seen), "accuracy": round(sum(r[3] == r[2] for r in seen) / len(seen), 3)
-                     if seen else None, "note": "the orchestrator's own call at capture, not a no-model path"})
+                     if seen else None, "note": "the orchestrator's own call at capture, not a no-model path",
+                     "ok": {r[0]: [int(r[3] == r[2]), None] for r in seen}})
     for arm, prof in _bench_order(jobs, _serving(decision + embedders) if serving is None else serving):
         host = urllib.parse.urlsplit(prof["base_url"]).hostname or ""
         if sensitive and not models.is_loopback(host):
@@ -1471,7 +1484,7 @@ def bench_show(p, limit=40):
     try:
         with open(os.path.join(p.root, BENCH), encoding="utf-8") as f:
             allr = [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict) and r.get("run")
-                    and r.get("arm") not in ("loo", "verifier")]  # T-2976/T-2977: those rows have their own reports
+                    and r.get("arm") not in ("loo", "verifier", "skipped")]  # T-2976/T-2977: those rows have their own reports
     except (OSError, ValueError):
         allr = []
     if not allr:
@@ -1490,6 +1503,217 @@ def bench_show(p, limit=40):
     if len(rows) > limit:
         lines.append(f"{len(rows) - limit} more rows left out")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- the visible half (T-3093)
+FROZEN_MAX, BASELINES = 400, ("orchestrator", "majority")  # frozen ids per use (bounds a night's run); the two rows that aren't backends
+
+
+def current_gen(p):
+    """The newest Rune generation here (gen-N under the genesis home), 0 before any."""
+    from sampo import rune
+    try:
+        return max([int(m.group(1)) for d in os.listdir(rune.home(p)) if (m := re.fullmatch(r"gen-(\d+)", d))] or [0])
+    except OSError:
+        return 0
+
+
+def frozen_ids(p):
+    """{use: [task ids]} pinned at FREEZE_GEN, or {}."""
+    try:
+        with open(os.path.join(p.root, FROZEN), encoding="utf-8") as f:
+            ids = json.load(f).get("ids")
+        return ids if isinstance(ids, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def freeze_set(p):
+    """Pin the held-out task ids once, when the project reaches generation FREEZE_GEN; never rewritten. Returns the ids or None."""
+    path = os.path.join(p.root, FROZEN)
+    if os.path.exists(path) or current_gen(p) < FREEZE_GEN:
+        return None
+    ids = {u: v[:FROZEN_MAX] for u, v in _bench_data(p, 0)["ids"].items()}
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"gen": current_gen(p), "at": c.now(), "ids": ids}, f)
+    return ids
+
+
+def noise_ceiling(p, use, ids):
+    """The share of these tasks never re-tiered (or re-typed) after capture: a label that moved can't be predicted, so
+    this is the most any model can score on them. None for no tasks."""
+    if not ids:
+        return None
+    key = "tier" if use == "intake-tier" else "type"
+    moved = {e.get("task") for e in c.ledger_events(p, kinds=["task_set"])
+             if isinstance(e.get("data"), dict) and key in (e["data"].get("changes") or {})}
+    return round(1 - len(moved & set(ids)) / len(ids), 3)
+
+
+def _bench_rows(p):
+    try:
+        with open(os.path.join(p.root, BENCH), encoding="utf-8") as f:
+            return [r for r in (json.loads(x) for x in f if x.strip()) if isinstance(r, dict)]
+    except (OSError, ValueError):
+        return []
+
+
+def _complete(r):
+    return r.get("arm") == "decision" and not r.get("errors") and bool(r.get("n")) and r.get("accuracy") is not None
+
+
+def _mcnemar(wins, losses):
+    """Exact two-sided p of wins vs losses being a fair coin (the paired test on tasks only one of two scored right)."""
+    n = wins + losses
+    return min(1.0, 2 * sum(math.comb(n, i) for i in range(min(wins, losses) + 1)) / 2 ** n) if n else 1.0
+
+
+def promote_verdict(row, bases, ids):
+    """Whether this run may take a use live: PROMOTE_MIN frozen rows (`ids`) it and the rules path and the majority
+    baseline all scored, at least PROMOTE_POINTS better than each with paired p < PROMOTE_P, and a Brier no worse than
+    a flat guess at its own accuracy (acc*(1-acc), the best a model with no sense of which answers are right can do).
+    Only `ids` judge: tasks closed since the freeze never do. {pass, judgeable, n, why, acc, gain_*, p_*}."""
+    ok = row.get("ok") or {}
+    fz = [t for t in ids if t in ok]
+    out = {"pass": False, "judgeable": False, "n": len(fz), "why": ""}
+    if len(fz) < PROMOTE_MIN:
+        out["why"] = f"{len(fz)} frozen rows scored, need {PROMOTE_MIN}"
+        return out
+    for name in ("path", "majority"):
+        b = (bases.get(name) or {}).get("ok") or {}
+        if sum(t in b for t in fz) < PROMOTE_MIN:
+            out["why"] = f"the {name} scored {sum(t in b for t in fz)} of them, need {PROMOTE_MIN}"
+            return out
+    out["judgeable"], acc = True, sum(ok[t][0] for t in fz) / len(fz)
+    out["acc"] = round(acc, 3)
+    fails = []
+    for name in ("path", "majority"):
+        b = bases[name]["ok"]
+        common = [t for t in fz if t in b]
+        wins, losses = sum(ok[t][0] > b[t][0] for t in common), sum(ok[t][0] < b[t][0] for t in common)
+        gain, pv = (wins - losses) / len(common), _mcnemar(wins, losses)
+        out[f"gain_{name}"], out[f"p_{name}"] = round(gain, 3), round(pv, 4)
+        if gain < PROMOTE_POINTS - 1e-9 or pv >= PROMOTE_P:
+            fails.append(f"{round(gain * 100, 1)} points over the {name} (p {round(pv, 3)}), need {round(PROMOTE_POINTS * 100)} at p < {PROMOTE_P}")
+    probs = [(ok[t][1] - ok[t][0]) ** 2 for t in fz if ok[t][1] is not None]
+    if probs and sum(probs) / len(probs) > acc * (1 - acc) + 1e-9:
+        fails.append(f"Brier {round(sum(probs) / len(probs), 3)} worse than a flat guess {round(acc * (1 - acc), 3)}")
+    out["pass"], out["why"] = not fails, "; ".join(fails)
+    return out
+
+
+def models_view(rows, frozen=None):
+    """T-3093, the site's Models section: per use and backend, the latest complete decision run (a partial, failed or
+    skipped run never replaces it; stale_since names the first miss after it, 'gen N' or 'run ID'), beside the rules path
+    and the majority baseline of the same run, the noise ceiling and the promotion verdict on the frozen ids."""
+    frozen, state, by_run, skips = frozen or {}, {}, {}, []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        if r.get("arm") == "skipped":
+            skips.append(r)
+            for s in state.values():
+                s["miss"] = s["miss"] or r
+        elif r.get("arm") == "decision" and r.get("use") in BENCH_USES and r.get("backend"):
+            by_run[(r.get("run"), r["use"], r["backend"])] = r
+            s = state.setdefault((r["use"], r["backend"]), {"row": None, "miss": None, "last": r})
+            s["last"] = r
+            if _complete(r):
+                s["row"], s["miss"] = r, None
+            elif s["row"] and not s["miss"]:
+                s["miss"] = r
+    out = {}
+    for (use, name), s in sorted(state.items()):
+        if name in BASELINES:
+            continue
+        r = s["row"] or s["last"]
+        m, fz = s["miss"], set(frozen.get(use) or ())
+        bases = {k: by_run.get((r.get("run"), use, v)) for k, v in (("path", "orchestrator"), ("majority", "majority"))}
+        ok = r.get("ok") or {}
+        d = out.setdefault(use, {"backends": [], "path": None, "majority": None, "ceiling": None})
+        d["backends"].append({
+            "backend": name, "run": r.get("run"), "gen": r.get("gen"), "complete": s["row"] is not None,
+            **{k: r.get(k) for k in ("accuracy", "brier", "p50_ms", "p95_ms", "n", "errors")},
+            "stale_since": None if not m else f"gen {m['gen']}" if m.get("gen") is not None else f"run {m.get('run')}",
+            "frozen_n": len(fz & set(ok)), "rolling_n": len(set(ok) - fz),
+            "verdict": promote_verdict(r, bases, frozen.get(use) or []) if s["row"] and all(bases.values()) else None})
+    for use, d in out.items():
+        for k, v in (("path", "orchestrator"), ("majority", "majority")):
+            s = state.get((use, v))
+            d[k] = (s["row"] or s["last"]) if s else None
+        d["ceiling"] = (d["majority"] or {}).get("ceiling")
+    return {"uses": out, "skips": skips[-3:]}
+
+
+def _live_backend(p, use):
+    """The backend the newest live decision row for `use` names, or None (not live, or a row from another rule)."""
+    from sampo import core, models
+    if not models.live(p, use):
+        return None
+    for _, _, text in reversed(list(core._decision_rows(p))):
+        m = re.match(r"\s*model-(live|shadow):\s*([\w.-]+)", text)
+        if m and m.group(2) == use:
+            b = re.search(r"backend (\S+)", text)
+            return b.group(1) if b else None
+
+
+def apply_promotion(p):
+    """T-3093: the promotion rule on the latest complete run of each backend. A backend that passes (the best one, if
+    several) goes live with a decision row citing the run; a live one whose latest run is judgeable and fails goes back to
+    shadow with a row citing that run; a run too thin to judge, or stale, changes nothing. Returns {use: (state, why)}."""
+    from sampo import models
+    view, out = models_view(_bench_rows(p), frozen_ids(p))["uses"], {}
+    for use in BENCH_USES:
+        bks, live = (view.get(use) or {}).get("backends", []), models.live(p, use)
+        lb = _live_backend(p, use)
+        if live and lb is None:
+            out[use] = ("live", "set by another rule")
+            continue
+        fresh = [b for b in bks if b["complete"] and not b["stale_since"] and b["verdict"]]
+        win = max((b for b in fresh if b["verdict"]["pass"]), key=lambda b: b["accuracy"], default=None)
+        cur = next((b for b in fresh if b["backend"] == lb), None)
+        v = win and win["verdict"]
+        if win and win["backend"] != lb:
+            models._set_state(p, "live", use, f"exam {win['run']}: backend {win['backend']} beat the rules path by "
+                              f"{round(v['gain_path'] * 100, 1)} points (p {v['p_path']}) and the majority by "
+                              f"{round(v['gain_majority'] * 100, 1)} on {v['n']} frozen rows")
+            out[use] = ("live", win["run"])
+        elif not win and cur and cur["verdict"]["judgeable"]:
+            models._set_state(p, "shadow", use, f"exam {cur['run']}: backend {lb} fell under on {cur['verdict']['n']} "
+                              f"frozen rows: {cur['verdict']['why']}")
+            out[use] = ("shadow", cur["run"])
+        else:
+            out[use] = ("live" if live else "shadow", "no change")
+    return out
+
+
+def bench_due(p):
+    """True when this Rune generation has no bench run that reached a backend (a skipped or all-down run leaves it due)."""
+    gen = current_gen(p)
+    return not any(r.get("gen") == gen and r.get("arm") == "decision" and r.get("backend") not in BASELINES and r.get("n")
+                   for r in _bench_rows(p))
+
+
+def bench_night(p, **kw):
+    """The $0 nightly rerun: bench_models under the moons store lock (never beside moons grow --keep or a funnel), then the
+    promotion rule. A busy store is a 'skipped' row (the last good rows stay); a down or hung backend is already an error
+    row, which never replaces them. Returns bench_models' result, or {skipped, rows}."""
+    from sampo import moonscale
+    gen = current_gen(p)
+    try:
+        with moonscale.store_lock(p):
+            freeze_set(p)
+            res = bench_models(p, **kw)
+    except moonscale.Busy as e:
+        row = {"run": time.strftime("m%Y%m%d-%H%M%S") + f"{time.time_ns() // 1_000_000 % 1000:03d}", "at": c.now(),
+               "arm": "skipped", "use": "*", "backend": "*", "why": c.fit(str(e), 160), "gen": gen}
+        path = os.path.join(p.root, BENCH)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        c.append_line(path, json.dumps(row) + "\n")
+        return {"skipped": str(e), "rows": [row]}
+    apply_promotion(p)
+    return res
 
 
 def _grant(sid, lang):
@@ -4385,7 +4609,10 @@ def cmd_exam(args):
                 from sampo import moonscale
                 gens = list({x["name"]: x for x in moonscale._generative(bool(c.read_meta(p).get("sensitive")))}.values()
                             ) if getattr(args, "generation", False) else ()  # live and slow: only when asked
-                res = bench_models(p, cap=args.limit or BENCH_CAP, generators=gens, k=args.n or GEN_K)
+                res = (bench_night if getattr(args, "night", False) else bench_models)(
+                    p, cap=args.limit or BENCH_CAP, generators=gens, k=args.n or GEN_K)
+                if res.get("skipped"):
+                    return cli.out(args, res, f"skipped: {res['skipped']}; the last good rows stay")
                 return cli.out(args, res, f"{len(res['rows'])} rows written to {BENCH}\n{bench_show(p)}")
             return cli.out(args, {"table": bench_show(p)}, bench_show(p))
         if action == "steer":  # T-2625: the steer-expansion exam (MOONSHOT.md part B)

@@ -593,6 +593,19 @@ def build(out):
     if os.path.isfile(bench_path):  # T-1222: the safety benchmark (site/bench_safety.py)
         with open(bench_path, encoding="utf-8") as f:
             stats.update(json.load(f))
+    sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
+    from sampo import louhi
+    mdir, rows, frozen = os.path.join(ROOT, "research", "models"), [], {}  # T-3093: the model bench, tolerant of absent files
+    for name in ("bench.jsonl", "frozen.json"):
+        try:
+            with open(os.path.join(mdir, name), encoding="utf-8") as f:
+                if name == "frozen.json":
+                    frozen = (json.load(f) or {}).get("ids") or {}
+                else:
+                    rows = [json.loads(x) for x in f if x.strip()]
+        except (OSError, ValueError, AttributeError):
+            pass
+    stats["model_bench"] = louhi.models_view(rows, frozen)
     stats = roles(stats)
     with open(os.path.join(HERE, "style.css"), encoding="utf-8") as f:
         check_tokens(f.read())
