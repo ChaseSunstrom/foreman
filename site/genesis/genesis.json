@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T01:58:17Z",
- "rev": "11e77110",
+ "updated": "2026-11-05T02:03:29Z",
+ "rev": "b3ac10ff",
  "capabilities": [
   {
    "n": 1,
@@ -3785,7 +3785,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "blocked",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -3868,7 +3868,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "blocked",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -3994,7 +3994,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "blocked",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -4090,12 +4090,12 @@
       {
        "id": "T-2886",
        "title": "Model bench: every local backend (Ollama decision models, Jeff, SelfJev, embedders, generators) measured on Sampo's own work with and without it, as a Louhi arm; numbers on the site's Models section; rerun every Rune generation",
-       "status": "planned",
+       "status": "blocked",
        "type": "FEATURE",
        "tier": "L",
        "steps": 5,
        "done": 3,
-       "current": "site Models section on the Benchmarks page and the per-generation $0 rerun (GPU lock, never beside grow, last good rows kept)"
+       "current": "site Models section, per-generation $0 rerun (child T-3093, M, in a lane)"
       }
      ]
     },
@@ -4133,7 +4133,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "blocked",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -4190,7 +4190,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "planned",
+       "status": "blocked",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
