@@ -3193,7 +3193,32 @@ def follow_up(jdir, tid):
     return "\n".join(lines)
 
 
-def _make_task(run, profile):
+def _replan(run, profile, tid, why, repaired, code):
+    """T-3016: a plan the plan gate refuses goes back to the planner once with the refusal (3 of 15 local exam runs ended
+    here); the corrected plan is checked like the first, and only then is the refused task dropped and the new one
+    filed. A second refusal, or a failure that isn't the gate's (a timeout, a crash), ends the run as before."""
+    msgs, then = getattr(run, "plan_msgs", None), f"fm task show {tid}" if tid else None
+    if repaired or not msgs or code == 124 or "refused" not in why.split(":", 1)[-1]:  # a --verify plan has no planner
+        raise CodeError(why, then=then)  # conversation; a timed-out task new may have made the task anyway
+    hint = ("Give each part of the request it names a criterion in the request's own words, with a check that fails "
+            "now.\n" if "a criterion for" in why else "")
+    msgs.append({"role": "user", "content": f"The plan gate refused this plan: {why}\n{hint}"
+                                            "Reply with only the corrected plan as a JSON object."})
+    run.plan = slot(run, run.planner or profile, msgs, check_plan, "plan", PLAN_FIELDS)
+    problem = "the planner answered instead of planning" if is_answer(run.plan) else _plan_problem(run)
+    if problem:  # the refused task stays, to be looked at
+        raise CodeError(f"{why}\nre-plan: {problem}", then=then)
+    if tid:
+        dc, _ = run.fm("task", "drop", tid, f"fm code: the plan gate refused it; re-planned once ({_one_line(why, 200)})")
+        if dc:
+            run.emit("note", f"{tid} couldn't be dropped (exit {dc}): it stays beside the re-planned task")
+    pl = run.plan
+    run.emit("plan", f"re-plan: {pl['type']} {pl['tier']} {pl['title']} (criteria: {len(pl['criteria'])}, "
+                     f"steps: {len(pl['steps'])})", plan=pl)
+    return _make_task(run, profile, repaired=True)
+
+
+def _make_task(run, profile, repaired=False):
     pl = run.plan
     after = f" (a follow-up to {run.after_tid})" if getattr(run, "after_tid", None) else ""  # T-1340
     a = ["task", "new", pl["title"], "--type", pl["type"], "--tier", pl["tier"], f"--raw={run.request}{after}"]
@@ -3210,16 +3235,17 @@ def _make_task(run, profile):
     a += [f"--ac={cr['text'].strip()} :: {cr['verify'].strip()}" for cr in pl["criteria"]]
     a += [f"--step={s.strip()}" for s in pl["steps"]]
     code, out = run.fm(*a)
-    made = m.extract_json(out) or {}
+    made = m.extract_json(out)
+    made = made if isinstance(made, dict) else {}
     if code or not made.get("id"):
-        raise CodeError(f"fm task new refused the plan: {out[:500]}")
+        return _replan(run, profile, made.get("id"), f"fm task new refused the plan: {out[:500]}", repaired, code)
     if pl["tier"] == "M":
         p = core.find_project(run.root)
         if p and core.rival_gap(core.find_brief(p, made["id"])):  # T-2341: under the race bar or one reading
             run.fm("second", "rival", made["id"])  # a failed or skipped read is noted and never blocks
         code, out = run.fm("focus", made["id"])
         if code:
-            raise CodeError(f"fm focus refused the plan: {out[:500]}", then=f"fm task show {made['id']}")
+            return _replan(run, profile, made["id"], f"fm focus refused the plan: {out[:500]}", repaired, code)
     run.tid = made["id"]
     _hold(run)
     _journal_start(run, profile)

@@ -638,6 +638,35 @@ class Review(CodeCase):
         self.assertTrue(os.path.exists(os.path.join(self.fake_home, "keep")))
         self.assertNotEqual(self.fm("task", "show", "T-0001", check=False).returncode, 0)
 
+    def test_a_plan_focus_refuses_goes_back_to_the_planner_once(self):
+        # T-3016: 3 of 15 local exam runs ended here (an M plan with no criterion for a clause of the request)
+        kept = dict(M_PLAN, criteria=M_PLAN["criteria"] + [
+            {"text": "keep the tests as they are", "verify": "python3 test_calc.py"}])
+        f = self.serve("anthropic", plan(M_PLAN), plan(kept),
+                       call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"), CLOSE)
+        r = self.code("fix add, and keep the tests as they are", "--model", "fake", check=False)
+        self.assertIn("isn't planned enough", f.said(1))
+        self.assertEqual(self.task("T-0001")["status"], "dropped", r.stdout + r.stderr)
+        self.assertEqual(self.task("T-0002")["status"], "done", r.stdout + r.stderr)
+
+    def test_a_plan_refused_twice_ends_the_run_with_the_refusal(self):
+        self.serve("anthropic", plan(M_PLAN), plan(M_PLAN))
+        r = self.code("fix add, and keep the tests as they are", "--model", "fake", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("refused the plan", r.stderr)
+        self.assertEqual(self.task("T-0001")["status"], "dropped")  # the first gave way to the re-plan
+        self.assertEqual(self.task("T-0002")["status"], "planned")  # the second stays to be looked at
+        self.assertIn("fm task show T-0002", r.stderr)
+
+    def test_a_re_plan_that_cannot_stand_keeps_the_refused_task(self):
+        # T-3016 review: the refused task is dropped only once its replacement passes the plan's checks
+        weak = dict(M_PLAN, criteria=[{"text": "keep the tests as they are", "verify": "true"}])
+        self.serve("anthropic", plan(M_PLAN), plan(weak))
+        r = self.code("fix add, and keep the tests as they are", "--model", "fake", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("proves nothing", r.stderr)
+        self.assertEqual(self.task("T-0001")["status"], "planned", r.stderr)
+
     def test_max_steps_stop_resumes_with_its_options(self):
         f = self.serve("openai", plan(), call("read", path="calc.py"), call("read", path="calc.py"))
         r = self.code("fix add", "--model", "fake", "--no-commit", "--max-steps", "2", check=False)
