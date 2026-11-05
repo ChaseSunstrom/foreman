@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T15:37:40Z",
- "rev": "37d09c71",
+ "updated": "2026-11-05T17:29:54Z",
+ "rev": "203d8e17",
  "capabilities": [
   {
    "n": 1,
@@ -36247,7 +36247,7 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 832,
+ "unproven": 833,
  "unproven_kinds": {
   "meaning-notes": 363,
   "meaning-user": 248,
@@ -36259,7 +36259,7 @@
   "docs": 118,
   "perf-noise": 1,
   "infra": 9,
-  "ui-unshot": 35,
+  "ui-unshot": 36,
   "data": 5
  },
  "next": {
@@ -37465,27 +37465,27 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 16277,
+   "generated": 17489,
    "write": {
     "title": 136,
-    "line": 1321,
+    "line": 1399,
     "payoff": 17,
     "kill test": 60,
-    "code": 4
+    "code": 5
    },
    "dups": {
     "exact": 14,
-    "embed": 2,
+    "embed": 6,
     "shingle": 0
    },
    "rejected": {
-    "kill": 8016,
-    "tier": 5475,
-    "novelty": 43
+    "kill": 8491,
+    "tier": 6018,
+    "novelty": 58
    },
-   "merged": 78,
-   "kept": 744,
-   "pending": 367
+   "merged": 104,
+   "kept": 794,
+   "pending": 387
   },
   "families": [
    {
@@ -37641,6 +37641,23 @@
     "evidence": "",
     "kinds": [
      "releases"
+    ]
+   },
+   {
+    "id": "F-016782",
+    "size": 2,
+    "lead": "Simulate the social dynamics of the dev team in Sampo",
+    "today": "Today you can't see how individual coding styles and assumptions clash within the team's collective output.",
+    "with_this": "With this, Sampo can model each developer's coding habits as distinct agents with unique biases and constraints, allowing it to predict where their combined contributions will create friction or conflict, and propose harmonizing refactors that respect each individual's 'personality' while ensuring …",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "exhaustive thinking",
+     "security"
     ]
    },
    {
@@ -38105,6 +38122,70 @@
     "evidence": "",
     "kinds": [
      "security"
+    ]
+   },
+   {
+    "id": "F-016198",
+    "size": 1,
+    "lead": "Derive Sampo's operating protocol from celestial ephemeris data",
+    "today": "Today you can't make Sampo's internal logic self-generate its own structural rules based on external cosmic data.",
+    "with_this": "With this, Sampo can dynamically reconfigure its own command hierarchy and resource allocation in real-time based on predictable astronomical cycles, eliminating the need for static configuration files.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "docs"
+    ]
+   },
+   {
+    "id": "F-016199",
+    "size": 1,
+    "lead": "Store Sampo's memory as a gravitational lensing field",
+    "today": "Today you can't compress and retrieve Sampo's historical context by simulating how light bends around massive objects.",
+    "with_this": "With this, Sampo can access relevant past decisions with zero latency by treating data mass as gravitational wells that naturally attract relevant queries, rather than using linear search.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "docs"
+    ]
+   },
+   {
+    "id": "F-016366",
+    "size": 1,
+    "lead": "Compress your debugging history into a single replayable tape",
+    "today": "Today you can't rewind your entire session to a specific logical state and see which of your past edits actually prevented a future bug.",
+    "with_this": "With this, Sampo can store a compact, causal tape of your decisions, allowing it to instantly simulate counterfactual fixes and verify if a current change would have broken the system had you chosen a different path earlier.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ecosystem"
+    ]
+   },
+   {
+    "id": "F-016586",
+    "size": 1,
+    "lead": "Let Sampo dream up unimplemented features to test robustness",
+    "today": "Today you can't test how your code handles hypothetical future requirements or edge cases you haven't thought of.",
+    "with_this": "With this, Sampo can generate 'ghost' features—fully functional but non-existent code paths that represent plausible future needs—and run them against the current codebase to expose fragilities, allowing it to harden the system against change by testing against imaginary but realistic scenarios.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "exhaustive thinking"
     ]
    },
    {
@@ -40630,92 +40711,12 @@
     "kinds": [
      "releases"
     ]
-   },
-   {
-    "id": "F-012723",
-    "size": 1,
-    "lead": "Short-sell unstable dependencies before they break",
-    "today": "Today you can't proactively 'short' or reduce exposure to dependencies that are showing signs of instability before they actually cause a failure.",
-    "with_this": "With this, you can prevent 50% of release blockers by automatically reducing the dependency on 'high-risk' libraries or services by substituting them with more stable alternatives before a crash occurs.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-012724",
-    "size": 1,
-    "lead": "Leverage release capacity via internal derivatives",
-    "today": "Today you can't 'leverage' your release capacity by borrowing compute or human resources from other teams or projects for critical releases.",
-    "with_this": "With this, you can accelerate critical releases by 2x by dynamically 'borrowing' resources from other projects through an internal marketplace, paying them back with future compute or priority access.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-012730",
-    "size": 1,
-    "lead": "Steer one feature to rewrite all related codebases instantly",
-    "today": "Today you can't update a single architectural decision across hundreds of projects without manual audit.",
-    "with_this": "With this, you can propagate a new pattern to every compatible project, saving weeks of refactoring and preventing technical debt.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
-   },
-   {
-    "id": "F-012750",
-    "size": 1,
-    "lead": "Grow a feature branch that self-prunes dead code paths",
-    "today": "Today you can't watch a feature implementation split and merge itself based on which sub-branches produce passing tests without human review.",
-    "with_this": "With this, you can see the final codebase contain only the logical path that actually solved the problem, with all exploratory dead ends removed from your commit history and runtime.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
-   },
-   {
-    "id": "F-012799",
-    "size": 1,
-    "lead": "Introduce a bug-fix economy with scarce resources",
-    "today": "Today you can't prioritize which bugs to fix first when all seem urgent.",
-    "with_this": "With this, you can allocate limited 'fix points' to bugs, forcing strict prioritization.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "bugs"
-    ]
    }
   ],
-  "families_total": 681,
+  "families_total": 723,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 744
+   "total": 794
   }
  },
  "steer": {
