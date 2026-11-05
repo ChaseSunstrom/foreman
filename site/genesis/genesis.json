@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T05:45:47Z",
- "rev": "ad751f96",
+ "updated": "2026-11-05T05:50:55Z",
+ "rev": "732c3ca6",
  "capabilities": [
   {
    "n": 1,
@@ -36249,9 +36249,9 @@
  "not_yet_open": 0,
  "unproven": 810,
  "unproven_kinds": {
-  "meaning-notes": 360,
+  "meaning-notes": 359,
   "meaning-user": 247,
-  "research-uncited": 34,
+  "research-uncited": 33,
   "perf-typed": 51,
   "typed": 36,
   "red": 75,
@@ -36259,7 +36259,7 @@
   "docs": 112,
   "perf-noise": 1,
   "infra": 8,
-  "ui-unshot": 28,
+  "ui-unshot": 29,
   "data": 5
  },
  "next": {
@@ -37484,8 +37484,8 @@
     "novelty": 38
    },
    "merged": 17,
-   "kept": 321,
-   "pending": 19
+   "kept": 340,
+   "pending": 0
   },
   "families": [
    {
@@ -40699,7 +40699,7 @@
   "families_total": 306,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 321
+   "total": 340
   }
  },
  "steer": {
