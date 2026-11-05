@@ -10,6 +10,7 @@
 
 ### Everything else
 
+- UI cards show a rendered example: a local model writes one per card, kept only when its render check passes (not blank, fits 390 px, 4.5:1 text in both themes, under 12 KB, nothing to sanitise), else the card shows its component's hand-written kit demo, in a sandboxed, script-free frame that follows the page theme (T-3102).
 - Guard: printf's `-v` counts only before its format, so a `command -v` inside a substitution among printf's arguments, beside an unquoted `$t`, no longer blocks a loop as "IFS may be changed"; a first word an expansion, brace or backtick could turn into `-v` is now refused as a computed name (T-3223).
 - The moons tests pin their embedding model instead of finding this box's Ollama ones, so they pass on CI runners with no local models (main's CI was red on Families and Promote since 2026-11-04) (T-3220).
 - Post-merge verify keeps a merge as inherited only when the commit before it names each of the same test classes failing; a class the merge added (the parent finds no such test) or a parent run that crashes leaves the red the merge's own, so it is reverted (T-3224).
