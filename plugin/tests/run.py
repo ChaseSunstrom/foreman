@@ -8,6 +8,8 @@ Exit 1 on any failure, with each failing class's report.
 import argparse
 import concurrent.futures
 import contextlib
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -26,10 +28,89 @@ def skipped():
     return {x.strip() for x in os.environ.get("FOREMAN_SKIP_TESTS", "").split(",") if x.strip()}
 
 
-def classes(patterns, k, hit=None, names=(), ids=None):
+SPLIT_S = 5.0  # T-3166: a class whose last run took this long runs a job per test
+START_S = 0.3  # ... what each job's interpreter start-up costs, left out of a split class's work time
+# Classes seen slow (tonight's measurements): split with no times yet (a first run, a --shard), where every other class
+# stays one job (an interpreter per test of 1400 classes would swamp a 2-core runner).
+SEEDED = {"LeanKind", "Stop", "ExamAuthors", "ExamGen", "Page", "ClockWindows", "PreToolUse", "SessionStart",
+          "Worker", "GenesisRead"}
+
+
+def keeps_whole(t):
+    """T-3166: a class with setUpClass/tearDownClass, a module with setUpModule/tearDownModule, a module that won't
+    import, or a class marked `run_whole = True` shares state between its tests: one job."""
+    c, tc = type(t), unittest.TestCase
+    m = sys.modules.get(c.__module__)
+    own = lambda n: getattr(getattr(c, n, None), "__func__", None) is not getattr(tc, n).__func__  # noqa: E731  (None: whole)
+    return (isinstance(t, unittest.loader._FailedTest) or getattr(c, "run_whole", False)
+            or own("setUpClass") or own("tearDownClass")
+            or any(hasattr(m, n) for n in ("setUpModule", "tearDownModule")))
+
+
+def times_path():
+    return os.environ.get("FM_TEST_TIMES") or os.path.join(
+        tempfile.gettempdir(), f"fmtest-times-{getattr(os, 'getuid', lambda: 0)()}-{hashlib.sha1(HERE.encode()).hexdigest()[:10]}.json")
+
+
+def load_times():
+    """T-3166: seconds each job took the last time it ran ({job id: s}); {} when there is none yet."""
+    try:
+        with open(times_path()) as f:
+            if os.fstat(f.fileno()).st_uid != getattr(os, "getuid", lambda: 0)():  # someone else's file in a shared /tmp
+                return {}
+            d = json.load(f)
+        return {k: float(v) for k, v in d.items()}
+    except Exception:  # OverflowError, RecursionError ...: times only order the jobs
+        return {}
+
+
+def save_times(new):
+    """Merged into the file's, so a run of a few modules keeps the rest's; capped, newest kept."""
+    d = load_times()
+    for k, v in new.items():
+        d.pop(k, None)
+        d[k] = round(v, 2)
+    d = dict(list(d.items())[-20000:])
+    p = f"{times_path()}.{os.getpid()}"
+    try:
+        with contextlib.suppress(OSError):
+            os.unlink(p)  # a stale or planted one: O_EXCL below then never follows a symlink
+        with os.fdopen(os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600), "w") as f:
+            json.dump(d, f)
+        os.replace(p, times_path())  # atomic: a run beside this one reads the old file or the new, never half
+    except OSError:
+        pass  # times only order the jobs
+
+
+def work_time(secs):
+    """A split class's work: its tests' seconds less each one's start-up, so it stays split only while it is slow."""
+    return round(max(0.0, sum(secs) - START_S * len(secs)), 2)
+
+
+def plan(todo, parts, whole, times):
+    """T-3166: the jobs for these classes, longest first. A class that may be split (not in whole) is, once its work
+    took SPLIT_S or more last time (or, never timed, when SEEDED names it): its tests become jobs."""
+    jobs = []
+    for cid in todo:
+        ids = parts.get(cid, [])
+        split = cid not in whole and len(ids) > 1 and (times[cid] >= SPLIT_S if cid in times else cid.rsplit(".", 1)[-1] in SEEDED)
+        jobs += ids if split else [cid]
+
+    def est(j):
+        if j in times:
+            return times[j]
+        if j in parts:  # a whole class never timed: half a second a test
+            return 0.5 * len(parts[j])
+        c = j.rsplit(".", 1)[0]  # a test never timed: its class's average
+        return times[c] / len(parts[c]) if c in times and c in parts else 0.5
+    return sorted(jobs, key=lambda j: -est(j))  # stable: ties keep the biggest-class-first order
+
+
+def classes(patterns, k, hit=None, names=(), ids=None, parts=None, whole=None):
     """Every test class id (module.Class) discover would run, biggest first so the long ones start early; hit (a set)
     gets each -k pattern or name that matched a test. T-1994: with names and -k both, a test matches one of each.
-    ids (a list) gets every test id walked, before any filter."""
+    ids (a list) gets every test id walked, before any filter. T-3166: parts (a dict) gets each class's matching
+    test ids, and whole (a set) the classes that keeps_whole."""
     sys.path.insert(0, HERE)
     counts, skip, hit = {}, skipped(), set() if hit is None else hit
 
@@ -47,6 +128,10 @@ def classes(patterns, k, hit=None, names=(), ids=None):
                 hit.update(x for x in (*k, *names) if x in t.id())
                 cid = f"{type(t).__module__}.{type(t).__name__}"
                 counts[cid] = counts.get(cid, 0) + 1
+                if parts is not None and t.id() not in parts.setdefault(cid, []):  # an imported TestCase is walked twice
+                    parts[cid].append(t.id())
+                if whole is not None and keeps_whole(t):
+                    whole.add(cid)
     for pattern in dict.fromkeys(patterns):
         walk(unittest.TestLoader().discover(HERE, pattern=pattern))  # not the shared one: unittest -k filters it
     return sorted(counts, key=lambda c: -counts[c])
@@ -131,7 +216,7 @@ def sweep(base=None):
 
 
 def slowest(results, n):
-    return ", ".join(f"{c.split('.')[-1]} {s:.0f}s" for c, _, _, _, s in sorted(results, key=lambda r: -r[4])[:n])
+    return ", ".join(f"{'.'.join(c.split('.')[1:][-2:])} {s:.0f}s" for c, _, _, _, s in sorted(results, key=lambda r: -r[4])[:n])
 
 
 def summary_notes(results, elapsed, deadline):
@@ -205,7 +290,8 @@ def main():
     t0 = time.time()
     sweep()
     hit, ids = set(), []
-    todo = classes(a.p or ["test*.py"], a.k, hit, a.names, ids)
+    parts, whole = {}, set()
+    todo = classes(a.p or ["test*.py"], a.k, hit, a.names, ids, parts, whole)
     missing = [n for n in a.names if n not in hit]
     if missing:  # T-1287: a name that matches nothing (a test file that doesn't exist) fails, not passes unseen
         fold = lambda s: s.lower().replace("_", "")  # noqa: E731
@@ -217,9 +303,21 @@ def main():
         return 1
     if a.shard:
         todo = todo[a.shard[0] - 1::a.shard[1]]
+    times = {} if a.shard else load_times()  # a shard's slice must not depend on this machine's last run
+    todo = plan(todo, parts, whole, times)  # T-3166: jobs, a big class's tests apart
     with burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
         end = t0 + a.deadline if a.deadline is not None else None
         results = list(ex.map(lambda c: run_one(c, a.k or a.names, a.timeout, end), todo))  # T-1994: the class is in a named module, so -k alone
+    if not a.shard:
+        seen = set(ids)
+        new = {r[0]: r[4] for r in results if r[1] >= 0 and r[2] != NOT_STARTED and r[0] in seen | set(parts)}
+        for cid, js in parts.items():  # a split class's work, so the next run still knows if it is slow
+            if js and all(j in new for j in js):
+                new[cid] = work_time([new[j] for j in js])
+        if a.k:  # a -k run ran part of each class: its time is no class's
+            new = {j: s for j, s in new.items() if j not in parts}
+        if new:
+            save_times(new)
     failed = [r for r in results if r[1] != 0]
     ci = os.environ.get("GITHUB_ACTIONS")  # T-1223: a run's log needs a login; its annotations are public
     for cid, _, err, _, _ in failed:
@@ -239,7 +337,7 @@ def main():
         sys.stderr.write(f"\nleft out (FOREMAN_SKIP_TESTS): {', '.join(sorted(skipped()))}")
     names = [r[0] for r in failed]  # T-2319: the last line says which classes, since tails cut the ==== blocks above
     said = ", ".join(names[:5]) + (f", +{len(names) - 5} more" if len(names) > 5 else "")
-    sys.stderr.write(f"\nRan {total} tests in {time.time() - t0:.1f}s ({len(todo)} classes, {a.j} at a time; "
+    sys.stderr.write(f"\nRan {total} tests in {time.time() - t0:.1f}s ({len(todo)} jobs, {a.j} at a time; "
                      f"slowest: {slow})\n\n{f'FAILED ({len(failed)} classes: {said})' if failed else 'OK' if total else 'NO TESTS RAN'}\n")
     return 1 if failed or not total else 0
 
