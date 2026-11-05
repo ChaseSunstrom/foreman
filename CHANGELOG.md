@@ -26,6 +26,7 @@
 - Smith no longer lets a model quit early: a done with no edit made while the plan's verify command fails gets that failure back as the next turn, at most twice, and early-done stops are counted per model (T-3180).
 - Briefs, criteria templates and playbooks name `claude plugin test mods/foreman-ui` for the UI mod, never `npx vitest`, which can't run in a fresh lane and refused a merge (T-3143).
 - `sampo lane brief` refuses a task whose own commits are already in main and says to re-run its criteria and finish it, so a merged task never gets a second builder; a revert reopens it (T-3168).
+- A verb that fails with a plain ValueError says so and how to capture it, instead of calling the state corrupt and sending you to `sampo fsck`; files that don't parse still say corrupt (T-3194).
 - A full `sampo check`'s suite gate gets at least 30 min, scaled by load per CPU and capped at 2 h, and a gate that times out says the load and deadline it had (T-3174).
 - Job progress, the data half: Sampo's long loops write a per-pid progress file and the live page's jobs show done, total, rate and ETA (T-3083).
 - The site's Benchmarks page has a Models section: a $0 rerun of the model bench every Rune generation and the promotion rule with its decision rows (T-3093).

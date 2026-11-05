@@ -8735,10 +8735,14 @@ def main(argv=None):
         print(f"fm: {e}", file=sys.stderr)
         print("Next: sampo fsck", file=sys.stderr)  # T-2653
         return 4
-    except ValueError as e:
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:  # a file that doesn't parse
         print(f"fm: state looks corrupt: {e} (sampo fsck names corrupt state files)", file=sys.stderr)
         print("Next: sampo fsck", file=sys.stderr)  # T-2653
         return 4
+    except ValueError as e:  # T-3194: a bad argument or the verb's own bug, never the user's state
+        print(f"fm: {args.cmd} failed: {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"Next: sampo {args.cmd} --help", file=sys.stderr)
+        return 1
     finally:
         if stop:
             stop()

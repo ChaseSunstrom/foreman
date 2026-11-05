@@ -46,8 +46,24 @@ class ExitNext(unittest.TestCase):
     def test_corrupt(self):
         self.check(c.CorruptState("bad"), 4)
 
-    def test_value(self):
-        self.check(ValueError("x"), 4)
+    def test_a_parse_error_is_corrupt_state(self):
+        import json
+        self.check(json.JSONDecodeError("bad", "{", 0), 4)
+        self.check(UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad"), 4)
+
+    def test_a_plain_value_error_is_not_called_corrupt_state(self):
+        # T-3194: an ElementTree error in works sent the user to sampo fsck over state that wasn't broken
+        self.check(ValueError("x"), 1)
+        rc, err = run_raising(ValueError("Invalid tag name"))
+        self.assertNotIn("corrupt", err)
+        self.assertNotIn("fsck", err)
+        self.assertIn("ValueError: Invalid tag name", err)
+
+    def test_a_brief_without_frontmatter_is_corrupt_state(self):
+        with self.assertRaises(c.CorruptState):
+            c.Brief.parse("no frontmatter", "/state/tasks/T-1.md")
+        with self.assertRaises(c.CorruptState):
+            c.Brief.parse("---\nid: T-1\n", "/state/tasks/T-1.md")
 
     def test_unreadable_state_file(self):
         with mock.patch.object(c, "in_state", return_value=True):

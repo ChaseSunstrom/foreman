@@ -1642,10 +1642,10 @@ class Brief:
     @classmethod
     def parse(cls, text, path=None):
         if not text.startswith("---\n"):
-            raise ValueError("brief has no frontmatter")
+            raise CorruptState("brief has no frontmatter" + (f": {path}" if path else ""))  # T-3194: state, not a bug
         end = text.find("\n---\n", 4)
         if end < 0:
-            raise ValueError("unterminated frontmatter")
+            raise CorruptState("unterminated frontmatter" + (f": {path}" if path else ""))
         meta, fm_lines = {}, []
         for line in text[4:end].split("\n"):
             m = _FM_LINE.match(line)
