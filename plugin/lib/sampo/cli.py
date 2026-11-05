@@ -811,7 +811,6 @@ def cmd_task(args):
             if getattr(args, "expect_fail", False) and args.step is None:
                 raise UsageError("--expect-fail is for a step's red run (--step N); a criterion only takes a passing run")
             pre = need_brief(p, args.id)
-            c.wait_for_load("sampo task evidence")  # T-2797
             code, output, timing = _repeat_runs(p.root, args.run, args.repeat,
                                                 c.load_scaled(args.timeout if args.timeout > 0 else None))
             cmd, result, shown = args.run, c.run_result(code, output, args.run), "\n".join(output.rstrip().splitlines()[-20:])
@@ -1324,8 +1323,6 @@ def task_finish(p, args):
             runs[cmd] = (0, f"reused: the same command passed on this tree and world at {at}")
         if cmd not in runs:
             guard_stored(p, b, cmd)  # T-0901
-            if not args.timings:  # T-2797: the first run waits for the load to fall; every run's limit scales with it
-                c.wait_for_load(f"sampo task finish {b.id}")
             t0 = time.monotonic()
             runs[cmd] = c.run_command(p.root, cmd, c.load_scaled(args.timeout))
             args.timings.append((cmd, time.monotonic() - t0))
@@ -1669,7 +1666,6 @@ def _close_affected(p, b, runs, args):
                {"cmd": c.fit(cmd, 200), "waived": c.fit(waive, 200)})
         return
     guard_stored(p, b, cmd)
-    c.wait_for_load(f"sampo task finish {b.id}")  # T-2797
     env, timeout = _skip_env(skip), c.load_scaled(args.timeout if args.timeout > 0 else None)
     t0 = time.monotonic()
     code, output = c.run_command(p.root, cmd, timeout, env=env)
@@ -5681,7 +5677,6 @@ def _check_affected(p, args):
                    (f"all {len(skip)} linked test module(s) skipped (other lanes' red-first tests); run the full "
                     f"gates: sampo check\n! {_left_out(skip)}" if skip else
                     f"No tests linked to the {len(changed)} changed file(s); run the full gates: sampo check") + note) or 0
-    c.wait_for_load("sampo check --affected")  # T-2797
     code, output = c.run_command(p.root, cmd, c.load_scaled(args.timeout if args.timeout > 0 else None),
                                  env=_skip_env(skip))
     if args.evidence:  # T-1747: recorded as what it is, never as the full gates (close still needs fm check)

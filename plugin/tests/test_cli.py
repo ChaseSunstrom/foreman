@@ -604,6 +604,29 @@ class TaskLifecycle(ForemanTestCase):
         self.assertEqual(self.fm("task", "evidence", "T-0001", "--step", "1", "pytest", check=False).returncode, 1,
                          "a typed result is still required without --run")
 
+    def test_targeted_runs_never_wait_for_load_and_a_full_wait_is_capped(self):
+        # T-3144: evidence and check --affected ran at once; a load wait is at most 60 s whatever FOREMAN_LOAD_WAIT says
+        env = {"FOREMAN_HOST": "load=24,cpus=8,mem_mb=8192", "FOREMAN_LOAD_WAIT": "0"}
+        self.fm("task", "step", "T-0001", "add", "a")
+        r = self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true", env=env)
+        self.assertNotIn("waiting for the machine's load", r.stderr)
+        r = self.fm("check", "--affected", check=False, env=env)
+        self.assertNotIn("waiting for the machine's load", r.stderr)
+        slept = []
+        old = (c.time.sleep, c.time.time)
+        t = [0.0]
+        c.time.sleep = lambda s: (slept.append(s), t.__setitem__(0, t[0] + s))
+        c.time.time = lambda: t[0]
+        os.environ["FOREMAN_HOST"] = "load=24,cpus=8,mem_mb=8192"
+        os.environ["FOREMAN_LOAD_WAIT"] = "900"
+        try:
+            c.wait_for_load("fm check", out=open(os.devnull, "w"))
+        finally:
+            c.time.sleep, c.time.time = old
+            os.environ.pop("FOREMAN_HOST", None)
+            os.environ.pop("FOREMAN_LOAD_WAIT", None)
+        self.assertLessEqual(sum(slept), 60)
+
     def test_evidence_run_never_reads_bytecode_older_than_its_source(self):
         # T-0876: a fix that kept the file's size and second of mtime ran the old code from __pycache__
         import py_compile

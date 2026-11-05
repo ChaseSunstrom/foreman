@@ -502,14 +502,15 @@ def load_scaled(timeout):
 
 
 def wait_for_load(who, limit=None, out=None):
-    """T-2797: wait (at most limit seconds; default FOREMAN_LOAD_WAIT or 300) while the 1-minute load is over LOAD_BAR per
-    CPU, saying why; True when it waited. An unreadable load never waits: the caller goes ahead and its run timeout is
-    scaled by load_scaled."""
+    """T-2797: wait (at most limit seconds; default FOREMAN_LOAD_WAIT or 60, never over 60: T-3144) while the 1-minute
+    load is over LOAD_BAR per CPU, saying why; True when it waited. An unreadable load never waits: the caller goes ahead
+    and its run timeout is scaled by load_scaled. Only a full suite or a merge calls it; targeted runs just scale."""
     if limit is None:
         try:
-            limit = max(0.0, float(os.environ.get("FOREMAN_LOAD_WAIT") or 300))
+            limit = max(0.0, float(os.environ.get("FOREMAN_LOAD_WAIT") or 60))
         except ValueError:
-            limit = 300.0
+            limit = 60.0
+    limit = min(limit, 60.0)
     busy = lambda: (hl := host_load()) is not None and hl[1] > 0 and hl[0] / hl[1] > LOAD_BAR
     if load_gate_off() or not busy():  # T-2822: a sandbox's fm never waits on the host's load
         return False
