@@ -1645,15 +1645,22 @@ class Writers(_Funnel):
         with open(os.path.join(self.p.dir, "research", "moons-writers.jsonl")) as f:
             saved = [json.loads(x) for x in f]
         self.assertEqual(saved, r["rows"])
-        self.assertEqual(self.ms.load_picks(self.p), {"write": ("local", "p27"), "kill": ("local", "p27"),
-                                                      "tier": ("haiku", None), "novelty": ("haiku", None)})
+        # T-3122 close: only the writer is taken; a judge that keeps more is laxer, not better, so the fill's judges stay
+        self.assertEqual(self.ms.load_picks(self.p), {"write": ("local", "p27")})
 
     def test_a_local_only_or_sensitive_run_never_picks_a_paid_writer(self):
         self.bench(tier_low=("p27",))
-        self.assertEqual(self.ms.load_picks(self.p, local_only=True),
-                         {"write": ("local", "p27"), "kill": ("local", "p27")})
+        self.assertEqual(self.ms.load_picks(self.p, local_only=True), {"write": ("local", "p27")})
         self.fm("sensitive", "on")
-        self.assertEqual(set(self.ms.load_picks(self.p)), {"write", "kill"})
+        self.assertEqual(set(self.ms.load_picks(self.p)), {"write"})
+
+    def test_a_judge_stage_pick_never_reaches_the_fill(self):
+        # kept per call rewards the laxest judge: a lenient tier judge would inflate kept moons, not improve them
+        os.makedirs(self.ms._dir(self.p), exist_ok=True)
+        with open(os.path.join(self.ms._dir(self.p), self.ms.WRITERS_FILE), "w") as f:
+            json.dump({"stages": {"write": {"writer": "haiku"}, "tier": {"writer": "haiku"}, "kill": {"writer": "haiku"},
+                                  "novelty": {"writer": "haiku"}}}, f)
+        self.assertEqual(self.ms.load_picks(self.p), {"write": ("haiku", None)})
 
     def test_a_writer_that_fails_is_a_row_not_the_end_of_the_run(self):
         from sampo import models
@@ -1675,7 +1682,7 @@ class Writers(_Funnel):
         self.assertLessEqual(len(self.asked), 3)
         self.assertLessEqual(sum(x["calls"] for x in r["rows"]), 3)
 
-    def test_the_fill_uses_the_picked_writer_for_the_write_and_each_judge_stage(self):
+    def test_the_fill_uses_the_picked_writer_and_keeps_its_own_judges(self):
         self.bench(tier_low=("p27",))
         seen = []
 
@@ -1693,8 +1700,8 @@ class Writers(_Funnel):
             return judged(p, system, prompt, **kw)
         self.seed(DEPLOY)
         self.go(judge)
-        self.assertIn(("kill", "local", "p27"), kws)
-        self.assertIn(("tier", "haiku", None), kws)
+        self.assertTrue(kws)
+        self.assertTrue(all(k[1:] == (None, None) for k in kws), kws)  # T-3122 close: no bench pick reaches a judge
         kws.clear()
         self.go(judge, local_only=True)
         self.assertTrue(all(k[1] != "haiku" for k in kws))

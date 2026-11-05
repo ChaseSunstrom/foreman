@@ -1292,8 +1292,10 @@ WRITERS_FILE, BENCH_FILE = "writers.json", os.path.join("research", "moons-write
 
 
 def load_picks(p, local_only=False):
-    """T-3122: {stage: (writer, profile)} the last bench-writers run picked, for write, kill, tier and novelty; {} when
-    there is none or it is unreadable. A paid pick is dropped for a --local-only run or a sensitive project."""
+    """T-3122: {"write": (writer, profile)} the last bench-writers run picked; {} when there is none or it is unreadable.
+    Only the writer: a judge stage's best kept-per-call is its laxest judge, which would inflate the kept count, so
+    kill, tier and novelty keep the fill's own judges. A paid pick is dropped for a --local-only run or a sensitive
+    project."""
     try:
         with open(os.path.join(_dir(p), WRITERS_FILE)) as f:
             got = json.load(f)["stages"]
@@ -1303,7 +1305,7 @@ def load_picks(p, local_only=False):
     out = {}
     for st, v in (got.items() if isinstance(got, dict) else ()):
         w, pr = (v.get("writer"), v.get("profile")) if isinstance(v, dict) else (None, None)
-        if st in ORDER and w in WRITERS and (pr is None or isinstance(pr, str) and len(pr) <= 80) \
+        if st == "write" and w in WRITERS and (pr is None or isinstance(pr, str) and len(pr) <= 80) \
                 and not (free and w != "local"):
             out[st] = (w, pr)
     return out
@@ -1324,9 +1326,9 @@ def writer_pool(p, local_only=False):
 def bench_writers(p, cells=3, batch=4, writers=None, local_only=False, seed=0, max_calls=None):
     """T-3122: each writer writes `batch` moons for the same `cells` cells into its own scratch store, and its own judges
     (kill, tier, novelty) judge them; one row per writer and stage: calls, rows in, kept, kept per call. The best
-    kept-per-call per stage (a tie to the free writer) goes to writers.json, which grow and the funnel read, and the
-    rows to research/moons-writers.jsonl. Kept per call rewards a lax judge as much as a good writer: it measures yield,
-    not quality. max_calls caps all the model calls together. The real store is never written."""
+    kept-per-call per stage (a tie to the free writer) goes to writers.json, and the rows to
+    research/moons-writers.jsonl. Kept per call rewards a lax judge as much as a good writer: it measures yield, not
+    quality, so grow and the funnel take only the write stage's pick (load_picks); the judge rows are for reading. max_calls caps all the model calls together. The real store is never written."""
     import shutil
     from sampo import louhi
     global _PIN
