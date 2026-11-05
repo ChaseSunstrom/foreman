@@ -4,9 +4,10 @@ deleted case can't hide, plus recent real commands, judged with no grants by eac
 slower (the hooks of each tree on the base's bench), and the always-on footprint doesn't grow with no cut to pay for it
 (T-2358's rule). The harness is always the base's (fmreplay.py, bench_hooks.py and its payloads), so a branch can't
 rewrite the judge; trees are built from git's blobs, not git archive (whose .gitattributes a branch controls).
-A refusal names the numbers. Only the user's yes to `fm ask ID core` given after a refusal of the same commit passes
-it: never the standing yes, never a decision, never a yes for an earlier commit. A gate that can't run refuses with the
-reason, and the same yes passes that too."""
+A refusal names the numbers. The user's yes to `fm ask ID core` given after a refusal of the same commit passes it;
+never a decision, never a yes for an earlier commit. The user's standing core yes passes a hold made only of
+footprint, verb-count or hook-speed rows (T-3219), never one where the guard blocks less, a case was removed or the gate
+couldn't run. A gate that can't run refuses with the reason, and the per-commit yes passes that too."""
 import hashlib
 import hmac
 import json
@@ -397,6 +398,9 @@ def hook_map(p, main, head, base):
     return got
 
 
+QUALITY_ROWS = ("footprint ", "verbs ", "hook ")  # T-3219: rows the standing yes may pass (never "guard…")
+
+
 def approved(p, b, sha):
     """The user's yes to `fm ask ID core` on this task, given after its last self-change refusal of this commit."""
     last, yes = None, False
@@ -476,6 +480,11 @@ def gate(p, b, main, ref, files):
         out.append(f"the self-change gate couldn't run ({type(e).__name__}: {c.fit(str(e), 160)})")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    # T-3219: the user's standing core yes ("I said stop asking me for things", 2026-11-05) passes a hold made only
+    # of quality rows; a guard that blocks less, a removed case or a gate that couldn't run still needs their own yes
+    if out and all(r.startswith(QUALITY_ROWS) for r in out) and (c.read_meta(p).get("standing") or {}).get("core"):
+        c.log_event(p, "self_change_standing_pass", task=b.id, data={"sha": sha, "rows": out[:20]})
+        return []
     if out:
         c.log_event(p, "self_change_refused", task=b.id, data={"sha": sha, "rows": out[:20]})
     return out
