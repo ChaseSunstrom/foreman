@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-05T19:28:35Z",
+ "updated": "2026-11-05T19:34:06Z",
  "rev": "9c5aa472",
  "capabilities": [
   {
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 18741,
+   "generated": 18849,
    "write": {
     "title": 140,
-    "line": 1457,
+    "line": 1466,
     "payoff": 17,
     "kill test": 64,
     "code": 6
@@ -37485,7 +37485,7 @@
    },
    "merged": 159,
    "kept": 828,
-   "pending": 40
+   "pending": 139
   },
   "families": [
    {
@@ -38218,6 +38218,22 @@
     "evidence": "",
     "kinds": [
      "portability"
+    ]
+   },
+   {
+    "id": "F-018446",
+    "size": 1,
+    "lead": "Simulate multi-user memory interference as magnetic domains",
+    "today": "Today you can't know if two concurrent sessions will corrupt each other's context when merged",
+    "with_this": "With this, Sampo can predict and prevent context bleeding between users by modeling memory states as non-interfering magnetic domains",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "multi-user"
     ]
    },
    {
@@ -40695,25 +40711,9 @@
     "kinds": [
      "releases"
     ]
-   },
-   {
-    "id": "F-012720",
-    "size": 1,
-    "lead": "Hedge release risk by parallelizing speculative branches",
-    "today": "Today you can't automatically spin up speculative release candidates to hedge against potential delays in primary dependency chains.",
-    "with_this": "With this, you can guarantee a minimum release velocity by having the system 'short' the risk of a critical dependency by pre-building alternative versions, ensuring you always have a viable path forward.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
    }
   ],
-  "families_total": 739,
+  "families_total": 745,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 828
