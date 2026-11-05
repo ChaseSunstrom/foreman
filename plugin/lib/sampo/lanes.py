@@ -2233,11 +2233,16 @@ def pm_verify(p, main, sha):
             c.log_event(p, "lane_revert_conflict", task=r["task"], data={"sha": sha, "reverts": gone})
             return True
         code, out = c.run_command(wt, pm_cmd(main), c.load_scaled(3600))
-        flaky = []
+        flaky = inherited = []
         if code and code != 124:  # T-3216: red in the full suite but green alone is a flake, not this merge's
             again = pm_rerun_cmd(main, pm_classes(out, code))
             if again and not c.run_command(wt, again, c.load_scaled(900))[0]:
                 flaky = pm_classes(out, code)
+            elif again:  # T-3213: red alone too; does main just before this merge fail the same classes?
+                _git(wt, "reset", "--hard", "-q", f"{sha}^1")
+                if (not gone or not _git(wt, "revert", "-m", "1", "--no-commit", "--no-edit", *reversed(gone)).returncode) \
+                        and c.run_command(wt, again, c.load_scaled(900))[0]:
+                    inherited = pm_classes(out, code)
     finally:
         _git(main, "worktree", "remove", "--force", wt)
         shutil.rmtree(tmp, ignore_errors=True)
@@ -2247,6 +2252,13 @@ def pm_verify(p, main, sha):
         note = f"verified: green on {sha[:9]}; {', '.join(flaky)} failed only inside the full suite, green alone (flaky)"
         cli.mutate(p, r["task"], lambda x: (x.append_log(note), x.meta.update(lane_verified=sha)),
                    "lane_verified", {"sha": sha})
+        return True
+    if inherited:  # the red was on main before this merge: it stays with the merge that brought it, no revert
+        pm_set(p, sha, state="inherited", classes=inherited)
+        c.log_event(p, "postmerge_inherited", task=r["task"], data={"sha": sha, "classes": inherited})
+        cli.mutate(p, r["task"], lambda x: x.append_log(
+            f"not reverted: {', '.join(inherited)} already fail on {sha[:9]}'s first parent"),
+            "postmerge_inherited", {"sha": sha})
         return True
     if code == 124:  # a timeout proves nothing: no revert; once more, then unverified
         c.log_event(p, "postmerge_timeout", task=r["task"], data={"sha": sha, "tries": tries})

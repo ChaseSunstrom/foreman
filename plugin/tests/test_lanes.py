@@ -2414,11 +2414,25 @@ class PostMergeVerify(ForemanTestCase):
         self.assertTrue(c.ledger_events(self.p, ["postmerge_flaky"]))
 
     def test_a_class_that_also_fails_alone_still_reverts(self):
-        os.environ["FM_POSTMERGE_RERUN"] = "false"
+        os.environ["FM_POSTMERGE_RERUN"] = "! ls bad*.txt"  # red alone here, green on the first parent
         self.addCleanup(os.environ.pop, "FM_POSTMERGE_RERUN", None)
         sha = self.land("a", bad=True)
         slanes.pm_run(self.p, self.repo)
         self.assertEqual(self.state(sha), "reverted")
+
+    def test_a_red_the_first_parent_already_has_is_inherited_not_reverted(self):
+        # T-3213: T-3189 landed on T-3160's red and was reverted for it
+        os.environ["FM_POSTMERGE_RERUN"] = "! ls bad*.txt"
+        self.addCleanup(os.environ.pop, "FM_POSTMERGE_RERUN", None)
+        a = self.land("a", bad="bad.txt")
+        slanes.pm_set(self.p, a, state="red")  # the merge that brought it; its own verify owns it
+        b = self.land("b")
+        slanes.pm_set(self.p, a, state="reverted")
+        slanes.pm_verify(self.p, self.repo, b)
+        r = slanes.pm_records(self.p)[b]
+        self.assertEqual((r["state"], r.get("classes")), ("inherited", ["test_mod.Cls"]))
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "b.txt")), "not reverted")
+        self.assertTrue(c.ledger_events(self.p, ["postmerge_inherited"]))
 
     def test_a_second_run_reverts_nothing_more(self):
         sha = self.land("a", bad=True)
