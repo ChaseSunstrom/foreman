@@ -432,6 +432,24 @@ class Lanes(ForemanTestCase):
         self.assertTrue(os.path.exists(os.path.join(c.find_project(self.repo).dir, "audits", f"{big}.builder.md")))
         self.assertNotIn("own sections are", self.fm("lane", "brief", small).stdout)
 
+    def test_a_task_already_merged_is_not_briefed(self):  # T-3168
+        mk = lambda t: json.loads(self.fm("task", "new", t, "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",  # noqa: E731
+                                          "--step", "s", "--json").stdout)["id"]
+        done, fresh = mk("Merged"), mk("Fresh")
+        commit = lambda m: self.git("commit", "-q", "--allow-empty", "-m", m)  # noqa: E731
+        refused = lambda: "merged: re-run its criteria and finish it" in (r := self.fm("lane", "brief", done, check=False)).stderr + r.stdout  # noqa: E731
+        for m in (f"other work ({done}0)", f"child work ({done} part 1)", f"({done} follow-up)",
+                  f"Changelog line for {done}"):  # a longer id and a passing mention are not its work
+            commit(m)
+        self.assertIn('model: "sonnet"', self.fm("lane", "brief", done).stdout)
+        commit(f"the work ({done})")
+        self.assertTrue(refused())
+        commit(f'Revert "the work ({done})"')
+        self.assertFalse(refused())  # a reverted merge doesn't count
+        commit(f"Merge {done}: it again")
+        self.assertTrue(refused())
+        self.assertIn('model: "sonnet"', self.fm("lane", "brief", fresh).stdout)
+
     def test_lane_stats_rates_landing_by_brief_size(self):  # T-2368
         p = c.find_project(self.repo)
         c.log_event(p, "lane_builder", task="T-0901", data={"path": "a", "chars": 3000})

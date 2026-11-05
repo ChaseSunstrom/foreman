@@ -1634,6 +1634,20 @@ def revert_route(p, date):
     return back
 
 
+def _merged_in_head(root, tid):
+    """T-3168: is the task's own work on HEAD? The newest of the last 2000 subjects naming it decides: "Merge ID:" or
+    "<what> (ID)" is its work, a Revert is not; a passing mention ("(ID part 1)", "for ID") is skipped."""
+    word = re.compile(rf"\b{re.escape(tid)}\b")
+    for s in c._git(root, "log", "-2000", "--format=%s", timeout=5).splitlines():
+        if not word.search(s):
+            continue
+        if s.startswith("Revert"):
+            return False
+        if s.startswith(f"Merge {tid}:") or s.endswith(f"({tid})"):
+            return True
+    return False
+
+
 def builder_brief(p, b, args, resume_branch=None, after=""):
     """T-0234: a self-contained brief for one S/M task worked by a foreman:fm-builder subagent in its own worktree
     (Agent isolation "worktree"; its `fm focus` binds the task there), and the Agent call that launches it. The main
@@ -1645,6 +1659,9 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
     if b.status in c.CLOSED or b.status in ("active", "verifying") or c.held_elsewhere(b):
         where = f" in {b.meta['lane']}" if b.meta.get("lane") else ""
         raise c.PolicyError(f"{b.id} is {b.status}{where}: a builder takes a task nobody is working on")
+    if resume_branch is None and _merged_in_head(p.root, b.id):
+        # T-3168: T-3034 was briefed anew though its commits were in main and only its close was pending
+        raise c.PolicyError(f"{b.id} is merged: re-run its criteria and finish it (a commit naming it is already in HEAD)")
     gaps = c.plan_gaps(b, c.effective_autonomy(p))
     if gaps:  # T-0823: the builder's first act is fm focus, which refuses these
         raise c.PolicyError(f"{b.id} isn't planned enough for a builder: missing {', '.join(gaps)} (fm task set/ac/step)")
