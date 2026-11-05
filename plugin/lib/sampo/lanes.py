@@ -2113,6 +2113,19 @@ def pm_cmd(main):
         "python3 plugin/tests/run.py" if os.path.exists(os.path.join(main, "plugin", "tests", "run.py")) else "")
 
 
+def pm_rerun_cmd(main, classes):
+    """T-3216: the red classes run alone: FM_POSTMERGE_RERUN ({classes} filled in), else this repo's runner on them;
+    "" when a red isn't a module.Class name (a bare suite exit can't be re-run alone)."""
+    if not classes or not all(re.fullmatch(r"[\w.]+", k) for k in classes):
+        return ""
+    tpl = os.environ.get("FM_POSTMERGE_RERUN")
+    if tpl:
+        return tpl.replace("{classes}", " ".join(classes))
+    if os.path.exists(os.path.join(main, "plugin", "tests", "run.py")):
+        return "python3 plugin/tests/run.py " + " ".join(classes)
+    return ""
+
+
 def pm_record(p, sha, tid, main):
     """A landed merge waits for its verify; start the runner. No suite command, no record."""
     os.makedirs(_pm_dir(p), exist_ok=True)
@@ -2220,9 +2233,21 @@ def pm_verify(p, main, sha):
             c.log_event(p, "lane_revert_conflict", task=r["task"], data={"sha": sha, "reverts": gone})
             return True
         code, out = c.run_command(wt, pm_cmd(main), c.load_scaled(3600))
+        flaky = []
+        if code and code != 124:  # T-3216: red in the full suite but green alone is a flake, not this merge's
+            again = pm_rerun_cmd(main, pm_classes(out, code))
+            if again and not c.run_command(wt, again, c.load_scaled(900))[0]:
+                flaky = pm_classes(out, code)
     finally:
         _git(main, "worktree", "remove", "--force", wt)
         shutil.rmtree(tmp, ignore_errors=True)
+    if flaky:
+        pm_set(p, sha, state="green", flaky=flaky)
+        c.log_event(p, "postmerge_flaky", task=r["task"], data={"sha": sha, "classes": flaky})
+        note = f"verified: green on {sha[:9]}; {', '.join(flaky)} failed only inside the full suite, green alone (flaky)"
+        cli.mutate(p, r["task"], lambda x: (x.append_log(note), x.meta.update(lane_verified=sha)),
+                   "lane_verified", {"sha": sha})
+        return True
     if code == 124:  # a timeout proves nothing: no revert; once more, then unverified
         c.log_event(p, "postmerge_timeout", task=r["task"], data={"sha": sha, "tries": tries})
         pm_set(p, sha, state="pending" if tries < 2 else "timeout", tries=tries)

@@ -2380,6 +2380,24 @@ class PostMergeVerify(ForemanTestCase):
         self.assertIn("test_mod.Cls", meta["postmerge_red"])
         self.assertIn("test_mod.Cls", slanes.recovery_after(self.p, c.find_brief(self.p, self.tid)))
 
+    def test_a_class_red_only_in_the_full_suite_is_a_flake_not_a_revert(self):
+        # T-3216: BoardVerbs failed only inside full post-merge suites and reverted four good merges in an hour
+        os.environ["FM_POSTMERGE_RERUN"] = "true"  # the red class passes when run alone
+        self.addCleanup(os.environ.pop, "FM_POSTMERGE_RERUN", None)
+        sha = self.land("a", bad=True)
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "green")
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "bad.txt")), "not reverted")
+        self.assertEqual(slanes.pm_records(self.p)[sha].get("flaky"), ["test_mod.Cls"])
+        self.assertTrue(c.ledger_events(self.p, ["postmerge_flaky"]))
+
+    def test_a_class_that_also_fails_alone_still_reverts(self):
+        os.environ["FM_POSTMERGE_RERUN"] = "false"
+        self.addCleanup(os.environ.pop, "FM_POSTMERGE_RERUN", None)
+        sha = self.land("a", bad=True)
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "reverted")
+
     def test_a_second_run_reverts_nothing_more(self):
         sha = self.land("a", bad=True)
         slanes.pm_run(self.p, self.repo)
