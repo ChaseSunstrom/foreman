@@ -118,6 +118,17 @@ class Lanes(ForemanTestCase):
         self.assertNotIn("elsewhere", p.stderr)
         self.assertEqual(p.returncode, 0, p.stderr)
 
+    def test_an_audit_on_the_current_tree_beats_an_older_pre_merge_one(self):
+        # T-3200: an adversary audit recorded after the merges was judged against the pre-merge audits' tree
+        mine = self._audited_task_then_two_merges("elsewhere/b.py", "elsewhere/c.py")
+        self.fm("task", "audit", mine, "adversary", "tried it", "held")
+        p, now = c.find_project(self.repo), c.worktree_id(self.repo)
+        b = c.find_brief(p, mine)
+        trees = c.audit_tree_past_merges(p, b, now)
+        self.assertIn(now, trees)
+        self.assertEqual(len(trees), 2, "the pre-merge audits' tree still counts for intent and edge")
+        self.assertEqual(b.audit_blockers(tree=trees, need=("adversary",)), [])
+
     def test_a_merged_file_this_task_also_touched_still_stales_the_audit(self):
         mine = self._audited_task_then_two_merges("src/shared.py", "elsewhere/c.py")
         self._write(self.repo, "src/shared.py", "x = 2\n")  # ours too, after the merge

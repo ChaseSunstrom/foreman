@@ -594,14 +594,18 @@ def merged_in(root, b):
 
 
 def audit_tree_past_merges(p, b, tree):
-    """T-2784: the tree of an audit that differs from the working files only by other tasks' merged-in files (and
-    those this task didn't touch): that audit still covers this task's own changes. `tree` itself otherwise."""
+    """T-2784: the trees an audit may have been made on and still cover this task's own changes: `tree` (the working
+    files) and each audit tree that differs from them only by other tasks' merged-in files (and those this task
+    didn't touch). T-3200: all of them, so an audit made after the merge and one made before both count."""
+    if not tree:
+        return tree
+    trees = {tree}
     merged = set(merged_in(p.root, b)) - set(task_touches(p, b.id))
-    for _, _, t in sorted(b.audits(), key=lambda a: a[1], reverse=True) if merged and tree else ():
+    for t in {t for _, _, t in b.audits()} if merged else ():
         if t and t != tree and (names := task_diff(p.root, t, "--name-only", "--no-renames")) is not None \
                 and set(names.splitlines()) <= merged:
-            return t
-    return tree
+            trees.add(t)
+    return frozenset(trees)
 
 
 def task_diff(root, base, *opts):
@@ -2045,8 +2049,9 @@ class Brief:
                 tree = t
         cutoff = max(self.last_work_ts(), since or "")
         audits = self.audits()
-        fresh = {lens for lens, ts, t in audits if (tree and t == tree) or (ts >= cutoff and (not tree or not t))}
-        changed = {lens for lens, ts, t in audits if ts >= cutoff and tree and t and t != tree}
+        trees = ({tree} if isinstance(tree, str) else set(tree or ())) - {None}  # T-3200: one id, or a set of them
+        fresh = {lens for lens, ts, t in audits if t in trees or (ts >= cutoff and (not trees or not t))}
+        changed = {lens for lens, ts, t in audits if ts >= cutoff and trees and t and t not in trees}
         stale = {lens for lens, _, _ in audits} - fresh - changed
         reasons = []
         for group in REQUIRED_AUDITS.get(self.tier, REQUIRED_AUDITS["S"]) + [{x} for x in need]:
