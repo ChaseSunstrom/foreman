@@ -168,6 +168,34 @@ class Route(_Moons):
                 mock.patch.object(ideas, "run_child", return_value="haiku text"):
             self.assertEqual(self.ms._ask(self.p, "sys", "prompt"), ("haiku text", "haiku"))
 
+    def test_a_failing_local_model_falls_through_to_the_next_and_the_stop_names_each_error(self):  # T-3152
+        from sampo import ideas, models
+        first, second = dict(self.PROFILE), dict(self.PROFILE, name="gpu-mimo9", base_url="http://127.0.0.1:9/v1")
+
+        def answer(prof, *a, **k):
+            if prof["name"] == "jarvis":
+                raise models.ModelError("timed out after 300 s")
+            return {"text": "gpu text"} if gpu_answers else {"text": ""}
+        os.environ.pop("MOONS_LOCAL", None)
+        with mock.patch.dict(os.environ, {"MOONS_TEST_KEY": "k"}), \
+                mock.patch.object(self.ms, "_generative", return_value=[first, second]), \
+                mock.patch.object(self.ms, "_up", return_value=True), \
+                mock.patch.object(self.ms, "_down", {}), \
+                mock.patch.object(models, "complete", side_effect=answer) as comp, \
+                mock.patch.object(ideas, "run_child") as child:
+            gpu_answers = True
+            self.assertEqual(self.ms._ask(self.p, "sys", "prompt"), ("gpu text", "gpu-mimo9"))
+            self.ms._ask(self.p, "sys", "prompt")
+            self.assertEqual([c[0][0]["name"] for c in comp.call_args_list], ["jarvis", "gpu-mimo9", "gpu-mimo9"],
+                             "a model that just failed is skipped for a while, not waited on every call")
+            gpu_answers = False
+            with mock.patch.object(self.ms, "_LOCAL_ONLY", True), mock.patch.object(self.ms, "_down", {}):
+                with self.assertRaises(self.ms.LocalOnly) as e:
+                    self.ms._ask(self.p, "sys", "prompt")
+            self.assertIn("jarvis: timed out after 300 s", str(e.exception))
+            self.assertIn("gpu-mimo9: empty reply", str(e.exception))
+            child.assert_not_called()
+
     def test_local_only_never_reaches_haiku_when_no_local_model_answers_or_it_errs(self):  # T-2916
         from sampo import ideas, models
         with mock.patch.object(self.ms, "_LOCAL_ONLY", True), mock.patch.object(ideas, "run_child") as child:
@@ -303,7 +331,7 @@ class Grow(_Moons):
         prof = {"name": "jarvis", "kind": "openai", "base_url": "https://127.0.0.1:9/v1", "model": "m",
                 "key_env": None, "context": 8192, "tools": False}
         err = models.ModelError("jarvis: reasoning used the whole budget: no text")
-        with mock.patch.object(self.ms, "_local", return_value=prof), mock.patch.object(models, "complete", side_effect=err), \
+        with mock.patch.object(self.ms, "_locals", return_value=[prof]), mock.patch.object(models, "complete", side_effect=err), \
                 mock.patch.object(self.ms.ideas, "run_child", return_value="h"):
             self.ms._cuts.clear()
             self.assertEqual(self.ms._ask(self.p, "s", "p"), ("h", "haiku"))
@@ -313,7 +341,7 @@ class Grow(_Moons):
         from sampo import models
         prof = {"name": "jarvis", "kind": "openai", "base_url": "https://127.0.0.1:9/v1", "model": "m",
                 "key_env": None, "context": 8192, "tools": False, "max_out": 1500}
-        with mock.patch.object(self.ms, "_local", return_value=prof), \
+        with mock.patch.object(self.ms, "_locals", return_value=[prof]), \
                 mock.patch.object(models, "complete", return_value={"text": "t"}) as comp:
             self.ms._ask(self.p, "s", "p")
             self.assertEqual((comp.call_args.kwargs["max_tokens"], comp.call_args.kwargs["think"]), (1500, None))

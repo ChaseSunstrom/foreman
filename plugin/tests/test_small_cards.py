@@ -250,7 +250,7 @@ class UiGrid(_Cards):
 
     def test_writer_routing_in_ask_never_calls_a_real_model(self):
         ms = self.sc.ms
-        with mock.patch.object(ms, "_local", return_value={"name": "loc"}), \
+        with mock.patch.object(ms, "_locals", return_value=[{"name": "loc"}]), \
                 mock.patch.object(ms.models, "complete", return_value={"text": "x"}) as comp, \
                 mock.patch.object(ms.ideas, "run_child", return_value="paid") as run, \
                 mock.patch.object(ms.budget, "check"):
@@ -258,7 +258,7 @@ class UiGrid(_Cards):
             self.assertEqual(ms._ask(self.p, "s", "p", writer="haiku")[1], "haiku")
             comp.assert_not_called()
             self.assertEqual(ms._ask(self.p, "s", "p", writer="local")[1], "loc")
-        with mock.patch.object(ms, "_local", return_value=None), self.assertRaises(ValueError):
+        with mock.patch.object(ms, "_locals", return_value=[]), self.assertRaises(ValueError):
             ms._ask(self.p, "s", "p", writer="local")
         with self.assertRaises(ValueError):
             ms._ask(self.p, "s", "p", writer="gpt")

@@ -15,6 +15,7 @@ import os
 import random
 import re
 import threading
+import time
 import urllib.parse
 import urllib.request
 
@@ -538,22 +539,32 @@ def _generative(sensitive):
         return
 
 
-def _local(sensitive):
-    """The MOONS_LOCAL profile when set (empty turns the local model off), else the first usable own or local
-    generative profile (T-2893); a sensitive project's only on loopback."""
+def _locals(sensitive):
+    """Each usable local profile in order, probed lazily: the MOONS_LOCAL profile alone when set (empty turns the local
+    model off), else every usable own or local generative profile (T-2893, T-3152); a sensitive project's only on
+    loopback. A profile that failed a call within DOWN_S is skipped, so a down server isn't waited on every call."""
     name = os.environ.get("MOONS_LOCAL")
     if name is None:
-        return next(filter(None, (_usable(x, sensitive) for x in _generative(sensitive))), None)
+        cands = (x for x in _generative(sensitive) if _down.get(x.get("name"), 0) <= time.time())
+        yield from filter(None, (_usable(x, sensitive) for x in cands))
+        return
     if not name.strip():
-        return None
+        return
     try:
         prof = models.resolve(name.strip())
     except (models.ModelError, OSError, ValueError):
-        return None
-    return _usable(prof, sensitive)
+        return
+    if prof := _usable(prof, sensitive):
+        yield prof
+
+
+def _local(sensitive):
+    """The first usable local profile (see _locals), or None."""
+    return next(_locals(sensitive), None)
 
 
 _lock, _cuts, _THINK = threading.Lock(), collections.Counter(), None  # replies cut empty, by model; --think's override
+_down, DOWN_S = {}, 600  # T-3152: profile name -> epoch until which a failed local model is skipped
 _LOCAL_ONLY = False  # T-2916: --local-only: a call no local model answers stops the run, never goes to Haiku
 
 
@@ -591,8 +602,8 @@ def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE, writer=None):
     sensitive = bool(c.read_meta(p).get("sensitive"))
     if writer is not None and writer not in WRITERS:
         raise ValueError(f"--writer takes {', '.join(WRITERS)}")
-    prof = _local(sensitive) if cheap and writer not in ("haiku", "sonnet") else None
-    if prof:
+    tried = []  # T-3152: each local model tried and why it gave nothing, named when the run stops
+    for prof in (_locals(sensitive) if cheap and writer not in ("haiku", "sonnet") else ()):
         try:
             r = models.complete(prof, [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
                                 max_tokens=min(prof.get("max_out", 4096), prof.get("context", 4096)), timeout=TIMEOUT,
@@ -600,12 +611,18 @@ def _ask(p, system, prompt, cheap=True, paid=0, feature=FEATURE, writer=None):
             if (r.get("text") or "").strip():
                 # a --think run books its rows under their own name, so coverage's "kept by model" is the A/B (T-2893)
                 return r["text"], prof["name"] + ("" if _THINK is None else "+think" if _THINK else "+nothink")
+            tried.append(f"{prof['name']}: empty reply")
         except (models.ModelError, ValueError, *models._TRANSPORT) as e:
             if "reasoning used the whole budget" in str(e):
                 with _lock:
                     _cuts[prof["name"]] += 1
+            else:  # a down or failing server: skip it a while instead of waiting TIMEOUT on every call
+                with _lock:
+                    _down[prof["name"]] = time.time() + DOWN_S
+            tried.append(f"{prof['name']}: {' '.join(str(e).split())[:160]}")
     if _LOCAL_ONLY or writer == "local":  # audit: cheap=False goes to the strongest review model, paid too
-        raise LocalOnly("local-only: no local model answered (MOONS_LOCAL); nothing was sent to a paid model")
+        raise LocalOnly("local-only: no local model answered (MOONS_LOCAL)" + (f": {'; '.join(tried)}" if tried else "")
+                        + "; nothing was sent to a paid model")
     if sensitive:
         raise ValueError("a sensitive project's records go to a local model only, and none answered (MOONS_LOCAL)")
     model = writer if writer in ("haiku", "sonnet") else "haiku" if cheap else rune.REVIEW_MODELS[-1]
