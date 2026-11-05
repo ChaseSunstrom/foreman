@@ -2520,6 +2520,16 @@ class CredentialReads(GuardCase):
                  ("bash -c 'cat ~/.ssh/id_rsa'", "credentials"), ('echo "$(< ~/.netrc)"', "credentials")]
         self.run_table(rows, self.bash)
 
+    def test_every_file_under_config_sampo_is_a_credential(self):
+        """T-3188: ~/.config/sampo holds secrets.env and selfgate.key; any later key there is guarded by its folder."""
+        rows = [(f"{cmd} ~/.config/sampo/{f}", "credentials") for cmd in ("cat", "head -n 1", "cp")
+                for f in ("secrets.env", "selfgate.key", "later-thing.json")]
+        rows += [("echo x > ~/.config/sampo/selfgate.key", "credentials"), ("cat $HOME/.config/sampo/secrets.env", "credentials"),
+                 ("cp ~/.config/sampo/secrets.env /tmp/s", "credentials"), ("cat < ~/.config/sampo/other", "credentials")]
+        self.run_table(rows, self.bash)
+        self.run_table([("{home}/.config/sampo/secrets.env", "credentials"), ("{home}/.config/sampo/notes.txt", "credentials"),
+                        ("{home}/.config/sampo-other/x.txt", None)], self.write)
+
     def test_public_parts_and_using_keys_are_not_reads(self):
         self.run_table([(c, None) for c in (
             "cat ~/.ssh/id_ed25519.pub", "cat ~/.ssh/known_hosts", "cat ~/.ssh/config", "cat ~/.ssh/authorized_keys",

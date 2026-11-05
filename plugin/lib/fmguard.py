@@ -384,7 +384,8 @@ def _variants(path):
 _SAFE_DEV = lazy(r"^/dev/(null|zero|stdout|stderr|stdin|tty|random|urandom|fd/.*|shm/.*)$")
 _DOC_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".kt", ".rb",
             ".php", ".cs", ".swift", ".scala", ".sh", ".md", ".rst", ".adoc", ".html", ".css", ".nix", ".lua", ".zig", ".ml"}
-_CRED_DIRS = [".ssh", ".aws", ".config/gcloud", ".kube", ".gnupg", ".config/gh"]
+_CRED_DIRS = [".ssh", ".aws", ".config/gcloud", ".kube", ".gnupg", ".config/gh",
+              ".config/sampo"]  # T-3188: secrets.env, selfgate.key and any later key
 _CRED_FILES = [".netrc", ".npmrc", ".pypirc", ".git-credentials", ".claude/.credentials.json", ".docker/config.json"]
 
 
@@ -2315,7 +2316,7 @@ def _quoted_paths(cmd):
 
 
 # T-1460: the home folder's credential names, as code joins them (os.path.join(HOME, ".ssh", "id_rsa"))
-_CRED_PART = lazy(r"(?:^|/)(?:\.ssh|\.aws|\.gnupg|\.kube|\.config/gcloud|\.config/gh|\.netrc|\.npmrc|\.pypirc"
+_CRED_PART = lazy(r"(?:^|/)(?:\.ssh|\.aws|\.gnupg|\.kube|\.config/gcloud|\.config/gh|\.config/sampo|\.netrc|\.npmrc|\.pypirc"
                         r"|\.git-credentials|\.docker|\.credentials\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?!\.pub))(?:/|$)")
 _HOME_IN_CODE = lazy(r"~|\bHOME\b|expanduser|homedir|Path\.home|Dir\.home|getpwuid")
 # credential files by name, wherever they sit in the code (quotes can be paired wrongly on purpose)

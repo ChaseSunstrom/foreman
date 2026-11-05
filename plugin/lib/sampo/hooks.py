@@ -1845,7 +1845,7 @@ def _outward_denial(pl):
 
 
 # fmguard._CRED_DIRS and _CRED_FILES (a test keeps them in step): read here before fmguard is imported
-_CRED_DIRS = [".ssh", ".aws", ".config/gcloud", ".kube", ".gnupg", ".config/gh"]
+_CRED_DIRS = [".ssh", ".aws", ".config/gcloud", ".kube", ".gnupg", ".config/gh", ".config/sampo"]
 _CRED_FILES = [".netrc", ".npmrc", ".pypirc", ".git-credentials", ".claude/.credentials.json", ".docker/config.json"]
 
 
