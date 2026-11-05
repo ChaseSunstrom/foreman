@@ -144,14 +144,9 @@ def _key(base):
 
 
 def _keyfile():
-    """The MAC key's path: the account's own ~/.config/sampo/selfgate.key (password database home, as models.secrets_path
-    finds it), never SAMPO_SECRETS or FOREMAN_SECRETS: a run pointed at a key the agent wrote must not verify with it (T-3192)."""
-    import pwd
-    try:
-        home = pwd.getpwuid(os.getuid()).pw_dir
-    except KeyError:  # a uid with no account entry (some containers): $HOME is all there is
-        home = os.path.expanduser("~")
-    return os.path.join(home, ".config", "sampo", "selfgate.key")
+    """The MAC key's path: selfgate.key beside secrets.env in the user's credential area (Ward guards *.key files)."""
+    from sampo import models
+    return os.path.join(os.path.dirname(models.secrets_path()), "selfgate.key")
 
 
 def _secret():
