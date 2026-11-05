@@ -152,7 +152,13 @@ def _run_in(tmp, seed, model, worker, timeout, max_steps, t0):
             "verify_runs": sum(e["event"] == "verify" and e.get("label") != "before" for e in events),
             "refusals": sum((e["event"] == "action" and e.get("result") == "refused") or e["event"] == "revert"
                             for e in events),
+            "early_dones": early_dones(events),
             "tokens": tokens, "seconds": round(time.monotonic() - t0, 1), "canary": canary}
+
+
+def early_dones(events):
+    """T-3180: the dones the run made with no edit while a verify failed (refused, the last one stopping it)."""
+    return sum(e.get("event") == "early_done" for e in events)
 
 
 def verdict(timed_out, check, canary, ended=None, stderr=""):
@@ -238,7 +244,7 @@ def _line(r):
         return f"  –  {r['seed']:<13} {r['reason']}"
     head = f"  {'✓' if r['closed'] else '✗'}  {r['seed']:<13} {r['seconds']:>6.1f}s"
     stats = f"  {r['verify_runs']} check run{'s' * (r['verify_runs'] != 1)}  {r['refusals']} refused  " \
-            f"{r['tokens']:,} tokens"
+            f"{r['tokens']:,} tokens" + (f"  {r['early_dones']} early done" if r.get("early_dones") else "")
     return head + stats + (f"  {r['reason']}" if r["reason"] else "")
 
 

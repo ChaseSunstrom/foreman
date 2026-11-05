@@ -56,6 +56,7 @@ FM = os.path.join(PLUGIN, "bin", "fm")
 HOOK = os.path.join(PLUGIN, "hooks", "hook")
 TYPES = ("FIX", "FEATURE", "CLEAN", "PERFORMANCE", "SECURITY", "RESEARCH")
 REPAIRS, ROUNDS = 2, 3
+EARLY_DONE_REFUSALS = 2  # T-3180: dones refused while no edit is made and a verify fails
 CAP = 3000            # characters of a run's head, and of its tail, the model sees
 READ_LINES, READ_MAX, LINE_MAX, READ_BYTES = 200, 400, 500, 16 << 20
 RUN_TIMEOUT, VERIFY_TIMEOUT, FM_TIMEOUT = 120, 600, 900
@@ -157,6 +158,7 @@ EVENTS = {
     "action": "action, target, result (ok|refused|error), detail (the result, cut)",
     "worker": "worker, exit", "revert": "file, reason",
     "verify": "criterion, label (before|verify), cmd, exit, output (when it failed)",
+    "early_done": "n: a done refused (no edit, a verify fails); the third stops the run",
     "changed": "step, files (dirty after the step), stat {path: [added, removed]}",
     "closed": "task, tokens, unproven (fm task finish's Not verified lines, T-2395)",
     "blocked": "task, reason, next (the command to run now)", "error": "task, next",
@@ -617,6 +619,7 @@ class Run:
         self.context = ""  # T-1374: what was piped on stdin
         self.reason = getattr(args, "reason", None)  # T-3006: one of REASONS, or None: as before
         self.state, self.checked, self.bad_run, self.broke = None, False, False, False  # a resume starts the state again
+        self.early, self.edited, self.tree0 = 0, False, None  # T-3180: refused early dones; an edit landed; the tree at start
         self.nonce = secrets.token_hex(6)  # T-1394: the data envelope's tag, which no file can know ahead
 
     def fence(self, text):
@@ -851,10 +854,11 @@ class Run:
                 return self.read(arg("path"), arg("start", int, 1), arg("lines", int, READ_LINES)), False
             if name == "search":
                 return self.search(arg("pattern"), a.get("glob") if isinstance(a.get("glob"), str) else None), False
-            if name == "edit":
-                return self.edit(arg("file"), arg("old"), arg("new")), False
-            if name == "write":
-                return self.write(arg("file"), arg("content")), False
+            if name in ("edit", "write"):
+                res = self.edit(arg("file"), arg("old"), arg("new")) if name == "edit" else \
+                    self.write(arg("file"), arg("content"))
+                self.edited = self.edited or not res.startswith(("error", "refused"))  # T-3180
+                return res, False
             if name == "run":
                 return self.run_cmd(arg("cmd")), False
         except (ValueError, OSError) as e:
@@ -1026,6 +1030,8 @@ class Run:
                             + (STATE_NOTE if self.reason == "state" else "")})
             self.add(name, {"role": "user", "content": prompt})
         msgs = self.msgs[name]
+        if self.tree0 is None:
+            self.tree0 = self.tree()
         lost = self.fence("not run (interrupted): the harness stopped before this action's result was recorded; it may "
                           "have partly happened, so check before doing it again")
         answered = {x.get("tool_call_id") for x in msgs if x.get("role") == "tool"}
@@ -1084,10 +1090,42 @@ class Run:
             seen[self.last_act] = seen.get(self.last_act, 0) + 1
             if seen[self.last_act] == 3 and not finished:  # T-2966: once a key, as louhi counts it
                 finished = self.loop_break(name, profile, self.last_act, tools)
+            if finished and self.last_act[0] == "done" and (back := self.early_done()):
+                self.add(name, {"role": "user", "content": back})
+                continue
             if finished:
                 break
         self.done.add(name)
         self.log(kind="phase_done", phase=name)
+
+    def tree(self):
+        """T-3180: HEAD and every dirty or untracked file with its size and mtime: a change by `run` shows as a
+        difference. (ponytail: an in-place rewrite to the same size within one mtime tick is missed.)"""
+        out = [_head(self.root)]
+        for rel in sorted(f for f in _dirty(self.root) if not core.ARTEFACT.search(f)):  # not a .pyc a check left
+            try:
+                st = os.lstat(os.path.join(self.root, rel))
+                out.append((rel, st.st_size, st.st_mtime_ns))
+            except OSError:
+                out.append((rel, None))
+        return out
+
+    def early_done(self):
+        """T-3180: a done with no edit or write made this run (a change by `run` isn't seen) while a criterion's verify
+        fails: the failure back as the next turn, twice at most; the third raises (stopped early). None: done stands."""
+        if not self.plan or self.read_only or self.edited or self.tree() != self.tree0:  # the flag is the fast path
+            return None
+        failed = self.verify("early")
+        if not failed:
+            return None
+        self.early += 1
+        self.log(kind="early_done", n=self.early)
+        self.emit("early_done", f"  done refused: no edit made and a verify fails ({self.early})", quiet=True, n=self.early)
+        if self.early > EARLY_DONE_REFUSALS:
+            raise CodeError(f"stopped early: the model called done {self.early} times with no edit while a verify fails: "
+                            f"{_one_line(_failures(failed), 300)}", f"fm code --resume {self.tid}" if self.tid else None)
+        return (f"Not done: you made no edit, and these verify commands still fail:\n\n{self.fence(_failures(failed))}\n\n"
+                "Edit the files so they pass, then call done.")
 
     def work(self, name, prompt):
         """T-1214: one worker turn, bounded by --worker-timeout (it and all it started killed), then the tree judged,

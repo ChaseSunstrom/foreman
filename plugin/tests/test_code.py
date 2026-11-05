@@ -13,6 +13,7 @@ from helpers import FM, PLUGIN, ForemanTestCase, busy_factor, read_json, read_te
 PLAN = {"type": "FIX", "tier": "S", "title": "Make calc.add add",
         "criteria": [{"text": "calc.add adds", "verify": "python3 test_calc.py"}], "steps": ["fix calc.add"]}
 HANG = object()
+NOT_A_FIX = {"calls": [("write", {"file": "notes.txt", "content": "x\n"})]}  # T-3180: an edit, so done isn't refused
 M_PLAN = dict(PLAN, tier="M",  # T-2344: an M plan's readings, options with failure modes, and a choice confidence
               readings=["calc.add subtracts by mistake, so it should add", "callers want a difference, so rename it"],
               options=[{"kind": "build", "text": "change the operator in calc.add", "fails_if": "a caller relies on it"},
@@ -291,13 +292,13 @@ class Repairs(CodeCase):
         self.assertIn("AssertionError: 6", f.said(3))  # the failing verify's output (a * b) went back to the model
 
     def test_verify_never_passing_blocks_the_task(self):
-        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        self.serve("openai", plan(), NOT_A_FIX, *[call("done", summary="nothing") for _ in range(4)])
         r = self.code("fix add", "--model", "fake", check=False)
         self.assertEqual(r.returncode, 1)
         self.assertEqual(self.task()["status"], "blocked")
 
     def test_recheck_reruns_a_blocked_runs_checks_through_the_guard(self):  # T-1341
-        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        self.serve("openai", plan(), NOT_A_FIX, *[call("done", summary="nothing") for _ in range(4)])
         self.code("fix add", "--model", "fake", check=False)
         self.assertEqual(self.task()["status"], "blocked")
         with open(os.path.join(self.repo, "calc.py"), "w") as f:  # a person fixed it in a live CLI
@@ -316,7 +317,7 @@ class Repairs(CodeCase):
         self.assertEqual(self.code("--recheck", "T-0099", check=False).returncode, 1)
 
     def test_escalate_takes_over_after_three_failed_rounds(self):
-        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        self.serve("openai", plan(), NOT_A_FIX, *[call("done", summary="nothing") for _ in range(4)])
         strong = self.serve("anthropic", call("edit", file="calc.py", old="a - b", new="a + b"),
                             call("done", summary="fixed"), name="strong")
         r = self.code("fix add", "--model", "fake", "--escalate", "strong")
@@ -1007,9 +1008,9 @@ class SlotIntegrity(CodeCase):  # T-1398
                f'  File "{os.path.join(self.repo, "test_calc.py")}", line 2, in <module>\n'
                'calc.py:2:5: E999 x\ncalc.py(2): error\n')
         self.assertEqual(smith.places(out, os.path.realpath(self.repo)), ["test_calc.py:2", "calc.py:2"])
-        f = self.serve("openai", plan(), call("done", summary="nothing yet"), *FIX)
+        f = self.serve("openai", plan(), NOT_A_FIX, call("done", summary="nothing yet"), *FIX)
         self.code("fix add", "--model", "fake")
-        self.assertIn("Where it fails: test_calc.py:2", json.dumps(f.seen[2]))
+        self.assertIn("Where it fails: test_calc.py:2", json.dumps(f.seen[3]))
 
 
 class Leases(CodeCase):  # T-1764
@@ -1048,7 +1049,7 @@ class Why(CodeCase):  # T-1760 (T-1373)
         self.assertEqual(self.code("why").stdout, out, "no ID: the newest run")
 
     def test_why_explains_a_blocked_run_with_its_reason(self):
-        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        self.serve("openai", plan(), NOT_A_FIX, *[call("done", summary="nothing") for _ in range(4)])
         self.code("fix add", "--model", "fake", check=False)
         out = self.code("why").stdout
         self.assertIn("T-0001: blocked (fix add)", out)
@@ -1087,7 +1088,7 @@ class PipedContext(CodeCase):  # T-1760 (T-1374)
 class RunFriction(CodeCase):  # T-1339
     def test_each_new_cause_is_logged_once_onto_foremans_own_friction_task(self):
         for _ in range(2):  # blocked twice for the same reason: one line
-            self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+            self.serve("openai", plan(), NOT_A_FIX, *[call("done", summary="nothing") for _ in range(4)])
             self.code("fix add", "--model", "fake", check=False)
         self.code("fix it", "--model", "nope", check=False)  # fails before any task
         lines = run_friction_lines(self)
@@ -1173,7 +1174,7 @@ class RunHooks(CodeCase):  # T-1351
 
     def test_a_block_runs_blocked_and_needs_you_and_a_refused_or_failing_one_is_a_note(self):
         self.on(blocked=f"touch {self.tmp}/blocked; exit 3", **{"needs-you": "rm -rf ~"})
-        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        self.serve("openai", plan(), NOT_A_FIX, *[call("done", summary="nothing") for _ in range(4)])
         r = self.code("fix add", "--model", "fake", check=False)
         self.assertEqual(r.returncode, 1)
         self.assertTrue(os.path.exists(os.path.join(self.tmp, "blocked")))
@@ -1259,7 +1260,7 @@ class Failures(CodeCase):  # T-1754 (T-1334, T-1355)
         self.assertEqual(last(r), "Next: fm code --resume T-0001")
         end = [json.loads(line) for line in r.stdout.splitlines()][-1]
         self.assertEqual((end["event"], end["next"]), ("error", "fm code --resume T-0001"))
-        self.serve("openai", plan(), *[call("done", summary="nothing") for _ in range(4)])
+        self.serve("openai", plan(), NOT_A_FIX, *[call("done", summary="nothing") for _ in range(4)])
         r = self.code("fix add", "--model", "fake", "--json", check=False)
         self.assertEqual(last(r), "Next: fm task show T-0002")
         self.assertEqual([json.loads(line) for line in r.stdout.splitlines()][-1]["next"], "fm task show T-0002")
