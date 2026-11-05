@@ -10,6 +10,7 @@
 
 ### Everything else
 
+- Kalevala part 2: `sampo kalevala start`, `step`, `gen` and `select` run each aspect's Rune tower as a sealed job, at most K at once and charged once inside Kalevala's own daily share, keep Kalevala's own generations, and carry closed behaviour changes into every tower's next seed as capabilities (T-3081).
 - Guard: a python heredoc followed by `2>&1` and read-only filter pipes (head, tail without follow, cut, wc, sort without -o/-T, flag-only uniq, grep with literal args) is judged as python, not shell text, unless the shell text could make a filter's name run something else (T-2261).
 - Moons yield more and can be about Sampo itself: a payoff line missing only "With this," is fixed at write and 847 old rejects are re-admitted; a Sampo grid (problem solving, memory, efficiency and every coverage area) is read thinnest first beside the user grid and accepts Sampo's own parts as the payoff; a moon whose kill test needs more than one person and one day gets one rewritten test as a child row; each cell's prompt carries its kind's top reject reasons and two kept moons (T-3045).
 - Direction 12 (the illustrated forge) is kept in the repo: its page, notes, `_src` generator and logos under `design/site/12-forge-illustrated/`, and the port scripts that made the landing site under `site/tools/`, which now write an output only when its content changes (T-3097).
