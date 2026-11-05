@@ -269,6 +269,28 @@ class OpenAIShape(Base):
             m.complete(p, [{"role": "user", "content": "hi"}])
         self.assertIn("FM_TEST_KEY", str(cm.exception))
 
+    def test_the_secrets_file_is_found_under_the_accounts_home_not_HOME(self):
+        # T-3080: an exam sets HOME to a throwaway, and the 27B arm then read "LLM_API_KEY is not set"
+        import pwd
+        os.environ.pop("SAMPO_SECRETS")
+        old = os.environ.get("HOME")
+        os.environ["HOME"] = self._tmp.name
+        try:
+            self.assertEqual(m.secrets_path(),
+                             os.path.join(pwd.getpwuid(os.getuid()).pw_dir, ".config", "sampo", "secrets.env"))
+        finally:
+            os.environ["HOME"] = old if old is not None else ""
+        os.environ["SAMPO_SECRETS"] = "/x/secrets.env"
+        self.assertEqual(m.secrets_path(), "/x/secrets.env")
+        os.environ.pop("SAMPO_SECRETS")
+        def no_entry(uid):  # a container's uid with no account entry
+            raise KeyError(uid)
+        real, pwd.getpwuid = pwd.getpwuid, no_entry
+        try:
+            self.assertEqual(m.secrets_path(), os.path.expanduser("~/.config/sampo/secrets.env"))
+        finally:
+            pwd.getpwuid = real
+
     def test_missing_key_env_raises(self):
         f = self.fake((200, oa_reply(), None))
         p = self.profile(f)

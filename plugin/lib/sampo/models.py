@@ -869,6 +869,19 @@ def _cli(profile, messages, timeout):
             "stop": "end", "usd": got.get("total_cost_usd")}
 
 
+def secrets_path():
+    """$SAMPO_SECRETS, else secrets.env under the account's own home (T-3080: from the password database, not $HOME,
+    which an exam or a sandbox points at a throwaway)."""
+    import pwd
+    if os.environ.get("SAMPO_SECRETS"):
+        return os.environ["SAMPO_SECRETS"]
+    try:
+        home = pwd.getpwuid(os.getuid()).pw_dir
+    except KeyError:  # a uid with no account entry (some containers): $HOME is all there is
+        home = os.path.expanduser("~")
+    return os.path.join(home, ".config", "sampo", "secrets.env")
+
+
 def secret(env):
     """T-3036: env's value, else its line in the user's private secrets file ($SAMPO_SECRETS, default
     ~/.config/sampo/secrets.env: KEY=VALUE lines, export and quotes allowed), so hooks, the night job and sampo-live,
@@ -876,7 +889,7 @@ def secret(env):
     got = (os.environ.get(env) or "").strip()
     if got:
         return got
-    path = os.environ.get("SAMPO_SECRETS") or os.path.expanduser("~/.config/sampo/secrets.env")
+    path = secrets_path()
     try:
         st = os.stat(path)
         if st.st_mode & 0o077 or st.st_uid != os.getuid():
