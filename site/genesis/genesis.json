@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T13:55:49Z",
- "rev": "4deb288c",
+ "updated": "2026-11-05T14:00:55Z",
+ "rev": "0f3d7485",
  "capabilities": [
   {
    "n": 1,
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 15044,
+   "generated": 15084,
    "write": {
     "title": 128,
-    "line": 961,
+    "line": 1001,
     "payoff": 17,
     "kill test": 60,
     "code": 3
