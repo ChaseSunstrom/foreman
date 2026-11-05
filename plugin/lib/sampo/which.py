@@ -87,8 +87,15 @@ def playbooks(task=None):
 def commands():
     from sampo import cli
     from sampo import recall
-    return [{"name": n, "load": f"fm {n}", "summary": cli._no_ids(" ".join(h.split())), "text": t}
-            for n, (h, t) in sorted(recall.verb_docs().items()) if n.split()[0] not in SELF | FOREMAN_ONLY]
+    out = [{"name": n, "load": f"fm {n}", "summary": cli._no_ids(" ".join(h.split())), "text": t}
+           for n, (h, t) in sorted(recall.verb_docs().items()) if n.split()[0] not in SELF | FOREMAN_ONLY]
+    out.append({"name": "task set ID scope=[...]", "load": "fm task set ID scope=[...]",
+                "summary": "widen task scope: set the scope assignments on a task", "text": "task set ID scope= widen task scope"})
+    out.append({"name": "task set ID approved=true", "load": "fm task set ID approved=true",
+                "summary": "approve a task: mark it approved", "text": "task set ID approved=true approve a task"})
+    out.append({"name": "task set ID --allow CATEGORY", "load": "fm task set ID --allow CATEGORY",
+                "summary": "allow a guard category on a task", "text": "task set ID --allow guard category allow a task"})
+    return out
 
 
 # ---- T-2371: the other shelves. Local files only: no network, no process; a shelf that fails is skipped and said.

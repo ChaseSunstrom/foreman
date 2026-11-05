@@ -74,6 +74,13 @@ class Which(ForemanTestCase):
         self.assertIn("fm serve", self.fm("which", "serve this repo").stdout)  # review: the second verb on its line
         self.assertTrue(self.fm("which", "what did it cost").stdout.startswith("fm commands:"))
 
+    def test_task_set_key_forms_are_found(self):
+        # T-3108: 'widen task scope', 'approve a task' and 'allow a guard category' name sampo task set ID scope=[...]
+        self.assertIn("fm task set", self.fm("which", "widen task scope").stdout)
+        self.assertIn("scope=[", self.fm("which", "widen task scope").stdout)
+        self.assertIn("approved=true", self.fm("which", "approve a task").stdout)
+        self.assertIn("--allow", self.fm("which", "allow a guard category on a task").stdout)
+
     def test_one_common_word_is_no_match(self):
         # T-1699 review: "page" alone listed the UI playbooks and fm page for a login task nothing covers
         p = self.fm("which", "add a zebra page with quokka", check=False)
