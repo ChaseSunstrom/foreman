@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-05T00:52:11Z",
+ "updated": "2026-11-05T00:57:22Z",
  "rev": "5de167c7",
  "capabilities": [
   {
@@ -4094,8 +4094,8 @@
        "type": "FEATURE",
        "tier": "L",
        "steps": 5,
-       "done": 1,
-       "current": "Louhi models arm: decision and embedding arms, held-out split, metrics, results file (lane A)"
+       "done": 2,
+       "current": "generation arm: ideas yield per model and Smith seeds with timeouts sized to the model (lane B)"
       }
      ]
     },
