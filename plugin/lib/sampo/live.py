@@ -16,8 +16,10 @@ Each collector is cheap (no model call, nothing beyond 127.0.0.1: Ollama's /api/
 nvidia-smi, /proc) and fails soft: its field is empty, never a 500. The whole snapshot is cached CACHE_S seconds, so any
 number of pages cost one build. Model calls come from what the code already logs: the ledger's cards_grow, moons_grow,
 moons_funnel, run_session, genesis_confirm and genesis_review events (each names its models) and state/spend.jsonl."""
+import calendar
 import hmac
 import json
+import math
 import os
 import re
 import secrets
@@ -253,6 +255,22 @@ def _words(d):
     return " · ".join(x for x in (" ".join(head), *prose) if x)
 
 
+def spend_today():
+    """T-3092: dollars spent in each local hour of today so far (state/spend.jsonl), for the page's spend chart."""
+    t0 = time.localtime()
+    start = time.mktime((t0.tm_year, t0.tm_mon, t0.tm_mday, 0, 0, 0, 0, 0, -1))
+    hrs = [0.0] * (t0.tm_hour + 1)
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "spend.jsonl"), 5000):
+        try:
+            at, usd = calendar.timegm(time.strptime(str(e["ts"]), "%Y-%m-%dT%H:%M:%SZ")), float(e.get("usd") or 0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        h = int((at - start) // 3600)
+        if 0 <= h < len(hrs) and math.isfinite(usd):
+            hrs[h] += usd
+    return [round(x, 2) for x in hrs]
+
+
 def stats(p):
     def slow():
         from sampo import moonscale, smallcards
@@ -260,7 +278,7 @@ def stats(p):
         return {"cards": {"general": cov["total"], "ui": cov["ui"].get("total", 0), "ui_cells": cov["ui"].get("filled", 0),
                           "grid_ui": cov["ui"].get("grid", 0)},
                 "moons": {"candidates": st["total"], "stages": st["stages"]},
-                "bench": []}  # ponytail: the bench table is a model read away; the page shows none until a cheap one exists
+                "spend": spend_today(), "bench": []}  # ponytail: the bench table is a model read away; the page shows none until a cheap one exists
     return dict(_cached(("stats", p.dir), SLOW_S, slow), closed_today=len(_closed_today(p)))
 
 

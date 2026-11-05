@@ -24,11 +24,11 @@
   {"id": "T-2981", "title": "Ledger logs model, caller and kind per call", "at": "2026-11-04T12:18:44Z"}
  ],
  "lanes": [
-  {"task": "T-2999", "title": "The live page: the forge scene and panels", "model": "opus", "since": "2026-11-04T18:02:05Z"},
+  {"task": "T-2999", "title": "The live page: the forge scene and panels", "model": "opus", "since": "2026-11-04T18:02:05Z", "steps": {"done": 2, "total": 5}},
   {"task": "T-2961", "title": "Bench the embed models on the UI card grid", "model": null, "since": null}
  ],
  "jobs": [
-  {"name": "moons funnel --batch 200 --stages kill,tier", "kind": "funnel", "pid": 41822, "since": "2026-11-04T16:50:00Z", "model": "qwen3:14b", "progress": null, "line": "tier: 430 kept, 790 waiting"},
+  {"name": "moons funnel --batch 200 --stages kill,tier", "kind": "funnel", "pid": 41822, "since": "2026-11-04T16:50:00Z", "model": "qwen3:14b", "progress": {"done": 430, "total": 1220, "unit": "cards", "rate": 0.5, "eta_s": 1580}, "line": "tier: 430 kept, 790 waiting"},
   {"name": "cards grow --ui --writer haiku", "kind": "grow", "pid": 42017, "since": "2026-11-04T17:10:00Z", "model": null, "progress": null, "line": ""},
   {"name": "exam run --models jeff/exam-smith", "kind": "exam", "pid": 43001, "since": null, "model": "jeff/exam-smith", "progress": null, "line": "scenario 18: fix a failing doctest"},
   {"name": "jeff train", "kind": "train", "pid": 39950, "since": "2026-11-04T15:05:00Z", "model": "jeff", "progress": null, "line": "step 396, loss 0.401"},
@@ -77,6 +77,7 @@
    "kill": {"kept": 1840, "rejected": 3022, "waiting": 1258},
    "tier": {"kept": 430, "rejected": 615, "waiting": 790},
    "novelty": {"kept": 99, "rejected": 126, "waiting": 205}}},
+  "spend": [0, 0, 0.4, 1.25, 0.8, 2.1, 0.3],
   "bench": [],
   "closed_today": 24
  }

@@ -47,9 +47,9 @@ class Files(unittest.TestCase):
         keys = {"at", "project", "focus", "queue", "closed_today", "lanes", "jobs", "models", "gpu", "flows", "events",
                 "stats"}
         self.assertTrue([s for s in got if s["flows"]], "some snapshot carries flows")
-        last = got[-1]  # the server today: bench rows and job progress don't exist yet, so the last snapshot has none
+        last = got[-1]  # bench rows don't exist yet; one job reports progress (T-3083's shape), the rest report none
         self.assertEqual(last["stats"]["bench"], [])
-        self.assertEqual({j["progress"] for j in last["jobs"]}, {None})
+        self.assertEqual(sorted(j["progress"] is None for j in last["jobs"]), [False, True, True, True, True])
         for s in got:
             self.assertEqual(set(s), keys)
             self.assertLessEqual({f["kind"] for f in s["flows"]}, KINDS)
@@ -75,13 +75,13 @@ class Files(unittest.TestCase):
         self.assertNotIn("javascript:", page.lower())
 
     def test_no_external_urls_anywhere(self):
-        for name in ("index.html", "live.css", "live.js"):
+        for name in ("index.html", "live.css", "live.js", "charts.js"):
             body = text(name)
             for pat in (r"(?i)\bhttps?://", r"(?i)url\(\s*['\"]?//", r"(?i)(?:src|href)\s*=\s*['\"]//", r"(?i)@import"):
                 self.assertNotRegex(body, pat, f"{name}: everything works offline")
 
     def test_the_script_stays_inside_the_csp(self):
-        js = text("live.js")
+        js = text("live.js") + text("charts.js")
         for pat in (r"\beval\s*\(", r"\bnew\s+Function\b", r"\.innerHTML\b", r"\.outerHTML\b", r"insertAdjacentHTML",
                     r"document\.write", r"setAttribute\(\s*['\"]style", r"set(?:Timeout|Interval)\(\s*['\"`]"):
             self.assertNotRegex(js, pat)
@@ -265,6 +265,13 @@ PROBE = """(() => { const $ = id => document.getElementById(id), n = (id, sel) =
     ktok: Object.fromEntries(["amber", "violet", "green", "orange", "blue", "red", "pale", "other", "dflt"].map(k => [k, getComputedStyle(document.documentElement).getPropertyValue("--k-" + k).trim()])),
     plate: getComputedStyle(document.documentElement).getPropertyValue("--plate").trim(),
     night: getComputedStyle(document.documentElement).getPropertyValue("--night").trim(),
+    charts: Object.fromEntries(["ch-calls", "ch-spend", "ch-funnel", "ch-gpu", "sp-calls"].map(id => { const e = $(id), s = e && e.querySelector("svg"), t = s && s.querySelector(".ch-t");
+      return [id, { shown: !!e && e.getBoundingClientRect().width > 0, svg: !!s, label: s ? (s.getAttribute("aria-label") || "") : "", role: s ? s.getAttribute("role") : "",
+        texts: s ? s.querySelectorAll("text").length : 0, fill: t ? getComputedStyle(t).fill : "", area: s ? s.querySelectorAll(".ch-area").length : 0,
+        dots: s ? s.querySelectorAll(".ch-dot").length : 0, segs: s ? s.querySelectorAll(".ch-seg").length : 0}]; })),
+    pgt: Array.from(document.querySelectorAll(".pg-t")).map(x => x.textContent), pgbars: document.querySelectorAll(".pg-bar[role=progressbar]").length,
+    legs: document.querySelectorAll(".ch-leg li").length, tankshown: !!$("gpu") && getComputedStyle(document.querySelector(".tank")).display !== "none",
+    netbg: (() => { const q = $("net"); try { const o = document.createElement("canvas").getContext("2d", {willReadFrequently: true}); o.canvas.width = o.canvas.height = 8; o.drawImage(q, 3, 3, 1, 1, 0, 0, 1, 1); const d = o.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3]]; } catch (e) { return null; } })(),
     tankflat: (() => { const s = document.querySelector("#tank-fill .seg"); return s ? getComputedStyle(s).backgroundImage : "none"; })()}; })()""" % json.dumps(list(PANELS))
 
 
@@ -723,6 +730,48 @@ class Page(unittest.TestCase):
                 else:
                     self.assertLess(lum(got["bg"]), 50, f"a dark page {where}")
                     self.assertGreater(lum(got["ink"]), 200, where)
+
+    def test_the_charts_are_drawn_from_one_kit_labelled_and_readable_in_both_schemes(self):  # T-3092
+        lin = lambda h: [(int(h[i:i + 2], 16) / 255) for i in (1, 3, 5)]
+        lum2 = lambda h: sum(w * (c / 12.92 if c <= .03928 else ((c + .055) / 1.055) ** 2.4) for w, c in zip((.2126, .7152, .0722), lin(h)))
+        for size in ((1440, 900), (390, 844)):
+            for scheme in ("dark", "light"):
+                where = f"{size} {scheme}"
+                got, errs = self.watch(size, True, lambda g: g.get("net") and g["net"]["painted"] and any("430 of" in t for t in g.get("pgt", [])),  # the last snapshot has landed
+                                       theme=None, scheme=scheme)
+                self.assertEqual(errs, [], where)
+                for id, c in got["charts"].items():
+                    self.assertTrue(c["shown"] and c["svg"], f"{id} drawn {where} {c}")
+                    self.assertEqual(c["role"], "img", id)
+                    self.assertGreater(len(c["label"]), 12, f"{id} has a text equivalent {where}")
+                self.assertGreaterEqual(got["charts"]["ch-spend"]["texts"], 6, "a spend chart has axes: y and x labels")
+                self.assertEqual(got["charts"]["ch-spend"]["dots"], 1, "the latest point is emphasised")
+                self.assertEqual(got["charts"]["ch-spend"]["area"], 1, where)
+                self.assertRegex(got["charts"]["ch-funnel"]["label"], r"\d", "the funnel's words carry its counts")
+                self.assertGreaterEqual(got["charts"]["ch-gpu"]["segs"], 1, "GPU memory is a stacked bar")
+                self.assertFalse(got["tankshown"], "no tank in the modern look")
+                self.assertGreaterEqual(got["legs"], 3, "legends")
+                m = re.findall(r"\d+", got["charts"]["ch-spend"]["fill"])
+                self.assertEqual(len(m), 3, got["charts"]["ch-spend"]["fill"])
+                txt = "#%02x%02x%02x" % tuple(map(int, m))
+                a, b = sorted((lum2(txt), lum2(got["plate"])))
+                self.assertGreaterEqual((b + .05) / (a + .05), 4.5, f"chart text {txt} on {got['plate']} {where}")
+                joined = " | ".join(got["pgt"])
+                self.assertRegex(joined, r"35% · 430 of 1220 cards · 0\.5/s|35% · 430 of 1,220 cards", where)
+                self.assertIn("ETA 26m", joined, where)
+                self.assertIn("no progress reported", joined, where)
+                self.assertIn("2 of 5 steps", joined, f"a lane's steps show on its task {where}")
+                if scheme == "light":
+                    self.assertIsNotNone(got["netbg"], where)
+                    self.assertGreater(sum(got["netbg"][:3]) / 3, 200, f"the network canvas is light too {where}")
+                else:
+                    self.assertLess(sum(got["netbg"][:3]) / 3, 80, where)
+
+    def test_forge_hides_the_charts_and_keeps_its_tank(self):  # T-3092
+        got, errs = self.watch((1440, 900), True, lambda g: g.get("nodes", 0) > 0 and g.get("ticker", 0) > 0, theme="forge")
+        self.assertEqual(errs, [])
+        self.assertFalse(got["charts"]["ch-calls"]["shown"])
+        self.assertTrue(got["tankshown"])
 
     def test_forge_brings_back_the_scene_the_words_and_the_serif(self):
         for size in ((1440, 900), (390, 844)):

@@ -1294,6 +1294,8 @@ function renderGpu(s) {
     const li = h("li", "v-free"); li.style.setProperty("--c", "transparent");
     li.append(h("span", "vn", "free"), h("span", "vg", gb(Math.max(0, total - used)))); rows.push(li);
   }
+  if (modern && window.Charts) Charts.stack($("ch-gpu"), {label: "GPU memory", total: cap, fmt: gb, empty: g ? "No models on the GPU" : "No GPU reading",
+    segs: mods.map((m, i) => ({name: str(m.name), v: num(m.vram_mb), c: rows[i].style.getPropertyValue("--c")})).concat(other > 64 ? [{name: "other processes", v: other, c: "var(--muted)"}] : [])});
   $("tank-fill").replaceChildren(...segs);
   $("gpu-list").replaceChildren(...rows);
   const read = $("gpu-read");
@@ -1310,10 +1312,10 @@ function renderJobs(s, first) {
     const kind = JOBC[str(j.kind)] ? str(j.kind) : "other", p = obj(j.progress), done = num(p.done), tot = num(p.total);
     const frac = done != null && tot ? clamp(done / tot, 0, 1) : null;
     el.className = "job"; el.style.setProperty("--c", kv(JOBC[kind]));
-    const bits = [str(j.model), j.since ? "for " + since(j.since, s.at) : "", frac != null ? fmt(done) + " of " + fmt(tot) : ""].filter(Boolean);
-    const bar = h("div", frac != null ? "jbar" : "jbar heat"), fill = h("span", "jfill");
-    if (frac != null) fill.style.setProperty("--p", frac.toFixed(4));
-    bar.append(fill);
+    const bits = [str(j.model), j.since ? "for " + since(j.since, s.at) : "", frac != null && !modern ? fmt(done) + " of " + fmt(tot) : ""].filter(Boolean);
+    let bar = h("div", frac != null ? "jbar" : "jbar heat");
+    if (modern && window.Charts) bar = Charts.progress({done, total: tot, unit: str(p.unit), rate: num(p.rate), eta: num(p.eta_s != null ? p.eta_s : p.eta), label: "Progress of " + str(j.name)});
+    else { const fill = h("span", "jfill"); if (frac != null) fill.style.setProperty("--p", frac.toFixed(4)); bar.append(fill); }
     const parts = [h("span", "jd"), h("span", "jn", str(j.name)), h("span", "jk", frac != null ? Math.round(frac * 100) + "%" : kind),
       h("p", "jm", bits.join(" · ") || "pid " + str(j.pid))];
     if (str(j.line).trim()) parts.push(h("p", "jl", str(j.line)));
@@ -1324,13 +1326,23 @@ function renderJobs(s, first) {
   setText($("jobs-sub"), jobs.length ? jobs.length + (modern ? " running" : " burning") : modern ? "idle" : "banked");
 }
 
+function stepsOf(o) {  // {steps: {done, total}} or "3/5"; null when the snapshot has none
+  o = obj(o);
+  const a = obj(o.steps), m = /^(\d+)\s*\/\s*(\d+)$/.exec(str(o.step));
+  const done = num(a.done) != null ? num(a.done) : m ? +m[1] : null, total = num(a.total) != null ? num(a.total) : m ? +m[2] : null;
+  return done != null && total ? {done, total} : null;
+}
+
 function renderQueue(s, first) {
-  const q = arr(s.queue).map(obj).slice(0, 12);
+  const q = arr(s.queue).map(obj).slice(0, 12), lanes = new Map(arr(s.lanes).map(obj).map(l => [str(l.task), l]));
   sync($("queue-list"), q, t => str(t.id), (el, t) => {
     el.className = "q"; el.dataset.status = str(t.status);
     const ty = str(t.type).toUpperCase(), chip = h("span", "qt", ty.toLowerCase() || "task");
     chip.style.setProperty("--c", kv(TYPEC[ty] || "#BAC0DD"));
-    el.replaceChildren(h("span", "qs"), h("span", "qid", str(t.id)), chip, h("span", "qtier", str(t.tier)), h("p", "qn", str(t.title)));
+    const kids = [h("span", "qs"), h("span", "qid", str(t.id)), chip, h("span", "qtier", str(t.tier)), h("p", "qn", str(t.title))];
+    const sp = modern && window.Charts ? stepsOf(t) || stepsOf(lanes.get(str(t.id))) : null;  // a task's steps, or its builder lane's
+    if (sp) kids.push(Charts.progress({done: sp.done, total: sp.total, unit: "steps", label: "Steps of " + str(t.id)}));
+    el.replaceChildren(...kids);
   }, first);
   $("queue-empty").hidden = q.length > 0;
   setText($("queue-sub"), q.length ? q.length + " waiting · " + q.filter(t => t.status === "active").length + " active" : "clear");
@@ -1396,6 +1408,49 @@ function renderCounters(s, first) {
   setText($("c-work-sub"), lanes + (lanes === 1 ? " builder · " : " builders · ") + jobs + (jobs === 1 ? " job" : " jobs"));
 }
 
+// ---------- the charts (T-3092): drawn by charts.js from the snapshot and from what this page has seen since it opened ----------
+const HIST_MAX = 150, SERIES_C = ["var(--k-blue)", "var(--k-violet)", "var(--k-green)", "var(--k-orange)", "var(--k-amber)"];
+const hist = {slug: "", at: 0, calls: new Map(), spark: {}};
+const push = (a, v) => { a.push(v); if (a.length > HIST_MAX) a.shift(); };
+function sample(s) {  // at most one reading a second, and a different project starts a fresh history
+  const at = Date.parse(str(s.at)), slug = str(obj(s.project).slug);
+  if (!Number.isFinite(at) || (slug === hist.slug && at - hist.at < 1000)) return;
+  if (slug !== hist.slug) { hist.calls.clear(); hist.spark = {}; hist.slug = slug; }
+  hist.at = at;
+  const models = arr(s.models).map(obj), seen = new Set(), st = obj(s.stats);
+  for (const m of models) {
+    const n = str(m.name);
+    if (!n || (!hist.calls.has(n) && hist.calls.size >= 12)) continue;
+    if (!hist.calls.has(n)) hist.calls.set(n, []);
+    push(hist.calls.get(n), [at, (num(m.calls_5m) || 0) / 5]);  // calls_5m is a five-minute count: per minute
+    seen.add(n);
+  }
+  for (const [n, a] of hist.calls) if (!seen.has(n)) push(a, [at, 0]);
+  const sp = (k, v) => { if (v != null) push(hist.spark[k] || (hist.spark[k] = []), v); };
+  sp("general", num(obj(st.cards).general)); sp("ui", num(obj(st.cards).ui));
+  sp("closed", num(st.closed_today) != null ? num(st.closed_today) : arr(s.closed_today).length);
+  sp("calls", models.reduce((a, m) => a + (num(m.calls_5m) || 0), 0));
+  sp("work", arr(s.lanes).length + arr(s.jobs).length);
+}
+function renderCharts(s) {
+  if (!modern || !window.Charts) return;
+  const hm = x => String(new Date(x).getHours()).padStart(2, "0") + ":" + String(new Date(x).getMinutes()).padStart(2, "0");
+  const top = [...hist.calls].map(([n, a]) => ({n, a, now: a.length ? a[a.length - 1][1] : 0, peak: Math.max(0, ...a.map(p => p[1]))}))
+    .sort((x, y) => y.now - x.now || y.peak - x.peak).filter(x => x.peak > 0).slice(0, 5);
+  Charts.line($("ch-calls"), {label: "Calls per minute by model", area: true, xfmt: hm, yfmt: v => String(Math.round(v * 10) / 10), empty: "No calls yet",
+    series: top.map((x, i) => ({name: x.n, c: SERIES_C[i % SERIES_C.length], pts: x.a}))});
+  const hrs = arr(obj(s.stats).spend).map(num).filter(v => v != null), usd = v => "$" + v.toFixed(2);
+  let run = 0;  Charts.line($("ch-spend"), {label: "Spend today, running total", area: true, xfmt: v => String(Math.round(v)).padStart(2, "0") + ":00", yfmt: usd, empty: "No spend reported",
+    series: hrs.length ? [{name: "spend", c: "var(--k-green)", pts: hrs.map((v, i) => [i, (run += v)])}] : []});
+  setText($("ch-spend-sub"), hrs.length ? usd(run) + " so far today" : "dollars so far today");
+  const stages = Object.entries(obj(obj(obj(s.stats).moons).stages)).slice(0, 8).map(([k, v]) => ({name: k, kept: num(obj(v).kept) || 0, rej: num(obj(v).rejected) || 0, wait: num(obj(v).waiting) || 0}));
+  Charts.funnel($("ch-funnel"), {label: "Moons funnel", stages, fmt: fmt, empty: "No funnel yet"});
+  const names = {general: "Cards", ui: "UI cards", closed: "Closed today", calls: "Calls in five minutes", work: "At work"};
+  for (const k in names) Charts.spark($("sp-" + k), hist.spark[k], {label: names[k], c: "var(--k-blue)"});
+}
+let chartW = 0;
+window.addEventListener("resize", () => { if (snap && window.innerWidth !== chartW) { chartW = window.innerWidth; renderCharts(snap); } });
+
 function renderHead(s) {
   const p = obj(s.project), where = $("project");
   where.replaceChildren(h("b", null, str(p.slug) || "no project"),
@@ -1427,6 +1482,8 @@ function take(s) {
   renderCloses(s, first);
   renderBench(s, first);
   renderCounters(s, first);
+  sample(s);
+  renderCharts(s);
   renderTicker(arr(s.events).map(obj).slice(0, 60), first);
   sceneTake(s, first);
   netIngest(s);
@@ -1701,6 +1758,8 @@ const toolOf = s => /[a-z]/i.test(str(s).replace(/\bT-\d+\b/gi, "").replace(/(^|
 const nat = (key, col) => !key ? "" : nnodes.has(key) ? key : nnodes.has("g:" + col) ? "g:" + col : "";  // a hidden node is its "+N" group
 const nroute = f => ({a: f.tid ? nat("a:" + f.tid, 0) : "", tl: f.tool ? nat("t:" + f.tool, 1) : "", m: nat("m:" + f.to, 2)});
 let ndirty = true, nlast = 0;
+const LIGHT = window.matchMedia ? matchMedia("(prefers-color-scheme: light)") : {matches: false}, NLITE = [[37, 78, 190], [52, 92, 200], [70, 84, 110]];
+if (LIGHT.addEventListener) LIGHT.addEventListener("change", () => { ndirty = true; if (nx) netPaint(); if (snap) renderCharts(snap); });
 
 function netPublish() {
   if (!nv) return;
@@ -1889,14 +1948,15 @@ function netDraw(t, st) {
   const c = nx;
   c.setTransform(ndpr, 0, 0, ndpr, 0, 0);
   const bgd = c.createLinearGradient(0, 0, 0, NH);
-  if (modern) { bgd.addColorStop(0, "#1D2640"); bgd.addColorStop(1, "#161D32"); } else { bgd.addColorStop(0, "#080A18"); bgd.addColorStop(1, "#04050E"); }
+  const lite = modern && LIGHT.matches;  // the modern light scheme paints the net on a light ground
+  if (lite) { bgd.addColorStop(0, "#F4F6FB"); bgd.addColorStop(1, "#E9EDF5"); } else if (modern) { bgd.addColorStop(0, "#1D2640"); bgd.addColorStop(1, "#161D32"); } else { bgd.addColorStop(0, "#080A18"); bgd.addColorStop(1, "#04050E"); }
   c.fillStyle = bgd; c.fillRect(0, 0, NW, NH);
   if (!modern) {
     c.globalCompositeOperation = "lighter";
     nglow(c, NW / 2, NH * 0.9, Math.max(NW, NH) * 0.55, EMBER, 0.05);  // the forge's warmth under the net
     c.globalCompositeOperation = "source-over";
   }
-  const HEADC = modern ? [150, 168, 205] : BRASS, INKC = modern ? [226, 232, 244] : PALE;
+  const HEADC = lite ? [74, 86, 110] : modern ? [150, 168, 205] : BRASS, INKC = lite ? [24, 32, 48] : modern ? [226, 232, 244] : PALE;
   ncnt.frames++;
   const P = nnodes;  // nodes hold still: the net redraws only while something moves
   const font = s => modern ? "500 " + s + "px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" : "500 " + s + "px \"Martian Mono\", ui-monospace, Menlo, monospace";
@@ -1943,7 +2003,7 @@ function netDraw(t, st) {
   for (const [k, n] of nnodes) {
     const q = P.get(k), lit = (nlitN.get(k) || 0) > t;
     const a = clamp(Math.max(n.glow, n.on ? 0.5 : 0.18, lit ? 1 : 0), 0, 1.4);
-    const col = n.kind && KIND[n.kind] && n.col !== 0 ? KIND[n.kind] : NCOL[n.col], r = n.group ? 4 : n.col === 0 ? 6.5 : 5;
+    const col = n.kind && KIND[n.kind] && n.col !== 0 ? KIND[n.kind] : lite ? NLITE[n.col] : NCOL[n.col], r = n.group ? 4 : n.col === 0 ? 6.5 : 5;
     c.globalCompositeOperation = "lighter";
     nglow(c, q.x, q.y, 12 + 22 * a, col, 0.18 + 0.4 * a);
     c.globalCompositeOperation = "source-over";
@@ -1952,7 +2012,7 @@ function netDraw(t, st) {
     c.beginPath(); c.arc(q.x, q.y, r, 0, TAU); c.stroke();
     c.font = font(11);
     const lab = nfit(c, n.label, NW / 3 - 14), hw = c.measureText(lab).width / 2, lx = clamp(q.x, hw + 4, NW - hw - 4), ly = q.y + r + 14;
-    c.lineJoin = "round"; c.lineWidth = 3; c.strokeStyle = modern ? "rgba(22,29,50,.85)" : "rgba(4,5,14,.85)"; c.strokeText(lab, lx, ly);  // a halo, so a line behind it doesn't cut the name
+    c.lineJoin = "round"; c.lineWidth = 3; c.strokeStyle = lite ? "rgba(244,246,251,.9)" : modern ? "rgba(22,29,50,.85)" : "rgba(4,5,14,.85)"; c.strokeText(lab, lx, ly);  // a halo, so a line behind it doesn't cut the name
     c.fillStyle = rgba(INKC, 0.5 + 0.45 * Math.min(1, a)); c.fillText(lab, lx, ly);
   }
   // the vignette, as the scene has

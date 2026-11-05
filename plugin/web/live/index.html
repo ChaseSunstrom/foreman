@@ -9,6 +9,7 @@
 <link rel="icon" href="data:,">
 <script src="/static/theme.js" nonce="__NONCE__"></script>
 <link rel="stylesheet" href="/static/live.css" nonce="__NONCE__">
+<script src="/static/charts.js" nonce="__NONCE__" defer></script>
 <script src="/static/live.js" nonce="__NONCE__" defer></script>
 </head>
 <body>
@@ -71,18 +72,25 @@
   </section>
 
   <section class="counters" id="counters" aria-label="Counters">
-    <div class="ctr"><p class="cl">Cards</p><p class="cv" id="c-general">—</p><p class="cs">general</p></div>
-    <div class="ctr"><p class="cl">UI cards</p><p class="cv" id="c-ui">—</p><p class="cs" id="c-cells">no grid yet</p><span class="meter" id="c-cellbar" aria-hidden="true"></span></div>
+    <div class="ctr"><p class="cl">Cards</p><p class="cv" id="c-general">—</p><span class="spark" id="sp-general" data-chart="spark"></span><p class="cs">general</p></div>
+    <div class="ctr"><p class="cl">UI cards</p><p class="cv" id="c-ui">—</p><span class="spark" id="sp-ui" data-chart="spark"></span><p class="cs" id="c-cells">no grid yet</p><span class="meter" id="c-cellbar" aria-hidden="true"></span></div>
     <div class="ctr ctr-moons"><p class="cl">Moons</p><p class="cv" id="c-moons">—</p><ol class="stages" id="c-stages" aria-label="Moons by funnel stage"></ol></div>
-    <div class="ctr"><p class="cl">Closed today</p><p class="cv" id="c-closed">—</p><p class="cs" id="c-closed-sub">tasks</p></div>
-    <div class="ctr"><p class="cl">Calls · 5 min</p><p class="cv" id="c-calls">—</p><p class="cs" id="c-calls-sub">across every model</p></div>
-    <div class="ctr"><p class="cl">At work</p><p class="cv" id="c-work">—</p><p class="cs" id="c-work-sub">builders and jobs</p></div>
+    <div class="ctr"><p class="cl">Closed today</p><p class="cv" id="c-closed">—</p><span class="spark" id="sp-closed" data-chart="spark"></span><p class="cs" id="c-closed-sub">tasks</p></div>
+    <div class="ctr"><p class="cl">Calls · 5 min</p><p class="cv" id="c-calls">—</p><span class="spark" id="sp-calls" data-chart="spark"></span><p class="cs" id="c-calls-sub">across every model</p></div>
+    <div class="ctr"><p class="cl">At work</p><p class="cv" id="c-work">—</p><span class="spark" id="sp-work" data-chart="spark"></span><p class="cs" id="c-work-sub">builders and jobs</p></div>
+  </section>
+
+  <section class="charts" id="charts" aria-label="Charts">
+    <article class="panel ch-p" aria-labelledby="chc-h"><header class="ph"><h2 id="chc-h">Calls per minute</h2><p class="sub">by model, since this page opened</p></header><div class="chart" id="ch-calls" data-chart="line"></div></article>
+    <article class="panel ch-p" aria-labelledby="chs-h"><header class="ph"><h2 id="chs-h">Spend today</h2><p class="sub" id="ch-spend-sub">dollars per hour</p></header><div class="chart" id="ch-spend" data-chart="line"></div></article>
+    <article class="panel ch-p" aria-labelledby="chf-h"><header class="ph"><h2 id="chf-h">Moons funnel</h2><p class="sub" id="ch-funnel-sub">candidates per stage</p></header><div class="chart" id="ch-funnel" data-chart="funnel"></div></article>
   </section>
 
   <div class="deck">
     <section class="panel p-gpu" id="gpu" aria-labelledby="gpu-h">
       <header class="ph"><h2 id="gpu-h">GPU</h2><p class="sub" id="gpu-name">No GPU reading</p></header>
       <div class="tankrow">
+        <div class="chart gpu-stack" id="ch-gpu" data-chart="stack"></div>
         <div class="tank" aria-hidden="true"><div class="fill" id="tank-fill"></div><div class="glass"></div></div>
         <div class="tank-side">
           <p class="gpu-read" id="gpu-read">—</p>

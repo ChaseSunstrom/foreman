@@ -56,6 +56,20 @@ class Snapshot(ForemanTestCase):
         self.assertEqual([(f["from"], f["to"], f["kind"]) for f in s["flows"]], [("card grow", "qwen3:14b", "write")])
         self.assertIn("cards_grow", [e["kind"] for e in s["events"]])
 
+    def test_spend_today_is_dollars_per_hour_for_the_chart(self):  # T-3092: the time series has data
+        t0 = time.localtime()
+        start = time.mktime((t0.tm_year, t0.tm_mon, t0.tm_mday, 0, 0, 0, 0, 0, -1))
+        rows = [{"ts": c.iso(start + 30), "usd": 1.5}, {"ts": c.iso(start + 40), "usd": 0.25}, {"ts": c.iso(start - 99), "usd": 9},
+                {"ts": "junk", "usd": 1}, {"ts": c.iso(start + 5), "usd": "nan"}, {"ts": c.iso(start + 5), "usd": None}]
+        path = os.path.join(c.state_dir(), "spend.jsonl")
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(json.dumps(r) for r in rows) + "\n")
+        hrs = live.spend_today()
+        self.assertEqual(len(hrs), t0.tm_hour + 1)
+        self.assertEqual(hrs[0], 1.75)
+        self.assertEqual(sum(hrs), 1.75)
+
     def test_flows_older_than_a_minute_are_out_and_event_text_is_redacted(self):
         old = c.log_event(self.p, "cards_grow", data={"models": {"haiku": 1}})
         with mock.patch.object(c, "now", return_value="2026-01-01T00:00:00Z"):
