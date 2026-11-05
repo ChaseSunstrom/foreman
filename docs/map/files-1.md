@@ -32,6 +32,7 @@ Full entries for [MASTER.md](../../MASTER.md) section 3 (File map); MASTER.md ke
 | `plugin/settings.json` | plugin default `subagentStatusLine` | Claude | by Claude Code | only `agent`/`subagentStatusLine` honored |
 | `plugin/bin/fm` | CLI entry (on the Bash tool PATH; protected) | Claude | on call | — |
 | `plugin/lib/` | the Python modules, one line each under "plugin/lib modules" below the table (T-1713) |
+| `plugin/cards/` | calling cards (T-3160): one folder per card (card.json, gen.py or templates, check, tests), run by `sampo card` (`sampo.callcards`); `SAMPO_CALLCARDS` adds absolute folders outside the repo | Claude | on call | — |
 | `plugin/hooks/hooks.json` | one handler per event (13 events), exec form (protected) | Claude | by Claude Code | p95 ≤ 150 ms |
 | `plugin/defaults.json` | every setting's default as the last release shipped it: sampo release names each one it changes in the notes and rewrites it; sampo settings changed compares with it (T-1549) | sampo release | read at release and by sampo settings changed | — |
 | `plugin/protocols.json` | how much deliberation each tier gets: S no panel, M a cold `sampo second rival` only under the race bar or with one honest reading (T-2341), L `sampo second plan` before approval (T-0662) | Claude | read by sampo second plan and sampo next | data |

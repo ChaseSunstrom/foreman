@@ -164,7 +164,8 @@ EVENTS = {
     "blocked": "task, reason, next (the command to run now)", "error": "task, next",
     "answer": "text: the answer to a question about the code (no task, nothing changed)",
     "note": "text, worker: which runner the run uses and why, or a caution about it (T-1328), or a worker turn that "
-            "changed nothing (T-1393); stopped [pids]: runners a killed fm code left, stopped at this start (T-1337)",
+            "changed nothing (T-1393); stopped [pids]: runners a killed fm code left, stopped at this start (T-1337); "
+            "cards [names]: the calling cards this run was offered (T-3160)",
     "tool": "action (read|edit|run|search|…), target, worker: a CLI's tool use as it happens (T-1329)",
     "working": "worker, secs, silent (seconds since its last byte): a CLI turn still running with nothing to show "
                "(each FM_HEARTBEAT s, default 10)",
@@ -621,6 +622,7 @@ class Run:
         self.state, self.checked, self.bad_run, self.broke = None, False, False, False  # a resume starts the state again
         self.early, self.edited, self.tree0 = 0, False, None  # T-3180: refused early dones; an edit landed; the tree at start
         self.nonce = secrets.token_hex(6)  # T-1394: the data envelope's tag, which no file can know ahead
+        self.cards_offer = self.cards_session = None  # T-3160: the calling cards picked for this run, and their Session
 
     def fence(self, text):
         """T-1394: text the repo or a tool wrote, in this run's data envelope, the '<' of every envelope-shaped tag in it
@@ -837,7 +839,10 @@ class Run:
         """(result text, step finished)."""
         if not isinstance(a, dict) or "_raw" in a:
             return "error: the action's arguments weren't a JSON object", False
-        if self.read_only and name not in ("read", "search", "done"):  # T-1320: a question changes nothing
+        if name not in ("card", "read", "search", "edit", "write", "run", "done") and name in {
+                cd["name"] for cd in self.offered()}:  # T-3160: a small model that calls a card by its own name
+            name, a = "card", dict(a, name=name)
+        if self.read_only and name not in ("read", "search", "done", "card"):  # T-1320: a question changes nothing
             return ("refused: this run answers a question and changes nothing: read or search, then call done with the "
                     "answer as the summary"), False
 
@@ -861,9 +866,12 @@ class Run:
                 return res, False
             if name == "run":
                 return self.run_cmd(arg("cmd")), False
+            if name == "card":
+                return self.card(a), False
         except (ValueError, OSError) as e:
             return f"error: {e}", False
-        return f"error: no action {name!r}; the actions are read, search, edit, write, run and done", False
+        return (f"error: no action {name!r}; the actions are read, search, edit, write, run"
+                + (", done and card" if self.offered() else " and done")), False
 
     def read(self, rel, start, lines):
         full = self.path(rel)
@@ -1010,6 +1018,98 @@ class Run:
         return (f"timed out after {RUN_TIMEOUT} s" if code is None else f"exit {code}") + (f"\n{out}" if out else "") \
             + (f"\n{note}" if note else "")
 
+    # -- calling cards (T-3160)
+    def offered(self):
+        """The calling cards that fit this task (callcards.pick over the request and the plan's title), picked once a
+        run; a question's run gets the read cards only. [] when cards are off (SAMPO_CARDS=off) or none fits."""
+        if self.cards_offer is None:
+            self.cards_offer = []
+            try:
+                from sampo import callcards
+                if callcards.enabled():
+                    self.cards_offer = callcards.pick(f"{self.request or ''}\n{(self.plan or {}).get('title') or ''}",
+                                                      root=self.root)["cards"]
+                    names = [cd["name"] for cd in self.cards_offer]  # the card bench's record of what a run was offered
+                    self.emit("note", f"calling cards offered: {', '.join(names) or 'none fits'}", quiet=True,
+                              cards=names)
+            except (ImportError, OSError, ValueError) as e:  # an offer, never a reason for the run to stop
+                self.emit("note", f"no calling cards offered: {_one_line(str(e), 120)}", quiet=True)
+        return [cd for cd in self.cards_offer if cd["read"] or not self.read_only]
+
+    def cards_note(self, profile):
+        """The system prompt's lines that teach the offered cards: each one's purpose and inputs, and how to call one."""
+        offered = self.offered()
+        if not offered:
+            return ""
+
+        def arg(k, p, req):
+            p = p if isinstance(p, dict) else {}
+            typ = "|".join(map(str, p["enum"])) if isinstance(p.get("enum"), list) else str(p.get("type", "any"))
+            return f"{k}{'' if k in req else '?'} ({typ})" + (f": {core.fit(str(p['description']), 120)}"
+                                                               if p.get("description") else "")
+        lines = []
+        for cd in offered:
+            req = set(cd["inputs"].get("required") or [])
+            props = cd["inputs"].get("properties") or {}
+            lines.append(f"  {cd['name']} ({'reads' if cd['read'] else 'changes files'}): {core.fit(cd['purpose'], 240)}"
+                         f"\n    inputs: " + "; ".join(arg(k, p, req) for k, p in props.items()))
+        how = ("call one with the card tool (name, inputs)" if profile.get("tools") else
+               'call one as {"action": "card", "name": "<card>", "inputs": {...}}')
+        return ("\nCalling cards that fit this task: each does one job exactly and is checked before anything changes, "
+                f"so use one where it fits; {how} (inputs marked ? are optional). A card that fails three times, or gets "
+                "the same failed call again, closes: then do it with the other actions.\n" + "\n".join(lines))
+
+    def card(self, a):
+        """A card call: through callcards' Session (its schema, confinement, checker, retry limits) and Smith's own
+        guard on each file it would write; the model reads callcards.text of the result."""
+        from sampo import callcards
+        if not callcards.enabled():
+            return "error: calling cards are off for this run (SAMPO_CARDS=off): use the other actions"
+        name, inputs = a.get("name"), a.get("inputs")
+        if isinstance(inputs, str):  # a model that sent the object as JSON text
+            inputs = m.extract_json(inputs)
+        elif inputs is None:  # or put the inputs beside the name
+            inputs = {k: v for k, v in a.items() if k not in ("name", "state")}
+        if not isinstance(name, str) or not isinstance(inputs, dict):
+            return "error: card needs name (a card's name) and inputs (an object of its inputs)"
+        cd = callcards.cards(self.root)[0].get(name)
+        if self.read_only and cd and not cd["read"]:
+            return (f"refused: this run answers a question and changes nothing, and card {name} changes files: use a "
+                    "read card, read or search")
+        if self.cards_session is None:
+            other = self.planner or self.escalate
+            self.cards_session = callcards.Session(self.root, guard=self.card_guard, escalate=(
+                lambda r: self.card_advice(other, r)) if other else None)
+        r = self.cards_session.call(name, inputs)
+        if r["status"] == "applied":
+            for rel in r["changed"] + r["created"]:
+                full = os.path.join(self.root, rel)
+                self.after("Write", {"file_path": full, "content": ""}, {"filePath": full})
+        return callcards.text(r)
+
+    def card_guard(self, writes):
+        """Smith's guard on each file a checked card would write ({rel: bytes}): the first refusal, or None."""
+        for rel, data in sorted(writes.items()):
+            full = self.path(rel)
+            why = self.hidden(full) or self.guard("Write", {"file_path": full, "content": data.decode("utf-8", "replace")})
+            if why:
+                return f"{rel}: {why}"
+        return None
+
+    def card_advice(self, other, r):
+        """A card closed after failing: one turn of --planner (else --escalate) says how to do its job with plain
+        actions; the Session puts the answer in the result's advice (once a run)."""
+        from sampo import callcards
+        self.check_cap("card")
+        msgs = [{"role": "system", "content": "A model doing one coding step called a calling card (a checked tool), and "
+                 "it failed until it closed. In at most ten lines, say how to do the same job with plain actions (read, "
+                 "search, edit, write, run). " + DATA_NOTE},
+                {"role": "user", "content": f"The task:\n{self.fence(self.request)}\nThe failed call:\n"
+                                            f"{self.fence(callcards.text(r))}"}]
+        res = m.complete(self.capped(other), msgs, max_tokens=600)
+        self.usage(res, other, "card")
+        return self.redact(res["text"] or "")
+
     def small_playbook(self, profile):
         """T-2917: for an own or loopback profile, the kept small-model variant of the playbook routed for the task's
         type, cut to the profile's context; "" for a cloud profile, no plan yet or no kept variant."""
@@ -1027,7 +1127,7 @@ class Run:
         if name not in self.msgs:
             self.add(name, {"role": "system", "content": ACT_PROMPT + (f"\n{variant_note()}" if variant_note() else "")
                             + ("" if profile.get("tools") else TEXT_ACTIONS) + self.small_playbook(profile)
-                            + (STATE_NOTE if self.reason == "state" else "")})
+                            + self.cards_note(profile) + (STATE_NOTE if self.reason == "state" else "")})
             self.add(name, {"role": "user", "content": prompt})
         msgs = self.msgs[name]
         if self.tree0 is None:
@@ -1043,6 +1143,12 @@ class Run:
         tools = TOOLS if profile.get("tools") else None
         if tools and self.read_only:
             tools = [t for t in TOOLS if t["name"] in ("read", "search", "done")]
+        if tools and self.offered():  # T-3160: the card tool names only the cards offered to this run
+            tools = tools + [{"name": "card", "description": "Call a calling card from the system prompt's list: a "
+                              "checked tool that does one job exactly.", "parameters": {
+                "type": "object", "required": ["name", "inputs"], "properties": {
+                    "name": {"type": "string", "enum": [cd["name"] for cd in self.offered()]},
+                    "inputs": {"type": "object", "description": "the card's inputs, as the system prompt lists them"}}}}]
         if tools and self.reason == "state":  # T-3006: every action may carry the state
             tools = [dict(t, parameters=dict(t["parameters"], properties=dict(t["parameters"]["properties"],
                                                                                 state=STATE_PROP))) for t in tools]
@@ -1463,6 +1569,8 @@ class Run:
         result = self.redact(result)
         target = next((str(a.get(k)) for k in ("file", "path", "cmd", "pattern", "summary") if isinstance(a, dict)
                        and a.get(k) is not None), "")
+        if name == "card" and isinstance(a, dict):  # T-3160: a card call's key is its name and inputs, not one path
+            target = f"{a.get('name')} {json.dumps(a.get('inputs'), sort_keys=True, default=str)}"
         state = "refused" if result.startswith("refused") else "error" if result.startswith("error") else "ok"
         self.emit("action", f"  {name} {_one_line(target, 70)}: {state}" + (
             f" ({_one_line(result, 100)})" if state != "ok" else ""), action=name, target=target[:200], result=state,
