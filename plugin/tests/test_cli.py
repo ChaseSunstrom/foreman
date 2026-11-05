@@ -54,6 +54,29 @@ class OutJson(unittest.TestCase):
         self.assertEqual(json.loads(text)["name"], "a\x7fb\x9bc")
 
 
+class VerifyFreshLane(ForemanTestCase):  # T-3189: T-3113's `cd mods/x && npx vitest run` passed only in a lane with node_modules
+    def test_warns_when_a_verify_cannot_run_in_a_fresh_lane(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir=self.home) as d:
+            git = lambda *a: subprocess.run(["git", "-C", d, *a], check=True, capture_output=True)  # noqa: E731
+            git("init", "-q")
+            os.makedirs(os.path.join(d, "ok"))
+            os.makedirs(os.path.join(d, "mods", "x"))
+            for f in ("ok/package.json", "mods/x/package.json"):
+                open(os.path.join(d, f), "w").write("{}")
+            git("add", "ok/package.json")  # mods/x/package.json stays untracked
+            warn = lambda cmd: " ".join(c.lint_verify(cmd, d))  # noqa: E731
+            self.assertIn("committed package.json", warn("cd mods/x && npx vitest run"))
+            self.assertIn("committed package.json", warn("cd nowhere && npm test"))
+            self.assertNotIn("package.json", warn("cd ok && npx vitest run"))
+            self.assertNotIn("package.json", warn("cd mods/x && python3 -m pytest"))
+        repo = os.path.join(os.path.dirname(__file__), "..", "..")
+        lint = lambda cmd: " ".join(c.lint_verify(cmd, repo))  # noqa: E731
+        self.assertIn("names no test", lint("python3 plugin/tests/run.py test_nope"))
+        self.assertIn("nosuchtool", lint("nosuchtool --x"))
+        self.assertEqual(lint("python3 plugin/tests/run.py test_cli"), "")
+
+
 class Init(ForemanTestCase):
     def test_init_prints_slug_and_state_is_empty(self):
         slug = self.fm("init").stdout.strip()
