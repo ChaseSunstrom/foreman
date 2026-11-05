@@ -19,6 +19,10 @@ from helpers import SampoTestCase
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 from sampo import callcards, landlock  # noqa: E402
+
+# T-3238: a test that runs a card for real needs calls confined; elsewhere (macOS: no Landlock) they refuse, by design
+confined = unittest.skipUnless(callcards.confinement()[0], "no confinement on this machine: calls refuse (Unconfined "
+                                                          "tests it)")
 from sampo import core as c  # noqa: E402
 
 UPPER = '''import json, sys
@@ -188,6 +192,7 @@ class Inputs(Base):
             r = callcards.call("wide", {"path": "a.txt", "include": [bad]}, self.repo)
             self.assertEqual(r["status"], "bad_input", (bad, r))
 
+    @confined
     def test_a_card_folder_must_be_absolute_and_outside_the_repo(self):
         self.card("shout")
         inside = os.path.join(self.repo, "mycards")
@@ -215,6 +220,7 @@ class Inputs(Base):
             self.assertNotIn("action", cd["inputs"].get("properties", {}), name)
 
 
+@confined
 class Apply(Base):
     """AC1: the generator runs on a scratch copy, the checker there, and only a pass changes the worktree."""
 
@@ -326,7 +332,7 @@ class Apply(Base):
         self.assertFalse(os.path.exists(os.path.join(self.repo, "new")))
 
 
-@unittest.skipUnless(callcards.confinement()[0], "no confinement on this machine: calls refuse (Unconfined tests it)")
+@confined
 class Confinement(Base):
     """AC2: a generator (or checker) that reaches the network, writes outside its scratch copy or reads a secret fails,
     and it never sees a credential."""
@@ -543,6 +549,7 @@ class Unconfined(Base):
         self.assertEqual(self.read("a.txt"), "hello world\n")
 
 
+@confined
 class Calls(Base):
     """AC6: a call never loops."""
 
@@ -631,6 +638,7 @@ class Calls(Base):
         self.assertEqual(r["cards"][0]["name"], "shout")
 
 
+@confined
 class Guard(Base):
     """The caller's own write rules (fm code's guard) judge a checked change before it lands."""
 
@@ -663,6 +671,7 @@ class Guard(Base):
                 self.assertEqual(callcards.enabled(), want, v)
 
 
+@confined
 class Text(Base):
     """What a model reads back from a call."""
 
@@ -731,6 +740,7 @@ class Bench(unittest.TestCase):
                          ["read:None"] * 60)
 
 
+@confined
 class Cli(Base):
     def test_list_show_call_and_test(self):
         tests = [{"name": "shouts", "files": {"t.txt": "hi\n"}, "inputs": {"path": "t.txt"}, "expect": "applied",

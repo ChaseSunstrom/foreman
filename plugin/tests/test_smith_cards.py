@@ -1,7 +1,12 @@
 """T-3160: fm code offers its task the calling cards that fit it, as a native tool and as a JSON action; a card call
 runs through the card runner (schema, confinement, checker) and fm code's own guard, and the model reads its result."""
 import json
+import os
+import subprocess
+import sys
+import unittest
 
+from test_callcards import confined
 from test_code import CLOSE, CodeCase, call, plan, text_action
 
 GUARD = {"path": "calc.py", "function": "add", "param": "a", "value": "0"}
@@ -15,6 +20,7 @@ def card_text(name, inputs):
     return {"text": "I'll do this:\n" + json.dumps({"action": "card", "name": name, "inputs": inputs})}
 
 
+@confined
 class Cards(CodeCase):
     def test_a_native_card_call_changes_the_file_and_the_model_reads_its_diff(self):
         f = self.serve("openai", plan(), card("py-none-guard", GUARD),
@@ -72,3 +78,17 @@ class Cards(CodeCase):
         self.assertIn("refused", f.said(3))
         self.assertNotIn("py-none-guard", json.dumps(f.seen[1]["tools"]), "a write card isn't offered to a question")
         self.assertEqual(self.calc(), "def add(a, b):\n    return a - b\n")
+
+
+class Portable(unittest.TestCase):
+    """T-3238: on macOS (no Landlock) every test that runs a card for real must skip, not fail: CI was red on main."""
+
+    def test_card_tests_skip_where_calls_cannot_be_confined(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        boot = ("import sys\nsys.path[:0] = [sys.argv[1], sys.argv[2]]\nfrom sampo import landlock\n"
+                "landlock.available = lambda: (False, 'Landlock is Linux only (this is Darwin)')\nimport unittest\n"
+                "unittest.main(module=None, argv=['unittest', 'test_callcards', 'test_smith_cards.Cards'])\n")
+        r = subprocess.run([sys.executable, "-c", boot, os.path.join(here, "..", "lib"), here], cwd=here,
+                           capture_output=True, text=True, timeout=600)
+        self.assertEqual(r.returncode, 0, r.stderr[-3000:])
+        self.assertIn("skipped=", r.stderr)
