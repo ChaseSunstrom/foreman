@@ -2623,6 +2623,27 @@ test('crest: the mark in half blocks, ringed by Elder Futhark runes, 8 rows wide
   expect(crest(100, 'idle', 0, [], false, 24).rows).toBe(3) // a short dock keeps its rows for the work
 })
 
+// T-3210: the mark is a crisp silhouette: at most 4 hand-picked tones each, none a blend of two others
+// (an anti-aliased downscale leaves in-between greys that read as noise at its base)
+test('crest: each mark is at most 4 tones, none an in-between shade of two others', () => {
+  const tones = (g: { grid: [string, number, number][]; cols: number }, w: number, h: number, x0: number, y0: number) => {
+    const s = new Set<number>()
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+      const [ch, fg, bg] = g.grid[y * g.cols + x]!
+      if (ch === '▀' || ch === '▄' || ch === '█') { s.add(fg); if (bg <= 0xffffff) s.add(bg) }
+    }
+    return [...s]
+  }
+  const rgb = (c: number) => [c >> 16, (c >> 8) & 255, c & 255]
+  const between = (c: number, a: number, b: number) => [0.2, 0.35, 0.5, 0.65, 0.8].some(t =>
+    rgb(c).every((v, k) => Math.abs(v - (rgb(a)[k]! * (1 - t) + rgb(b)[k]! * t)) <= 24))
+  for (const p of [tones(crest(100, 'idle', 0, [], false), 12, 6, 44, 1), tones(crest(50, 'idle', 0, [], false), 6, 3, 0, 0)]) {
+    expect(p.length).toBeGreaterThanOrEqual(3)
+    expect(p.length).toBeLessThanOrEqual(4)
+    for (const c of p) for (const a of p) for (const b of p) if (a !== c && b !== c && a !== b) expect([hex(c), between(c, a, b)]).toEqual([hex(c), false])
+  }
+})
+
 test('crest: runes light in turn while work runs, rest dim, flare on a finish; reduced motion holds still', () => {
   expect(litCount(crest(100, 'idle', 0, [], false))).toBe(1) // all one dim colour
   expect(litCount(crest(100, 'idle', 5, [], false))).toBe(1)

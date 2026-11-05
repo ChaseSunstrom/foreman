@@ -600,27 +600,41 @@ export function agentColor(id: string): number {
   return MINI_COLORS[(h >>> 0) % MINI_COLORS.length]!
 }
 
-// T-3113: the crest, the pane's full-width top. design/sampo/logo/mark-simple.svg (halo dropped, cropped to the art)
-// rasterised once into half-block cells: '.' is empty, else glyph + fg hex [+ bg hex] (12 px = 6 rows; 6 px = 3 rows).
-const MARK_TOKENS: Record<number, string[]> = {
+// T-3113: the crest, the pane's full-width top: design/sampo/logo/mark-simple.svg (fire behind an anvil on an iron-bound
+// stone). T-3210: hand-drawn pixel art, not a downscale (an anti-aliased one read as a muddy mosaic with grey noise at
+// its base): four flat tones, one pixel per character ('.' empty), two pixels a cell in half blocks (12 px = 6 rows).
+const MARK_TONES: Record<string, number> = { Y: 0xffc24d, R: 0xe8531c, S: 0x8a92a6, D: 0x4e4a58 } // gold, ember, steel, stone
+const MARK_PIXELS: Record<number, string[]> = {
   12: [
-    '. . . . . ▄ffba39 ▀ffb846ff6e22 . . . . .',
-    '. . . . ▀ff892cfdb24e ▀ff9d3ccda489 ▀f09842c29f90 ▀ff822afdbc5a . . . .',
-    '. . . ▀fff4cd6f7888 ▀cab088565a68 ▀bd9674505561 ▀bd9473505561 ▀c9b18b585d6a ▀ffffd1757c8c ▄c5cae6 . .',
-    '. . ▄ffffff ▄fb916b ▄604837 ▀34394560554b ▀343b45605a57 ▄604f3f ▄d17f53 ▄ffd9b4 . .',
-    '. ▀727279d5a898 ▀47474e7c6565 ▀3f3e45776364 ▀38373e554242 ▀3b3b424c3d3f ▀36353d453a3e ▀30303741383e ▀3031382d262c ▀373942262127 ▄423c49 .',
-    '. ▀f2bca7 ▀806866d1a7a3 ▀7a6463a68782 ▀5642416a514e ▀4f3e3f5e4b4c ▀483b3e554447 ▀42393e4a3f46 ▀31272f3a2f36 ▀272227342e34 ▀57525c .',
+    '......R.....',
+    '.....RRR..R.',
+    '..R..RYR.RR.',
+    '.RR.RYYYRRR.',
+    '.RYRRYYYYYR.',
+    '.SSSSSSSSSSS', // the anvil's face, its horn to the right
+    '.SSSSSSSS...',
+    '....SSSS....',
+    '...SSSSSS...',
+    '.DDDDDDDDDD.', // the stone and its iron band
+    'SSSSSSSSSSSS',
+    '.DDDDDDDDDD.',
   ],
   6: [
-    '. . ▄ffa95a ▀fff14ef7a35b . .',
-    '. ▀fff5f5 ▀8f80716f6059 ▀8f81736d6561 ▀f1e1e1 .',
-    '. ▀5e5357957876 ▀443b3f594545 ▀3b363c493c41 ▀2e2c33302a2f .',
+    '...R..',
+    '.RRYR.',
+    '.SSSSS',
+    '..SS..',
+    '.DDDD.',
+    'SSSSSS',
   ],
 }
 type Cell = [string, number, number]
 const MARK: Record<number, (Cell | null)[][]> = Object.fromEntries(
-  Object.entries(MARK_TOKENS).map(([k, rows]) => [k, rows.map(r => r.split(' ').map((t): Cell | null =>
-    t === '.' ? null : [t[0]!, parseInt(t.slice(1, 7), 16), t.length > 7 ? parseInt(t.slice(7, 13), 16) : DEFAULT_BG]))]))
+  Object.entries(MARK_PIXELS).map(([k, px]) => [k, px.filter((_, y) => y % 2 === 0).map((top, j) => [...top].map((t, i): Cell | null => {
+    const b = px[j * 2 + 1]![i]!
+    if (t === '.') return b === '.' ? null : ['▄', MARK_TONES[b]!, DEFAULT_BG]
+    return t === b ? ['█', MARK_TONES[t]!, DEFAULT_BG] : ['▀', MARK_TONES[t]!, b === '.' ? DEFAULT_BG : MARK_TONES[b]!]
+  }))]))
 
 /** Elder Futhark, U+16A0 to U+16EA: the ring around the mark */
 export const RUNES = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ'

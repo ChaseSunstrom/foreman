@@ -233,6 +233,9 @@ def render(raw, out, cols=None, rows=None):
                 d.rectangle([px, py, px + w * cw - 1, py + ch - 1], fill=bg)
             if c == "█":
                 d.rectangle([px, py, px + cw - 1, py + ch - 1], fill=fg)
+            elif c in "▀▄":  # T-3210: drawn as a terminal does, an exact half: Hack's glyphs leave a seam
+                top = py if c == "▀" else py + ch // 2
+                d.rectangle([px, top, px + cw - 1, top + (ch // 2 if c == "▀" else ch - ch // 2) - 1], fill=fg)
             elif c != " ":
                 d.text((px, py + 1), c, font=face(c, b), fill=fg)
             x += w
