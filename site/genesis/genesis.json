@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T11:34:49Z",
- "rev": "ac225cad",
+ "updated": "2026-11-05T11:45:32Z",
+ "rev": "649c130f",
  "capabilities": [
   {
    "n": 1,
@@ -36247,13 +36247,13 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 818,
+ "unproven": 820,
  "unproven_kinds": {
-  "meaning-notes": 359,
+  "meaning-notes": 360,
   "meaning-user": 248,
   "research-uncited": 33,
-  "perf-typed": 55,
-  "typed": 36,
+  "perf-typed": 56,
+  "typed": 37,
   "red": 75,
   "tui-unshot": 10,
   "docs": 114,
@@ -37480,12 +37480,12 @@
    },
    "rejected": {
     "kill": 7649,
-    "tier": 4024,
+    "tier": 4166,
     "novelty": 39
    },
-   "merged": 45,
+   "merged": 50,
    "kept": 347,
-   "pending": 1684
+   "pending": 1537
   },
   "families": [
    {
