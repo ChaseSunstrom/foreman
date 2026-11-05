@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-05T11:23:06Z",
- "rev": "de5df0c9",
+ "updated": "2026-11-05T11:28:19Z",
+ "rev": "738524a9",
  "capabilities": [
   {
    "n": 1,
@@ -37480,12 +37480,12 @@
    },
    "rejected": {
     "kill": 7649,
-    "tier": 3887,
+    "tier": 3953,
     "novelty": 39
    },
-   "merged": 43,
+   "merged": 44,
    "kept": 347,
-   "pending": 1823
+   "pending": 1756
   },
   "families": [
    {
