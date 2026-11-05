@@ -311,7 +311,8 @@ def cmd_lane(args):
 
 
 BUILDERS = 2  # at once by default: each is a full session's worth of tokens, and every merge is reviewed here
-BUILDERS_MAX = 6  # T-1089: fm lane max N raises it for an unattended run; more than this is more merging than building
+BUILDERS_MAX = 16  # T-1089: fm lane max N raises it; T-3135: 6 filled within minutes once finished lanes stopped counting
+UNMERGED_MAX = 20  # T-3135: finished lanes waiting on a merge hold no builder slot, but this many unmerged refuse a new lane
 
 
 def builders_cap(p):
@@ -1648,11 +1649,20 @@ def builder_brief(p, b, args, resume_branch=None, after=""):
     if not [v for _, v in b.verify_cmds() if v]:
         raise cli.UsageError(f"{b.id} has no criterion with a verify command: a builder needs checks it can run "
                                f"(fm task ac {b.id} add \"…\" --verify \"<cmd>\")")
-    out = [x.id for x in c.load_briefs(p) if x.meta.get("builder") and x.status not in c.CLOSED and x.id != b.id]
+    briefs = c.load_briefs(p)
+    out = [x.id for x in briefs if x.meta.get("builder") and x.status not in c.CLOSED and x.id != b.id]
+    try:  # T-3135: a lane whose builder returned (commits, clean tree, no live builder) waits on a merge, not a slot
+        done = set(c.finished_lanes(p, briefs, quiet_min=0))
+    except Exception:  # unreadable lanes count as working: the cap errs toward fewer builders
+        done = set()
+    working, waiting = [i for i in out if i not in done], [i for i in out if i in done]
     cap = builders_cap(p)
-    if len(out) >= cap:
-        raise c.PolicyError(f"{len(out)} builders are already out ({', '.join(out)}), the cap is {cap}: merge and close "
-                            f"one first (fm lane max N raises the cap, up to {BUILDERS_MAX})")
+    if len(working) >= cap:
+        raise c.PolicyError(f"{len(working)} builders are still working ({', '.join(working)}), the cap is {cap}: wait "
+                            f"for one to return (fm lane max N raises the cap, up to {BUILDERS_MAX})")
+    if len(waiting) >= UNMERGED_MAX:
+        raise c.PolicyError(f"{len(waiting)} finished lanes wait unmerged ({', '.join(waiting[:8])}…): merge some first "
+                            f"(fm lane merge ID)")
     if strain := c.host_strain():  # T-2797: five lanes and a design agent drove load to 3.5 per core: gates timed out
         raise c.PolicyError(f"{strain}: no new lane until it eases; "
                             f"{len(out)} builder(s) out{': ' + ', '.join(out) if out else ''}")

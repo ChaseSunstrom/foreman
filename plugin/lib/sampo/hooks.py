@@ -4423,8 +4423,13 @@ def lanes_free(briefs, p=None):
     """T-0700: whether fm lane brief would take another builder (it refuses past the cap; T-1709: fm lane max's)."""
     from sampo import lanes as slanes
     cap = slanes.builders_cap(p) if p else slanes.BUILDERS
-    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < cap and \
-        not c.host_strain()  # T-0465: a strained host takes no builder lane
+    try:  # T-3135: a finished lane waiting on a merge holds no builder slot
+        done = set(c.finished_lanes(p, briefs, quiet_min=0)) if p else set()
+    except Exception:
+        done = set()
+    out = [b for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED]
+    return sum(1 for b in out if b.id not in done) < cap and len(out) - sum(1 for b in out if b.id not in done) \
+        < slanes.UNMERGED_MAX and not c.host_strain()  # T-0465: a strained host takes no builder lane
 
 
 def _economy(p=None):

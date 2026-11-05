@@ -1,6 +1,7 @@
 """T-0134: a linked git worktree is a lane of its project: it shares the project's state, keeps its own active task
 (focus there pauses only that lane's), does its git work in its own files, and neither side's next or queue offers a
 task the other holds. fm lane new|list|rm manage them; rm never discards uncommitted work."""
+import argparse
 import json
 import re
 import os
@@ -8,6 +9,7 @@ import shutil
 import subprocess
 import time
 import unittest
+from unittest import mock
 
 from helpers import ForemanTestCase, read_text, valid_m_plan
 
@@ -526,6 +528,32 @@ class Lanes(ForemanTestCase):
         subprocess.run(["git", "-C", path, "add", "-A"], check=True)
         subprocess.run(["git", "-C", path, "commit", "-qm", "built"], check=True, env=env)
         return tid, path
+
+    def test_finished_lanes_waiting_on_a_merge_hold_no_builder_slot(self):
+        # T-3135: 2026-11-05, six slots sat held by lanes whose builders had returned, so nothing new could start
+        self.finished_builder()
+        self.finished_builder()
+        self.fm("lane", "max", "2")
+        tid = first(self.fm("task", "new", "Next", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step",
+                            "s", "--json").stdout)["id"]
+        self.fm("task", "set", tid, "approved=true")
+        r = self.fm("lane", "brief", tid, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        from sampo import lanes as slanes
+        self.assertGreaterEqual(slanes.BUILDERS_MAX, 10, "the ceiling fm lane max may set")
+
+    def test_too_many_unmerged_lanes_refuse_a_new_one_and_say_so(self):
+        from sampo import lanes as slanes
+        with mock.patch.object(slanes, "UNMERGED_MAX", 2):
+            self.finished_builder()
+            self.finished_builder()
+            p = c.find_project(self.repo)
+            tid = first(self.fm("task", "new", "Next", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                                "--step", "s", "--json").stdout)["id"]
+            self.fm("task", "set", tid, "approved=true")
+            with self.assertRaises(c.PolicyError) as e:
+                slanes.builder_brief(p, c.find_brief(p, tid), argparse.Namespace(model=None, json=False))
+            self.assertIn("wait unmerged", str(e.exception))
 
     def test_a_finished_lane_asks_for_a_merge_not_a_resume(self):
         tid, path = self.finished_builder()
