@@ -2240,9 +2240,13 @@ def pm_verify(p, main, sha):
                 flaky = pm_classes(out, code)
             elif again:  # T-3213: red alone too; does main just before this merge fail the same classes?
                 _git(wt, "reset", "--hard", "-q", f"{sha}^1")
-                if (not gone or not _git(wt, "revert", "-m", "1", "--no-commit", "--no-edit", *reversed(gone)).returncode) \
-                        and c.run_command(wt, again, c.load_scaled(900))[0]:
-                    inherited = pm_classes(out, code)
+                if not gone or not _git(wt, "revert", "-m", "1", "--no-commit", "--no-edit", *reversed(gone)).returncode:
+                    pcode, pout = c.run_command(wt, again, c.load_scaled(900))
+                    # T-3224: inherited only when the parent names each red class failing; a parent run that
+                    # names none ("no test matches" for a class the merge added, a crash) leaves the red this merge's
+                    reds, named = pm_classes(out, code), {m.rpartition(".")[0] or m for m in _FAILED.findall(pout)}
+                    if pcode and set(reds) <= named:
+                        inherited = reds
     finally:
         _git(main, "worktree", "remove", "--force", wt)
         shutil.rmtree(tmp, ignore_errors=True)

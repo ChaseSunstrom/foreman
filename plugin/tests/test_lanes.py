@@ -2420,9 +2420,20 @@ class PostMergeVerify(ForemanTestCase):
         slanes.pm_run(self.p, self.repo)
         self.assertEqual(self.state(sha), "reverted")
 
+    def test_a_red_the_first_parent_cannot_run_is_the_merges_own_and_reverts(self):
+        # T-3224: the merge added the red class; on the first parent run.py finds no such test and exits 1 too
+        os.environ["FM_POSTMERGE_RERUN"] = "ls bad*.txt >/dev/null 2>&1 || { echo 'run.py: no test matches test_mod'; " \
+                                           "exit 1; }; echo 'FAIL: test_x (test_mod.Cls.test_x)'; exit 1"
+        self.addCleanup(os.environ.pop, "FM_POSTMERGE_RERUN", None)
+        sha = self.land("a", bad=True)
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "reverted")
+        self.assertFalse(c.ledger_events(self.p, ["postmerge_inherited"]))
+
     def test_a_red_the_first_parent_already_has_is_inherited_not_reverted(self):
         # T-3213: T-3189 landed on T-3160's red and was reverted for it
-        os.environ["FM_POSTMERGE_RERUN"] = "! ls bad*.txt"
+        os.environ["FM_POSTMERGE_RERUN"] = "ls bad*.txt >/dev/null 2>&1 || exit 0; " \
+                                           "echo 'FAIL: test_x (test_mod.Cls.test_x)'; exit 1"  # T-3224: names it
         self.addCleanup(os.environ.pop, "FM_POSTMERGE_RERUN", None)
         a = self.land("a", bad="bad.txt")
         slanes.pm_set(self.p, a, state="red")  # the merge that brought it; its own verify owns it
