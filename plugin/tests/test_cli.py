@@ -964,6 +964,20 @@ class Checks(ForemanTestCase):
                          "pytest -q a.py::t")
         self.assertIsNone(cli._narrow_rerun("pytest -q", "FAILED a.py::t - x\n=== 1 failed, 1 error ===\n"))
 
+    def test_the_suite_gate_deadline_scales_with_load_and_a_timeout_names_both(self):  # T-3174
+        from sampo import cli
+        suite = "python3 plugin/tests/run.py"
+        for load, want in ((1, 1800), (16, 1800), (32, 3600), (400, 7200)):  # per 16 CPUs; capped at 7200
+            os.environ["FOREMAN_HOST"] = f"load={load},cpus=16"
+            self.addCleanup(os.environ.__setitem__, "FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
+            self.assertEqual(cli._gate_deadline(suite, 600), want)
+            self.assertEqual(cli._gate_deadline("python3 plugin/tests/run.py test_cli", 600), min(7200, 600 * max(1, load / 16)))
+        self.fm("init")
+        self.fm("check", "add", "sleep 5")
+        p = self.fm("check", "--fresh", "--timeout", "1", check=False, env={"FOREMAN_HOST": "load=6,cpus=4"})  # 1.5: at the bar, no wait
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("load 1.5 per CPU, deadline 1.5s", p.stdout)
+
     def test_a_gate_flaky_again_and_again_fails(self):
         # final review: a racy bug that passes half the time mustn't keep passing as "flaky"
         self.fm("init")

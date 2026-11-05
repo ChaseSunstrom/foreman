@@ -4953,7 +4953,7 @@ def _cmd_check(args):
     # T-1964: never two suites at once; edits meanwhile start none (gates_running is set)
     c.wait_while(lambda: ambient.running(p), "the ambient test run", "sampo check", limit=300)
     c.wait_for_load("sampo check")  # T-2797: gates that can only time out wait; the run limit then scales with the load
-    gate_timeout = c.load_scaled(args.timeout if args.timeout > 0 else None)
+    base_timeout = args.timeout if args.timeout > 0 else None
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
     for cmd in _gate_order(p, checks):  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
@@ -4964,7 +4964,10 @@ def _cmd_check(args):
             continue
         guard_stored(p, act, cmd)  # T-0901 review: a stored gate (fm smoke set cmd adds one too)
         t0 = time.monotonic()
+        gate_timeout = _gate_deadline(cmd, base_timeout)
         code, output = c.run_command(p.root, cmd, gate_timeout, env=env)
+        if code == 124 and (hl := c.host_load()):  # T-3174: a timeout says the load it ran under
+            output += f"\n(load {hl[0] / hl[1]:.1f} per CPU, deadline {gate_timeout:g}s)"
         slow = time.monotonic() - t0 > _slow_gate()  # a slow gate isn't rerun whole: its failure costs enough already
         narrow = _narrow_rerun(cmd, output) if code == 1 and slow and not failure_class(output) else None  # T-1678
         if code and (not slow or narrow):
@@ -5054,6 +5057,15 @@ def _cmd_check(args):
                            for cmd, code, _, s in results], "failed": failed, "wrote": wrote, "wrote_paths": wrote_paths, "skipped_tests": skip},
         "\n".join(lines))
     return 1 if failed else 0
+
+
+def _gate_deadline(cmd, timeout):
+    """T-3174: a gate's run deadline: the whole suite (tests/run.py with no names) gets at least 30 min, any gate its
+    timeout, times max(1, load per CPU) (core.load_scaled), at most 2 h; None stays unlimited."""
+    if timeout is not None and re.search(r"tests/run\.py\s*$", cmd):
+        timeout = max(timeout, 1800)
+    t = c.load_scaled(timeout)
+    return None if t is None else min(t, max(timeout, 7200))
 
 
 def _slow_gate():
