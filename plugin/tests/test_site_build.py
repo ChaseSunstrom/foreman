@@ -299,6 +299,23 @@ class GenesisScorecard(unittest.TestCase):
         self.assertNotIn("innerHTML", re.search(r"function longRow\(\)(.*?)\n  }\n", js, re.S).group(1))  # T-2263
 
 
+class PortTools(unittest.TestCase):
+    """T-2904: the port's tools write an output only when its content changes, so a rerun leaves no churn."""
+
+    def test_an_unchanged_output_is_not_rewritten(self):
+        spec = importlib.util.spec_from_file_location("writeif", os.path.join(ROOT, "site", "tools", "writeif.py"))
+        w = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(w)
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "tokens.json")
+            self.assertTrue(w.write_if_changed(p, '{"a": 1}\n'))
+            os.utime(p, (1, 1))
+            self.assertFalse(w.write_if_changed(p, '{"a": 1}\n'))
+            self.assertEqual(os.stat(p).st_mtime, 1)
+            self.assertTrue(w.write_if_changed(p, '{"a": 2}\n'))
+            self.assertEqual(read_text(p), '{"a": 2}\n')
+
+
 if __name__ == "__main__":
     unittest.main()
 

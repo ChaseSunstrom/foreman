@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sampo: your coding agent, with a smith on the job</title>
+<meta name="description" content="Sampo is the discipline layer for coding agents: plan before editing, prove the work with commands it ran, one task at a time, through the whole queue.">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="{{ICON}}">
+<link rel="preload" href="fonts/BodoniModa-normal.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+/* before first paint: the theme, and whether the forge will move */
+(function(){var d=document.documentElement;d.classList.add('js');try{var t=localStorage.getItem('sampo-theme');if(t)d.dataset.theme=t}catch(e){}
+if(!matchMedia('(prefers-reduced-motion: reduce)').matches)d.classList.add('anim')})();
+</script>
+<style>
+{{CSS}}
+</style>
+</head>
+<body>
+<a class="skip" href="#top">Skip to the content</a>
+<svg id="defs" aria-hidden="true" focusable="false"><defs>{{DEFS}}</defs></svg>
+<div class="sky-fall" aria-hidden="true"></div>
+<noscript id="skysrc"><svg class="sky-still" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMin slice" aria-hidden="true">{{SKY}}</svg></noscript>
+<canvas id="sky" aria-hidden="true"></canvas>
+
+<header class="bar">
+  <a class="brand" href="#top" aria-label="Sampo, home"><img src="{{LOGO_SIMPLE}}" alt="" width="34" height="34">Sampo</a>
+  <nav class="nav" aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#smith">Smith</a>
+    <a href="tower/index.html">Rune</a>
+    <a href="#ward">Ward</a>
+    <a href="#moons">Moons</a>
+    <a href="#record">Record</a>
+  </nav>
+  <details class="menu">
+    <summary class="tbtn">Sections</summary>
+    <nav aria-label="Sections, on a small screen">
+      <a href="#how">How it works</a>
+      <a href="#smith">Smith</a>
+      <a href="tower/index.html">Rune</a>
+      <a href="#ward">Ward</a>
+      <a href="#moons">Moons</a>
+      <a href="#record">Record</a>
+    </nav>
+  </details>
+  <button class="tbtn" id="theme" type="button" aria-label="Switch theme"><span class="n">Day<span class="lg">light</span></span><span class="d">Forge<span class="lg"> light</span></span></button>
+  <a class="gh" href="https://github.com/ChaseSunstrom/sampo">GitHub</a>
+</header>
+
+<main id="top">
+<section class="hero" aria-labelledby="h1">
+  <div class="scene" id="scene" role="img" aria-label="A forge at night under a turning sky: a steel anvil set into a standing stone cut with five glowing runes and bound with a riveted iron band, a molten seam where the anvil sits; behind it a hearth of dry-laid stone whose flames burn blue at the root, then gold, with green and violet tongues; bellows breathe at its side and a hammer falls on the glowing bar every few seconds, throwing coloured sparks that rise into the stars.">
+    <div class="lay far"><noscript class="laysrc"><svg viewBox="0 0 1200 1000" aria-hidden="true">{{FAR}}</svg></noscript><svg class="rimlite" viewBox="0 0 1200 1000" aria-hidden="true"><path d="{{RIMS}}"/></svg><div class="hazeband"></div></div>
+    <div class="lay mid">
+      <noscript class="laysrc"><svg viewBox="0 0 1200 1000" aria-hidden="true">{{FLOOR}}</svg></noscript>
+      <noscript class="laysrc"><svg viewBox="0 0 1200 1000" aria-hidden="true">{{HEARTH_BACK}}</svg></noscript>
+      {{BELLOWS}}
+      <canvas class="fire" id="firecv" aria-hidden="true"></canvas>
+      <svg class="flst stat" viewBox="300 0 800 470" aria-hidden="true">{{STATIC_FLAMES}}</svg>
+      <noscript class="laysrc"><svg viewBox="0 0 1200 1000" aria-hidden="true">{{HEARTH_FRONT}}</svg></noscript>
+      {{POOL}}
+    </div>
+    <div class="glow" id="glow"></div>
+    <div class="lay fore" id="fore">
+      {{SHAD}}
+      <noscript class="laysrc"><svg viewBox="0 0 1200 1000" aria-hidden="true">{{ANVIL}}</svg></noscript>
+      <div class="carry">{{BILLET}}{{TONGS}}</div>{{LITE_ANV}}
+      <noscript class="laysrc ovs"><div class="ovs">{{OVERLAYS}}<svg class="ov stat" viewBox="0 0 1200 1000" style="inset:0;width:100%;height:100%" aria-hidden="true">{{STATIC_FX}}</svg></div></noscript>
+      <canvas class="fx" id="fx" aria-hidden="true"></canvas>
+      {{HAMMER}}
+    </div>
+    <div class="lay near"><noscript class="laysrc"><svg viewBox="0 0 1200 1000" aria-hidden="true">{{TROUGH}}{{NEAR}}</svg></noscript>{{STEAM}}</div>
+    <div class="bloom" id="bloom"></div>
+  </div>
+  <div class="hero-copy">
+    <p class="eyebrow rise" style="--d:.05s">Sampo, formerly Foreman · discipline for coding agents</p>
+    <h1 class="struck" id="h1"><span class="ln">Your coding agent,</span> <span class="ln"><em>with a smith</em></span> <span class="ln">on the job.</span></h1>
+    <p class="lede rise" style="--d:.5s">Sampo is the discipline layer for coding agents: Claude Code, Codex, Gemini CLI, opencode, or its own <strong>Smith</strong> on any model. It makes the agent plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until the work is done or needs you.</p>
+    <div class="install rise" style="--d:.65s">
+      <code id="cmd">curl -fsSL <wbr>https://raw.githubusercontent.com/<wbr><span class="nw">ChaseSunstrom/<wbr>sampo/<wbr>main/<wbr><span class="nb">install.sh | bash</span></span></code>
+      <button class="copy" type="button" data-copy="cmd">Copy</button>
+    </div>
+    <p class="also rise" style="--d:.75s">Or inside Claude Code: <code>/plugin marketplace add ChaseSunstrom/sampo</code>, then <code>/plugin install foreman@foreman</code>.</p>
+    <p class="label cap rise" style="--d:1.1s"><span class="cat">The forge · Ilmarinen's anvil</span>Set into a standing stone cut with runes. The hammer falls every few seconds on a bar from the fire; the bellows breathe and the flames leap with them.</p>
+    <div class="acts rise" style="--d:1.3s"><a class="plate" href="#how">Into the forge</a><button class="btn2" id="strike-btn" type="button" hidden><b aria-hidden="true">✦</b>Strike the anvil</button></div>
+  </div>
+</section>
+
+<section class="sec" id="how" aria-labelledby="how-h">
+  <div class="text">
+    <p class="eyebrow">How it works</p>
+    <h2 id="how-h">Every request walks the same <em>eight stations</em></h2>
+    <p class="intro">A plain request, a tagged list or a whole backlog all go the same way down the road, from the mine to the record house. Each station is a step the agent can't skip: the hooks refuse an edit with no plan, and a close with no proof.</p>
+    <ol class="stations" id="stations">
+      <li><span class="n" aria-hidden="true">I</span><h3>Capture</h3><p>The request becomes a task with a type and a size.</p></li>
+      <li><span class="n" aria-hidden="true">II</span><h3>Expand</h3><p>What done means, and the command that proves it.</p></li>
+      <li><span class="n" aria-hidden="true">III</span><h3>Ground</h3><p>Checked against the real code before planning.</p></li>
+      <li><span class="n" aria-hidden="true">IV</span><h3>Plan</h3><p>Steps, scope and risks; big work weighs its approaches.</p></li>
+      <li><span class="n" aria-hidden="true">V</span><h3>Execute</h3><p>Edits only inside an active task, test first.</p></li>
+      <li><span class="n" aria-hidden="true">VI</span><h3>Verify</h3><p>Commands run and recorded, then independent audits.</p></li>
+      <li><span class="n" aria-hidden="true">VII</span><h3>Reflect</h3><p>What slipped and why becomes a lesson or a follow-up.</p></li>
+      <li><span class="n" aria-hidden="true">VIII</span><h3>Record</h3><p>Docs, changelog, commit, and the exact place to resume.</p></li>
+    </ol>
+  </div>
+  <div class="side how-side">
+    <noscript class="figsrc">{{FIG_HOW}}</noscript>
+  </div>
+</section>
+
+<section class="sec flip" id="smith" aria-labelledby="smith-h">
+  <div class="text">
+    <p class="eyebrow">Smith</p>
+    <h2 id="smith-h">What the Smith holds <em>your agent to</em></h2>
+    <p class="intro">Left to itself, a coding agent edits before it understands, says tests pass without running them and chases every new idea halfway. The Smith runs the task loop, and Sampo's hooks make the right way the only way.</p>
+    <dl class="holds">
+      <div><dt>Plans first</dt><dd>Every request becomes a brief before any edit: its type and size, what done means, the command that proves it, and the steps. An edit with no active task is refused.</dd></div>
+      <div><dt>Proves it</dt><dd>Evidence is a command Sampo ran and recorded, not a sentence. A fix needs a test that failed first.</dd></div>
+      <div><dt>Stays on task</dt><dd>One active task. New requests go to the inbox instead of being chased; <code>NOW:</code> switches on purpose.</dd></div>
+      <div><dt>Never loses its place</dt><dd>State lives on disk, so after <code>/compact</code> or in a new session the agent resumes at the exact step.</dd></div>
+      <div><dt>Keeps going</dt><dd>Drive mode works through the whole queue. In full auto it decides, records why, and saves what only you can approve for one summary at the end.</dd></div>
+      <div><dt>Learns</dt><dd>Your corrections, its own friction and every reviewer's findings turn into fixes, tripwires and lessons the next task reads.</dd></div>
+    </dl>
+    <figure class="log" id="log">
+      <figcaption><span>One fix through the Smith</span><span>an example session</span></figcaption>
+<pre><span class="ln you" style="--i:0">❯ FIX: sampo edit's block form can't delete text</span><span class="ln" style="--i:1">● Treating this as FIX, <span class="nw">tier S.</span></span><span class="ln r" style="--i:2">⎿ <span class="nw">T-0001</span>: done when an empty new side deletes the&nbsp;block</span><span class="ln" style="--i:3">● Plan  1 step, test first, scope fmedit.py and its&nbsp;test</span><span class="ln" style="--i:4">● Write  plugin/<wbr>tests/<wbr>test_batch_edit.py  +4</span><span class="ln r bad" style="--i:5">⎿ ✗ 1 failed  test_block_with_<wbr>empty_new_text_<wbr>deletes</span><span class="ln" style="--i:6">● Update  plugin/<wbr>lib/<wbr>fmedit.py  <span class="nw">+1 −1</span></span><span class="ln" style="--i:7">● Run  sampo task prove <span class="nw">T-0001</span></span><span class="ln r ok" style="--i:8">⎿ ✓ fails without the change, passes with it</span><span class="ln" style="--i:9">● Run  sampo check</span><span class="ln r ok" style="--i:10">⎿ ✓ tests, doctor, replay</span><span class="ln" style="--i:11">● Run  sampo task finish <span class="nw">T-0001</span> <span class="nw">--commit</span></span><span class="ln r ok" style="--i:12">⎿ ✓ closed, changelog, committed</span><span class="ln you" style="--i:13">● Queue is empty. Nothing needs you.</span></pre>
+    </figure>
+    <div class="lanes">
+      <h3>Many hands, one Smith</h3>
+      <p>Independent tasks run side by side: builders work in their own worktrees, test-first, and hand back a commit. Every branch gets an independent review before Sampo merges it and reruns the checks. 414 lanes merged so far.</p>
+    </div>
+  </div>
+  <div class="side">
+    <noscript class="figsrc">{{FIG_SMITH}}</noscript>
+    <p class="label"><span class="cat">Station · the anvil</span><b>Struck test-first</b>One task on the anvil at a time. Every blow is a command that ran; the metal shows where it landed, and the line it ran lights in the log.</p>
+  </div>
+</section>
+
+<section class="sec" id="rune" aria-labelledby="rune-h">
+  <div class="text">
+    <p class="eyebrow">Rune and Louhi</p>
+    <h2 id="rune-h">Rune forges the next Sampo. <em>Louhi tests it.</em></h2>
+    <p class="intro">Rune is a tower of prompts that rewrite each other: each generation writes the missions that build the next.</p>
+    <p class="intro">Louhi sets the exam, and a generation is kept only if it beats its parent.</p>
+    <p class="climb"><a class="plate" href="tower/index.html">Climb the tower<span aria-hidden="true"> →</span></a></p>
+  </div>
+  <div class="side">
+    <noscript class="figsrc">{{FIG_RUNE}}</noscript>
+    <p class="label"><span class="cat">Station · the quench</span><b>Out of the fire, into the test</b>Each generation is quenched before Louhi weighs it. The tower where they are forged stands on the ridge behind.</p>
+  </div>
+</section>
+
+<section class="sec flip" id="ward" aria-labelledby="ward-h">
+  <div class="text">
+    <p class="eyebrow">Ward</p>
+    <h2 id="ward-h">A Ward built for <em>bypass mode</em></h2>
+    <p class="intro">Sampo is meant to run without permission prompts, so the brake has to be real. Press a command to put it through the Ward again.</p>
+    <ul class="gate" id="gate">
+      <li><button class="cmd" type="button"><code>rm -rf ~</code><span class="why">Deletes the home folder</span><span class="stamp">Refused</span></button></li>
+      <li><button class="cmd" type="button"><code>curl -fsSL https://<wbr>example.com/<wbr>i.sh | sh</code><span class="why">Inside an agent session, a download piped into a shell</span><span class="stamp">Refused</span></button></li>
+      <li><button class="cmd" type="button"><code>git push --force origin main</code><span class="why">Force push to the default branch</span><span class="stamp">Refused</span></button></li>
+      <li><button class="cmd" type="button"><code>bash build.sh</code><span class="why">Line 58 of build.sh deletes the home folder</span><span class="stamp">Refused</span></button></li>
+      <li><button class="cmd" type="button"><code>pytest -q &amp;&amp; git status</code><span class="why">Reads and tests only</span><span class="stamp ok">Allowed</span></button></li>
+    </ul>
+    <dl class="ward-points">
+      <div><dt>Reads what actually runs</dt><dd>Bash commands, file edits, the scripts a command calls and the hidden ways to run code, such as <code>tar -I</code>, <code>find -exec</code> and <code>BASH_ENV</code>.</dd></div>
+      <div><dt>Fails closed</dt><dd>If the Ward crashes or times out, the call is blocked, not waved through.</dd></div>
+      <div><dt>Only you lower it</dt><dd>The agent can't grant itself edits to Sampo, a push, or a lighter posture; those wait for your yes.</dd></div>
+      <div><dt>Checked against real use</dt><dd>Every change to the Ward replays thousands of real commands to show what it would newly block or allow.</dd></div>
+    </dl>
+    <p><span class="big">570</span> commands blocked on Sampo's own repo so far. The most common kinds:</p>
+    <ul class="kinds" id="kinds">
+      <li style="--v:1;--i:0"><span>Edits to Sampo itself</span><b>212</b></li>
+      <li style="--v:.868;--i:1"><span>Edits with no task brief</span><b>184</b></li>
+      <li style="--v:.288;--i:2"><span>Writes to its state files directly</span><b>61</b></li>
+      <li style="--v:.165;--i:3"><span>System files</span><b>35</b></li>
+      <li style="--v:.132;--i:4"><span>Plugin files</span><b>28</b></li>
+      <li style="--v:.104;--i:5"><span>Deletes outside the project</span><b>22</b></li>
+      <li style="--v:.052;--i:6"><span>Downloads piped into a shell</span><b>11</b></li>
+      <li style="--v:.038;--i:7"><span>Credential reads</span><b>8</b></li>
+    </ul>
+    <p class="fine" style="margin-top:10px">Nine more blocks have no kind recorded.</p>
+  </div>
+  <div class="side">
+    <noscript class="figsrc">{{FIG_WARD}}</noscript>
+    <p class="label"><span class="cat">Station · the rivets</span><b>Nine locks</b>Louhi locked the Sampo behind nine locks; here they are nine rivets in the band round the stone, each set blue-hot in turn. The Ward is the one lock the agent can't pick.</p>
+  </div>
+</section>
+
+<section class="sec" id="moons" aria-labelledby="moons-h">
+  <div class="text">
+    <p class="eyebrow">Moons and the Underworld</p>
+    <h2 id="moons-h">{{MOONS_H2}}</h2>
+    <p class="intro">{{MOONS_INTRO}}</p>
+    <ol class="moons">{{MOON_LIST}}</ol>
+    <div class="under">
+      <h3>The Underworld</h3>
+      <p>Ideas waiting on a blocker. Each is rechecked; none comes back until its blocker clears.</p>
+      <ul>
+        <li><b>A local model backend for the model layer <i class="cn">selfjev-4b</i></b><span>Unevaluated: no exam arm has run it against a path it would replace.</span></li>
+        <li><b>A second local model backend <i class="cn">jeff</i></b><span>Unevaluated: no exam arm has run it against a path it would replace.</span></li>
+        <li><b>Task-specific models trained on Sampo&#x27;s own history <i class="cn">Jevlike</i></b><span>Unevaluated: no task-specific model has been trained from Sampo&#x27;s own history yet.</span></li>
+        <li><b>An intent router <i class="cn">Von</i></b><span>Unevaluated: intent routing has no exam arm yet.</span></li>
+        <li><b>Byte-stable goal card in the cached prefix</b><span>No measurable win: the goal card is about 120 characters.</span></li>
+        <li><b>Proofs expire when the thing proved changes</b><span>Its kill test found no stale proof.</span></li>
+        <li><b>Plan-time example confirmation</b><span>Its kill test needs the user present.</span></li>
+        <li><b>M-12 · Weight deciders by a scored market on whether a close survives</b><span>No decider beats chance on whether a close survives 14 days unfixed, so a pool has nothing to weight.</span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="side">
+    <figure class="chart" id="chart"><noscript class="figsrc">{{CHART}}</noscript></figure>
+    <p class="label"><span class="cat">Station · the sky</span><b>The moonshot chart</b>{{MOONS_CAP}}</p>
+  </div>
+</section>
+
+<section class="record" id="record" aria-labelledby="rec-h">
+  <div class="head">
+    <div>
+      <p class="eyebrow">Built with itself</p>
+      <h2 id="rec-h">The forge's <em>own readings</em></h2>
+    </div>
+    <p class="intro">Sampo is developed under Sampo: every change to its own repo went through the stations above. These readings come from the repo's own task, evidence and commit records, to 2 November 2026.</p>
+  </div>
+  <div class="gauges" id="gauges">{{GAUGES}}</div>
+  <div class="totals">
+    <div><b>1,662</b><span>tasks done</span></div>
+    <div><b>7,390</b><span>evidence runs</span></div>
+    <div><b>690</b><span>proofs</span></div>
+    <div><b>1,349</b><span>commits</span></div>
+  </div>
+  <figure class="ledger" id="ledger">
+{{LEDGER}}
+<figcaption><span>Tasks closed per day, as ingots; a dot marks a day with none. Hover or focus a day for its evidence runs.</span><span>Peak: 211 on 16 October</span></figcaption>
+<div class="vh"><table><caption>Tasks closed and evidence runs per working day</caption><tr><th>Day</th><th>Tasks</th><th>Evidence runs</th></tr>{{LEDGER_ROWS}}</table></div>
+  </figure>
+</section>
+</main>
+
+<footer class="foot">
+  <div>
+    <div class="foothead"><noscript class="figsrc">{{FOOT_MARK}}</noscript><div><p class="eyebrow">Where the names come from</p>
+    <h2>Old as myth, <em>precise as code</em></h2></div></div>
+    <p>The names come from the Kalevala, where the Sampo is a mill that grinds flour, salt and gold from nothing. Ilmarinen the smith forged it, so the task loop is the Smith. Väinämöinen sang runes that made things, so the prompt tower is Rune. Louhi set impossible tasks, so the exam is Louhi. The stolen sun and moon were forged anew, so the moonshot catalogue is Moons. Lost words were fetched back from the underworld, so the ideas waiting on a blocker live in the Underworld. And the guard at the gate is the Ward.</p>
+  </div>
+  <div>
+    <noscript class="figsrc">{{FIG_FOOT}}</noscript>
+    <div class="install" style="margin-top:0">
+      <code id="cmd2">curl -fsSL <wbr>https://raw.githubusercontent.com/<wbr><span class="nw">ChaseSunstrom/<wbr>sampo/<wbr>main/<wbr><span class="nb">install.sh | bash</span></span></code>
+      <button class="copy" type="button" data-copy="cmd2">Copy</button>
+    </div>
+    <p class="fine"><b>When not to use it.</b> Quick one-off questions or scripts: planning, evidence and audits are overhead for a five-minute job. Native Windows: Sampo needs Linux, macOS or WSL.</p>
+    <p class="fine"><a href="https://github.com/ChaseSunstrom/sampo">Source on GitHub</a></p>
+  </div>
+  <div class="colophon"><span>Sampo · forged under its own Smith</span><span>Every drawing on this page is vector, drawn in the mark's own hand</span></div>
+</footer>
+
+<script>
+{{JS}}
+</script>
+</body>
+</html>
