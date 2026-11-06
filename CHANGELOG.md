@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- sampo check, check --affected and the finish refusal print every failing class (at most 50 lines, then a count); run.py emits them all, the check_run event stores up to 200 with failed_n, and the evidence text puts the class names first (T-3397).
 - The Rune page shows Kalevala: a city of towers beside Genesis with a key, a switch and a deep link; one bad tower no longer aborts the export (T-3266).
 - sampo next and the drive name the finished lanes waiting on a merge with the last 2 h landing rate and the hours the pile takes to clear (T-3478).
 - sampo ship reuses the gates' pass (a merge train's or a full sampo check's) when its test is the gates' own and the pushed tree differs from the gated one only in files its CI skips, so a ship after a train no longer reruns the whole suite (T-3468).
