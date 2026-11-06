@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- The site build test proves the published share image is a real PNG file (over 10 KB, PNG signature) and that no published asset is a symlink (T-3059).
 - Rune's drift check no longer flags a seed line on one noisy cold read: a flagged line gets a second read and counts as drifted only when both name it, a line only one read names is listed as unconfirmed, drift.md records both reads' verdicts, and a clean first read still costs one call (T-3056).
 - The Stop hook holds a reply once when its shell code block has an irreversible step (rm -r, mv -f or into an absolute or ~ path, dd, mkfs, git reset --hard, git clean, forced push, truncating redirect, SQL DROP) without set -euo pipefail at its top or a check before the step, unless the session already ran that line; it names the line and the script shape (T-3001).
 - sampo queue, tidy and the status "Dangling deps" line no longer flag a dependency on an archived (closed) task; archived ids are read from the archive's filenames and count as done (T-3430).
