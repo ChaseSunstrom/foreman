@@ -2324,6 +2324,17 @@ class PostToolUse(HookCase):
         ev = self.events()[-1]
         self.assertEqual((ev["kind"], ev["tool"], ev["ms"]), ("tool", "Edit", 12))
 
+    def test_an_edit_in_a_lane_worktree_is_never_the_main_tasks(self):  # T-3256
+        self.fm("init")
+        main = self.task()
+        lane = os.path.join(self.repo, ".claude", "worktrees", "agent-x")
+        path = os.path.join(lane, "ANDON.md")
+        self.hook("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": path}, "tool_response": {},
+                                  "agent_id": "a1"})
+        touched = [e for e in c.ledger_tail(self.project()) if e["event"] == "touched"]
+        self.assertNotEqual(touched[-1]["task"], main)
+        self.assertNotIn("ANDON.md", c.task_touches(self.project(), main))
+
     def test_failure_event(self):
         self.fm("init")
         self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "false"}, "error": "Exit code 1"})

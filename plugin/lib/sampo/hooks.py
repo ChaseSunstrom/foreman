@@ -3120,8 +3120,12 @@ def post_tool_use(pl, ok=True):
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     if ok and p and tool in FILE_TOOLS:
-        act = None if _oneoff() else c.active_brief_fast(p, p.lane)  # T-1007: a one-off owns no task
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
+        lane = p.lane
+        if not lane and path.startswith(p.root.rstrip("/") + "/"):  # T-3256: a builder's edit in its own worktree is
+            m = c._WORKTREE_PREFIX.match(os.path.relpath(path, p.root))  # its lane's task's, never the main one's
+            lane = os.path.join(p.root, m.group(0).rstrip("/")) if m else None
+        act = None if _oneoff() else c.active_brief_fast(p, lane)  # T-1007: a one-off owns no task
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
         try:  # T-0705: the affected tests run out of the model's turns; only a flip comes back

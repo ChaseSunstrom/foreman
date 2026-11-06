@@ -11,6 +11,9 @@
 
 ### Everything else
 
+- A builder's edit inside its own lane worktree counts for the lane's task, never for the main checkout's active task, so a close no longer fails its scope gate while builders work (T-3256).
+- The live page's modern look draws every panel with one small chart kit (no library, under the strict CSP): calls per minute by model and spend over the day as time series, GPU memory stacked per model, the moons funnel, sparklines, running jobs' progress bars with percent, rate and ETA, and steps done of total for tasks and lanes; each chart has a text equivalent, and the network canvas turns light in the light scheme (T-3092).
+- The README draws every table and four charts as pictures in the live page's modern look, light and dark: `python3 demo/readme_figures.py` redraws them from the README's own rows (kept under each picture as text) and from measured data (tasks closed a day and tests over time from git, hook time from bench_hooks.py, the model bench), `--check` names a stale one, and `sampo works check --type figure` gates a document figure at its shown size; the contrast gate no longer reads a one-level raster difference between its two renders as faint text (T-3247).
 - `sampo sandbox` binds back, read-only, what a job reads from under /tmp or /run and its working folder there, so `run.py --sandbox` works from a repo under /tmp, as in `sampo ship`'s scratch tree (T-3246).
 - The live page's jobs list reads a python3 command's program past options with a value (`-X dev`, `-W ignore`), follows `-m MODULE`, and names no program for `-c CODE`, so those runs are no longer missed (T-3199).
 - The first builder lane is never starved by moderate load: with no builder working, `sampo lane brief` starts one unless the load is past 3 per CPU; further lanes keep the 1.5 per CPU bar. Sampo's own test sweeps and fills had held the load over the bar for three hours with nothing being built (T-3243).
