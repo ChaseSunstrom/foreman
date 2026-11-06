@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T06:41:44Z
-updated: 2026-11-06T06:41:44Z
+updated: 2026-11-06T08:56:10Z
 ---
 # claims._body fetches into local refs/sampo/* on every read and never prunes, leaving…
 ## Raw request
@@ -26,4 +26,5 @@ updated: 2026-11-06T06:41:44Z
 ## Verification evidence
 ## Log
 - 2026-11-06T06:41:44Z created
+- 2026-11-06T08:56:10Z blocked on T-3321 and T-3329: claims.py exists only on their unmerged lanes; build after both land
 ## Follow-ups captured

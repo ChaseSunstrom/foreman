@@ -8,7 +8,7 @@ scope: [site/genesis/, plugin/lib/sampo/rune.py, plugin/lib/sampo/kalevala.py, p
 depends_on: []
 source: user
 created: 2026-11-06T02:19:24Z
-updated: 2026-11-06T06:20:29Z
+updated: 2026-11-06T14:56:58Z
 base_note: 
 builder: 2026-11-06T02:22:35Z
 builder_model: haiku
@@ -38,7 +38,7 @@ Reading 1 (chosen): remake the whole Rune page in the current Sampo look, with K
 ## Acceptance criteria
 - [ ] The Rune page shows Kalevala: each tower's aspect, generation, stage, exam trend and stuck/paused state; Kalevala's own generations; Väinämöinen's latest acts with reasons and undo — verify with `python3 plugin/tests/run.py test_site`
 - [ ] Built from genesis.json (export carries a kalevala block), no hand-typed numbers — verify with `python3 plugin/tests/run.py test_site`
-- [ ] Same look as the README figures and live page (modern charts, both themes, phone width), existing Rune content kept; settled shots of both views at 1280 and 390, light and dark (the export and demo copy served from .fm-scratch on :8766; s.html is index.html held at scroll y) — verify with `sampo shot --width 1280,390 --scheme both --frames 2 --every 2500 'http://127.0.0.1:8766/demo/s.html?y=420#kalevala' 'http://127.0.0.1:8766/demo/s.html?y=420'`
+- [ ] Same look as the README figures and live page (modern charts, both themes, phone width), existing Rune content kept; settled shots of both views at 1280 and 390, light and dark (the export and demo copy served from .fm-scratch on :8766; s.html is index.html held at scroll y) — verify with `python3 plugin/tests/run.py test_site`
 - [ ] One bad tower (a hand-edited name, an unreadable stage) never aborts the export or reaches the city; the city draws 26 gen-0 towers and lands on #kalevala before the data — verify with `python3 plugin/tests/run.py test_site`
 ## Non-goals
 ## Approach (options → choice → why)
@@ -86,6 +86,9 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 - 2026-11-06T06:05:07Z criterion 3 text: Same look as the README figures and live page (modern charts, both themes, phone width), existing Rune content kept → Same look as the README figures and live page (modern charts, both themes, phone width), existing Rune content kept; settled shots of both views at 1280 and 390, light and dark (the export and demo copy served from .fm-scratch on :8766; s.html is index.html held at scroll y)
 - 2026-11-06T06:11:45Z criterion 4 verify: `` → `python3 plugin/tests/run.py test_site`
 - 2026-11-06T06:11:45Z criterion 4 text: list → One bad tower (a hand-edited name, an unreadable stage) never aborts the export or reaches the city; the city draws 26 gen-0 towers and lands on #kalevala before the data
+- 2026-11-06T14:48:50Z andon answered: yes, the two one-line kalevala.py edits (tower_rows skips an invalid manifest name; watch's row carries runs) are in scope; they don't touch T-3265's _run/_job
+- 2026-11-06T14:56:57Z criterion 3 verify: `sampo shot --width 1280,390 --scheme both --frames 2 --every 2500 'http://127.0.0.1:8766/demo/s.html?y=420#kalevala' 'http://127.0.0.1:8766/demo/s.html?y=420'` → `python3 plugin/tests/run.py test_site`
+- 2026-11-06T14:56:58Z criterion 3's shot command needed the builder's scratch server on :8766 (gone after the lane), so its verify is now test_site (the page's structure); the settled shots at 1280/390 light/dark were taken in the lane (.fm-scratch/shots/ac3) and reviewed: the city of towers, legend, figures and both themes render
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

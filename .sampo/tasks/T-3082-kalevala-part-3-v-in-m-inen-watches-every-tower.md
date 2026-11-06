@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/kalevala.py, plugin/lib/sampo/night.py, plugin/tests/te
 depends_on: [T-3265]
 source: user
 created: 2026-11-05T00:34:18Z
-updated: 2026-11-06T02:10:31Z
+updated: 2026-11-06T14:48:50Z
 builder: 2026-11-05T20:57:25Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|431015|12747818
@@ -100,6 +100,7 @@ Read T-3050's brief (state/projects/foreman-4a056f/tasks/T-3050-is-it-possible-t
 - 2026-11-06T00:40:37Z merged worktree-agent-a6cdfeb01e8c00505 (7 file(s))
 - 2026-11-06T00:56:36Z verified: the full suite is green on 5c403348c
 - 2026-11-06T02:10:31Z set depends_on=['T-3265']
+- 2026-11-06T14:48:50Z andon answered: the builder's assumption stands. Night runs Kalevala rounds in this lane; wiring the drive's Stop-hook continuation is a follow-up after T-3163 lands (it edits test_hooks.py), captured separately
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

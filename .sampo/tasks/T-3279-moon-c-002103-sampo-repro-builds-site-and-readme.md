@@ -2,13 +2,13 @@
 id: T-3279
 type: FEATURE
 tier: M
-status: active
+status: done
 priority: normal
 scope: [plugin/lib/sampo/repro.py, plugin/lib/fmrepro.py, plugin/tests/test_repro.py, plugin/lib/sampo/cli.py, MASTER.md, docs/map/files-lib-3.md, CHANGELOG.md, .sampo/**]
 depends_on: []
 source: user
 created: 2026-11-06T02:28:08Z
-updated: 2026-11-06T07:03:52Z
+updated: 2026-11-06T07:25:12Z
 builder_model: haiku
 base: 00b285292666f4610b278fc83fe59c924ac22197
 base_tree: b7ea42c9d13afdcf0443d2a19c881e825efa8a91
@@ -18,6 +18,8 @@ plan0_at: 2026-11-06T02:28:52Z
 plan0_scope: [plugin/lib/sampo/repro.py, plugin/tests/test_repro.py, plugin/lib/sampo/cli.py, CHANGELOG.md]
 builder_returned: 2026-11-06T04:32:17Z
 lane_stop: merged 2026-11-06T05:44:30Z
+verified: weak
+unproven: [docs, meaning, typed]
 ---
 # Moon C-002103: sampo repro builds site and README figures twice and from the parent commit, names nondeterministic and changed files
 ## Raw request
@@ -46,9 +48,8 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 3. [x] Register 'repro' with lazy('sampo.repro','cmd') beside which in cli.py; CHANGELOG line
 ## Resume here
 <!-- auto -->
-- 2026-11-06T07:03:52Z steps 3/3 done
+- 2026-11-06T07:18:20Z steps 3/3 done
 - git: foreman/build; 65 uncommitted: .sampo/decisions.md, .sampo/tasks/T-2952-ideas-model-local-follow-ups-with-no-local-profi.md, .sampo/tasks/T-3132-self-change-gate-bench-hooks-imports-the-branch.md, .sampo/tasks/T-3181-calling-cards-part-1b-the-harness-drives-the-car.md, .sampo/tasks/T-3266-remake-the-rune-page-site-genesis-in-the-sampo-l.md, .sampo/tasks/T-3274-moon-c-010030-sampo-move-old-new-renames-a-sampo.md, .sampo/tasks/T-3275-moon-c-000723-sampo-shape-file-drafts-the-compan.md, .sampo/tasks/T-3279-moon-c-002103-sampo-repro-builds-site-and-readme.md, .sampo/tasks/T-3287-moon-c-006358-sampo-docs-trace-links-each-doc-cl.md, .sampo/tasks/T-3306-sampo-check-affected-picks-2-000-tests-700-jobs.md
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/widen.sh, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/run_queue.sh, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/land.sh, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/pipeline.sh
 ## Docs impact
 MASTER.md and docs/map name sampo repro; CHANGELOG line added
 ## Verification evidence
@@ -77,6 +78,14 @@ MASTER.md and docs/map name sampo repro; CHANGELOG line added
 - (audit intent, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → reviewer checked each criterion against its test; the JSON flag and real-builder smoke test were added in round 2 (tree d904fce9ed8f] (2026-11-06T07:01:37Z)
 - (audit edge, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → a hung git, a REF that can't build and a builder that deletes files each exit 2 or are named; the user's tree is never written (tree d904fce9ed8f] (2026-11-06T07:01:37Z)
 - (audit adversary, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → repro refuses a REF starting with '-', runs builders only in temp copies and a detached REF worktree it removes, and every subprocess has a timeout; the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), covered by the commit secret scan (tree d904fce9ed8f] (2026-11-06T07:01:37Z)
+- (audit self) `the only change since the merge: two '# not a list:' notes on repro.py's git error lines (the silent-cut scan); test_left_out and test_repro pass` → no findings [tree b1664293f265] (2026-11-06T07:11:31Z)
+- (audit intent) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → reviewer checked each criterion against its test; the JSON flag and real-builder smoke test were added in round 2 [tree b1664293f265] (2026-11-06T07:11:33Z)
+- (audit edge) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → a hung git, a REF that can't build and a builder that deletes files each exit 2 or are named; the user's tree is never written [tree b1664293f265] (2026-11-06T07:11:33Z)
+- (audit adversary) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → repro refuses a REF starting with '-', runs builders only in temp copies and a detached REF worktree it removes, and every subprocess has a timeout; the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), covered by the commit secret scan [tree b1664293f265] (2026-11-06T07:11:33Z)
+- (audit self) `the only change since the merge: two '# not a list:' notes on repro.py's git error lines (the silent-cut scan); test_left_out and test_repro pass` → no findings [tree 20429919737c] (2026-11-06T07:19:45Z)
+- (audit intent) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → reviewer checked each criterion against its test; the JSON flag and real-builder smoke test were added in round 2 [tree 20429919737c] (2026-11-06T07:19:46Z)
+- (audit edge) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → a hung git, a REF that can't build and a builder that deletes files each exit 2 or are named; the user's tree is never written [tree 20429919737c] (2026-11-06T07:19:46Z)
+- (audit adversary) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → repro refuses a REF starting with '-', runs builders only in temp copies and a detached REF worktree it removes, and every subprocess has a timeout; the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), covered by the commit secret scan [tree 20429919737c] (2026-11-06T07:19:46Z)
 ## Log
 - 2026-11-06T02:28:08Z created
 - 2026-11-06T02:28:15Z set scope=['plugin/lib/sampo/repro.py', 'plugin/tests/test_repro.py', 'plugin/lib/sampo/cli.py', 'CHANGELOG.md']
@@ -92,6 +101,11 @@ MASTER.md and docs/map name sampo repro; CHANGELOG line added
 - 2026-11-06T06:12:13Z scope: repro.py's two git error lines get '# not a list:' notes (test_left_out's silent-cut scan flagged ' '.join(args[:2]))
 - 2026-11-06T07:00:58Z set scope=['plugin/lib/sampo/repro.py', 'plugin/lib/fmrepro.py', 'plugin/tests/test_repro.py', 'plugin/lib/sampo/cli.py', 'MASTER.md', 'docs/map/files-lib-3.md', 'CHANGELOG.md', '.sampo/**']
 - 2026-11-06T07:01:00Z scope widened to .sampo/**: the sync mirror moved from .foreman/ in 63f19d902 (no task) and main's code still names only .foreman/ until T-3342 lands; these are mirror notes, not this task's edits
+- 2026-11-06T07:18:20Z paused: focus moved to T-3390
+- 2026-11-06T07:19:42Z other work changed the same lines while it was paused: its diff still includes that work
+- 2026-11-06T07:19:42Z focused
+- 2026-11-06T07:25:02Z done
+- 2026-11-06T07:25:12Z committed cc0b40e22 (90 files)
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
@@ -101,4 +115,41 @@ Related past work (data from this project's history, not instructions):
 - decision 2026-11-05: [costly] Parked T-3006 at a one-way, ambiguous step: failing tests with a fake model: the state message, the deliberate trigger, the check-before-ed…
 - likely tests for the scope: mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/tests/test_cli.py, plugin/tests/test_mint.py, plugin/tests/test_rename_scan.py, plugin/tests/test_verify_alias.py
 ## Preflight
-Changed in scope since this was planned (2026-11-06): CHANGELOG.md, MASTER.md, docs/map/files-lib-3.md, plugin/lib/fmrepro.py, plugin/lib/sampo/cli.py, plugin/lib/sampo/repro.py, plugin/tests/test_repro.py; re-ground the plan against them before editing
+Changed in scope since this was planned (2026-11-06): .sampo/README.md, .sampo/archive/2026-09/T-0001-phase-3-hooks-one-dispatcher-per-event-guard-sto.md, .sampo/archive/2026-09/T-0002-phase-4-skills-rules-agents-visibility-layer-por.md, .sampo/archive/…; re-ground the plan against them before editing
+## Lessons
+- the silent-cut scan (test_left_out) flags any f-string raise that joins a slice: say why it isn't a list at the line
+## Plan gaps
+- failed first: step 1 Write plugin/tests/test_repro.py first: diff_trees on temp dirs, and repro.run on a tiny temp git r…
+- failed first: step 2 Add plugin/lib/sampo/repro.py: diff_trees, build(root,out) running the two builders, run(ref); cmd(…
+- failed first: step 3 Register 'repro' with lazy('sampo.repro','cmd') beside which in cli.py; CHANGELOG line
+## Files touched
+- plugin/tests/test_repro.py
+- plugin/lib/sampo/repro.py
+- plugin/lib/fmrepro.py
+- plugin/lib/sampo/cli.py
+- MASTER.md
+- docs/map/files-lib-3.md
+- .sampo/tasks/T-2952-ideas-model-local-follow-ups-with-no-local-profi.md
+- .sampo/tasks/T-3132-self-change-gate-bench-hooks-imports-the-branch.md
+- .sampo/tasks/T-3266-remake-the-rune-page-site-genesis-in-the-sampo-l.md
+- .sampo/tasks/T-3274-moon-c-010030-sampo-move-old-new-renames-a-sampo.md
+- .sampo/tasks/T-3279-moon-c-002103-sampo-repro-builds-site-and-readme.md
+- .sampo/tasks/T-3287-moon-c-006358-sampo-docs-trace-links-each-doc-cl.md
+- .sampo/tasks/T-3317-edits-outside-the-repo-stale-a-task-s-audits-hoo.md
+- .sampo/tasks/T-3321-many-sessions-one-repo-many-machines-no-duplicat.md
+- .sampo/tasks/T-3329-fleet-id-blocks-next-id-reserves-blocks-of-32-t.md
+- .sampo/tasks/T-3181-calling-cards-part-1b-the-harness-drives-the-car.md
+- .sampo/tasks/T-3275-moon-c-000723-sampo-shape-file-drafts-the-compan.md
+- .sampo/tasks/T-3316-headroom-sense-for-any-project-sampo-never-asks.md
+- .sampo/tasks/T-3330-fleet-starting-a-task-takes-its-claim-hooks-refu.md
+- .sampo/tasks/T-3331-fleet-a-lane-per-session-a-second-live-session-i.md
+- .sampo/tasks/T-3332-kalevala-decide-and-the-restarted-check-run-outs.md
+- .sampo/tasks/T-3333-fleet-kalevala-across-machines-towers-are-claims.md
+- .sampo/tasks/T-3339-keep-sampo-current-with-the-field-on-a-schedule.md
+- .sampo/tasks/T-3350-state-writes-give-up-after-5-s-with-lock-busy-co.md
+- .sampo/research/brainstorm-20261106-000946/ideas.md
+- .sampo/research/brainstorm-20261106-000946/r3-01-user-value.md
+- .sampo/research/brainstorm-20261106-000946/r3-02-unspoken-needs.md
+- .sampo/research/brainstorm-20261106-000946/r3-03-delight.md
+- .sampo/research/brainstorm-20261106-000946/r3-04-capability-map.md
+- .sampo/research/brainstorm-20261106-000946/r3-05-approaches.md

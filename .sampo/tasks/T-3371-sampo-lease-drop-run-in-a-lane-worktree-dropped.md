@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T06:20:48Z
-updated: 2026-11-06T07:07:04Z
+updated: 2026-11-06T09:43:39Z
 base_note: 
 lane: ~/.claude/foreman/.claude/worktrees/agent-a8f347513a4f6aa2c
 lane_branch: worktree-agent-a8f347513a4f6aa2c
@@ -27,7 +27,7 @@ builder_returned: 2026-11-06T07:07:04Z
 Reading 1: identity is session+active task plus lane-<id> pre-claims. Reading 2: identity is the whole session, ruled out because lanes share the main session id (T-1216).
 ## Assumptions (confidence)
 ## Acceptance criteria
-- [ ] lease drop releases only caller's leases and its lane pre-claims — verify with `python3 -m unittest plugin/tests/test_claims.py`
+- [ ] lease drop releases only caller's leases and its lane pre-claims — verify with `python3 plugin/tests/run.py test_claims`
 ## Non-goals
 ## Approach (options → choice → why)
 1) mine() keyed session+task, add lane pre-claims and unseen-task guard; likely outcome: exact drops. 2) use what exists: the lease's own session/task fields already identify the holder, which is option 1's base; fails if tasks are unseen. 3) do less: refuse bare drop in lanes; fails because lanes lose cleanup. Choice 1 (90%): smallest change in the shared predicate.
@@ -52,6 +52,8 @@ Reading 1: identity is session+active task plus lane-<id> pre-claims. Reading 2:
 - 2026-11-06T07:00:26Z focused
 - 2026-11-06T07:02:08Z focused
 - 2026-11-06T07:06:17Z focused
+- 2026-11-06T09:43:39Z criterion 1 verify: `python3 -m unittest plugin/tests/test_claims.py` → `python3 plugin/tests/run.py test_claims`
+- 2026-11-06T09:43:39Z criterion 1 verify moved from a bare 'python3 -m unittest' form (fails from the repo root, where lane merge runs it) to plugin/tests/run.py (T-3411 makes this automatic)
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

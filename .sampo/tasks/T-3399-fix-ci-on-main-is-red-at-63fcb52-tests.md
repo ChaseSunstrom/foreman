@@ -1,0 +1,33 @@
+---
+id: T-3399
+type: FIX
+tier: M
+status: captured
+priority: normal
+scope: []
+depends_on: []
+source: discovered
+created: 2026-11-06T07:19:19Z
+updated: 2026-11-06T07:19:19Z
+trigger: ci-red
+trigger_key: 09aeed4b8bce88fb
+---
+# FIX: CI on main is red at 63fcb52 (tests)
+## Raw request
+> FIX: CI on main is red at 63fcb52 (tests)
+> CONTEXT: found by the session-start sweep (T-1810): https://github.com/ChaseSunstrom/sampo/commit/63fcb520a0c8bc3c28bdd94bd158aac417dc4436
+> CI-red: 63fcb520a0c8bc3c28bdd94bd158aac417dc4436
+## Interpretation
+## Assumptions (confidence)
+## Acceptance criteria
+## Non-goals
+## Approach (options → choice → why)
+## Risks and rollback
+## Execution prompt
+## Steps
+## Resume here
+## Docs impact
+## Verification evidence
+## Log
+- 2026-11-06T07:19:19Z created
+## Follow-ups captured

@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T06:22:19Z
-updated: 2026-11-06T06:57:21Z
+updated: 2026-11-06T08:57:03Z
 base_note: 
 lane: ~/.claude/foreman/.claude/worktrees/agent-a62fa1ce1fdf8b5ac
 lane_branch: worktree-agent-a62fa1ce1fdf8b5ac
@@ -18,7 +18,8 @@ predict_minutes: 3
 predict_attempts: 1
 plan0_at: 2026-11-06T06:29:30Z
 plan0_scope: []
-builder_returned: 2026-11-06T06:57:21Z
+lane_stop: refused 2026-11-06T08:51:40Z
+builder_returned: 2026-11-06T08:56:15Z
 ---
 # test_exam's GateGrowth classes (LeanKindGate*, one per louhi.GATE_MUTATIONS entry,…
 ## Raw request
@@ -27,7 +28,7 @@ builder_returned: 2026-11-06T06:57:21Z
 Reading 1: bench fewer fixtures in the gate runner so each class is cheap (chosen; keeps real gate). Reading 2: gate classes on changed files (rejected: the proof should keep running).
 ## Assumptions (confidence)
 ## Acceptance criteria
-- [ ] each LeanKindGate class still passes (refused by own metric, dropped check flips, controls pass) — verify with `python3 -m unittest test_exam.LeanKindGateHookDelay`
+- [ ] each LeanKindGate class still passes (refused by own metric, dropped check flips, controls pass) — verify with `python3 plugin/tests/run.py test_exam`
 ## Non-goals
 ## Approach (options → choice → why)
 1) stub hook with cost model: fails if the stub drifts from real hooks, losing the proof. 2) use what exists: selfgate's memoized base bench shared across classes via disk cache; fails if classes stay separate processes with stale caches. 3) do less: bench 4 of 16 fixtures in-process in the gate runner; likely outcome: ~4x cheaper, same refusals. Choice 3 (90%): real hooks and gate stay; measure one class before (72 s at load 21) and after.
@@ -47,6 +48,8 @@ Reading 1: bench fewer fixtures in the gate runner so each class is cheap (chose
 - 2026-11-06T06:29:28Z focused
 - 2026-11-06T06:29:30Z predicted from its closes: 3 min, 1 attempt(s)
 - 2026-11-06T06:54:41Z focused
+- 2026-11-06T08:57:03Z criterion 1 verify: `python3 -m unittest test_exam.LeanKindGateHookDelay` → `python3 plugin/tests/run.py test_exam`
+- 2026-11-06T08:57:03Z merge refusal cause: criterion 1's verify ran 'python3 -m unittest test_exam.LeanKindGateHookDelay' from the repo root, where test_exam isn't importable (ERROR: _FailedTest); verify now 'python3 plugin/tests/run.py test_exam' (122 OK in the lane after merging 3d1fb1b45)
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
