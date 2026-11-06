@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T14:48:27Z",
- "rev": "566a10869",
+ "updated": "2026-11-06T15:20:06Z",
+ "rev": "505653aa8",
  "capabilities": [
   {
    "n": 1,
@@ -36256,7 +36256,7 @@
   "typed": 43,
   "red": 86,
   "tui-unshot": 12,
-  "docs": 131,
+  "docs": 130,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 41,
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 30609,
+   "generated": 31015,
    "write": {
-    "title": 203,
-    "line": 1933,
+    "title": 205,
+    "line": 1947,
     "payoff": 21,
     "kill test": 90,
     "code": 11
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 15437,
-    "tier": 10610,
-    "novelty": 94
+    "kill": 15809,
+    "tier": 10900,
+    "novelty": 107
    },
-   "merged": 534,
-   "kept": 1273,
-   "pending": 333
+   "merged": 568,
+   "kept": 1287,
+   "pending": 0
   },
   "families": [
    {
@@ -40744,10 +40744,10 @@
     ]
    }
   ],
-  "families_total": 1017,
+  "families_total": 1023,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1273
+   "total": 1287
   }
  },
  "steer": {
