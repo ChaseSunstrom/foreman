@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T06:54:02Z",
- "rev": "b3314e2b1",
+ "updated": "2026-11-06T07:01:51Z",
+ "rev": "63f19d902",
  "capabilities": [
   {
    "n": 1,
@@ -37465,7 +37465,7 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 23158,
+   "generated": 23268,
    "write": {
     "title": 166,
     "line": 1623,
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 11472,
-    "tier": 8081,
+    "kill": 11641,
+    "tier": 8230,
     "novelty": 75
    },
-   "merged": 298,
-   "kept": 972,
-   "pending": 340
+   "merged": 306,
+   "kept": 986,
+   "pending": 110
   },
   "families": [
    {
@@ -38334,8 +38334,24 @@
     ]
    },
    {
+    "id": "F-022839",
+    "size": 1,
+    "lead": "Simulate stakeholder reactions to proposed doc updates",
+    "today": "Today you can't predict how different teams will react to a major documentation restructure before publishing.",
+    "with_this": "With this, you can preview how engineers, managers, and clients will perceive new documentation, allowing you to optimize tone and structure for each audience.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "docs"
+    ]
+   },
+   {
     "id": "F-015679",
-    "size": 19,
+    "size": 37,
     "lead": "Evolve Sampo's collaboration patterns with other agents",
     "today": "Today you can't have Sampo automatically discover more effective ways to coordinate with other agents in a multi-agent system based on past collaboration outcomes.",
     "with_this": "With this, Sampo can improve the efficiency and accuracy of multi-agent systems by evolving its communication and coordination protocols to find the most effective division of labor.",
@@ -38347,40 +38363,23 @@
     "evidence": "",
     "kinds": [
      "anticipation",
+     "beyond code",
+     "ecosystem",
      "efficiency",
      "getting the tools it lacks",
      "goal to finish",
      "initiative",
-     "observability",
-     "orchestration",
-     "portability",
-     "problem solving",
-     "self-repair and self-improvement",
-     "self-triggering",
-     "ux"
-    ]
-   },
-   {
-    "id": "F-021281",
-    "size": 11,
-    "lead": "Deduplicate semantic reasoning across parallel agents",
-    "today": "Today you can't efficiently handle complex tasks that require multiple parallel reasoning threads because Sampo treats each agent as independent, leading to redundant computation and conflicting conclusions.",
-    "with_this": "With this, Sampo can solve complex problems faster by synchronizing its internal reasoning agents, identifying overlapping logical sub-problems, and merging their results into a single coherent strategy before execution.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "beyond code",
-     "ecosystem",
-     "getting the tools it lacks",
      "memory",
      "model layer",
      "multi-user",
+     "observability",
+     "orchestration",
      "performance",
+     "portability",
+     "problem solving",
      "security",
+     "self-repair and self-improvement",
+     "self-triggering",
      "ux"
     ]
    },
@@ -40733,10 +40732,10 @@
     ]
    }
   ],
-  "families_total": 838,
+  "families_total": 842,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 972
+   "total": 986
   }
  },
  "steer": {
