@@ -8252,8 +8252,8 @@ def _build_parser(only=None):
                    "uses whose live agreement fell under the floor")
     s.add_argument("--with-agent", action="store_true", help="models --export: also the agent-written fields "
                    "(the brief's reading, approach, criteria, steps, lessons), each marked author=agent; off by default")
-    s.add_argument("--night", action="store_true", help="models run: the night's rerun: under the moons store lock (a busy "
-                   "store is a skipped row), then the promotion rule (T-3093)")
+    s.add_argument("--night", action="store_true", help="models run: the night's rerun: under its own exam lock (a busy "
+                   "lock is a skipped row; a moons grow runs beside it, T-3487), then the promotion rule (T-3093)")
     s.add_argument("--generation", action="store_true", help="models run: also the generation arm: K moons (--n, default 16) "
                    "through admit, kill and tier, and the Smith seeds, per generative profile; slow, and it calls the profiles "
                    "(models run: --limit caps the held-out rows asked per use, default 200) (T-2894)")

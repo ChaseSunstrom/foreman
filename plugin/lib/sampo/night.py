@@ -73,7 +73,7 @@ def jobs(p):
         out.append(("moons funnel", ["moons", "funnel", "--max-calls", "400", "--local-only"], 0.0))
     from sampo import louhi
     if not meta.get("sensitive") and moonscale._local(False) and louhi.bench_due(p):  # T-3093: free: once a Rune generation
-        out.append(("model bench", ["exam", "models", "run", "--night"], 0.0))  # under the moons store lock, never beside grow
+        out.append(("model bench", ["exam", "models", "run", "--night"], 0.0))  # T-3487: its own exam lock; it runs beside a grow
     if not meta.get("sensitive") and moonscale._local(False):  # T-2912: free: the local model's next-request guess
         out.append(("next request", ["outcomes", "--predictions", "--ask-local"], 0.0))
     smoke = meta.get("smoke") or {}

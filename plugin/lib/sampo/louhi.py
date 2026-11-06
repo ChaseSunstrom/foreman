@@ -1695,17 +1695,48 @@ def bench_due(p):
                    for r in _bench_rows(p))
 
 
+EXAM_LOCK = "exam.lock"  # T-3487: a bench run's own flock, in the project's state dir; the moons store's lock is not its lock
+
+
+class ExamBusy(Exception):
+    pass
+
+
+@contextlib.contextmanager
+def _exam_lock(p, wait=0.0):
+    """T-3487: one bench run at a time on this project, a flock on exam.lock with the holder's pid inside; the kernel drops
+    it with the process. `wait` is the deadline in seconds to poll for it (0: refuse at once). A moons grow --keep never
+    holds it, so a bench runs beside a grow and the GPU stays busy."""
+    os.makedirs(p.dir, exist_ok=True)
+    fd = os.open(os.path.join(p.dir, EXAM_LOCK), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    pid = os.pread(fd, 20, 0).decode("ascii", "replace").strip()
+                    raise ExamBusy(f"another bench run holds the exam lock (pid {pid if pid.isdigit() else '?'})") from None
+                time.sleep(0.05)
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor releases the flock
+
+
 def bench_night(p, **kw):
-    """The $0 nightly rerun: bench_models under the moons store lock (never beside moons grow --keep or a funnel), then the
-    promotion rule. A busy store is a 'skipped' row (the last good rows stay); a down or hung backend is already an error
-    row, which never replaces them. Returns bench_models' result, or {skipped, rows}."""
-    from sampo import moonscale
+    """The $0 nightly rerun: bench_models under the exam lock (T-3487: one bench at a time, never the moons store's, so a
+    grow --keep runs beside it), then the promotion rule. A busy exam lock is a 'skipped' row (the last good rows stay); a
+    down or hung backend is already an error row, which never replaces them. Returns bench_models' result, or {skipped, rows}."""
     gen = current_gen(p)
     try:
-        with moonscale.store_lock(p):
+        with _exam_lock(p):
             freeze_set(p)
             res = bench_models(p, **kw)
-    except moonscale.Busy as e:
+    except ExamBusy as e:
         row = {"run": time.strftime("m%Y%m%d-%H%M%S") + f"{time.time_ns() // 1_000_000 % 1000:03d}", "at": c.now(),
                "arm": "skipped", "use": "*", "backend": "*", "why": c.fit(str(e), 160), "gen": gen}
         path = os.path.join(p.root, BENCH)

@@ -482,19 +482,17 @@ class ModelBenchVisible(ForemanTestCase):  # T-3093: the Models section, the per
         louhi.apply_promotion(self.p)
         self.assertFalse(models.live(self.p, "intake-type"))
 
-    def test_a_busy_card_is_a_skipped_row_and_the_generation_stays_due(self):
+    def test_a_held_moons_store_does_not_stop_a_bench_round(self):  # T-3487: a grow --keep holds the moons store for days
         from sampo import moonscale, rune
         os.makedirs(os.path.join(rune.home(self.p), "gen-4"))
-        self.assertEqual(louhi.current_gen(self.p), 4)
-        self.assertTrue(louhi.bench_due(self.p))
-        import threading  # the store lock is re-entrant per thread: another funnel holds it from its own thread
+        import threading  # the store lock is re-entrant per thread: the grow holds it from its own thread
         held, done = threading.Event(), threading.Event()
 
-        def other():
+        def grow():
             with moonscale.store_lock(self.p):
                 held.set()
                 done.wait(30)
-        t = threading.Thread(target=other)
+        t = threading.Thread(target=grow)
         t.start()
         held.wait(30)
         try:
@@ -502,12 +500,32 @@ class ModelBenchVisible(ForemanTestCase):  # T-3093: the Models section, the per
         finally:
             done.set()
             t.join()
-        self.assertIn("another funnel", res["skipped"])
+        self.assertNotIn("skipped", res)
+        rows = [json.loads(x) for x in open(os.path.join(self.p.root, louhi.BENCH))]
+        self.assertTrue(rows and all(r["arm"] != "skipped" for r in rows), "the round ran beside the grow")
+
+    def test_a_busy_exam_lock_is_a_skipped_row_and_the_generation_stays_due(self):
+        from sampo import rune
+        os.makedirs(os.path.join(rune.home(self.p), "gen-4"))
+        self.assertEqual(louhi.current_gen(self.p), 4)
+        self.assertTrue(louhi.bench_due(self.p))
+        with louhi._exam_lock(self.p):  # another bench run holds it (flock is per open file, so this thread is refused too)
+            res = louhi.bench_night(self.p, decision=[], embedders=[])
+        self.assertIn("another bench run", res["skipped"])
         rows = [json.loads(x) for x in open(os.path.join(self.p.root, louhi.BENCH))]
         self.assertEqual([(r["arm"], r["gen"]) for r in rows], [("skipped", 4)])
         self.assertTrue(louhi.bench_due(self.p), "a skip leaves the generation due")
         self.assertEqual(louhi.models_view(rows)["uses"], {})
         self.assertNotIn("skipped", louhi.bench_show(self.p).lower().replace("no model bench", ""))
+
+    def test_the_exam_lock_names_its_holder_and_is_free_again_after_release(self):  # T-3487: the deadline and the pid
+        with louhi._exam_lock(self.p):
+            with self.assertRaises(louhi.ExamBusy) as e:
+                with louhi._exam_lock(self.p, wait=0.1):
+                    pass
+            self.assertIn(f"pid {os.getpid()}", str(e.exception))
+        with louhi._exam_lock(self.p, wait=0.1):
+            pass
 
     def test_a_rerun_stamps_its_gen_and_per_task_hits_and_pins_the_frozen_set_once(self):
         from sampo import rune
