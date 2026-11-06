@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- rune.step and rune.towers share one ledger scan per ledger state (keyed by each file's path, mtime, size and inode) instead of one per tower: the 27-tower step loop drops from 3.05 s to 0.27 s with byte-identical output (T-3375).
 - Closing a task (sampo task finish, done, drop, block, defer) releases its file leases at once instead of holding hub files from other lanes for about 20 minutes; the release touches only that project's leases, and a blocked or deferred lane keeps its pre-claim (T-3398).
 - core.log_event caps list-valued data fields at 200 (the true count in <field>_n, a caller's own count kept) and strings at 4000 characters before hashing, so one event can't bloat the hash-chained ledger; verify-ledger --accept-damage acks in chunks of 200 so none is cut (T-3403).
 - Re-landed T-3410 (the fmtrain bullet in MASTER.md and its map entry) after the post-merge suite reverted it on load-only failures; test_docs passes again (T-3426).
