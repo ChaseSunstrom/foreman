@@ -3212,7 +3212,7 @@ def _doctor():
 
 
 def _gates(p):
-    """The newest full fm check pass on this tree or its code tree ('run at HH:MM UTC') or None: read, never rerun."""
+    """The newest full fm check pass on this exact tree ('run at HH:MM UTC') or None: read, never rerun."""
     from sampo import cli as scli
     return scli._cached_pass(p, list(c.read_meta(p).get("checks") or []), c.worktree_id(p.root))
 
@@ -4075,7 +4075,7 @@ def sweep(p, n, agent="foreman"):
     row("docs", [c.fit(c.plain(f"{x['file']}: {x['kind']} {x['detail']}"), 160) for x in sdocs.scan(p.root)], "no docs drift")
     row("doctor", _doctor(), "no failures")
     ran = _gates(p)
-    row("gates", [] if ran else ["no full fm check pass recorded on this tree or its code tree: run fm check" if c.read_meta(p).get("checks")
+    row("gates", [] if ran else ["no full fm check pass recorded on this exact tree: run fm check" if c.read_meta(p).get("checks")
                                  else "no gates configured: fm check add '<cmd>', then fm check"],
         f"full gates green on this tree, {ran}")
     row("privileges", *privileges(p, n))
