@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-06T04:06:27Z",
+ "updated": "2026-11-06T04:11:39Z",
  "rev": "5c403348",
  "capabilities": [
   {
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 21541,
+   "generated": 21648,
    "write": {
     "title": 153,
-    "line": 1533,
+    "line": 1554,
     "payoff": 18,
     "kill test": 64,
     "code": 7
@@ -37480,12 +37480,12 @@
    },
    "rejected": {
     "kill": 10768,
-    "tier": 7643,
+    "tier": 7686,
     "novelty": 72
    },
-   "merged": 268,
-   "kept": 919,
-   "pending": 59
+   "merged": 271,
+   "kept": 932,
+   "pending": 86
   },
   "families": [
    {
@@ -37523,7 +37523,7 @@
    },
    {
     "id": "F-014278",
-    "size": 14,
+    "size": 18,
     "lead": "Simulate ecosystem ripple effects before releasing a single crate",
     "today": "Today you can't predict how a breaking change in your library will break thousands of downstream users' builds until they file bugs.",
     "with_this": "With this, you can see a live map of which downstream projects will fail, crash, or degrade in performance when you publish your next version.",
@@ -37535,6 +37535,7 @@
     "evidence": "",
     "kinds": [
      "bugs",
+     "docs",
      "features",
      "migrations",
      "refactors",
@@ -38312,6 +38313,30 @@
     ]
    },
    {
+    "id": "F-021281",
+    "size": 11,
+    "lead": "Deduplicate semantic reasoning across parallel agents",
+    "today": "Today you can't efficiently handle complex tasks that require multiple parallel reasoning threads because Sampo treats each agent as independent, leading to redundant computation and conflicting conclusions.",
+    "with_this": "With this, Sampo can solve complex problems faster by synchronizing its internal reasoning agents, identifying overlapping logical sub-problems, and merging their results into a single coherent strategy before execution.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "beyond code",
+     "ecosystem",
+     "getting the tools it lacks",
+     "memory",
+     "model layer",
+     "multi-user",
+     "performance",
+     "security",
+     "ux"
+    ]
+   },
+   {
     "id": "F-010563",
     "size": 4,
     "lead": "Settle security disagreements by letting two rival fixes fight in a tournament",
@@ -38497,6 +38522,22 @@
     "evidence": "",
     "kinds": [
      "migrations"
+    ]
+   },
+   {
+    "id": "F-021508",
+    "size": 2,
+    "lead": "Simulate the future security posture of your entire org",
+    "today": "Today you can't see how a single code change will ripple through every future release to create a vulnerability six months from now.",
+    "with_this": "With this, you can see the projected attack surface of your next three releases before you write a single line of code, preventing future breaches that current static analysis misses.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
     ]
    },
    {
@@ -40690,44 +40731,12 @@
     "kinds": [
      "refactors"
     ]
-   },
-   {
-    "id": "F-012173",
-    "size": 1,
-    "lead": "Simulate the long-term decay of any new feature's value",
-    "today": "Today you can't know if a feature will be obsolete in six months before you spend months building it.",
-    "with_this": "With this, you can discard low-value feature ideas immediately, protecting your team's time and budget from building dead-end software.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
-   },
-   {
-    "id": "F-012259",
-    "size": 1,
-    "lead": "Crowdsource performance fixes from the entire engineering org",
-    "today": "Today you can't get immediate expert review for a performance issue on your phone.",
-    "with_this": "With this, you can get a ranked list of fixes from top performers in your org instantly.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "performance"
-    ]
    }
   ],
-  "families_total": 782,
+  "families_total": 804,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 919
+   "total": 932
   }
  },
  "steer": {
