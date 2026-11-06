@@ -184,6 +184,18 @@ class Risk(HookCase):
             f.write("{not json")
         self.assertEqual(self.fresh(p), 4, "a broken cache counts afresh")
 
+    def test_a_revert_undone_by_a_re_land_costs_nothing(self):
+        # T-3492: four of 2026-11-06's six reverts were false post-merge reds, each re-landed by reverting the revert;
+        # they still spent 12 points and paused the self-improvement pass
+        self.fm("init")
+        g = lambda *a: subprocess.run(["git", "-C", self.repo, "-c", "user.email=t@example.com", "-c", "user.name=t",
+                                       *a], check=True, capture_output=True, text=True).stdout.strip()  # noqa: E731
+        g("commit", "--allow-empty", "-m", 'Revert "Merge T-1: a"')
+        bad = g("rev-parse", "HEAD")
+        g("commit", "--allow-empty", "-m", "Re-land T-1 after a false revert (T-2)", "-m", f"This reverts commit {bad[:9]}.")
+        g("commit", "--allow-empty", "-m", 'Revert "Merge T-3: b"')  # a revert that stands still costs three
+        self.assertEqual(self.fm_json("risk")["spent"], 3)
+
     def test_a_revert_commit_today_costs_three(self):
         self.fm("init")
         g = lambda *a: subprocess.run(["git", "-C", self.repo, *a], check=True, capture_output=True)  # noqa: E731

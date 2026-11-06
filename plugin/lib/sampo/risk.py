@@ -95,8 +95,7 @@ def _counts(p, day):
     if gkey and old.get("git") == gkey and isinstance(old.get("rev"), int):
         rev = old["rev"]
     else:
-        subjects = c._git(p.root, "log", f"--since={day} 00:00:00 +0000", "--format=%s", fail="") if root else ""
-        rev = sum(1 for s in subjects.splitlines() if s.startswith("Revert "))
+        rev = _reverts(p.root, day) if root else 0
     if not ok or n != saved or gkey != old.get("git") or rev != old.get("rev") or off - old.get("off", 0) > 65536:
         try:  # most calls write nothing: the next process rereads the few lines since
             c.write_atomic(cpath, json.dumps({"day": day, "off": off, "line": line, "mark": mark, "n": n,
@@ -104,6 +103,19 @@ def _counts(p, day):
         except OSError:
             pass
     return {**n, "revert": rev}
+
+
+_UNDOES = c.lazy(r"This reverts commit ([0-9a-f]{7,40})")
+
+
+def _reverts(root, day):
+    """Today's reverts that still stand. T-3492: a revert a later commit undid (a re-land citing 'This reverts commit
+    <its sha>') was a false alarm, and the undoing commit is no revert of anyone's work: neither spends points."""
+    log = c._git(root, "log", f"--since={day} 00:00:00 +0000", "--format=%H%x1f%s%x1f%b%x1e", fail="")
+    rows = [r.strip("\n").split("\x1f") for r in log.split("\x1e") if r.strip()]
+    undone = {m for _, _, body in (r for r in rows if len(r) == 3) for m in _UNDOES.findall(body)}
+    return sum(1 for r in rows if len(r) == 3 and r[1].startswith("Revert ") and not r[1].startswith('Revert "Revert')
+               and not any(r[0].startswith(u) for u in undone))
 
 
 def slowed(p, meta=None):
