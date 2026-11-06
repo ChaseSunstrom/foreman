@@ -452,10 +452,82 @@ code .nw{white-space:nowrap}
 @media (max-width: 1000px){.cat-list{grid-template-columns:minmax(0,1fr)}.cat-bar{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width: 640px){.cat-bar{grid-template-columns:minmax(0,1fr)}.mc{padding:12px 12px 14px}.mc-title{font-size:17px}}
 
+/* ---------- Kalevala (T-3266): the switch, the city of towers and the towers' section ---------- */
+#main:not(.kv) .only-k,#main.kv .only-g{display:none}
+.vswitch{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px}
+.vswitch button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:44px;padding:9px 16px 10px;font:500 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ash);background:none;border:1px solid var(--rule-2);cursor:pointer;
+  clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px);transition:color var(--dur-small),background-color var(--dur-small)}
+.vswitch small{font:400 12px/1.2 var(--sans);letter-spacing:0;text-transform:none;color:var(--muted);transition:color var(--dur-small)}
+.vswitch button:hover{color:var(--ink);background:var(--night-2)}
+.vswitch button[aria-pressed="true"]{color:var(--night);background:var(--engrave);border-color:transparent}
+.vswitch button[aria-pressed="true"] small{color:var(--night);opacity:.75}
+.vswitch button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.kkey{margin:-10px 0 18px;max-width:56ch;font-size:13px;line-height:1.5;color:var(--muted)}
+.kkey span{white-space:nowrap;color:var(--ash)}
+.kkey span::before{content:"";display:inline-block;width:7px;height:7px;margin:0 5px 1px 2px;border-radius:50%;background:var(--st);box-shadow:0 0 6px var(--st)}
+@media (max-width: 900px){.tcopy .vswitch{order:2;margin:14px var(--gutter) 0}.tcopy .kkey{order:2;margin:10px var(--gutter) 0}}
+
+/* the pull-back: the root tower shrinks to its place at the city's centre as the city's towers rise round it */
+.tscene{--kd:calc(var(--dur-stage) * 2.4)}
+.art{transform-origin:59% var(--gy,96%);transition:transform var(--kd) var(--ease-move),opacity var(--dur-stage) var(--ease-move)}
+.kv .art{transform:scale(.6);opacity:0;visibility:hidden;pointer-events:none;transition:transform var(--kd) var(--ease-move),opacity var(--dur-stage) var(--ease-move),visibility 0s var(--dur-stage)}
+#vault,#vfx,#flame{transition:opacity var(--dur-stage) var(--ease-move)}
+.kv #vault,.kv #vfx,.kv #flame{opacity:0}
+.kv .names,.kv .moonkeys,.kv .mtag{visibility:hidden}
+.city{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;z-index:2;opacity:0;visibility:hidden;pointer-events:none;transition:opacity var(--dur-stage) var(--ease-move),visibility 0s var(--dur-stage)}
+.kv .city{opacity:1;visibility:visible;transition:none}
+.city .ctw{transform:scale(1.6667);transition:transform var(--kd) var(--ease-move)}
+.kv .city .ctw{transform:none}
+.city .kt-t{opacity:0;transform:translateY(24px);transition:opacity var(--dur-small),transform var(--dur-small)}
+.kv .city .kt-t{opacity:1;transform:none;transition:opacity var(--dur-stage) var(--ease-enter) calc(var(--kd) * .45 + var(--i) * var(--dur-tap)),transform var(--dur-stage) var(--ease-enter) calc(var(--kd) * .45 + var(--i) * var(--dur-tap)),filter var(--dur-small)}
+.kv .city a{pointer-events:auto;cursor:pointer;outline:none}
+.city a:hover .kt-t,.city a:focus-visible .kt-t{filter:brightness(1.4)}
+.city a:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.city a:focus-visible .kt-t{filter:brightness(1.4) drop-shadow(0 0 1.5px var(--gold)) drop-shadow(0 0 4px var(--gold))}  /* the ring Firefox draws on an SVG link: outline may not */
+.city .kw,.city .kb{fill:var(--st)}
+.city .kx{fill:var(--night-2)}
+.city stop{stop-color:var(--st)}
+.s-red{--st:var(--red)} .s-orange{--st:var(--orange)} .s-gold{--st:var(--gold)} .s-green{--st:var(--green)} .s-blue{--st:var(--blue)} .s-muted{--st:var(--muted)}
+
+/* the towers' section: the states in one bar, the day's spend, a card per tower, the gens and the acts */
+#k-body h3{margin:38px 0 14px;font:500 12px/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.ksum{margin:6px 0 0}
+#k-body td b{white-space:nowrap}
+.kbar{display:flex;gap:2px;height:10px;margin:0 0 12px}
+.kbar i{min-width:6px;background:var(--st)}
+.ktowers{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,264px),1fr));gap:14px}
+.kt{display:block;padding:14px 16px 14px;min-width:0;color:var(--ink);text-decoration:none;background:var(--plate);border:1px solid var(--rule);border-left:3px solid var(--st)}
+a.kt{transition:border-color var(--dur-small),background-color var(--dur-small)}
+a.kt:hover{border-color:var(--rule-2);border-left-color:var(--st);background:var(--night-2)}
+a.kt:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.kt p{margin:0}
+.kt-top{display:flex;align-items:center;justify-content:space-between;gap:12px;font:500 12px/1.3 var(--mono);letter-spacing:.08em}
+.kt-id{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-weight:600}
+.kchip{flex:none;padding:3px 7px;color:var(--st);border:1px solid color-mix(in srgb,var(--st) 45%,transparent);text-transform:uppercase;letter-spacing:.1em}
+.kt h4{margin:10px 0 4px;font:italic 500 18px/1.3 var(--display);color:var(--ink);text-wrap:balance;overflow-wrap:anywhere}
+.kt-gen{font:500 12px/1.5 var(--mono);color:var(--ash)}
+.kt-act{margin-top:4px!important;font-size:13.5px;line-height:1.45;color:var(--ash);overflow-wrap:anywhere}
+.ktr{margin:12px 0 2px;color:var(--st)}
+.ktr svg{display:block;width:100%;height:auto;overflow:visible}
+.ktr .g{stroke:var(--ink)}
+.ktr .ax{fill:var(--muted);font:500 11px var(--mono)}
+.kt-cap{margin-top:8px!important;font:500 12px/1.4 var(--mono);color:var(--st)}
+.kt-foot{margin-top:10px!important;padding-top:9px;border-top:1px solid var(--line);font:500 12px/1.4 var(--mono);color:var(--muted)}
+.kflag{margin:8px 0 0;font:500 12.5px/1.45 var(--mono);color:var(--orange);overflow-wrap:anywhere}
+.kacts{margin:0;padding:0;list-style:none;border-top:1px solid var(--rule-2)}
+.kacts li{padding:12px 2px;border-bottom:1px solid var(--line)}
+.kacts p{margin:3px 0;color:var(--ash);overflow-wrap:anywhere}
+.kacts b{margin-right:10px;font:500 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--orange)}
+.kacts span{color:var(--ink);font-weight:600}
+.kacts small{margin-left:10px;font:500 12px/1 var(--mono);color:var(--muted)}
+.kundo{font:500 12.5px/1.5 var(--mono);color:var(--muted)!important}
+.kundo code{color:var(--ink)}
+
 /* reduced motion: the arrival and every hover settle at once */
 @media (prefers-reduced-motion: reduce){
   .crs .fr,.art .mb>g,.art .cr>g,.sname,button.lvl,.cap,.tile,button.rule,.gens button,.trow,button.chip,.mid,.doc,.tfoot nav a,#dr-close{transition:none}
   .tscene.go,.go .mt,.go .alm,.go .crs,.go .crown,.go .crs .flash,#drawer[open]{animation:none}
   .anim .art:not(.go) #tower-art,.anim .art:not(.go) .alm{animation:none;opacity:1}
   button.lvl:hover,.cap:hover,.tile:hover,button.rule:hover{transform:none}
+  .art,.kv .art,.city,.city .ctw,.city .kt-t,.kv .city .kt-t,#vault,#vfx,#flame,.vswitch button,.vswitch small,a.kt{transition:none}
 }

@@ -7,8 +7,9 @@ import os
 import sys
 import threading
 import unittest
+from unittest import mock
 
-from helpers import PLUGIN, read_doc
+from helpers import PLUGIN, ForemanTestCase, read_doc, read_text
 
 from sampo import shot
 
@@ -275,3 +276,156 @@ class ModelLayerPage(unittest.TestCase):  # T-2489: the gen-2 model layer on the
         root = os.path.dirname(SITE)
         for name in ("README.md", "MASTER.md", "CHANGELOG.md"):
             self.assertIn("Model layer", read_doc(os.path.join(root, name)), name)
+
+
+class KalevalaExport(ForemanTestCase):
+    """T-3266: the Rune page shows Kalevala from genesis.json alone. rune.export writes a kalevala block: each tower's
+    aspect, generation, stage, exam trend, state, pause and spend; Kalevala's own gens; Väinämöinen's newest acts."""
+
+    def setUp(self):
+        super().setUp()
+        from sampo import core as c
+        self.fm("init")
+        gen0 = os.path.join(self.tmp, "gen0.md")
+        with open(gen0, "w") as f:
+            f.write("root charter\n\n## 2. Capabilities\n1. **Bugs.** finds and fixes broken code. Exam: bug.\n")
+        self.fm("genesis", "init", "--file", gen0)
+        self.p, self.out = c.find_project(self.repo), os.path.join(self.tmp, "site")
+
+    def export(self):
+        from sampo import rune
+        rune.export(self.p, self.out)
+        return json.loads(read_text(os.path.join(self.out, "genesis.json")))
+
+    def grade(self, tower, run, train):
+        from sampo import rune
+        rune.set_tower(tower)
+        try:
+            with open(os.path.join(rune.home(self.p), "exam.jsonl"), "a") as f:
+                f.write(json.dumps({"agent": "foreman", "run": run, "model": "sonnet", "split": "train",
+                                    "closed": {"train": list(train), "holdout": []}}) + "\n")
+        finally:
+            rune.set_tower(None)
+
+    def test_no_block_before_kalevala_opens_a_tower(self):
+        self.assertNotIn("kalevala", self.export())
+
+    def test_towers_gens_and_acts_come_from_the_ledger_and_the_manifest(self):
+        from sampo import kalevala
+        self.fm("kalevala", "start")  # efficiency, memory, problem-solving
+        self.fm("kalevala", "gen")
+        self.grade("memory", "r1", ["a"])
+        self.grade("memory", "r2", ["a", "b"])
+        home = os.path.expanduser("~")
+        kalevala.pause(self.p, f"<img src=x onerror=alert(1)> see {home}/notes", "memory")
+        k = self.export()["kalevala"]
+        towers = {t["name"]: t for t in k["towers"]}
+        self.assertEqual(sorted(towers), ["efficiency", "memory", "problem-solving"])
+        mem, eff = towers["memory"], towers["efficiency"]
+        self.assertEqual((mem["aspect"], mem["generation"], mem["trend"], mem["state"]), ("memory", 0, [1, 2], "improving"))
+        self.assertEqual(mem["paused"], "<img src=x onerror=alert(1)> see ~/notes")  # raw text; the page writes text
+        self.assertEqual((eff["trend"], eff["closed"], eff["state"], eff["paused"]), ([], None, "unscored", None))
+        self.assertEqual(eff["stage"]["stage"], "spec")  # its next action, read only
+        self.assertIn("action", eff["stage"])
+        for t in towers.values():
+            self.assertNotIn("newest", t)  # an absolute path the page has no use for
+            self.assertIn("spend", t)
+            self.assertIn("stuck", t)
+        self.assertEqual([(g["n"], g["set"]) for g in k["gens"]], [(1, sorted(towers))])
+        self.assertEqual(k["gens"][0]["based_on"], "root gen-0")
+        act = k["acts"][-1]
+        self.assertEqual((act["act"], act["tower"], act["undo"]), ("pause", "memory", "fm kalevala resume memory"))
+        self.assertTrue(act["at"])
+        self.assertIsNone(k["halted"])
+        self.assertIn("share", k)
+        self.assertIn("spent_today", k)
+        self.assertNotIn(home + "/", json.dumps(k))
+
+    def test_a_damaged_manifest_is_named_not_fatal(self):
+        from sampo import kalevala
+        self.fm("kalevala", "start")
+        with open(os.path.join(kalevala.home(self.p), "manifest.json"), "w") as f:
+            f.write("{not json")
+        k = self.export()["kalevala"]
+        self.assertIn("doesn't parse", k["error"])
+        self.assertNotIn("towers", k)
+
+    def test_one_bad_tower_never_aborts_the_export(self):
+        """Review of T-3266: a manifest name failing TOWER_NAME is skipped (as rune.towers skips such dirs); one
+        tower's stage that won't read is that tower's error; a watch that won't read is the block's error; the export
+        still writes genesis.json, and the caller's tower is back after it."""
+        from sampo import kalevala, rune
+        self.fm("kalevala", "start")
+        path = os.path.join(kalevala.home(self.p), "manifest.json")
+        m = json.loads(read_text(path))
+        m["towers"]["Bad Name"] = {"aspect": "x"}
+        m["towers"]["../up"] = {"aspect": "y"}
+        with open(path, "w") as f:
+            json.dump(m, f)
+        stage, calls = kalevala._stage, []
+
+        def flaky(p, name):
+            if name == "memory":
+                raise OSError("exam.jsonl: permission denied")
+            return stage(p, name)
+
+        runs = kalevala._tower_runs
+
+        def counted(p, name):
+            calls.append(name)
+            return runs(p, name)
+        rune.set_tower("efficiency")
+        try:
+            with mock.patch.object(kalevala, "_stage", flaky), mock.patch.object(kalevala, "_tower_runs", counted):
+                k = self.export()["kalevala"]
+            self.assertEqual(rune._TOWER, "efficiency")  # set_tower(None) inside kalevala doesn't leak out
+        finally:
+            rune.set_tower(None)
+        towers = {t["name"]: t for t in k["towers"]}
+        self.assertEqual(sorted(towers), ["efficiency", "memory", "problem-solving"])
+        self.assertIn("permission denied", towers["memory"]["stage"]["error"])
+        self.assertEqual(towers["efficiency"]["stage"]["stage"], "spec")
+        self.assertEqual(sorted(calls), sorted(towers))  # watch's runs are the trend: one read per tower
+        self.assertNotIn("runs", towers["memory"])
+        with mock.patch.object(kalevala, "watch", side_effect=OSError("towers/memory: permission denied")):
+            k = self.export()["kalevala"]
+        self.assertIn("permission denied", k["error"])
+        self.assertNotIn("towers", k)
+        m["towers"] = ["not", "a", "map"]
+        with open(path, "w") as f:
+            json.dump(m, f)
+        self.assertIn("error", self.export()["kalevala"])
+
+
+class KalevalaPage(unittest.TestCase):
+    """T-3266: the Rune page's Kalevala view: a city of towers beside the forge tower, a Genesis ⇄ Kalevala switch kept in
+    the URL hash, and each tower's aspect, gen, stage, trend, stuck or paused state, Kalevala's gens and the newest acts,
+    all from genesis.json's kalevala block, written as text."""
+    gdir = os.path.join(SITE, "genesis")
+
+    def test_the_switch_the_city_and_the_section_are_in_the_page(self):
+        page = read_text(os.path.join(self.gdir, "index.html"))
+        for s in ('data-view="genesis"', 'data-view="kalevala"', 'aria-pressed="true"', 'id="k-towers"', 'id="city"',
+                  'id="city-art"', 'id="k-key"', "taller = more generations", "beacon is its state"):
+            self.assertIn(s, page)  # the city's key shows, not only in the SVG's title
+        css = read_text(os.path.join(self.gdir, "genesis.css"))
+        self.assertRegex(css, r"\.city a:focus-visible \.kt-t\{filter:[^}]*drop-shadow")  # a ring Firefox draws on SVG
+        reduced = css[css.index("prefers-reduced-motion"):]
+        self.assertIn(".city", reduced)  # the pull-back is a cut when motion is reduced
+        js = read_text(os.path.join(self.gdir, "genesis.js"))
+        for s in ("function kalevala(", "tower|", '"kalevala"', "data-ktower"):
+            self.assertIn(s, js)
+
+    def test_the_view_renders_the_block_as_text(self):
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("no node")
+        out = subprocess.run([node, os.path.join(PLUGIN, "tests", "genesis_page.js"), self.gdir, "kalevala"],
+                             capture_output=True, text=True, timeout=60)
+        got = json.loads(out.stdout or "{}")
+        want = {"text": True, "markup": False, "city": True, "early": True, "honest": True, "trend": True, "stuck": True,
+                "paused": True, "stage": True,
+                "spend": True, "gens": True, "acts": True, "share": True, "drawer": True, "none": True, "error": True}
+        self.assertEqual(got, want, out.stderr[-2000:])

@@ -42,10 +42,20 @@ if(!matchMedia("(prefers-reduced-motion: reduce)").matches)d.classList.add("anim
   <div class="tcopy">
     <p class="eyebrow rise">Sampo · Rune · <span id="gen-label">live</span></p>
     <h1 id="h1" class="struck"><span class="ln">One message in.</span><span class="ln"><em>A harness that builds itself.</em></span></h1>
-    <p class="lede rise" style="--d:.2s">One prompt starts a tower of prompts that write, test and rewrite each other, until Sampo can find, think
+    <div class="vswitch rise" id="view-switch" role="group" aria-label="View" style="--d:.15s">
+      <button type="button" id="vs-genesis" data-view="genesis" aria-pressed="true">Genesis<small>the root tower</small></button>
+      <button type="button" id="vs-kalevala" data-view="kalevala" aria-pressed="false">Kalevala<small>the city of towers</small></button>
+    </div>
+    <p class="kkey only-k" id="k-key">Each tower is one aspect: taller = more generations; its beacon is its state:
+      <span class="s-green">improving</span> <span class="s-gold">flat</span> <span class="s-red">falling or drifted</span>
+      <span class="s-orange">stalled</span> <span class="s-muted">no exam yet</span>. The root stands at the centre.</p>
+    <p class="lede only-k" id="k-lede">Kalevala opens one tower for each aspect of Sampo, each on the root's sealed gen-0, and runs them in rounds.
+      Väinämöinen watches every tower against what you asked for: he pauses one that drifts, steers one that falls, and logs each act with the line that undoes it.</p>
+    <dl class="stats only-k" id="k-stats"><div><dt>loading the city</dt><dd>…</dd></div></dl>
+    <p class="lede rise only-g" style="--d:.2s">One prompt starts a tower of prompts that write, test and rewrite each other, until Sampo can find, think
       through, do and prove anything, in any repo, without being asked. Each generation is a course of the tower; each moonshot
       is a moon above it. All of it is drawn from the tower's own export: open any course, moon or plate to read what it holds.</p>
-    <dl class="stats rise" id="stats" style="--d:.35s"><div><dt>loading the tower</dt><dd>…</dd></div></dl>
+    <dl class="stats rise only-g" id="stats" style="--d:.35s"><div><dt>loading the tower</dt><dd>…</dd></div></dl>
   </div>
   <div class="tscene" id="scene" style="--sh:1000">
     <canvas id="stars" aria-hidden="true"></canvas>
@@ -61,10 +71,23 @@ if(!matchMedia("(prefers-reduced-motion: reduce)").matches)d.classList.add("anim
     <canvas id="flame" aria-hidden="true"></canvas>
     <div class="names" id="sky-names" aria-hidden="true"></div>
     <div class="mtag" id="mtag" hidden></div>
+    <svg class="city" id="city" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMax meet" aria-labelledby="city-t">
+      <title id="city-t">Kalevala, a city of towers: one tower for each aspect, as tall as its generations and lit by its state, round the root tower at the centre. Open a tower to read it.</title>
+      <g id="city-art"></g>
+    </svg>
   </div>
 </section>
 
-<aside class="vkey" aria-labelledby="vk-h">
+<section class="gsec only-k" id="k-towers" aria-labelledby="k-label" style="--accent:var(--orange)">
+  <div class="ghead">
+    <p class="eyebrow">K · Kalevala</p>
+    <h2 id="k-label">Every tower, <em>watched against what you asked</em></h2>
+    <p class="intro">Each tower's aspect, generation, stage and exam; the generations Kalevala ran across them; and every act Väinämöinen took, with its reason and the line that undoes it.</p>
+  </div>
+  <div id="k-body" class="loading">Loading genesis.json…</div>
+</section>
+
+<aside class="vkey only-g" aria-labelledby="vk-h">
   <div class="vk-head">
     <p class="eyebrow" id="vk-h">How to read the sky</p>
     <p class="vk-lede">One moon for every moonshot, lit by the forge on the tower.</p>

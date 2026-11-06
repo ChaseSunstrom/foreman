@@ -3,8 +3,8 @@ const fs = require("fs"), vm = require("vm"), dir = process.argv[2], texts = [],
 const data = JSON.parse(fs.readFileSync(dir + "/genesis.json", "utf8"));
 function el() {
   const e = {children: [], classList: {add() {}, remove() {}, toggle() {}}, style: {}, dataset: {}, value: "", addEventListener(t, f) { (this.h = this.h || {})[t] = f; },
-    setAttribute() {}, getAttribute() { return null; }, closest() { return null; }, querySelector() { return null; },
-    querySelectorAll() { return []; }, appendChild(c) { this.children.push(c); return c; }, append(...c) { this.children.push(...c); },
+    setAttribute(k, v) { (this.attrs = this.attrs || {})[k] = String(v); }, getAttribute() { return null; }, closest() { return null; }, querySelector() { return null; },
+    querySelectorAll() { return []; }, appendChild(c) { if (!c || typeof c !== "object" || Array.isArray(c)) throw new TypeError("appendChild: not a Node"); this.children.push(c); return c; }, append(...c) { this.children.push(...c); },
     scrollIntoView() { scrolled++; }};
   for (const k of ["textContent", "innerHTML"]) {
     let v = "";
@@ -23,14 +23,16 @@ function catFile(u) {
     tiers: [...new Set(CAT.slice(k * per, k * per + per).map(r => r.tier))]});
   return {total: CAT.length, per, tiers, families: new Set(CAT.map(r => r.family)).size, shards};
 }
-async function page(extra) {
+async function page(extra, hash) {
   texts.length = html.length = 0;
-  const D = Object.assign({}, data, extra), els = {};
+  const D = Object.assign({}, data, extra), els = {}, loc = {hash: hash || "", pathname: "/genesis/", search: ""};
   const ctx = {document: {documentElement: el(), getElementById: id => els[id] = els[id] || el(), querySelector: () => null,
-    addEventListener() {}, createElement: el, createTextNode: t => ({textContent: t})}, location: {hash: ""}, localStorage: {},
+    addEventListener() {}, createElement: el, createTextNode: t => ({textContent: t})}, location: loc, localStorage: {},
+    history: {replaceState(s, t, u) { const i = String(u).indexOf("#"); loc.hash = i < 0 ? "" : String(u).slice(i); }},
     matchMedia: () => ({matches: false}), AbortController, console, clearTimeout,
     setTimeout: (f, ms) => setTimeout(f, ms >= 20000 ? 30 : ms),  // the page's 20 s timeout, shortened
     fetch: async (u, o) => {
+      if (mode === "stall" && /genesis\.json/.test(u)) return new Promise(() => {});  // the data, still on its way
       if (/catalogue/.test(u)) {
         fetched.push(u);
         if (mode === "hang" && /-\d+\.json/.test(u)) return new Promise((_, no) => o.signal.addEventListener("abort", () => { aborted.push(u); no(new Error("aborted")); }));
@@ -41,7 +43,8 @@ async function page(extra) {
   lastEls = els;
   vm.runInNewContext(fs.readFileSync(dir + "/genesis.js", "utf8"), ctx);
   await new Promise(r => setTimeout(r, 50));
-  return {texts: texts.slice(), html: html.join("\n"), docs: !!(els["docs-body"] && els["docs-body"].innerHTML)};
+  return {texts: texts.slice(), html: html.join("\n"), docs: !!(els["docs-body"] && els["docs-body"].innerHTML),
+    pressed: ((els["vs-kalevala"] || {}).attrs || {})["aria-pressed"], city: (els["city-art"] || {}).innerHTML || "", hash: loc.hash};
 }
 // T-2852: `genesis_page.js DIR scale` prints what the Moons part did with moons_scale: a hostile family, then none
 async function scale() {
@@ -109,9 +112,50 @@ async function catalogue() {
   res.down = says(/didn't load \(503\)/) && E("cat-retry").hidden === false;
   console.log(JSON.stringify(res));
 }
+// T-3266: `genesis_page.js DIR kalevala` prints what the Kalevala view did with the export's kalevala block: hostile text,
+// an unscored gen-0 tower, an improving one, a stuck one, a gen and an act; then #tower=api; then no block; then a damaged one
+async function kalevala() {
+  const bad = "<img src=x onerror=alert(1)>", says = (x, re) => x.texts.some(t => re.test(t));
+  const tower = (name, o) => Object.assign({name, aspect: name, sealed: true, generation: 0, drift: null, closed: null, delta: null,
+    idle_h: 1, spend: 0, missions: 0, restarted: null, stuck: false, state: "unscored", paused: null, trend: [],
+    stage: {stage: "spec", gen: 1, action: "Write gen 1's spec: fm genesis spec", kind: "ok"}}, o);
+  const K = {towers: [
+    tower("memory", {aspect: "Memory " + bad, paused: "off intent " + bad}),
+    tower("api", {aspect: "API surface", generation: 2, closed: 2, delta: 1, trend: [1, 2], state: "improving", spend: 0.12}),
+    tower("docs", {aspect: "Docs", generation: 3, closed: 1, delta: 0, trend: [1, 1, 1], state: "flat", stuck: true,
+      stage: {error: "its next stage doesn't read: " + bad}})],
+    gens: [{n: 1, set: ["memory", "api"], based_on: "root gen-0", at: "2026-11-05T09:00:00Z", verdict: "baseline", base: "gen-1",
+      reason: "first gen " + bad, scores: {}, helped: null, new_capabilities: []}],
+    acts: [{act: "pause", tower: "memory", reason: "drifted " + bad, undo: "fm kalevala resume memory", at: "2026-11-05T10:00:00Z"}],
+    halted: null, rounds: 1, spent_today: 0.12, share: 5};
+  const s = await page({kalevala: K}), t = await page({kalevala: K}, "#tower=api");
+  const n = await page({kalevala: undefined}), e = await page({kalevala: {error: "Kalevala's manifest doesn't parse: x"}});
+  // the opened city: 26 gen-0 towers, unscored, plus two names no tower may have; a #kalevala link lands in the city
+  const many = {towers: Array.from({length: 26}, (_, i) => tower("aspect-" + String.fromCharCode(97 + i)))
+    .concat([tower("Bad Name"), tower('x" onload="alert(1)')]), gens: [], acts: [], halted: null, rounds: 0, spent_today: 0, share: 5};
+  const c = await page({kalevala: many}, "#kalevala"), xs = [...c.city.matchAll(/data-ktower="[^"]*"[^]*?<ellipse cx="([\d.-]+)"/g)].map(m => +m[1]);
+  mode = "stall";  // the data still loading: the deep link switches first, so the root tower never flashes
+  const w = await page({kalevala: many}, "#kalevala"), wt = await page({kalevala: many}, "#tower=api");
+  mode = "";
+  console.log(JSON.stringify({text: s.texts.some(x => x.includes("Memory " + bad)) && s.texts.some(x => x.includes("off intent " + bad))
+      && s.texts.some(x => x.includes("drifted " + bad)) && s.texts.some(x => x.includes("first gen " + bad))
+      && s.texts.some(x => x.includes("its next stage doesn't read: " + bad)),  // one tower's unreadable stage, as text
+    city: (c.city.match(/data-ktower="/g) || []).length === 26 && !/Bad Name|onload/.test(c.city) && c.pressed === "true" && c.hash === "#kalevala"
+      && xs.length === 26 && xs.slice(1).filter((x, i) => x < xs[i]).length <= 2  // left to right in each of the three rows
+      && Math.max(...xs) <= 915,  // the right-most tower clears the scene's edge (the viewport's, at 1280)
+    early: w.pressed === "true" && w.hash === "#kalevala" && wt.pressed === "true" && wt.hash === "#tower=api",
+    markup: s.html.includes("onerror") || t.html.includes("onerror"),
+    honest: says(s, /\bgen 0\b/) && says(s, /no exam yet/i), trend: says(s, /improving/) && says(s, /\+1\b/),
+    stuck: says(s, /\bstuck\b/i), paused: says(s, /\bpaused\b/i), stage: says(s, /sampo genesis spec/) && !says(s, /\bfm genesis\b/),
+    spend: says(s, /\$0\.12/), gens: says(s, /baseline/) && says(s, /root gen-0/), acts: says(s, /sampo kalevala resume memory/),
+    share: says(s, /\$5\.00/), drawer: says(t, /^Kalevala tower/) && t.texts.includes("API surface") && says(t, /^gen 1 · baseline · first gen/) && !says(t, /towers come from genesis\.json/)
+      && t.pressed === "true" && s.pressed !== "true",  // a tower's link lands in the city, behind its drawer
+    none: says(n, /Kalevala hasn't opened a tower yet/), error: says(e, /manifest doesn't parse: x/)}));
+}
 (async () => {
   if (process.argv[3] === "scale") return scale();
   if (process.argv[3] === "catalogue") return catalogue();
+  if (process.argv[3] === "kalevala") return kalevala();
   const bad = "<img src=x onerror=alert(1)>";
   const a = await page({scorecard: [null, 7, {n: 1, name: "Initiative", state: "partial", closed: 2, graded: 4, why: bad}]});
   const b = await page({scorecard: undefined});

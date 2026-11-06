@@ -961,7 +961,7 @@
 
   function towerSVG(S) {
     HV = {};
-    var body = ground(S) + base(S) + S.courses.map(function (c, i) { return course(c, i, S); }).join("") + crown(S);
+    var body = ground(S) + '<g id="troot">' + base(S) + S.courses.map(function (c, i) { return course(c, i, S); }).join("") + crown(S) + "</g>";  /* the city reuses #troot */
     return DEFS + "<defs>" + Object.keys(HV).map(function (id) {  /* each heat's floor gradient, in the rune's own 10 × 16 cell */
       return grad(id, [[0, HV[id], 0], [.3, HV[id]], [.7, HV[id]], [1, HV[id], 0]], ' gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="16"');
     }).join("") + "</defs>" + body;
@@ -1360,7 +1360,7 @@
     var nowT = 0;
     function loop(now) {
       requestAnimationFrame(loop);
-      if (!on) { last = now; return; }
+      if (!on || VIEW === "kalevala") { last = now; return; }  // the city hides the sky's moons and fire: draw none
       var t = (now - T0) / 1000; n++; nowT = t;
       if (n & 1) drawFire(t);
       else {
@@ -1473,7 +1473,7 @@
     try { history.replaceState(null, "", hash ? "#" + hash : location.pathname + location.search); } catch (e) {}
   }
   function close() { if (dlg.close) dlg.close(); else dlg.removeAttribute("open"); }
-  dlg.addEventListener("close", function () { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} });
+  dlg.addEventListener("close", function () { try { history.replaceState(null, "", location.pathname + location.search + (VIEW === "kalevala" ? "#kalevala" : "")); } catch (e) {} });
   $("dr-close").addEventListener("click", close);
   dlg.addEventListener("click", function (e) { if (e.target === dlg) close(); });
   function title(text, fallback) { var m = /^#\s+(.+)$/m.exec(text || ""); return m ? m[1] : fallback; }
@@ -1567,9 +1567,243 @@
     show(id + " · moonshot · " + wildWord(r), String(r.title || id), meta, body || '<p class="empty">Its block in moonshot.md is not in this export.</p>', "moon=" + id, "w" + w);
   }
 
+  /* ===== Kalevala (T-3082, T-3266): a tower for each aspect, watched against what you asked, drawn as a city round the
+     root tower. The block's strings go in as text only (kel); markup holds numbers, fixed words and names that pass KNAME ===== */
+  var VIEW = "genesis", KNAME = /^[a-z][a-z0-9-]{0,40}$/;
+  var KSTATE = {  /* rune.export's state: [word, colour, what it means] */
+    unsealed: ["unsealed", "red", "Its gen-0 no longer matches its seal."],
+    drifted: ["drifted", "red", "Its drift check found it off what you asked."],
+    stalled: ["stalled", "orange", "No new generation within the stall window."],
+    unscored: ["no exam yet", "muted", "No graded exam run yet."],
+    "new": ["first exam", "blue", "One graded run so far: the next one shows its trend."],
+    improving: ["improving", "green", "Its last exam closed more scenarios than the run before."],
+    falling: ["falling", "red", "Its last exam closed fewer scenarios than the run before."],
+    flat: ["flat", "gold", "Its last exam closed as many scenarios as the run before."] };
+  var KORDER = ["improving", "new", "flat", "falling", "stalled", "drifted", "unsealed", "unscored"];
+  var KACT = { pause: "paused", resume: "resumed", steer_refused: "steer refused" };
+  function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function kstate(t) { return own(KSTATE, t.state) ? t.state : "unscored"; }
+  function kel(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; }
+  function kput(p) { for (var i = 1; i < arguments.length; i++) if (arguments[i]) p.appendChild(arguments[i]); return p; }
+  function usd(v) { return "$" + (+v || 0).toFixed(2); }
+  function kint(v) { return Math.max(0, Math.floor(+v || 0)); }
+  function ksign(v) { v = Math.round(+v || 0); return (v > 0 ? "+" : "") + v; }
+  function kBlock() { var K = D && D.kalevala; return K && typeof K === "object" && !K.error && Array.isArray(K.towers) ? K : null; }
+  function kList(k) { var K = kBlock(); return K && Array.isArray(K[k]) ? K[k].filter(function (x) { return x && typeof x === "object"; }) : []; }
+  function kName(t) { return KNAME.test(String(t.name)) ? String(t.name) : ""; }
+  function kRank(t) { var c = KSTATE[kstate(t)][1]; return t.paused ? 0 : t.stuck ? 1 : c === "red" ? 2 : c === "orange" ? 3 : 4; }
+  function kSort(a, b) { return kRank(a) - kRank(b) || kint(b.generation) - kint(a.generation) || String(a.name).localeCompare(String(b.name)); }
+
+  /* an exam trend: the closed train scenarios of each graded run, as the README figures draw a series (grid .07/.16, area .14, line 2.5) */
+  function ktrend(a, W, H) {
+    a = (Array.isArray(a) ? a : []).slice(-24).map(function (v) { return Math.max(0, +v || 0); });
+    var n = a.length, p = 8, top = Math.max(1, Math.max.apply(null, a.concat([0]))), big = H >= 120, lx = big ? 34 : p;
+    function X(i) { return n > 1 ? lx + i * (W - lx - p) / (n - 1) : (lx + W - p) / 2; }
+    function Y(v) { return H - p - (big ? 14 : 0) - v * (H - 2 * p - (big ? 14 : 0)) / top; }
+    var o = [line(lx, Y(top), W - p, Y(top), "currentColor", 1, ' class="g" stroke-opacity=".07"'),
+      line(lx, Y(top / 2), W - p, Y(top / 2), "currentColor", 1, ' class="g" stroke-opacity=".07"'),
+      line(lx, Y(0), W - p, Y(0), "currentColor", 1, ' class="g" stroke-opacity=".16"' + (n ? "" : ' stroke-dasharray="4 4"'))];
+    if (big) o.push('<text class="ax" x="' + (lx - 6) + '" y="' + F(Y(top) + 4) + '" text-anchor="end">' + top + "</text>",
+      '<text class="ax" x="' + (lx - 6) + '" y="' + F(Y(0) + 4) + '" text-anchor="end">0</text>',
+      '<text class="ax" x="' + lx + '" y="' + (H - 4) + '">run 1</text>', n > 1 ? '<text class="ax" x="' + (W - p) + '" y="' + (H - 4) + '" text-anchor="end">run ' + n + "</text>" : "");
+    if (n) {
+      var P = a.map(function (v, i) { return [X(i), Y(v)]; });
+      if (n > 1) o.push(poly(P.concat([[X(n - 1), Y(0)], [X(0), Y(0)]]), "currentColor", ' fill-opacity=".14"'),
+        '<polyline points="' + pts(P) + '" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>');
+      o.push('<circle cx="' + F(P[n - 1][0]) + '" cy="' + F(P[n - 1][1]) + '" r="3.5" fill="currentColor"/>');
+    }
+    return '<svg viewBox="0 0 ' + W + " " + H + '" aria-hidden="true">' + o.join("") + "</svg>";
+  }
+
+  /* the Kalevala section and the hero's lede numbers, from the export's kalevala block alone */
+  function kalevala() {
+    var body = $("k-body"), st = $("k-stats"), K = kBlock(), raw = D && D.kalevala;
+    body.className = ""; body.textContent = ""; st.textContent = "";
+    function stat(dd, dt, cls) { st.appendChild(kput(kel("div", cls), kel("dt", "", dt), kel("dd", "", dd))); }
+    if (!K) {
+      body.className = "empty";
+      body.textContent = raw && typeof raw === "object" && raw.error ? say(String(raw.error))
+        : "Kalevala hasn't opened a tower yet: sampo kalevala start opens one for each aspect, each on the root's sealed gen-0.";
+      stat("0", "towers open");
+      drawCity();
+      return;
+    }
+    var T = kList("towers"), G = kList("gens"), A = kList("acts"), n = T.length, cnt = {};
+    var scored = T.filter(function (t) { return t.closed != null; }).length, paused = T.filter(function (t) { return t.paused; }).length;
+    T.forEach(function (t) { var s = kstate(t); cnt[s] = (cnt[s] || 0) + 1; });
+    stat(String(n), plural(n, "tower").replace(/^\d+ /, "") + " open");
+    stat(scored + " of " + n, "with a graded exam");
+    stat(String(kint(K.rounds)), "rounds run");
+    stat(String(G.length), "Kalevala gens");
+    stat(String(paused), "paused");
+    stat(usd(K.spent_today), "spent today, of a " + usd(K.share) + " share");
+    if (D.next && D.next.action) stat(say(String(D.next.action)), "the root's next", "rev");
+    if (K.halted) body.appendChild(kel("p", "kflag", "Halted: " + say(String(K.halted)) + " · sampo kalevala resume restarts it"));
+
+    /* the summary: every tower's state in one bar, and the day's spend against Kalevala's share */
+    var sum = kel("div", "ksum"), kb = kel("div", "kbar"), leg = kel("p", "legend"), sh = +K.share || 0, sp = +K.spent_today || 0, fill = kel("i");
+    kb.setAttribute("aria-hidden", "true");
+    KORDER.forEach(function (s) {
+      if (!cnt[s]) return;
+      var i = kel("i", "s-" + KSTATE[s][1]);
+      i.style.flexGrow = String(cnt[s]);
+      i.title = cnt[s] + " " + KSTATE[s][0];
+      kb.appendChild(i);
+      leg.appendChild(kel("span", "s-" + KSTATE[s][1], cnt[s] + " " + KSTATE[s][0]));
+    });
+    fill.style.width = (sh > 0 ? Math.min(100, sp / sh * 100) : 0).toFixed(1) + "%";
+    body.appendChild(kput(sum, kb, leg, kput(kel("div", "share"), fill, kel("span", "", usd(sp) + " spent today of Kalevala's " + usd(sh) + " share of the day cap"))));
+
+    /* a card for each tower: the ones that need you first */
+    body.appendChild(kel("h3", "", "Towers"));
+    var grid = kel("div", "ktowers");
+    T.slice().sort(kSort).forEach(function (t) {
+      var nm = kName(t), s = kstate(t), w = KSTATE[s], g = kint(t.generation), stg = t.stage && typeof t.stage === "object" ? t.stage : null;
+      var card = kel(nm ? "a" : "div", "kt s-" + w[1]), chip = kel("span", "kchip", w[0]), id = kel("span", "kt-id", nm || "unnamed");
+      if (nm) { card.setAttribute("href", "#tower=" + nm); card.setAttribute("data-ktower", nm); }
+      chip.title = w[2]; id.title = nm || "";
+      kput(card, kput(kel("p", "kt-top"), id, chip), kel("h4", "", String(t.aspect || nm)),
+        kel("p", "kt-gen", "gen " + g + (stg && stg.stage ? " · next: " + String(stg.stage) : "")),
+        stg && (stg.action || stg.error) ? kel("p", "kt-act", stg.action ? say(String(stg.action)) : String(stg.error)) : null);
+      if (t.closed != null) {
+        var tr = kel("div", "ktr");
+        tr.innerHTML = ktrend(t.trend, 240, 64);
+        kput(card, tr, kel("p", "kt-cap", w[0] + " · closed " + kint(t.closed) + (t.delta != null ? " (" + ksign(t.delta) + ")" : "") + " · " +
+          plural(Array.isArray(t.trend) ? t.trend.length : 0, "graded run")));
+      } else card.appendChild(kel("p", "kt-cap", "No exam yet · gen " + g + ", unscored"));
+      kput(card, kel("p", "kt-foot", usd(t.spend) + " today · " + plural(kint(t.missions), "open mission") + " · idle " + (Math.round((+t.idle_h || 0) * 10) / 10) + "h"),
+        t.paused ? kel("p", "kflag", "paused: " + String(t.paused)) : null,
+        t.stuck ? kel("p", "kflag", "stuck: no gain in its last three exams") : null);
+      grid.appendChild(card);
+    });
+    body.appendChild(grid);
+
+    /* Kalevala's generations, newest first: which towers each one ran, what it was based on, and its verdict */
+    body.appendChild(kel("h3", "", "Kalevala's generations"));
+    if (G.length) {
+      var tb = kel("table"), hr = kel("tr"), rows = kel("tbody");
+      ["Gen", "Towers", "Based on", "Verdict", "Base", "Why"].forEach(function (h) { hr.appendChild(kel("th", "", h)); });
+      G.slice().reverse().forEach(function (g) {
+        rows.appendChild(kput(kel("tr"), kput(kel("td"), kel("b", "", "gen " + kint(g.n))),
+          kel("td", "", Array.isArray(g.set) ? g.set.map(String).join(", ") : ""), kel("td", "", String(g.based_on || "–")),
+          kel("td", "", String(g.verdict || "not judged yet")), kel("td", "", String(g.base || "–")), kel("td", "", String(g.reason || ""))));
+      });
+      body.appendChild(kput(kel("div", "tbl"), kput(tb, kput(kel("thead"), hr), rows)));
+    } else body.appendChild(kel("p", "empty", "No Kalevala generation yet: the first round sets its baseline."));
+
+    /* Väinämöinen's acts, newest first, each with its reason and the line that undoes it */
+    body.appendChild(kel("h3", "", "Väinämöinen's acts"));
+    if (A.length) body.appendChild(kActs(A));
+    else body.appendChild(kel("p", "empty", "No act yet: Väinämöinen logs each pause, resume and refused steer here."));
+    drawCity();
+  }
+  function kActs(A) {
+    var ol = kel("ol", "kacts");
+    A.slice().reverse().forEach(function (a) {
+      var head = kput(kel("p"), kel("b", "", own(KACT, a.act) ? KACT[a.act] : "act"), kel("span", "", String(a.tower || "every tower")), a.at ? kel("small", "", ago(a.at)) : null);
+      ol.appendChild(kput(kel("li"), head, kel("p", "", String(a.reason || "")), kput(kel("p", "kundo", "undo: "), kel("code", "", say(String(a.undo || "none"))))));
+    });
+    return ol;
+  }
+
+  /* the city: one tower per aspect round the root (#troot, drawn by the scene, at .6), as tall as its generations, its
+     windows and beacon lit by its state. The tallest stand in the back row, the higher gens nearest the root */
+  var KGLOW = ["red", "orange", "gold", "green", "blue", "muted"];
+  function citySVG(T, S, linked) {
+    var CX = S.CX, GY = S.GY, cap = Math.max(100, .54 * (GY - S.TOP + 40)), RT = .6;
+    var list = T.filter(kName).sort(function (a, b) { return kint(b.generation) - kint(a.generation) || String(a.name).localeCompare(String(b.name)); });
+    var N = list.length, nb = Math.ceil(N * .38), nm = Math.ceil((N - nb) * .55);
+    var rows = [[list.slice(0, nb), .72, GY - 6, 40], [list.slice(nb, nb + nm), .92, GY + 8, 95], [list.slice(nb + nm), 1.1, GY + 24, 130]];
+    var drawn = rows.map(function (R) {
+      var ts = R[0], s = R[1], y = R[2], iv = [[190, CX - R[3]], [CX + R[3], 935]]  /* 935: the right-most tower's foot clears the scene's (the viewport's) edge */, tot = iv[0][1] - iv[0][0] + iv[1][1] - iv[1][0], slots = [];
+      for (var j = 0; j < ts.length; j++) {
+        var at = (j + .5) * tot / ts.length, k = at > iv[0][1] - iv[0][0] ? 1 : 0;
+        slots.push(k ? iv[1][0] + at - (iv[0][1] - iv[0][0]) : iv[0][0] + at);
+      }
+      slots.sort(function (a, b) { return Math.abs(a - CX) - Math.abs(b - CX); });
+      return ts.map(function (t, j) { return { t: t, x: slots[j] + (hash(t.name) - .5) * 8, y: y, s: s }; })
+        .sort(function (a, b) { return a.x - b.x; })  /* left to right: the tab order reads the row as the eye does */
+        .map(ktower).join("");
+    });
+    var defs = "<defs>" + KGLOW.map(function (c) { return '<radialGradient id="kg-' + c + '" class="s-' + c + '"><stop offset="0" stop-opacity=".55"/><stop offset="1" stop-opacity="0"/></radialGradient>'; }).join("") + "</defs>";
+    var top = GY - (GY - S.TOP) * RT;
+    var root = linked ? '<a href="#" data-view="genesis" aria-label="The root tower: back to Genesis"><title>The root tower</title>' +
+      '<ellipse cx="' + CX + '" cy="' + F(top + 6) + '" rx="70" ry="70" fill="url(#pool)" opacity=".7"/>' +
+      '<use href="#troot" transform="translate(' + CX + " " + F(GY) + ") scale(" + RT + ") translate(" + -CX + " " + F(-GY) + ')"/></a>' : "";
+    return defs + '<g class="ctw" style="transform-origin:' + CX + "px " + F(GY) + 'px">' + (linked ? '<use href="#tground"/>' : "") +
+      drawn[0] + root + drawn[1] + drawn[2] + "</g>";
+    function ktower(o) {
+      var t = o.t, x = o.x, y = o.y, s = o.s, nm = kName(t), g = Math.min(kint(t.generation), 12), w = KSTATE[kstate(t)], c = w[1];
+      var hw = 26 * s * (.85 + .3 * hash(nm + "w")), H = Math.min(cap, s * (120 + 22 * g)), tw = hw * .78, yb = y - 6 * s, yt = yb - H, q = [];
+      var dim = t.paused ? ' class="kx"' : "", lit = t.paused ? "" : ' class="kw"' + (t.stuck ? ' opacity=".45"' : "");
+      q.push('<ellipse cx="' + F(x) + '" cy="' + F(y) + '" rx="' + F(hw * 2) + '" ry="' + F(5 * s) + '" fill="url(#pool)" opacity=".35"/>');
+      q.push(poly([[x - hw * 1.25, y], [x + hw * 1.25, y], [x + hw * 1.15, yb], [x - hw * 1.15, yb]], "url(#sF)"));
+      q.push(poly([[x - hw, yb], [x - hw * .2, yb], [x - tw * .2, yt], [x - tw, yt]], "url(#sL)"));
+      q.push(poly([[x - hw * .2, yb], [x + hw, yb], [x + tw, yt], [x - tw * .2, yt]], "url(#sF)"));
+      q.push(line(x + hw, yb, x + tw, yt, "url(#sR)", F(2 * s)));
+      for (var i = 1; i <= g; i++) {  /* a tempered course for each generation, as the root's */
+        var by = yb - i * (H - 10 * s) / (g + 1), bw = hw - (hw - tw) * (yb - by) / H;
+        q.push(poly([[x - bw - 1.5 * s, by - 2.5 * s], [x + bw + 1.5 * s, by - 2.5 * s], [x + bw + 1.5 * s, by + 1 * s], [x - bw - 1.5 * s, by + 1 * s]], "url(#tp" + i % 4 + ")"));
+      }
+      for (var k = 0, nw = 1 + Math.floor(H / (46 * s)); k < nw; k++) {  /* window slits up the shaft */
+        var wy = yb - 14 * s - k * (H - 26 * s) / Math.max(1, nw);
+        q.push('<rect x="' + F(x - hw * .62) + '" y="' + F(wy - 8 * s) + '" width="' + F(2.6 * s) + '" height="' + F(8 * s) + '"' + (lit || dim) + "/>",
+          '<rect x="' + F(x + hw * .38) + '" y="' + F(wy - 8 * s) + '" width="' + F(2.6 * s) + '" height="' + F(8 * s) + '"' + (lit ? lit + ' fill-opacity=".6"' : dim) + "/>");
+      }
+      var ry = yt - 5 * s, rh = hw * 1.1;
+      q.push(poly([[x - tw - 3 * s, yt], [x + tw + 3 * s, yt], [x + tw + 3 * s, ry], [x - tw - 3 * s, ry]], "url(#sT)"));
+      q.push(poly([[x - tw - 2 * s, ry], [x, ry - rh], [x, ry]], "url(#sL)"), poly([[x, ry - rh], [x + tw + 2 * s, ry], [x, ry]], "url(#sR)"));
+      if (!t.paused) q.push('<circle cx="' + F(x) + '" cy="' + F(ry - rh - 4 * s) + '" r="' + F(16 * s) + '" fill="url(#kg-' + c + ')"/>');
+      q.push('<circle cx="' + F(x) + '" cy="' + F(ry - rh - 4 * s) + '" r="' + F(2.6 * s) + '"' + (t.paused ? ' class="kx"' : ' class="kb"') + "/>");
+      return '<a href="#tower=' + nm + '" data-ktower="' + nm + '" aria-label="' + nm + " · " + w[0] + " · gen " + kint(t.generation) + (t.paused ? " · paused" : "") +
+        (t.stuck ? " · stuck" : "") + '"><title>' + nm + " · " + w[0] + '</title><g class="kt-t s-' + c + '" style="--i:' + kRank(t) + '">' + q.join("") + "</g></a>";
+    }
+  }
+  function drawCity() {
+    var S = L || { CX: 590, GY: 960, SH: 1000, TOP: 400 }, ca = $("city-art"), c = $("city");
+    if (!ca) return;
+    ca.innerHTML = citySVG(kList("towers"), S, !!L);
+    if (c && c.setAttribute) c.setAttribute("viewBox", "0 0 1000 " + F(S.SH));
+    var sc = $("scene");  /* the root's foot, where the pull-back is centred */
+    if (sc && sc.style && sc.style.setProperty) sc.style.setProperty("--gy", F(S.GY / S.SH * 100) + "%");
+  }
+  /* the switch: Genesis (the root tower) or Kalevala (the city); the city pulls back from the root, and the hash keeps it */
+  function setView(v, keep) {
+    VIEW = v === "kalevala" ? "kalevala" : "genesis";
+    var mn = $("main");
+    if (mn && mn.classList) mn.classList.toggle("kv", VIEW === "kalevala");
+    [["vs-genesis", "genesis"], ["vs-kalevala", "kalevala"]].forEach(function (b) { var e = $(b[0]); if (e && e.setAttribute) e.setAttribute("aria-pressed", String(VIEW === b[1])); });
+    if (!keep) try { history.replaceState(null, "", VIEW === "kalevala" ? "#kalevala" : location.pathname + location.search); } catch (e) {}
+  }
+  /* one tower in the drawer: its state, stage, exam trend, spend, its acts and the gens it ran in */
+  function openKTower(name) {
+    var t = kList("towers").filter(function (x) { return kName(x) === name; })[0];
+    if (!t) return;
+    setView("kalevala");
+    var w = KSTATE[kstate(t)], stg = t.stage && typeof t.stage === "object" ? t.stage : {};
+    show("Kalevala tower · gen " + kint(t.generation), String(t.aspect || name), "", "", "tower=" + name);
+    var meta = $("dr-meta"), body = $("dr-body");
+    function bx(k, v) { if (v) meta.appendChild(kput(kel("div", "box"), kel("b", "", k), kel("span", "", v))); }
+    bx("Tower", name); bx("State", w[0] + ": " + w[2]); bx("Generation", "gen " + kint(t.generation));
+    bx("Next step", stg.action ? say(String(stg.action)) : stg.error ? String(stg.error) : ""); bx("Exam", t.closed == null ? "no exam yet" : "closed " + kint(t.closed) + (t.delta != null ? " (" + ksign(t.delta) + ")" : ""));
+    bx("Spend today", usd(t.spend)); bx("Missions", plural(kint(t.missions), "open mission")); bx("Idle", (Math.round((+t.idle_h || 0) * 10) / 10) + " h");
+    bx("Drift", t.drift ? String(t.drift) : "not checked"); bx("Seal", t.sealed ? "gen-0 matches its seal" : "gen-0 no longer matches its seal");
+    bx("Paused", t.paused ? String(t.paused) : ""); bx("Stuck", t.stuck ? "no gain in its last three exams" : "");
+    body.appendChild(kel("h4", "", "Exam trend"));
+    if (t.closed != null) { var tr = kel("div", "ktr s-" + w[1]); tr.innerHTML = ktrend(t.trend, 560, 160); body.appendChild(tr); }
+    else body.appendChild(kel("p", "empty", "No graded exam yet: its first run starts the trend."));
+    var A = kList("acts").filter(function (a) { return a.tower === name; }), G = kList("gens").filter(function (g) { return Array.isArray(g.set) && g.set.indexOf(name) >= 0; });
+    body.appendChild(kel("h4", "", "Väinämöinen's acts"));
+    body.appendChild(A.length ? kActs(A) : kel("p", "empty", "No act on this tower yet."));
+    body.appendChild(kel("h4", "", "Kalevala gens it ran in"));
+    body.appendChild(G.length ? kput.apply(null, [kel("ul")].concat(G.map(function (g) { return kel("li", "", "gen " + kint(g.n) + " · " + String(g.verdict || "not judged yet") + (g.reason ? " · " + String(g.reason) : "")); }))) : kel("p", "empty", "None yet."));
+  }
+
   document.addEventListener("click", function (e) {
-    var t = e.target.closest && e.target.closest("[data-doc],[data-mission],[data-cap],[data-task],[data-rule],[data-l4],[data-moon],[data-gen-pick]");
+    var t = e.target.closest && e.target.closest("[data-doc],[data-mission],[data-cap],[data-task],[data-rule],[data-l4],[data-moon],[data-gen-pick],[data-ktower],[data-view]");
+    if (t && t.getAttribute("data-view")) { e.preventDefault(); setView(t.getAttribute("data-view")); return; }  // the switch works before the data
     if (!t || !D) return;
+    if (t.hasAttribute("data-ktower")) { e.preventDefault(); openKTower(t.getAttribute("data-ktower")); return; }
     if (t.hasAttribute("data-gen-pick")) { selectGen(+t.getAttribute("data-gen-pick")); return; }  // the anchor then scrolls to A
     if (t.closest("a[href]")) e.preventDefault();  // a block or rune inside a course: the drawer, not the jump
     if (t.hasAttribute("data-gen")) selectGen(+t.getAttribute("data-gen"));
@@ -1598,6 +1832,7 @@
   }
   $("gens").addEventListener("click", function (e) { var b = e.target.closest("[data-pick]"); if (b) selectGen(+b.getAttribute("data-pick")); });
 
+  if (/^#(kalevala$|tower=)/.test(location.hash)) setView("kalevala", true);  // a deep link lands in the city before the data: no root-tower flash
   fetch("genesis.json", { cache: "no-cache" }).then(function (r) {
     if (!r.ok) throw new Error(r.status);
     return r.json();
@@ -1614,12 +1849,15 @@
     try { scorecard(); } catch (e) {}  // a odd scorecard row costs its table, never the docs or the route below
     docs();
     try { scene(); } catch (e) { if (typeof console !== "undefined") console.warn("the scene kept its still: " + e); }  // the art never costs the data
+    try { kalevala(); } catch (e) { if (typeof console !== "undefined") console.warn("Kalevala kept its note: " + e); }
     var h = location.hash.slice(1);
     try { h = decodeURIComponent(h); } catch (e) { h = ""; }  // a malformed hash (#doc=%) opens nothing, breaks nothing
-    var m = /^(doc|cap|mission|task|moon)=(.+)$/.exec(h);
-    if (m) ({ doc: openDoc, cap: function (v) { openCap(+v); }, mission: openMission, task: openTask, moon: openMoon })[m[1]](m[2]);
+    var m = /^(tower|doc|cap|mission|task|moon)=(.+)$/.exec(h);
+    if (m) ({ tower: openKTower, doc: openDoc, cap: function (v) { openCap(+v); }, mission: openMission, task: openTask, moon: openMoon })[m[1]](m[2]);
     else if (h === "l4") openL4();
+    else if (h === "kalevala") setView("kalevala");
   }).catch(function () {
+    var kb = $("k-body"); if (kb) { kb.className = "empty"; kb.textContent = "Kalevala's towers come from genesis.json, which didn't load."; }
     $("tower-body").insertAdjacentHTML("afterbegin", '<p class="empty">The tower\'s live data (genesis.json) didn\'t load, so this is the copy the page was built with. Opened from disk? Serve the folder, e.g. from the site build.</p>');
     var art = $("art"); if (art && art.classList) art.classList.add("go", "done");
   });

@@ -1224,6 +1224,49 @@ def _task(b):
             "steps": len(steps), "done": sum(s.done for s in steps), "current": c.plain(cur)}
 
 
+def _kalevala(p):
+    """Kalevala for the page (T-3266): each tower's watch row with its pause, exam trend and next stage; Kalevala's own
+    gens; Väinämöinen's newest acts; the halt, rounds and today's spend against its share. None before kalevala start;
+    a damaged manifest, tower or stage is named, never fatal to the export, and the caller's tower is back after it."""
+    from sampo import kalevala as k  # kalevala imports rune
+    bad = (OSError, ValueError, KeyError, TypeError, AttributeError)  # a hand-edited or unreadable file
+    prev = _TOWER  # kalevala's helpers leave the root named
+    try:
+        try:
+            m = k.load(p)
+            if not isinstance(m, dict) or not isinstance(m.get("towers", {}), dict):
+                raise ValueError("its towers aren't a map")
+        except ValueError as e:
+            return {"error": f"Kalevala's manifest doesn't parse: {e}"}
+        if not m.get("towers"):
+            return None
+        try:
+            rows = k.watch(p)["towers"]
+            keep = ("set", "based_on", "at", "verdict", "base", "reason", "scores", "helped", "new_capabilities")
+            gens = [dict({x: g[x] for x in keep if x in g}, n=int(n)) for n, g in sorted(m.get("gens", {}).items(),
+                                                                                         key=lambda kv: int(kv[0]))]
+        except bad as e:
+            return {"error": f"Kalevala's towers don't read: {e}"}
+        towers = []
+        for t in rows:
+            t.pop("newest", None)  # an absolute path the page never shows
+            name = t["name"]
+            try:  # one tower's unreadable stage is that tower's error, not the page's
+                stage = {x: v for x, v in k._stage(p, name).items() if x in ("stage", "gen", "action", "kind")}
+            except bad as e:
+                stage = {"error": f"its next stage doesn't read: {e}"}
+            towers.append(dict(t, paused=(m["towers"].get(name) or {}).get("paused"), stage=stage,
+                               trend=(t.pop("runs") if "runs" in t else k._tower_runs(p, name))[-24:]))
+    finally:
+        set_tower(prev)
+    try:
+        spend = {"spent_today": k.spent_today(), "share": round(k.share(), 2)}
+    except (OSError, ValueError, KeyError, TypeError):  # the budget's books, unreadable: the towers still show
+        spend = {"spent_today": None, "share": None}
+    return {"towers": towers, "gens": gens, "acts": k.acts(p)[-k.ACTS_SHOWN:], "halted": m.get("halted"),
+            "rounds": m.get("rounds", 0), **spend}
+
+
 def export(p, out):
     """The tower as data for a page (genesis.json) plus each doc as a file beside it, home paths shown as ~ and
     secrets redacted, so the run can be followed from the repo or its site."""
@@ -1309,6 +1352,8 @@ def export(p, out):
     if st := ssteer.latest(p, held=True):  # T-2625: the steer-expansion exam's newest run, its held-out rate on the page
         data["steer"] = {k: st.get(k) for k in ("run", "at", "model", "judge", "cases", "failed", "harmful", "holdout",
                                                 "train")}
+    if k := _kalevala(p):  # T-3266: the city view; absent before kalevala start
+        data["kalevala"] = k
     data = scrub(data)
     try:  # T-2084: a doc the last export listed and the tower lost goes; nothing else in DIR is ours to remove
         with open(os.path.join(out, "genesis.json"), encoding="utf-8") as f:

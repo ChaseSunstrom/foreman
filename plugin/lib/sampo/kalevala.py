@@ -69,6 +69,8 @@ def tower_rows(p):
     info = {r["name"]: r for r in rune.towers(p)}
     out = []
     for name, t in sorted(load(p)["towers"].items()):
+        if not rune._valid(name):  # a hand-edited name: skipped, as rune.towers skips such dirs (T-3266)
+            continue
         rune.set_tower(name)
         try:
             sealed = rune.sealed(p) == ""
@@ -522,7 +524,7 @@ def _watch_row(p, t, now, stall_h, ledger):
            "delta": runs[-1] - runs[-2] if len(runs) > 1 else None, "idle_h": round(idle, 1),
            "spend": round(sum(float(e.get("usd") or 0) for e in ledger if e.get("feature") == FEATURE
                               and _charged_to(e.get("detail")) == name), 4),
-           "missions": len(missions), "newest": newest, "restarted": t.get("restarted"),
+           "missions": len(missions), "newest": newest, "restarted": t.get("restarted"), "runs": runs,
            "stuck": len(runs) >= 3 and runs[-1] - runs[-2] <= 0 and runs[-2] - runs[-3] <= 0}
     row["state"] = _tower_state(row, stall_h)
     return row
