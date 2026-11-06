@@ -588,7 +588,7 @@ def ship(p, args):
                     moved = _files(base, new)
                     if moved & _files(base, tip):
                         _err(f"{remote} main moved while testing; nothing was pushed: run fm ship again")
-                    ignored = _ci_ignored(root, new)
+                    ignored = _ci_ignored(root, tip)  # T-3439: GitHub runs the pushed commit's workflow, not main's
                     if not all(any(g.match(f) for g in ignored) for f in moved):  # T-2572: an untested tree never ships
                         _err(f"{remote} main moved while testing in files CI tests ({c.joinmore(sorted(moved), 3)}); "
                              "nothing was pushed: run fm ship again (it tests the new main)")

@@ -6,6 +6,7 @@ on:
       - site/genesis/genesis.json
       - site/genesis/*.md
       - site/genesis/gen-*/**
+      - site/genesis/moons-catalogue*.json  # T-3439: the catalogue shards (T-3047); no test reads the committed ones
   pull_request:
 
 permissions:

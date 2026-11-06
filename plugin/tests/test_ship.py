@@ -167,6 +167,36 @@ class Ship(ForemanTestCase):
         self.assertFalse(g("site/genesis/*.md").match("site/genesis/gen-2/x.md"))
         self.assertTrue(g("'site/genesis/*.md'").match("site/genesis/frame.md"))
 
+    def test_the_repos_ci_skips_every_tower_data_file_but_tests_the_page_code(self):
+        # T-3439: the tower began publishing moons-catalogue shards that test.yml still tested, so every ship's 20-40
+        # min window met a tower push "in files CI tests" and nothing reached GitHub for a night
+        import shutil
+        from helpers import PLUGIN
+        from sampo import release
+        root = os.path.dirname(PLUGIN)
+        os.makedirs(os.path.join(self.repo, ".github", "workflows"))
+        shutil.copy(os.path.join(root, ".github", "workflows", "test.yml"), os.path.join(self.repo, ".github", "workflows"))
+        sh(self.repo, "add", "-A")
+        sh(self.repo, "commit", "-qm", "the real workflow")
+        ignored = release._ci_ignored(self.repo, "HEAD")
+        files = sh(root, "ls-files", "site/genesis").split() + ["site/genesis/moons-catalogue-999.json"]
+        data = [f for f in files if f.endswith((".json", ".md"))]
+        self.assertTrue(data and len(data) < len(files), files)
+        for f in files:
+            self.assertEqual(any(g.match(f) for g in ignored), f in data, f)
+
+    def test_a_tower_move_ships_when_the_pushed_trees_ci_skips_it(self):
+        # T-3439: GitHub runs the pushed commit's workflow, so its globs decide, not the moved main's (which had none)
+        os.makedirs(os.path.join(self.repo, ".github", "workflows"))
+        with open(os.path.join(self.repo, ".github", "workflows", "test.yml"), "w") as f:
+            f.write("on:\n  push:\n    paths-ignore:\n      - site/genesis/moons-catalogue*.json\njobs: {}\n")
+        sh(self.repo, "add", "-A")
+        sh(self.repo, "commit", "-qm", "ci")
+        self.grant()
+        r = self.ship("--test", f"sh {self.mover('site/genesis/moons-catalogue-001.json')}")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.main_log()[:4], ["ci", "add b", "add a", "tower update"])
+
     def test_a_main_that_moved_in_a_shipped_file_still_refuses(self):  # T-2511
         self.grant()
         r = self.ship("--test", f"sh {self.mover('a.txt')}")
