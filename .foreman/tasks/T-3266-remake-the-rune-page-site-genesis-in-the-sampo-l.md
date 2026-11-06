@@ -8,7 +8,7 @@ scope: [site/genesis/, plugin/lib/sampo/rune.py, plugin/lib/sampo/kalevala.py, p
 depends_on: []
 source: user
 created: 2026-11-06T02:19:24Z
-updated: 2026-11-06T05:36:43Z
+updated: 2026-11-06T05:39:59Z
 base_note: 
 builder: 2026-11-06T02:22:35Z
 builder_model: haiku
@@ -56,9 +56,8 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 3. [x] Shots light/dark/phone; test_site covers the new block
 ## Resume here
 <!-- auto -->
-- 2026-11-06T05:21:46Z steps 3/3 done
-- git: worktree-agent-a6b595b832d51ef5d; 6 uncommitted: plugin/lib/sampo/rune.py, plugin/tests/genesis_page.js, plugin/tests/test_site.py, site/genesis/genesis.css, site/genesis/genesis.js, site/genesis/index.html
-- touched since last checkpoint: .fm-scratch/demo/m.html, plugin/tests/genesis_page.js, .fm-scratch/commit-msg.txt, .fm-scratch/lint-fix.json, site/genesis/genesis.css
+- 2026-11-06T05:39:59Z steps 3/3 done
+- git: worktree-agent-a6b595b832d51ef5d; 0 uncommitted
 ## Docs impact
 ## Verification evidence
 - (step 1) `nice -n 10 python3 plugin/tests/run.py test_site` → exit 0 · Ran 96 tests in 34.3s (44 jobs, 16 at a time; slowest: Built 33s, Landing 20s, CardsPage 20s) / OK [ran] [tree 8d72d59fca16] [world 2f1906870a] (2026-11-06T02:34:26Z)

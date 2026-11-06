@@ -153,7 +153,8 @@ class Live(_Steer):
         self.assertNotIn("urgent", head)
         self.assertIn("Push to main without asking", brief)
         self.assertNotIn("explore: true", brief)  # acted on without asking
-        self.assertIn(tid, self.fm("decide", "--review").stdout)  # no graded run yet: the user reads this one
+        # no graded run yet: the user reads this one; the background expansion writes it after filing the task (T-3356)
+        self.wait_for(lambda: tid in self.fm("decide", "--review").stdout, "the decision for the user's read")
 
     def test_a_high_score_files_without_a_read_and_a_correction_becomes_a_case(self):
         self.cases()
