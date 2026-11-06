@@ -255,6 +255,14 @@ def cmd_lane(args):
         if not b.meta.get("builder"):
             raise cli.UsageError(f"{b.id} has no builder to recover (fm lane brief {b.id})")
         return recover(p, b, main, args)
+    if args.action == "precheck":  # T-3444: a queue runner checks the next lanes while one merge lands
+        tree = _verify(b, p)
+        if not tree or _lane_tree(b.meta["lane"], b.meta.get("lane_branch") or branch) != tree:  # review: say so
+            raise c.PolicyError(f"{b.id}: every criterion is green, but nothing was recorded: the lane has tracked "
+                                "edits or isn't on its branch's tip, so a pass there isn't what merges (commit, then "
+                                "precheck)")
+        return cli.out(args, {"id": b.id, "tree": tree}, f"{b.id}: every criterion is green in its lane; fm lane merge "
+                       "reuses these passes while the lane's tree stays as it is")
     if args.action == "merge":
         why = getattr(args, "unverified", None)
         if why is not None and not why.strip():
@@ -1859,9 +1867,30 @@ def _secretish(lane, rel):
     return out
 
 
-def _verify(b):
+def _lane_tree(wt, branch):
+    """T-3444: the lane's tree when its worktree sits on branch's tip (what merges) with no tracked edits, else None:
+    a pass anywhere else speaks for something that won't merge."""
+    if _git(wt, "status", "--porcelain", "--untracked-files=no").stdout.strip():
+        return None
+    head = _git(wt, "rev-parse", "HEAD").stdout.strip()
+    if not head or head != _git(wt, "rev-parse", "--verify", "-q", f"{branch}^{{commit}}").stdout.strip():
+        return None
+    return _git(wt, "rev-parse", "HEAD^{tree}").stdout.strip() or None
+
+
+def _passes(rec, tree):
+    """The commands a lane_passed record holds for tree ([] for another tree or a record that won't parse)."""
+    try:
+        seen = json.loads(rec or "{}")
+    except (TypeError, ValueError):
+        return []
+    return list(seen.get("cmds") or []) if tree and isinstance(seen, dict) and seen.get("tree") == tree else []
+
+
+def _verify(b, p=None):
     """T-0948: re-run each criterion's verify command in the lane's worktree (the runner and timeout fm task evidence
-    --run uses, nothing recorded); the first red one refuses the merge, and so does a brief with nothing to run."""
+    --run uses); the first red one refuses the merge, and so does a brief with nothing to run. T-3444: a pass on the
+    lane's clean tip tree is recorded on the brief (given p) and reused while that tree stays as it is."""
     from sampo import cli
     cmds = [(n, v) for n, v in b.verify_cmds() if v]
     if not cmds:
@@ -1872,8 +1901,15 @@ def _verify(b):
         raise cli.UsageError(f"{b.id}: its lane worktree is gone, so its criteria can't be re-run there: fm lane "
                                f"new {b.id} re-attaches its kept branch {b.meta.get('lane_branch') or ''}, or fm lane "
                                f"merge {b.id} --unverified \"<why>\" merges it as it stands (logged)")
-    c.wait_for_load(f"fm lane merge {b.id}")  # T-2797: a gate that can only time out waits; then it gets a longer one
+    branch = b.meta.get("lane_branch") or f"foreman/{b.id}"
+    tree = _lane_tree(wt, branch)
+    passed = _passes(b.meta.get("lane_passed"), tree)
+    if any(cmd not in passed for _, cmd in cmds):
+        c.wait_for_load(f"fm lane merge {b.id}")  # T-2797: a gate that can only time out waits; then a longer one
     for n, cmd in cmds:
+        if cmd in passed:
+            print(f"fm: criterion {n} passed on this lane tree ({tree[:9]}) before: reused", file=sys.stderr)
+            continue
         code, out = c.run_command(wt, cmd, c.load_scaled(600))
         if code:
             first = c.first_error_line(out)  # T-3411
@@ -1881,6 +1917,14 @@ def _verify(b):
                                 + (f"\nfirst error: {first}" if first else "") + "\n"
                                 + "\n".join(out.rstrip().splitlines()[-15:]) + f"\nFix it on the branch, then merge "
                                 f"(fm lane merge {b.id} --unverified \"<reason>\" waives it, logged)")
+        if tree and p is not None and _lane_tree(wt, branch) == tree:  # review: the run may have rewritten files
+
+            def keep(x, cmd=cmd):  # merged with a concurrent precheck's passes on the same tree
+                done = sorted(set(_passes(x.meta.get("lane_passed"), tree)) | {cmd})
+                # a meta line drops everything after " #" (core._parse_value): JSON's # keeps a command whole
+                x.meta["lane_passed"] = json.dumps({"tree": tree, "cmds": done}).replace("#", "\\u0023")
+            cli.mutate(p, b.id, keep, "lane_precheck")
+    return tree
 
 
 _HUNK = re.compile(r"^@@ -\S+ \+\S+ @@ ?(.*)$")
@@ -2040,7 +2084,7 @@ def merge(p, b, main, unverified=None):
         c.log_event(p, "lane_unverified", task=b.id, data={"reason": unverified.strip(), "branch": branch})
     else:
         try:
-            _verify(b)
+            _verify(b, p)
         except (c.PolicyError, cli.UsageError) as e:  # T-0949: a refusal is an enforce event fm doctor counts
             c.log_event(p, "enforce", task=b.id, data={"kind": "merge_refused", "reason": str(e)[:300], "branch": branch})
             stop_mark(p, b.id, "refused")
@@ -2562,7 +2606,7 @@ def remove(p, b, main, drop=None, keep=False):
     kept = list(have) if keep else [x for x in have if _git(main, "branch", "-d", x).returncode]
 
     def take_back(x):
-        for k in ("lane", "lane_branch", "builder", "builder_proc"):  # the builder slot comes back too (review)
+        for k in ("lane", "lane_branch", "builder", "builder_proc", "lane_passed"):  # the builder slot comes back too
             if not (k == "lane_branch" and x.meta.get(k) in kept):  # T-1071: an unmerged branch stays findable
                 x.meta.pop(k, None)
         if x.status in ("active", "verifying"):

@@ -8563,9 +8563,11 @@ def _build_parser(only=None):
                                                        "stats: builder landing rate by brief size (T-2368); "
                                                        "verify: the full suite on each landed merge, reverting a red one (T-3141); "
                                                        "train [ID,ID…]: merge N lanes in a scratch tree, gate once, "
-                                                       "bisect a red set, fast-forward (T-3380)")
+                                                       "bisect a red set, fast-forward (T-3380); "
+                                                       "precheck: a lane's criteria run ahead of its merge, "
+                                                       "which reuses passes on an unchanged tree (T-3444)")
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "recover", "race", "pick",
-                                      "stats", "verify", "train"])
+                                      "stats", "verify", "train", "precheck"])
     s.add_argument("--reset", metavar="SHA", help="verify: settle a conflict or red record after a forward fix (T-3141)")
     s.add_argument("--agent-stopped", action="store_true", help="recover: its agent was stopped (TaskStop), so a "
                                                                 "stalled lane is free to take back (T-2354)")

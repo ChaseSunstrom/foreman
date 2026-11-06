@@ -2701,5 +2701,91 @@ class PostMergeVerify(ForemanTestCase):
         self.assertFalse(os.path.exists(os.path.join(self.repo, "bad.txt")))
 
 
+class LanePrecheck(ForemanTestCase):
+    """T-3444: lane merge re-ran every criterion serially while the merge queue waited (4-16 min a lane, 80 queued); a
+    pass on the lane's clean tip tree is recorded and reused, and lane precheck runs it ahead of the merge."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.runs = os.path.join(self.tmp, "runs.txt")
+        self.tid = first(self.fm("task", "new", "Built", "--type", "FEATURE", "--tier", "S", "--ac",
+                                 f"ok :: sh -c 'echo run >> {self.runs}'", "--step", "s", "--json").stdout)["id"]
+        self.lane = json.loads(self.fm("lane", "new", self.tid, "--json").stdout)["path"]
+        self.commit("work.txt", "work\n")
+
+    def commit(self, name, text):
+        with open(os.path.join(self.lane, name), "w") as f:
+            f.write(text)
+        subprocess.run(["git", "-C", self.lane, "add", name], check=True)
+        subprocess.run(["git", "-C", self.lane, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", name],
+                       check=True)
+
+    def count(self):
+        return len(read_text(self.runs).splitlines()) if os.path.exists(self.runs) else 0
+
+    def test_a_precheck_pass_is_reused_by_the_merge_on_the_same_tree(self):
+        self.fm("lane", "precheck", self.tid)
+        self.assertEqual(self.count(), 1)
+        r = self.fm("lane", "merge", self.tid)
+        self.assertEqual(self.count(), 1, "the merge reused the pass")
+        self.assertIn("reused", r.stderr)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "work.txt")))
+
+    def test_a_lane_that_moved_after_its_precheck_runs_again(self):
+        self.fm("lane", "precheck", self.tid)
+        self.commit("more.txt", "more\n")
+        self.fm("lane", "merge", self.tid)
+        self.assertEqual(self.count(), 2)
+
+    def test_a_pass_with_tracked_edits_in_the_lane_is_never_reused(self):
+        with open(os.path.join(self.lane, "work.txt"), "w") as f:
+            f.write("edited, not committed\n")
+        self.assertIn("nothing was recorded", self.fm("lane", "precheck", self.tid, check=False).stderr)
+        subprocess.run(["git", "-C", self.lane, "checkout", "--", "work.txt"], check=True)
+        self.fm("lane", "merge", self.tid)
+        self.assertEqual(self.count(), 2, "the edited tree's pass speaks for nothing that merges")
+
+    def test_a_red_precheck_names_the_criterion_and_keeps_the_passes_before_it(self):
+        self.fm("task", "ac", self.tid, "add", "red", "--verify", "false")
+        r = self.fm("lane", "precheck", self.tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("criterion 2 is red", r.stderr)
+        self.fm("task", "ac", self.tid, "rm", "2")
+        self.fm("lane", "merge", self.tid)
+        self.assertEqual(self.count(), 1, "criterion 1's pass on this tree still counts")
+
+    def test_a_command_holding_a_hash_is_still_reused(self):
+        # review: a brief's meta line drops everything after " #", so the record must not carry one
+        self.fm("task", "ac", self.tid, "edit", "1", "--verify", f"sh -c 'echo run >> {self.runs} # counted'")
+        self.fm("lane", "precheck", self.tid)
+        self.fm("lane", "merge", self.tid)
+        self.assertEqual(self.count(), 1)
+
+    def test_a_worktree_on_another_commit_than_the_branch_records_nothing(self):
+        # review: merge takes the branch's tip; a pass on a worktree switched off it speaks for something else
+        subprocess.run(["git", "-C", self.lane, "checkout", "-q", "--detach", "HEAD~1"], check=True)
+        r = self.fm("lane", "precheck", self.tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("nothing was recorded", r.stderr)
+        subprocess.run(["git", "-C", self.lane, "checkout", "-q", f"foreman/{self.tid}"], check=True)
+        self.fm("lane", "merge", self.tid)
+        self.assertEqual(self.count(), 2)
+
+    def test_a_criterion_that_edits_tracked_files_records_nothing(self):
+        # review: the tree read before a 4-16 min run must still be the tree when the pass is recorded
+        self.fm("task", "ac", self.tid, "edit", "1", "--verify",
+                f"sh -c 'echo run >> {self.runs}; echo regenerated > work.txt'")
+        self.fm("lane", "precheck", self.tid, check=False)
+        subprocess.run(["git", "-C", self.lane, "checkout", "--", "work.txt"], check=True)
+        self.fm("lane", "merge", self.tid, "--unverified", "the criterion rewrites work.txt on purpose", check=False)
+        self.assertNotIn("lane_passed", c.find_brief(c.find_project(self.repo), self.tid).meta)
+
+    def test_lane_rm_drops_the_record(self):
+        self.fm("lane", "precheck", self.tid)
+        self.fm("lane", "rm", self.tid, "--force", "test", check=False)
+        self.assertNotIn("lane_passed", c.find_brief(c.find_project(self.repo), self.tid).meta)
+
+
 if __name__ == "__main__":
     unittest.main()
