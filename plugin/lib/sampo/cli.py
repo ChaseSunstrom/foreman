@@ -1473,7 +1473,8 @@ def _task_finish(p, args):
                                        "ran": [[r[2][:200], r[3]] for r in results][:20]})  # T-0749: catch rates
     failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → " + (  # T-2385: every failing infra file, not only the last output lines
         " / ".join(l for l in output.splitlines() if l.startswith("fail"))[:600] if cmd == "fm prove --infra" else
-        c.run_result(code, output)) for kind, n, cmd, code, output in results if code]
+        c.run_result(code, output) + "".join("\n" + x for x in c.class_lines(c.failed_classes(output), "      "))  # T-3397
+        ) for kind, n, cmd, code, output in results if code]
     if failed:
         raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
     _close_affected(p, need_brief(p, b.id), runs, args)  # T-1117: what it changed must not break what's linked to it
@@ -5129,6 +5130,9 @@ def _cmd_check(args):
                       "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
                                                                      **({"failing": c.failing_tests(out_)[:50]} if code else {}),
                                                                      **skipped.get(cmd, {})} for cmd, code, out_, s in results],
+                      **({"failed": c.more(sorted({n for _, code, out_, _ in results if code for n in c.failed_classes(out_)}), 200)[0],
+                          "failed_n": len({n for _, code, out_, _ in results if code for n in c.failed_classes(out_)})}
+                         if failed else {}),  # T-3397: the ledger has no payload cap: 200 names and the count
                       **({"skip_tests": sorted(skip)} if skip else {}),
                       **({"sentinel": True} if os.environ.get("FOREMAN_SENTINEL_RUN") else {})})
     try:  # T-1117: a red gate is someone's task without anyone deciding so
@@ -5140,7 +5144,9 @@ def _cmd_check(args):
         base_lines = [f"baseline capture failed: {e}"]
     if args.evidence:  # one run, one verdict: a later passing gate can't hide an earlier failing one
         shown = [r for r in results if r[1]] or results
-        result = (f"✗ exit 1 · {failed} of {len(results)} failed: " if failed else
+        every = sorted({n for _, code, out_, _ in results if code for n in c.failed_classes(out_)})
+        result = (f"✗ exit 1 · {failed} of {len(results)} failed: " + (c.joinmore(every, 50) + " · " if every else "")  # T-3397: names first, they survive the cut
+                  if failed else
                   f"exit 0 · {len(results)} passed: ") + (f"({left_out}) " if left_out else "") + "; ".join(
             f"{cmd} → {c.run_result(code, output)}" + (f" ({notes[cmd]})" if cmd in notes else "")
             for cmd, code, output, _ in shown)
@@ -5151,6 +5157,7 @@ def _cmd_check(args):
     for cmd, code, output, secs in results:
         lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)} ({secs:.1f} s)"
                      + (f" — {notes[cmd]}" if cmd in notes else ""))
+        lines += c.class_lines(c.failed_classes(output)) if code else []  # T-3397: every one, after the summary line
         names = c.failing_tests(output) if code else []  # T-1884: the failing test and how, not the summary's tail
         tail = ([f"failing: {', '.join(names[:5])}" + (f" (+{len(names) - 5} more)" if names[5:] else "")]
                 + c.failure_excerpt(output, names[0], 600).splitlines()[-10:] if names
@@ -5915,6 +5922,8 @@ def _check_affected(p, args):
                                  env=_skip_env(skip))
     if args.evidence:  # T-1747: recorded as what it is, never as the full gates (close still needs fm check)
         result = c.run_result(code, output)
+        if code and (every := c.failed_classes(output)):  # T-3397: the names first, they survive the cut
+            result = result.replace(" · ", f" · {c.joinmore(every, 50)} · ", 1)
         mutate(p, args.evidence, lambda b: b.add_evidence(
             c.AFFECTED_LABEL + cmd, result[:600], step=args.step, ac=args.ac,
             tree=c.worktree_id(p.root), ran=True),
@@ -5922,6 +5931,7 @@ def _check_affected(p, args):
     out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip, "unrunnable": odd,
                "hubs": hubs},
         f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → {c.run_result(code, output)}"
+        + "".join("\n" + l for l in c.class_lines(c.failed_classes(output))) * bool(code)  # T-3397: every one
         + "".join(f"\n  hub {f}: " + (f"{len(i['tests'])} test(s) by {', '.join((i['symbols'] or [])[:6]) or 'its path'}"
                                       if i["tests"] is not None else f"all {i['linked']} linked (change not mappable)")
                   for f, i in hubs.items())

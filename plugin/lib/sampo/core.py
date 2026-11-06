@@ -3816,6 +3816,19 @@ def failing_tests(output):
     return sorted({next(g for g in m.groups() if g) for m in _FAILING_TEST.finditer(output or "")})[:200]
 
 
+def failed_classes(output):
+    """T-3397: every failing class the suite runner named (its `  failed class: X` lines, none cut), else the failing
+    tests the output names."""
+    blocks = re.findall(r"(?m)^((?:  failed class: [\w.]+\r?(?:\n|\Z))+)", output or "")  # run.py's one contiguous block
+    return re.findall(r"[\w.]+", " ".join(blocks[-1:]).replace("failed class:", "")) or failing_tests(output)
+
+
+def class_lines(names, indent="    ", n=50):
+    """T-3397: the failing names one per line (the first n, then a note), for a gate's printed result."""
+    shown, note = more(list(names), n, "sampo check --json")
+    return [indent + x for x in shown] + ([indent + "(+" + note + ")"] if note else [])
+
+
 def failure_excerpt(output, test, most=700):
     """T-1789: how one failing test failed, from a gate's output: the lines from the first naming it to the next
     test's rule or the summary (unittest's ===== and Ran), redacted, its last `most` characters (where the assertion

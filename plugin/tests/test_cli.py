@@ -1006,6 +1006,51 @@ class EditCriterion(ForemanTestCase):
 
 
 class Checks(ForemanTestCase):
+    def test_every_failing_class_is_printed_and_ledgered(self):  # T-3397: the summary line cut the list at ~200 chars
+        self.fm("init")
+        names = [f"test_mod_{i}.LongClassNameNumber{i}" for i in range(12)]
+        with open(os.path.join(self.repo, "run.py"), "w") as f:
+            f.write("import sys\nprint(''.join('  failed class: ' + n + '\\n' for n in " + repr(names) + "))\n"
+                    "print('Ran 9 tests\\n\\nFAILED (12 classes: x, +7 more)')\nsys.exit(1)\n")
+        self.fm("check", "add", "python3 run.py")
+        p = self.fm("check", "--fresh", check=False)
+        for n in names:
+            self.assertIn(f"\n    {n}\n", p.stdout)
+        ev = [e for e in c.ledger_tail(c.find_project(self.repo), 50) if e["event"] == "check_run"][-1]
+        self.assertEqual(sorted(ev["data"]["failed"]), sorted(names))
+        self.assertEqual(c.failed_classes("  failed class: a.B\n  failed class: c.D\n"), ["a.B", "c.D"])
+        self.assertEqual(c.failed_classes("  failed class: x.Fake\nnoise\n  failed class: a.B\r\n  failed class: c.D\r\n"),
+                         ["a.B", "c.D"], "only the last contiguous block, CRLF too")
+        many = c.class_lines([f"m.C{i}" for i in range(80)])
+        self.assertEqual((len(many), many[-1]), (51, "    (+30 left out (sampo check --json))"))
+
+    def test_a_red_gate_names_its_classes_in_the_finish_refusal_and_the_affected_print(self):  # T-3397
+        self.fm("init")
+        names = [f"test_mod_{i}.Class{i}" for i in range(60)]
+        with open(os.path.join(self.repo, "run.py"), "w") as f:
+            f.write("import sys\nprint(''.join('  failed class: ' + n + '\\n' for n in " + repr(names) + "))\nsys.exit(1)\n")
+        tid = self.fm_json("task", "new", "T", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s",
+                           "--focus")["id"]
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture")
+        p = self.fm("task", "finish", tid, "--run", "python3 run.py", "--audit", "self check", check=False)
+        self.assertIn("      test_mod_0.Class0\n", p.stderr)
+        self.assertIn("      test_mod_49.Class49\n", p.stderr)
+        self.assertNotIn("test_mod_50.Class50", p.stderr)
+        self.assertIn("(+10 left out (sampo check --json))", p.stderr)
+        for rel in ("src/parser.py", "tests/test_parser.py"):
+            os.makedirs(os.path.join(self.repo, os.path.dirname(rel)), exist_ok=True)
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write("x = 1\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"],
+                       check=True)
+        self.fm("check", "affected", "python3 run.py {tests}")
+        with open(os.path.join(self.repo, "src/parser.py"), "a") as f:
+            f.write("y = 2\n")
+        out = self.fm("check", "--affected", check=False).stdout
+        self.assertIn("\n    test_mod_0.Class0\n", out)
+        self.assertIn("(+10 left out (sampo check --json))", out)
+
     def test_a_slow_gate_reruns_only_its_failing_tests(self):  # T-1678
         self.fm("init")
         with open(os.path.join(self.repo, "run.py"), "w") as f:
