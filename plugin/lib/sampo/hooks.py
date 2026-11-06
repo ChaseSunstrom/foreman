@@ -4289,8 +4289,8 @@ def _drive(p, sd, briefs, pl, g):
             return None
         d["lanes"] = held + ["done"] + done
         if done:
-            return ("Sampo drive: builder lane(s) finished and wait on a merge: " + "; ".join(
-                f"sampo lane merge {i}" for i in done) + " (review the branch first), then sampo lane rm and close it here.")
+            return ("Sampo drive: builder lane(s) finished and wait on a merge: " + c.merge_hint(done)
+                    + " (review the branch first), then sampo lane rm and close it here.")  # T-3467
         return (f"Sampo drive: builder lanes hold {', '.join(held[:4])}; nothing else is queued. Each builder's "  # not a list: text for a model, not a screen
                 f"notification wakes you: then review its branch, sampo lane merge, sampo lane rm, and close it here.")
     if d.get("hold"):

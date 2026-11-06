@@ -4284,6 +4284,20 @@ def ship_waiting(p):
     return n, any(PUSH_GRANT.search(t) for t in rules) and not any(NO_PUSH.search(t) for t in rules)
 
 
+TRAIN_BATCH = 8  # T-3467: lanes per suggested train: a red one costs ~log2(8) = 3 more gate runs to find
+
+
+def merge_hint(done):
+    """T-3467: the command a set of finished lanes waits on: one merges; two or more land through one train (one gate
+    run for them all, a red set bisected), TRAIN_BATCH at a time. Listing one `lane merge` each led a session to merge
+    ~80 lanes one at a time (~10 min apiece) beside the built train."""
+    if len(done) == 1:
+        return f"sampo lane merge {done[0]}"
+    more = len(done) - TRAIN_BATCH
+    return (f"sampo lane train {','.join(done[:TRAIN_BATCH])} (one gate run for them all"
+            + (f"; {more} more after it" if more > 0 else "") + ")")
+
+
 def next_for(p, briefs=None):
     """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111);
     T-0247: a decision whose revisit trigger fired rides along."""
@@ -4312,8 +4326,7 @@ def next_for(p, briefs=None):
     except Exception:  # a lane that can't be read never costs the next action
         done, recovery = finished_lanes(p, briefs), ""
     if done:
-        merge = (f"builder lane(s) finished, their work waits on a merge: "
-                 + "; ".join(f"sampo lane merge {i}" for i in done) + " (review the branch first)")
+        merge = f"builder lane(s) finished, their work waits on a merge: {merge_hint(done)} (review the branch first)"
         action = merge + " · " + action if idle_now else action + " · " + merge
     if recovery:
         action = recovery + " · " + action if idle_now else action + " · " + recovery

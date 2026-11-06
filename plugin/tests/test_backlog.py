@@ -81,7 +81,9 @@ class Capture(ForemanTestCase):
         self.assertIn("T-0002", out)
         self.assertIn("Close to done work: T-0001", out)
         self.assertNotIn("Close to done", self.fm("capture", "export weekly reports as a CSV file", "--type", "FIX",
-                                                  "--anyway").stdout, "only a FEATURE is flagged")
+                                                  "--anyway").stdout, "a FIX of done work is flagged by nothing")
+        self.assertIn("Close to done work: T-0001", self.fm("capture", "export weekly reports as CSV fast", "--type",
+                                                             "PERFORMANCE", "--anyway").stdout, "T-3467: a speed-up of done work is flagged")
         self.assertNotIn("Close to done", self.fm("capture", "fix the login timeout on slow wifi").stdout)
 
 

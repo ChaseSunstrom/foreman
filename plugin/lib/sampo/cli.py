@@ -358,7 +358,7 @@ def _near(p, args, text, type_):
         if getattr(args, "json", False):
             out(args, {"refused": "near-duplicate", "of": same[0], "title": same[1]}, None)
         return REFUSED_NEAR, None
-    done = done if type_ == "FEATURE" else None
+    done = done if type_ in ("FEATURE", "PERFORMANCE") else None  # T-3467: a speed-up of done work too (T-3460)
 
     def note(tid):
         return "".join([
@@ -8562,8 +8562,8 @@ def _build_parser(only=None):
                                                        "recover <id>: the one recovery for why its lane stopped (T-2354); "
                                                        "stats: builder landing rate by brief size (T-2368); "
                                                        "verify: the full suite on each landed merge, reverting a red one (T-3141); "
-                                                       "train [ID,ID…]: merge N lanes in a scratch tree, gate once, "
-                                                       "bisect a red set, fast-forward (T-3380); "
+                                                       "train IDS: land several finished lanes at once in a scratch tree with one gate run "
+                                                       "and a red set bisected (T-3380; no comma here: T-3467); "
                                                        "precheck: a lane's criteria run ahead of its merge, "
                                                        "which reuses passes on an unchanged tree (T-3444)")
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "recover", "race", "pick",

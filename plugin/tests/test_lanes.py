@@ -639,6 +639,11 @@ class Lanes(ForemanTestCase):
         self.assertNotIn(f"fm lane recover {tid}", out, "a finished lane is merged, not recovered")
         self.assertEqual(c.finished_lanes(c.find_project(self.repo), c.load_briefs(c.find_project(self.repo))), [tid])
 
+    def test_several_finished_lanes_are_offered_as_one_train(self):
+        # T-3467: the hint listed one 'sampo lane merge' per lane, so a session merged ~80 lanes one at a time
+        ids = sorted(self.finished_builder()[0] for _ in range(3))
+        self.assertIn(f"sampo lane train {','.join(ids)}", self.fm("next").stdout)
+
     def test_the_drive_names_a_finished_lane_for_merge_once(self):
         tid, _ = self.finished_builder()
         stop = lambda: self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting.",

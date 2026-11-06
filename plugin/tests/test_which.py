@@ -53,6 +53,9 @@ class Which(ForemanTestCase):
         out = self.fm("which", "notify me when a run finishes").stdout
         self.assertIn("fm notify", out)
 
+    def test_the_merge_train_is_found_by_what_it_does(self):  # T-3467: "train [ID,ID…]" split at its comma
+        self.assertIn("fm lane train", self.fm("which", "land several finished lanes at once").stdout)
+
     def test_a_task_subcommand_is_found_by_its_help(self):  # T-1908: only top-level commands were indexed
         self.assertIn("fm task drop", self.fm("which", "drop a task").stdout)
         self.assertIn("fm task evidence", self.fm("which", "record evidence for a step").stdout)
