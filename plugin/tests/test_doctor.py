@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 from helpers import PLUGIN, ForemanTestCase, git_repo
 
@@ -492,6 +493,58 @@ class Checks(unittest.TestCase):
         with tarfile.open(os.path.join(home, "backups", "claude-20260102-000000.tgz"), "w:gz") as t:
             t.add(os.path.join(home, "backups", "claude-20260101-000000.tgz"), "x")
         self.assertEqual(d.check_backup(home).status, "PASS")
+
+    def test_worktree_of_installed_repo_warns_not_fails(self):
+        """T-3406: install wiring that points at the installed checkout, judged from its git worktree, is a WARN."""
+        with tempfile.TemporaryDirectory() as t:
+            main, wt = os.path.join(t, "main"), os.path.join(t, "wt")
+            for cmd in (["git", "init", "-q", main], ["git", "-C", main, "-c", "user.name=x", "-c", "user.email=x@x",
+                                                    "commit", "-q", "--allow-empty", "-m", "i"],
+                        ["git", "-C", main, "worktree", "add", "-q", wt]):
+                subprocess.run(cmd, check=True, capture_output=True)
+            for r in (main, wt):
+                os.makedirs(os.path.join(r, "plugin", "hooks"))
+            inst, mine = os.path.join(main, "plugin", "hooks", "statusline"), os.path.join(wt, "plugin", "hooks", "statusline")
+            for f in (inst, mine):
+                open(f, "w").close()
+            manifest = {"statusLine_original": {}}
+            st =lambda cmd, wrapper: d.check_statusline({"statusLine": {"command": cmd}}, manifest, wrapper).status
+            self.assertEqual(st(inst, mine), "WARN")
+            self.assertEqual(st(inst + " --flag 'a b'", mine), "WARN")  # args after the path
+            self.assertEqual(st(mine, inst), "FAIL")  # stale wiring into a worktree, judged from main
+            self.assertEqual(st("/elsewhere/statusline", mine), "FAIL")
+            self.assertTrue(d._sibling_worktree(os.path.join(main, "plugin"), os.path.join(wt, "plugin")))
+            self.assertFalse(d._sibling_worktree(os.path.join(wt, "plugin"), os.path.join(main, "plugin")))
+            self.assertFalse(d._sibling_worktree(os.path.join(t, "plugin"), os.path.join(wt, "plugin")))
+            # the rules symlink, same pair both ways (temp HOME)
+            home = os.path.join(t, "home")
+            os.makedirs(os.path.join(home, ".claude", "rules"))
+            for r in (main, wt):
+                os.makedirs(os.path.join(r, "plugin", "rules"))
+                open(os.path.join(r, "plugin", "rules", "foreman.md"), "w").close()
+            link = os.path.join(home, ".claude", "rules", "foreman.md")
+            with unittest.mock.patch.dict(os.environ, {"HOME": home}):
+                for wired, running, want in ((main, wt, "WARN"), (wt, main, "FAIL")):
+                    if os.path.lexists(link):
+                        os.remove(link)
+                    os.symlink(os.path.join(wired, "plugin", "rules", "foreman.md"), link)
+                    self.assertEqual(d.check_rules_symlink(os.path.join(running, "plugin")).status, want)
+            # a missing wired target, a bare command, an unbalanced quote, two unrelated repos: all FAIL
+            self.assertEqual(st(os.path.join(main, "plugin", "hooks", "gone"), mine), "FAIL")
+            self.assertEqual(st("claude-hud", mine), "FAIL")
+            self.assertEqual(st("python3 " + inst, mine), "FAIL")
+            self.assertEqual(d._cmd_path("a 'b"), "a 'b")  # shlex ValueError: the whole command
+            other = os.path.join(t, "other")
+            subprocess.run(["git", "init", "-q", other], check=True, capture_output=True)
+            os.makedirs(os.path.join(other, "plugin"))
+            self.assertFalse(d._sibling_worktree(os.path.join(other, "plugin"), os.path.join(wt, "plugin")))
+            self.assertFalse(d._sibling_worktree("", os.path.join(wt, "plugin")))
+            with unittest.mock.patch.dict(os.environ, {"HOME": home}):
+                os.remove(link)
+                os.symlink(os.path.join(main, "plugin", "rules", "gone.md"), link)  # dangling, dir still there
+                self.assertEqual(d.check_rules_symlink(os.path.join(wt, "plugin")).status, "FAIL")
+            with unittest.mock.patch.object(d, "_run", return_value=subprocess.CompletedProcess([], 127, "", "timeout")):
+                self.assertFalse(d._sibling_worktree(main, wt))  # a git failure or timeout is never a WARN
 
     def test_statusline_and_deny(self):
         wrapper = "/x/plugin/hooks/statusline"

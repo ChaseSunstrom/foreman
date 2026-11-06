@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -919,6 +920,30 @@ def check_git_hygiene(repo):
     return Result("git hygiene", "FAIL" if bad else "PASS", "; ".join(bad) or "nothing ignored is tracked; no secrets staged")
 
 
+def _sibling_worktree(wired, running):
+    """T-3406: the wiring points at a repo's main checkout and we run from a linked worktree of it. Directional: a
+    stale wiring into an old worktree, judged from main, stays a FAIL. A git error or timeout is False."""
+    if not (wired and os.path.isabs(wired)):  # '' would make git -C use the cwd's repo
+        return False
+
+    def dirs(p):
+        r =[_run(["git", "-C", p, "rev-parse", "--path-format=absolute", f], timeout=10) for f in ("--git-dir", "--git-common-dir")]
+        return [x.stdout.strip() for x in r] if all(x.returncode == 0 for x in r) else None
+    w, r = dirs(wired), dirs(running)
+    return bool(w and r and w[0] == w[1] and r[0] != r[1] and w[1] == r[1])
+
+
+def _cmd_path(cmd):
+    """The program of a statusLine command (its first word); the whole command when it can't be parsed."""
+    try:
+        return shlex.split(cmd)[0]
+    except (ValueError, IndexError):
+        return cmd
+
+
+WORKTREE_WARN = "checking a worktree of the installed checkout"
+
+
 def check_statusline(settings, manifest, wrapper):
     if manifest is None:
         return Result("statusline", *(("PASS", NO_CC) if not shutil.which("claude") else
@@ -927,6 +952,9 @@ def check_statusline(settings, manifest, wrapper):
     if cmd == wrapper and "statusLine_original" in manifest:
         orig = (manifest.get("statusLine_original") or {}).get("command")
         return Result("statusline", "PASS", f"Sampo wrapper in place; original preserved ({orig or 'none'})")
+    if cmd and manifest and "statusLine_original" in manifest and os.path.exists(_cmd_path(cmd)) \
+            and _sibling_worktree(os.path.dirname(_cmd_path(cmd)), os.path.dirname(wrapper)):
+        return Result("statusline", "WARN", f"{WORKTREE_WARN}: statusLine is {cmd!r}")
     return Result("statusline", "FAIL", f"statusLine is {cmd!r}, not the Sampo wrapper recorded at install")
 
 
@@ -946,6 +974,8 @@ def check_rules_symlink(plugin=PLUGIN):
         return Result("rules symlink", *(("PASS", NO_CC) if not shutil.which("claude") else
                                          ("WARN", f"{link} missing (fm install-user)")))
     ok = os.path.realpath(link) == os.path.realpath(target)
+    if not ok and os.path.exists(link) and _sibling_worktree(os.path.dirname(os.path.realpath(link)), os.path.dirname(os.path.realpath(target))):
+        return Result("rules symlink", "WARN", f"{WORKTREE_WARN}: {link} → {os.path.realpath(link)}")
     return Result("rules symlink", "PASS" if ok else "FAIL", f"{link} → {os.path.realpath(link)}")
 
 
