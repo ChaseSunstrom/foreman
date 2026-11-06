@@ -11,6 +11,8 @@
 
 ### Everything else
 
+- run.py --load N tops the host up to at most twice its CPU count, counting the busy loops other runs already hold, and says when it cuts the number: three --load 32 runs on 16 CPUs held 96 loops and load 100 for 12 minutes (T-3441).
+- sampo ship no longer refuses when the live tower pushes moons-catalogue shards mid-test: test.yml skips the shards as data (no test reads the committed ones), and the moved-while-testing check reads the CI globs of the tree being pushed, the workflow GitHub runs, not the moved main's (T-3439).
 - Kalevala watch shows a tower whose files can't be read as its own "unreadable" row with the reason instead of blanking the whole block, a round lists it as skipped, and the genesis drawer's close keeps the page's query string (T-3376).
 - Task boundaries file the predicted next asks that no open task covers as predicted captures (at most 3 open project-wide, no refiling within 7 days, guesses of 3+ words), and sampo misses counts a catch when the user later asks for one (T-3128).
 - An edit made while sampo task finish runs is noted ("a close of ID is running: this edit isn't part of it") and journalled to no task, only in the closing tree: a close in the main checkout leaves lane builders' edits attributed, and concurrent closes each keep their own marker (T-3030).
