@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- `sampo sync` is cheap again: an export walks only the folders that travel and skips every file whose source and mirror copy are unchanged since the last export (a size-and-mtime stamp per file), so an unchanged export takes ~0.3-0.5 s instead of 6-8 s under the project lock on every state write (T-3349).
 - A builder's `sampo lease take` is no longer refused by another lane's brief pre-claim (pre-claims stay advisory, with a one-line note naming them); an explicit lease of another session still refuses (T-3283).
 - `sampo sync on` works on this repo's state: atomic writes cut the file name in their temp name (a 250-byte brainstorm file refused the mirror), and the commit scan no longer takes a placeholder URL password (`user:pass@host`) or an ISO date under a secret-like name (`token_expires = "2030-01-01"`) for a credential (T-3336).
 - Test runs share the machine: every `run.py` draws its classes from one slot pool sized to the CPUs (or the cgroup's quota), so ten runs at once queue for 16 slots instead of starting 160 workers; the tests' `fm()` calls go through a fork server that imports Sampo once (2.4x cheaper per call); `perf_bench.py` records suite and CLI timings with host load; `sampo lane max` goes up to 100 builders (T-3297, part 1 of T-3252).

@@ -8,7 +8,7 @@ scope: [site/assets/diagrams/*, plugin/tests/test_readme_diagrams.py, CHANGELOG.
 depends_on: []
 source: followup
 created: 2026-11-05T21:12:35Z
-updated: 2026-11-06T04:37:29Z
+updated: 2026-11-06T05:21:23Z
 builder: 2026-11-05T23:56:14Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|3723|7619
@@ -21,6 +21,7 @@ predict_attempts: 1
 plan0_at: 2026-11-05T23:56:45Z
 plan0_scope: [site/assets/diagrams/*, plugin/tests/test_readme_diagrams.py, CHANGELOG.md]
 group: README figures and diagrams
+builder_returned: 2026-11-06T05:21:23Z
 ---
 # README diagrams (T-3245 part 2): redraw site/assets/diagrams loop, guard and architecture in Sampo's look and name (they still say Foreman), light and dark, gated by sampo works check
 ## Raw request
@@ -41,9 +42,9 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 2. [x] redraw the three diagrams
 ## Resume here
 <!-- auto -->
-- 2026-11-06T04:34:19Z step 1/2: failing test: no diagram says Foreman; both themes exist and pass works check
-- git: worktree-agent-a5d99302bb1fb7a77; 2 uncommitted: plugin/tests/test_readme_diagrams.py, site/index.html
-- touched since last checkpoint: plugin/tests/test_readme_diagrams.py, site/index.html
+- 2026-11-06T05:19:12Z step 1/2: failing test: no diagram says Foreman; both themes exist and pass works check
+- git: worktree-agent-a5d99302bb1fb7a77; 0 uncommitted
+- touched since last checkpoint: site/index.html
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_readme_diagrams` → ✗ exit 1 · Ran 3 tests in 0.7s (1 jobs, 16 at a time; slowest: ReadmeDiagrams 0s) / FAILED (1 classes: test_readme_diagrams.ReadmeDiagrams) [ran] [tree 68a557f03c56] [world 2f1906870a] (2026-11-05T23:58:16Z)
@@ -54,6 +55,7 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 - (step 2) `nice -n 10 sampo works check site/assets/diagrams/loop-dark.svg site/assets/diagrams/loop-light.svg site/assets/diagrams/guard-dark.svg site/assets/diagrams/guard-light.svg` → ✗ exit 1 · ✗ unique: 0 cells from site/assets/diagrams/loop-light.svg (bar > 4 of 576 cells off by > 96/255 from every earlier work that passed) / 2 of 4 works passed [ran] [tree 7226444dbc55] [world 2f1906870a] (2026-11-06T04:36:01Z)
 - (step 2) `nice -n 10 sampo works check site/assets/diagrams/loop-dark.svg site/assets/diagrams/loop-light.svg` → exit 0 · ✓ unique: nearest 576 cells (bar > 4 of 576 cells off by > 96/255 from every earlier work that passed) / 2 of 2 works passed [ran] [tree 7226444dbc55] [world 2f1906870a] (2026-11-06T04:36:19Z)
 - (step 2) `nice -n 10 sampo works check site/assets/diagrams/guard-dark.svg site/assets/diagrams/guard-light.svg` → exit 0 · ✓ unique: nearest 567 cells (bar > 4 of 576 cells off by > 96/255 from every earlier work that passed) / 2 of 2 works passed [ran] [tree 7226444dbc55] [world 2f1906870a] (2026-11-06T04:36:59Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_design_gates test_design_lint test_design_sprint test_docs test_doctor test_fmpy test_genesis test_goal test_left_out test_map test_models test_moons_scale test_moonshot test_motion_verify test_readme_diagrams test_rename_scan test_replay test_sampo_design test_ship test_ship_next test_showpieces test_site test_site_build test_site_hero test_site_landing test_site_sampo test_site_sections test_steer test_suite_hygiene test_taste_ledger && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 1081 tests in 2404.4s (354 jobs, 2 at a time; slowest: GenesisRead 283s, ProofBeforePresentation 189s, GenesisCheck 166s) / FAILED (1 classes: test_doctor.Checks) [ran] [tree e6d314559c5c] [world 2f1906870a] (2026-11-06T05:21:13Z)
 ## Log
 - 2026-11-05T21:12:35Z created
 - 2026-11-05T23:56:14Z builder brief: ~/.claude/foreman/state/projects/foreman-4a056f/audits/T-3248.builder.md

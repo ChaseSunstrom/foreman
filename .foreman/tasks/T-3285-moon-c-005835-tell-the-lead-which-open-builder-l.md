@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/lane_overlap.py plugin/lib/fmlane_overlap.py plugin/lib
 depends_on: []
 source: user
 created: 2026-11-06T02:34:16Z
-updated: 2026-11-06T04:39:53Z
+updated: 2026-11-06T05:36:08Z
 builder: 2026-11-06T02:34:32Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
@@ -72,6 +72,7 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_code test_design_tokens test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_hooks test_inbox_spec test_lane_overlap test_lane_twins test_lanes test_left_out test_library test_mcp test_models test_moons_scale test_parallel test_proof test_rename_scan test_scaffold test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_ui_signals && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 174 tests across 6 files. [47.89s] [ran] [tree 623003e65b13] [world 2f1906870a] (2026-11-06T03:46:08Z)
 - (step 1) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_lane_overlap` → ✗ exit 1 · Ran 22 tests in 11.8s (7 jobs, 2 at a time; slowest: LaneList.test_fm_lane_list_prints_an_overlap_line_for_a_pair_sharing_a_def_and_none_for_an_unrelated_lane 6s, LaneList.test_uncommitted_lanes_overl [ran] [tree 0bd63bfe41dc] [world 2f1906870a] (2026-11-06T04:33:20Z)
 - (step 2) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_lane_overlap` → exit 0 · Ran 23 tests in 63.5s (17 jobs, 2 at a time; slowest: LaneList.test_fm_lane_list_prints_an_overlap_line_for_a_pair_sharing_a_def_and_none_for_an_unrelated_lane 25s, LaneList.test_fm_lane_list_prints_n [ran] [tree 6207368b3314] [world 2f1906870a] (2026-11-06T04:39:53Z)
+- (step 3) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_lanes test_lane_twins test_lane_overlap` → exit 0 · Ran 209 tests in 411.7s (192 jobs, 2 at a time; slowest: Lanes.test_a_merged_file_this_task_also_touched_still_stales_the_audit 41s, ProbeProvisional.test_revert_route_restores_the_dearer_pick_and_pau [ran] [tree 935b57b7a7df] [world 2f1906870a] (2026-11-06T05:36:08Z)
 ## Log
 - 2026-11-06T02:34:16Z created
 - 2026-11-06T02:34:24Z set scope=['plugin/lib/sampo/lane_overlap.py', 'plugin/lib/sampo/lanes.py', 'plugin/tests/test_lane_overlap.py', 'CHANGELOG.md']

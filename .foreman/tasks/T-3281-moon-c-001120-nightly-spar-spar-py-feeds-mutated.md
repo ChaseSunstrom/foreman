@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: user
 created: 2026-11-06T02:28:23Z
-updated: 2026-11-06T04:54:50Z
+updated: 2026-11-06T05:20:25Z
 builder: 2026-11-06T02:28:40Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
@@ -21,7 +21,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T02:29:13Z
 plan0_scope: []
 predict_noted: 2026-11-06T04:41:42Z
-builder_returned: 2026-11-06T04:49:04Z
+builder_returned: 2026-11-06T05:20:25Z
 ---
 # Moon C-001120: nightly spar (spar.py) feeds mutated hook payloads and CLI args to a temp home, files any traceback as a FIX with the reproducer
 ## Raw request
@@ -63,6 +63,7 @@ Choice 1 (85%): reuses the temp-home harness and crash detector already proven b
 - (step 3) `PYTHON_CPU_COUNT=2 python3 plugin/tests/run.py test_spar. test_night.` → exit 0 · Ran 58 tests in 40.0s (37 jobs, 2 at a time; slowest: Cli 8s, Night.test_a_night_records_the_tasks_the_queue_closed_and_the_digest_says_so 7s, NightGuards 6s) / OK [ran] [tree a030bfee5af2] [world 2f1906870a] (2026-11-06T04:18:17Z)
 - (step 3) `python3 plugin/tests/run.py test_spar.` → exit 0 · Ran 26 tests in 21.3s (8 jobs, 16 at a time; slowest: Cli.test_fm_spar_reports_a_bounded_run_at_idle_priority 20s, Cli.test_the_replay_flag_reruns_one_mutant_in_a_sandbox 16s, Run 3s) / OK [ran] [tree 025f0bab46a8] [world 2f1906870a] (2026-11-06T04:42:35Z)
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_cli test_code test_design_tokens test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_hooks test_inbox_spec test_kalevala test_left_out test_library test_louhi_models test_mcp test_mint test_models test_moons_scale test_night test_parallel test_proof test_rename_scan test_scaffold test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_spar test_ui_signals test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 2418 tests in 343.7s (1445 jobs, 16 at a time; slowest: LeanKindGateHookDelay 152s, LeanKindGateSessionLine 140s, LeanKindGateGuardAllow 137s) / FAILED (2 classes: test_docs.MapShards, test_docs.P [ran] [tree 025f0bab46a8] [world 2f1906870a] (2026-11-06T04:54:50Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_cli test_code test_design_tokens test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_hooks test_inbox_spec test_kalevala test_left_out test_library test_louhi_models test_mcp test_mint test_models test_moons_scale test_night test_parallel test_proof test_rename_scan test_scaffold test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_spar test_ui_signals test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 174 tests across 6 files. [31.68s] [ran] [tree 6be423c66d43] [world 2f1906870a] (2026-11-06T05:20:07Z)
 ## Log
 - 2026-11-06T02:28:23Z created
 - 2026-11-06T02:28:40Z builder brief: ~/.claude/foreman/state/projects/foreman-4a056f/audits/T-3281.builder.md

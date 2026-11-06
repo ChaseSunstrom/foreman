@@ -14,6 +14,7 @@ the local one wins and theirs is kept under sync-conflicts/ for a manual merge; 
 wait until git's conflict is resolved. Callers hold the project lock.
 """
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -21,6 +22,7 @@ import shutil
 from sampo import core as c
 
 DIR = ".foreman"
+STAMPS = "sync-stamps.json"  # T-3349: per mirrored file, its source's and its mirror copy's (mtime_ns, size) last export
 LOCAL_ONLY = ("allow", "approved", "plugin_pin")
 LEASE_MARKS = ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit")  # one machine's marks on a brief
 
@@ -118,14 +120,20 @@ def export(p):
     base, written, here = dict(c.read_meta(p).get("sync_base") or {}), 0, {}
     if not os.path.exists(os.path.join(root, "README.md")):
         _write(os.path.join(root, "README.md"), README)
-    for rel in _walk(p.dir):
-        if not _travels(rel):
+    old, stamps = _stamps(p), {}
+    for rel in _local(p):
+        m = _ID.match(os.path.basename(rel)) if rel.startswith(BRIEFS) else None
+        if rel.startswith(BRIEFS) and not m:
+            continue  # not a brief (fm names them T-NNNN-…)
+        src, dest = os.path.join(p.dir, rel), os.path.join(root, rel)
+        seen = [_stamp(src), _stamp(dest)]
+        if seen[1] and old.get(rel) == seen and rel in base:  # T-3349: neither side moved since the last export
+            stamps[rel] = seen
+            if m:
+                here[m.group(1)] = rel
             continue
-        text = _read(os.path.join(p.dir, rel))
-        if rel.startswith(BRIEFS):
-            m = _ID.match(os.path.basename(rel))
-            if not m:
-                continue  # not a brief (fm names them T-NNNN-…)
+        text = _read(src)
+        if m:
             try:
                 text = _for_mirror(text)
             except ValueError:
@@ -140,14 +148,47 @@ def export(p):
             _write(dest, text)
             written += 1
         base[rel] = _sha(text)
+        stamps[rel] = [_stamp(src), _stamp(dest)]
     for rel in list(_walk(root)):  # a brief archived here moved: drop its old copy if it is still ours
         m = _ID.match(os.path.basename(rel))
         if rel.startswith(BRIEFS) and m and here.get(m.group(1), rel) != rel \
                 and _sha(_read(os.path.join(root, rel))) == base.get(rel):
             os.remove(os.path.join(root, rel))
             base.pop(rel, None)
+            stamps.pop(rel, None)
     _save_base(p, base)
+    if stamps != old:
+        c.write_atomic(os.path.join(p.dir, STAMPS), json.dumps(stamps, sort_keys=True))
     return written
+
+
+def _local(p):
+    """The local files that travel, walking only their folders: state also holds folders of ~300,000 files that never
+    travel (exam runs), and walking those cost every export seconds (T-3349)."""
+    for top in sorted({x.rstrip("/").split("/")[0] for x in BRIEFS + ("research/",)}):
+        yield from (f"{top}/{rel}" for rel in _walk(os.path.join(p.dir, top)) if _travels(f"{top}/{rel}"))
+    for name in ("decisions.md", "fixes.md"):
+        path = os.path.join(p.dir, name)
+        if os.path.isfile(path) and not os.path.islink(path):
+            yield name
+
+
+def _stamp(path):
+    """[mtime_ns, size] of the path itself (lstat: a file swapped for a symlink reads as changed), None when absent."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    return [st.st_mtime_ns, st.st_size]
+
+
+def _stamps(p):
+    try:
+        with open(os.path.join(p.dir, STAMPS), encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
 
 
 def _set_aside(p, rel, text):

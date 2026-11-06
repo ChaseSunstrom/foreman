@@ -35,6 +35,24 @@ class Sync(ForemanTestCase):
         self.assertIn("RFC 4180", read_text(os.path.join(self.mirror, "research", "csv-notes.md")))
         self.assertIn("fm sync", read_text(os.path.join(self.mirror, "README.md")))
 
+    def test_an_unchanged_export_reads_nothing(self):
+        # T-3349: every state write re-read, re-parsed and re-redacted every mirrored file under the project lock
+        from unittest import mock
+        from sampo import sync
+        self.fm("sync", "on")
+        p = c.find_project(self.repo)
+        reads, real = [], sync._read
+        with mock.patch.object(sync, "_read", side_effect=lambda path: reads.append(path) or real(path)):
+            self.assertEqual(sync.export(p), 0)
+        self.assertEqual(reads, [])
+        self.fm("task", "log", self.tid, "picked the csv module")  # a changed brief is exported again
+        self.assertIn("picked the csv module", self.exported())
+        path = os.path.join(self.mirror, "decisions.md")  # a pulled change is still left for the import
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("\n- theirs\n")
+        sync.export(p)
+        self.assertIn("- theirs", read_text(path))
+
     def test_the_mirror_follows_every_change_and_stops_when_off(self):
         self.fm("sync", "on")
         self.fm("task", "log", self.tid, "picked the csv module")

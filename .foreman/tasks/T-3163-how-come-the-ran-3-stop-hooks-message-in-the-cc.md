@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: user
 created: 2026-11-05T06:15:17Z
-updated: 2026-11-06T05:07:48Z
+updated: 2026-11-06T05:35:48Z
 builder: 2026-11-05T20:57:15Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|431015|12747818
@@ -20,7 +20,6 @@ predict_minutes: 8
 predict_attempts: 1
 plan0_at: 2026-11-05T20:57:41Z
 plan0_scope: []
-builder_returned: 2026-11-06T05:07:48Z
 ---
 # The Sampo UI mod styles every row kind Claude Code lets a mod draw that it skips today (AskUserQuestion, CommandOutput, ToolProgress, InfoNotice, SessionMode), and the unstylable hook rows get quieter by sending less through them
 ## Raw request

@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T02:10:18Z
-updated: 2026-11-06T05:06:09Z
+updated: 2026-11-06T05:12:10Z
 builder: 2026-11-06T02:21:59Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
@@ -20,7 +20,7 @@ predict_minutes: 8
 predict_attempts: 1
 plan0_at: 2026-11-06T02:22:49Z
 plan0_scope: []
-builder_returned: 2026-11-06T04:52:27Z
+builder_returned: 2026-11-06T05:12:10Z
 ---
 # T-3082 review fixes: night's Kalevala rounds get a wall-clock cap and a heartbeat each…
 ## Raw request
@@ -61,6 +61,7 @@ Choice 1 (85%): each fix is small and sits on a hook that already exists.
 - (step 1) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_kalevala test_night test_kalevala_live` → exit 0 · Ran 141 tests in 112.5s (66 jobs, 2 at a time; slowest: KalevalaStep 57s, KalevalaWatch 40s, KalevalaGen 12s) / OK [ran] [tree 83e3d75d61ec] [world 2f1906870a] (2026-11-06T04:14:31Z)
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_cli test_doctor test_kalevala test_left_out test_louhi_models test_mint test_models test_moons_scale test_night test_rename_scan test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 174 tests across 6 files. [25.22s] [ran] [tree 83e3d75d61ec] [world 2f1906870a] (2026-11-06T04:15:47Z)
 - (step 3) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_kalevala test_night test_kalevala_live` → exit 0 · Ran 146 tests in 404.8s (70 jobs, 2 at a time; slowest: KalevalaStep 142s, KalevalaWatch 92s, Kalevala 41s) / OK [ran] [tree 60eb6d872310] [world 2f1906870a] (2026-11-06T05:06:09Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_cli test_doctor test_kalevala test_left_out test_louhi_models test_mint test_models test_moons_scale test_night test_rename_scan test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 174 tests across 6 files. [45.25s] [ran] [tree 60eb6d872310] [world 2f1906870a] (2026-11-06T05:11:40Z)
 ## Log
 - 2026-11-06T02:10:18Z created
 - 2026-11-06T02:10:30Z planned: it has criteria and steps

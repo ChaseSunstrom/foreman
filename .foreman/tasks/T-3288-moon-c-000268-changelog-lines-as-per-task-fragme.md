@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/clfrag.py, plugin/tests/test_clfrag.py, plugin/lib/samp
 depends_on: []
 source: user
 created: 2026-11-06T02:34:40Z
-updated: 2026-11-06T04:25:05Z
+updated: 2026-11-06T05:19:06Z
 builder: 2026-11-06T02:35:00Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
@@ -20,6 +20,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:35:51Z
 plan0_scope: [plugin/lib/sampo/clfrag.py, plugin/tests/test_clfrag.py, plugin/lib/sampo/release.py, plugin/agents/fm-builder.md, CHANGELOG.md]
+builder_returned: 2026-11-06T05:19:06Z
 ---
 # Moon C-000268: changelog lines as per-task fragments (changelog.d/T-NNNN.md) folded into CHANGELOG.md at release, so lanes never collide there
 ## Raw request
@@ -65,6 +66,8 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 - (step 3) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_release` → exit 0 · Ran 46 tests in 90.0s (46 jobs, 2 at a time; slowest: BoardVerbs.test_release_check_runs_doctor_and_demo_in_a_temporary_home 27s, Release.test_a_release_without_push_can_be_pushed_later_and_only_pushe [ran] [tree e8e5c8881430] [world 2f1906870a] (2026-11-06T04:16:00Z)
 - (step 4) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_release -k any_repo_fold` → exit 0 · Ran 1 tests in 3.5s (1 jobs, 2 at a time; slowest: AnyRepo 2s) / OK [ran] [tree e8e5c8881430] [world 2f1906870a] (2026-11-06T04:16:07Z)
 - (step 4) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_lanes test_builder` → exit 0 · Ran 211 tests in 535.2s (201 jobs, 2 at a time; slowest: RaceEvidence.test_a_test_that_errors_on_the_other_side_is_coupled_not_caught 26s, Contract.test_a_briefed_task_that_never_launched_frees_its_sl [ran] [tree e8e5c8881430] [world 2f1906870a] (2026-11-06T04:25:05Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_agents test_ambient test_approve_reads test_audit test_board_export test_bookkeeping test_builder test_bus test_claims test_claude test_clfrag test_code test_core test_debug test_design_tokens test_design_works test_diagnosis test_docs test_docsdrift test_doctor test_exam test_export test_find test_foresight test_genesis test_goal test_guard test_guard_diff test_guard_exec_vectors test_guard_git test_guard_overrefusal test_guard_pipes test_guard_sampo test_handoff test_hooks test_inbox_spec test_judgment test_lanes test_left_out test_lib_hostile test_library test_mcp test_models test_moons_scale test_onwrite test_parallel test_proof test_release test_rename_scan test_roles test_scaffold test_self_aware test_session test_session_fixes test_settings_scopes test_showpieces test_site_build test_site_sections test_small_cards test_snapshots test_supply_delta test_ui_signals test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 3227 tests in 3190.3s (2219 jobs, 2 at a time; slowest: LeanKindGateGuardAllow 117s, LeanKindGateHookDelay 100s, LeanKindGateSessionLine 100s) / FAILED (1 classes: test_doctor.Checks) [ran] [tree e8e5c8881430] [world 2f1906870a] (2026-11-06T05:18:25Z)
+- (step 4) `python3 plugin/tests/run.py test_doctor -k cpu_pressure` → exit 0 · Ran 1 tests in 1.0s (1 jobs, 16 at a time; slowest: Checks 0s) / OK [ran] [tree e8e5c8881430] [world 2f1906870a] (2026-11-06T05:18:48Z)
 ## Log
 - 2026-11-06T02:34:40Z created
 - 2026-11-06T02:34:49Z set scope=['plugin/lib/sampo/clfrag.py', 'plugin/tests/test_clfrag.py', 'plugin/lib/sampo/release.py', 'plugin/agents/fm-builder.md', 'CHANGELOG.md']

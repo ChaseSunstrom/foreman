@@ -8,7 +8,7 @@ scope: [site/genesis/, plugin/lib/sampo/rune.py, plugin/lib/sampo/kalevala.py, p
 depends_on: []
 source: user
 created: 2026-11-06T02:19:24Z
-updated: 2026-11-06T05:04:22Z
+updated: 2026-11-06T05:36:43Z
 base_note: 
 builder: 2026-11-06T02:22:35Z
 builder_model: haiku
@@ -53,16 +53,19 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 ## Steps
 1. [x] Export: genesis.json gains a kalevala block (towers, gens, acts) from kalevala.tower_rows/acts
 2. [x] Page: remake genesis/index.html + genesis.js/css in the Sampo look with the Kalevala sections and charts
-3. [ ] Shots light/dark/phone; test_site covers the new block  <- CURRENT
+3. [x] Shots light/dark/phone; test_site covers the new block
 ## Resume here
 <!-- auto -->
-- 2026-11-06T04:57:53Z step 2/3: Page: remake genesis/index.html + genesis.js/css in the Sampo look with the Kalevala sections and charts
+- 2026-11-06T05:21:46Z steps 3/3 done
 - git: worktree-agent-a6b595b832d51ef5d; 6 uncommitted: plugin/lib/sampo/rune.py, plugin/tests/genesis_page.js, plugin/tests/test_site.py, site/genesis/genesis.css, site/genesis/genesis.js, site/genesis/index.html
-- touched since last checkpoint: .fm-scratch/demo/s.html, .fm-scratch/site/s.html, site/genesis/genesis.css, .fm-scratch/demo/t.html, site/genesis/genesis.js, plugin/tests/genesis_page.js
+- touched since last checkpoint: .fm-scratch/demo/m.html, plugin/tests/genesis_page.js, .fm-scratch/commit-msg.txt, .fm-scratch/lint-fix.json, site/genesis/genesis.css
 ## Docs impact
 ## Verification evidence
 - (step 1) `nice -n 10 python3 plugin/tests/run.py test_site` → exit 0 · Ran 96 tests in 34.3s (44 jobs, 16 at a time; slowest: Built 33s, Landing 20s, CardsPage 20s) / OK [ran] [tree 8d72d59fca16] [world 2f1906870a] (2026-11-06T02:34:26Z)
 - (step 2) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_site` → exit 0 · Ran 98 tests in 159.9s (56 jobs, 2 at a time; slowest: CardsPage 34s, Built 28s, Session 26s) / OK [ran] [tree d0e3003caf58] [world 2f1906870a] (2026-11-06T05:04:22Z)
+- (step 3) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_site_sampo test_site` → exit 0 · Ran 98 tests in 239.7s (51 jobs, 2 at a time; slowest: Built 115s, Landing 81s, CardsPage 72s) / OK [ran] [tree 2e365185b1ed] [world 2f1906870a] (2026-11-06T05:17:03Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_design_gates test_design_lint test_design_sprint test_docs test_doctor test_fmpy test_genesis test_goal test_left_out test_map test_models test_moons_scale test_moonshot test_motion_verify test_rename_scan test_replay test_sampo_design test_ship test_ship_next test_showpieces test_site test_site_build test_site_hero test_site_landing test_site_sampo test_site_sections test_steer test_suite_hygiene test_taste_ledger && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 1083 tests in 693.7s (346 jobs, 2 at a time; slowest: Ship 123s, GenesisRead 85s, GenerationReview 66s) / FAILED (2 classes: test_doctor.Checks, test_design_lint.Site) [ran] [tree 2e365185b1ed] [world 2f1906870a] (2026-11-06T05:18:39Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_design_gates test_design_lint test_design_sprint test_docs test_doctor test_fmpy test_genesis test_goal test_left_out test_map test_models test_moons_scale test_moonshot test_motion_verify test_rename_scan test_replay test_sampo_design test_ship test_ship_next test_showpieces test_site test_site_build test_site_hero test_site_landing test_site_sampo test_site_sections test_steer test_suite_hygiene test_taste_ledger && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 1083 tests in 614.1s (485 jobs, 2 at a time; slowest: GenesisCheck 58s, GenesisLive 52s, ProofBeforePresentation 42s) / FAILED (1 classes: test_doctor.Checks) [ran] [tree dfa6b205b077] [world 2f1906870a] (2026-11-06T05:32:03Z)
 ## Log
 - 2026-11-06T02:19:24Z created
 - 2026-11-06T02:19:27Z criterion 3 verify: `python3 plugin/tests/shot.py site/genesis/index.html` → `python3 demo/shot.py --help`

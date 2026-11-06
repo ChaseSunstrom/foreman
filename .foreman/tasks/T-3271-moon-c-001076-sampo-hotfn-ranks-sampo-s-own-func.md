@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/hotfn.py, plugin/tests/test_hotfn.py, plugin/lib/sampo/
 depends_on: []
 source: user
 created: 2026-11-06T02:27:37Z
-updated: 2026-11-06T04:54:25Z
+updated: 2026-11-06T05:22:05Z
 builder: 2026-11-06T02:27:47Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
@@ -20,6 +20,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:28:27Z
 plan0_scope: [plugin/lib/sampo/hotfn.py, plugin/tests/test_hotfn.py, plugin/lib/sampo/cli.py, CHANGELOG.md, MASTER.md]
+builder_returned: 2026-11-06T05:22:05Z
 ---
 # Moon C-001076: sampo hotfn ranks Sampo's own functions by churn x size x FIX-task touches and captures the top as refactor tasks
 ## Raw request
