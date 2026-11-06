@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py]
 depends_on: []
 source: discovered
 created: 2026-11-06T04:30:12Z
-updated: 2026-11-06T05:58:53Z
+updated: 2026-11-06T06:48:23Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-a307c8db10ab6c4fc
 lane_branch: worktree-agent-a307c8db10ab6c4fc
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -17,6 +17,7 @@ predict_minutes: 2
 predict_attempts: 1
 plan0_at: 2026-11-06T05:52:11Z
 plan0_scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py]
+builder_returned: 2026-11-06T06:48:23Z
 ---
 # Two hook crashes the spar fuzzer found are clean refusals
 ## Raw request
@@ -31,12 +32,15 @@ plan0_scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py]
 ## Execution prompt
 ## Steps
 1. [x] two failing tests with the malformed payloads
-2. [x] guard json.loads; pop with a default
+2. [ ] guard json.loads; pop with a default  <- CURRENT
 ## Resume here
 ## Docs impact
 ## Verification evidence
 - (step 2) `python3 plugin/tests/run.py test_hooks` → exit 0 · Ran 261 tests in 305.1s (153 jobs, 16 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 27s, Approvals 26s, UserPromptSubmit 25s) / OK (ran] (tree fd3904144fd6] (world 2f1906870a] (2026-11-06T05:58:47Z)
 - (step 1) `python3 plugin/tests/run.py test_hooks.SparCrashes` → exit 0 · Ran 2 tests in 207.5s (1 jobs, 16 at a time; slowest: SparCrashes 4s) / OK (ran] (tree fd3904144fd6] (world 2f1906870a] (2026-11-06T05:58:53Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_compact test_core test_doctor test_hooks test_left_out test_models test_rename_scan && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 630 tests in 981.6s (376 jobs, 16 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 12s, NoTaskGateMulti.test_at_stop_the_requests_with_evidence_close_when_every_python_start_tak (ran] (tree 70abc01ad1ea] (world 2f1906870a] (2026-11-06T06:34:44Z)
+- (step 2) `python3 plugin/tests/run.py test_hooks` → exit 0 · Ran 263 tests in 976.1s (249 jobs, 16 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 12s, NoTaskGateMulti.test_at_stop_the_requests_with_evidence_close_when_every_python_start_tak (ran] (tree 70abc01ad1ea] (world 2f1906870a] (2026-11-06T06:36:54Z)
+- (step 2) `python3 plugin/tests/run.py test_compact test_core test_doctor test_left_out test_models test_rename_scan` → ✗ exit 1 · Ran 372 tests in 608.9s (104 jobs, 16 at a time; slowest: ConfidenceRoutes 9s, Bench 8s, RenameScan.test_no_fm_only_command_regex 6s) / FAILED (1 classes: test_left_out.LeftOut) (ran] (tree 70abc01ad1ea] (world 2f1906870a] (2026-11-06T06:47:12Z)
 ## Log
 - 2026-11-06T04:30:12Z created
 - 2026-11-06T05:51:44Z planned from capture

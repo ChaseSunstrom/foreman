@@ -4,11 +4,11 @@ type: FEATURE
 tier: M
 status: active
 priority: normal
-scope: [plugin/lib/sampo/repro.py, plugin/lib/fmrepro.py, plugin/tests/test_repro.py, plugin/lib/sampo/cli.py, MASTER.md, docs/map/files-lib-3.md, CHANGELOG.md]
+scope: [plugin/lib/sampo/repro.py, plugin/lib/fmrepro.py, plugin/tests/test_repro.py, plugin/lib/sampo/cli.py, MASTER.md, docs/map/files-lib-3.md, CHANGELOG.md, .sampo/**]
 depends_on: []
 source: user
 created: 2026-11-06T02:28:08Z
-updated: 2026-11-06T06:12:23Z
+updated: 2026-11-06T07:03:52Z
 builder_model: haiku
 base: 00b285292666f4610b278fc83fe59c924ac22197
 base_tree: b7ea42c9d13afdcf0443d2a19c881e825efa8a91
@@ -46,11 +46,11 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 3. [x] Register 'repro' with lazy('sampo.repro','cmd') beside which in cli.py; CHANGELOG line
 ## Resume here
 <!-- auto -->
-- 2026-11-06T02:46:31Z step 3/3: Register 'repro' with lazy('sampo.repro','cmd') beside which in cli.py; CHANGELOG line
-- git: worktree-agent-a43cfbb02f63ce9c4; 6 uncommitted: MASTER.md, docs/map/files-lib-3.md, plugin/lib/sampo/cli.py, plugin/lib/fmrepro.py, plugin/lib/sampo/repro.py, plugin/tests/test_repro.py
-- touched since last checkpoint: plugin/lib/sampo/repro.py, plugin/lib/fmrepro.py, plugin/lib/sampo/cli.py, plugin/tests/test_repro.py, MASTER.md, docs/map/files-lib-3.md
+- 2026-11-06T07:03:52Z steps 3/3 done
+- git: foreman/build; 65 uncommitted: .sampo/decisions.md, .sampo/tasks/T-2952-ideas-model-local-follow-ups-with-no-local-profi.md, .sampo/tasks/T-3132-self-change-gate-bench-hooks-imports-the-branch.md, .sampo/tasks/T-3181-calling-cards-part-1b-the-harness-drives-the-car.md, .sampo/tasks/T-3266-remake-the-rune-page-site-genesis-in-the-sampo-l.md, .sampo/tasks/T-3274-moon-c-010030-sampo-move-old-new-renames-a-sampo.md, .sampo/tasks/T-3275-moon-c-000723-sampo-shape-file-drafts-the-compan.md, .sampo/tasks/T-3279-moon-c-002103-sampo-repro-builds-site-and-readme.md, .sampo/tasks/T-3287-moon-c-006358-sampo-docs-trace-links-each-doc-cl.md, .sampo/tasks/T-3306-sampo-check-affected-picks-2-000-tests-700-jobs.md
+- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/widen.sh, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/run_queue.sh, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/land.sh, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/pipeline.sh
 ## Docs impact
-MASTER.md bullet and docs/map/files-lib-3.md line added by the builder; the verb's help names its cost
+MASTER.md and docs/map name sampo repro; CHANGELOG line added
 ## Verification evidence
 - (step 1) `nice -n 10 python3 plugin/tests/run.py test_repro` → ✗ exit 1 (never ran: no tests ran) · Ran 1 tests in 49.4s (2 jobs, 16 at a time; slowest: Repro 44s, loader._FailedTest 0s) / FAILED (1 classes: unittest.loader._FailedTest) (ran] (tree 3542fd3cabf3] (world 2f1906870a] (2026-11-06T02:35:21Z)
 - (step 2) `nice -n 10 python3 plugin/tests/run.py test_repro` → ✗ exit 1 · Ran 17 tests in 125.9s (5 jobs, 16 at a time; slowest: Repro 109s, Run 20s, Cmd 14s) / FAILED (2 classes: test_repro.Cmd, test_repro.Verb) (ran] (tree 474a41f945c5] (world 2f1906870a] (2026-11-06T02:40:03Z)
@@ -68,6 +68,15 @@ MASTER.md bullet and docs/map/files-lib-3.md line added by the builder; the verb
 - (audit self, imported) `the only change since the merge: two '# not a list:' notes on repro.py's git error lines (the silent-cut scan); test_left_out and test_repro pass` → no findings (tree cf8b91a753d4] (2026-11-06T06:12:19Z)
 - (audit intent, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → reviewer checked each criterion against its test; the JSON flag and real-builder smoke test were added in round 2 (tree cf8b91a753d4] (2026-11-06T06:12:23Z)
 - (audit edge, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → a hung git is now ReproError (exit 2), not nondeterminism; cleanup still runs with check=False (tree cf8b91a753d4] (2026-11-06T06:12:23Z)
+- (audit self, imported) `the only change since the merge: two '# not a list:' notes on repro.py's git error lines (the silent-cut scan); test_left_out and test_repro pass` → no findings (tree 24f6c01e706b] (2026-11-06T06:38:55Z)
+- (audit self, imported) `the only change since the merge: two '# not a list:' notes on repro.py's git error lines (the silent-cut scan); test_left_out and test_repro pass` → no findings (tree 24f6c01e706b] (2026-11-06T06:40:24Z)
+- (audit intent, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → reviewer checked each criterion against its test; the JSON flag and real-builder smoke test were added in round 2 (tree 24f6c01e706b] (2026-11-06T06:40:28Z)
+- (audit edge, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → a hung git, a REF that can't build and a builder that deletes files each exit 2 or are named; the user's tree is never written (tree 24f6c01e706b] (2026-11-06T06:40:28Z)
+- (audit adversary, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → repro refuses a REF starting with '-', runs builders only in temp copies and a detached REF worktree it removes, and every subprocess has a timeout; the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), covered by the commit secret scan (tree 24f6c01e706b] (2026-11-06T06:40:28Z)
+- (audit self, imported) `the only change since the merge: two '# not a list:' notes on repro.py's git error lines (the silent-cut scan); test_left_out and test_repro pass` → no findings (tree d904fce9ed8f] (2026-11-06T07:01:33Z)
+- (audit intent, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → reviewer checked each criterion against its test; the JSON flag and real-builder smoke test were added in round 2 (tree d904fce9ed8f] (2026-11-06T07:01:37Z)
+- (audit edge, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → a hung git, a REF that can't build and a builder that deletes files each exit 2 or are named; the user's tree is never written (tree d904fce9ed8f] (2026-11-06T07:01:37Z)
+- (audit adversary, imported) `lane review before merge (fm-reviewer, FIX FIRST), findings fixed in round 2; self audit after the last change` → repro refuses a REF starting with '-', runs builders only in temp copies and a detached REF worktree it removes, and every subprocess has a timeout; the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), covered by the commit secret scan (tree d904fce9ed8f] (2026-11-06T07:01:37Z)
 ## Log
 - 2026-11-06T02:28:08Z created
 - 2026-11-06T02:28:15Z set scope=['plugin/lib/sampo/repro.py', 'plugin/tests/test_repro.py', 'plugin/lib/sampo/cli.py', 'CHANGELOG.md']
@@ -81,6 +90,8 @@ MASTER.md bullet and docs/map/files-lib-3.md line added by the builder; the verb
 - 2026-11-06T05:44:32Z focused
 - 2026-11-06T06:10:18Z focused
 - 2026-11-06T06:12:13Z scope: repro.py's two git error lines get '# not a list:' notes (test_left_out's silent-cut scan flagged ' '.join(args[:2]))
+- 2026-11-06T07:00:58Z set scope=['plugin/lib/sampo/repro.py', 'plugin/lib/fmrepro.py', 'plugin/tests/test_repro.py', 'plugin/lib/sampo/cli.py', 'MASTER.md', 'docs/map/files-lib-3.md', 'CHANGELOG.md', '.sampo/**']
+- 2026-11-06T07:01:00Z scope widened to .sampo/**: the sync mirror moved from .foreman/ in 63f19d902 (no task) and main's code still names only .foreman/ until T-3342 lands; these are mirror notes, not this task's edits
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/doctor.py, plugin/tests/test_doctor.py, CHANGELOG.md]
 depends_on: []
 source: discovered
 created: 2026-11-06T05:11:39Z
-updated: 2026-11-06T06:12:55Z
+updated: 2026-11-06T06:33:41Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-aca35f4f80860e1f6
 lane_branch: worktree-agent-aca35f4f80860e1f6
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -17,7 +17,7 @@ predict_minutes: 2
 predict_attempts: 1
 plan0_at: 2026-11-06T05:52:23Z
 plan0_scope: [plugin/lib/sampo/doctor.py, plugin/tests/test_doctor.py, CHANGELOG.md]
-builder_returned: 2026-11-06T06:12:55Z
+builder_returned: 2026-11-06T06:33:41Z
 ---
 # sampo doctor warns on MCP servers configured with the deprecated HTTP+SSE transport (MCP 2026-07-28 reclassified it Deprecated, eligible for removal)
 ## Raw request
@@ -31,13 +31,16 @@ builder_returned: 2026-11-06T06:12:55Z
 ## Risks and rollback
 ## Execution prompt
 ## Steps
-1. [ ] fixture test, red  <- CURRENT
-2. [x] check_mcp_transport walking the mcpServers dicts _supply already walks (doctor.py:2146)
+1. [ ] fixture test, red
+2. [ ] check_mcp_transport walking the mcpServers dicts _supply already walks (doctor.py:2146)  <- CURRENT
 ## Resume here
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_doctor McpTransport` → ✗ exit 1 · Ran 115 tests in 64.4s (45 jobs, 16 at a time; slowest: ViewsRepair 9s, LockProbe 4s, Command 4s) / FAILED (1 classes: test_doctor.McpTransport) (ran] (tree 988967955c04] (world 2f1906870a] (2026-11-06T05:53:54Z)
 - (step 2) `python3 plugin/tests/run.py test_doctor` → exit 0 · Ran 115 tests in 630.3s (45 jobs, 16 at a time; slowest: ViewsRepair 48s, Timing 4s, LockProbe 4s) / OK (ran] (tree 31d4a23afdf2] (world 2f1906870a] (2026-11-06T06:04:40Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_doctor test_left_out test_models test_rename_scan && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 217 tests in 384.0s (76 jobs, 16 at a time; slowest: ViewsRepair 7s, RenameScan.test_no_fm_only_command_regex 6s, Bench 5s) / FAILED (1 classes: test_left_out.LeftOut) (ran] (tree 31d4a23afdf2] (world 2f1906870a] (2026-11-06T06:19:15Z)
+- (step 2) `python3 plugin/tests/run.py test_left_out` → ✗ exit 1 · Ran 3 tests in 4.3s (1 jobs, 16 at a time; slowest: LeftOut 0s) / FAILED (1 classes: test_left_out.LeftOut) (ran] (tree 31d4a23afdf2] (world 2f1906870a] (2026-11-06T06:21:08Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_doctor test_left_out test_models test_rename_scan && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 221 tests in 303.0s (71 jobs, 16 at a time; slowest: RenameScan.test_no_fm_only_command_regex 6s, ViewsRepair 5s, LockProbe 3s) / FAILED (1 classes: test_left_out.LeftOut) (ran] (tree 27ce7a873d3c] (world 2f1906870a] (2026-11-06T06:33:19Z)
 ## Log
 - 2026-11-06T05:11:39Z created
 - 2026-11-06T05:49:43Z planned from capture

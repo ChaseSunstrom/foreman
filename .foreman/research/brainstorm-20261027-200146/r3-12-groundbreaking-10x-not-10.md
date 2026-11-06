@@ -1,3 +1,0 @@
-# Brainstorm — lens: groundbreaking: 10x, not 10%
-
-FAILED: no ideas in the required format: 1. **Compile the hot hooks into one static binary** — PERFORMANCE — value 5 — effort L — risk med — category: startup   Why: The pack says box and st…

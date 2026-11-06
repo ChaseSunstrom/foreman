@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/doctrace.py, plugin/tests/test_doctrace.py, plugin/lib/
 depends_on: []
 source: user
 created: 2026-11-06T02:34:27Z
-updated: 2026-11-06T06:06:24Z
+updated: 2026-11-06T06:17:42Z
 builder: 2026-11-06T02:34:38Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
@@ -20,7 +20,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:43:38Z
 plan0_scope: [plugin/lib/sampo/doctrace.py, plugin/tests/test_doctrace.py, plugin/lib/sampo/cli.py, CHANGELOG.md]
-builder_returned: 2026-11-06T05:57:31Z
+builder_returned: 2026-11-06T06:17:42Z
 ---
 # Moon C-006358: sampo docs --trace links each doc claim to the code lines that back it, and --since REF flags claims whose backing changed
 ## Raw request

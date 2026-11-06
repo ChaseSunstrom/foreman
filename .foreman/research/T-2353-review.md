@@ -1,3 +1,0 @@
-T-2353 review (coordinator, main thread: the pace gate held fm-reviewer subagents): approve, no fix needed.
-Checked: promotion is one-sided over 5+ probes (a single reworked probe at n=5 blocks it, as planned); the racing-session retry recursion is bounded by the three model tiers; route.json is coerced on read; transitions re-check state under the lock so one decide row per change.
-Open: confirm_routes maps long-exam goal ids to task briefs, but fm exam long goals are scenario ids, so a promotion may stay provisional forever (visible on the brief line; --revert-route undoes it): captured T-2434. A promoted pick is never demoted automatically; fm run leaves L on Claude's default.

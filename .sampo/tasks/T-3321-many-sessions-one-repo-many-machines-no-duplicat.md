@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/claims.py, plugin/tests/test_claims_remote.py, plugin/l
 depends_on: []
 source: user
 created: 2026-11-06T04:26:40Z
-updated: 2026-11-06T06:12:58Z
+updated: 2026-11-06T06:48:25Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-a3b6faa3c854c6eb7
 lane_branch: worktree-agent-a3b6faa3c854c6eb7
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -17,7 +17,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T05:55:03Z
 plan0_scope: [plugin/lib/sampo/claims.py, plugin/tests/test_claims_remote.py, plugin/lib/fmclaims.py, MASTER.md, docs/map]
-builder_returned: 2026-11-06T06:10:19Z
+builder_returned: 2026-11-06T06:48:25Z
 ---
 # Fleet part 1: claims on git refs: take, renew, release and list claims under refs/sampo/<slug>/claim/<key> by atomic compare-and-swap push; leases expire and are taken over exactly once
 ## Raw request
@@ -41,12 +41,16 @@ Blast radius (sampo graph blast): co-changes CHANGELOG.md, plugin/lib/fmcli.py, 
 2. [x] claims.py: empty-tree commit with JSON body, push --atomic --force-with-lease
 3. [x] expiry, takeover, renew batching, list
 ## Resume here
+<!-- auto -->
+- 2026-11-06T06:47:29Z steps 3/3 done
+- git: worktree-agent-a3b6faa3c854c6eb7; 0 uncommitted
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_claims_remote` → ✗ exit 1 (never ran: no tests ran) · Ran 0 tests in 16.3s (1 jobs, 16 at a time; slowest: loader._FailedTest 0s) / FAILED (1 classes: unittest.loader._FailedTest) (ran] (tree 194deb837da1] (world 2f1906870a] (2026-11-06T05:56:03Z)
 - (step 1) `python3 plugin/tests/run.py test_claims_remote` → exit 0 · Ran 9 tests in 159.4s (2 jobs, 16 at a time; slowest: Take 2s, Lifecycle 1s) / OK (ran] (tree 9e3b7a038f0f] (world 2f1906870a] (2026-11-06T06:08:50Z)
 - (step 2) `python3 plugin/tests/run.py test_claims_remote` → exit 0 · Ran 9 tests in 154.0s (2 jobs, 16 at a time; slowest: Lifecycle 1s, Take 1s) / OK (ran] (tree 9e3b7a038f0f] (world 2f1906870a] (2026-11-06T06:11:26Z)
 - (step 3) `python3 plugin/tests/run.py test_claims_remote` → exit 0 · Ran 9 tests in 90.4s (2 jobs, 16 at a time; slowest: Take 1s, Lifecycle 1s) / OK (ran] (tree 9e3b7a038f0f] (world 2f1906870a] (2026-11-06T06:12:58Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_claims_remote test_code test_design_tokens test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_hooks test_inbox_spec test_left_out test_library test_mcp test_models test_moons_scale test_parallel test_proof test_rename_scan test_scaffold test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_ui_signals && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 2094 tests in 2247.4s (643 jobs, 16 at a time; slowest: LeanKindGateHookDelay 77s, JudgmentKinds 71s, LeanKindGateGuardAllow 62s) / FAILED (1 classes: test_left_out.LeftOut) (ran] (tree 48458831595a] (world 2f1906870a] (2026-11-06T06:46:59Z)
 ## Log
 - 2026-11-06T04:26:40Z created
 - 2026-11-06T04:29:02Z steer: the user: 'manage all of that across sessions too, like a consensus thing... able to handle tasks like those recursive towers, kalevala, genesis stuff, even without direct access... not only one machine managing everything, but working together'. No leader machine: peers agree on claims, ids, tower ownership, keep/revert and births, watcher acts; git (any shared remote) is the only channel; a vanished peer never blocks the rest

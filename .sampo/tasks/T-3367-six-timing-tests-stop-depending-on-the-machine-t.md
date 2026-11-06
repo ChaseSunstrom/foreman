@@ -8,7 +8,7 @@ scope: [plugin/tests/test_lanes.py, plugin/tests/test_doctor.py, plugin/tests/te
 depends_on: []
 source: followup
 created: 2026-11-06T05:55:41Z
-updated: 2026-11-06T05:56:25Z
+updated: 2026-11-06T06:55:18Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-acfb0602c7edc4502
 lane_branch: worktree-agent-acfb0602c7edc4502
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -17,6 +17,7 @@ predict_minutes: 2
 predict_attempts: 1
 plan0_at: 2026-11-06T05:56:25Z
 plan0_scope: [plugin/tests/test_lanes.py, plugin/tests/test_doctor.py, plugin/tests/test_demo.py, plugin/tests/test_docs.py, plugin/tests/test_cli.py, plugin/tests/test_showpieces.py]
+builder_returned: 2026-11-06T06:55:18Z
 ---
 # Six timing tests stop depending on the machine: test_lanes stall test sets the mtime ahead (not now), test_doctor stubs os.cpu_count (closes T-3308), test_demo drops its wall-clock assert for fm's scaled timeout, test_docs Fences scales CHECK_SECONDS, test_cli parallel captures retry on exit 3 and assert all 8, test_showpieces frame count scales with busy_factor
 ## Raw request
@@ -30,10 +31,11 @@ plan0_scope: [plugin/tests/test_lanes.py, plugin/tests/test_doctor.py, plugin/te
 ## Risks and rollback
 ## Execution prompt
 ## Steps
-1. [ ] the six edits  <- CURRENT
+1. [x] the six edits
 ## Resume here
 ## Docs impact
 ## Verification evidence
+- (step 1) `python3 plugin/tests/run.py test_doctor test_demo` → exit 0 · Ran 120 tests in 85.0s (55 jobs, 16 at a time; slowest: Demo.test_pace_and_colour_for_a_recording 6s, ViewsRepair 5s, DemoNext 5s) / OK (ran] (tree 633963fe960a] (world 2f1906870a] (2026-11-06T06:55:10Z)
 ## Log
 - 2026-11-06T05:55:41Z created
 - 2026-11-06T05:56:22Z focused

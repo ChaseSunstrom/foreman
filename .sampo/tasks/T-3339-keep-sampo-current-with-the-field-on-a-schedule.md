@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/outside.py, plugin/tests/test_outside.py, plugin/lib/sa
 depends_on: []
 source: user
 created: 2026-11-06T05:04:57Z
-updated: 2026-11-06T06:45:26Z
+updated: 2026-11-06T07:02:07Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-a8ac414757f610849
 lane_branch: worktree-agent-a8ac414757f610849
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -17,6 +17,7 @@ predict_minutes: 2
 predict_attempts: 1
 plan0_at: 2026-11-06T05:57:02Z
 plan0_scope: [plugin/lib/sampo/outside.py, plugin/tests/test_outside.py, plugin/lib/sampo/cli.py, docs/map/ops-2.md]
+builder_returned: 2026-11-06T07:02:07Z
 ---
 # Landscape scan: weekly, four fixed tracks (what users want or miss; models, APIs and MCP servers; Codex/Cursor/Gemini CLI/opencode/Aider features; agent research) with no planner call, and Decision/[read] lines never taken for items
 ## Raw request
@@ -42,6 +43,7 @@ plan0_scope: [plugin/lib/sampo/outside.py, plugin/tests/test_outside.py, plugin/
 - 2026-11-06T05:54:21Z planned from capture
 - 2026-11-06T05:56:56Z focused
 - 2026-11-06T05:57:02Z predicted from its closes: 2 min, 1 attempt(s)
+- 2026-11-06T07:01:03Z step 1: no red run was recorded before the code change (tests and code were written together); step 2 evidence is the first run of test_outside
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

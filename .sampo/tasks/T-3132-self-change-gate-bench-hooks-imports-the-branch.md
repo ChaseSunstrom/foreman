@@ -8,7 +8,7 @@ scope: [plugin/tests/bench_hooks.py, plugin/tests/test_bench_hooks.py, CHANGELOG
 depends_on: []
 source: discovered
 created: 2026-11-05T03:51:02Z
-updated: 2026-11-06T06:11:40Z
+updated: 2026-11-06T06:22:35Z
 group: hook bench gate
 lane: ~/.claude/foreman/.claude/worktrees/agent-a51eef1318dd31261
 lane_branch: worktree-agent-a51eef1318dd31261
@@ -18,7 +18,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T05:54:15Z
 plan0_scope: [plugin/tests/bench_hooks.py, plugin/tests/test_bench_hooks.py, CHANGELOG.md]
-builder_returned: 2026-11-06T06:11:40Z
+builder_returned: 2026-11-06T06:22:35Z
 ---
 # The hook bench never imports the tree's own code into its timing process: the script budget comes from a child, so a branch can't patch the clock that judges it
 ## Raw request
@@ -38,6 +38,7 @@ builder_returned: 2026-11-06T06:11:40Z
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_bench_hooks` → exit 0 · Ran 6 tests in 244.5s (4 jobs, 16 at a time; slowest: Modules 10s, Isolation 1s, ScriptBudget 0s) / OK (ran] (tree 8ff826ace361] (world 2f1906870a] (2026-11-06T05:58:56Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_bench_hooks test_doctor test_left_out test_models test_rename_scan && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 223 tests in 210.6s (67 jobs, 16 at a time; slowest: RenameScan 8s, ViewsRepair 6s, Modules.test_a_hook_run_records_the_plugin_files_its_process_imported 6s) / FAILED (1 classes: test_left_out.Lef (ran] (tree 5a13e13784b1] (world 2f1906870a] (2026-11-06T06:20:34Z)
 ## Log
 - 2026-11-05T03:51:02Z created
 - 2026-11-05T03:51:16Z planned from capture
@@ -47,6 +48,7 @@ builder_returned: 2026-11-06T06:11:40Z
 - 2026-11-06T03:52:34Z unblocked
 - 2026-11-06T05:54:13Z focused
 - 2026-11-06T05:54:15Z predicted from its closes: 4 min, 1 attempt(s)
+- 2026-11-06T06:22:01Z test_left_out.LeftOut fails on repro.py:31/34 from the T-3279 merge in the base; not this task's files; fixed in T-3279's close
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

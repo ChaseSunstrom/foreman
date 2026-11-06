@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: user
 created: 2026-11-05T08:37:54Z
-updated: 2026-11-06T05:59:01Z
+updated: 2026-11-06T06:59:40Z
 builder_model: haiku
 base: 5c403348c1dfe9523985c9f84cf7db536080f17f
 base_tree: 9eb33fa93e768f0136959dc9b365e08cdaa741eb
@@ -21,6 +21,7 @@ builder: 2026-11-06T03:46:42Z
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
 lane: ~/.claude/foreman/.claude/worktrees/agent-a58c52b8f814ca4ca
 lane_branch: worktree-agent-a58c52b8f814ca4ca
+builder_returned: 2026-11-06T06:59:40Z
 ---
 # Calling cards part 1b: the harness drives the cards, not the model: before the first turn Sampo runs the read cards a task needs (failing frame, outline, callers) and puts their facts in the prompt; a failure signature picks a fix card Sampo applies with the model filling only its open slot; and done is refused while verify is red with no edit (T-3157, after the T-3160 pilot)
 ## Raw request
@@ -56,6 +57,7 @@ Reading 1 (chosen): the T-3160 pilot showed the 27B rarely calls a card (1 of 10
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_audit test_board_surfaces test_brainstorm_skill test_budget test_callcards test_clean_helpers test_cli test_code_close_scaffold test_code_hardening test_code_worker test_cognition test_core test_docs test_doctor test_ecosystem test_find test_goal test_hooks test_ideas test_ideation test_kalevala test_knowledge test_lake test_learning2 test_left_out test_loop test_mcp test_models test_moons_scale test_night test_outcomes test_outside test_page test_panic test_portability test_proof test_recall test_reliability_tools test_rename_scan test_research test_research_rigor test_roles test_safety test_scout test_second test_site test_site_sections test_smith_cards test_sync test_tidy test_trust test_ui test_verbs_nopipe test_verifier && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 2172 tests in 262.7s (723 jobs, 16 at a time; slowest: Recall 91s, TaskLifecycle 82s, Survival 79s) / FAILED (1 classes: test_ui.UiView) (ran] (tree d1bc55d37085] (world 2f1906870a] (2026-11-06T00:04:14Z)
 - (step 2) `nice python3 plugin/tests/run.py test_ui` → exit 0 · Ran 58 tests in 9.7s (35 jobs, 16 at a time; slowest: UiView.test_today_done_counts_tasks_closed_today 8s, UiView.test_unproven_count_and_top_kind_ride_in_the_view_model 7s, UiView.test_closed_tasks_a (ran] (tree b9665f71c866] (world 2f1906870a] (2026-11-06T00:06:38Z)
 - (step 3) `test -s research/callcards/slice.md` → exit 0 · (no output) (ran] (tree e7cc39615aff] (world 2f1906870a] (2026-11-06T05:59:01Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_audit test_board_surfaces test_brainstorm_skill test_budget test_callcards test_clean_helpers test_cli test_code_close_scaffold test_code_hardening test_code_worker test_cognition test_core test_docs test_doctor test_ecosystem test_find test_goal test_hooks test_ideas test_ideation test_kalevala test_knowledge test_lake test_learning2 test_left_out test_loop test_mcp test_models test_moons_scale test_night test_outcomes test_outside test_page test_panic test_portability test_proof test_recall test_reliability_tools test_rename_scan test_research test_research_rigor test_roles test_safety test_scout test_second test_site test_site_sections test_smith_cards test_sync test_tidy test_trust test_ui test_verbs_nopipe test_verifier && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 2196 tests in 1697.6s (700 jobs, 2 at a time; slowest: TaskLifecycle 227s, Proof 180s, Harness.test_a_matched_fix_card_is_applied_and_the_model_fills_one_schema_slot 98s) / FAILED (1 classes: test (ran] (tree e7cc39615aff] (world 2f1906870a] (2026-11-06T06:32:14Z)
 ## Log
 - 2026-11-05T08:37:54Z created
 - 2026-11-05T08:37:56Z blocked: after T-3160's slice merges (review running) and T-3180 (early done refused)

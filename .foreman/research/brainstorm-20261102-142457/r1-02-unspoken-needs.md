@@ -1,3 +1,0 @@
-# Brainstorm — lens: unspoken needs
-
-FAILED: no ideas in the required format: 1. **Scan the file a command is about to run** — SECURITY — value 4 — effort M — risk med — category: guard   Why: assumption: the guard matches comm…

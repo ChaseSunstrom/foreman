@@ -1,1 +1,0 @@
-T-0014 operator audit: changes needed. HIGH claude path baked into ExecStart breaks after a reinstall elsewhere → resolve at start (env + baked PATH). MED uninstall --dry-run doesn't mention serve units. MED doctor has no serve check. MED Remote Control stderr goes to the journal unredacted (document). LOW fm run exits 1 for every stop reason (document).

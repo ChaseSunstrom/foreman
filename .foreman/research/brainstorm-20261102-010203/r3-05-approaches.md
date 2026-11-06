@@ -1,3 +1,0 @@
-# Brainstorm — lens: approaches
-
-FAILED: no ideas in the required format: 1. **Make the replay corpus the single immune organ** — CLEAN — value 4 — effort S — risk low — category: immune coreWhy: 124 labelled cases already …

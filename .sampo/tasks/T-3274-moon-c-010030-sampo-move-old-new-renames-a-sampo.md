@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/movemod.py, plugin/tests/test_movemod.py, plugin/lib/sa
 depends_on: []
 source: user
 created: 2026-11-06T02:27:49Z
-updated: 2026-11-06T05:52:56Z
+updated: 2026-11-06T06:22:38Z
 builder: 2026-11-06T02:27:56Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
@@ -20,7 +20,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:28:32Z
 plan0_scope: [plugin/lib/sampo/movemod.py, plugin/tests/test_movemod.py, plugin/lib/sampo/cli.py, CHANGELOG.md, MASTER.md]
-builder_returned: 2026-11-06T05:52:56Z
+builder_returned: 2026-11-06T06:22:38Z
 ---
 # Moon C-010030: sampo move OLD NEW renames a sampo module and rewrites every import and reference, then proves it by importing every module
 ## Raw request
@@ -50,7 +50,7 @@ Blast radius (sampo graph blast): co-changes plugin/lib/fmcli.py, plugin/lib/fmg
 4. [x] CHANGELOG line and a MASTER.md mention beside rewrite; run test_movemod
 ## Resume here
 <!-- auto -->
-- 2026-11-06T04:31:06Z step 1/4: write test_movemod.py first: a temp git repo with a tiny package (a.py imported by b.py, a test and a doc), red
+- 2026-11-06T06:21:52Z step 1/4: write test_movemod.py first: a temp git repo with a tiny package (a.py imported by b.py, a test and a doc), red
 - git: worktree-agent-a426fb9da61abd0f7; 0 uncommitted
 ## Docs impact
 ## Verification evidence
@@ -66,6 +66,9 @@ Blast radius (sampo graph blast): co-changes plugin/lib/fmcli.py, plugin/lib/fmg
 - (step 4) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_movemod` → ✗ exit 1 · Ran 11 tests in 4.5s (1 jobs, 2 at a time; slowest: MoveModTest 2s) / FAILED (1 classes: test_movemod.MoveModTest) (ran] (tree 49f66806df5b] (world 2f1906870a] (2026-11-06T04:33:16Z)
 - (step 4) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_movemod` → exit 0 · Ran 11 tests in 9.6s (1 jobs, 2 at a time; slowest: MoveModTest 5s) / OK (ran] (tree e22072f25c09] (world 2f1906870a] (2026-11-06T04:34:05Z)
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_cli test_code test_design_tokens test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_hooks test_inbox_spec test_kalevala test_left_out test_library test_louhi_models test_mcp test_mint test_models test_moons_scale test_movemod test_parallel test_proof test_rename_scan test_scaffold test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_ui_signals test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 2350 tests in 4649.7s (1690 jobs, 2 at a time; slowest: LeanKindGateHookDelay 486s, LeanKindGateSessionLine 486s, LeanKindGateGuardAllow 481s) / FAILED (5 classes: test_exam.LeanKindGateHookDelay, (ran] (tree e22072f25c09] (world 2f1906870a] (2026-11-06T05:51:53Z)
+- (step 4) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_movemod` → exit 0 · Ran 11 tests in 6.3s (1 jobs, 2 at a time; slowest: MoveModTest 4s) / OK (ran] (tree e22072f25c09] (world 2f1906870a] (2026-11-06T06:17:54Z)
+- (step 4) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_cli` → exit 0 · Ran 152 tests in 151.1s (128 jobs, 2 at a time; slowest: StateViews.test_state_md_is_bounded 42s, DecisionsResearchSelf 12s, TaskLifecycle.test_docs_named_in_docs_impact_must_exist_and_be_current 8s) (ran] (tree e22072f25c09] (world 2f1906870a] (2026-11-06T06:20:56Z)
+- (step 4) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_left_out` → exit 0 · Ran 3 tests in 1.6s (1 jobs, 2 at a time; slowest: LeftOut 1s) / OK (ran] (tree e22072f25c09] (world 2f1906870a] (2026-11-06T06:21:12Z)
 ## Log
 - 2026-11-06T02:27:49Z created
 - 2026-11-06T02:27:55Z set scope=['plugin/lib/sampo/movemod.py', 'plugin/tests/test_movemod.py', 'plugin/lib/sampo/cli.py', 'CHANGELOG.md', 'MASTER.md']

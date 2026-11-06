@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/core.py, plugin/tests/test_core.py]
 depends_on: []
 source: discovered
 created: 2026-11-06T04:23:07Z
-updated: 2026-11-06T06:12:57Z
+updated: 2026-11-06T06:31:19Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-a55d20cd9c2a47474
 lane_branch: worktree-agent-a55d20cd9c2a47474
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -17,7 +17,7 @@ predict_minutes: 2
 predict_attempts: 1
 plan0_at: 2026-11-06T05:52:14Z
 plan0_scope: [plugin/lib/sampo/core.py, plugin/tests/test_core.py]
-builder_returned: 2026-11-06T06:12:57Z
+builder_returned: 2026-11-06T06:31:19Z
 ---
 # Edits outside the repo don't stale a task's audits
 ## Raw request
@@ -38,6 +38,7 @@ builder_returned: 2026-11-06T06:12:57Z
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_core.Ledger.test_last_change_ignores_files_outside_the_repo` → ✗ exit 1 · Ran 1 tests in 5.0s (1 jobs, 16 at a time; slowest: Ledger 1s) / FAILED (1 classes: test_core.Ledger) (ran] (tree 0f69b9fabbbc] (world 2f1906870a] (2026-11-06T05:52:51Z)
 - (step 2) `python3 plugin/tests/run.py test_core test_ledger_chain` → exit 0 · Ran 182 tests in 315.6s (56 jobs, 16 at a time; slowest: Migrate 13s, Chain 10s, ConfidenceRoutes.test_an_assumption_under_the_bar_is_refused_until_a_verified_check_a_cold_reader_agrees_with 4s) / OK (ran] (tree f15f9c92538c] (world 2f1906870a] (2026-11-06T06:12:34Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_core test_doctor test_left_out test_models test_rename_scan test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 363 tests in 283.6s (112 jobs, 16 at a time; slowest: RenameScan 7s, ViewsRepair 5s, Migrate 3s) / FAILED (1 classes: test_left_out.LeftOut) (ran] (tree 79b43a1ab36e] (world 2f1906870a] (2026-11-06T06:28:19Z)
 ## Log
 - 2026-11-06T04:23:07Z created
 - 2026-11-06T05:51:42Z planned from capture

@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py]
 depends_on: []
 source: user
 created: 2026-11-06T05:33:13Z
-updated: 2026-11-06T06:10:37Z
+updated: 2026-11-06T06:46:04Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-aeeb57f7679090a68
 lane_branch: worktree-agent-aeeb57f7679090a68
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -17,7 +17,7 @@ predict_minutes: 5
 predict_attempts: 1
 plan0_at: 2026-11-06T05:57:12Z
 plan0_scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py]
-builder_returned: 2026-11-06T06:10:37Z
+builder_returned: 2026-11-06T06:46:04Z
 ---
 # Measure the hook handler: hook_ms events carry the tool name and the guard's own ms, so the PreToolUse handler's 32 → 90 ms p50 rise (Nov 3-6, quiet-machine days) can be pinned to the guard or to the note builders after it
 ## Raw request
@@ -37,6 +37,8 @@ builder_returned: 2026-11-06T06:10:37Z
 ## Docs impact
 ## Verification evidence
 - (step 2) `python3 plugin/tests/run.py test_hooks.HookMs` → exit 0 · Ran 1 tests in 104.2s (1 jobs, 16 at a time; slowest: HookMs 0s) / OK (ran] (tree 66b6276d764c] (world 2f1906870a] (2026-11-06T06:04:54Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_compact test_core test_doctor test_hooks test_left_out test_models test_rename_scan && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 629 tests in 989.5s (244 jobs, 16 at a time; slowest: Approvals 51s, UserPromptSubmit 46s, PromptApprovals 43s) / FAILED (1 classes: test_left_out.LeftOut) (ran] (tree 66b6276d764c] (world 2f1906870a] (2026-11-06T06:21:33Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_compact test_core test_doctor test_hooks test_left_out test_models test_rename_scan && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 124 (timed out after 831.903s) · timed out after 831.903s (ran] (tree b175bf48d25e] (world 2f1906870a] (2026-11-06T06:45:48Z)
 ## Log
 - 2026-11-06T05:33:13Z created
 - 2026-11-06T05:54:45Z planned from capture

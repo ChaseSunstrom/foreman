@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo, plugin/tests, README.md, plugin/skills]
 depends_on: []
 source: user
 created: 2026-11-06T05:09:41Z
-updated: 2026-11-06T07:00:49Z
+updated: 2026-11-06T07:10:10Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-ad87d1e22878ac6e5
 lane_branch: worktree-agent-ad87d1e22878ac6e5
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -38,18 +38,23 @@ Renaming refs/foreman/*, the foreman/<id> lane branch prefix, .foreman-state.jso
 Blast radius (sampo graph blast): co-changes MASTER.md, CHANGELOG.md, plugin/lib/fmcli.py, plugin/lib/fmgenesis.py, plugin/tests/test_genesis.py; past FIXes T-2061, T-2846.
 ## Execution prompt
 ## Steps
-1. [ ] constant and every site  <- CURRENT
-2. [ ] sync.move with its cases
-3. [ ] guard/verify-lint and rename-scan checks
+1. [x] constant and every site
+2. [x] sync.move with its cases
+3. [ ] guard/verify-lint and rename-scan checks  <- CURRENT
 ## Resume here
+<!-- auto -->
+- 2026-11-06T07:10:10Z step 3/3: guard/verify-lint and rename-scan checks
+- git: worktree-agent-ad87d1e22878ac6e5; 5 uncommitted: plugin/lib/fmguard.py, plugin/lib/sampo/cli.py, plugin/lib/sampo/sync.py, plugin/tests/test_rename_scan.py, plugin/tests/test_sync.py
+- touched since last checkpoint: plugin/lib/sampo/cli.py, plugin/lib/fmguard.py, .fm-scratch/ed.json, .fm-scratch/ed2.json, plugin/lib/sampo/sync.py, plugin/tests/test_sync.py, plugin/tests/test_rename_scan.py
 ## Docs impact
 ## Verification evidence
+- (step 2) `python3 plugin/tests/run.py test_sync` → exit 0 · Ran 28 tests in 264.8s (28 jobs, 16 at a time; slowest: Sync.test_a_tracked_foreman_becomes_one_logged_rename_commit 1s, Sync.test_a_failed_commit_puts_it_back_and_only_export_retries 1s, Sync.test_an (ran] (tree c240ff0072db] (world 2f1906870a] (2026-11-06T06:28:21Z)
+- (step 1) `python3 plugin/tests/run.py test_rename_scan` → exit 0 · Ran 11 tests in 127.8s (11 jobs, 16 at a time; slowest: RenameScan.test_no_fm_only_command_regex 5s, RenameScan.test_no_library_code_hardcodes_the_old_mirror_name 2s, RenameScan.test_user_visible_fore (ran] (tree 507633c1fbb3] (world 2f1906870a] (2026-11-06T06:47:47Z)
 ## Log
 - 2026-11-06T05:09:41Z created
 - 2026-11-06T06:00:08Z planned from capture
 - 2026-11-06T06:08:12Z focused
 - 2026-11-06T06:08:17Z predicted from its closes: 4 min, 1 attempt(s)
-- 2026-11-06T07:00:49Z scope: plugin/lib/fmguard.py edited (guard treats .sampo as state only when fm's), per coordinator review
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

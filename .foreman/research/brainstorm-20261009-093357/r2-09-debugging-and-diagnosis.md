@@ -1,3 +1,0 @@
-# Brainstorm — lens: debugging and diagnosis
-
-FAILED: no ideas in the required format: 1. **Run a debug gym on the project's own history**: wild. FEATURE, value 5, effort L, risk med. Category: self-improvement.   Why: The debugger is o…

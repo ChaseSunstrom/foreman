@@ -1,3 +1,0 @@
-# Brainstorm — lens: simplicity
-
-FAILED: no ideas in the required format: **Answers to earlier questions, through the simplicity lens**- Harness dependence: assume any cell whose probe needs a hook is Claude-only. A goal ke…

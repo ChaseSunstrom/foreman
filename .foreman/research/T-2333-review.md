@@ -1,2 +1,0 @@
-T-2333 review (fm-reviewer, one pass): intent met; ls/cat/cd with a path read as can-fail in done-when and verify, both via lint_verify.
-Findings, all fixed: (1) exit change unnamed, now in CHANGELOG and table-tested; (2) redirect words counted as paths, now dropped; (3) a path fallback (x || ls dist) stopped flagging the mask, now _hollow(pathed=False) in _masked; (4) no direct lint_verify table, now 10 subTests; (5) docstring reworded.
