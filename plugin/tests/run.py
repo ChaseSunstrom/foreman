@@ -382,6 +382,23 @@ def burn(n):
             p.wait()
 
 
+def load_room(n, cpus=None, load=None, spinners=None):
+    """T-3441: how many of --load's n busy loops fit under twice the CPU count, given the 1-minute load and the burn
+    spinners already running (counted from /proc: the average lags a run started seconds ago)."""
+    cpus = cpus or os.cpu_count() or 4
+    if load is None:
+        load = os.getloadavg()[0] if hasattr(os, "getloadavg") else 0.0
+    if spinners is None:
+        spinners = 0
+        for pid in os.listdir("/proc") if os.path.isdir("/proc") else ():
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    spinners += b"while os.getppid() == " in f.read()
+            except OSError:
+                continue
+    return max(0, min(n, int(2 * cpus - max(load, spinners))))
+
+
 def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("-j", type=int, default=slot_count() or os.cpu_count() or 4)  # T-3252: the pool
@@ -452,6 +469,9 @@ def main():
         todo = todo[a.shard[0] - 1::a.shard[1]]
     times = {} if a.shard else load_times()  # a shard's slice must not depend on this machine's last run
     todo = plan(todo, parts, whole, times)  # T-3166: jobs, a big class's tests apart
+    if a.load and (room := load_room(a.load)) < a.load:
+        sys.stderr.write(f"run.py: --load {a.load} cut to {room}: the host already runs near twice its CPU count\n")
+        a.load = room
     with burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
         try:
             import helpers  # T-3338: lazily, after classes() put the tests folder on sys.path

@@ -158,6 +158,14 @@ class Load(unittest.TestCase):
         with run.burn(0) as procs:
             self.assertEqual(procs, [])
 
+    def test_load_tops_the_host_up_to_twice_its_cpus_counting_running_spinners(self):
+        # T-3441: three --load 32 runs on 16 CPUs held 96 busy loops (load 100) for 12 min and starved every merge
+        self.assertEqual(run.load_room(32, cpus=16, load=1.0, spinners=0), 31)
+        self.assertEqual(run.load_room(32, cpus=16, load=5.0, spinners=31), 1, "the 1-minute average lags its spinners")
+        self.assertEqual(run.load_room(32, cpus=16, load=90.0, spinners=0), 0)
+        self.assertEqual(run.load_room(4, cpus=16, load=1.0, spinners=0), 4)
+        self.assertGreaterEqual(run.load_room(0), 0)
+
 
 class UnknownNames(unittest.TestCase):
     """T-1287: a module name that matches no test was dropped silently while another name matched, so a criterion
