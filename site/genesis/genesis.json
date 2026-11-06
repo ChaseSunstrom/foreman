@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T05:33:54Z",
- "rev": "3648d96de",
+ "updated": "2026-11-06T05:39:02Z",
+ "rev": "fde3bac82",
  "capabilities": [
   {
    "n": 1,
@@ -36247,14 +36247,14 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 857,
+ "unproven": 858,
  "unproven_kinds": {
   "meaning-notes": 372,
   "meaning-user": 249,
   "research-uncited": 34,
-  "perf-typed": 59,
+  "perf-typed": 60,
   "typed": 37,
-  "red": 85,
+  "red": 86,
   "tui-unshot": 11,
   "docs": 126,
   "perf-noise": 1,
@@ -37465,11 +37465,11 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 22542,
+   "generated": 22622,
    "write": {
-    "title": 154,
+    "title": 155,
     "line": 1591,
-    "payoff": 18,
+    "payoff": 19,
     "kill test": 65,
     "code": 8
    },
@@ -37485,7 +37485,7 @@
    },
    "merged": 295,
    "kept": 958,
-   "pending": 172
+   "pending": 250
   },
   "families": [
    {
