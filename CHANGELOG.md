@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- The Stop hook holds a reply once when its shell code block has an irreversible step (rm -r, mv -f or into an absolute or ~ path, dd, mkfs, git reset --hard, git clean, forced push, truncating redirect, SQL DROP) without set -euo pipefail at its top or a check before the step, unless the session already ran that line; it names the line and the script shape (T-3001).
 - sampo queue, tidy and the status "Dangling deps" line no longer flag a dependency on an archived (closed) task; archived ids are read from the archive's filenames and count as done (T-3430).
 - sampo ship reruns red test classes alone after a load wait and refuses only on those still red alone, in both the affected-first and full-suite steps; flakes are named and file no baseline task (T-3435).
 - The post-merge suite no longer reverts a prose-only merge (MASTER.md, README, CHANGELOG, docs/, the state mirror) for a red test class that is still red alone after a load wait but whose source names none of the changed files; code merges, other .md files (skills, commands, agents, rules), crashes and import errors are blamed as before, and the revert note names "reached by: <files>" (T-3425).
