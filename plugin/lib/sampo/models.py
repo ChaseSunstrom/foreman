@@ -59,7 +59,9 @@ import urllib.request
 from sampo.core import foreman_home, state_dir
 
 CALLS, CALLS_CAP = "calls.jsonl", 4 << 20  # T-3014: ~150 B a call, ~1.5 MB a busy day; one .1 file past the cap
-CALLS_ENV = "SAMPO_CALLS"  # set by the CLI, inherited: an exam's Smith runs under a temp home and still logs here
+# set by the CLI, inherited: an exam's Smith runs under a temp home and still logs here. T-3448: FOREMAN_, the name
+# core.mirror_env leaves (an inherited or exported SAMPO_CALLS moves to it at import)
+CALLS_ENV = "FOREMAN_CALLS"
 
 
 def note_call(profile, kind=None):

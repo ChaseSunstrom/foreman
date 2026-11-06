@@ -582,6 +582,22 @@ class NoteCallWhere(unittest.TestCase):  # T-3017
         self.assertEqual([r["where"] for r in rows], ["local", "local", "local", "remote"])
 
 
+    def test_a_child_sampo_logs_to_the_parents_call_log(self):  # T-3448
+        # the child's core.mirror_env moved the inherited SAMPO_CALLS to FOREMAN_CALLS, then its cli.main set
+        # SAMPO_CALLS to its own temp home's log, which note_call read: an exam's Smith logged nowhere the page looks
+        import subprocess
+        import sys
+        lib = os.path.dirname(os.path.dirname(os.path.abspath(m.__file__)))
+        code = ("import os, sys; sys.path.insert(0, sys.argv[1]); from sampo import cli, models\n"
+                "sys.argv = ['sampo', '--help']\ntry:\n    cli.main()\nexcept SystemExit:\n    pass\n"
+                "print(os.environ.get(models.CALLS_ENV))")
+        with tempfile.TemporaryDirectory() as d:
+            env = {k: v for k, v in os.environ.items() if not k.endswith("_CALLS")}
+            env.update(SAMPO_CALLS=os.path.join(d, "parent.jsonl"), FOREMAN_HOME=os.path.join(d, "home"))
+            out = subprocess.run([sys.executable, "-c", code, lib], env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(out.stdout.strip().splitlines()[-1], os.path.join(d, "parent.jsonl"), out.stderr[-500:])
+
+
 class ExtractJson(unittest.TestCase):
     def test_fenced(self):
         self.assertEqual(m.extract_json('Sure:\n```json\n{"a": 1}\n```\nthanks'), {"a": 1})

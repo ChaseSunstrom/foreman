@@ -142,7 +142,7 @@ class Snapshot(ForemanTestCase):
     def test_a_child_under_a_temp_home_logs_to_the_inherited_file(self):  # T-3014: exam Smith runs
         from sampo import models
         path = os.path.join(self.tmp, "real-calls.jsonl")
-        with mock.patch.dict(os.environ, {"SAMPO_CALLS": path}):
+        with mock.patch.dict(os.environ, {"FOREMAN_CALLS": path}):
             models.note_call({"name": "jarvis", "model": "qwen3.8-27b", "base_url": "https://jarvis.example/v1"})
         with open(path) as f:
             self.assertEqual(json.loads(f.read())["to"], "jarvis")
@@ -165,10 +165,10 @@ class Snapshot(ForemanTestCase):
     def test_the_cli_hands_its_call_log_to_children(self):  # T-3014 review: an exam's Smith under a temp home
         from sampo import cli
         with mock.patch.dict(os.environ), mock.patch.object(cli.sys, "argv", ["sampo", "--version"]):
-            os.environ.pop("SAMPO_CALLS", None)
+            os.environ.pop("FOREMAN_CALLS", None)
             with self.assertRaises(SystemExit):
                 cli.main()
-            self.assertEqual(os.environ.get("SAMPO_CALLS"), os.path.join(c.state_dir(), "calls.jsonl"))
+            self.assertEqual(os.environ.get("FOREMAN_CALLS"), os.path.join(c.state_dir(), "calls.jsonl"))
 
     def test_the_call_log_rotates_past_its_cap(self):
         from sampo import models

@@ -49,7 +49,8 @@ os.environ.setdefault("FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
 from sampo import setup  # noqa: E402
 for _k in setup.ENV:
     os.environ.pop(_k, None)
-os.environ.pop("SAMPO_CALLS", None)  # T-3014: a test run under sampo check never logs into the live page's calls
+for _k in ("SAMPO_CALLS", "FOREMAN_CALLS"):  # T-3014: a test run under sampo check never logs into the live page's calls
+    os.environ.pop(_k, None)  # T-3448: core (imported above) has moved an inherited SAMPO_CALLS to FOREMAN_CALLS
 
 
 def valid_m_plan():
