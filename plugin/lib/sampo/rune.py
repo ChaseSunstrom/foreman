@@ -3167,19 +3167,29 @@ def drift(p, n):
         from sampo import ideas as sideas
         lines = _logical(seed_text)
         prompt = _charter(p, gen0) + f"\n<seed>\n{_fence(seed_text)}\n</seed>"
-        try:
-            reply = sideas.run_child("genesis", DRIFT_CHILD, prompt, "sonnet", 180, project=p.slug)
-        except ValueError as e:
-            read = f"didn't run: {c.fit(c.plain(str(e)), 160)}"
-        else:  # the reply is untrusted: only a seed line it names verbatim goes into drift.md, never the reader's words
+
+        def cold():  # the reply is untrusted: only a seed line it names verbatim counts, never the reader's words
+            try:
+                reply = sideas.run_child("genesis", DRIFT_CHILD, prompt, "sonnet", 180, project=p.slug)
+            except ValueError as e:
+                return [], f"didn't run: {c.fit(c.plain(str(e)), 160)}"
             named = _named(reply, "DRIFT", lines)
             hits = list(dict.fromkeys(s for *_, at in named for s in at))
             stray = sum(not h for h, *_ in named)
-            found += [f"seed.md (cold read): {s}" for s in hits]
-            read = (f"{len(hits)} drifted line(s)" if hits  # fail closed: only a plain CLEAN with no stray quote passes
-                    else f"didn't count: it named {stray} line(s) the seed doesn't hold" if stray
-                    else "clean" if CLEAN_VERDICT.search(reply) else "didn't count: no CLEAN or DRIFT line")
-    verdict = "drifted" if found else "clean" if read == "clean" else "unread"
+            return hits, (f"{len(hits)} drifted line(s)" if hits  # fail closed: only a plain CLEAN with no stray quote passes
+                          else f"didn't count: it named {stray} line(s) the seed doesn't hold" if stray
+                          else "clean" if CLEAN_VERDICT.search(reply) else "didn't count: no CLEAN or DRIFT line")
+        hits, read = cold()
+        if hits:  # T-3056: one read is noisy; a second, only on flagged lines, must name the same line to count
+            hits2, read2 = cold()
+            sure = [s for s in hits if s in hits2]
+            notes += [f"unconfirmed (one cold read only): {s}" for s in dict.fromkeys(hits + hits2) if s not in sure]
+            found += [f"seed.md (cold read): {s}" for s in sure]
+            counted = bool(hits2) or read2 == "clean"  # a second read that didn't count leaves the line unread
+            read = f"read 1: {read}; read 2: {read2}" + ("; no line named twice" if counted and not sure else "")
+            if counted and not sure:
+                read = "clean (" + read + ")"
+    verdict = "drifted" if found else "clean" if read == "clean" or read.startswith("clean (") else "unread"
     out = [f"# Drift — gen-{n}", "", f"Verdict: {verdict}", "",
            f"Checked {', '.join(files)} against gen-0's {len(allowed)} MUST/NEVER line(s); cold read: {read}.", "",
            *([f"- {x}" for x in found] or ["Nothing drifted."]),
