@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T10:03:36Z",
- "rev": "c70f6fb7d",
+ "updated": "2026-11-06T10:20:02Z",
+ "rev": "177fdfc5a",
  "capabilities": [
   {
    "n": 1,
@@ -36247,12 +36247,12 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 871,
+ "unproven": 872,
  "unproven_kinds": {
-  "meaning-notes": 379,
+  "meaning-notes": 380,
   "meaning-user": 252,
   "research-uncited": 34,
-  "perf-typed": 60,
+  "perf-typed": 61,
   "typed": 42,
   "red": 86,
   "tui-unshot": 12,
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 26172,
+   "generated": 26573,
    "write": {
-    "title": 178,
-    "line": 1712,
+    "title": 179,
+    "line": 1735,
     "payoff": 21,
     "kill test": 83,
     "code": 8
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 13100,
-    "tier": 9208,
+    "kill": 13247,
+    "tier": 9307,
     "novelty": 82
    },
-   "merged": 372,
-   "kept": 1078,
-   "pending": 273
+   "merged": 381,
+   "kept": 1096,
+   "pending": 377
   },
   "families": [
    {
@@ -38384,7 +38384,7 @@
    },
    {
     "id": "F-025245",
-    "size": 57,
+    "size": 61,
     "lead": "Synchronize parallel agents via shared semantic attention heads",
     "today": "Today you can't make parallel Sampo agents stop duplicating effort when they realize they are solving the same sub-problem.",
     "with_this": "With this, Sampo can reduce total compute by allowing agents to share 'attention weights' for common sub-problems, so they only diverge when their contexts genuinely differ.",
@@ -38400,6 +38400,7 @@
      "calibrated judgment",
      "ecosystem",
      "efficiency",
+     "exhaustive thinking",
      "genesis as a feature",
      "getting the tools it lacks",
      "goal to finish",
@@ -38639,6 +38640,22 @@
     "evidence": "",
     "kinds": [
      "security"
+    ]
+   },
+   {
+    "id": "F-025884",
+    "size": 2,
+    "lead": "Price onboarding friction as a liquid market option",
+    "today": "Today you can't discover which onboarding step breaks the most users because friction is hidden in silent failures.",
+    "with_this": "With this, you can see a live price tag on each onboarding step that rises as users abandon it, letting you buy fixes based on real cost.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
     ]
    },
    {
@@ -39730,22 +39747,6 @@
     ]
    },
    {
-    "id": "F-008936",
-    "size": 1,
-    "lead": "Price onboarding friction as liquid futures",
-    "today": "Today you can't hedge against the risk that a new user will abandon setup.",
-    "with_this": "With this, you can buy insurance against onboarding failure, ensuring your user base grows despite friction points.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "onboarding"
-    ]
-   },
-   {
     "id": "F-008941",
     "size": 1,
     "lead": "Pool onboarding risks into insurance pools",
@@ -40738,10 +40739,10 @@
     ]
    }
   ],
-  "families_total": 909,
+  "families_total": 916,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1078
+   "total": 1096
   }
  },
  "steer": {
