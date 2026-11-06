@@ -90,6 +90,61 @@ class Train(ForemanTestCase):
         self.assertEqual(self.git("reflog", "-n", "1", "--format=%gs").split()[0], "merge", "one fast-forward")
         self.assertFalse(self.meta(b).get("lane_stop", "").startswith("merged"))
 
+    def test_a_lane_conflicting_with_the_base_is_left_out_before_any_gate_run(self):
+        """T-3474: git merge-tree names a conflict with the base in milliseconds, not as 'an earlier lane'."""
+        a = self.lane(1, "same.txt", "lane\n")
+        with open(os.path.join(self.repo, "same.txt"), "w") as f:
+            f.write("base\n")
+        self.git("add", "same.txt")
+        self.git("commit", "-qm", "base moves")
+        r = self.train(a, check=False)
+        self.assertIn("conflicts with the base: same.txt", r.stdout + r.stderr)
+        self.assertEqual(self.gate_runs(), 0, "no gate run on a lane merge-tree rules out")
+
+    def test_a_lane_whose_affected_test_fails_is_left_out_before_the_gate_run(self):
+        """T-3474: each lane's affected tests run on base+lane first; a red one is named by class, a green one lands
+        through one gate run (the gate itself never runs these tests)."""
+        self.fm("check", "affected", "python3 -m unittest {tests}")
+        test = "import unittest\nclass {0}(unittest.TestCase):\n    def test_it(self):\n        self.assertTrue({1})\n"
+        good = self.lane(1, "test_good.py", test.format("Good", "True"))
+        bad = self.lane(2, "test_bad.py", test.format("Bad", "False"))
+        r = self.train(good, bad)
+        self.assertIn(f"left out {bad}: its affected tests fail on the base: test_bad.Bad", r.stdout)
+        self.assertEqual(self.gate_runs(), 1, r.stdout)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "test_good.py")))
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "test_bad.py")))
+        self.assertNotIn("probe", self.git("worktree", "list"), "the probe worktrees are gone")
+
+    def test_an_affected_test_red_on_the_base_itself_is_left_to_the_gates(self):
+        """T-3474 review: a class red on the bare base too isn't the lane's fault: an info line, and the lane goes on."""
+        self.fm("check", "affected", "python3 -m unittest {tests}")
+        red = "import unittest\nclass Old(unittest.TestCase):\n    def test_it(self):\n        self.assertTrue(False)\n"
+        with open(os.path.join(self.repo, "test_old.py"), "w") as f:
+            f.write(red)
+        self.git("add", "test_old.py")
+        self.git("commit", "-qm", "a red test on the base")
+        a = self.lane(1, "test_old.py", red + "# touched\n")
+        r = self.train(a)
+        self.assertIn("its affected tests are red on the base itself: test_old.Old; left to the gates", r.stdout)
+        self.assertNotIn(f"left out {a}", r.stdout)
+        self.assertEqual(self.gate_runs(), 1, r.stdout)
+        self.assertTrue(self.meta(a)["lane_stop"].startswith("merged"))
+
+    def test_a_flaky_affected_test_is_rerun_once_and_the_lane_goes_on(self):
+        """T-3474 review: red once, green on the rerun of its class: named as flaky, never blamed on the lane."""
+        self.fm("check", "affected", "python3 -m unittest {tests}")
+        count = os.path.join(self.tmp, "flaky-runs")
+        flaky = ("import os, unittest\nclass Flaky(unittest.TestCase):\n    def test_it(self):\n"
+                 f"        with open({count!r}, 'a') as f:\n            f.write('x')\n"
+                 f"        self.assertGreater(os.path.getsize({count!r}), 1)\n")
+        a = self.lane(1, "test_flaky.py", flaky)
+        r = self.train(a)
+        self.assertIn("flaky", r.stdout)
+        self.assertIn("test_flaky.Flaky", r.stdout)
+        self.assertNotIn(f"left out {a}", r.stdout)
+        self.assertEqual(self.gate_runs(), 1, r.stdout)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "test_flaky.py")))
+
     def test_a_lane_whose_own_criterion_is_red_is_left_out_named(self):
         a, b = self.lane(1, "a.txt"), self.lane(2, "b.txt", ac="false")
         r = self.train(a, b)

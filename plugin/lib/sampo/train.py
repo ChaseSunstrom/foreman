@@ -4,12 +4,14 @@ prefix (each probe a gate run), which are dropped; the main checkout's branch th
 The train's check_run carries the code tree (core.code_tree: no CHANGELOG.md, no sync mirror), so `sampo check` after
 each close reuses the pass while the code is unchanged."""
 import os
+import re
+import shlex
 import shutil
 import tempfile
 import time
 
 from sampo import core as c
-from sampo.lanes import _git, _ref_ok, _verify, pm_wait
+from sampo.lanes import _git, _ref_ok, _verify, pm_rerun_cmd, pm_wait
 
 
 def _merge_in(wt, b, tip, log):
@@ -22,6 +24,62 @@ def _merge_in(wt, b, tip, log):
     _git(wt, "merge", "--abort")
     log.append((b.id, "conflicts with an earlier lane in the train" + (f": {c.joinmore(files, 8)}" if files else "")))
     return None
+
+
+def _probe(p, main, base, b, tip, notes):
+    """T-3474: why this lane can't land, known before any full gate run, or ''. `git merge-tree` names a conflict with
+    the base in milliseconds; the tests affected by the lane's change (cli.affected, as `sampo ship` runs them first)
+    run on base+lane in a throwaway tree, naming a red lane in a minute instead of a bisection of full gate runs. A
+    timeout (124) or a run of no tests (5) proves nothing, so the lane goes on to the gates. Before blaming, the red
+    classes rerun once on base+lane (green: a flake) and then on the bare base (red there too: the base's); each goes
+    on to the gates with a line in `notes`."""
+    from sampo import cli
+    r = _git(main, "merge-tree", "--write-tree", "--name-only", "--no-messages", base, tip)
+    if r.returncode == 1:  # 1 is a conflict; any other failure (an old git) leaves it to the train's own merge
+        files = r.stdout.splitlines()[1:]  # the first line is the merged tree
+        return "conflicts with the base" + (f": {c.joinmore(files, 8)}" if files else "")
+    wt = tempfile.mkdtemp(prefix="sampo-probe-")
+    try:
+        if _git(main, "worktree", "add", "-q", "--detach", wt, base).returncode or _git(
+                wt, "-c", "user.name=sampo", "-c", "user.email=sampo@localhost", "merge", "--no-ff", "--no-edit",
+                tip).returncode:
+            return ""
+        try:
+            cmd = cli.affected(c.Project(p.slug, wt, p.dir, p.lane), since=base)[0]
+        except Exception:  # no affected command configured, or no map: the full gates still decide
+            return ""
+        if not cmd:
+            return ""
+        def run(cmd):  # (exit, the classes it names red)
+            cwd, cmd, _ = c.normalize_verify(wt, cmd)  # T-3411's cwd fix first: the nice wrapper would hide it
+            if shutil.which("nice"):  # the probe yields to whatever else the machine runs
+                cmd = "nice -n 10 bash -c " + shlex.quote(cmd)
+            code, out = c.run_command(cwd, cmd, c.load_scaled(900))
+            return code, {m.group(1) for m in re.finditer(r"^(?:FAIL|ERROR): \S+ \(([\w.]+?)\.\w+\)", out, re.M)}
+
+        def again(classes):  # the red classes alone where the runner names them (pm_rerun_cmd), else cmd again
+            return run(pm_rerun_cmd(wt, sorted(classes)) or cmd)
+
+        code, bad = run(cmd)
+        if code in (0, 5, 124):
+            return ""
+        if not bad:
+            return f"its affected tests fail on the base: exit {code}"
+        code, red = again(bad)
+        still = ((bad & red) or bad) if code else set()  # a flake is green on the rerun; a red naming none stays red
+        if bad - still:
+            notes.append((b.id, f"flaky (red once, green on a rerun): {c.joinmore(sorted(bad - still), 6)}"))
+        _git(wt, "reset", "-q", "--hard", base)
+        based = (still & again(still)[1]) if still else set()  # red without the lane too: the base's, not the lane's
+        if based:
+            notes.append((b.id, f"its affected tests are red on the base itself: {c.joinmore(sorted(based), 6)}; "
+                                "left to the gates"))
+        blame = still - based
+        return "its affected tests fail on the base: " + c.joinmore(sorted(blame), 6) if blame else ""
+    finally:
+        _git(main, "worktree", "remove", "--force", wt)
+        shutil.rmtree(wt, ignore_errors=True)
+        _git(main, "worktree", "prune")
 
 
 def _held(p, b, main, tip):
@@ -65,7 +123,7 @@ def _run(p, main, ids):
         raise c.PolicyError(f"{main} is on no branch: check one out for the train to fast-forward")
     pm_wait(p, main)
     pre_tree = c.worktree_tree(main)
-    left = []
+    left, notes = [], []  # notes: (id, what a probe saw that still let the lane on)
     cands = []  # (brief, tip) in order
     for tid in ids:
         b = cli.need_brief(p, tid)
@@ -82,6 +140,7 @@ def _run(p, main, ids):
                     _verify(b)
                 except (c.PolicyError, cli.UsageError) as e:
                     why = str(e).splitlines()[0]
+            why = why or _probe(p, main, base, b, tip, notes)  # T-3474: conflicts and red affected tests, before any gate run
             left.append((b.id, why)) if why else cands.append((b, tip))
     if not cands:
         raise c.PolicyError("nothing to merge: " + "; ".join(f"{i}: {w}" for i, w in left))
@@ -173,7 +232,7 @@ def _run(p, main, ids):
         ct = c.code_tree(main, tree)
         c.log_event(p, "check_run", data={"tree": tree[:12], "code_tree": ct, "env": c.env_id(), "train": ids_in,
                                           "results": green})
-        return {"merged": ids_in, "left_out": left, "gate_runs": runs[0], "tip": tip, "branch": branch}
+        return {"merged": ids_in, "left_out": left, "notes": notes, "gate_runs": runs[0], "tip": tip, "branch": branch}
     finally:
         _git(main, "worktree", "remove", "--force", wt)
         shutil.rmtree(wt, ignore_errors=True)
@@ -186,7 +245,7 @@ def cmd(p, args, main):
     got = train(p, main, ids)
     lines = [f"Train: {len(got['merged'])} lane(s) landed on {got['branch']} ({got['tip'][:9]}) in "
              f"{got['gate_runs']} gate run(s): {', '.join(got['merged'])}"]
-    lines += [f"  left out {i}: {w}" for i, w in got["left_out"]]
+    lines += [f"  left out {i}: {w}" for i, w in got["left_out"]] + [f"  note {i}: {w}" for i, w in got["notes"]]
     lines.append("sampo check now reuses this pass while only CHANGELOG.md and the sync mirror change.")
     return cli.out(args, got, "\n".join(lines))
 
