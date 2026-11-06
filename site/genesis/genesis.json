@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-06T16:30:32Z",
+ "updated": "2026-11-06T16:49:10Z",
  "rev": "b2637ff28",
  "capabilities": [
   {
@@ -37465,27 +37465,27 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 31905,
+   "generated": 32227,
    "write": {
-    "title": 213,
-    "line": 1967,
-    "payoff": 21,
-    "kill test": 90,
+    "title": 215,
+    "line": 1983,
+    "payoff": 22,
+    "kill test": 95,
     "code": 11
    },
    "dups": {
     "exact": 15,
-    "embed": 55,
+    "embed": 56,
     "shingle": 0
    },
    "rejected": {
-    "kill": 16263,
+    "kill": 16298,
     "tier": 11160,
     "novelty": 109
    },
    "merged": 602,
    "kept": 1312,
-   "pending": 87
+   "pending": 349
   },
   "families": [
    {
@@ -37523,7 +37523,7 @@
    },
    {
     "id": "F-021968",
-    "size": 141,
+    "size": 153,
     "lead": "Harmonize parallel agents via standing wave resonance",
     "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
     "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
@@ -37565,7 +37565,7 @@
    },
    {
     "id": "F-014278",
-    "size": 19,
+    "size": 21,
     "lead": "Simulate ecosystem ripple effects before releasing a single crate",
     "today": "Today you can't predict how a breaking change in your library will break thousands of downstream users' builds until they file bugs.",
     "with_this": "With this, you can see a live map of which downstream projects will fail, crash, or degrade in performance when you publish your next version.",
@@ -37577,6 +37577,7 @@
     "evidence": "",
     "kinds": [
      "bugs",
+     "design",
      "docs",
      "features",
      "migrations",
@@ -40745,7 +40746,7 @@
     ]
    }
   ],
-  "families_total": 1041,
+  "families_total": 1039,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 1312
