@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- sampo task block and defer keep a task's file leases again (T-3398 had them released, breaking T-2870's rule that open tasks keep theirs); leases are released only when a task is done or dropped (T-3432).
 - roundtrip.py clones without --branch when HEAD is detached, so sampo lane train's scratch tree no longer fails the e2e base check as "Remote branch HEAD not found" and trains can land (T-3429).
 - sampo doctor warns, in a Sampo checkout only, naming the fm*.py old-import shims nothing imports any more, once the plugin reaches 1.4.0 (core.ALIAS_UNTIL, two minors after the rename) (T-3095).
 - Doctor shows each lane class's subagent effort (builder, reviewer, scout), notes when CLAUDE_CODE_SUBAGENT_EFFORT (Claude Code 2.1.316) overrides them, and gates builder worktree reliance on Claude Code 2.1.311 (T-3384).
