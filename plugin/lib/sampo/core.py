@@ -323,7 +323,7 @@ def mirror_ignored(root, name=MIRROR):
         return False
 
 
-CODE_TREE_SKIP = ("CHANGELOG.md", ".foreman", ".sampo")  # T-3380: what every task close rewrites, not the code
+CODE_TREE_SKIP = ("CHANGELOG.md",) + MIRRORS  # T-3380: what every task close rewrites, not the code
 
 
 def code_tree(root, tree=None):
