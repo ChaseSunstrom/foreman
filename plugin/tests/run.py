@@ -403,6 +403,12 @@ def parse(argv=None):
     ap.add_argument("names", nargs="*", help="test module names (T-0808: fm check affected's {names}); with -k, only "
                                              "their tests that match a -k (T-1994)")
     a = ap.parse_intermixed_args(argv)  # names may sit on either side of -k
+    for i, n in enumerate(a.names):  # T-3428: a path into the tests dir names its module
+        if "/" in n or n.endswith(".py"):
+            d, f = os.path.split(n)
+            if not (f.startswith("test") and f.endswith(".py") and (not d or os.path.realpath(d) == os.path.realpath(HERE))):
+                ap.error(f"{n}: not a test name or a test_*.py file in {HERE}")
+            a.names[i] = f[:-3]
     if a.deadline is not None and a.deadline < 1:  # review: 0 is falsy and turned the deadline off
         ap.error("--deadline takes a number of seconds, 1 or more")
     if a.shard is not None:

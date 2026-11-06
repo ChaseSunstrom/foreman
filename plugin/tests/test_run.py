@@ -29,6 +29,17 @@ class Args(unittest.TestCase):
         self.assertEqual((sorted(a.names), a.k), (["test_cli", "test_lanes"], ["Stop"]))
         self.assertEqual(run.parse([]).k, [])
 
+    def test_paths_into_the_tests_dir_name_their_module(self):  # T-3428
+        import io
+        rel = os.path.relpath(run.HERE)
+        for p in (f"{rel}/test_genesis.py", f"./{rel}/test_genesis.py", "test_genesis.py",
+                  os.path.join(run.HERE, "test_genesis.py"), "test_genesis"):
+            self.assertEqual(run.parse([p, "-k", "Memo"]).names, ["test_genesis"], p)
+        for bad in ("/etc/passwd.py", "plugin/test_x.py", "../x/test_y.py", f"{rel}/other.py", f"{rel}/"):
+            with self.assertRaises(SystemExit, msg=bad), contextlib.redirect_stderr(io.StringIO()) as e:
+                run.parse([bad])
+            self.assertIn("not a test name", e.getvalue())
+
     def test_a_name_and_a_k_select_only_the_tests_matching_both(self):
         # T-1994: "run.py test_run -k shards" ran every test_run test (names and -k were unioned)
         hit = set()
