@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- The fmrepro import shim matches the other shims exactly, so test_rename_aliases is green again after the repro merge (T-3400).
 - test_cli.AffectedPairs gives its nested `fm check --affected` runs a 120 s base hang guard, so a loaded host stops failing every close on them (T-3390).
 - **Reproducible build check.** `sampo repro` builds the site and README figures twice and from REF, and names the nondeterministic and changed files, removals included (T-3279).
 - `sampo sync` is cheap again: an export walks only the folders that travel and skips every file whose source and mirror copy are unchanged since the last export (a size-and-mtime stamp per file), so an unchanged export takes ~0.3-0.5 s instead of 6-8 s under the project lock on every state write (T-3349).
