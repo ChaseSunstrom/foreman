@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- sampo ship reruns red test classes alone after a load wait and refuses only on those still red alone, in both the affected-first and full-suite steps; flakes are named and file no baseline task (T-3435).
 - The post-merge suite no longer reverts a prose-only merge (MASTER.md, README, CHANGELOG, docs/, the state mirror) for a red test class that is still red alone after a load wait but whose source names none of the changed files; code merges, other .md files (skills, commands, agents, rules), crashes and import errors are blamed as before, and the revert note names "reached by: <files>" (T-3425).
 - sampo task block and defer keep a task's file leases again (T-3398 had them released, breaking T-2870's rule that open tasks keep theirs); leases are released only when a task is done or dropped (T-3432).
 - roundtrip.py clones without --branch when HEAD is detached, so sampo lane train's scratch tree no longer fails the e2e base check as "Remote branch HEAD not found" and trains can land (T-3429).
