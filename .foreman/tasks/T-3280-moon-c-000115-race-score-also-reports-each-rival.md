@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/racemetrics.py, plugin/lib/sampo/lanes.py, plugin/lib/f
 depends_on: []
 source: user
 created: 2026-11-06T02:28:16Z
-updated: 2026-11-06T04:47:36Z
+updated: 2026-11-06T05:09:06Z
 builder: 2026-11-06T02:28:39Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
@@ -20,7 +20,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:29:05Z
 plan0_scope: [plugin/lib/sampo/racemetrics.py, plugin/lib/sampo/lanes.py, plugin/tests/test_racemetrics.py, CHANGELOG.md, MASTER.md, docs/map.md]
-builder_returned: 2026-11-06T04:47:36Z
+builder_returned: 2026-11-06T05:09:06Z
 ---
 # Moon C-000115: race --score also reports each rival branch import time
 ## Raw request
@@ -61,6 +61,7 @@ Blast radius (sampo graph blast): co-changes plugin/lib/fmcli.py, plugin/lib/fmg
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_code test_design_tokens test_design_works test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_hooks test_inbox_spec test_lane_twins test_lanes test_left_out test_library test_mcp test_models test_moons_scale test_parallel test_proof test_racemetrics test_rename_scan test_scaffold test_self_aware test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_ui_signals && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 2221 tests in 2080.2s (835 jobs, 16 at a time; slowest: Lanes 485s, Proof 484s, OutcomeEscalation 481s) / FAILED (16 classes: test_lanes.Lanes, test_proof.Proof, test_lanes.LaneRecovery, test_desi [ran] [tree 88763a246115] [world 2f1906870a] (2026-11-06T04:09:51Z)
 - (step 2) `nice -n 10 python3 plugin/tests/run.py test_racemetrics` → exit 0 · Ran 4 tests in 23.0s (4 jobs, 16 at a time; slowest: RaceMetrics.test_race_score_prints_each_sides_import_ms_and_the_ranking_keeps_its_order 19s, RaceMetrics.test_a_module_that_sleeps_at_import_measur [ran] [tree 88763a246115] [world 2f1906870a] (2026-11-06T04:10:52Z)
 - (step 3) `nice -n 10 python3 plugin/tests/run.py -k test_cross_examination_ranks_the_side_whose_test_catches_the_other_first test_lanes` → exit 0 · Ran 1 tests in 21.0s (1 jobs, 16 at a time; slowest: RaceEvidence 16s) / OK [ran] [tree 88763a246115] [world 2f1906870a] (2026-11-06T04:11:20Z)
+- (step 2) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_racemetrics` → exit 0 · Ran 8 tests in 69.0s (8 jobs, 2 at a time; slowest: RaceMetrics.test_race_score_prints_each_sides_import_time_and_module_count_and_the_ranking_keeps_its_order 44s, RaceMetrics.test_a_side_with_too_man [ran] [tree 21f2ece0de66] [world 2f1906870a] (2026-11-06T05:08:36Z)
 ## Log
 - 2026-11-06T02:28:16Z created
 - 2026-11-06T02:28:23Z set title=Moon C-000115: race --score also reports each rival branch import time

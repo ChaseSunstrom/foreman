@@ -567,3 +567,4 @@
 | 2026-11-06 | [costly] read T-3322: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar |  |  |
 | 2026-11-06 | [costly] read T-3323: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar |  |  |
 | 2026-11-06 | [costly] read T-3325: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar |  |  |
+| 2026-11-06 | T-3082 closes with the drive's Stop hook not running Kalevala rounds; night runs them. Wiring the drive (and handing gen-1 seeds to sessions) is T-3249's job | hooks.py is out of T-3082's scope and T-3163 is editing the drive region now; T-3249 already owns session-side Kalevala work |  |

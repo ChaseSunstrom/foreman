@@ -8,7 +8,7 @@ scope: [site/genesis/, plugin/lib/sampo/rune.py, plugin/lib/sampo/kalevala.py, p
 depends_on: []
 source: user
 created: 2026-11-06T02:19:24Z
-updated: 2026-11-06T04:57:53Z
+updated: 2026-11-06T05:04:22Z
 base_note: 
 builder: 2026-11-06T02:22:35Z
 builder_model: haiku
@@ -52,8 +52,8 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 ## Execution prompt
 ## Steps
 1. [x] Export: genesis.json gains a kalevala block (towers, gens, acts) from kalevala.tower_rows/acts
-2. [ ] Page: remake genesis/index.html + genesis.js/css in the Sampo look with the Kalevala sections and charts  <- CURRENT
-3. [ ] Shots light/dark/phone; test_site covers the new block
+2. [x] Page: remake genesis/index.html + genesis.js/css in the Sampo look with the Kalevala sections and charts
+3. [ ] Shots light/dark/phone; test_site covers the new block  <- CURRENT
 ## Resume here
 <!-- auto -->
 - 2026-11-06T04:57:53Z step 2/3: Page: remake genesis/index.html + genesis.js/css in the Sampo look with the Kalevala sections and charts
@@ -62,6 +62,7 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 ## Docs impact
 ## Verification evidence
 - (step 1) `nice -n 10 python3 plugin/tests/run.py test_site` → exit 0 · Ran 96 tests in 34.3s (44 jobs, 16 at a time; slowest: Built 33s, Landing 20s, CardsPage 20s) / OK [ran] [tree 8d72d59fca16] [world 2f1906870a] (2026-11-06T02:34:26Z)
+- (step 2) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_site` → exit 0 · Ran 98 tests in 159.9s (56 jobs, 2 at a time; slowest: CardsPage 34s, Built 28s, Session 26s) / OK [ran] [tree d0e3003caf58] [world 2f1906870a] (2026-11-06T05:04:22Z)
 ## Log
 - 2026-11-06T02:19:24Z created
 - 2026-11-06T02:19:27Z criterion 3 verify: `python3 plugin/tests/shot.py site/genesis/index.html` → `python3 demo/shot.py --help`

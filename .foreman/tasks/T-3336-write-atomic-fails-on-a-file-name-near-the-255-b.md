@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/core.py, plugin/tests/test_core.py, CHANGELOG.md, plugi
 depends_on: []
 source: discovered
 created: 2026-11-06T04:44:37Z
-updated: 2026-11-06T05:02:01Z
+updated: 2026-11-06T05:03:37Z
 base: a6a471ef6fa5fded57eb011ae2e37df8c93c003f
 base_tree: c00f587f3487ccb8e918e1520ddefba67ef52542
 predict_minutes: 3
@@ -63,6 +63,7 @@ unproven: [red]
 - 2026-11-06T04:49:37Z set scope=['plugin/lib/sampo/core.py', 'plugin/tests/test_core.py', 'CHANGELOG.md', 'plugin/lib/sampo/secrets.py', 'plugin/tests/test_secrets.py']
 - 2026-11-06T04:50:00Z scope: the close's commit scan refused .foreman/research/T-1859-review.md:12, a review quoting https://user:[REDACTED]@host as an example; the URL-password pattern never asked is_placeholder, so placeholder URL passwords (pass, password, example…) block every commit of the mirror. Fixed here because it blocks this close
 - 2026-11-06T05:02:01Z done
+- 2026-11-06T05:03:37Z guard authorization added: publish
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
