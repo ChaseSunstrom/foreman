@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T06:30:42Z",
- "rev": "f17250962",
+ "updated": "2026-11-06T06:37:45Z",
+ "rev": "b3a8d8928",
  "capabilities": [
   {
    "n": 1,
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 22758,
+   "generated": 23054,
    "write": {
-    "title": 159,
-    "line": 1591,
+    "title": 166,
+    "line": 1615,
     "payoff": 19,
     "kill test": 65,
     "code": 8
@@ -37481,11 +37481,11 @@
    "rejected": {
     "kill": 11451,
     "tier": 8081,
-    "novelty": 72
+    "novelty": 75
    },
    "merged": 298,
-   "kept": 958,
-   "pending": 17
+   "kept": 972,
+   "pending": 265
   },
   "families": [
    {
@@ -38302,6 +38302,38 @@
     ]
    },
    {
+    "id": "F-022711",
+    "size": 1,
+    "lead": "Excavate the semantic strata of your org's secret leaks",
+    "today": "Today you can't see how your team's internal jargon has eroded into a predictable pattern that attackers use to guess credentials.",
+    "with_this": "With this, you can identify the specific internal slang that correlates with your highest-risk secret leaks, letting you banish that vocabulary from your chat history before it becomes a breach vector.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-022713",
+    "size": 1,
+    "lead": "Map the tribal boundaries of your org's security culture",
+    "today": "Today you can't see which sub-groups in your organization share a hidden, insecure communication dialect that bypasses your audits.",
+    "with_this": "With this, you can identify 'tribal' chat clusters that share unique, unmonitored slang for discussing sensitive operations, enabling you to close the gap between formal security policy and informal practice.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
     "id": "F-015679",
     "size": 19,
     "lead": "Evolve Sampo's collaboration patterns with other agents",
@@ -38538,6 +38570,22 @@
     "evidence": "",
     "kinds": [
      "migrations"
+    ]
+   },
+   {
+    "id": "F-011838",
+    "size": 2,
+    "lead": "Auto-negotiate refactor scope based on current team bandwidth",
+    "today": "Today you can't automatically adjust the scope of a refactor to fit the team's current capacity and risk tolerance.",
+    "with_this": "With this, you can propose refactors that are perfectly sized for the team's current situation, avoiding both under-delivery and over-commitment.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "refactors"
     ]
    },
    {
@@ -40509,22 +40557,6 @@
     ]
    },
    {
-    "id": "F-011838",
-    "size": 1,
-    "lead": "Auto-negotiate refactor scope based on current team bandwidth",
-    "today": "Today you can't automatically adjust the scope of a refactor to fit the team's current capacity and risk tolerance.",
-    "with_this": "With this, you can propose refactors that are perfectly sized for the team's current situation, avoiding both under-delivery and over-commitment.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "refactors"
-    ]
-   },
-   {
     "id": "F-011872",
     "size": 1,
     "lead": "Create a black hole for infinite regress bugs",
@@ -40699,44 +40731,12 @@
     "kinds": [
      "design"
     ]
-   },
-   {
-    "id": "F-012125",
-    "size": 1,
-    "lead": "Auto-resolve merge conflicts using project semantic context",
-    "today": "Today you can't trust parallel agents to fix their own merge conflicts without human intervention.",
-    "with_this": "With this, you can start parallel missions knowing the system will heal code conflicts based on your project's architecture.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "ops"
-    ]
-   },
-   {
-    "id": "F-012127",
-    "size": 1,
-    "lead": "Auto-prioritize briefs based on project criticality paths",
-    "today": "Today you can't decide which parallel task to finish first to unblock the rest.",
-    "with_this": "With this, you can see which task to interrupt or fast-track to keep the main thread moving fastest.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "ops"
-    ]
    }
   ],
-  "families_total": 826,
+  "families_total": 838,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 958
+   "total": 972
   }
  },
  "steer": {
