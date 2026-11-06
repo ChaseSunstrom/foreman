@@ -11,6 +11,8 @@
 
 ### Everything else
 
+- test_cli.AffectedPairs runs in about 3 s instead of 90-240 s: its nested lane repo's tests/run.py is a small stand-in that runs the named modules and fails a skipped or missing name, with every assertion kept (T-3417).
+- Six timing tests no longer depend on the machine: the stall test sets the mtime ahead, the doctor test stubs the CPU count (closes T-3308), the demo test drops its wall-clock assertion, and the docs, CLI and showpiece tests scale or retry under load (T-3367).
 - Stored verifies written as `python3 -m unittest test_X.Class` now run (at lane merge, finish, re-verify and sentinel) as `python3 plugin/tests/run.py test_X.Class`, or from the folder holding the test when the repo has no run.py; `sampo task ac add|edit --verify` prints a note when it does, and the lane merge refusal names the criterion command and its first ERROR line (T-3411).
 - doctor: the statusline and rules-symlink checks WARN instead of FAIL when run from a linked git worktree of the installed checkout (wired at main, running in a worktree; the reverse still FAILs), so `sampo lane train` gates can pass; git calls time out to FAIL and statusLine commands with arguments are parsed (T-3406).
 - MASTER.md and the docs/map shard list the fmtrain shim (T-3405's old import path, kept for two releases), so test_docs.MapShards and test_docs.PluginFiles pass again (T-3410).
