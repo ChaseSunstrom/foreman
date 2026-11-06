@@ -10,7 +10,9 @@ import concurrent.futures
 import contextlib
 import hashlib
 import json
+import math
 import os
+import random
 import re
 import shutil
 import signal
@@ -20,6 +22,11 @@ import tempfile
 import time
 import unittest
 
+try:
+    import fcntl
+except ImportError:  # Windows: no flock, so no slot pool; classes run as before
+    fcntl = None
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -27,6 +34,92 @@ def child_env(tmp):
     """A class's environment: its own TMPDIR, and local models hidden as on CI unless the caller set the switch
     (T-3229: the moons tests leaned on this box's Ollama embedders, passed here and failed on every CI run)."""
     return dict(os.environ, TMPDIR=tmp, FOREMAN_NO_LOCAL_MODELS=os.environ.get("FOREMAN_NO_LOCAL_MODELS", "1"))
+
+
+SLOT_ENV = "SAMPO_SLOT"  # T-3252: set in a class's children, so a run.py inside a slot never waits on its parent's pool
+CGROUP_ROOT = "/sys/fs/cgroup"
+
+
+def _cgroup_dir():
+    """This process's cgroup v2 folder, or None."""
+    try:
+        with open("/proc/self/cgroup") as f:
+            rel = next((ln.split("::", 1)[1].strip() for ln in f if ln.startswith("0::")), None)
+    except OSError:
+        return None
+    return os.path.join(CGROUP_ROOT, rel.lstrip("/")) if rel else None
+
+
+def slot_count():
+    """T-3252: the CPUs every run.py on the machine shares: SAMPO_SLOTS, else the CPU count cut to the tightest cgroup
+    quota above this process (sampo cpu cap 50 on 16 CPUs gives 8)."""
+    try:
+        return max(0, int(os.environ["SAMPO_SLOTS"]))
+    except (KeyError, ValueError):
+        pass
+    n, d = os.cpu_count() or 4, _cgroup_dir()
+    while d and os.path.realpath(d).startswith(os.path.realpath(CGROUP_ROOT)):
+        try:
+            with open(os.path.join(d, "cpu.max")) as f:
+                quota, period = f.read().split()[:2]
+            if quota != "max":
+                n = min(n, max(1, math.ceil(int(quota) / int(period))))
+        except (OSError, ValueError):
+            pass
+        if os.path.realpath(d) == os.path.realpath(CGROUP_ROOT):
+            break
+        d = os.path.dirname(d)
+    return n
+
+
+@contextlib.contextmanager
+def cpu_slot(wait=3600.0, poll=0.05):
+    """T-3252: one of the machine's CPU slots, shared by every run.py on it (mine, each builder's, the ship's, the
+    post-merge verify), held while the block runs: its number, or None when nested, off (SAMPO_SLOTS=0) or the wait ran
+    out (the class then runs anyway: a slow run beats a hung one). A slot is a lock file, so the kernel frees it when
+    its holder dies and a crashed runner leaks nothing."""
+    n = slot_count()
+    folder = _slot_folder() if n and not os.environ.get(SLOT_ENV) and fcntl else None
+    if not folder:  # nested, off, no flock (Windows) or a folder that isn't safely ours: run without one
+        yield None
+        return
+    end, order = time.monotonic() + wait, random.sample(range(n), n)
+    while True:
+        for i in order:
+            try:
+                fd = os.open(os.path.join(folder, str(i)), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            except OSError:
+                continue
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                os.close(fd)
+                continue
+            try:
+                yield i
+            finally:
+                os.close(fd)  # closing it frees the slot
+            return
+        if time.monotonic() >= end:
+            yield None
+            return
+        time.sleep(poll * random.uniform(1, 5))  # spread the retries of many waiters
+
+
+def _slot_folder():
+    """The pool's folder, made if missing: None unless it's a real folder of mine that nobody else may write (a
+    squatted /tmp path or an unwritable XDG_RUNTIME_DIR runs the class without a slot)."""
+    uid = getattr(os, "getuid", lambda: 0)()
+    folder = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir(), f"sampo-slots-{uid}")
+    try:
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        st = os.lstat(folder)
+    except OSError:
+        return None
+    import stat
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != uid or st.st_mode & 0o022:
+        return None
+    return folder
 
 
 def skipped():
@@ -186,6 +279,14 @@ def sandboxed(argv, tmp, env):
 
 
 def run_one(cid, k, timeout=480, deadline=None):
+    """T-3252: the class runs in one of the machine's CPU slots; waiting for it counts against neither its timeout nor
+    its recorded time, and the run's deadline still applies once it starts."""
+    wait = max(0.0, deadline - time.time()) if deadline is not None else 3600.0
+    with cpu_slot(wait) as slot:
+        return _run_one(cid, k, timeout, deadline, slot)
+
+
+def _run_one(cid, k, timeout, deadline, slot):
     """T-1808: a class still running after timeout s is killed and fails by name, with every thread's stack
     (faulthandler on SIGABRT); its own session, so a child holding the pipes dies with it. T-1809: the run's deadline
     (an epoch) shortens that, and a class not started by then fails as NOT_STARTED."""
@@ -204,6 +305,8 @@ def run_one(cid, k, timeout=480, deadline=None):
         return cid, 1, f"run.py: couldn't make the class's temp folder: {e}\n", 0, 0.0
     argv, env =[sys.executable, "-X", "faulthandler", "-c", BOOT, "0" if SANDBOX else str(os.getpid()), "-q", cid,
                  *extra], child_env(tmp)
+    if slot is not None:
+        env[SLOT_ENV] = str(slot)
     if SANDBOX:  # its own pid namespace: it dies with bwrap (--die-with-parent), not by a parent pid check
         argv, env = sandboxed(argv, tmp, env)
     p = subprocess.Popen(argv, cwd=HERE,
@@ -281,7 +384,7 @@ def burn(n):
 
 def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("-j", type=int, default=slot_count() or os.cpu_count() or 4)  # T-3252: the pool
     ap.add_argument("-k", action="append", default=[], help="only tests whose id contains this (repeatable)")
     ap.add_argument("-p", action="append", help="module glob, as unittest discover's -p (repeatable; default "
                                                 "test*.py)")  # T-0389: a second -p replaced the first

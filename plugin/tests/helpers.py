@@ -353,8 +353,8 @@ class SampoTestCase(unittest.TestCase):
         if args[:1] == ("which",):  # T-2371: fm which reads ~/.claude.json and bin folders: never this machine's
             e.update(HOME=os.path.join(self.tmp, "nohome"), CLAUDE_CONFIG_DIR=os.path.join(self.tmp, "nocc"))
         e.update(env or {})
-        p = subprocess.run([sys.executable, FM, *args], cwd=cwd or self.repo, env=e,
-                           capture_output=True, text=True, input=input, timeout=timeout * busy_factor())
+        import forkcli  # T-3252: a fork of a warm Sampo, not a fresh interpreter; the same result
+        p = forkcli.run(FM, args, cwd=cwd or self.repo, env=e, input=input, timeout=timeout * busy_factor())
         if check and p.returncode != 0:
             raise AssertionError(f"fm {' '.join(args)} exited {p.returncode}\nstdout:{p.stdout}\nstderr:{p.stderr}")
         return p

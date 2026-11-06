@@ -319,7 +319,7 @@ def cmd_lane(args):
 
 
 BUILDERS = 2  # at once by default: each is a full session's worth of tokens, and every merge is reviewed here
-BUILDERS_MAX = 16  # T-1089: fm lane max N raises it; T-3135: 6 filled within minutes once finished lanes stopped counting
+BUILDERS_MAX = 100  # T-1089: fm lane max N raises it; T-3135: 6 filled within minutes once finished lanes stopped counting; T-3252: the user runs up to ~100 agents
 LANE_HARD_BAR = 3.0  # T-3243: load per CPU past which not even a first lane starts (later lanes keep core.LOAD_BAR)
 UNMERGED_MAX = 20  # T-3135: finished lanes waiting on a merge hold no builder slot, but this many unmerged refuse a new lane
 

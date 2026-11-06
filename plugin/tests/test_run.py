@@ -96,11 +96,12 @@ class Load(unittest.TestCase):
                 self.assertAlmostEqual(got, want, msg=text)
         case = helpers.ForemanTestCase()
         case.home, case.repo = "/nonexistent-home", "/"
+        import forkcli  # T-3297: fm() runs through the fork server, hooks through subprocess.run
         with mock.patch.object(helpers, "busy_factor", return_value=3.0), \
-                mock.patch.object(helpers.subprocess, "run") as run_:
+                mock.patch.object(helpers.subprocess, "run") as run_, mock.patch.object(forkcli, "run") as fork_:
             case.hook("Stop", {})
             case.fm("status", check=False)
-        self.assertEqual([c.kwargs["timeout"] for c in run_.call_args_list], [30.0, 90.0])
+        self.assertEqual([c.kwargs["timeout"] for c in run_.call_args_list + fork_.call_args_list], [30.0, 90.0])
 
     def test_frames_are_judged_by_animation_time_and_rest_not_by_wall_windows(self):
         # T-1728: a loaded machine's slow frames (a 2 s gap) count as one capped step, as the pages count them

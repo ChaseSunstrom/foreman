@@ -760,7 +760,7 @@ Login, MCP servers, history, memory, themes and per-repo `.claude/` folders are 
 <summary><b>Tests, recordings and the repo layout</b></summary>
 
 ```bash
-python3 plugin/tests/run.py                                     # unit + behaviour, one test class per core (~80 s)
+python3 plugin/tests/run.py                                     # unit + behaviour, one class per CPU slot, shared by every run on the machine (~80 s)
 python3 plugin/tests/bench_hooks.py --runs 50                   # hook latency
 python3 plugin/tests/e2e/roundtrip.py                           # install/uninstall/reinstall in a sandbox HOME
 python3 plugin/tests/e2e/scenarios.py                           # live §12 scenarios (uses claude -p; costs tokens)
