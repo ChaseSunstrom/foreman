@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- Sampo's sentinel treats a re-verify that times out (run_command's "timed out after Ns", or run.py stopping at its deadline, which now exits 124) as inconclusive: no "Re-verify failed" FIX is filed, the entry stays queued for up to 3 timeouts and is then dropped with a notice, a rerun that times out no longer masks the first failure, and --json counts inconclusive (T-2944).
 - last_change and first_touch date a Bash-sourced edit by its file mtime (data.at), floored at the Bash call's start and the task's creation, so an audit recorded between the edit and a late hook event no longer looks stale (T-3378).
 - Kalevala: one tower's decide-and-act runs under its own per-tower lock with a 30 s deadline, so two concurrent steps snapshot a stalled tower and log each act once, and a busy tower is skipped instead of hanging (T-3332).
 - Hook timing events (`hook_ms`) from PreToolUse record the tool name and the guard's own decision time (`guard_ms`, plus `decided` when it asked or denied), so a slow handler can be pinned to the guard or to the notes after it (T-3352).
