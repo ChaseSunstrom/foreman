@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T18:33:16Z",
- "rev": "5a77ed1f5",
+ "updated": "2026-11-06T19:46:40Z",
+ "rev": "3c72990d9",
  "capabilities": [
   {
    "n": 1,
@@ -4094,8 +4094,8 @@
        "type": "FEATURE",
        "tier": "L",
        "steps": 5,
-       "done": 3,
-       "current": "site Models section, per-generation $0 rerun (child T-3093, M, in a lane)"
+       "done": 5,
+       "current": ""
       }
      ]
     },
@@ -33631,6 +33631,870 @@
     "bug"
    ],
    "author": "self"
+  },
+  {
+   "run": "s0-001",
+   "agent": "smith",
+   "keyed": 8,
+   "found": 1,
+   "false_alarms": 1,
+   "exam_defects": 0,
+   "fixable": 8,
+   "fixed": 1,
+   "tf_keyed": 4,
+   "tf_first": 0,
+   "readings_keyed": 2,
+   "readings_hit": 0,
+   "missing_keyed": 1,
+   "missing_hit": 1,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 10,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 10,
+   "conf_missing": 10,
+   "brier_sum": 2.5,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      1
+     ],
+     "js": [
+      0,
+      2
+     ],
+     "rust": [
+      1,
+      3
+     ],
+     "ruby": [
+      0,
+      1
+     ],
+     "python": [
+      0,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      1
+     ],
+     "vuln": [
+      0,
+      1
+     ],
+     "untested": [
+      1,
+      1
+     ],
+     "slow": [
+      0,
+      2
+     ],
+     "docs": [
+      0,
+      1
+     ],
+     "flaky": [
+      0,
+      1
+     ],
+     "dep": [
+      0,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 8,
+    "found": 1,
+    "false_alarms": 1,
+    "exam_defects": 0,
+    "fixable": 8,
+    "fixed": 1,
+    "tf_keyed": 4,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 10,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 10,
+    "conf_missing": 10,
+    "brier_sum": 2.5,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       1
+      ],
+      "js": [
+       0,
+       2
+      ],
+      "rust": [
+       1,
+       3
+      ],
+      "ruby": [
+       0,
+       1
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ],
+      "vuln": [
+       0,
+       1
+      ],
+      "untested": [
+       1,
+       1
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       1
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "false_by_kind": {
+     "vague": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.1
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-rust-15f302"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "vague": 1
+   },
+   "brier": 0.25,
+   "closed_share": 0.1,
+   "tokens": 1093066,
+   "fix_rate": 0.1,
+   "tokens_per_fix": 1093066,
+   "model": "gpu-qwen4-32k",
+   "at": "2026-11-06T19:30:19Z",
+   "gen": 4,
+   "split": "train",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s0-001",
+   "agent": "smith",
+   "keyed": 8,
+   "found": 1,
+   "false_alarms": 1,
+   "exam_defects": 0,
+   "fixable": 8,
+   "fixed": 1,
+   "tf_keyed": 4,
+   "tf_first": 0,
+   "readings_keyed": 2,
+   "readings_hit": 0,
+   "missing_keyed": 1,
+   "missing_hit": 1,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 10,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 10,
+   "conf_missing": 10,
+   "brier_sum": 2.5,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      1
+     ],
+     "js": [
+      0,
+      2
+     ],
+     "rust": [
+      1,
+      3
+     ],
+     "ruby": [
+      0,
+      1
+     ],
+     "python": [
+      0,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      1
+     ],
+     "vuln": [
+      0,
+      1
+     ],
+     "untested": [
+      1,
+      1
+     ],
+     "slow": [
+      0,
+      2
+     ],
+     "docs": [
+      0,
+      1
+     ],
+     "flaky": [
+      0,
+      1
+     ],
+     "dep": [
+      0,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 8,
+    "found": 1,
+    "false_alarms": 1,
+    "exam_defects": 0,
+    "fixable": 8,
+    "fixed": 1,
+    "tf_keyed": 4,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 10,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 10,
+    "conf_missing": 10,
+    "brier_sum": 2.5,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       1
+      ],
+      "js": [
+       0,
+       2
+      ],
+      "rust": [
+       1,
+       3
+      ],
+      "ruby": [
+       0,
+       1
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ],
+      "vuln": [
+       0,
+       1
+      ],
+      "untested": [
+       1,
+       1
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       1
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "false_by_kind": {
+     "vague": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.1
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-rust-15f302"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "vague": 1
+   },
+   "brier": 0.25,
+   "closed_share": 0.1,
+   "tokens": 1093066,
+   "fix_rate": 0.1,
+   "tokens_per_fix": 1093066,
+   "model": "gpu-qwen4-32k",
+   "at": "2026-11-06T19:31:42Z",
+   "gen": 4,
+   "split": "train",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s0-001",
+   "agent": "smith",
+   "keyed": 8,
+   "found": 1,
+   "false_alarms": 1,
+   "exam_defects": 0,
+   "fixable": 8,
+   "fixed": 1,
+   "tf_keyed": 4,
+   "tf_first": 0,
+   "readings_keyed": 2,
+   "readings_hit": 0,
+   "missing_keyed": 1,
+   "missing_hit": 1,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 10,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 10,
+   "conf_missing": 10,
+   "brier_sum": 2.5,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      1
+     ],
+     "js": [
+      0,
+      2
+     ],
+     "rust": [
+      1,
+      3
+     ],
+     "ruby": [
+      0,
+      1
+     ],
+     "python": [
+      0,
+      1
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      1
+     ],
+     "vuln": [
+      0,
+      1
+     ],
+     "untested": [
+      1,
+      1
+     ],
+     "slow": [
+      0,
+      2
+     ],
+     "docs": [
+      0,
+      1
+     ],
+     "flaky": [
+      0,
+      1
+     ],
+     "dep": [
+      0,
+      1
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 0,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 0,
+    "fixed": 0,
+    "tf_keyed": 0,
+    "tf_first": 0,
+    "readings_keyed": 0,
+    "readings_hit": 0,
+    "missing_keyed": 0,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 0,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 0,
+    "conf_missing": 0,
+    "brier_sum": 0,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {},
+    "brier": null,
+    "closed_share": null
+   },
+   "train": {
+    "keyed": 8,
+    "found": 1,
+    "false_alarms": 1,
+    "exam_defects": 0,
+    "fixable": 8,
+    "fixed": 1,
+    "tf_keyed": 4,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 10,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 10,
+    "conf_missing": 10,
+    "brier_sum": 2.5,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       1
+      ],
+      "js": [
+       0,
+       2
+      ],
+      "rust": [
+       1,
+       3
+      ],
+      "ruby": [
+       0,
+       1
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       1
+      ],
+      "vuln": [
+       0,
+       1
+      ],
+      "untested": [
+       1,
+       1
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       1
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "false_by_kind": {
+     "vague": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.1
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-rust-15f302"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "vague": 1
+   },
+   "brier": 0.25,
+   "closed_share": 0.1,
+   "tokens": 1093066,
+   "fix_rate": 0.1,
+   "tokens_per_fix": 1093066,
+   "model": "gpu-qwen4-32k",
+   "at": "2026-11-06T19:31:51Z",
+   "gen": 4,
+   "split": "train",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
   }
  ],
  "coverage": {
@@ -36247,19 +37111,19 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 891,
+ "unproven": 895,
  "unproven_kinds": {
-  "meaning-notes": 393,
-  "meaning-user": 256,
+  "meaning-notes": 394,
+  "meaning-user": 257,
   "research-uncited": 34,
   "perf-typed": 65,
-  "typed": 44,
+  "typed": 46,
   "red": 86,
   "tui-unshot": 12,
   "docs": 129,
   "perf-noise": 1,
   "infra": 9,
-  "ui-unshot": 41,
+  "ui-unshot": 42,
   "data": 7
  },
  "next": {
@@ -37077,7 +37941,7 @@
     "novelty": "5",
     "stage": "idea",
     "unblocks": [],
-    "asked": "T-0689"
+    "asked": "T-3482"
    },
    {
     "id": "M-35",
@@ -37465,12 +38329,12 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 33439,
+   "generated": 33844,
    "write": {
-    "title": 221,
-    "line": 2019,
+    "title": 227,
+    "line": 2031,
     "payoff": 23,
-    "kill test": 99,
+    "kill test": 105,
     "code": 11
    },
    "dups": {
@@ -37479,13 +38343,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 17074,
-    "tier": 11765,
+    "kill": 17250,
+    "tier": 11939,
     "novelty": 117
    },
-   "merged": 669,
+   "merged": 678,
    "kept": 1369,
-   "pending": 0
+   "pending": 22
   },
   "families": [
    {
@@ -37523,7 +38387,7 @@
    },
    {
     "id": "F-021968",
-    "size": 169,
+    "size": 171,
     "lead": "Harmonize parallel agents via standing wave resonance",
     "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
     "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
@@ -40747,7 +41611,7 @@
     ]
    }
   ],
-  "families_total": 1066,
+  "families_total": 1076,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 1369
@@ -40773,5 +41637,613 @@
    "covered": 0,
    "clauses": 0
   }
+ },
+ "kalevala": {
+  "towers": [
+   {
+    "name": "aspect-1-initiative",
+    "aspect": "1. Initiative",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-10-beyond-code",
+    "aspect": "10. Beyond code",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-11-self-triggerin",
+    "aspect": "11. Self-triggering",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-12-staying-lean-a",
+    "aspect": "12. Staying lean and safe",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-13-genesis-as-a-f",
+    "aspect": "13. Genesis as a feature",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-2-exhaustive-thin",
+    "aspect": "2. Exhaustive thinking",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-3-anticipation",
+    "aspect": "3. Anticipation",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-4-goal-to-finish",
+    "aspect": "4. Goal to finish",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-5-getting-the-too",
+    "aspect": "5. Getting the tools it lacks",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-6-verifying-anyth",
+    "aspect": "6. Verifying anything",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-7-self-repair-and",
+    "aspect": "7. Self-repair and self-improvement",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-8-calibrated-judg",
+    "aspect": "8. Calibrated judgment",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "aspect-9-orchestration",
+    "aspect": "9. Orchestration",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "docs",
+    "aspect": "Docs",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "ecosystem",
+    "aspect": "Ecosystem",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "efficiency",
+    "aspect": "efficiency",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "memory",
+    "aspect": "memory",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "model-layer",
+    "aspect": "Model layer",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "multi-user",
+    "aspect": "Multi-user",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "observability",
+    "aspect": "Observability",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "onboarding",
+    "aspect": "Onboarding",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "performance",
+    "aspect": "Performance",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "portability",
+    "aspect": "Portability",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "problem-solving",
+    "aspect": "problem solving",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "security",
+    "aspect": "Security",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   },
+   {
+    "name": "ux",
+    "aspect": "UX",
+    "sealed": true,
+    "generation": 0,
+    "drift": null,
+    "closed": null,
+    "delta": null,
+    "idle_h": 17.5,
+    "spend": 0,
+    "missions": 0,
+    "restarted": null,
+    "stuck": false,
+    "state": "unscored",
+    "paused": null,
+    "stage": {
+     "stage": "spec",
+     "gen": 1,
+     "action": "turn gen-0 §2 into a held-out exam (spec.md)",
+     "kind": "ok"
+    },
+    "trend": []
+   }
+  ],
+  "gens": [],
+  "acts": [],
+  "halted": null,
+  "rounds": 1,
+  "spent_today": 0,
+  "share": 500.0
  }
 }
