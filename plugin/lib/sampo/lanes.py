@@ -177,6 +177,11 @@ def cmd_lane(args):
             c.update_meta(p, builders=int(args.id))
         return cli.out(args, {"builders": builders_cap(p)}, f"Builders at once: {builders_cap(p)} (fm lane max N, "
                          f"1 to {BUILDERS_MAX})")
+    if args.action == "train":  # T-3380: N reviewed lanes through one gate run
+        if p.lane:
+            raise c.PolicyError("sampo lane train runs from the main checkout, not from inside a lane")
+        from sampo import train
+        return train.cmd(p, args, main)
     if args.action == "stats":  # T-2368: does a long brief land worse than a short one
         rows = stats(p)
         return cli.out(args, {"stats": rows}, "\n".join(

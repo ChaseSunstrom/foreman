@@ -190,7 +190,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmjeffexport` (T-2970: Sampo's own decider on Jeff, `sampo exam models --jeff DIR` and `--train-jeff`: Examples… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmlake` (T-2974: the training lake, `sampo exam models --export DIR [--with-agent]`: outcome-labelled… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmlandlock` (T-1607: a sampo smith worker's writes confined with Landlock… [→ files-lib-2](docs/map/files-lib-2.md)
-- `fmlanes` (`sampo lane`: git worktrees as lanes with their own active task… [→ files-lib-2](docs/map/files-lib-2.md)
+- `fmlanes` (`sampo lane`: git worktrees as lanes with their own active task; `sampo lane train` (sampo/train, T-3380) gates N lanes once… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmledger` (`sampo verify-ledger`: the ledger's hash chain proved line by line… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmlib` (T-0933: `sampo lib` — the stack library: card parsing and lint, stack… [→ files-lib-2](docs/map/files-lib-2.md)
 - `fmlong`… [→ files-lib-2](docs/map/files-lib-2.md)

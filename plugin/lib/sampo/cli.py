@@ -5586,7 +5586,10 @@ def _cached_pass(p, checks, tree, skip=()):
         if e.get("event") == "check_run":
             d = e.get("data") or {}
             rs = d.get("results") or []
-            if d.get("tree") == tree and d.get("env") == c.env_id() and [r.get("cmd") for r in rs] == checks \
+            # T-3380: a merge train's pass also holds for the same code tree (a close's CHANGELOG and mirror edits aside)
+            if d.get("code_tree") and d.get("tree") != tree and d["code_tree"] != c.code_tree(p.root):
+                return None
+            if (d.get("tree") == tree or d.get("code_tree")) and d.get("env") == c.env_id() and [r.get("cmd") for r in rs] == checks \
                     and (d.get("skip_tests") or []) == sorted(skip) \
                     and not any(r.get("exit") for r in rs) and (c.age_days(e.get("ts")) or 0) < CACHE_DAYS:
                 return f"run at {str(e.get('ts', ''))[11:16]} UTC"
@@ -8360,9 +8363,11 @@ def _build_parser(only=None):
                                                        "resume <id>: take back a stopped builder's work; "
                                                        "recover <id>: the one recovery for why its lane stopped (T-2354); "
                                                        "stats: builder landing rate by brief size (T-2368); "
-                                                       "verify: the full suite on each landed merge, reverting a red one (T-3141)")
+                                                       "verify: the full suite on each landed merge, reverting a red one (T-3141); "
+                                                       "train [ID,ID…]: merge N lanes in a scratch tree, gate once, "
+                                                       "bisect a red set, fast-forward (T-3380)")
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "recover", "race", "pick",
-                                      "stats", "verify"])
+                                      "stats", "verify", "train"])
     s.add_argument("--reset", metavar="SHA", help="verify: settle a conflict or red record after a forward fix (T-3141)")
     s.add_argument("--agent-stopped", action="store_true", help="recover: its agent was stopped (TaskStop), so a "
                                                                 "stalled lane is free to take back (T-2354)")

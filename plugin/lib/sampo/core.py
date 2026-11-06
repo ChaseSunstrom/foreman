@@ -323,6 +323,26 @@ def mirror_ignored(root, name=MIRROR):
         return False
 
 
+CODE_TREE_SKIP = ("CHANGELOG.md", ".foreman", ".sampo")  # T-3380: what every task close rewrites, not the code
+
+
+def code_tree(root, tree=None):
+    """T-3380: `tree` (default: the working files' tree) without CHANGELOG.md and the sync mirror dirs, as a tree id.
+    A close's own commit changes only those, so a gate pass on the code tree before it still holds after."""
+    tree = tree or worktree_tree(root)
+    if not tree:
+        return None
+    with tempfile.TemporaryDirectory() as t:
+        env = dict({k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, GIT_INDEX_FILE=os.path.join(t, "index"))
+        try:
+            for args in (["read-tree", tree], ["rm", "-r", "-q", "--cached", "--ignore-unmatch", "--", *CODE_TREE_SKIP]):
+                subprocess.run(["git", "-C", root, *args], env=env, capture_output=True, timeout=120, check=True)
+            return subprocess.run(["git", "-C", root, "write-tree"], env=env, capture_output=True, text=True,
+                                  timeout=120, check=True).stdout.strip() or None
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+
 def worktree_tree(root, timeout=None):
     """The full git tree object of the working files (see worktree_id); `git diff <rev> <tree>` shows every change
     since <rev>, untracked files included. The throwaway index starts as a copy of the real one (mtimes kept, so git's

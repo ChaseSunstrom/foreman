@@ -1,0 +1,192 @@
+"""T-3380: sampo lane train, a merge queue. Reviewed lanes merge one after another in a scratch integration worktree
+(never the main checkout); the project's gates run once on the result; a red set is bisected to its culprit lanes by
+prefix (each probe a gate run), which are dropped; the main checkout's branch then fast-forwards to the gated tip.
+The train's check_run carries the code tree (core.code_tree: no CHANGELOG.md, no sync mirror), so `sampo check` after
+each close reuses the pass while the code is unchanged."""
+import os
+import shutil
+import tempfile
+import time
+
+from sampo import core as c
+from sampo.lanes import _git, _ref_ok, _verify, pm_wait
+
+
+def _merge_in(wt, b, tip, log):
+    """Merge `tip` into the scratch tree; a conflict is aborted and logged (id, files). The new head sha or None."""
+    r = _git(wt, "-c", "user.name=sampo", "-c", "user.email=sampo@localhost", "merge", "--no-ff", "-m",
+             f"Merge {b.id}: {b.title}", tip)
+    if not r.returncode:
+        return _git(wt, "rev-parse", "HEAD").stdout.strip()
+    files = [f for f in _git(wt, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0") if f]
+    _git(wt, "merge", "--abort")
+    log.append((b.id, "conflicts with an earlier lane in the train" + (f": {c.joinmore(files, 8)}" if files else "")))
+    return None
+
+
+def _held(p, b, main, tip):
+    """The reason `sampo lane merge` would refuse this lane's files (guard, self-change gate), or ''."""
+    import fmguard
+    from sampo import selfgate
+    meta = c.read_meta(p)
+    ctx = fmguard.Ctx(cwd=main, project_root=main, home=os.path.expanduser("~"), foreman_home=c.foreman_home(),
+                      state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(), scratch=[],
+                      allow=set(b.meta.get("allow") or []), task_id=b.id, standing=set(meta.get("standing") or {}),
+                      trusted=bool(c.trusted()))
+    files = [f for f in _git(main, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{tip}").stdout.split("\0") if f]
+    for f in files:
+        blk = fmguard.check("Write", {"file_path": os.path.join(main, f), "content": ""}, ctx)
+        if blk:
+            return f"the guard refuses {f} ({blk.category})"
+    held = selfgate.gate(p, b, main, tip, files)
+    return "the self-change gate holds it: " + c.joinmore(held, 4, "; ") if held else ""
+
+
+def train(p, main, ids=None):
+    """Land the named `ids` (a bare train would land lanes nobody picked) through one gate run, one train at a time.
+    Returns a dict: merged, left_out [(id, why)], gate_runs, tip, branch. Raises PolicyError when nothing can land, the
+    base is red or the branch moved."""
+    from sampo import cli
+    ids = list(dict.fromkeys(ids or []))
+    if not ids:
+        raise cli.UsageError("name the lanes to land: sampo lane train T-0001,T-0002 (it never lands a lane nobody picked)")
+    with c.lock(os.path.join(p.dir, "train"), timeout=1):  # a second train, not a lane merge, waits on this one
+        return _run(p, main, ids)
+
+
+def _run(p, main, ids):
+    from sampo import cli
+    checks = list(c.read_meta(p).get("checks") or [])
+    if not checks:
+        raise cli.UsageError("no checks configured: sampo check add '<cmd>'")
+    branch = _git(main, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
+    base = _git(main, "rev-parse", "HEAD").stdout.strip()
+    if not branch or not base:
+        raise c.PolicyError(f"{main} is on no branch: check one out for the train to fast-forward")
+    pm_wait(p, main)
+    pre_tree = c.worktree_tree(main)
+    left = []
+    cands = []  # (brief, tip) in order
+    for tid in ids:
+        b = cli.need_brief(p, tid)
+        br = b.meta.get("lane_branch") or f"foreman/{b.id}"
+        if b.meta.get("lane_spike"):
+            left.append((b.id, "a spike is never merged"))
+        elif not _ref_ok(main, br):
+            left.append((b.id, f"no branch {br}"))
+        else:
+            tip = _git(main, "rev-parse", "--verify", f"{br}^{{commit}}").stdout.strip()
+            why = _held(p, b, main, tip)
+            if not why:  # as `lane merge` does: the lane's own acceptance commands re-run in its worktree
+                try:
+                    _verify(b)
+                except (c.PolicyError, cli.UsageError) as e:
+                    why = str(e).splitlines()[0]
+            left.append((b.id, why)) if why else cands.append((b, tip))
+    if not cands:
+        raise c.PolicyError("nothing to merge: " + "; ".join(f"{i}: {w}" for i, w in left))
+    wt = tempfile.mkdtemp(prefix="sampo-train-")  # outside the main checkout; git worktree add takes the empty dir
+    r = _git(main, "worktree", "add", "-q", "--detach", wt, base)
+    if r.returncode:
+        raise c.PolicyError(f"git worktree add failed: {r.stderr.strip()[:300]}")
+    runs, results = [0], []
+
+    def build(start, lanes):
+        """Reset the scratch tree to `start`, merge `lanes`; [(brief, sha after)] of those that merged."""
+        _git(wt, "reset", "-q", "--hard", start)
+        out = []
+        for b, tip in lanes:
+            sha = _merge_in(wt, b, tip, left)
+            if sha:
+                out.append((b, sha))
+        return out
+
+    def moved():
+        return _git(main, "rev-parse", "HEAD").stdout.strip() != base or \
+            _git(main, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip() != branch
+
+    def gate():
+        """True when every gate passes in the scratch tree as it stands."""
+        c.wait_for_load("sampo lane train")
+        runs[0] += 1
+        results.clear()
+        for cmd in checks:
+            t0 = time.monotonic()
+            code, out = c.run_command(wt, cmd, c.load_scaled(1800))
+            results.append({"cmd": cmd, "exit": code, "s": round(time.monotonic() - t0, 1)})
+            if code:
+                return False
+        return True
+
+    try:
+        merged = build(base, cands)
+        tips = {b.id: t for b, t in cands}
+        green, red = [], []  # the cmds of the newest green run; the failing cmds of the newest red one
+        if moved():  # a lane merged meanwhile: don't spend a gate run on a base that is gone
+            raise c.PolicyError(f"{branch} moved since the train started (was {base[:9]}): nothing landed; run it again")
+        while merged and not gate():
+            red = [r["cmd"] for r in results if r["exit"]]
+            # prefix bisection: prefix lo is green (0 = base), prefix hi is red; the lane at hi is the culprit
+            lo, hi = 0, len(merged)
+            while hi - lo > 1:
+                mid = (lo + hi) // 2
+                _git(wt, "reset", "-q", "--hard", merged[mid - 1][1])
+                if gate():
+                    lo, green = mid, list(results)
+                else:
+                    hi, red = mid, [r["cmd"] for r in results if r["exit"]]
+            if hi == 1:  # the first lane is blamed on the strength of a base nobody gated: gate it before blaming
+                _git(wt, "reset", "-q", "--hard", base)
+                if not gate():
+                    raise c.PolicyError(f"the base {base[:9]} of {branch} is red ({', '.join(r['cmd'] for r in results if r['exit'])}): "
+                                        "fix it before a train can blame a lane")
+            left.append((merged[hi - 1][0].id, "its merge turns the gates red: " + ", ".join(red)))
+            keep = merged[:hi - 1]
+            start = keep[-1][1] if keep else base
+            rest = [(b, tips[b.id]) for b, _ in merged[hi:]]
+            merged = keep + build(start, rest)  # no rest: the head is prefix lo, which passed above (or is the base)
+            if not rest:
+                break
+        else:
+            green = list(results)  # ponytail: a cut prefix with a rest behind it is gated again whole, one more run
+        if not merged:
+            raise c.PolicyError("nothing landed: " + "; ".join(f"{i}: {w}" for i, w in left))
+        tip = _git(wt, "rev-parse", "HEAD").stdout.strip()
+        if moved():
+            raise c.PolicyError(f"{branch} moved while the train ran (was {base[:9]}): nothing landed; run it again")
+        ids_in = [b.id for b, _ in merged]
+        for b, _ in merged:  # marked before the fast-forward, so a crash can't leave landed lanes unmarked
+            def done(x, b=b):
+                for k in ("base", "base_tree", "paused_tree"):
+                    x.meta.pop(k, None)
+                x.meta.update({"base": base}, **({"base_tree": pre_tree} if pre_tree else {}))
+                x.append_log(f"merged {b.meta.get('lane_branch') or 'foreman/' + b.id} in merge train")
+                x.meta.update(lane_stop=f"merged {c.now()}")
+            cli.mutate(p, b.id, done, "lane_merge", {"train": ids_in})
+        ff = _git(main, "merge", "-q", "--ff-only", tip)
+        if ff.returncode:
+            for b, _ in merged:
+                cli.mutate(p, b.id, lambda x: x.meta.update(lane_stop=f"refused {c.now()}: the train's fast-forward failed"),
+                           "lane_merge", {"train": ids_in, "undone": True})
+            raise c.PolicyError(f"fast-forward of {branch} to {tip[:9]} refused: {(ff.stderr or ff.stdout).strip()[:300]}")
+        tree = _git(main, "rev-parse", f"{tip}^{{tree}}").stdout.strip()
+        ct = c.code_tree(main, tree)
+        c.log_event(p, "check_run", data={"tree": tree[:12], "code_tree": ct, "env": c.env_id(), "train": ids_in,
+                                          "results": green})
+        return {"merged": ids_in, "left_out": left, "gate_runs": runs[0], "tip": tip, "branch": branch}
+    finally:
+        _git(main, "worktree", "remove", "--force", wt)
+        shutil.rmtree(wt, ignore_errors=True)
+        _git(main, "worktree", "prune")
+
+
+def cmd(p, args, main):
+    from sampo import cli
+    ids = [x for x in (args.id or "").replace(",", " ").split() if x]  # one positional: T-1,T-2
+    got = train(p, main, ids)
+    lines = [f"Train: {len(got['merged'])} lane(s) landed on {got['branch']} ({got['tip'][:9]}) in "
+             f"{got['gate_runs']} gate run(s): {', '.join(got['merged'])}"]
+    lines += [f"  left out {i}: {w}" for i, w in got["left_out"]]
+    lines.append("sampo check now reuses this pass while only CHANGELOG.md and the sync mirror change.")
+    return cli.out(args, got, "\n".join(lines))
+
