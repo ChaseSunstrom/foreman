@@ -44,6 +44,30 @@ class CliErgonomics(ForemanTestCase):
         self.assertEqual(b.status, "done")
         self.assertIn("runs: 2 → 1", b.section("Measurements"))
 
+    def test_ac_list_rm_and_bare_words_T3372(self):
+        tid = self.perf_task()
+        n0 = len(c.find_brief(c.find_project(self.repo), tid).acceptance())
+        r = self.fm("task", "ac", tid, "list")
+        self.assertEqual(len(r.stdout.strip().splitlines()), n0)
+        for word in ("works", "show login"):  # a lone word is refused; `show X` is not a list
+            args = ("task", "ac", tid, *word.split())
+            self.assertNotEqual(self.fm(*args, check=False).returncode, 0, word)
+        self.fm("task", "ac", tid, "list view loads")  # quoted multi-word text still adds
+        self.fm("task", "ac", tid, "add", "second")
+        b = c.find_brief(c.find_project(self.repo), tid)
+        self.assertEqual(len(b.acceptance()), n0 + 2)
+        self.assertNotEqual(self.fm("task", "ac", tid, "rm", "99", check=False).returncode, 0)
+        self.fm("task", "evidence", tid, "--ac", str(n0 + 1), "--run", "true")
+        r = self.fm("task", "ac", tid, "rm", str(n0), check=False)  # evidence on a later criterion
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("evidence", r.stdout + r.stderr)
+        self.fm("task", "ac", tid, "rm", str(n0 + 2))
+        self.assertEqual(len(c.find_brief(c.find_project(self.repo), tid).acceptance()), n0 + 1)
+
+    def test_ac_list_with_none_says_so_T3372(self):
+        self.fm("task", "new", "empty", "--type", "FIX", "--tier", "S")
+        self.assertIn("(no criteria)", self.fm("task", "ac", "T-0001", "list").stdout)
+
     def test_step_edit_and_rm_renumber(self):
         # T-1959: a batch's copied member steps took a whole Steps rewrite by hand
         tid = self.perf_task()

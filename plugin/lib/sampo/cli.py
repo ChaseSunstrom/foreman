@@ -3601,6 +3601,14 @@ def task_step(p, args):
 
 
 def task_ac(p, args):
+    if args.action == "list":  # T-3372
+        if args.arg:  # `ac T-1 show login` is a criterion's text, not a list
+            raise UsageError(f"ac list takes no argument, got {args.arg!r}; to add a criterion: sampo task ac ID add \"<text>\"")
+        b = need_brief(p, args.id)
+        return out(args, [{"n": a.n, "checked": a.checked, "text": a.text} for a in b.acceptance()],
+                   "\n".join(f"{a.n}. [{'x' if a.checked else ' '}] {a.text}" for a in b.acceptance()) or "(no criteria)")
+    if not args.arg:
+        raise UsageError(f"sampo task ac ID {args.action} needs {'the criterion text' if args.action == 'add' else 'a criterion number'}")
     if args.action == "add":
         text, verify = c.split_verify(args.arg)  # "criterion :: verify cmd" or "— verify with `cmd`", as with task new --ac
         verify = args.verify or verify
@@ -3613,6 +3621,12 @@ def task_ac(p, args):
         n = int(args.arg)
     except ValueError:
         raise UsageError(f"criterion number expected, got {args.arg!r}")
+    if args.action == "rm":
+        try:
+            b, _ = mutate(p, args.id, lambda b: b.remove_ac(n), "ac_remove", {"ac": n})
+        except KeyError as e:
+            raise UsageError(str(e).strip("'\""))
+        return out(args, c.brief_summary(c.find_brief(p, b.id) or b), f"{b.id}: criterion {n} removed; later ones renumbered.")
     if args.action == "edit":
         if args.verify is None and not args.text:
             raise UsageError("sampo task ac ID edit N needs --verify CMD and/or --text TEXT")
@@ -6638,7 +6652,7 @@ def _build_parser(only=None):
         "show": "print a task's brief", "card": "write a proved task's SVG title card",
         "receipt": "what a reviewer reads, with the before and after numbers",
         "set": "change a task's fields or a section", "step": "add a step, or mark one current or done",
-        "ac": "add, check or edit an acceptance criterion", "evidence": "run a step's check and record it as evidence",
+        "ac": "add, check, edit, rm or list acceptance criteria", "evidence": "run a step's check and record it as evidence",
         "audit": "record an audit lens result", "finish": "one-call close: checks, audits, docs, done and commit",
         "prove": "red to green proof: the tests fail on the start tree and pass now", "log": "add a line to the log",
         "hypo": "debugging hypotheses: add, test, reject", "note": "working memory: a fact or an open question",
@@ -6735,8 +6749,8 @@ def _build_parser(only=None):
     t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
     t = tadd("ac")
     t.add_argument("id")
-    t.add_argument("action", choices=["add", "check", "edit"])
-    t.add_argument("arg")
+    t.add_argument("action", choices=["add", "check", "edit", "rm", "list"])
+    t.add_argument("arg", nargs="?", help="add: the criterion's text; check, edit, rm: its number; list: none")
     t.add_argument("--verify")
     t.add_argument("--text", help="edit: the criterion's new text (its verify command stays unless --verify)")
     t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
@@ -8682,7 +8696,7 @@ def _alias(argv):
 
 
 _TASK_ID = re.compile(r"^T-\d+$", re.I)
-ACT_SYNONYMS = {"remove": "rm", "delete": "rm", "del": "rm"}  # T-2540: words that mean an action, never step text
+ACT_SYNONYMS = {"remove": "rm", "delete": "rm", "del": "rm", "ls": "list", "show": "list"}  # T-3372: list only where offered (ac); T-2540: words that mean an action, never step text
 # T-1877: ranges and lists; nine digits at most, so int() never sees a runaway number
 _TASK_IDS = re.compile(r"^T-\d{1,9}(?:\.\.(?:T-)?\d{1,9})?(?:,T-\d{1,9}(?:\.\.(?:T-)?\d{1,9})?)*$", re.I)
 
@@ -8728,7 +8742,8 @@ def _task_shape(parser, argv):
         rest[1] = ACT_SYNONYMS[rest[1]]
     lone = (len(rest) > 1 and not rest[1].startswith("-") and not rest[1].isdigit()  # an option or a step number
             and not (len(rest) > 2 and not rest[2].startswith("-")))  # T-2540: a second bare word is unquoted text
-    if acts and "add" in acts and lone and _TASK_ID.match(rest[0]) and rest[1] not in acts and (
+    verbish = sub == "ac" and re.fullmatch(r"[a-z]+", rest[1] if len(rest) > 1 else "")  # T-3372: `ac ID list` is a verb, never a criterion: argparse refuses it, naming the verbs
+    if acts and "add" in acts and lone and not verbish and _TASK_ID.match(rest[0]) and rest[1] not in acts and (
             " " in rest[1] or not difflib.get_close_matches(rest[1].lower(), acts)):
         rest = [rest[0], "add"] + rest[1:]  # review: a one-word typo stays an error; T-1903: a lone word nothing resembles is one
     return argv[:lead + 2] + rest
@@ -8753,6 +8768,8 @@ def _worker_may(args):
     verb = getattr(args, "verb", None)
     if verb in WORKER_SUBREADS:
         attr, ok = WORKER_SUBREADS[verb]
+        if verb == "task" and getattr(args, "task_cmd", None) == "ac":  # T-3372: ac list reads; its other actions write
+            return getattr(args, "action", None) == "list"
         return getattr(args, attr, None) in ok
     return verb in WORKER_READS and not getattr(args, "replan", False)
 
