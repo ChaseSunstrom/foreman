@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- last_change and first_touch date a Bash-sourced edit by its file mtime (data.at), floored at the Bash call's start and the task's creation, so an audit recorded between the edit and a late hook event no longer looks stale (T-3378).
 - Kalevala: one tower's decide-and-act runs under its own per-tower lock with a 30 s deadline, so two concurrent steps snapshot a stalled tower and log each act once, and a busy tower is skipped instead of hanging (T-3332).
 - Hook timing events (`hook_ms`) from PreToolUse record the tool name and the guard's own decision time (`guard_ms`, plus `decided` when it asked or denied), so a slow handler can be pinned to the guard or to the notes after it (T-3352).
 - Self-checks in sampo next and the drive, in every state: landed commits unshipped 2+ h after the last sampo ship, a retired mirror folder tracked beside the current one, and the user's asks from the last 3 days not landed, oldest first (T-3127).
