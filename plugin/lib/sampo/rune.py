@@ -1557,7 +1557,44 @@ def _refresh_cards(p, wt):
         return False, "cards refresh failed: no index.json written"
     if after < before:  # the scratch worktree and its edits go with the publish
         return False, f"cards not refreshed: this store has {after} cards, main's export {before}"
+    bad = _cards_degraded(os.path.join(wt, CARDS))
+    if bad:  # T-3424: an equal count can still be a degraded export (empty or missing kit, empty demos; kit heights are measured with a last-heights fallback, T-3228)
+        return False, f"cards refresh failed: {bad}"
     return bool(release._git(wt, "status", "--porcelain", "--", CARDS).strip()), ""
+
+
+def _cards_degraded(dest):
+    """Why the card export in dest must not be published, else "" (T-3424; reads files only): a file the index lists is
+    missing or empty, a kit demo has no HTML or no positive height, or more than 3 demos all share one height."""
+    import json
+    try:
+        with open(os.path.join(dest, "index.json"), encoding="utf-8") as f:
+            index = json.load(f)
+        names = sorted(index.get("files") or {})
+        ui = int(((index.get("grids") or {}).get("ui") or {}).get("count") or 0)
+    except (OSError, ValueError, AttributeError, TypeError):
+        return "no readable index.json"
+    for n in names:
+        try:
+            if not os.path.getsize(os.path.join(dest, n + ".json")):
+                return f"{n}.json is empty"
+        except OSError:
+            return f"{n}.json is missing"
+    if "kit" not in names:  # the export drops kit.json when the kit comes back empty, and the UI demos go with it
+        return "UI cards but no kit.json" if ui > 0 else ""
+    try:
+        with open(os.path.join(dest, "kit.json"), encoding="utf-8") as f:
+            demos = list(json.load(f)["kit"].values())
+        heights = [d["h"] for d in demos]
+        if not all(isinstance(d["html"], str) and d["html"].strip() for d in demos):
+            return "a kit demo has empty HTML"
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return "kit.json is unreadable or lacks html/h"
+    if not all(isinstance(h, (int, float)) and not isinstance(h, bool) and h > 0 for h in heights):
+        return "a kit demo has no positive height"
+    if len(heights) > 3 and len(set(heights)) == 1:
+        return f"all {len(heights)} kit demo heights are {heights[0]}"
+    return ""
 
 
 def _file_text(path):

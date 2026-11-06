@@ -3,6 +3,7 @@ filed only in the tower's shape, and a status that shows every generation."""
 import json
 import os
 import re
+import shutil
 import hashlib
 import itertools
 import stat
@@ -4530,3 +4531,55 @@ class GenesisStepMemo(ForemanTestCase):
             self.assertEqual(len(scans), n)
         finally:
             c.ledger_events = real
+
+
+class CardsDegraded(ForemanTestCase):
+    """T-3424: the daily card publish refuses a degraded export even when its count matches."""
+
+    def export(self, kit, drop=None):
+        from sampo import rune
+        d = os.path.join(self.tmp, "cards")
+        shutil.rmtree(d, ignore_errors=True)
+        os.makedirs(d)
+        files = {"index.1": "{}", "ui-1": "{}", "kit": json.dumps({"frame": "", "kit": kit})}
+        for n, t in files.items():
+            if n != drop:
+                tower_file(d, n + ".json", t)
+        tower_file(d, "index.json", json.dumps({"count": 1, "files": {n: "x" for n in files}}))
+        return rune._cards_degraded(d)
+
+    def test_good_and_degraded(self):
+        demo = lambda h: {"html": "<b>x</b>", "h": h}  # noqa: E731
+        good = {c: demo(100 + i) for i, c in enumerate("abcde")}
+        self.assertEqual(self.export(good), "")
+        self.assertEqual(self.export({c: demo(120) for c in "ab"}), "")  # 3 or fewer may share a height
+        self.assertIn("heights are 120", self.export({c: demo(120) for c in "abcde"}))
+        self.assertIn("positive height", self.export({**good, "f": demo(0)}))
+        self.assertIn("empty HTML", self.export({**good, "f": {"html": " ", "h": 9}}))
+        self.assertIn("ui-1.json is missing", self.export(good, drop="ui-1"))
+
+    def test_no_kit_is_refused_only_with_ui_cards(self):
+        from sampo import rune
+        d = os.path.join(self.tmp, "nokit")
+        for ui, want in ((5, "no kit.json"), (0, "")):
+            tower_file(d, "general-1.json", "{}")
+            tower_file(d, "index.json", json.dumps({"count": 1, "files": {"general-1": "x"},
+                                                    "grids": {"ui": {"count": ui}}}))
+            got = rune._cards_degraded(d)
+            self.assertTrue(want in got if want else got == "", got)
+
+    def test_refresh_cards_reports_a_degraded_export(self):
+        from unittest import mock
+        from sampo import rune
+        root, wt = os.path.join(self.tmp, "root"), os.path.join(self.tmp, "wt")
+        for base in (root, wt):
+            tower_file(base, "site/build.py", "# same\n")
+        index = {"count": 1, "files": {"general-1": "x"}, "grids": {"ui": {"count": 3}}}
+
+        def build(*a, **k):  # the stand-in build writes an export with UI cards and no kit
+            tower_file(wt, "site/cards/general-1.json", "{}")
+            tower_file(wt, "site/cards/index.json", json.dumps(index))
+            return mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch("subprocess.run", build):
+            got = rune._refresh_cards(mock.Mock(root=root), wt)
+        self.assertEqual(got, (False, "cards refresh failed: UI cards but no kit.json"))
