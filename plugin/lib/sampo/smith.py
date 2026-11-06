@@ -2637,7 +2637,7 @@ def _snapshot(root, verify=None):
             "mcp": _mcp(os.path.join(home, ".claude.json"))}
 
 
-WATCHED = (".claude", ".foreman")  # also judged by the guard when git doesn't show them
+WATCHED = (".claude", *core.MIRRORS)  # also judged by the guard when git doesn't show them
 
 
 def _cfgs(home):

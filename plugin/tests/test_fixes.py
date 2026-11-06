@@ -120,10 +120,10 @@ class KnownFixes(ForemanTestCase):
         self.learn()
         self.fm("sync", "on")
         self.fm("sync", "export")
-        with open(os.path.join(self.repo, ".foreman", "fixes.md"), encoding="utf-8") as f:
+        with open(os.path.join(self.repo, ".sampo", "fixes.md"), encoding="utf-8") as f:
             self.assertIn("python3 -m pytest -q tests", f.read())
         # a teammate's fix arrives with a pull: the import takes the lines this copy lacks
-        with open(os.path.join(self.repo, ".foreman", "fixes.md"), "a", encoding="utf-8") as f:
+        with open(os.path.join(self.repo, ".sampo", "fixes.md"), "a", encoding="utf-8") as f:
             f.write("- `sh: cargo: command not found` → source ~/.cargo/env first <!-- fix {\"sig\": \"sh: cargo: command "
                     "not found\", \"do\": \"source ~/.cargo/env first\", \"failed\": \"cargo build\", \"from\": \"teammate\"} -->\n")
         self.fm("sync", "import")

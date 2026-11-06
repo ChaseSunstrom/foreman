@@ -10,7 +10,7 @@ Generate ideas by forcing different viewpoints (user, operator, attacker, mainta
 
 ## Verify
 - `sampo research list`: the ideas note was saved, not left in chat.
-- `grep -c '^- ' .foreman/ideas.md`: replace the path with the saved note; at least 3 lenses each produced distinct items.
+- `grep -c '^- ' .sampo/ideas.md`: replace the path with the saved note; at least 3 lenses each produced distinct items.
 - `sampo ideas --help`: shows `--lens`, `--rounds`, `--dry`, `--seen` for fanning the lenses out to tool-less children.
 
 ## Test first

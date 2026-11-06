@@ -58,7 +58,7 @@ def commit(p, b, files, message, check=None):
     if not branch or not head:
         raise ValueError("a stack needs a branch with a commit (not a detached or empty HEAD)")
     flat = []
-    for f in files:  # a synced .foreman/ mirror is a folder: its files
+    for f in files:  # a synced .sampo/ mirror is a folder: its files
         full = os.path.join(p.root, f)
         flat += [os.path.relpath(os.path.join(d, n), p.root) for d, _, ns in os.walk(full) for n in ns] \
             if os.path.isdir(full) else [f]

@@ -261,7 +261,7 @@ class BoardClose(Base):
         self.assertEqual(self.named("none: CHANGELOG.md untouched"), set())
 
     def test_docs_paths_outside_the_repo_or_in_foreman_state_claim_nothing(self):
-        self.assertEqual(self.named("../CHANGELOG.md /etc/passwd .foreman/x"), set())
+        self.assertEqual(self.named("../CHANGELOG.md /etc/passwd .foreman/x .sampo/x"), set())
 
     def test_tier_drift_has_a_short_kind_in_the_verdict(self):
         from sampo import cli

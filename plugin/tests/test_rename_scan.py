@@ -231,6 +231,31 @@ class RenameScan(unittest.TestCase):
         for prose in ("is foreman ok?", "Foreman.", "ask Foreman-owned work", "the foreman arm", "Foreman's ui"):
             self.assertTrue(re.search(r"\bforeman\b", KEPT.sub("", prose), re.I), prose)
 
+    def test_no_library_code_hardcodes_the_old_mirror_name(self):  # T-3342: one constant (core.MIRROR/MIRRORS) names the mirror
+        import ast
+        lib = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
+        allowed = (("core.py", 'MIRRORS = (MIRROR, ".foreman")'),  # the constant
+                   ("fmguard.py", '(".foreman", ".sampo")'),  # the stdlib-only guard can't import it
+                   ("cli.py", r"\.sampo|\.foreman|\.claude"))  # the cache-path regex, both names
+        hits = []
+        for root, _, names in os.walk(lib):
+            for n in names:
+                if not n.endswith(".py"):
+                    continue
+                path = os.path.join(root, n)
+                with open(path, encoding="utf-8") as f:
+                    src = f.read()
+                lines = src.splitlines()
+                tree = ast.parse(src)
+                docs = {id(b[0].value) for node in ast.walk(tree) if isinstance(node, (ast.Module, ast.FunctionDef, ast.ClassDef,
+                        ast.AsyncFunctionDef)) for b in [node.body] if b and isinstance(b[0], ast.Expr)}
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs \
+                            and re.search(r"\.foreman(?![\w-])", node.value) \
+                            and not any(n == f and frag in " ".join(lines[node.lineno - 1:node.end_lineno]) for f, frag in allowed):
+                        hits.append(f"{n}:{node.lineno}")
+        self.assertEqual(hits, [])
+
 
 if __name__ == "__main__":
     unittest.main()

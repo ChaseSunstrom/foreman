@@ -80,7 +80,7 @@ class Load(ForemanTestCase):
         self.assertIn("(uncommitted)", self.show("fix/alpha").stdout)
 
     def test_an_old_foreman_overlay_folder_is_named(self):
-        put(self.repo, ".foreman/playbooks/fix/alpha.md", "old place\n")
+        put(self.repo, ".sampo/playbooks/fix/alpha.md", "old place\n")
         r = self.show("fix/alpha")
         self.assertNotIn("old place", r.stdout)
         self.assertIn(".claude/playbooks", r.stderr)
@@ -217,7 +217,7 @@ class Writable(ForemanTestCase):
                     task_id="T-1", unbriefed=None)
         new = {"file_path": os.path.join(self.repo, pb.OVERLAYS, "fix", "x.md"), "content": "Use {{test}}.\n"}
         self.assertIsNone(g.check("Write", new, ctx))
-        mirror = {"file_path": os.path.join(self.repo, ".foreman", "playbooks", "fix", "x.md"), "content": "x\n"}
+        mirror = {"file_path": os.path.join(self.repo, ".sampo", "playbooks", "fix", "x.md"), "content": "x\n"}
         self.assertEqual(getattr(g.check("Write", mirror, ctx), "category", None), "state-direct")  # fm's alone
 
     def test_a_worker_may_show_a_playbook(self):

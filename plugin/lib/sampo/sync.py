@@ -1,4 +1,4 @@
-"""fm sync: an opt-in mirror of a project's Sampo state inside the repo (.foreman/), committed with the code, so
+"""fm sync: an opt-in mirror of a project's Sampo state inside the repo (.sampo/, formerly .foreman/), committed with the code, so
 another clone or machine can pick the work up.
 
 Briefs (and their archive), decisions and research travel; the ledger, meta, sessions, pending asks, gates and views
@@ -13,6 +13,7 @@ the next fm command (or session start, or `fm sync import`) takes it in before w
 the local one wins and theirs is kept under sync-conflicts/ for a manual merge; files with unresolved merge markers
 wait until git's conflict is resolved. Callers hold the project lock.
 """
+import filecmp
 import hashlib
 import json
 import os
@@ -21,16 +22,17 @@ import shutil
 
 from sampo import core as c
 
-DIR = ".foreman"
+DIR = c.MIRROR
+OLD = c.MIRRORS[1]  # T-3342: the folder before the rename; read while DIR is absent, moved by move()
 STAMPS = "sync-stamps.json"  # T-3349: per mirrored file, its source's and its mirror copy's (mtime_ns, size) last export
 LOCAL_ONLY = ("allow", "approved", "plugin_pin")
 LEASE_MARKS = ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit")  # one machine's marks on a brief
 
 
-def settle(b, new, why="it arrived from the repo's .foreman/ (fm sync), not from a request here"):
+def settle(b, new, why="it arrived from the repo's .sampo/ (fm sync), not from a request here"):
     """T-1749: a brief that came from elsewhere (fm sync import, fm home import), as this machine takes it: not active
     or leased here, and, when it is new here and open, waiting for the user's own yes (fm ask ID confirm): a repo's
-    .foreman/ can hold tasks nobody here asked for."""
+    .sampo/ can hold tasks nobody here asked for."""
     if b.meta.get("status") in ("active", "verifying"):
         b.meta["status"] = "planned"  # focus is per machine
     for k in LEASE_MARKS:
@@ -39,7 +41,7 @@ def settle(b, new, why="it arrived from the repo's .foreman/ (fm sync), not from
         b.meta["confirm"], b.meta["confirm_why"] = True, why  # T-1750: the confirm gap says why it waits
     return b
 BRIEFS = ("tasks/", "archive/")
-README = """# .foreman
+README = """# .sampo
 
 Sampo's task briefs, decisions and research for this repository, mirrored by `fm sync` so another clone or machine
 can pick the work up (`fm sync import`, or automatically at session start). fm writes this folder; change the work
@@ -52,7 +54,150 @@ _AUDIT_LINE = re.compile(r"(?m)^(-\s+\(audit\s+[a-z]+)\)")
 
 
 def mirror(p):
-    return os.path.join(c.main_view(p).root, DIR)  # T-0134: one mirror, the main checkout's, never a lane's copy
+    root = c.main_view(p).root  # T-0134: one mirror, the main checkout's, never a lane's copy
+    new = os.path.join(root, DIR)
+    if (not os.path.lexists(new) or not _ours(new)) and os.path.isdir(os.path.join(root, OLD)):
+        return os.path.join(root, OLD)  # T-3342: not moved yet (or .sampo/ is the user's own, not fm's)
+    return os.path.join(root, DIR)
+
+
+def _busy(root):
+    """A merge, rebase, cherry-pick or detached HEAD: not the moment to commit a rename."""
+    gd = c._git(root, "rev-parse", "--absolute-git-dir").strip()
+    return not gd or c._git(root, "symbolic-ref", "-q", "HEAD") == "" or any(
+        os.path.exists(os.path.join(gd, n)) for n in ("MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD"))
+
+
+def _ours(d):
+    """A folder that looks like fm's mirror: a tasks/ folder, or a README whose first line is fm's heading."""
+    try:
+        if os.path.isdir(os.path.join(d, "tasks")):
+            return True
+        with open(os.path.join(d, "README.md"), encoding="utf-8") as f:
+            return f.readline().strip() in ("# " + DIR, "# " + OLD)
+    except (OSError, ValueError):
+        return False
+
+
+def _aside(p, rel, path):
+    dest = os.path.join(p.dir, "sync-conflicts", OLD + "__" + rel.replace("/", "__"))
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copyfile(path, dest)
+
+
+def _fold(p, old, new):
+    """Fold the old folder's files into .sampo/ with no loss and no clock: a file .sampo lacks is copied (any kind of
+    regular file, never a symlink); decisions.md/fixes.md keep every line of both; of two briefs the later `updated`
+    wins; any other differing file keeps .sampo's and the old copy is set aside under sync-conflicts/."""
+    rnew = os.path.realpath(new)
+    for d, dirs, files in os.walk(old):
+        dirs[:] = sorted(x for x in dirs if x != ".git" and not os.path.islink(os.path.join(d, x)))
+        for f in sorted(files):
+            a = os.path.join(d, f)
+            rel = os.path.relpath(a, old).replace(os.sep, "/")
+            b = os.path.join(new, rel)
+            if os.path.islink(a) or not os.path.isfile(a) or rel == "README.md":
+                continue
+            if not os.path.realpath(b).startswith(rnew + os.sep):
+                continue  # a pulled link inside .sampo/ pointing out: never written through
+            if not os.path.lexists(b):
+                os.makedirs(os.path.dirname(b), exist_ok=True)
+                shutil.copyfile(a, b)
+                continue
+            if os.path.islink(b) or not os.path.isfile(b) or filecmp.cmp(a, b, shallow=False):
+                continue
+            try:
+                ta, tb = _read(a), _read(b)
+            except (OSError, ValueError):
+                _aside(p, rel, a)
+                continue
+            if rel in ("decisions.md", "fixes.md"):  # append-only: keep every line of both
+                have = tb.splitlines()
+                extra = [x for x in ta.splitlines() if x.strip() and x not in have]
+                if extra:
+                    _write(b, tb.rstrip("\n") + "\n" + "\n".join(extra) + "\n")
+            elif rel.startswith(BRIEFS) and rel.endswith(".md") and \
+                    str(c.Brief.parse(ta).meta.get("updated") or "") > str(c.Brief.parse(tb).meta.get("updated") or ""):
+                _aside(p, rel, b)
+                _write(b, ta)
+            else:
+                _aside(p, rel, a)
+
+
+def move(p, retry=False):
+    """T-3342: the mirror was .foreman/ before the product was renamed. Move it to .sampo/ once: git mv and one logged
+    commit when tracked, a plain rename when ignored or outside git. Only from a CLI export (the caller holds the
+    lock), never a hook. A failed commit is put back and noted in meta (sync status shows it); only `retry` (fm sync
+    export) tries again. Returns the number of files moved, or None."""
+    root = c.main_view(p).root
+    old, new = os.path.join(root, OLD), os.path.join(root, DIR)
+    if os.path.islink(old) or not os.path.isdir(old) or os.path.islink(new) or (os.path.isdir(new) and not _ours(new)):
+        return None  # a .sampo/ that isn't fm's (the user's own) is never merged into
+    # a lane (or any other checkout) never moves or commits in the main checkout: only from the cwd's own toplevel
+    cwd = os.path.realpath(os.getcwd())
+    if getattr(p, "lane", None) or os.path.realpath(root) != os.path.realpath(c.git_root(cwd) or cwd):
+        return None
+    meta = c.read_meta(p)
+    if meta.get("sync_move_error") and not retry:
+        return None
+    git = bool(c.git_root(root)) and bool(c._git(root, "rev-parse", "--git-dir"))
+    if git and _busy(root):
+        return None
+    tracked = git and c._git(root, "ls-files", "--", OLD, timeout=30).strip() != ""
+    ignored = git and not tracked and c.mirror_ignored(root, OLD)
+    n, both = len(list(_walk(old))), os.path.isdir(new)
+    try:
+        if both:  # old code (or a pull) brought the old folder back: fold it in; it is dropped after the commit
+            _fold(p, old, new)
+        elif tracked:
+            r = c._git(root, "mv", OLD, DIR, proc=True, timeout=60)
+            if r.returncode:
+                raise OSError(r.stderr.strip() or "git mv failed")
+        else:
+            os.rename(old, new)
+        readme = os.path.join(new, "README.md")
+        retitled = os.path.isfile(readme) and _read(readme).startswith("# " + OLD + "\n")
+        if retitled:
+            _write(readme, "# " + DIR + _read(readme)[len("# " + OLD):])
+        sha = None
+        if tracked:
+            if both:  # out of the way for the commit (it records the old files as gone); back if the commit fails
+                aside = old + ".moving"
+                if os.path.lexists(aside):
+                    raise OSError(f"{OLD}.moving is in the way")
+                os.rename(old, aside)
+            c._git(root, "add", "--", DIR, timeout=60)
+            r = c._git(root, "commit", "-q", "-m", f"Move fm sync's mirror {OLD}/ to {DIR}/", "--", OLD, DIR,
+                       proc=True, timeout=120)
+            if r.returncode:
+                c._git(root, "reset", "-q", "--", OLD, DIR, timeout=60)  # never a checkout: uncommitted mirror edits stay
+                if both:
+                    os.rename(aside, old)
+                else:
+                    if retitled:
+                        _write(readme, "# " + OLD + _read(readme)[len("# " + DIR):])
+                    os.rename(new, old)
+                raise OSError("the move commit failed: " + (r.stderr.strip() or r.stdout.strip())[:200])
+            sha = c._git(root, "rev-parse", "--short", "HEAD").strip()
+        if both:
+            shutil.rmtree(aside if tracked else old)
+        if not tracked:
+            if ignored and not c.mirror_ignored(root, DIR) and not c._git(root, "ls-files", "--", DIR, timeout=30).strip():
+                ex = c._git(root, "rev-parse", "--git-path", "info/exclude").strip()
+                ex = ex if os.path.isabs(ex) else os.path.join(root, ex)
+                os.makedirs(os.path.dirname(ex), exist_ok=True)
+                with open(ex, "a", encoding="utf-8") as f:
+                    f.write(f"/{DIR}/\n")
+    except OSError as e:
+        meta = c.read_meta(p)
+        meta["sync_move_error"] = str(e)[:300]
+        c.write_meta(p, meta)
+        return None
+    meta = c.read_meta(p)
+    if meta.pop("sync_move_error", None) is not None:
+        c.write_meta(p, meta)
+    c.log_event(p, "sync_moved", data={"files": n, "sha": sha})
+    return n
 
 
 def _sha(text):
@@ -292,8 +437,11 @@ def status(p):
             theirs.add(m.group(1))
             if base.get(rel) != _sha(_read(os.path.join(root, rel))):
                 incoming.append(m.group(1))
-    return {"on": bool(meta.get("sync")), "dir": root, "briefs": len(theirs), "local": len(local),
-            "repo_only": sorted(theirs - local), "local_only": sorted(local - theirs), "incoming": sorted(incoming)}
+    st = {"on": bool(meta.get("sync")), "dir": root, "briefs": len(theirs), "local": len(local),
+          "repo_only": sorted(theirs - local), "local_only": sorted(local - theirs), "incoming": sorted(incoming)}
+    if meta.get("sync_move_error"):  # T-3342: the .foreman -> .sampo move failed; `sampo sync export` retries it
+        st["move_error"] = meta["sync_move_error"]
+    return st
 
 
 def cmd_sync(args):
@@ -302,6 +450,7 @@ def cmd_sync(args):
     if args.action == "on":
         with c.lock(p.dir):
             try:
+                move(p)
                 res = import_(p)  # a clone that already has a mirror takes it before writing its own
                 meta = c.read_meta(p)
                 meta["sync"] = True
@@ -315,9 +464,10 @@ def cmd_sync(args):
             c.log_event(p, "sync", data={"on": True, "written": n, "imported": res["added"] + res["updated"]},
                         session=cli.session())
             c.regen_views(p)
-        notes = [" .foreman/ is ignored by git here: add `!.foreman/` to .gitignore, or it never reaches another "
-                 "clone." if c.mirror_ignored(c.main_view(p).root) else "",
-                 " This repo is marked sensitive: review .foreman/ before pushing (evidence is redacted, but briefs "
+        name = os.path.basename(mirror(p))
+        notes = [f" {name}/ is ignored by git here: add `!{name}/` to .gitignore, or it never reaches another "
+                 "clone." if c.mirror_ignored(c.main_view(p).root, name) else "",
+                 f" This repo is marked sensitive: review {name}/ before pushing (evidence is redacted, but briefs "
                  "describe the work)." if c.read_meta(p).get("sensitive") else ""]
         return print(f"Mirroring Sampo state to {mirror(p)} ({n} file(s) written); commit it with your work. "
                      f"Approvals stay on this machine." + "".join(notes)
@@ -327,7 +477,7 @@ def cmd_sync(args):
             meta = c.read_meta(p)
             meta["sync"] = False
             c.write_meta(p, meta)
-            if args.remove and os.path.isdir(mirror(p)) and not os.path.islink(mirror(p)):
+            if args.remove and os.path.isdir(mirror(p)) and not os.path.islink(mirror(p)) and _ours(mirror(p)):
                 shutil.rmtree(mirror(p))
             c.log_event(p, "sync", data={"on": False, "removed": bool(args.remove)}, session=cli.session())
         return print(f"Sync off; {mirror(p)} " + ("removed." if args.remove else "left as it is (fm sync off --remove "
@@ -335,6 +485,7 @@ def cmd_sync(args):
     if args.action in ("import", "export"):
         with c.lock(p.dir):
             if args.action == "export":
+                move(p, retry=True)
                 res = {"written": export(p)}
                 text = f"{res['written']} file(s) written to {mirror(p)}."
             else:
@@ -346,6 +497,7 @@ def cmd_sync(args):
         return cli.out(args, res, text)
     st = status(p)
     cli.out(args, st, f"Sync {'on' if st['on'] else 'off'} · {st['dir']} · {st['briefs']} brief(s) mirrored, "
-                        f"{st['local']} here" + "".join(f"\n  {k.replace('_', ' ')}: {', '.join(st[k])}" for k in
+                        f"{st['local']} here" + (f"\n  move to {DIR}/ failed: {st['move_error']} (sampo sync export retries)"
+                                                 if st.get("move_error") else "") + "".join(f"\n  {k.replace('_', ' ')}: {', '.join(st[k])}" for k in
                                                          ("incoming", "repo_only", "local_only") if st[k])
-              + ("\n  A teammate joins from their clone, once .foreman/ is pushed: fm sync on" if st["on"] else ""))
+              + ("\n  A teammate joins from their clone, once .sampo/ is pushed: fm sync on" if st["on"] else ""))

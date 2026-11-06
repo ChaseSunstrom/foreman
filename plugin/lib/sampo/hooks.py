@@ -582,7 +582,7 @@ def _resume_turn(pl, sd):
 
 
 def _sync_import(p):
-    """A repo with a .foreman/ mirror (fm sync) brings its work along: take in what's new at session start, and on a
+    """A repo with a .sampo/ mirror (fm sync) brings its work along: take in what's new at session start, and on a
     fresh clone (no local briefs, sync never switched off here) turn syncing on. Caller holds the lock; returns a note
     for the session context, or None."""
     from sampo import sync
@@ -599,7 +599,7 @@ def _sync_import(p):
     meta["sync"] = True
     c.write_meta(p, meta)
     n = res["added"] + res["updated"]
-    return (f"sampo sync: {res['added']} added, {res['updated']} updated from .foreman/"
+    return (f"sampo sync: {res['added']} added, {res['updated']} updated from {os.path.basename(sync.mirror(p))}/"
             + (f"; {len(res['conflicts'])} conflict(s) (sampo sync status)" if res["conflicts"] else "") + ".") if n or \
         res["conflicts"] else None
 
@@ -2974,7 +2974,7 @@ def _bash_touches(pl, p):
             fresh = mtime >= since and os.path.isfile(full)
         except OSError:
             continue  # deleted: the task's diff at finish still sees it
-        if not fresh or rel.startswith(("..", ".foreman/")):
+        if not fresh or rel.startswith(("..", *c.MIRROR_DIRS)):
             continue
         # timed by the file, not by this async hook: a scope reason the same command logged comes after it (T-0164)
         c.log_event(p, "touched", task=act.id, data={"file": full, "tool": "Bash", "at": c.iso(mtime)},

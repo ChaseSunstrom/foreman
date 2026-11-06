@@ -176,6 +176,9 @@ def _writable(path):
     return os.access(path, os.W_OK)
 
 
+MIRROR = ".sampo"  # T-3342: fm sync's in-repo mirror; repos from before the rename still hold it as .foreman
+MIRRORS = (MIRROR, ".foreman")
+MIRROR_DIRS = tuple(d + "/" for d in MIRRORS)
 _STATE_MARKER = ".foreman-state.json"
 PERMISSION_MODES = ["acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"]  # claude 2.1.280 --help
 ASK_TTL = 300  # seconds an `fm ask` the PreToolUse hook saw stays claimable by fm (it runs right after)
@@ -310,11 +313,11 @@ def worktree_id(root):
     return tree[:12] if tree else None
 
 
-def mirror_ignored(root):
-    """True when git ignores fm sync's mirror (.foreman/) in this checkout: git add then refuses any pathspec naming it
-    (session audit: every task snapshot and commit failed in such a repo)."""
+def mirror_ignored(root, name=MIRROR):
+    """True when git ignores fm sync's mirror (.sampo/, or .foreman/ before the move) in this checkout: git add then
+    refuses any pathspec naming it (session audit: every task snapshot and commit failed in such a repo)."""
     try:
-        return subprocess.run(["git", "-C", root, "check-ignore", "-q", ".foreman/README.md"], capture_output=True,
+        return subprocess.run(["git", "-C", root, "check-ignore", "-q", name + "/README.md"], capture_output=True,
                               timeout=10).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -336,9 +339,10 @@ def worktree_tree(root, timeout=None):
                                   capture_output=True, text=True, timeout=left(10)).stdout.strip()
             if real and os.path.isfile(real):
                 shutil.copy2(real, env["GIT_INDEX_FILE"])
-            # fm sync's mirror (.foreman/**.md) changes with every fm call: not the work being audited. Anything else
+            # fm sync's mirror (.sampo/**.md) changes with every fm call: not the work being audited. Anything else
             # put in that folder still counts. An ignored mirror needs no exclude, and git add refuses one naming it.
-            spec = [] if mirror_ignored(root) else [":(exclude,glob).foreman/**/*.md"]
+            spec = [f":(exclude,glob){m}/**/*.md" for m in MIRRORS
+                    if os.path.isdir(os.path.join(root, m)) and not mirror_ignored(root, m)]
             subprocess.run(["git", "-C", root, "add", "-A", "--", ".", *spec], env=env,
                            capture_output=True, timeout=left(120), check=True)
             tree = subprocess.run(["git", "-C", root, "write-tree"], env=env, capture_output=True, text=True,
@@ -4627,12 +4631,12 @@ def code_line(p):
 
 def main_view(p):
     """T-0134: the project as its main checkout sees it: the shared view files (status.json, STATE.md…) and the
-    repo's .foreman mirror belong to it, whichever lane wrote last (a lane's own view is fm ui, computed live)."""
+    repo's .sampo mirror belong to it, whichever lane wrote last (a lane's own view is fm ui, computed live)."""
     return Project(p.slug, main_worktree(p.root) or p.root, p.dir) if p.lane else p
 
 
 def regen_views(p, briefs=None, mirror=True):
-    """STATE/INBOX and the status files; with mirror (and fm sync on), the repo's .foreman/ mirror too. T-0673 review:
+    """STATE/INBOX and the status files; with mirror (and fm sync on), the repo's .sampo/ mirror too. T-0673 review:
     a capture into another project (fm projects --sweep) passes mirror=False, so nothing lands in that repo's tree."""
     p = main_view(p)
     sd = state_dict(p, briefs)
@@ -4775,7 +4779,7 @@ def _git(root, *args, timeout=2, fail="", proc=False):
 
 def git_summary(root):
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
-    changed = [l[3:] for l in _git(root, "status", "--porcelain", "--", ".", ":(exclude).foreman").splitlines()
+    changed = [l[3:] for l in _git(root, "status", "--porcelain", "--", ".", *(f":(exclude){m}" for m in MIRRORS)).splitlines()
                if len(l) > 3]  # fm sync's mirror changes with every fm call; it isn't the user's work
     return branch, changed
 
@@ -5305,9 +5309,9 @@ def scope_reason_covers(b, touches, outside):
 
 
 def scope_drift(b, files):
-    """Files this task edited outside its scope globs (T-0055); .foreman/ is Sampo's own mirror."""
+    """Files this task edited outside its scope globs (T-0055); .sampo/ (or .foreman/) is Sampo's own mirror."""
     scope = b.meta.get("scope") or []
-    return [f for f in files if scope and not f.startswith(".foreman/") and not any(glob_match(f, s) for s in scope)]
+    return [f for f in files if scope and not f.startswith(MIRROR_DIRS) and not any(glob_match(f, s) for s in scope)]
 
 
 _VERIFY_OF = lazy(r"— verify with `((?:(?!— verify with `).)+)`\s*$")  # T-2839: the last one, not a quoted one
@@ -5485,7 +5489,7 @@ def lint_verify(cmd, root):
         problems.append(f"it reaches a live service ({', '.join(live)}): keep it a manual check (sampo task evidence ID "
                         f"--ac N CMD RESULT), or point it at a sandbox")
     if _STATE_READ.search(cmd or ""):  # T-0963: it passes when the records say so, not when the code works
-        problems.append("it reads Sampo's state (.foreman, state/tasks or briefs), not the code: check the behaviour")
+        problems.append("it reads Sampo's state (.sampo, state/tasks or briefs), not the code: check the behaviour")
     if re.search(r"(?<![\w/.~-])state/projects/", cmd or ""):  # T-2988: state is git-ignored, so no lane holds it
         problems.append("it names state/projects/ relative to the repo: a builder lane has no state, so fm lane merge "
                         "reads it red; give the absolute path")
@@ -5552,7 +5556,7 @@ def _test_ids(tests, stem):
     return ids
 
 
-_STATE_READ = lazy(r"(?:^|[\s'\"=:/])\.foreman(?:/|\b)|\bforeman/state/(?:projects/[^/\s]+/)?(?:tasks|briefs)\b"
+_STATE_READ = lazy(r"(?:^|[\s'\"=:/])\.(?:sampo|foreman)(?:/|\b)|\bforeman/state/(?:projects/[^/\s]+/)?(?:tasks|briefs)\b"
                          r"|\bstate/projects/[^/\s]+/(?:tasks|briefs)\b|\bstate/(?:tasks|briefs)/T-\d+|\$\{?FOREMAN_STATE\b")  # a task file, not a repo's own state/
 
 

@@ -1802,7 +1802,7 @@ def _claimed(p, b, others=None):
     """T-1122: the files this task says are its own, its scope and the paths its 'scope:' log reasons name: an edit
     made in the same command as the finish has no touched record yet, so the record alone can't say it's this task's."""
     named = [s.rstrip("/") for s in b.meta.get("scope") or []]
-    ok = lambda n: n and not n.startswith(("/", "..", ".foreman/")) and os.path.isfile(os.path.join(p.root, n))
+    ok = lambda n: n and not n.startswith(("/", "..", *c.MIRROR_DIRS)) and os.path.isfile(os.path.join(p.root, n))
     out = {n for n in named if ok(n)}
     b = c.find_brief(p, b.id) or b  # T-2251: the finish's --docs landed in the file after b was read
     for line in b.section("Log").splitlines():  # a 'scope:' reason is a deliberate claim: it holds (T-1122)
@@ -1832,7 +1832,7 @@ def _landed(p, b):
     base = c.task_base(p.root, b) if c.git_root(p.root) else None
     if not base:
         return "Landed: unknown (no git start point on record)"
-    files = [f for f in smap.changed(p.root, base) if not f.startswith(".foreman/")]
+    files = [f for f in smap.changed(p.root, base) if not f.startswith(c.MIRROR_DIRS)]
     others = _others(p, b)
     theirs = set(_theirs(p, b, files, others))
     files = [f for f in files if f not in theirs][:500]
@@ -1878,7 +1878,7 @@ def _task_files(p, b):
         changed = smap.changed(p.root, base)
         theirs = set(_theirs(p, b, changed))  # T-1968: another task's edits are its to answer for (scope, audit)
         for f in changed:
-            if f not in touches and f not in theirs and not f.startswith(".foreman/"):
+            if f not in touches and f not in theirs and not f.startswith(c.MIRROR_DIRS):
                 try:
                     touches[f] = c.iso(os.path.getmtime(os.path.join(p.root, f)))
                 except OSError:  # deleted
@@ -2094,7 +2094,7 @@ def _stale_index_lock(root, age=600):
 
 def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
     """T-0129: commit what this task changed (from its focus snapshot), only after it closed: a refused close commits
-    nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it. dry (T-0720): only the
+    nothing, and work from before the task stays out. A synced .sampo/ mirror goes with it. dry (T-0720): only the
     credential check, before the close, leaving the index as it was."""
     from sampo import map as smap
     import subprocess
@@ -2103,7 +2103,7 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
         if dry:
             return
         raise UsageError(f"{b.id} is done, but has no start point on record to tell its files apart: commit by hand")
-    mirror = os.path.isdir(os.path.join(p.root, ".foreman")) and not c.mirror_ignored(p.root)
+    mirror = [m for m in c.MIRRORS if os.path.isdir(os.path.join(p.root, m)) and not c.mirror_ignored(p.root, m)]
     files = smap.changed(p.root, base)
     # T-0192: a file written in the command that focused the task is in the focus snapshot; the hooks saw it touched
     touched = [f for f in c.task_touches(p, b.id) if f not in files]
@@ -2127,13 +2127,13 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
     # out without a word; they're named now, and --with FILE commits one
     st = c._git(p.root, "status", "--porcelain", "-z", "-uall", "--no-renames", timeout=30)
     rest = [f for f in (e[3:] for e in st.split("\0") if len(e) > 3)
-            if f not in files and f not in theirs and f not in users and not f.startswith(".foreman/")]
+            if f not in files and f not in theirs and f not in users and not f.startswith(c.MIRROR_DIRS)]
     files += [f for f in rest if f in wanted]
     rest = [f for f in rest if f not in wanted]
     if rest and not dry:
         print(f"{b.id}: left out {len(rest)} uncommitted file(s) it didn't change: {', '.join(rest[:8])}"
               f"{' …' if len(rest) > 8 else ''} (sampo task finish {b.id} --commit ... --with FILE commits one)")
-    files += [".foreman"] if mirror else []
+    files += mirror
     elsewhere = {}  # T-0360: edits in another checkout are that repo's to commit, so say where they are
     for e in c.ledger_tail(p, c.TASK_WINDOW):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == b.id else None
@@ -2658,7 +2658,7 @@ def _close_warnings(p, b, files):
 
 
 _CACHES = re.compile(r"(?:^|/)(?:__pycache__|\.pytest_cache|\.mypy_cache|node_modules|\.venv|venv|\.tox|\.cache|"
-                     r"\.foreman|\.claude|state|local|backups)(?:/|$)")  # rewritten by every run: never "left behind"
+                     r"\.sampo|\.foreman|\.claude|state|local|backups)(?:/|$)")  # rewritten by every run: never "left behind"
 
 
 def _close_warnings_of(p, b, files):
@@ -6043,7 +6043,7 @@ def cmd_audit(args):
 
 
 def _sync_in(args):
-    """fm sync: a pull or merge changed .foreman/, so take it in before this command works on the old copy (cheap when
+    """fm sync: a pull or merge changed .sampo/, so take it in before this command works on the old copy (cheap when
     nothing came in: a hash per mirrored file). Never in the way of the command itself."""
     if getattr(args, "cmd", None) == "sync":
         return
@@ -6052,7 +6052,7 @@ def _sync_in(args):
         if not c.read_meta(p).get("sync"):
             return
         from sampo import sync
-        if sync.incoming(p):
+        if sync.incoming(p):  # T-3342: the old folder is read as it is; it moves only in `sampo sync on/export`
             with c.lock(p.dir):
                 sync.import_(p)
                 c.regen_views(p)
@@ -7447,9 +7447,9 @@ def _build_parser(only=None):
     s.add_argument("--sweep", action="store_true", help="ask the local model about recent unmatched questions first")
 
     s = add("sync", lazy("sampo.sync", "cmd_sync"), tier=("Project and settings", 790),
-            help="opt-in mirror of this project's briefs, decisions and research in the repo (.foreman/)")
+            help="opt-in mirror of this project's briefs, decisions and research in the repo (.sampo/)")
     s.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "import", "export"])
-    s.add_argument("--remove", action="store_true", help="off: also delete .foreman/")
+    s.add_argument("--remove", action="store_true", help="off: also delete .sampo/")
 
     s = add("audit", cmd_audit, tier=("Finding your way", 420), help="prep audits: freeze the task's diff and write one review brief for one reviewer")
     s.add_argument("action", choices=["prep", "scan", "run"], help="prep ID: review brief for a task; scan: mechanical "

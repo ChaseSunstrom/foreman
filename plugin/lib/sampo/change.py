@@ -143,7 +143,7 @@ def _py_rename(text, old, new):
 def _files(p, glob):
     names = c._git(p.root, "ls-files", "-co", "--exclude-standard", timeout=60).splitlines()
     return [f for f in names if (not glob or fnmatch.fnmatch(f, glob)) and os.path.isfile(os.path.join(p.root, f))
-            and not f.startswith((".foreman/", ".git/"))]
+            and not f.startswith((*c.MIRROR_DIRS, ".git/"))]
 
 
 def _residual_re(old):

@@ -123,10 +123,10 @@ class Secrets(ForemanTestCase):
         self.assertEqual(self.git("diff", "--cached", "--name-only").split(), ["staged.txt"], "still staged, not committed")
 
     def test_finish_commit_takes_paths_literally_and_leaves_out_an_ignored_mirror(self):
-        # session audit: a file named '*' widened the pathspec to every changed file, and an ignored .foreman/ made
+        # session audit: a file named '*' widened the pathspec to every changed file, and an ignored .sampo/ made
         # git add (so every task commit) fail
         self.fm("init")
-        self.write(".gitignore", ".foreman/\n")
+        self.write(".gitignore", ".sampo/\n")
         self.git("add", ".gitignore")
         self.git("commit", "-qm", "ignore the mirror")
         self.fm("sync", "on")

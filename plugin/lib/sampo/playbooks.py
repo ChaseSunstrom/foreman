@@ -20,7 +20,7 @@ runs (PLUGIN_ROOT), and the `fm` on PATH reads the main checkout's playbooks.
 T-1621: `fm playbooks show NAME` is how the skill loads one: each {{fact}} (FACTS) filled in from fm map for the project
 it runs in, an unknown or empty one left as {{fact?}}, and the project's .claude/playbooks/<stage>/<name>.md after it
 under a 'This project' heading: beside the project's other Claude Code files, shared through git, and a place the guard
-lets a session write (.foreman/ is fm's alone). The overlay is the repo's own markdown: read only as a plain file below
+lets a session write (.sampo/ is fm's alone). The overlay is the repo's own markdown: read only as a plain file below
 the checkout (no link anywhere under it), cut at OVERLAY_MAX, control characters dropped, never run, its {{…}} left
 alone, and shown as one blockquote under a provenance line, marked (uncommitted) when it differs from HEAD: text an
 injected session planted can't pass for Sampo's. A show counts as a read for reach() and fm usage, and the lint
@@ -1233,8 +1233,8 @@ def cmd_show(args):
             f"{len(got['runnable'])} runnable block(s), {len(got['verify'])} verify command(s)\n" + "\n".join(lines)
             if lines else "no checks: no runnable python block and no named verify command")) or 0
     p = cli.resolve(args) if getattr(args, "project", None) else c.find_project(os.getcwd())
-    if p and os.path.isdir(os.path.join(p.root, ".foreman", "playbooks")):
-        print(f"fm playbooks: .foreman/playbooks/ isn't read; overlays live in {OVERLAYS}/<stage>/<name>.md",
+    if p and any(os.path.isdir(os.path.join(p.root, m, "playbooks")) for m in c.MIRRORS):
+        print(f"fm playbooks: {c.MIRROR}/playbooks/ isn't read; overlays live in {OVERLAYS}/<stage>/<name>.md",
               file=sys.stderr)
     text = load(hits[0], ROOT, p)
     if getattr(args, "model", None):  # T-2917: the kept small-model variant for that profile, else the original

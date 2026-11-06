@@ -1,7 +1,8 @@
-"""fm sync: an opt-in, committed mirror of the project's Foreman state (.foreman/) that another clone imports (T-0022).
+"""fm sync: an opt-in, committed mirror of the project's Sampo state (.sampo/) that another clone imports (T-0022).
 Authorization never travels: grants are stripped on export and ignored on import."""
 import os
 import re
+import subprocess
 
 from helpers import ForemanTestCase, read_text
 
@@ -19,7 +20,7 @@ class Sync(ForemanTestCase):
         self.fm("task", "set", self.tid, "approved=true")
         self.fm("decide", "CSV over XLSX (no new dependency)", "--task", self.tid)
         self.fm("research", "add", "csv-notes", input="# CSV\nRFC 4180 quoting.\n")
-        self.mirror = os.path.join(self.repo, ".foreman")
+        self.mirror = os.path.join(self.repo, ".sampo")
 
     def exported(self):
         path = next(os.path.join(d, f) for d, _, fs in os.walk(os.path.join(self.mirror, "tasks")) for f in fs
@@ -73,7 +74,7 @@ class Sync(ForemanTestCase):
         b = c.find_brief(p, self.tid)
         self.assertEqual(b.title, "Add export")
         self.assertEqual((b.meta.get("allow") or [], b.meta.get("approved")), ([], None))
-        self.assertTrue(c.read_meta(p).get("sync"), "a repo with .foreman/ keeps syncing on the new machine")
+        self.assertTrue(c.read_meta(p).get("sync"), "a repo with .sampo/ keeps syncing on the new machine")
         self.assertIn("CSV over XLSX", read_text(os.path.join(p.dir, "decisions.md")))
 
     def test_a_newer_pulled_brief_updates_the_local_one_but_never_its_grants(self):
@@ -251,6 +252,235 @@ class Sync(ForemanTestCase):
         ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.tmp, foreman_home=self.home)
         r = g.check("Write", {"file_path": os.path.join(self.mirror, "tasks", "T-0001-x.md"), "content": "x"}, ctx)
         self.assertEqual(r.category, "state-direct")
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", self.repo, *args], capture_output=True, text=True).stdout.strip()
+
+    def legacy(self, tracked=True):
+        """T-3342: a repo whose mirror is still the old .foreman/ folder."""
+        self.fm("sync", "on")
+        os.rename(self.mirror, os.path.join(self.repo, ".foreman"))
+        if tracked:
+            self.git("add", "-A")
+            self.git("commit", "-qm", "legacy mirror")
+        return os.path.join(self.repo, ".foreman")
+
+    def test_fresh_sync_writes_sampo_and_status_and_readme_name_it(self):
+        self.fm("sync", "on")
+        self.assertTrue(os.path.isdir(self.mirror))
+        self.assertFalse(os.path.exists(os.path.join(self.repo, ".foreman")))
+        self.assertIn("# .sampo", read_text(os.path.join(self.mirror, "README.md")))
+        self.assertIn(".sampo", self.fm_json("sync", "status")["dir"])
+
+    def test_a_tracked_foreman_becomes_one_logged_rename_commit(self):
+        old = self.legacy()
+        self.assertEqual(self.fm_json("sync", "status")["dir"], old, "read in place until the move")
+        before = self.git("rev-list", "--count", "HEAD")
+        self.fm("sync", "export")
+        self.assertFalse(os.path.exists(old))
+        self.assertIn("# .sampo", read_text(os.path.join(self.mirror, "README.md")))
+        self.assertEqual(int(self.git("rev-list", "--count", "HEAD")), int(before) + 1)
+        self.assertEqual(self.git("log", "-1", "--format=%s"), "Move fm sync's mirror .foreman/ to .sampo/")
+        self.assertEqual(self.git("ls-files", ".foreman"), "")
+        self.assertTrue(self.git("ls-files", ".sampo"))
+        self.assertEqual(self.git("status", "--porcelain", "--", ".sampo", ".foreman"), "")
+        moved = [e for e in c.ledger_tail(c.find_project(self.repo), 50) if e.get("event") == "sync_moved"]
+        self.assertEqual(len(moved), 1)
+        self.assertEqual(moved[0]["data"]["sha"], self.git("rev-parse", "--short", "HEAD"))
+        self.fm("sync", "export")  # a second run moves nothing
+        self.assertEqual(int(self.git("rev-list", "--count", "HEAD")), int(before) + 1)
+
+    def test_an_ignored_foreman_is_renamed_without_a_commit(self):
+        with open(os.path.join(self.repo, ".gitignore"), "a") as f:
+            f.write(".foreman/\n")
+        self.git("add", ".gitignore")
+        self.git("commit", "-qm", "ignore")
+        old = self.legacy(tracked=False)
+        head = self.git("rev-parse", "HEAD")
+        self.fm("sync", "export")
+        self.assertTrue(os.path.isdir(self.mirror))
+        self.assertFalse(os.path.exists(old))
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual(self.git("check-ignore", ".sampo/README.md"), ".sampo/README.md")
+
+    def test_both_folders_fold_into_sampo_and_commit(self):
+        old = self.legacy()
+        self.fm("sync", "export")  # moved
+        os.makedirs(os.path.join(old, "research"))  # a pull brings the old folder back
+        with open(os.path.join(old, "research", "theirs.md"), "w") as f:
+            f.write("# theirs\n")
+        with open(os.path.join(old, "decisions.md"), "w") as f:
+            f.write("old copy\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "pulled old mirror")
+        mine = read_text(os.path.join(self.mirror, "decisions.md"))
+        self.fm("sync", "export")
+        self.assertFalse(os.path.exists(old))
+        self.assertEqual(read_text(os.path.join(self.mirror, "research", "theirs.md")), "# theirs\n")
+        text = read_text(os.path.join(self.mirror, "decisions.md"))
+        self.assertIn(mine.strip(), text, "a file .sampo has is kept")
+        self.assertIn("old copy", text)
+        self.assertEqual(self.git("ls-files", ".foreman"), "")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_an_untracked_newer_foreman_beside_a_tracked_sampo_merges_in_without_loss(self):
+        old = self.legacy()
+        self.fm("sync", "export")  # moved and committed
+        os.makedirs(os.path.join(old, "research"))  # old code keeps writing an untracked .foreman/
+        with open(os.path.join(old, "research", "new.md"), "w") as f:
+            f.write("# new\n")
+        with open(os.path.join(old, "decisions.md"), "w") as f:
+            f.write("- only in the old folder\n")
+        with open(os.path.join(old, "research", "csv-notes.md"), "w") as f:
+            f.write("# CSV\nnewer text\n")
+        self.fm("sync", "export")
+        self.assertFalse(os.path.exists(old))
+        self.assertEqual(read_text(os.path.join(self.mirror, "research", "new.md")), "# new\n")
+        self.assertNotIn("newer text", read_text(os.path.join(self.mirror, "research", "csv-notes.md")), "never by mtime")
+        self.assertIn("newer text", self.aside_text())  # the other copy is set aside, not lost
+        text = read_text(os.path.join(self.mirror, "decisions.md"))
+        self.assertIn("CSV over XLSX", text)
+        self.assertIn("only in the old folder", text)
+
+    def aside_text(self):
+        saved = os.path.join(c.find_project(self.repo).dir, "sync-conflicts")
+        return "".join(read_text(os.path.join(saved, f)) for f in os.listdir(saved)) if os.path.isdir(saved) else ""
+
+    def brief_path(self, base):
+        return next(os.path.join(d, f) for d, _, fs in os.walk(os.path.join(base, "tasks")) for f in fs
+                    if f.startswith(self.tid))
+
+    def test_a_stale_old_brief_never_beats_a_newer_sampo_brief(self):  # the clock is `updated`, never mtime
+        old = self.legacy()
+        self.fm("sync", "export")
+        mine = read_text(self.brief_path(self.mirror))
+        stale = re.sub(r"(?m)^(updated:).*$", r"\1 2000-01-01T00:00:00Z", mine).replace("Add export", "STALE TITLE")
+        self.assertNotEqual(stale, mine)
+        os.makedirs(os.path.join(old, "tasks"))
+        with open(os.path.join(old, "tasks", os.path.basename(self.brief_path(self.mirror))), "w") as f:
+            f.write(stale)  # written just now: the newest mtime
+        self.fm("sync", "export")
+        self.assertFalse(os.path.exists(old))
+        self.assertNotIn("STALE TITLE", read_text(self.brief_path(self.mirror)))
+        self.assertIn("STALE TITLE", self.aside_text())
+
+    def test_non_markdown_files_in_the_old_folder_travel_or_are_set_aside(self):
+        old = self.legacy()
+        self.fm("sync", "export")
+        os.makedirs(old)
+        for rel, text in (("policy.toml", "a = 1\n"), ("research/data.csv", "x,y\n")):
+            os.makedirs(os.path.dirname(os.path.join(old, rel)), exist_ok=True)
+            with open(os.path.join(old, rel), "w") as f:
+                f.write(text)
+        with open(os.path.join(self.mirror, "research", "data.csv"), "w") as f:
+            f.write("mine\n")
+        self.fm("sync", "export")
+        self.assertFalse(os.path.exists(old))
+        self.assertEqual(read_text(os.path.join(self.mirror, "policy.toml")), "a = 1\n")
+        self.assertEqual(read_text(os.path.join(self.mirror, "research", "data.csv")), "mine\n")
+        self.assertIn("x,y", self.aside_text())
+
+    def test_a_failed_move_commit_keeps_uncommitted_mirror_edits(self):
+        old = self.legacy()
+        hook = os.path.join(self.repo, ".git", "hooks", "pre-commit")
+        os.makedirs(os.path.dirname(hook), exist_ok=True)
+        with open(hook, "w") as f:
+            f.write("#!/bin/sh\nexit 1\n")
+        os.chmod(hook, 0o755)
+        note = os.path.join(old, "research", "csv-notes.md")
+        with open(note, "a") as f:
+            f.write("uncommitted edit\n")
+        self.fm("sync", "export")
+        self.assertIn("uncommitted edit", read_text(note))
+        # both folders: the same failure leaves the old folder, with its edits, in place
+        os.remove(hook)
+        self.fm("sync", "export")
+        self.assertIn("uncommitted edit", read_text(os.path.join(self.mirror, "research", "csv-notes.md")))
+        os.makedirs(old)
+        with open(os.path.join(old, "extra.md"), "w") as f:
+            f.write("extra edit\n")
+        self.git("add", "-f", "-A")
+        self.git("commit", "-qm", "pulled old")
+        with open(os.path.join(old, "extra.md"), "a") as f:
+            f.write("more\n")
+        with open(hook, "w") as f:
+            f.write("#!/bin/sh\nexit 1\n")
+        os.chmod(hook, 0o755)
+        self.fm("sync", "export")
+        self.assertIn("more", read_text(os.path.join(old, "extra.md")))
+        self.assertEqual(self.git("ls-files", ".foreman"), ".foreman/extra.md", "the index is put back too")
+
+    def test_a_users_own_sampo_folder_is_never_merged_moved_or_removed(self):
+        old = self.legacy()
+        os.makedirs(self.mirror)
+        with open(os.path.join(self.mirror, "notes.txt"), "w") as f:
+            f.write("mine\n")
+        self.fm("sync", "export")
+        self.assertTrue(os.path.isdir(old), "not moved into someone else's folder")
+        self.assertEqual(os.listdir(self.mirror), ["notes.txt"])
+        self.assertFalse(g.classify_write(os.path.join(self.mirror, "notes.txt"), g.Ctx(
+            cwd=self.repo, project_root=self.repo, home=self.tmp, foreman_home=self.tmp)))
+
+    def test_a_tracked_sampo_is_not_added_to_the_exclude_file(self):
+        old = self.legacy(tracked=False)
+        with open(os.path.join(self.repo, ".git", "info", "exclude"), "a") as f:
+            f.write("/.foreman/\n")
+        os.makedirs(self.mirror)
+        with open(os.path.join(self.mirror, "README.md"), "w") as f:
+            f.write("# .sampo\n")
+        self.git("add", "-f", ".sampo")
+        self.git("commit", "-qm", "a tracked .sampo")
+        self.fm("sync", "export")
+        self.assertFalse(os.path.exists(old))
+        self.assertNotIn("/.sampo/", read_text(os.path.join(self.repo, ".git", "info", "exclude")))
+
+    def test_a_lane_worktree_never_moves_the_main_checkouts_mirror(self):
+        old = self.legacy()
+        head = self.git("rev-parse", "HEAD")
+        wt = os.path.join(self.tmp, "lane-wt")
+        self.git("worktree", "add", "-q", "-b", "lane-x", wt)
+        self.fm("sync", "export", cwd=wt)
+        self.fm("task", "log", self.tid, "from the lane", cwd=wt)
+        self.assertTrue(os.path.isdir(old))
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        sub = os.path.join(self.repo, "sub")
+        os.makedirs(sub)
+        self.fm("sync", "export", cwd=sub)  # the repo's own checkout, from a subfolder: its own toplevel
+        self.assertFalse(os.path.exists(old))
+
+    def test_nothing_moves_mid_merge_or_on_a_detached_head(self):
+        old = self.legacy()
+        with open(os.path.join(self.repo, ".git", "MERGE_HEAD"), "w") as f:
+            f.write(self.git("rev-parse", "HEAD") + "\n")
+        self.fm("sync", "export")
+        self.assertTrue(os.path.isdir(old))
+        os.remove(os.path.join(self.repo, ".git", "MERGE_HEAD"))
+        self.git("checkout", "-q", "--detach")
+        self.fm("sync", "export")
+        self.assertTrue(os.path.isdir(old))
+        self.assertFalse(os.path.exists(self.mirror))
+
+    def test_a_failed_commit_puts_it_back_and_only_export_retries(self):
+        old = self.legacy()
+        hook = os.path.join(self.repo, ".git", "hooks", "pre-commit")
+        os.makedirs(os.path.dirname(hook), exist_ok=True)
+        with open(hook, "w") as f:
+            f.write("#!/bin/sh\nexit 1\n")
+        os.chmod(hook, 0o755)
+        head = self.git("rev-parse", "HEAD")
+        self.fm("sync", "export")
+        self.assertTrue(os.path.isdir(old))
+        self.assertFalse(os.path.exists(self.mirror))
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual(self.git("status", "--porcelain", "--", ".foreman"), "")
+        self.assertIn("move", self.fm_json("sync", "status").get("move_error", ""))
+        os.remove(hook)
+        self.fm("task", "log", self.tid, "any other command")
+        self.assertTrue(os.path.isdir(old), "only sync export retries")
+        self.fm("sync", "export")
+        self.assertTrue(os.path.isdir(self.mirror))
+        self.assertFalse(os.path.exists(old))
+        self.assertNotIn("move_error", self.fm_json("sync", "status"))
 
     def test_status(self):
         self.assertIn("off", self.fm("sync", "status").stdout)

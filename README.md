@@ -389,7 +389,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 - The next time any session meets that failure, in this project or another on the machine, Claude gets the fix in the failure's context (`Sampo: known fix for this failure … Try that before anything else`), and a command that failed before is flagged before it runs again.
 - A look around (`ls`, `cat`, `git status`) or a retry that happens to pass teaches nothing. A code edit between the failure and the pass makes it a code fix, so nothing is kept.
 - A fix that keeps missing stops being offered, and a failure met three times with no fix becomes a task to remove its cause.
-- Project fixes travel with the repo: `sampo sync on` mirrors them into `.foreman/fixes.md` (`.sampo/` once the per-repo mirror is renamed), so clones, other machines and teammates' sessions get them through git. A fix that only came with the repo is offered as a hint to check (never as an instruction, never before a command runs) until you adopt it with `sampo fix trust N`. A sensitive project's fixes stay in that project.
+- Project fixes travel with the repo: `sampo sync on` mirrors them into `.sampo/fixes.md` (an older repo's `.foreman/` moves there once, in one commit), so clones, other machines and teammates' sessions get them through git. A fix that only came with the repo is offered as a hint to check (never as an instruction, never before a command runs) until you adopt it with `sampo fix trust N`. A sensitive project's fixes stay in that project.
 - `sampo fix list` shows them, `sampo fix add "<error>" --do "<what works>"` teaches one the hooks can't see, `sampo fix rm N` forgets one. A hook only ever says a fix; it never runs one.
 
 </details>

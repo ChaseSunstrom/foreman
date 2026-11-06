@@ -266,6 +266,7 @@ class UiView(ForemanTestCase):
         os.makedirs(elsewhere)
         p = self.fm("ui", "--json", cwd=elsewhere)
         self.assertEqual(json.loads(p.stdout), {"v": 1, "project": None})
+        self.assertFalse(os.path.exists(os.path.join(elsewhere, ".sampo")))
         self.assertFalse(os.path.exists(os.path.join(elsewhere, ".foreman")))
 
     def test_task_show_json_has_steps_criteria_and_depends(self):

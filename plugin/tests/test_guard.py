@@ -902,9 +902,10 @@ class Core(GuardCase):
             ("cd {fhome}/plugin/lib; cd /nonexistent-T0175; echo hi > fmguard.py", "core"),  # ; runs on after a failed cd
             # a known variable aimed somewhere harmless writes only there; nothing protected named, nothing blocked
             ("x=/tmp/out; cat {fhome}/plugin/lib/fmguard.py > $x", None),
-            ("d=/tmp/probe && mkdir -p $d && cd $d && echo x > .foreman/x", None),  # the T-0175 friction
+            ("d=/tmp/probe && mkdir -p $d && cd $d && echo x > .sampo/x", None),  # the T-0175 friction
             # the text after $( is also read on its own (T-0158), from the first folder: coarse, kept closed
             ("cd $(mktemp -d) && echo x > .foreman/x", "state-direct"),
+            ("cd $(mktemp -d) && echo x > .sampo/x", "state-direct"),
             ("cd $(mktemp -d) && echo x > out.txt", None),
             ("for f in a b; do echo $f > $f.txt; done", None),
             ("x=/tmp/a; false && x={fhome}/plugin/lib/fmguard.py; echo hi > $x", "core"),  # mixed: unknown, named

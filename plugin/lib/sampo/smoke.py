@@ -229,13 +229,13 @@ def cmd_smoke(args):
 
 
 def _rev(root):
-    """The folder a run's screenshots go in: the short commit; with tracked changes (fm sync's .foreman mirror aside),
+    """The folder a run's screenshots go in: the short commit; with tracked changes (fm sync's .sampo mirror aside),
     -dirty-<a hash of the diff>, so other changes never overwrite the frames a receipt names (-dirty alone when git
     can't say)."""
     sha = re.sub(r"\W", "", c._git(root, "rev-parse", "--short", "HEAD", timeout=10).strip())
     if not sha:
         return "no-commit"
-    diff = c._git(root, "diff", "HEAD", "--binary", "--", ".", ":(exclude).foreman", timeout=10, fail=None)
+    diff = c._git(root, "diff", "HEAD", "--binary", "--", ".", *(f":(exclude){m}" for m in c.MIRRORS), timeout=10, fail=None)
     if diff is None:
         return sha + "-dirty"
     return sha + (f"-dirty-{hashlib.sha256(diff.encode('utf-8', 'replace')).hexdigest()[:8]}" if diff else "")

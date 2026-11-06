@@ -2858,7 +2858,8 @@ class Command(CodeCase):
     def test_extensions_load_from_foremans_home_and_never_from_the_project(self):
         panel = "def setup(api):\n    api.panel('{0}', '{0}', lambda st, w, h, app: [])\n"
         for folder, name in ((os.path.join(self.home, "tui"), "fromhome"), (os.path.join(self.repo, "tui"), "fromrepo"),
-                             (os.path.join(self.repo, ".foreman", "tui"), "fromrepo2")):
+                             (os.path.join(self.repo, ".sampo", "tui"), "fromrepo2"),
+                             (os.path.join(self.repo, ".foreman", "tui"), "fromrepo3")):
             os.makedirs(folder, exist_ok=True)
             with open(os.path.join(folder, f"{name}.py"), "w", encoding="utf-8") as f:
                 f.write(panel.format(name))

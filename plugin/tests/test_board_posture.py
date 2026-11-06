@@ -50,6 +50,7 @@ class BoardPosture(ForemanTestCase):
 
     def test_lint_flags_foreman_state_not_a_repos_own_state_folder(self):
         self.assertTrue(c.lint_verify("cat ~/.claude/foreman/state/projects/x/tasks/T-1.md", self.repo))
+        self.assertTrue(c.lint_verify("grep done .sampo/tasks/T-0001.md", self.repo))
         self.assertTrue(c.lint_verify("grep done .foreman/tasks/T-0001.md", self.repo))
         self.assertFalse(c.lint_verify("python3 -m pytest tests/state/tasks", self.repo), "a repo's own state/tasks folder")
 
@@ -91,7 +92,7 @@ class BoardPosture(ForemanTestCase):
         self.assertNotIn("hooks", read_json(os.path.join(home, ".claude", "settings.json")))
 
     def test_lint_verify_flags_a_check_that_reads_foremans_state(self):
-        for cmd in ("grep -q done .foreman/tasks/T-0001.md",
+        for cmd in ("grep -q done .sampo/tasks/T-0001.md", "grep -q done .foreman/tasks/T-0001.md",
                     "test -f ~/.claude/foreman/state/projects/app-1/tasks/T-0001.md",
                     "cat state/briefs/T-0001.md"):
             self.assertTrue(any("Sampo's state" in x for x in c.lint_verify(cmd, self.repo)), cmd)

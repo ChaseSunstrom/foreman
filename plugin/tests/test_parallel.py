@@ -185,9 +185,9 @@ class Parallel(ForemanTestCase):
         self.assertEqual(len(self.sessions()), before, "the next run starts nothing")
 
     def test_a_committed_mirror_doesnt_count_as_the_users_changes(self):
-        # T-0174 review: fm keeps a tracked .foreman/ current from every lane session, in the main checkout
+        # T-0174 review: fm keeps a tracked .sampo/ current from every lane session, in the main checkout
         self.fm("sync", "on")
-        subprocess.run(["git", "-C", self.repo, "add", ".foreman"], check=True)
+        subprocess.run(["git", "-C", self.repo, "add", ".sampo"], check=True)
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "mirror"], check=True)
         self.task("one", "work-T-0001.txt")
         self.task("two", "work-T-0002.txt")

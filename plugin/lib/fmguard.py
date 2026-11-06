@@ -701,12 +701,24 @@ def _system_path(p, ctx):
             and not any(_under(p, s) for s in getattr(ctx, "scratch", ()) or ()))
 
 
+def _fm_mirror(d):
+    """.sampo/ is fm's mirror only when it has a tasks/ folder or fm's README heading (T-3342)."""
+    try:
+        if os.path.isdir(os.path.join(d, "tasks")):
+            return True
+        with open(os.path.join(d, "README.md"), encoding="utf-8") as f:
+            return f.readline().strip() == "# .sampo"
+    except (OSError, ValueError):
+        return not os.path.exists(d)  # absent: a first write is fm's own
+
+
 def classify_write(path, ctx, real=True):
     cats = []
     # a link (real=False) is judged where it is, and where its folder really is (a link inside a linked folder)
     for p in (_variants(path) if real else {path, os.path.join(os.path.realpath(os.path.dirname(path)),
                                                                 os.path.basename(path))}):
         mirrors = [os.path.join(ctx.project_root, d) for d in (".foreman", ".sampo")] if ctx.project_root else []  # fm sync
+        mirrors = [m for m in mirrors if not m.endswith(".sampo") or _fm_mirror(m)]  # a user's own .sampo/ isn't state
         if any(d and _under(p, d) for d in [*ctx.state_dirs, *mirrors]):
             cats.append("state-direct")
         if _is_core(p, ctx):

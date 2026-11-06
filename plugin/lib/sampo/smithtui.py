@@ -4256,7 +4256,9 @@ def project_settings_path(root):
 
 def policy_path(root):
     """T-1611: the repo's policy, committed with it: [pin] settings no narrower scope overrides."""
-    return os.path.join(root, ".foreman", "policy.toml")
+    from sampo import core as c
+    paths = [os.path.join(root, m,"policy.toml") for m in c.MIRRORS]
+    return next((x for x in paths if os.path.isfile(x)), paths[0])
 
 
 def _settings_file(path):
