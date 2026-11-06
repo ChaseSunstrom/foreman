@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T15:20:06Z",
- "rev": "505653aa8",
+ "updated": "2026-11-06T15:57:59Z",
+ "rev": "777427b01",
  "capabilities": [
   {
    "n": 1,
@@ -36247,16 +36247,16 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 884,
+ "unproven": 886,
  "unproven_kinds": {
   "meaning-notes": 391,
-  "meaning-user": 252,
+  "meaning-user": 254,
   "research-uncited": 34,
   "perf-typed": 63,
   "typed": 43,
   "red": 86,
   "tui-unshot": 12,
-  "docs": 130,
+  "docs": 129,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 41,
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 31015,
+   "generated": 31616,
    "write": {
-    "title": 205,
-    "line": 1947,
+    "title": 213,
+    "line": 1967,
     "payoff": 21,
     "kill test": 90,
     "code": 11
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 15809,
-    "tier": 10900,
-    "novelty": 107
+    "kill": 16002,
+    "tier": 11049,
+    "novelty": 109
    },
-   "merged": 568,
-   "kept": 1287,
-   "pending": 0
+   "merged": 592,
+   "kept": 1303,
+   "pending": 189
   },
   "families": [
    {
@@ -37522,14 +37522,14 @@
     ]
    },
    {
-    "id": "F-016366",
-    "size": 139,
-    "lead": "Compress your debugging history into a single replayable tape",
-    "today": "Today you can't rewind your entire session to a specific logical state and see which of your past edits actually prevented a future bug.",
-    "with_this": "With this, Sampo can store a compact, causal tape of your decisions, allowing it to instantly simulate counterfactual fixes and verify if a current change would have broken the system had you chosen a different path earlier.",
+    "id": "F-021968",
+    "size": 141,
+    "lead": "Harmonize parallel agents via standing wave resonance",
+    "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
+    "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
     "tier": "extreme",
     "cold": null,
-    "wild": 4,
+    "wild": 5,
     "block": null,
     "stage": "candidate",
     "evidence": "",
@@ -38312,22 +38312,6 @@
     ]
    },
    {
-    "id": "F-021968",
-    "size": 1,
-    "lead": "Harmonize parallel agents via standing wave resonance",
-    "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
-    "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
-    "tier": "extreme",
-    "cold": null,
-    "wild": 5,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "onboarding"
-    ]
-   },
-   {
     "id": "F-022711",
     "size": 1,
     "lead": "Excavate the semantic strata of your org's secret leaks",
@@ -38472,11 +38456,11 @@
     ]
    },
    {
-    "id": "F-010989",
-    "size": 9,
-    "lead": "Run parallel refactors that share a single moving history",
-    "today": "Today you can't run multiple large refactors in parallel without them diverging, merging, or destroying each other's context.",
-    "with_this": "With this, you can spin up a dozen isolated refactors against the same living codebase, and each one sees a consistent, evolving state without manual rebasing.",
+    "id": "F-005844",
+    "size": 12,
+    "lead": "Auto-merge conflicting features by semantic intent inference",
+    "today": "Today you can't let CI decide which of two conflicting feature branches is the correct business logic.",
+    "with_this": "With this, you can push conflicting feature branches and CI resolves them into a single coherent implementation without human review.",
     "tier": "xhigh",
     "cold": null,
     "wild": 4,
@@ -38484,6 +38468,7 @@
     "stage": "candidate",
     "evidence": "",
     "kinds": [
+     "features",
      "migrations",
      "refactors",
      "releases"
@@ -39365,22 +39350,6 @@
     "evidence": "",
     "kinds": [
      "bugs"
-    ]
-   },
-   {
-    "id": "F-005844",
-    "size": 1,
-    "lead": "Auto-merge conflicting features by semantic intent inference",
-    "today": "Today you can't let CI decide which of two conflicting feature branches is the correct business logic.",
-    "with_this": "With this, you can push conflicting feature branches and CI resolves them into a single coherent implementation without human review.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
     ]
    },
    {
@@ -40742,12 +40711,44 @@
     "kinds": [
      "features"
     ]
+   },
+   {
+    "id": "F-011897",
+    "size": 1,
+    "lead": "Index the market price of per-language exam stability",
+    "today": "Today you can't see a live market price for the stability of your language-specific tests",
+    "with_this": "With this, you can track a live index that reflects the community's confidence in your language tests",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
+   },
+   {
+    "id": "F-011905",
+    "size": 1,
+    "lead": "Evolve release gates from live traffic patterns",
+    "today": "Today you can't let your CI decide if a release is safe based on the actual runtime behavior of previous versions.",
+    "with_this": "With this, you can ship updates only when the system's natural error rates and load patterns confirm stability, preventing rollback chaos.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
    }
   ],
-  "families_total": 1023,
+  "families_total": 1041,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1287
+   "total": 1303
   }
  },
  "steer": {
