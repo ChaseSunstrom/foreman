@@ -1033,6 +1033,37 @@ def _version(root):
     return (_load_json(os.path.join(root, ".claude-plugin", "plugin.json")) or {}).get("version") or "?"
 
 
+def check_aliases(version=None, lib=None, checkout=None):
+    """T-3095: WARN, naming them, when the fm*.py old-import shims are still present at or past c.ALIAS_UNTIL, in a
+    Sampo checkout only (a user install can't remove them: the update restores them), skipping any still imported."""
+    v = version or _version(PLUGIN)
+    if not re.match(r"\d+\.\d+", v):
+        return Result("old aliases", "PASS", f"plugin version unknown ({v}): not checked")
+    nums = lambda s: (tuple(int(x) for x in re.findall(r"\d+", s)[:3]) + (0, 0, 0))[:3]
+    if nums(v) < nums(c.ALIAS_UNTIL):
+        return Result("old aliases", "PASS", f"{v} is before {c.ALIAS_UNTIL}, when the fm*.py shims may go")
+    root = checkout or os.path.dirname(PLUGIN)
+    if not os.path.exists(os.path.join(root, ".git")):
+        return Result("old aliases", "PASS", "installed copy: the shims go in the repo, not here")
+    lib = lib or os.path.join(PLUGIN, "lib")
+    left = []
+    for f in sorted(glob.glob(os.path.join(lib, "fm*.py"))):
+        with open(f, encoding="utf-8") as fh:
+            if "Old import path" in fh.read():
+                left.append(os.path.basename(f)[:-3])
+    used = set()
+    for dp, _, fs in os.walk(os.path.join(root, "plugin")):
+        for f in fs:
+            if f.endswith(".py"):
+                with open(os.path.join(dp, f), encoding="utf-8", errors="replace") as fh:
+                    used.update(re.findall(r"^\s*(?:import|from)\s+(fm\w+)\b", fh.read(), re.M))
+    left = [m for m in left if m not in used]
+    if not left:
+        return Result("old aliases", "PASS", "no unused fm*.py shims left")
+    return Result("old aliases", "WARN", f"{v} is past {c.ALIAS_UNTIL}: delete the old import shims ({len(left)}): "
+                                         + ", ".join(left[:8]) + (", …" if len(left) > 8 else ""))
+
+
 def check_dual_install(home=None, known=None, installed=None):
     """T-0923: Sampo installed from a marketplace that isn't this home (GitHub, another folder) beside install.sh's
     copy here: sessions run whichever they started with, and the two drift apart. Different versions warn."""
@@ -2817,6 +2848,7 @@ def run_all(full=False, accept_supply=False):
                           if stale else "status views match the briefs", int((time.perf_counter() - t0) * 1000)))
     here = c.find_project(os.getcwd())
     results.append(check_dual_install())
+    results.append(check_aliases())  # T-3095
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
     results.append(check_product(here))

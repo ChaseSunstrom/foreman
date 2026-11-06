@@ -50,6 +50,7 @@ class lazy:  # lowercase: reads like re.compile at each site
         return attr
 
 
+ALIAS_UNTIL = "1.4.0"  # T-3095: the plugin/lib/fm*.py shims (T-2742, renamed at 1.2.x) go from this release: two minors on
 PLUGIN_ROOT =os.path.dirname(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 

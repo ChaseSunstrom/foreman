@@ -1503,3 +1503,37 @@ class ReleaseAge(unittest.TestCase):  # T-2597: twelve days and 746 bullets went
         self.assertEqual(d.check_release_age(self.write("no changelog here")).status, "PASS")
         import tempfile
         self.assertEqual(d.check_release_age(tempfile.gettempdir() + "/no-such-dir-T2597").status, "PASS")
+
+
+class AliasRemoval(unittest.TestCase):  # T-3095: the fm*.py shims name the release they may go; doctor warns once it's reached
+    def test_warns_naming_the_aliases_from_the_removal_version_and_not_before(self):
+        self.assertEqual(c.ALIAS_UNTIL, "1.4.0")
+        r = d.check_aliases(version="1.3.99")
+        self.assertEqual(r.status, "PASS")
+        for v in ("1.4.0", "2.0.1"):
+            r = d.check_aliases(version=v)
+            self.assertEqual(r.status, "WARN")
+            self.assertIn("1.4.0", r.detail)
+            self.assertIn("fmagents", r.detail)
+        self.assertEqual(d.check_aliases(version="?").status, "PASS")
+        self.assertNotIn("before", d.check_aliases(version="?").detail)
+        self.assertEqual(d.check_aliases(version="1.4").status, "WARN")  # 1.4 is 1.4.0
+
+    def test_only_real_unused_shims_in_a_checkout(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        lib = os.path.join(root, "plugin", "lib")
+        os.makedirs(lib)
+        shim = '"""Old import path, kept for two releases (T-2742): the module is sampo.%s."""\n'
+        for n in ("fmone", "fmtwo"):
+            open(os.path.join(lib, n + ".py"), "w").write(shim % n[2:])
+        open(os.path.join(lib, "fmguard.py"), "w").write('"""the real guard"""\n')
+        open(os.path.join(lib, "user.py"), "w").write("import fmtwo\n")
+        self.assertEqual(d.check_aliases(version="1.4.0", lib=lib, checkout=root).status, "PASS")  # no .git: an install
+        os.mkdir(os.path.join(root, ".git"))
+        r = d.check_aliases(version="1.4.0", lib=lib, checkout=root)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("fmone", r.detail)
+        self.assertNotIn("fmguard", r.detail)
+        self.assertNotIn("fmtwo", r.detail)  # still imported
+        self.assertNotIn("fmguard", d.check_aliases(version="1.4.0").detail)  # the real tree
