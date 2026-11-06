@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T10:27:44Z",
- "rev": "810a91ad3",
+ "updated": "2026-11-06T12:53:17Z",
+ "rev": "a0f6762fe",
  "capabilities": [
   {
    "n": 1,
@@ -36247,16 +36247,16 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 872,
+ "unproven": 880,
  "unproven_kinds": {
-  "meaning-notes": 380,
+  "meaning-notes": 387,
   "meaning-user": 252,
   "research-uncited": 34,
-  "perf-typed": 61,
-  "typed": 42,
+  "perf-typed": 63,
+  "typed": 43,
   "red": 86,
   "tui-unshot": 12,
-  "docs": 129,
+  "docs": 131,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 41,
@@ -37465,27 +37465,27 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 26573,
+   "generated": 29002,
    "write": {
-    "title": 179,
-    "line": 1735,
+    "title": 197,
+    "line": 1867,
     "payoff": 21,
-    "kill test": 83,
-    "code": 8
+    "kill test": 90,
+    "code": 11
    },
    "dups": {
-    "exact": 14,
-    "embed": 46,
+    "exact": 15,
+    "embed": 51,
     "shingle": 0
    },
    "rejected": {
-    "kill": 13421,
-    "tier": 9466,
-    "novelty": 82
+    "kill": 14509,
+    "tier": 10116,
+    "novelty": 88
    },
-   "merged": 403,
-   "kept": 1096,
-   "pending": 19
+   "merged": 477,
+   "kept": 1196,
+   "pending": 364
   },
   "families": [
    {
@@ -37562,7 +37562,7 @@
    },
    {
     "id": "F-013971",
-    "size": 3,
+    "size": 4,
     "lead": "Simulate the social impact of a release before it ships",
     "today": "Today you can't know how many support tickets will spike after a change until it is live",
     "with_this": "With this, you can predict the volume and sentiment of user complaints for a specific code change in advance",
@@ -38383,8 +38383,40 @@
     ]
    },
    {
+    "id": "F-026946",
+    "size": 1,
+    "lead": "Reconstruct reverted commits from neural decay signals",
+    "today": "Today you can't recover the exact semantic intent of a change that was auto-reverted by a build guard before the diff was fully materialized.",
+    "with_this": "With this, you can restore the lost T-3410 changes to your production branch with 100% fidelity to the original author's intent, saving hours of manual re-implementation.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
+    "id": "F-027933",
+    "size": 1,
+    "lead": "Detect onboarding burnout from typing patterns",
+    "today": "Today you can't see if a new hire is struggling or stuck until they ask for help.",
+    "with_this": "With this, you can proactively offer help or simplify tasks when a new hire's typing rhythm shows signs of frustration.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
     "id": "F-025245",
-    "size": 61,
+    "size": 101,
     "lead": "Synchronize parallel agents via shared semantic attention heads",
     "today": "Today you can't make parallel Sampo agents stop duplicating effort when they realize they are solving the same sub-problem.",
     "with_this": "With this, Sampo can reduce total compute by allowing agents to share 'attention weights' for common sub-problems, so they only diverge when their contexts genuinely differ.",
@@ -38409,6 +38441,8 @@
      "model layer",
      "multi-user",
      "observability",
+     "onboarding",
+     "ops",
      "orchestration",
      "performance",
      "portability",
@@ -38417,12 +38451,13 @@
      "self-repair and self-improvement",
      "self-triggering",
      "staying lean and safe",
-     "ux"
+     "ux",
+     "verifying anything"
     ]
    },
    {
     "id": "F-010989",
-    "size": 6,
+    "size": 8,
     "lead": "Run parallel refactors that share a single moving history",
     "today": "Today you can't run multiple large refactors in parallel without them diverging, merging, or destroying each other's context.",
     "with_this": "With this, you can spin up a dozen isolated refactors against the same living codebase, and each one sees a consistent, evolving state without manual rebasing.",
@@ -38472,6 +38507,24 @@
     "kinds": [
      "ops",
      "refactors"
+    ]
+   },
+   {
+    "id": "F-016675",
+    "size": 4,
+    "lead": "Fork the user's intent to explore multiple goals",
+    "today": "Today you can't let Sampo simultaneously pursue multiple conflicting user goals to see which one is more feasible, forcing a single linear path.",
+    "with_this": "With this, Sampo can parse ambiguous or conflicting user requests into parallel intent forks, exploring the consequences of each goal to present the user with the most viable option.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "initiative",
+     "performance",
+     "security"
     ]
    },
    {
@@ -40689,60 +40742,12 @@
     "kinds": [
      "features"
     ]
-   },
-   {
-    "id": "F-011905",
-    "size": 1,
-    "lead": "Evolve release gates from live traffic patterns",
-    "today": "Today you can't let your CI decide if a release is safe based on the actual runtime behavior of previous versions.",
-    "with_this": "With this, you can ship updates only when the system's natural error rates and load patterns confirm stability, preventing rollback chaos.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-011921",
-    "size": 1,
-    "lead": "Require a signed 'no-regression' attestation from the service owner",
-    "today": "Today you can't enforce that the person responsible for a service has verified their part isn't broken by your change.",
-    "with_this": "With this, you can ensure that any cross-service change is backed by a human confirmation from the affected team, reducing the chance of silent regressions.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-011946",
-    "size": 1,
-    "lead": "Let a thousand agents vote on the safest refactoring sequence",
-    "today": "Today you can't simulate how a large-scale codebase change will ripple through the entire dependency graph before executing it on your device.",
-    "with_this": "With this, you can see a consensus-ranked list of safe refactoring steps on your phone, ensuring your code remains stable for all connected users.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "refactors"
-    ]
    }
   ],
-  "families_total": 916,
+  "families_total": 976,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1096
+   "total": 1196
   }
  },
  "steer": {
