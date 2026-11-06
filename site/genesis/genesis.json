@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T05:23:29Z",
- "rev": "2218d3e0a",
+ "updated": "2026-11-06T05:28:43Z",
+ "rev": "378389b90",
  "capabilities": [
   {
    "n": 1,
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 22353,
+   "generated": 22518,
    "write": {
     "title": 154,
-    "line": 1574,
+    "line": 1591,
     "payoff": 18,
     "kill test": 65,
     "code": 8
@@ -37484,8 +37484,8 @@
     "novelty": 72
    },
    "merged": 295,
-   "kept": 937,
-   "pending": 21
+   "kept": 958,
+   "pending": 148
   },
   "families": [
    {
@@ -37523,7 +37523,7 @@
    },
    {
     "id": "F-014278",
-    "size": 18,
+    "size": 19,
     "lead": "Simulate ecosystem ripple effects before releasing a single crate",
     "today": "Today you can't predict how a breaking change in your library will break thousands of downstream users' builds until they file bugs.",
     "with_this": "With this, you can see a live map of which downstream projects will fail, crash, or degrade in performance when you publish your next version.",
@@ -38283,6 +38283,22 @@
     "evidence": "",
     "kinds": [
      "verifying anything"
+    ]
+   },
+   {
+    "id": "F-021968",
+    "size": 1,
+    "lead": "Harmonize parallel agents via standing wave resonance",
+    "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
+    "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
     ]
    },
    {
@@ -40715,28 +40731,12 @@
     "kinds": [
      "ops"
     ]
-   },
-   {
-    "id": "F-012131",
-    "size": 1,
-    "lead": "Hire autonomous agents to isolate variables via competitive elimination",
-    "today": "Today you can't efficiently determine which of 100 variables caused a one-off system failure.",
-    "with_this": "With this, you can identify the exact root cause variable without manually stepping through each one.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "refactors"
-    ]
    }
   ],
-  "families_total": 806,
+  "families_total": 826,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 937
+   "total": 958
   }
  },
  "steer": {
