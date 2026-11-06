@@ -1067,6 +1067,56 @@ class KalevalaWatch(ForemanTestCase):
         self.assertIn(act[0]["snapshot"], act[0]["undo"])
         # ponytail: memory's stage is 'fatal' in this fixture, so it isn't run; the run-first order is the ranking above
 
+    def test_two_concurrent_steps_snapshot_a_stalled_tower_and_log_its_restart_once(self):
+        import shutil
+        import time
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+        self.grade("memory", "r1", ["a"])
+        self.make_gen("memory", 1, when=time.time() - 30 * 3600)
+        real = shutil.copytree
+
+        def slow(*a, **k):  # the snapshot is slow, so the second step reaches its check while the first copies
+            time.sleep(0.4)
+            return real(*a, **k)
+        run, _ = self.runner()
+        with mock.patch.object(kalevala.shutil, "copytree", slow):
+            ts = [threading.Thread(target=kalevala.step, args=(p,), kwargs={"runner": run}) for _ in range(2)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(30)
+        self.assertEqual([a["tower"] for a in kalevala.acts(p) if a["act"] == "restart"], ["memory"])
+        self.assertEqual(len(os.listdir(os.path.join(kalevala.home(p), "snapshots"))), 1)
+
+    def test_a_held_decide_lock_makes_a_step_skip_that_tower_as_busy_within_the_deadline(self):
+        import time
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+        run, calls = self.runner()
+        held, release = threading.Event(), threading.Event()
+
+        def hold():
+            with kalevala._decide_lock(p, "memory"):
+                held.set()
+                release.wait(30)
+        t = threading.Thread(target=hold)
+        t.start()
+        held.wait(10)
+        try:
+            with mock.patch.object(kalevala, "DECIDE_WAIT", 0.2):
+                t0 = time.monotonic()
+                res = kalevala.step(p, runner=run)
+                took = time.monotonic() - t0
+        finally:
+            release.set()
+            t.join(10)
+        self.assertEqual({x["tower"]: x["status"] for x in res["results"]}["memory"], "busy")
+        self.assertFalse(any("memory" in " ".join(a) for a in calls), calls)
+        self.assertLess(took, 10)
+
     def test_a_steer_passes_the_drift_check_before_it_is_written(self):
         from sampo import kalevala
         p = self.project()

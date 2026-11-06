@@ -130,6 +130,30 @@ def tower_lock(p, name):
         yield
 
 
+DECIDE_WAIT = 30.0  # seconds a step waits for another step's decision on one tower before it skips that tower as busy
+
+
+@contextlib.contextmanager
+def _decide_lock(p, name):
+    """One tower's decide-and-act at a time: a flock on its own file, polled to a deadline as c.lock does, apart from
+    the project lock (the acts take that) and from tower_lock (held for a job's hours). Other towers don't wait on
+    it. Raises Busy past DECIDE_WAIT, or when the filesystem refuses the lock (ENOLCK)."""
+    os.makedirs(home(p), exist_ok=True)
+    deadline = time.monotonic() + DECIDE_WAIT
+    with open(os.path.join(home(p), f"{name}.decide.lock"), "a") as f:
+        while True:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise Busy(name) from None
+                time.sleep(0.02)
+            except OSError:  # ENOLCK on NFS: no lock to be had
+                raise Busy(name) from None
+        yield
+
+
 def order(rows):
     """Stalled first (its restart goes first), then thinnest first (the lowest generation, then the name), then the
     stuck: a tower whose exam hasn't moved in two generations is last, so its slot goes to one that improves."""
@@ -630,33 +654,39 @@ def _decide(p, rows):
     byname = {r["name"]: r for r in rows}
     for n in order(rows):
         r = byname[n]
-        if load(p)["towers"][n].get("paused"):
-            out[n] = "paused"
-            continue
-        if r["state"] == "drifted":
-            pause(p, f"drift: off gen-0's rules: the cold read drifted ({r['drift']})", n)
-            out[n] = "paused"
-            continue
-        if r["state"] == "stalled":
-            _restart(p, r)
-        if r["delta"] is not None and r["delta"] < 0:
-            steer(p, n, FALLING_STEER)
-        files = _touches(r)
-        clash = next(((e, files & ef) for e, ef in seen if files & ef), None)
-        if clash:
-            e, shared = clash
-            names = ", ".join(sorted(shared))
-            if r["state"] == "improving":
-                _act(p, "wait", n, f"shares {names} with {e}, which ranks first: it waits this round",
-                     undo="none: it runs the next round")
-                out[n] = "waiting"
-            else:
-                _tower_set(p, n, paused=f"merged into {e}: both write {names}")
-                _act(p, "merge", n, f"merged into {e}: both write {names}; paused, not deleted",
-                     undo=f"fm kalevala resume {n}")
-                out[n] = "merged"
-            continue
-        seen.append((n, files))
+        with contextlib.ExitStack() as es:  # one tower's decision at a time: the state is re-read inside, so a second step sees the first's act
+            try:
+                es.enter_context(_decide_lock(p, n))
+            except Busy:  # another step has held it past DECIDE_WAIT: this tower sits out the round
+                out[n] = "busy"
+                continue
+            if load(p)["towers"][n].get("paused"):
+                out[n] = "paused"
+                continue
+            if r["state"] == "drifted":
+                pause(p, f"drift: off gen-0's rules: the cold read drifted ({r['drift']})", n)
+                out[n] = "paused"
+                continue
+            if r["state"] == "stalled":
+                _restart(p, r)
+            if r["delta"] is not None and r["delta"] < 0:
+                steer(p, n, FALLING_STEER)
+            files = _touches(r)
+            clash = next(((e, files & ef) for e, ef in seen if files & ef), None)
+            if clash:
+                e, shared = clash
+                names = ", ".join(sorted(shared))
+                if r["state"] == "improving":
+                    _act(p, "wait", n, f"shares {names} with {e}, which ranks first: it waits this round",
+                         undo="none: it runs the next round")
+                    out[n] = "waiting"
+                else:
+                    _tower_set(p, n, paused=f"merged into {e}: both write {names}")
+                    _act(p, "merge", n, f"merged into {e}: both write {names}; paused, not deleted",
+                         undo=f"fm kalevala resume {n}")
+                    out[n] = "merged"
+                continue
+            seen.append((n, files))
     return out
 
 
