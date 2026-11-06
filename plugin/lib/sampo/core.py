@@ -2233,6 +2233,25 @@ class Brief:
         for x in changes:
             self.append_log(x)
 
+    def remove_ac(self, n):
+        """T-3372: criterion n removed and the later ones renumbered; refused when it or a later one has evidence
+        (keyed by criterion number, so renumbering would move it)."""
+        acs = self.acceptance()
+        if not 1 <= n <= len(acs):
+            raise KeyError(f"no acceptance criterion {n}")
+        if any(self.has_evidence(ac=x.n) for x in acs if x.n >= n):
+            raise PolicyError(f"{self.id}: criterion {n} or a later one has evidence, which renumbering would move; "
+                              "edit the criterion's text instead, or leave it")
+        lines, k = [], 0
+        for line in self.section("Acceptance criteria").splitlines():
+            if _AC_RE.match(line):
+                k += 1
+                if k == n:
+                    continue
+            lines.append(line)
+        self.append_log(f"criterion {n} removed: {acs[n - 1].text}")
+        self.set_section("Acceptance criteria", "\n".join(lines) + ("\n" if lines else ""))
+
     def check_ac(self, n):
         if not self.has_evidence(ac=n):
             raise PolicyError(f"{self.id} acceptance criterion {n} has no evidence; record it with "

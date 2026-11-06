@@ -3466,7 +3466,9 @@ def _runner_evidence(pl, p, act, cmd):
     if not run or not cur or act.has_evidence(step=cur.n) or _RED_STEP.search(cur.text):
         return
     known = [v for _, v in act.verify_cmds() if v] + list(c.read_meta(p).get("checks") or [])
-    if run not in {_runner(" ".join(v.split())) for v in known}:
+    # T-2911: the same runner is not the same check; only a verify command (or gate) itself, normalised, is about this step
+    mine = re.sub(r"^cd \S+ && ", "", _unpiped(cmd)[0])
+    if mine not in {re.sub(r"^cd \S+ && ", "", " ".join(v.split())) for v in known}:
         return
     r = pl.get("tool_response")
     output = f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")

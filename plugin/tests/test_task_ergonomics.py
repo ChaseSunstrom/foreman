@@ -46,6 +46,24 @@ class TaskErgonomics(ForemanTestCase):
         self.assertEqual([a.text.split(" — ")[0] for a in b.acceptance()][1:], ["second", "third"])
         self.assertEqual(len(b.steps()), 2)
 
+    def test_ac_list_rm_and_bare_verbs_T3372(self):
+        tid = self.task()
+        self.fm("task", "ac", tid, "second :: true")
+        self.assertIn("second", self.fm("task", "ac", tid, "list").stdout)
+        for word in ("list", "show", "frobnicate"):
+            if word == "frobnicate":
+                r = self.fm("task", "ac", tid, word, check=False)
+                self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(len(self.brief(tid).acceptance()), 2, "no criterion named list/frobnicate")
+        r = self.fm("task", "ac", tid, "rm", "9", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.fm("task", "evidence", tid, "--ac", "1", "--run", "true")
+        r = self.fm("task", "ac", tid, "rm", "1", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(len(self.brief(tid).acceptance()), 2)
+        self.fm("task", "ac", tid, "rm", "2")
+        self.assertEqual(len(self.brief(tid).acceptance()), 1)
+
     def test_drop_block_and_defer_take_reason_as_an_option_too(self):
         tid = self.task()
         self.fm("task", "drop", tid, "--reason", "not needed", "--force")
