@@ -4459,3 +4459,36 @@ class GroundedMission(ForemanTestCase):  # T-2547: Mission 3 filed five briefs; 
         self.assertIn("code", str(e.exception))
         rune.put(self.p, "gen-1/mission-w.md", "# Mission\n\nTask: none.\n")  # no intake block: nothing to ground
         rune.put(self.p, "not-yet.md", "# Not yet\n")  # other tower files are unaffected
+
+
+class GenesisStepMemo(ForemanTestCase):
+    """T-3375: step() scans the ledger once per ledger state, not once per call, and an appended event is still seen."""
+    def test_memo_scans_once_per_state_and_sees_an_append(self):
+        from sampo import core as c, rune
+        self.fm("init")
+        p = c.find_project(self.repo)
+        scans, real = [], c.ledger_events
+        c.ledger_events = lambda *a, **k: (scans.append(1), real(*a, **k))[1]
+        try:
+            rune._SCANS.clear()
+            first = [rune._events(p, ["genesis_seal"]) for _ in range(5)]
+            self.assertEqual(len(scans), 1)
+            self.assertTrue(all(f == first[0] for f in first))
+            c.log_event(p, "genesis_seal", data={"gen": 1, "sha": "ab"})
+            self.assertEqual(len(rune._events(p, ["genesis_seal"])), len(first[0]) + 1)
+            self.assertEqual(len(scans), 2)
+            warm = rune.step(p)
+            rune._SCANS.clear()
+            self.assertEqual(warm, rune.step(p))  # same output cold and warm
+            # a new archive file is a new ledger file: rescan; towers() shares the memo
+            os.makedirs(os.path.join(p.dir, "archive"), exist_ok=True)
+            with open(os.path.join(p.dir, "archive", "ledger-2020-01.jsonl"), "w") as f:
+                f.write("")
+            rune._events(p, ["genesis_seal"])
+            self.assertEqual(len(scans), 3)
+            rune.towers(p)
+            n = len(scans)
+            rune.towers(p)
+            self.assertEqual(len(scans), n)
+        finally:
+            c.ledger_events = real

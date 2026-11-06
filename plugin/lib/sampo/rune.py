@@ -63,8 +63,30 @@ def _log(p, event, **kw):
     return c.log_event(p, event, **kw)
 
 
+_SCANS = {}  # T-3375: (ledger files' path/mtime/size, kinds) -> that scan; an append changes the size, so it is re-read
+
+
+def _scan(p, kinds):
+    """Every ledger event of these kinds, one scan per ledger state: step() asks for the same kinds once per tower,
+    ~85 ms each. The events are shared between callers, so none may change one."""
+    sig = []
+    for f in c.ledger_files(p):
+        try:
+            st = os.stat(f)
+            sig.append((f, st.st_ino, st.st_mtime_ns, st.st_size))  # the inode: a same-size rename-based rewrite
+        except OSError:
+            sig.append((f, 0, 0, -1))
+    key = (tuple(sig), tuple(kinds))
+    ev = _SCANS.get(key)
+    if ev is None:
+        if len(_SCANS) > 16:
+            _SCANS.clear()
+        ev = _SCANS[key] = c.ledger_events(p, kinds=kinds)
+    return ev
+
+
 def _events(p, kinds):
-    return [e for e in c.ledger_events(p, kinds=kinds) if (e.get("data") or {}).get("tower") == _TOWER]
+    return [e for e in _scan(p, kinds) if (e.get("data") or {}).get("tower") == _TOWER]
 
 
 def own_steers(p):
@@ -89,7 +111,7 @@ def towers(p):
     tdir = os.path.join(base, "towers")
     names = [n for n in sorted(os.listdir(tdir)) if _valid(n) and os.path.isdir(os.path.join(tdir, n))] if os.path.isdir(tdir) else []
     last = {}  # (tower, kind) -> the newest verdict: one ledger scan for every tower
-    for e in c.ledger_events(p, kinds=["genesis_select", "genesis_drift"]):
+    for e in _scan(p, ["genesis_select", "genesis_drift"]):
         x = e.get("data") or {}
         last[(x.get("tower"), e.get("event"))] = x.get("verdict")
     for name in ([None] if os.path.isfile(os.path.join(base, "gen-0.md")) else []) + names:
