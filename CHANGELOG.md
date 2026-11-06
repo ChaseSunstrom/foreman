@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- roundtrip.py clones without --branch when HEAD is detached, so sampo lane train's scratch tree no longer fails the e2e base check as "Remote branch HEAD not found" and trains can land (T-3429).
 - sampo doctor warns, in a Sampo checkout only, naming the fm*.py old-import shims nothing imports any more, once the plugin reaches 1.4.0 (core.ALIAS_UNTIL, two minors after the rename) (T-3095).
 - Doctor shows each lane class's subagent effort (builder, reviewer, scout), notes when CLAUDE_CODE_SUBAGENT_EFFORT (Claude Code 2.1.316) overrides them, and gates builder worktree reliance on Claude Code 2.1.311 (T-3384).
 - sampo task set takes scope+=PATH[,PATH…] and scope-=PATH (also depends_on) to widen or trim a list without re-listing it, resolved under the task lock so concurrent widenings keep each other's paths (T-3377).
