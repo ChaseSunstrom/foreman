@@ -25,6 +25,7 @@ from sampo import core as c
 DIR = c.MIRROR
 OLD = c.MIRRORS[1]  # T-3342: the folder before the rename; read while DIR is absent, moved by move()
 STAMPS = "sync-stamps.json"  # T-3349: per mirrored file, its source's and its mirror copy's (mtime_ns, size) last export
+SCRUB = 1  # T-3508: the stamps' "v"; bump when _outgoing changes, so the next export rewrites every mirrored file
 LOCAL_ONLY = ("allow", "approved", "plugin_pin")
 LEASE_MARKS = ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit")  # one machine's marks on a brief
 
@@ -43,9 +44,10 @@ def settle(b, new, why="it arrived from the repo's .sampo/ (fm sync), not from a
 BRIEFS = ("tasks/", "archive/")
 README = """# .sampo
 
-Sampo's task briefs, decisions and research for this repository, mirrored by `fm sync` so another clone or machine
-can pick the work up (`fm sync import`, or automatically at session start). fm writes this folder; change the work
-through fm, not by editing these files. Approvals, run marks, audits and focus never count on another machine.
+Sampo's task briefs, decisions and research for this repository, mirrored by `sampo sync` so another clone or machine
+can pick the work up (`sampo sync import`, or automatically at session start). Sampo writes this folder; change the
+work through sampo, not by editing these files. Approvals, run marks, audits and focus never count on another machine;
+home folders read as ~ and private hosts as <host>.
 """
 MAX_IMPORT = 1_000_000  # bytes; a mirrored note bigger than this is left in the repo
 _ID = re.compile(r"^(T-\d{4,})")
@@ -238,6 +240,12 @@ def _for_mirror(text):
     return b.render()
 
 
+def _outgoing(rel, text):
+    """A local file as the mirror holds it: a brief without grants; no secret, home folder or private host (T-3508).
+    Export writes it and import compares with it, so a redacted copy never reads as a local change."""
+    return c.redact_local(c.redact(_for_mirror(text) if rel.startswith(BRIEFS) else text))
+
+
 def _from_mirror(text):
     """A mirrored brief as this machine may take it: no grants, no run or worktree marks, audits relabelled so they
     don't count here (this machine's gates need its own runs and audits)."""
@@ -246,6 +254,9 @@ def _from_mirror(text):
     b = c.Brief.parse(_AUDIT_LINE.sub(r"\1, imported)", c._unmarked(c.plain_lines(text))))
     for k in LOCAL_ONLY:
         b.meta.pop(k, None)
+    if isinstance(b.meta.get("scope"), list):  # T-3508: the export showed this machine's home as ~
+        b.meta["scope"] = [os.path.expanduser(s) if isinstance(s, str) and s.startswith("~/") else s
+                           for s in b.meta["scope"]]
     return b
 
 
@@ -263,9 +274,11 @@ def export(p):
     if os.path.islink(root):
         raise OSError(f"{root} is a symlink; fm sync writes only a real folder")
     base, written, here = dict(c.read_meta(p).get("sync_base") or {}), 0, {}
-    if not os.path.exists(os.path.join(root, "README.md")):
-        _write(os.path.join(root, "README.md"), README)
-    old, stamps = _stamps(p), {}
+    old, stamps = _stamps(p), {"v": SCRUB}
+    readme = os.path.join(root, "README.md")  # an older fm wrote its own wording: refreshed with the first re-scrub
+    if not os.path.exists(readme) or not old and os.path.isfile(readme) and _read(readme) != README \
+            and _read(readme).startswith(("# " + DIR + "\n", "# " + OLD + "\n")):  # fm's heading: not the user's own
+        _write(readme, README)
     for rel in _local(p):
         m = _ID.match(os.path.basename(rel)) if rel.startswith(BRIEFS) else None
         if rel.startswith(BRIEFS) and not m:
@@ -277,15 +290,12 @@ def export(p):
             if m:
                 here[m.group(1)] = rel
             continue
-        text = _read(src)
+        try:
+            text = _outgoing(rel, _read(src))  # the mirror is committed: no secret from any older note may reach it
+        except ValueError:
+            continue
         if m:
-            try:
-                text = _for_mirror(text)
-            except ValueError:
-                continue
             here[m.group(1)] = rel
-        text = c.redact(text)  # the mirror is committed: no secret from any older note may reach it
-        dest = os.path.join(root, rel)
         cur = _read(dest) if os.path.isfile(dest) and not os.path.islink(dest) else None
         if cur is not None and cur != text and _sha(cur) != base.get(rel):
             continue  # changed in the repo (pull, merge): the import takes it first
@@ -331,7 +341,7 @@ def _stamps(p):
     try:
         with open(os.path.join(p.dir, STAMPS), encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
+        return data if isinstance(data, dict) and data.get("v") == SCRUB else {}  # older stamps: rewrite all
     except (OSError, ValueError):
         return {}
 
@@ -377,7 +387,7 @@ def import_(p):
                 _write(dest, theirs.render())
                 res["added"] += 1
             else:
-                mine_text = _for_mirror(_read(local.path))
+                mine_text = _outgoing(rel, _read(local.path))
                 if base.get(rel) is None and (theirs.meta.get("updated") or "") <= (local.meta.get("updated") or ""):
                     base[rel] = h  # never synced, and this copy is as new: keep it (the next export writes it)
                     continue
@@ -401,14 +411,15 @@ def import_(p):
                 res["updated"] += 1
         elif rel in ("decisions.md", "fixes.md"):  # append-only: take the lines this copy lacks (T-1032: fixes)
             have = _read(dest) if os.path.exists(dest) else ""
-            extra = [l for l in c.plain_lines(cur).splitlines() if l.strip() and l not in have.splitlines()]
+            seen = set(have.splitlines()) | set(_outgoing(rel, have).splitlines())  # ours, as exported too
+            extra = [l for l in c.plain_lines(cur).splitlines() if l.strip() and l not in seen]
             if extra:
                 _write(dest, have.rstrip("\n") + ("\n" if have else "") + "\n".join(extra) + "\n")
                 res["updated"] += 1
         elif not os.path.exists(dest):
             _write(dest, c.plain_lines(cur))  # pulled text: no terminal sequences
             res["added"] += 1
-        elif _read(dest) != cur:
+        elif cur not in (ours := _read(dest), _outgoing(rel, ours)):  # T-3508: or the same, as exported
             res["conflicts"].append(f"{rel}: differs here; kept this one, theirs is in {_set_aside(p, rel, cur)}")
         base[rel] = h
     _save_base(p, base)

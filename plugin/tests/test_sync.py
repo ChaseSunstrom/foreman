@@ -34,7 +34,7 @@ class Sync(ForemanTestCase):
         self.assertNotRegex(text, r"(?m)^allow:|^approved:")
         self.assertIn("CSV over XLSX", read_text(os.path.join(self.mirror, "decisions.md")))
         self.assertIn("RFC 4180", read_text(os.path.join(self.mirror, "research", "csv-notes.md")))
-        self.assertIn("fm sync", read_text(os.path.join(self.mirror, "README.md")))
+        self.assertIn("`sampo sync`", read_text(os.path.join(self.mirror, "README.md")))
 
     def test_an_unchanged_export_reads_nothing(self):
         # T-3349: every state write re-read, re-parsed and re-redacted every mirrored file under the project lock
@@ -242,6 +242,75 @@ class Sync(ForemanTestCase):
             f.write("x" * 2_000_001)
         self.assertIn("too large", self.fm("sync", "import").stdout)
         self.assertFalse(os.path.exists(os.path.join(p.dir, "research", "huge.md")))
+
+    def test_exports_show_home_folders_as_tilde_and_private_hosts_as_host(self):
+        # T-3508: the mirror is public: no login, home folder or private address of this machine may reach it, and
+        # the redacted copies still read as unchanged on import (no false conflict, no duplicated decision line)
+        import json
+        from unittest import mock
+        from sampo import sync
+        p, home = c.find_project(self.repo), "/srv/u/alice"
+        with open(os.path.join(p.dir, "research", "hosts.md"), "w") as f:
+            f.write("cd /srv/u/alice/proj and /home/bob/.ssh/config, /home/carol.\n"
+                    "ssh alice@100.101.102.103 'tmux ls'; api at 192.168.1.20:8080, 10.1.2.3, 172.20.0.5, "
+                    "dev@172.31.9.9\n"
+                    "public 8.8.8.8, 172.32.0.1, 100.128.0.1, 10.1.2.3.4, v1.2.3; /mnt/home/x and /srv/u/alicex stay\n")
+        self.fm("task", "log", self.tid, "ran ssh alice@100.101.102.103 from /home/bob/src")
+        self.fm("task", "set", self.tid, "scope+=/srv/u/alice/proj/**")
+        self.fm("decide", "keep builds in /home/bob/cache", "--task", self.tid)
+        meta = c.read_meta(p)
+        meta["sync"] = True
+        c.write_meta(p, meta)
+        with mock.patch.dict(os.environ, {"HOME": home}):
+            sync.export(p)
+            mirrored = "".join(read_text(os.path.join(d, f)) for d, _, fs in os.walk(self.mirror) for f in fs)
+            for leak in (home + "/", "/home/bob", "/home/carol", "alice@", "100.101.102.103", "192.168.1.20",
+                         "10.1.2.3,", "172.20.0.5", "172.31.9.9"):
+                self.assertNotIn(leak, mirrored)
+            self.assertEqual(read_text(os.path.join(self.mirror, "research", "hosts.md")).splitlines(), [
+                "cd ~/proj and ~/.ssh/config, ~.",
+                "ssh <host> 'tmux ls'; api at <host>:8080, <host>, <host>, <host>",
+                "public 8.8.8.8, 172.32.0.1, 100.128.0.1, 10.1.2.3.4, v1.2.3; /mnt/home/x and /srv/u/alicex stay"])
+            self.assertIn("ran ssh <host> from ~/src", self.exported())
+            self.assertIn("~/proj/**", self.exported())
+            self.pulled(lambda t: re.sub(r"(?m)^updated: .*$", "updated: 2999-01-01T00:00:00Z", t)
+                                + "- 2999-01-01T00:00:00Z pulled note\n")
+            self.pulled(lambda t: t + "- theirs\n", rel="decisions.md")
+            res = sync.import_(p)
+            self.assertEqual(res["conflicts"], [])
+            self.assertEqual(res["updated"], 2)
+            b = c.find_brief(p, self.tid)
+            self.assertIn("pulled note", b.render())
+            self.assertEqual(b.meta.get("scope"), [home + "/proj/**"], "a scope is this machine's path again")
+            decisions = read_text(os.path.join(p.dir, "decisions.md"))
+            self.assertEqual((decisions.count("keep builds in"), decisions.count("- theirs")), (1, 1))
+            self.assertEqual(sync.export(p), 0, "taken in, nothing to write back")
+        self.assertIn("v", json.loads(read_text(os.path.join(p.dir, sync.STAMPS))))
+
+    def test_the_next_export_cleans_a_mirror_written_before_redaction(self):
+        # T-3508: files an older export mirrored unredacted (and its `fm sync` README) are rewritten, though the
+        # export stamps (T-3349) say neither side moved
+        import json
+        from sampo import sync
+        self.fm("sync", "on")
+        p = c.find_project(self.repo)
+        rel, raw = "research/csv-notes.md", "notes from /home/bob/x via alice@100.101.102.103\n"
+        for path in (os.path.join(p.dir, rel), os.path.join(self.mirror, rel)):
+            with open(path, "w") as f:
+                f.write(raw)
+        readme = os.path.join(self.mirror, "README.md")
+        with open(readme, "w") as f:
+            f.write(sync.README.replace("`sampo sync", "`fm sync"))
+        meta = c.read_meta(p)
+        meta["sync_base"][rel] = sync._sha(raw)
+        c.write_meta(p, meta)
+        old = {r: [sync._stamp(os.path.join(p.dir, r)), sync._stamp(os.path.join(self.mirror, r))]
+               for r in sync._local(p)}  # an older export's stamps: no version
+        c.write_atomic(os.path.join(p.dir, sync.STAMPS), json.dumps(old))
+        sync.export(p)
+        self.assertEqual(read_text(os.path.join(self.mirror, rel)), "notes from ~/x via <host>\n")
+        self.assertIn("`sampo sync`", read_text(readme))
+        self.assertNotIn("fm sync", read_text(readme))
 
     def test_the_mirror_does_not_change_the_worktree_id(self):
         before = c.worktree_id(self.repo)

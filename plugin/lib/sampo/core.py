@@ -1320,6 +1320,28 @@ def redact(text):
     return text
 
 
+_HOMES = lazy(r"(?<![\w.~-])/(?:home|Users)/[\w-]+(?:\.[\w-]+)*(?![\w-]|\.\w)")
+_IPV4 = lazy(r"(?<![\w.])(?:[\w.+-]+@)?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w]|\.\d)")
+
+
+def _private_host(m):
+    a, b, *rest = (int(x) for x in m.groups())
+    private = a == 10 or (a, b) == (192, 168) or (a == 172 and 16 <= b <= 31) or (a == 100 and 64 <= b <= 127)
+    return "<host>" if private and max(a, b, *rest) <= 255 else m.group(0)
+
+
+def redact_local(text):
+    """T-3508: text bound for a public copy (the .sampo mirror) without this machine's layout: the home folder and any
+    /home/<name> (or /Users/<name>) read as ~; a user@ip or bare ip in 10/8, 172.16/12, 192.168/16 or CGNAT 100.64/10
+    reads as <host>."""
+    if not isinstance(text, str):
+        return text
+    home = os.path.expanduser("~").rstrip("/")
+    if home:
+        text = re.sub(r"(?<![\w.~-])" + re.escape(home) + r"(?![\w-]|\.\w)", "~", text)
+    return _IPV4.sub(_private_host, _HOMES.sub("~", text))
+
+
 def redact_obj(obj):
     if isinstance(obj, str):
         return redact(obj)
