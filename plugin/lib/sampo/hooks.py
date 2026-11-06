@@ -2150,7 +2150,7 @@ def _pre_tool_use(raw):
                     ("ambient", lambda: _ambient_note(p)), ("bus", lambda: _bus_note(pl)),
                     ("cards", lambda: _card_note(pl, p, act)), ("test-first", lambda: _test_first_note(pl, p, act)),
                     ("design", lambda: _design_note(pl, p, act)),
-                    ("gates", lambda: _gates_note(pl, p)))
+                    ("gates", lambda: _gates_note(pl, p)), ("closing", lambda: _closing_note(pl, p)))
         off = c.ablated()  # T-1375: a bench arm's features switched off (never the guard, which spoke above)
         note = " ".join(_said_once(pl, list(filter(None, [made, saved, slow, warn]
                                                    + [_each(b) for name, b in builders if name not in off]))))
@@ -3147,7 +3147,8 @@ def post_tool_use(pl, ok=True):
         if not lane and path.startswith(p.root.rstrip("/") + "/"):  # T-3256: a builder's edit in its own worktree is
             m = c._WORKTREE_PREFIX.match(os.path.relpath(path, p.root))  # its lane's task's, never the main one's
             lane = os.path.join(p.root, m.group(0).rstrip("/")) if m else None
-        act = None if _oneoff() else c.active_brief_fast(p, lane)  # T-1007: a one-off owns no task
+        act = None if _oneoff() or _closing(p, pl) else c.active_brief_fast(p, lane)  # T-1007: a one-off owns no task; T-3030: nor
+        # does an edit beside a running close (finish focused its task)
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
         try:  # T-0705: the affected tests run out of the model's turns; only a flip comes back
@@ -4503,6 +4504,29 @@ def _side_work(sd, briefs, work, full, offered, p):
 def _gates_running(p):
     """T-1176: the task whose `fm check --evidence` runs in the background now, else None."""
     return (c.gates_live(p) or {}).get("task")
+
+
+def _closing(p, pl):
+    """T-3030: the marker of a live `sampo task finish` when this call edits a project file, else None."""
+    if not (p and pl.get("tool_name") in FILE_TOOLS and _in_project(_edit_path(pl), p)):
+        return None
+    path = _edit_path(pl)
+    for g in (c.read_meta(p).get("closing") or {}).values():  # keyed by pid: concurrent closes each keep their own
+        try:
+            os.kill(int(g["pid"]), 0)
+        except (KeyError, TypeError, ValueError, OSError):
+            continue
+        root = (g.get("root") or p.root).rstrip("/") + "/"
+        # only edits in the closing tree: a close in the main checkout says nothing about a lane's worktree edit
+        if path.startswith(root) and not c._WORKTREE_PREFIX.match(path[len(root):]):
+            return g
+    return None
+
+
+def _closing_note(pl, p):
+    g = _closing(p, pl)
+    return g and (f"Sampo: a close of {g.get('task')} is running: this edit isn't part of it (it is journalled to no "
+                  "task); let the close end before editing for another task.")
 
 
 def _gates_note(pl, p):

@@ -1307,6 +1307,28 @@ def _close_advice(p, b):
 
 
 def task_finish(p, args):
+    """T-3030: the close runs under a `closing` marker (task, pid), so the edit hook attributes nothing made meanwhile."""
+    me = str(os.getpid())
+
+    def mark(entry):  # keyed by pid: concurrent closes each add and drop only their own entry
+        with c.lock(p.dir):
+            m = c.read_meta(p)
+            cl = {k: v for k, v in (m.get("closing") or {}).items() if k != me}
+            if entry:
+                cl[me] = entry
+            m["closing"] = cl or None
+            c.write_meta(p, m)
+    mark({"task": args.id, "pid": os.getpid(), "root": p.root, "at": c.now()})
+    try:
+        return _task_finish(p, args)
+    finally:
+        try:
+            mark(None)
+        except Exception as e:  # a lock timeout must not mask the finish result; a dead pid's entry is ignored anyway
+            print(f"sampo: couldn't clear the closing marker ({e}); it lapses with this process", file=sys.stderr)
+
+
+def _task_finish(p, args):
     """One-call close-out (R1; any tier since T-0097): runs each open criterion's own verify command (else --run) and
     --run for each open step, records them as fm runs, checks what passed, records the audits (S: self; M/L: each
     --lens "<lens>: <result>", all done the --audit way), sets Docs impact, then fm task done. Anything that fails

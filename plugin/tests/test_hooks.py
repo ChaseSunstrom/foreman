@@ -3749,3 +3749,55 @@ class Ablate(HookCase):  # T-1375
         r = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "rm -rf ~"}},
                       env={"FOREMAN_ABLATE": "guard"})
         self.assertIn("deny", r.stdout + r.stderr, "the guard still refuses")
+
+
+class ClosingMarker(HookCase):  # T-3030
+    def close_marker(self, tid, pid, root=None):
+        c.update_meta(self.project(), closing={str(pid): {"task": tid, "pid": pid, "root": root or self.repo, "at": c.now()}})
+
+    def test_a_close_in_the_main_tree_leaves_a_lanes_edit_attributed(self):
+        self.fm("init")
+        tid = self.task(scope=["docs/**"])
+        lane = os.path.join(self.repo, ".claude", "worktrees", "agent-x")
+        os.makedirs(os.path.join(lane, "docs"))
+
+        def lane_edit(name):
+            path = os.path.join(lane, "docs", name)
+            pl = {"tool_name": "Edit", "tool_input": {"file_path": path, "old_string": "a", "new_string": "b"}}
+            note = self.ctx_of(self.hook("PreToolUse", pl))
+            self.hook("PostToolUse", pl)
+            return note, [e.get("task") for e in self.touched(path)]
+        _, before = lane_edit("l1.md")
+        self.close_marker(tid, os.getpid())
+        note, after = lane_edit("l2.md")
+        self.assertNotIn("a close of", note)
+        self.assertEqual(after, before, "attributed as it was without the main close")
+
+    def edit(self, name):
+        path = os.path.join(self.repo, "docs", name)
+        pl = {"tool_name": "Edit", "tool_input": {"file_path": path, "old_string": "a", "new_string": "b"}}
+        pre = self.ctx_of(self.hook("PreToolUse", pl))
+        self.hook("PostToolUse", pl)
+        return pre, path
+
+    def touched(self, path):
+        with open(os.path.join(self.project().dir, "ledger.jsonl")) as f:
+            return [e for e in map(json.loads, f) if e.get("event") == "touched" and (e.get("data") or {}).get("file") == path]
+
+    def test_an_edit_during_a_live_close_is_noted_and_not_journalled_to_it(self):
+        self.fm("init")
+        tid = self.task(scope=["docs/**"])
+        self.close_marker(tid, os.getpid())
+        note, path = self.edit("a.md")
+        self.assertIn(f"a close of {tid} is running: this edit isn't part of it", note)
+        self.assertEqual([e.get("task") for e in self.touched(path)], [None])
+
+    def test_a_dead_pid_or_no_marker_attributes_as_before(self):
+        self.fm("init")
+        tid = self.task(scope=["docs/**"])
+        dead = subprocess.Popen([sys.executable, "-c", ""])
+        dead.wait()
+        self.close_marker(tid, dead.pid)
+        note, path = self.edit("b.md")
+        self.assertNotIn("a close of", note)
+        self.assertEqual([e.get("task") for e in self.touched(path)], [tid])
