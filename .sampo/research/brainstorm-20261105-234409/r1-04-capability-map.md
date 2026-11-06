@@ -1,0 +1,56 @@
+# Brainstorm — lens: capability map
+
+- **Name the full decider capability set** — FEATURE — value 5 — effort M — risk low — capability map
+  Why: the request names only a decider + "more"; a best-in-class small Sampo model needs every slot, not one. The pack's own open work (T-0335/0337 `fm ask` across Codex/Gemini/opencode, T-2967 guard path miss, T-2966 Smith loop) are unmodelled decision points. List what complete coverage does: (1) brief accept/reject, (2) next-task ordering, (3) verify-command suggestion from stack card, (4) loop/dead-run predictor on Smith journal, (5) false-done "will this close hold" scorer, (6) Ward risk classification, (7) `fm ask` answer-as-user, (8) plan step→files predictor, (9) cost/size estimator, (10) model-route chooser, (11) moon pre-filter by user taste, (12) per-project cold-start prior, (13) trigger/next-ask anticipation, (14) card fill-in for the small model. Each slot must exist as a callable head, not prose.
+  Done when: `sampo model slots` prints the full registry with each slot's status (rule / kNN / trained / abstain), and every slot is reachable from at least one session path per the standing rule that capabilities must be called, not just verbs.
+
+- **Give the decider an orchestrator with specialist sub-agents** — FEATURE — value 4 — effort M — risk med — capability map
+  Why: the request says "how it improves every Rune generation" and the standing rule wants work "without direct access." A complete decider isn't one call: an orchestrator routes a brief to the right specialist (accept/reject, files, verify, cost), each returns a typed verdict, the orchestrator fuses with abstain and a confidence. This is the "agents of agents" shape the user keeps asking for (multi-session, consensus, fleet). The pack shows the pieces (T-0335 ask, T-2966 loop, T-2967 guard) but nothing composes them.
+  Done when: a headless `sampo decide <brief>` runs 3+ specialists and prints a fused verdict with per-slot abstain reasons, with no human in the loop.
+
+- **Serve, schedule and fail-over the model on this box** — FEATURE — value 4 — effort M — risk med — capability map
+  Why: the request explicitly asks "how it is trained and served on this box," and the pack shows the constraint: the moons funnel and exams occupy the GPU (question earlier brainstorms left: "what does the model path do when the GPU is busy with the moons funnel, and is the fallback measured?"). A best-in-class serving story covers: pin weights by digest, quantise per slot, a resident small endpoint, an idle-GPU scheduler that yields to Ollama/funnel, a canary probe at session start, a deterministic rules-fallback contract when the endpoint is cold, and a measured fallback.
+  Done when: `sampo model status` shows load, VRAM, scheduled windows and a live canary; a busy-GPU run still returns a verdict via the declared fallback within a budget.
+
+- **Build the measurement and improvement loop for every Rune generation** — FEATURE — value 5 — effort L — risk med — capability map
+  Why: the request asks "how it is measured, how it improves every Rune generation," and the standing rules demand evidence, held-out exams and never-killed-for-ambition. A complete loop: (1) leave-one-project-out bench per slot, (2) a champion/challenger registry with shadow mode, (3) a published per-generation scorecard, (4) retrain-by-content-hash with rollback, (5) a drift alarm per slot, (6) an adoption card that gates promotion. The pack's T-0866/0867 (bench vs plain, held-rate scorecard) are deferred and this is the backbone they wait on.
+  Done when: `sampo model scorecard --gen N` shows each slot's held-out metric, delta vs the rules baseline, and an adoption/rollback decision with the bench that earned it.
+
+- **Keep the decider generic across every Sampo project, local-only** — FEATURE — value 4 — effort M — risk low — privacy
+  Why: the user's words are explicit: "a generic model … not just the sampo repo … other things made with sampo." A best-in-class generic decider: one shared base + per-project LoRA adapters, a provenance manifest with project ids stripped, a per-project opt-out the collector enforces, a "sibling priors" cold start, and share-weights-never-text federation. The pack's T-0332 and the rename (T-2747) confirm many surfaces and homes must resolve correctly.
+  Done when: the model is trained on ≥2 projects, leaves one whole project held out, and the held-out scorecard is printed without any project name appearing in the artefact.
+
+- **Write the training pipeline the pack implies** — FEATURE — value 4 — effort M — risk med — capability map
+  Why: the request asks "what it is trained on, how it is trained." The pack names the raw material: ~2,900 closed briefs, bge-m3 embeddings, a trained head, LoRA through the installed "Jeff training stack," verified green-only Smith runs, and loop runs as negatives. A complete pipeline: export one flat table (project-id + name stripped), split by time + dedupe, label by outcome (done-and-held vs reverted/later-fixed), tag provenance on every row, rejection-sample Smith, keep every refusal as a negative, make training resumable and VRAM-safe, and red-team the corpus for injection.
+  Done when: one command `sampo model train` builds a tagged, leakage-checked dataset, trains a head, and emits a provenance manifest that `sampo doctor` can verify.
+
+- **Expose every model slot in the UI with abstain and veto** — FEATURE — value 3 — effort S — risk low — ui
+  Why: the pack lists a web UI surface and the standing rule that a capability must be callable and legible. A best-in-class product shows the user which decisions are model-driven, each slot's bench, every abstain reason, and a per-slot/per-project "no model" switch that really changes behaviour. This answers the earlier left question: "what would a user who never read MASTER.md need to see to know which slot is model-driven and how to turn it off?"
+  Done when: the web UI renders the slot registry with bench, last abstain reason, and a working per-slot off switch, verified by a DOM assertion.
+
+- **Wild: make the decider a readable rulebook, not a black box** — FEATURE — value 4 — effort M — risk med — delight
+  Why: the standing rule "no idea is killed for ambition" plus the user's distrust of unexplained automation (T-2912 silent-cut scan complaint) argues for a decider you can open. Distil the trained head back into a small, human-readable rule set (or a decision tree) per slot, so `sampo model explain <slot>` prints why a verdict was made in plain words, and the rulebook can be diffed between Rune generations. This is a second-order twist on the many "explain a decision" ideas already listed.
+  Done when: `sampo model explain <slot> <case>` returns a ≤5-line rule citation that matches the model's verdict, and a cold child can predict the verdict from the rulebook alone.
+
+- **Wild: train a Ward that learns what this user never accepts** — FEATURE — value 4 — effort M — risk med — security
+  Why: the request is "a better Kev-style decider and more." The user's own words show a strong, repeatable sense of what they refuse (the 2026-11-04 steer on not interrupting, the "feel free to push" grant, repeated "no software installs"). A best-in-class Ward isn't only rule-based: a learned per-user refusal head (fed by their drops and hand-edits) that tightens — never loosens — the existing guard, paired with an attacker that probes it. This grows the existing "train a Ward classifier" idea into the user's personal safety taste.
+  Done when: on a replay of the user's real drops, the learned Ward refuses exactly the classes they refused and passes the legitimate intents, with the rule set only tighter than before.
+
+- **Wild: let the decider draft the user's next steer before it is said** — FEATURE — value 4 — effort M — risk high — delight
+  Why: the user's words are full of pushback and corrections (T-2912, the rename ordering, the silent-cut scan, the "moons must be wild" steer). The need behind the "more" in the request is anticipating their standards. A best-in-class decider includes a "steer twin": from the brief and the session, it drafts the one-line standing-rule the user will likely give, shown as a ghost suggestion the user accepts with one key. This is the second-order version of the many "predict the user" ideas, aimed at their rules rather than their asks.
+  Done when: on 10 held-out sessions the drafted steer matches a later real steer ≥5 times, each credited only when the user accepts it.
+
+- **Wire every decider slot to a real session path and a free-arm baseline** — FIX — value 5 — effort M — risk low — capability map
+  Why: the standing rules are explicit: a capability is a top gap when its free arm beats the session arm, and a capability must be called by a real path, not just exist as a verb. The pack shows the slots are scattered (T-0335, T-2966, T-2967) with no single registry or baseline. A best-in-class version requires every slot to (a) be reachable from session start / `fm next` / the drive / a hook, and (b) carry a measured free-arm (rules or kNN) baseline so the trained head must beat it.
+  Done when: `sampo model slots --reachable` confirms every slot has a named session path, and `sampo model slots --baseline` shows each slot's trained score against its free-arm score, with the gap printed.
+
+- **Build the champion/challenger registry with one-command rollback** — FEATURE — value 4 — effort M — risk med — capability map
+  Why: the request asks how the model "improves" and the standing rules demand no idea be killed without reason and every growth be measured. A complete decider ships a registry: a champion per slot, a challenger in shadow, promotion gated on the leave-one-project-out bench, and a one-command rollback on any regression. The pack's T-0828 (shadow mode) and T-2868 (write rules) point to the same machinery.
+  Done when: `sampo model promote <slot> --candidate` runs shadow, checks the bench, and `sampo model rollback <slot>` restores the prior head within one command, both verified by a scorecard diff.
+
+- **Prove genericity with a redaction and leak scan on every artefact** — SECURITY — value 4 — effort S — risk low — privacy
+  Why: the request is generic across projects, so the strongest requirement is that one project's data and names never leak into another's model or its published scorecard. A best-in-class decider: strip project ids and names in the training build, scan every exported table, model artefact and scorecard for project-specific strings, and hold out whole projects. The pack's T-2967 (literal-path comparison) and the rename show how easily identity leaks through paths and names.
+  Done when: a leak scan over the training table, weights manifest and published scorecard reports zero project names or paths, and a held-out project's briefs appear in no training row.
+
+Next question: does the user want the decider to act (take the decision, e.g. auto-accept a brief) or only advise (rank and abstain), and per-slot — because the whole serving, fallback and veto design branches on that?
+Next question: what is the "free arm" baseline for the ask-answer slot when the user has fewer than 20 past accepts on a project, and does the user accept "say nothing" as the correct default below that line?
