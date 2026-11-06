@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- A child sampo (an exam's Smith under a temp home) logs its model calls to the parent's call log again: the path lives under FOREMAN_CALLS, the name core.mirror_env leaves (T-3448).
 - Re-landed T-3377 (scope+=PATH): a post-merge runner at a pre-T-3442 sha reverted it on the slot-pool false reds (T-3454).
 - The post-merge suite settles pending merges with one run on main's HEAD even after a revert: requeued merges no longer fall back to one oldest-first run each on old trees (T-3456).
 - A task's close no longer counts another task's merged-in doc (named in its Docs impact) or a revert of another task's merge as its own out-of-scope edit (T-3452).
