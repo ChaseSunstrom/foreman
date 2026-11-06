@@ -734,6 +734,8 @@ def run_command(root, cmd, timeout=600, env=None, stdin=None):
         _drop_racy_pyc(root)
     if env is None:  # T-1114: fm check sets the skip list itself; an inherited one would leave tests out silently
         env = {k: v for k, v in os.environ.items() if k != "FOREMAN_SKIP_TESTS"}
+    if timeout:  # T-3338: tests/run.py ends its own run under the timeout, naming what was slow, not killed unnamed
+        env = {**env, "FM_RUN_DEADLINE": str(max(1, int(timeout) - min(30, int(timeout) // 10)))}
     try:  # its own process group, so a timeout kills the servers and workers it started too; no stdin to wait on
         pr = subprocess.Popen(["bash", "-c", cmd], cwd=root, stdin=stdin, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True, errors="replace", start_new_session=True, env=env)

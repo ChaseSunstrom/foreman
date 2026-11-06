@@ -447,11 +447,23 @@ def main():
     times = {} if a.shard else load_times()  # a shard's slice must not depend on this machine's last run
     todo = plan(todo, parts, whole, times)  # T-3166: jobs, a big class's tests apart
     with burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
-        end = t0 + a.deadline if a.deadline is not None else None
-        results = list(ex.map(lambda c: run_one(c, a.k or a.names, a.timeout, end), todo))  # T-1994: the class is in a named module, so -k alone
+        try:
+            import helpers  # T-3338: lazily, after classes() put the tests folder on sys.path
+            busy = helpers.busy_factor()
+        except ImportError:  # a copy of run.py alone (test_check_paths) has no helpers
+            busy = 1
+        cap = round(a.timeout * busy)  # a loaded host's class runs slower; the deadline still clamps
+        # T-3338 review: --deadline, else the gate's (core.run_command sets FM_RUN_DEADLINE under its own timeout), else
+        # 8 class timers: the scaled timers never outlast the caller's, so a kill names the class
+        dl = a.deadline if a.deadline is not None else int(os.environ.get("FM_RUN_DEADLINE") or 0) or max(8 * cap, 600)
+        a.deadline, end = dl, t0 + dl
+        results = list(ex.map(lambda c: run_one(c, a.k or a.names, cap, end), todo))  # T-1994: the class is in a named module, so -k alone
     if not a.shard:
         seen = set(ids)
-        new = {r[0]: r[4] for r in results if r[1] >= 0 and r[2] != NOT_STARTED and r[0] in seen | set(parts)}
+        # T-3338: a killed class (negative rc) counts as slow, so the next run splits it instead of killing it again
+        timer = lambda r: r[1] < 0 and "killed (T-1808)" in r[2]  # noqa: E731  # not a deadline kill or a SIGKILL
+        new = {r[0]: max(r[4], SPLIT_S) if timer(r) else r[4]
+               for r in results if (r[1] >= 0 or timer(r)) and r[2] != NOT_STARTED and r[0] in seen | set(parts)}
         for cid, js in parts.items():  # a split class's work, so the next run still knows if it is slow
             if js and all(j in new for j in js):
                 new[cid] = work_time([new[j] for j in js])

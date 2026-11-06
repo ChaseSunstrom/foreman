@@ -1252,6 +1252,11 @@ class RunCommand(unittest.TestCase):
             _, out = c.run_command(os.path.dirname(__file__), 'echo "skip=${FOREMAN_SKIP_TESTS:-none}"')
         self.assertIn("skip=none", out)
 
+    def test_a_run_tells_the_command_its_deadline_under_the_timeout(self):
+        # T-3338: run.py clamps its class timers to it, so a gate's own timeout never kills a run that names no class
+        _, out = c.run_command(os.path.dirname(__file__), 'echo "d=$FM_RUN_DEADLINE"', timeout=600)
+        self.assertIn("d=570", out)
+
 
 class NativeClaude(unittest.TestCase):
     def test_the_native_install_is_found_when_path_lacks_it(self):

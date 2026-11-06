@@ -342,6 +342,18 @@ class Hang(unittest.TestCase):
             run.parse(["--deadline", "0"])  # review: 0 read as falsy turned the deadline off
 
 
+class HangsWhenAsked(unittest.TestCase):
+    """T-3338: hangs only when test_a_killed_class_is_timed_and_split_next_run asks, through the environment."""
+
+    def test_a(self):
+        if os.environ.get("FM_RUN_HANG"):
+            import time
+            time.sleep(120)
+
+    def test_b(self):
+        pass
+
+
 class SplitMe(unittest.TestCase):
     """T-3166: no class-level setup, so run.py runs each of these as its own job."""
 
@@ -490,6 +502,21 @@ class PerTestJobs(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stderr)
         self.assertEqual(r.stderr.strip().splitlines()[-1], "FAILED (1 classes: test_run.SplitMe.test_b)")
         self.assertIn("FAIL: test_b", r.stderr)
+
+    def test_a_killed_class_is_timed_and_split_next_run(self):  # T-3338: Lanes and Proof were killed at 480 s on every rerun
+        r, got = nested(["test_run.HangsWhenAsked", "--timeout", "1"], env={"FM_RUN_HANG": "1"})
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("still running after", r.stderr)
+        self.assertGreaterEqual(got.get("test_run.HangsWhenAsked", 0), run.SPLIT_S)
+        r, _ = nested(["test_run.HangsWhenAsked", "--timeout", "1"], got, {"FM_RUN_HANG": "1"})
+        self.assertIn("(2 jobs", r.stderr)
+        self.assertEqual(r.stderr.strip().splitlines()[-1], "FAILED (1 classes: test_run.HangsWhenAsked.test_a)")
+
+    def test_a_deadline_kill_is_not_recorded_as_slow_and_the_env_sets_the_deadline(self):  # T-3338 review
+        r, got = nested(["test_run.HangsWhenAsked"], env={"FM_RUN_HANG": "1", "FM_RUN_DEADLINE": "3"})
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("deadline", r.stderr)  # killed at it, or still waiting for a CPU slot under load
+        self.assertNotIn("test_run.HangsWhenAsked", got or {})
 
     def test_a_class_with_setup_runs_whole(self):
         r, _ = nested(["test_run.WithSetUpClass"], {"test_run.WithSetUpClass": 99})
