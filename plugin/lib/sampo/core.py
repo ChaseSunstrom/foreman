@@ -3552,7 +3552,33 @@ def rewind_note(hit):
 _LAST_CHANGE = {}  # T-2024: (ledger, task) -> (file signature, answer); state_dict and the Next line both ask
 
 
-def last_change(p, tid):
+def _created(p, tid):
+    """A task's created stamp, cached; "" when its brief is missing or unreadable (last_change never raises)."""
+    if tid not in _CREATED:
+        try:
+            b = find_brief(p, tid)
+        except (OSError, ValueError):
+            return ""
+        if not b:
+            return ""
+        _CREATED[tid] = str(b.meta.get("created") or "")
+    return _CREATED[tid]
+
+
+def touch_time(e, started=""):
+    """T-3378: when a touched event's edit really happened: data.at (a Bash edit's file mtime, which the hook sees late)
+    when it is a timestamp no later than the event and not before the task started; else the event's own ts."""
+    ts, d = e.get("ts", ""), e.get("data") or {}
+    at, start = d.get("at"), d.get("start")  # start: when the Bash call began; a touch -d can't date its edit before it
+    if not (parse_ts(at) and started <= at <= ts):
+        return ts
+    return max(at, start) if parse_ts(start) and start <= ts else at
+
+
+_CREATED = {}  # task id -> created (it never changes)
+
+
+def last_change(p, tid, started=None):
     """Timestamp of the latest file edit the hooks attributed to this task (audits must come after it)."""
     path = os.path.join(p.dir, "ledger.jsonl")
     try:
@@ -3564,7 +3590,9 @@ def last_change(p, tid):
     if sig and hit and hit[0] == sig:
         return hit[1]
     rows = _tail_rows(path, 5000, keep=('"touched"', f'"{tid}"'))  # T-2017
-    ts = max((e.get("ts", "") for e in rows if isinstance(e, dict) and e.get("task") == tid
+    if started is None:
+        started = _created(p, tid)
+    ts = max((touch_time(e, started) for e in rows if isinstance(e, dict) and e.get("task") == tid
               and e.get("event") == "touched"), default="")
     if sig:
         _LAST_CHANGE[(path, tid)] = (sig, ts)
@@ -4501,7 +4529,7 @@ def _next_for(p, briefs=None):
     if b.status == "active" and b.meta.get("replan"):  # T-0603
         return b, "replan", (f"replan {b.id}: {b.meta['replan']} — re-read Steps and the Execution prompt, change what "
                              f"no longer holds, then sampo task log {b.id} \"replan: <what changed>\"")
-    since = last_change(p, b.id)
+    since = last_change(p, b.id, str(b.meta.get("created") or ""))
     st, action = stage(b, autonomy, since), next_action(b, autonomy, since)
     group = []
     if st in ("captured", "planned") and not b.meta.get("batch"):  # T-0670: related items of any size, as one
@@ -4632,7 +4660,7 @@ def state_dict(p, briefs=None):
     open_ids = {b.id for b in everything if b.status not in ("done", "dropped")}
     active = None
     if act:
-        changed = last_change(p, act.id)
+        changed = last_change(p, act.id, str(act.meta.get("created") or ""))
         active = dict(brief_summary(act), stage=stage(act, autonomy, changed), audits=audit_progress(act, changed))
     return {
         "project": p.slug, "root": p.root,
@@ -4964,7 +4992,7 @@ def all_touches(p, window=None, only=None):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and t and only in (None, t) else None
         if f and f.startswith(p.root.rstrip("/") + "/"):
             rel = _WORKTREE_PREFIX.sub("", os.path.relpath(f, p.root))  # T-0807: a lane's edit is the repo file
-            out.setdefault(t, {})[rel] = (e.get("data") or {}).get("at") or e.get("ts", "")  # "at": a Bash edit
+            out.setdefault(t, {})[rel] = touch_time(e)  # a Bash edit is timed by its mtime
     return out
 
 
@@ -5447,7 +5475,8 @@ def first_touch(p, tid):
     """Timestamp of the first project-file edit the hooks attributed to this task, or "" (T-1979: a scratchpad Write
     outside the project isn't one, as in task_touches)."""
     root = p.root.rstrip("/") + "/"
-    return min((e.get("ts", "") for e in ledger_tail(p, TASK_WINDOW) if e.get("task") == tid
+    started = _created(p, tid)
+    return min((touch_time(e, started) for e in ledger_tail(p, TASK_WINDOW) if e.get("task") == tid
                 and e.get("event") == "touched" and str((e.get("data") or {}).get("file") or "").startswith(root)),
                default="")
 

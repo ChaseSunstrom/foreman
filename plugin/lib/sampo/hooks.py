@@ -3020,7 +3020,8 @@ def _bash_touches(pl, p):
         if not fresh or rel.startswith(("..", *c.MIRROR_DIRS)):
             continue
         # timed by the file, not by this async hook: a scope reason the same command logged comes after it (T-0164)
-        c.log_event(p, "touched", task=act.id, data={"file": full, "tool": "Bash", "at": c.iso(mtime)},
+        c.log_event(p, "touched", task=act.id, data={"file": full, "tool": "Bash", "at": c.iso(mtime),
+                    "start": c.iso(time.time() - (pl.get("duration_ms") or 0) / 1000)},
                     session=pl.get("session_id"))
         if scope and not any(c.glob_match(rel, s) for s in scope):
             outside.append(full)

@@ -313,6 +313,35 @@ class Ledger(ForemanTestCase):
         c.log_event(p, "touched", task="T-0001", data={"file": os.path.join(p.root, "README.md")})
         self.assertEqual(sorted(c.task_touches(p, "T-0001")), ["README.md", "plugin/lib/a.py"])
 
+    def test_last_change_dates_a_bash_edit_at_its_mtime(self):
+        # T-3378: a Bash touch seen after a hook delay carries data.at; no at / a future at keeps the event's ts
+        p = c.init_project(self.repo)
+        with mock.patch.object(c, "now", return_value="2026-01-01T10:00:00Z"):
+            c.log_event(p, "touched", task="T-0001", data={"file": "a.py", "tool": "Bash", "at": "2026-01-01T09:00:00Z"})
+            c.log_event(p, "touched", task="T-0002", data={"file": "a.py", "tool": "Bash", "at": "2026-01-01T11:00:00Z"})
+            c.log_event(p, "touched", task="T-0003", data={"file": "a.py", "tool": "Edit"})
+        self.assertEqual(c.last_change(p, "T-0001"), "2026-01-01T09:00:00Z")
+        self.assertEqual(c.last_change(p, "T-0002"), "2026-01-01T10:00:00Z")
+        self.assertEqual(c.last_change(p, "T-0003"), "2026-01-01T10:00:00Z")
+
+    def test_touch_time_start_created_and_first_touch(self):
+        # T-3378 round 2: an at before the call's start (a touch -d) is dated at the start; an at before the task
+        # was created is ignored; first_touch and task_touches use the same time; a broken brief can't raise
+        p = c.init_project(self.repo)
+        f = os.path.join(p.root, "a.py")
+        with mock.patch.object(c, "now", return_value="2026-01-01T10:00:00Z"):
+            c.log_event(p, "touched", task="T-0001", data={"file": f, "tool": "Bash", "at": "2026-01-01T09:00:00Z",
+                                                           "start": "2026-01-01T09:59:00Z"})
+            c.log_event(p, "touched", task="T-0002", data={"file": f, "tool": "Bash", "at": "2026-01-01T09:00:00Z"})
+        self.assertEqual(c.last_change(p, "T-0001"), "2026-01-01T09:59:00Z")
+        self.assertEqual(c.first_touch(p, "T-0001"), "2026-01-01T09:59:00Z")
+        self.assertEqual(c.task_touches(p, "T-0001"), {"a.py": "2026-01-01T09:59:00Z"})
+        self.assertEqual(c.last_change(p, "T-0002", "2026-01-01T09:30:00Z"), "2026-01-01T10:00:00Z")  # at < created
+        c._LAST_CHANGE.clear()  # the cache is keyed by the ledger's size, not by started
+        self.assertEqual(c.last_change(p, "T-0002", "2026-01-01T08:00:00Z"), "2026-01-01T09:00:00Z")
+        with mock.patch.object(c, "find_brief", side_effect=ValueError("bad")):
+            self.assertEqual(c.last_change(p, "T-0009"), "")
+
     def test_tail_returns_n_events_beyond_64k(self):
         p = c.init_project(self.repo)
         c.log_event(p, "touched", task="T-0001", data={"file": "x.py"})
