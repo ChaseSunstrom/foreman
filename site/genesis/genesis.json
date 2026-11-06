@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-06T03:51:12Z",
+ "updated": "2026-11-06T04:00:18Z",
  "rev": "5c403348",
  "capabilities": [
   {
@@ -985,7 +985,7 @@
       {
        "id": "T-2328",
        "title": "Mission 5 (thinking, #2 #8): write gen-1/mission-thinking.md, build its open briefs, write its critique",
-       "status": "blocked",
+       "status": "dropped",
        "type": "FEATURE",
        "tier": "L",
        "steps": 3,
@@ -1192,7 +1192,7 @@
       {
        "id": "T-2329",
        "title": "Mission 6 (tools, #5): write gen-1/mission-tools.md, build its open briefs, write its critique",
-       "status": "blocked",
+       "status": "dropped",
        "type": "FEATURE",
        "tier": "L",
        "steps": 3,
@@ -1428,7 +1428,7 @@
       {
        "id": "T-2330",
        "title": "Mission 7 (proof, #6 #10): write gen-1/mission-proof.md, build its open briefs, write its critique",
-       "status": "blocked",
+       "status": "dropped",
        "type": "FEATURE",
        "tier": "L",
        "steps": 3,
@@ -1759,7 +1759,7 @@
       {
        "id": "T-2331",
        "title": "Mission 8 (self, #7 #9 #11 #12 #3): write gen-1/mission-self.md, build its open briefs, write its critique",
-       "status": "blocked",
+       "status": "dropped",
        "type": "FEATURE",
        "tier": "L",
        "steps": 3,
@@ -3785,7 +3785,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "blocked",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -3868,7 +3868,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "blocked",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -3994,7 +3994,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "blocked",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -4090,7 +4090,7 @@
       {
        "id": "T-2886",
        "title": "Model bench: every local backend (Ollama decision models, Jeff, SelfJev, embedders, generators) measured on Sampo's own work with and without it, as a Louhi arm; numbers on the site's Models section; rerun every Rune generation",
-       "status": "blocked",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 5,
@@ -4133,7 +4133,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "blocked",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -4190,7 +4190,7 @@
       {
        "id": "T-2878",
        "title": "Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…",
-       "status": "blocked",
+       "status": "planned",
        "type": "FEATURE",
        "tier": "L",
        "steps": 6,
@@ -37465,7 +37465,7 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 21501,
+   "generated": 21541,
    "write": {
     "title": 153,
     "line": 1533,
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 10745,
+    "kill": 10755,
     "tier": 7577,
     "novelty": 72
    },
    "merged": 263,
    "kept": 919,
-   "pending": 113
+   "pending": 143
   },
   "families": [
    {
