@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- core.log_event caps list-valued data fields at 200 (the true count in <field>_n, a caller's own count kept) and strings at 4000 characters before hashing, so one event can't bloat the hash-chained ledger; verify-ledger --accept-damage acks in chunks of 200 so none is cut (T-3403).
 - Re-landed T-3410 (the fmtrain bullet in MASTER.md and its map entry) after the post-merge suite reverted it on load-only failures; test_docs passes again (T-3426).
 - test_cli.AffectedPairs runs in about 3 s instead of 90-240 s: its nested lane repo's tests/run.py is a small stand-in that runs the named modules and fails a skipped or missing name, with every assertion kept (T-3417).
 - Six timing tests no longer depend on the machine: the stall test sets the mtime ahead, the doctor test stubs the CPU count (closes T-3308), the demo test drops its wall-clock assertion, and the docs, CLI and showpiece tests scale or retry under load (T-3367).
