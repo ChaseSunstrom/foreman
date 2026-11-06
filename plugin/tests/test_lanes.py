@@ -2390,6 +2390,35 @@ class PostMergeVerify(ForemanTestCase):
         self.assertEqual(self.state(sha), "green")
         self.assertEqual(c.find_brief(self.p, self.tid).meta.get("lane_verified"), sha)
 
+    def test_a_green_newest_merge_settles_every_older_pending_one(self):
+        # T-3446: oldest first ran one 20-40 min suite per merge while merges landed every ~8 min (18 waited)
+        runs = os.path.join(self.tmp, "runs.txt")
+        os.environ["FM_POSTMERGE_CMD"] = f"echo run >> {runs}; " + self.RED
+        shas = [self.land(n) for n in ("a", "b", "n")]
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual([self.state(s) for s in shas], ["green"] * 3)
+        self.assertEqual(len(read_text(runs).splitlines()), 1, "one suite run stands for all three")
+        self.assertEqual(slanes.pm_records(self.p)[shas[0]].get("covered_by"), shas[2])
+
+    def test_a_red_newest_merge_still_finds_the_culprit_oldest_first(self):
+        runs = os.path.join(self.tmp, "runs.txt")
+        os.environ["FM_POSTMERGE_CMD"] = f"echo run >> {runs}; " + self.RED
+        a, bad, n = self.land("a"), self.land("x", bad=True), self.land("n")
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(a), "green")
+        self.assertEqual(self.state(bad), "reverted")
+        self.assertNotEqual(self.state(n), "reverted", "the newest merge isn't blamed for an older one's red")
+        self.assertEqual(read_text(runs).count("run"), 4, "one probe on the newest, then a, x and n oldest first")
+
+    def test_a_merge_reverted_by_hand_is_never_covered(self):
+        # review: its effect isn't in the newest tree, so a green there says nothing about it
+        a = self.land("a")
+        self.git("revert", "-m", "1", "--no-edit", a)
+        b = self.land("b")
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(b), "green")
+        self.assertNotIn("covered_by", slanes.pm_records(self.p)[a])
+
     def test_red_suite_reverts_exactly_that_merge_and_reopens_the_lane(self):
         sha = self.land("a", bad=True)
         head = self.git("rev-parse", "HEAD")

@@ -2388,7 +2388,9 @@ def _pm_dead(r):
 
 
 def pm_run(p, main):
-    """Settle every red merge, then verify every pending one, oldest first (the detached process's whole job)."""
+    """Settle every red merge, then verify every pending one, oldest first (the detached process's whole job). T-3446:
+    with several pending, one suite run on the newest goes first; green there stands for every one in its history."""
+    probed = set()
     for _ in range(1000):  # bounded: a requeue loop can't spin forever
         recs = pm_records(p)
         red = [s for s, r in recs.items() if r["state"] == "red"]
@@ -2397,8 +2399,47 @@ def pm_run(p, main):
                 return
             continue
         todo = [s for s, r in recs.items() if r["state"] == "pending" or (r["state"] == "running" and _pm_dead(r))]
-        if not todo or not pm_verify(p, main, todo[0]):
+        newest = todo[-1] if todo else None
+        if len(todo) > 1 and newest not in probed and not any(recs[s].get("after_reverts") for s in todo):
+            probed.add(newest)
+            if _pm_claim(p, todo[0]):  # holds the queue (other runners stop at the oldest) while the newest runs
+                try:
+                    green = _pm_green_at(main, newest)
+                finally:
+                    pm_set(p, todo[0], state="pending")
+                if green:
+                    _pm_cover(p, main, todo, newest)
+                    continue
+        if not todo or not pm_verify(p, main, todo[0]):  # a red newest: oldest first finds whose red it is
             return
+
+
+def _pm_green_at(main, sha):
+    """T-3446: the full suite on sha in a throwaway worktree; True only on a clean pass (a probe: records nothing)."""
+    tmp = tempfile.mkdtemp(prefix="fm-verify-")
+    wt = os.path.join(tmp, "wt")
+    try:
+        return not _git(main, "worktree", "add", "--detach", wt, sha).returncode and \
+            c.run_command(wt, pm_cmd(main), c.load_scaled(3600))[0] == 0
+    finally:
+        _git(main, "worktree", "remove", "--force", wt)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _pm_cover(p, main, todo, newest):
+    """T-3446: a green suite on newest verifies every pending merge in its history: not one a live runner took
+    meanwhile, nor one reverted by hand (its effect isn't in newest's tree)."""
+    from sampo import cli
+    for s in todo:
+        if s != newest and (_git(main, "merge-base", "--is-ancestor", s, newest).returncode or _pm_reverted(main, s)):
+            continue
+        r = pm_records(p).get(s)
+        if not r or not (r["state"] == "pending" or (r["state"] == "running" and _pm_dead(r))):
+            continue
+        pm_set(p, s, state="green", covered_by=newest)
+        cli.mutate(p, r["task"], lambda x, s=s: (
+            x.append_log(f"verified: the full suite is green on {newest[:9]}, which contains {s[:9]}"),
+            x.meta.update(lane_verified=s)), "lane_verified", {"sha": s})
 
 
 def recovery_after(p, b):
