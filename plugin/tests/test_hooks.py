@@ -2506,6 +2506,49 @@ class Stop(HookCase):
             self.assertIsNone(hooks._leads_hold(self.project(), pl, True))  # past the deadline: skipped
         self.assertIsNone(hooks._leads_hold(self.project(), pl, True))  # and it counted as the one hold
 
+    def test_a_paste_block_with_an_irreversible_step_is_held_once_unless_a_guarded_script(self):  # T-3001
+        self.fm("init")
+        self.fm("drive", "off")
+        fence = "```"
+        blk = lambda body: f"Run this:\n{fence}bash\n{body}\n{fence}\n"  # noqa
+        bad = blk("rsync -a /a/ /b/\nmv /a /a.old\nrm -rf /a.old")
+        p = self.stop(bad)
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("mv /a /a.old", parse(p)["reason"])
+        self.assertIn("set -euo pipefail", parse(p)["reason"])
+        self.assertIsNone(self.decision(self.stop(bad)), "once per reply")
+        good = blk("set -euo pipefail\ncommand -v rsync >/dev/null\ntest -d /b\nrm -rf /a.old")
+        self.assertIsNone(self.decision(self.stop(good)))
+        p = self.stop(blk("set -euo pipefail\nrm -rf /x"))  # strict mode alone, no check before the rm
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("check", parse(p)["reason"])
+        self.assertIsNone(self.decision(self.stop(blk("ls -la\ngit status"))))
+
+    def test_a_paste_block_false_holds_and_variants(self):  # T-3001 round 2
+        self.fm("init")
+        self.fm("drive", "off")
+        fence = "```"
+        blk = lambda body: f"Try:\n{fence}bash\n{body}\n{fence}\n"  # noqa
+        for safe in ("echo x > file.txt", "cmd >out.log 2>&1", "jq . a > b", "awk '$1 > 5' f", "cat > f <<EOF\nhi\nEOF",
+                     "docker run --cap-drop ALL x", "iptables -j DROP", "git clean -nd", "git clean --dry-run -fd",
+                     "mv a.txt b.txt", "mv -n a b"):
+            self.assertIsNone(self.decision(self.stop(blk(safe), session=safe)), safe)
+        for bad in ("> /var/log/app.log", ": > app.log", "truncate -s0 f", "psql -c 'DROP TABLE t'", "mv -f a b",
+                    "mv a /srv/b", "mv a ~/b", "git clean -fd"):
+            self.assertEqual(self.decision(self.stop(blk(bad), session=bad)), "block", bad)
+        for strict in ("set -Eeuo pipefail", "set -o errexit -o pipefail", "set -e\nset -o pipefail"):
+            ok = blk(f"{strict}\ntest -d /a\nrm -rf /a")
+            self.assertIsNone(self.decision(self.stop(ok, session=strict)), strict)
+        # quoted code: the session already ran the line this turn, so a review reply quoting it isn't held
+        t = self.turn(("Bash", {"command": 'x=/tmp/q; rm -rf "$x"'}, "", False))
+        msg = blk('rm -rf "$x"')
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": msg, "session_id": "q1",
+                               "transcript_path": t})
+        self.assertIsNone(self.decision(p))
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": msg, "session_id": "q2",
+                               "transcript_path": self.turn(("Read", {"file_path": "a"}, "x", False))})
+        self.assertEqual(self.decision(p), "block")
+
     def test_a_tests_pass_claim_needs_a_passing_run_after_the_last_edit(self):
         # T-0886: the Stop gate checked only "done"; "all tests pass" went unchecked against the turn's own runs
         self.fm("init")

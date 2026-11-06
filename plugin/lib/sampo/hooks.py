@@ -3738,7 +3738,7 @@ def _stop(pl):
         closed = {b.id for b in briefs if b.status in c.CLOSED}
         nudge = None if reload_due else _headless_wait(pl) if oneoff else (
             _evidence_gate(p, act, pl, g, closed) or _clauses_gate(p, pl, g, closed) or _safe_goal_gate(p, pl, g, sid, closed)
-            or _claims_gate(pl, g)
+            or _claims_gate(pl, g) or _paste_gate(pl, g)
             or _proof_claim_gate(p, act, pl, g)
             or _question_nudge(pl, p)
             or _headless_wait(pl))
@@ -3984,6 +3984,49 @@ def _turn_calls(path, cap=4_000_000):
                     str(y.get("text") or "") for y in body or [] if isinstance(y, dict))
                 calls[by_id[x["tool_use_id"]]][2:] = [text, bool(x.get("is_error"))]
     return [tuple(x) for x in calls]
+
+
+_SH_FENCE = c.lazy(r"```(?:bash|sh|shell|zsh)[^\n]*\n(.*?)```", re.S)
+_IRREV = c.lazy(r"^\s*(?:sudo\s+)?(?:rm\s+-\S*[rf]|rm\s+\S*/\s*$|mv\s+-\S*f|mv\s.*\s[~/]\S*\s*$|rsync\b.*--delete|dd\s|mkfs|"
+                    r"git\s+reset\s+--hard|git\s+clean(?!.*(?:\s-\S*n|--dry-run))|git\s+push\s+.*(?:--force|-f\b)|"
+                    r">\s*\S|:\s*>|truncate\b)|\bDROP\s+(?:TABLE|DATABASE|SCHEMA|INDEX|COLUMN)\b", re.I)
+_GUARD = c.lazy(r"\btest\s+-|\bcommand\s+-v\b|^\s*\[\[?\s|^\s*if\s|\[\[?\s.*\]\]?\s*(?:\|\||&&)|\b(?:which|type)\s+\S+\s*(?:>|\|\||&&)")
+_PIPEFAIL = c.lazy(r"^\s*set\s[^\n]*pipefail", re.M)  # T-3001: -Eeuo pipefail, -e -o pipefail, -o errexit -o pipefail
+_ERREXIT = c.lazy(r"^\s*set\s(?:[^\n]*\s)?(?:-[A-Za-z]*e[A-Za-z]*|-o\s+errexit)\b", re.M)
+
+
+def _paste_gate(pl, g):
+    """T-3001: a reply handing the user a shell block with an irreversible step (rm -r, mv, dd, mkfs, git reset --hard,
+    a forced push, a truncating redirect) is held once unless the block starts `set -euo pipefail` and checks (test,
+    command -v, [ ] ||) before that step: a paste block lost 72 GB of models when rsync was missing and its last line
+    deleted the store. Only a safety net: Claude runs commands itself."""
+    msg = pl.get("last_assistant_message") or ""
+    if pl.get("stop_hook_active") or "```" not in msg:
+        return None
+    for body in _SH_FENCE.findall(msg):
+        lines = [x for x in body.splitlines() if x.strip() and not x.lstrip().startswith("#")]
+        step = next((i for i, x in enumerate(lines) if _IRREV.search(x)), None)
+        if step is None:
+            continue
+        head = "\n".join(lines[:3])  # not a list: the block's opening lines, a regex haystack
+        strict = bool(_PIPEFAIL.search(head) and _ERREXIT.search(head))
+        guarded = any(_GUARD.search(x) for x in lines[:step])
+        if strict and guarded:
+            continue
+        if pl.get("transcript_path"):  # quoted code: the session already ran that line, so it isn't handed over
+            ran = [str(x[1].get("command") or "") for x in _turn_calls(pl["transcript_path"]) if x[0] == "Bash"]
+            if any(lines[step].strip() in r for r in ran):
+                continue
+        key = f"{pl.get('session_id')}:p:{hashlib.sha1(msg.encode()).hexdigest()[:12]}"
+        if key in g.setdefault("claims", []):
+            return None
+        g["claims"] = (g["claims"] + [key])[-50:]
+        miss = " and ".join(x for x, ok in (("start with `set -euo pipefail`", strict),
+                                            ("check (test -e/-d, command -v, [ … ] ||) before it", guarded)) if not ok)
+        return (f"Sampo: the shell block has an irreversible step (`{c.fit(lines[step].strip(), 80)}`) but doesn't {miss}. "
+                "Hand it over as a script: set -euo pipefail, a check before every irreversible step, nothing after a "
+                "failed move deleting the original; better, run it yourself.")
+    return None
 
 
 def _claims_gate(pl, g):
