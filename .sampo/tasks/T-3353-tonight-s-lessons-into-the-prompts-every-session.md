@@ -9,6 +9,8 @@ depends_on: []
 source: user
 created: 2026-11-06T05:33:56Z
 updated: 2026-11-06T05:33:57Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-a879c1c0c29cef328
+lane_branch: worktree-agent-a879c1c0c29cef328
 ---
 # Tonight's lessons into the prompts every session loads: the operating rules, MASTER.md and its ops map, and the builder and reviewer agent definitions plus the lane brief
 ## Raw request

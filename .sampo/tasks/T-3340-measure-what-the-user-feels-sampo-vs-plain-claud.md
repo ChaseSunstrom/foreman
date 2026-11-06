@@ -9,6 +9,8 @@ depends_on: []
 source: user
 created: 2026-11-06T05:06:38Z
 updated: 2026-11-06T05:55:13Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-a4dde600af6ee6121
+lane_branch: worktree-agent-a4dde600af6ee6121
 ---
 # Benchmark queue fixture: bench/spec-suite/queue.py (make.py --suite queue) builds 12 candidate tasks on hard's invoicing package (keep-rule bugs, dense features, a flaky test, an API migration, one impossible task, one ambiguous-but-safe task), each with hidden fail-to-pass tests and a naive variant that must fail
 ## Raw request

@@ -9,6 +9,8 @@ depends_on: []
 source: followup
 created: 2026-11-06T04:31:59Z
 updated: 2026-11-06T04:32:00Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-a824caa9aad2c966a
+lane_branch: worktree-agent-a824caa9aad2c966a
 ---
 # Fleet: a lane per session: a second live session in the same checkout gets its own lane worktree, so its edits are its own task's
 ## Raw request

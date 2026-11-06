@@ -43,10 +43,10 @@ Blast radius (sampo graph blast): co-changes CHANGELOG.md, plugin/lib/fmcli.py, 
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 plugin/tests/run.py test_claims_remote` → ✗ exit 1 (never ran: no tests ran) · Ran 0 tests in 16.3s (1 jobs, 16 at a time; slowest: loader._FailedTest 0s) / FAILED (1 classes: unittest.loader._FailedTest) [ran] [tree 194deb837da1] [world 2f1906870a] (2026-11-06T05:56:03Z)
-- (step 1) `python3 plugin/tests/run.py test_claims_remote` → exit 0 · Ran 9 tests in 159.4s (2 jobs, 16 at a time; slowest: Take 2s, Lifecycle 1s) / OK [ran] [tree 9e3b7a038f0f] [world 2f1906870a] (2026-11-06T06:08:50Z)
-- (step 2) `python3 plugin/tests/run.py test_claims_remote` → exit 0 · Ran 9 tests in 154.0s (2 jobs, 16 at a time; slowest: Lifecycle 1s, Take 1s) / OK [ran] [tree 9e3b7a038f0f] [world 2f1906870a] (2026-11-06T06:11:26Z)
-- (step 3) `python3 plugin/tests/run.py test_claims_remote` → exit 0 · Ran 9 tests in 90.4s (2 jobs, 16 at a time; slowest: Take 1s, Lifecycle 1s) / OK [ran] [tree 9e3b7a038f0f] [world 2f1906870a] (2026-11-06T06:12:58Z)
+- (step 1) `python3 plugin/tests/run.py test_claims_remote` → ✗ exit 1 (never ran: no tests ran) · Ran 0 tests in 16.3s (1 jobs, 16 at a time; slowest: loader._FailedTest 0s) / FAILED (1 classes: unittest.loader._FailedTest) (ran] (tree 194deb837da1] (world 2f1906870a] (2026-11-06T05:56:03Z)
+- (step 1) `python3 plugin/tests/run.py test_claims_remote` → exit 0 · Ran 9 tests in 159.4s (2 jobs, 16 at a time; slowest: Take 2s, Lifecycle 1s) / OK (ran] (tree 9e3b7a038f0f] (world 2f1906870a] (2026-11-06T06:08:50Z)
+- (step 2) `python3 plugin/tests/run.py test_claims_remote` → exit 0 · Ran 9 tests in 154.0s (2 jobs, 16 at a time; slowest: Lifecycle 1s, Take 1s) / OK (ran] (tree 9e3b7a038f0f] (world 2f1906870a] (2026-11-06T06:11:26Z)
+- (step 3) `python3 plugin/tests/run.py test_claims_remote` → exit 0 · Ran 9 tests in 90.4s (2 jobs, 16 at a time; slowest: Take 1s, Lifecycle 1s) / OK (ran] (tree 9e3b7a038f0f] (world 2f1906870a] (2026-11-06T06:12:58Z)
 ## Log
 - 2026-11-06T04:26:40Z created
 - 2026-11-06T04:29:02Z steer: the user: 'manage all of that across sessions too, like a consensus thing... able to handle tasks like those recursive towers, kalevala, genesis stuff, even without direct access... not only one machine managing everything, but working together'. No leader machine: peers agree on claims, ids, tower ownership, keep/revert and births, watcher acts; git (any shared remote) is the only channel; a vanished peer never blocks the rest

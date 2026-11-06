@@ -39,8 +39,8 @@ Blast radius (sampo graph blast): co-changes plugin/lib/fmcli.py, plugin/lib/fmg
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 plugin/tests/run.py test_session` → exit 0 · Ran 46 tests in 501.0s (28 jobs, 16 at a time; slowest: Session 13s, Say 4s, SessionTrailer 4s) / OK [ran] [tree 87cd10d9be77] [world 2f1906870a] (2026-11-06T06:03:48Z)
-- (step 3) `python3 plugin/tests/run.py test_agents` → exit 0 · Ran 28 tests in 70.5s (11 jobs, 16 at a time; slowest: Hook 17s, Export 3s, Install 1s) / OK [ran] [tree 87cd10d9be77] [world 2f1906870a] (2026-11-06T06:09:28Z)
+- (step 1) `python3 plugin/tests/run.py test_session` → exit 0 · Ran 46 tests in 501.0s (28 jobs, 16 at a time; slowest: Session 13s, Say 4s, SessionTrailer 4s) / OK (ran] (tree 87cd10d9be77] (world 2f1906870a] (2026-11-06T06:03:48Z)
+- (step 3) `python3 plugin/tests/run.py test_agents` → exit 0 · Ran 28 tests in 70.5s (11 jobs, 16 at a time; slowest: Hook 17s, Export 3s, Install 1s) / OK (ran] (tree 87cd10d9be77] (world 2f1906870a] (2026-11-06T06:09:28Z)
 ## Log
 - 2026-11-06T05:11:41Z created
 - 2026-11-06T05:49:47Z planned from capture

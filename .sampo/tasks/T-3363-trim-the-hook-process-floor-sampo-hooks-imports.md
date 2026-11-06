@@ -9,6 +9,8 @@ depends_on: []
 source: followup
 created: 2026-11-06T05:54:53Z
 updated: 2026-11-06T05:54:55Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-a519553639925a6b6
+lane_branch: worktree-agent-a519553639925a6b6
 ---
 # Trim the hook process floor: sampo.hooks imports its stdlib extras lazily (tempfile/random, shutil/bz2, hashlib) and hooks/hook runs python3 -I, so the floor (TaskCompleted p50, 37.5 ms) drops to 30 ms or less with every gate green
 ## Raw request

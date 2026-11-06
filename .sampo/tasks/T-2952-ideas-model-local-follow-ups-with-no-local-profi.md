@@ -40,7 +40,7 @@ Reading 1 (taken): five small follow-ups from the T-2910 and T-2915 audits, each
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 plugin/tests/run.py test_ideas` → exit 0 · Ran 32 tests in 177.8s (23 jobs, 16 at a time; slowest: Ideas.test_the_pack_is_one_cached_system_prompt_and_the_first_child_warms_it 4s, BoardIdeas 3s, Ideas.test_brainstorms_learn_from_the_asks_they_ [ran] [tree 2f1081cb5ff5] [world 2f1906870a] (2026-11-06T06:10:40Z)
+- (step 1) `python3 plugin/tests/run.py test_ideas` → exit 0 · Ran 32 tests in 177.8s (23 jobs, 16 at a time; slowest: Ideas.test_the_pack_is_one_cached_system_prompt_and_the_first_child_warms_it 4s, BoardIdeas 3s, Ideas.test_brainstorms_learn_from_the_asks_they_ (ran] (tree 2f1081cb5ff5] (world 2f1906870a] (2026-11-06T06:10:40Z)
 ## Log
 - 2026-11-04T10:08:30Z created
 - 2026-11-05T02:07:04Z set scope=['plugin/lib/sampo/ideas.py', 'plugin/lib/sampo/cli.py', 'plugin/tests/test_ideas.py']

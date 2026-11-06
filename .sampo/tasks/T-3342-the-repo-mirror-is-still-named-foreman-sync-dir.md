@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo, plugin/tests, README.md, plugin/skills]
 depends_on: []
 source: user
 created: 2026-11-06T05:09:41Z
-updated: 2026-11-06T06:08:17Z
+updated: 2026-11-06T07:00:49Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-ad87d1e22878ac6e5
 lane_branch: worktree-agent-ad87d1e22878ac6e5
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -49,6 +49,7 @@ Blast radius (sampo graph blast): co-changes MASTER.md, CHANGELOG.md, plugin/lib
 - 2026-11-06T06:00:08Z planned from capture
 - 2026-11-06T06:08:12Z focused
 - 2026-11-06T06:08:17Z predicted from its closes: 4 min, 1 attempt(s)
+- 2026-11-06T07:00:49Z scope: plugin/lib/fmguard.py edited (guard treats .sampo as state only when fm's), per coordinator review
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

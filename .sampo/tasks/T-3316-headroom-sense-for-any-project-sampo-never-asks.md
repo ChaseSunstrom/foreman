@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/headroom.py, plugin/tests/test_headroom.py, plugin/lib/
 depends_on: []
 source: user
 created: 2026-11-06T04:20:48Z
-updated: 2026-11-06T06:11:34Z
+updated: 2026-11-06T07:02:19Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-a116c672c4b27d347
 lane_branch: worktree-agent-a116c672c4b27d347
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
@@ -17,6 +17,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T05:53:17Z
 plan0_scope: [plugin/lib/sampo/headroom.py, plugin/tests/test_headroom.py, plugin/lib/fmheadroom.py, MASTER.md, docs/map]
+builder_returned: 2026-11-06T07:02:19Z
 ---
 # Headroom part 1: census of a project's fixed sets and caps, plus caps raised by hand (T-3316)
 ## Raw request
@@ -42,9 +43,15 @@ Blast radius (sampo graph blast): co-changes CHANGELOG.md, plugin/lib/fmcli.py, 
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 plugin/tests/run.py test_headroom` → exit 0 · Ran 3 tests in 165.5s (3 jobs, 16 at a time; slowest: HeadroomTest.test_fast_on_this_repo 28s, HeadroomTest.test_raised_counts_value_increases 0s, HeadroomTest.test_census_lists_caps_and_sets_not_bare [ran] [tree b7a33b5f728d] [world 2f1906870a] (2026-11-06T06:08:19Z)
-- (step 2) `python3 plugin/tests/run.py test_headroom` → exit 0 · Ran 3 tests in 64.7s (3 jobs, 16 at a time; slowest: HeadroomTest.test_fast_on_this_repo 11s, HeadroomTest.test_census_lists_caps_and_sets_not_bare_timeout 0s, HeadroomTest.test_raised_counts_value_in [ran] [tree b7a33b5f728d] [world 2f1906870a] (2026-11-06T06:09:33Z)
-- (step 3) `python3 plugin/tests/run.py test_headroom` → exit 0 · Ran 3 tests in 113.3s (3 jobs, 16 at a time; slowest: HeadroomTest.test_fast_on_this_repo 8s, HeadroomTest.test_raised_counts_value_increases 0s, HeadroomTest.test_census_lists_caps_and_sets_not_bare_ [ran] [tree b7a33b5f728d] [world 2f1906870a] (2026-11-06T06:11:34Z)
+- (step 1) `python3 plugin/tests/run.py test_headroom` → exit 0 · Ran 3 tests in 165.5s (3 jobs, 16 at a time; slowest: HeadroomTest.test_fast_on_this_repo 28s, HeadroomTest.test_raised_counts_value_increases 0s, HeadroomTest.test_census_lists_caps_and_sets_not_bare (ran] (tree b7a33b5f728d] (world 2f1906870a] (2026-11-06T06:08:19Z)
+- (step 2) `python3 plugin/tests/run.py test_headroom` → exit 0 · Ran 3 tests in 64.7s (3 jobs, 16 at a time; slowest: HeadroomTest.test_fast_on_this_repo 11s, HeadroomTest.test_census_lists_caps_and_sets_not_bare_timeout 0s, HeadroomTest.test_raised_counts_value_in (ran] (tree b7a33b5f728d] (world 2f1906870a] (2026-11-06T06:09:33Z)
+- (step 3) `python3 plugin/tests/run.py test_headroom` → exit 0 · Ran 3 tests in 113.3s (3 jobs, 16 at a time; slowest: HeadroomTest.test_fast_on_this_repo 8s, HeadroomTest.test_raised_counts_value_increases 0s, HeadroomTest.test_census_lists_caps_and_sets_not_bare_ (ran] (tree b7a33b5f728d] (world 2f1906870a] (2026-11-06T06:11:34Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_code test_design_tokens test_design_works test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_headroom test_hooks test_inbox_spec test_left_out test_library test_mcp test_models test_moons_scale test_parallel test_proof test_rename_scan test_scaffold test_self_aware test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_ui_signals && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 124 (timed out after 1726.52s) · timed out after 1726.52s (ran] (tree b7a33b5f728d] (world 2f1906870a] (2026-11-06T06:40:37Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_code test_design_tokens test_design_works test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_headroom test_hooks test_inbox_spec test_left_out test_library test_mcp test_models test_moons_scale test_parallel test_proof test_rename_scan test_scaffold test_self_aware test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_ui_signals && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 124 (timed out after 1307.48s) · timed out after 1307.48s (ran] (tree b7a33b5f728d] (world 2f1906870a] (2026-11-06T06:42:16Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_code test_design_tokens test_design_works test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_headroom test_hooks test_inbox_spec test_left_out test_library test_mcp test_models test_moons_scale test_parallel test_proof test_rename_scan test_scaffold test_self_aware test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_ui_signals && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 124 (timed out after 1755.21s) · timed out after 1755.21s (ran] (tree b7a33b5f728d] (world 2f1906870a] (2026-11-06T06:47:32Z)
+- (ac 1) `python3 plugin/tests/run.py test_headroom 2>&1 | head -50` → exit 0 · Ran 6 tests in 15.8s (6 jobs, 16 at a time; slowest: HeadroomTest.test_warm_run_on_this_repo_under_3_cpu_seconds 8s, HeadroomTest.test_census_lists_caps_and_sets_not_bare_timeout 0s, HeadroomTest.test (ran] (tree 689971878845] (world 2f1906870a] (2026-11-06T07:01:39Z)
+- (ac 2) `python3 plugin/tests/run.py test_headroom 2>&1 | head -50` → exit 0 · Ran 6 tests in 15.8s (6 jobs, 16 at a time; slowest: HeadroomTest.test_warm_run_on_this_repo_under_3_cpu_seconds 8s, HeadroomTest.test_census_lists_caps_and_sets_not_bare_timeout 0s, HeadroomTest.test (ran] (tree 689971878845] (world 2f1906870a] (2026-11-06T07:01:39Z)
+- (ac 3) `python3 plugin/tests/run.py test_headroom 2>&1 | head -50` → exit 0 · Ran 6 tests in 15.8s (6 jobs, 16 at a time; slowest: HeadroomTest.test_warm_run_on_this_repo_under_3_cpu_seconds 8s, HeadroomTest.test_census_lists_caps_and_sets_not_bare_timeout 0s, HeadroomTest.test (ran] (tree 689971878845] (world 2f1906870a] (2026-11-06T07:01:39Z)
 ## Log
 - 2026-11-06T04:20:48Z created
 - 2026-11-06T04:31:02Z planned from capture

@@ -36,8 +36,8 @@ builder_returned: 2026-11-06T06:12:55Z
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 plugin/tests/run.py test_doctor McpTransport` → ✗ exit 1 · Ran 115 tests in 64.4s (45 jobs, 16 at a time; slowest: ViewsRepair 9s, LockProbe 4s, Command 4s) / FAILED (1 classes: test_doctor.McpTransport) [ran] [tree 988967955c04] [world 2f1906870a] (2026-11-06T05:53:54Z)
-- (step 2) `python3 plugin/tests/run.py test_doctor` → exit 0 · Ran 115 tests in 630.3s (45 jobs, 16 at a time; slowest: ViewsRepair 48s, Timing 4s, LockProbe 4s) / OK [ran] [tree 31d4a23afdf2] [world 2f1906870a] (2026-11-06T06:04:40Z)
+- (step 1) `python3 plugin/tests/run.py test_doctor McpTransport` → ✗ exit 1 · Ran 115 tests in 64.4s (45 jobs, 16 at a time; slowest: ViewsRepair 9s, LockProbe 4s, Command 4s) / FAILED (1 classes: test_doctor.McpTransport) (ran] (tree 988967955c04] (world 2f1906870a] (2026-11-06T05:53:54Z)
+- (step 2) `python3 plugin/tests/run.py test_doctor` → exit 0 · Ran 115 tests in 630.3s (45 jobs, 16 at a time; slowest: ViewsRepair 48s, Timing 4s, LockProbe 4s) / OK (ran] (tree 31d4a23afdf2] (world 2f1906870a] (2026-11-06T06:04:40Z)
 ## Log
 - 2026-11-06T05:11:39Z created
 - 2026-11-06T05:49:43Z planned from capture

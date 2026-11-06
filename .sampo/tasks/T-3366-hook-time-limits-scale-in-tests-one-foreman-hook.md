@@ -34,7 +34,7 @@ plan0_scope: [plugin/lib/sampo/hooks.py, plugin/tests/helpers.py, plugin/tests/t
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 plugin/tests/run.py --load 48 test_hooks -k NoTaskGate` → exit 0 · Ran 31 tests in 199.3s (6 jobs, 16 at a time; slowest: NoTaskGateClose 25s, NoTaskGateMulti 23s, NoTaskGateKinds 19s) / OK [ran] [tree afec363fa052] [world 2f1906870a] (2026-11-06T06:08:18Z)
+- (step 1) `python3 plugin/tests/run.py --load 48 test_hooks -k NoTaskGate` → exit 0 · Ran 31 tests in 199.3s (6 jobs, 16 at a time; slowest: NoTaskGateClose 25s, NoTaskGateMulti 23s, NoTaskGateKinds 19s) / OK (ran] (tree afec363fa052] (world 2f1906870a] (2026-11-06T06:08:18Z)
 ## Log
 - 2026-11-06T05:55:37Z created
 - 2026-11-06T05:56:07Z focused

@@ -9,6 +9,8 @@ depends_on: [T-3321]
 source: followup
 created: 2026-11-06T04:31:56Z
 updated: 2026-11-06T04:31:56Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-aeb5a77060abc43f5
+lane_branch: worktree-agent-aeb5a77060abc43f5
 ---
 # Fleet: id blocks: next_id reserves blocks of 32 T-numbers through a claims ref so two machines never mint the same id
 ## Raw request

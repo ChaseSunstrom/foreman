@@ -9,6 +9,8 @@ depends_on: [T-3321]
 source: followup
 created: 2026-11-06T04:31:57Z
 updated: 2026-11-06T04:31:58Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-a6974a31f571ee3eb
+lane_branch: worktree-agent-a6974a31f571ee3eb
 ---
 # Fleet: starting a task takes its claim; hooks refuse edits once the claim is lost, naming the holder's machine
 ## Raw request

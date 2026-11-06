@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T03:59:24Z
 updated: 2026-11-06T03:59:24Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-a3d676939daa74e0b
+lane_branch: worktree-agent-a3d676939daa74e0b
 ---
 # Sampo check --affected picks ~2,000 tests (700 jobs) for any change to a hub file…
 ## Raw request

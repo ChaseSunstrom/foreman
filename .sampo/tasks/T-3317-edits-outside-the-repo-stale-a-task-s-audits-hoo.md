@@ -36,8 +36,8 @@ builder_returned: 2026-11-06T06:12:57Z
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 plugin/tests/run.py test_core.Ledger.test_last_change_ignores_files_outside_the_repo` → ✗ exit 1 · Ran 1 tests in 5.0s (1 jobs, 16 at a time; slowest: Ledger 1s) / FAILED (1 classes: test_core.Ledger) [ran] [tree 0f69b9fabbbc] [world 2f1906870a] (2026-11-06T05:52:51Z)
-- (step 2) `python3 plugin/tests/run.py test_core test_ledger_chain` → exit 0 · Ran 182 tests in 315.6s (56 jobs, 16 at a time; slowest: Migrate 13s, Chain 10s, ConfidenceRoutes.test_an_assumption_under_the_bar_is_refused_until_a_verified_check_a_cold_reader_agrees_with 4s) / OK [ran] [tree f15f9c92538c] [world 2f1906870a] (2026-11-06T06:12:34Z)
+- (step 1) `python3 plugin/tests/run.py test_core.Ledger.test_last_change_ignores_files_outside_the_repo` → ✗ exit 1 · Ran 1 tests in 5.0s (1 jobs, 16 at a time; slowest: Ledger 1s) / FAILED (1 classes: test_core.Ledger) (ran] (tree 0f69b9fabbbc] (world 2f1906870a] (2026-11-06T05:52:51Z)
+- (step 2) `python3 plugin/tests/run.py test_core test_ledger_chain` → exit 0 · Ran 182 tests in 315.6s (56 jobs, 16 at a time; slowest: Migrate 13s, Chain 10s, ConfidenceRoutes.test_an_assumption_under_the_bar_is_refused_until_a_verified_check_a_cold_reader_agrees_with 4s) / OK (ran] (tree f15f9c92538c] (world 2f1906870a] (2026-11-06T06:12:34Z)
 ## Log
 - 2026-11-06T04:23:07Z created
 - 2026-11-06T05:51:42Z planned from capture

@@ -9,6 +9,8 @@ depends_on: []
 source: followup
 created: 2026-11-06T06:03:46Z
 updated: 2026-11-06T06:03:47Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-a185619b5690dd96e
+lane_branch: worktree-agent-a185619b5690dd96e
 ---
 # Install and docs read SAMPO_* first: install.sh reads only FOREMAN_* (install.sh:19-26) while the code already reads SAMPO_* (core.py:68); docs name FOREMAN_HOME x40, REPO x8, DESKTOP_REPO x6, QUIET x2, NO_BACKGROUND x1 (INSTALL.md, MASTER.md, README.md, install.sh, site/stats.py): say SAMPO_* with FOREMAN_* as the old alias
 ## Raw request

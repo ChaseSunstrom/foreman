@@ -28,10 +28,10 @@ def _git(root, *args, check=True):
         p = subprocess.run(["git", "-C", root, *args], capture_output=True, timeout=GIT_TIMEOUT)
     except subprocess.TimeoutExpired:
         if check:  # a hung git is not "nondeterministic": exit 2, and the cleanup still runs
-            raise ReproError(f"git {' '.join(args[:2])} timed out after {GIT_TIMEOUT} s")
+            raise ReproError(f"git {' '.join(args[:2])} timed out after {GIT_TIMEOUT} s")  # not a list: the git verb and its first argument
         return subprocess.CompletedProcess(args, 1, b"", b"timed out")
     if check and p.returncode != 0:
-        raise ReproError(f"git {' '.join(args[:2])} failed: {p.stderr.decode('utf-8', 'replace').strip()[-300:]}")
+        raise ReproError(f"git {' '.join(args[:2])} failed: {p.stderr.decode('utf-8', 'replace').strip()[-300:]}")  # not a list: verb and first argument
     return p
 
 

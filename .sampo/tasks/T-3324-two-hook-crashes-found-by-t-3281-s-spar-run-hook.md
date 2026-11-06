@@ -35,8 +35,8 @@ plan0_scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py]
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 2) `python3 plugin/tests/run.py test_hooks` → exit 0 · Ran 261 tests in 305.1s (153 jobs, 16 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 27s, Approvals 26s, UserPromptSubmit 25s) / OK [ran] [tree fd3904144fd6] [world 2f1906870a] (2026-11-06T05:58:47Z)
-- (step 1) `python3 plugin/tests/run.py test_hooks.SparCrashes` → exit 0 · Ran 2 tests in 207.5s (1 jobs, 16 at a time; slowest: SparCrashes 4s) / OK [ran] [tree fd3904144fd6] [world 2f1906870a] (2026-11-06T05:58:53Z)
+- (step 2) `python3 plugin/tests/run.py test_hooks` → exit 0 · Ran 261 tests in 305.1s (153 jobs, 16 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 27s, Approvals 26s, UserPromptSubmit 25s) / OK (ran] (tree fd3904144fd6] (world 2f1906870a] (2026-11-06T05:58:47Z)
+- (step 1) `python3 plugin/tests/run.py test_hooks.SparCrashes` → exit 0 · Ran 2 tests in 207.5s (1 jobs, 16 at a time; slowest: SparCrashes 4s) / OK (ran] (tree fd3904144fd6] (world 2f1906870a] (2026-11-06T05:58:53Z)
 ## Log
 - 2026-11-06T04:30:12Z created
 - 2026-11-06T05:51:44Z planned from capture

@@ -38,9 +38,9 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 2) `python3 plugin/tests/run.py test_mcp` → exit 0 · Ran 30 tests in 155.1s (16 jobs, 16 at a time; slowest: McpTools 10s, Edges 3s, McpReview 2s) / OK [ran] [tree 7302695b2a1f] [world 2f1906870a] (2026-11-06T05:56:34Z)
-- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_doctor test_left_out test_mcp test_models test_rename_scan && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 246 tests in 616.0s (80 jobs, 16 at a time; slowest: RenameScan 41s, LockProbe 18s, Bench 16s) / FAILED (1 classes: test_left_out.LeftOut) [ran] [tree 7302695b2a1f] [world 2f1906870a] (2026-11-06T06:07:13Z)
-- (step 2) `python3 plugin/tests/run.py test_left_out` → ✗ exit 1 · Ran 3 tests in 102.0s (1 jobs, 16 at a time; slowest: LeftOut 0s) / FAILED (1 classes: test_left_out.LeftOut) [ran] [tree 7302695b2a1f] [world 2f1906870a] (2026-11-06T06:09:27Z)
+- (step 2) `python3 plugin/tests/run.py test_mcp` → exit 0 · Ran 30 tests in 155.1s (16 jobs, 16 at a time; slowest: McpTools 10s, Edges 3s, McpReview 2s) / OK (ran] (tree 7302695b2a1f] (world 2f1906870a] (2026-11-06T05:56:34Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_doctor test_left_out test_mcp test_models test_rename_scan && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 246 tests in 616.0s (80 jobs, 16 at a time; slowest: RenameScan 41s, LockProbe 18s, Bench 16s) / FAILED (1 classes: test_left_out.LeftOut) (ran] (tree 7302695b2a1f] (world 2f1906870a] (2026-11-06T06:07:13Z)
+- (step 2) `python3 plugin/tests/run.py test_left_out` → ✗ exit 1 · Ran 3 tests in 102.0s (1 jobs, 16 at a time; slowest: LeftOut 0s) / FAILED (1 classes: test_left_out.LeftOut) (ran] (tree 7302695b2a1f] (world 2f1906870a] (2026-11-06T06:09:27Z)
 ## Log
 - 2026-11-06T05:49:45Z created
 - 2026-11-06T05:53:26Z focused

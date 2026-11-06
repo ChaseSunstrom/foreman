@@ -36,8 +36,8 @@ builder_returned: 2026-11-06T06:09:01Z
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 plugin/tests/run.py test_hooks.GuardAblation test_doctor` → ✗ exit 1 · run.py: no test matches test_hooks.GuardAblation [ran] [tree 149f75b8cd91] [world 2f1906870a] (2026-11-06T05:55:05Z)
-- (step 2) `python3 plugin/tests/run.py test_hooks.Ablate test_doctor` → exit 0 · Ran 116 tests in 656.6s (45 jobs, 16 at a time; slowest: ViewsRepair 50s, NightTimers 11s, Ablate 7s) / OK [ran] [tree 4e68c9bb5424] [world 2f1906870a] (2026-11-06T06:08:43Z)
+- (step 1) `python3 plugin/tests/run.py test_hooks.GuardAblation test_doctor` → ✗ exit 1 · run.py: no test matches test_hooks.GuardAblation (ran] (tree 149f75b8cd91] (world 2f1906870a] (2026-11-06T05:55:05Z)
+- (step 2) `python3 plugin/tests/run.py test_hooks.Ablate test_doctor` → exit 0 · Ran 116 tests in 656.6s (45 jobs, 16 at a time; slowest: ViewsRepair 50s, NightTimers 11s, Ablate 7s) / OK (ran] (tree 4e68c9bb5424] (world 2f1906870a] (2026-11-06T06:08:43Z)
 ## Log
 - 2026-11-06T05:52:49Z created
 - 2026-11-06T05:53:08Z focused

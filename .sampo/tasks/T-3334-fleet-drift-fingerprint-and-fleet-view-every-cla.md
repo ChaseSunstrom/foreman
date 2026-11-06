@@ -9,6 +9,8 @@ depends_on: [T-3321]
 source: followup
 created: 2026-11-06T04:32:05Z
 updated: 2026-11-06T04:32:05Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-a1a866bdfa7ddc7ca
+lane_branch: worktree-agent-a1a866bdfa7ddc7ca
 ---
 # Fleet: drift fingerprint and fleet view: every claim carries a hash of mandate, root seal, tower gen-0s, steers, standing intent and plugin version; a mismatch refuses tower claims and names the differing part; sampo fleet lists who works what where from the refs
 ## Raw request

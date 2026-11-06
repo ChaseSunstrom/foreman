@@ -37,7 +37,7 @@ builder_returned: 2026-11-06T06:11:40Z
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 plugin/tests/run.py test_bench_hooks` → exit 0 · Ran 6 tests in 244.5s (4 jobs, 16 at a time; slowest: Modules 10s, Isolation 1s, ScriptBudget 0s) / OK [ran] [tree 8ff826ace361] [world 2f1906870a] (2026-11-06T05:58:56Z)
+- (step 1) `python3 plugin/tests/run.py test_bench_hooks` → exit 0 · Ran 6 tests in 244.5s (4 jobs, 16 at a time; slowest: Modules 10s, Isolation 1s, ScriptBudget 0s) / OK (ran] (tree 8ff826ace361] (world 2f1906870a] (2026-11-06T05:58:56Z)
 ## Log
 - 2026-11-05T03:51:02Z created
 - 2026-11-05T03:51:16Z planned from capture

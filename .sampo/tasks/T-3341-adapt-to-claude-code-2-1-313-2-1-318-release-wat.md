@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T05:09:24Z
 updated: 2026-11-06T05:52:53Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-ae02f38ec38d05dfc
+lane_branch: worktree-agent-ae02f38ec38d05dfc
 ---
 # Claude Code 2.1.311-2.1.318 adaptation: doctor gate for SubagentStop firing once per subagent (2.1.311; older versions overcount budget rows), and fm-builder.md pins effort: high like every other agent (2.1.316-317 effort routing), with a test that every agent names effort
 ## Raw request

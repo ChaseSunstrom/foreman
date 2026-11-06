@@ -35,9 +35,9 @@ plan0_scope: [plugin/lib/sampo/selfaware.py, plugin/tests/test_self_aware.py]
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 2) `python3 plugin/tests/run.py test_self_aware` → ✗ exit 1 · Ran 4 tests in 32.4s (2 jobs, 16 at a time; slowest: Ledger 1s, Classify 0s) / FAILED (1 classes: test_self_aware.Ledger) [ran] [tree a7fd89fc020b] [world 2f1906870a] (2026-11-06T05:53:13Z)
-- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_doctor test_left_out test_models test_rename_scan test_self_aware && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 220 tests in 53.1s (63 jobs, 16 at a time; slowest: ViewsRepair 13s, RenameScan 11s, Bench 6s) / FAILED (2 classes: test_left_out.LeftOut, test_self_aware.Ledger) [ran] [tree a7fd89fc020b] [world 2f1906870a] (2026-11-06T05:54:11Z)
-- (step 2) `python3 plugin/tests/run.py test_self_aware` → exit 0 · Ran 5 tests in 122.2s (2 jobs, 16 at a time; slowest: Ledger 3s, Classify 1s) / OK [ran] [tree 875ae1acfb11] [world 2f1906870a] (2026-11-06T05:58:32Z)
+- (step 2) `python3 plugin/tests/run.py test_self_aware` → ✗ exit 1 · Ran 4 tests in 32.4s (2 jobs, 16 at a time; slowest: Ledger 1s, Classify 0s) / FAILED (1 classes: test_self_aware.Ledger) (ran] (tree a7fd89fc020b] (world 2f1906870a] (2026-11-06T05:53:13Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_doctor test_left_out test_models test_rename_scan test_self_aware && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 220 tests in 53.1s (63 jobs, 16 at a time; slowest: ViewsRepair 13s, RenameScan 11s, Bench 6s) / FAILED (2 classes: test_left_out.LeftOut, test_self_aware.Ledger) (ran] (tree a7fd89fc020b] (world 2f1906870a] (2026-11-06T05:54:11Z)
+- (step 2) `python3 plugin/tests/run.py test_self_aware` → exit 0 · Ran 5 tests in 122.2s (2 jobs, 16 at a time; slowest: Ledger 3s, Classify 1s) / OK (ran] (tree 875ae1acfb11] (world 2f1906870a] (2026-11-06T05:58:32Z)
 ## Log
 - 2026-11-06T04:31:26Z created
 - 2026-11-06T05:52:17Z focused

@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T04:32:01Z
 updated: 2026-11-06T04:32:02Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-acd1b9b94054d0907
+lane_branch: worktree-agent-acd1b9b94054d0907
 ---
 # Kalevala: _decide and the restarted check run outside the project lock, so two concurrent steps can snapshot a tower twice and log an act twice
 ## Raw request

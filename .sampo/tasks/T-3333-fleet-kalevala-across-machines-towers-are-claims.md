@@ -9,6 +9,8 @@ depends_on: [T-3321]
 source: followup
 created: 2026-11-06T04:32:03Z
 updated: 2026-11-06T04:32:03Z
+lane: ~/.claude/foreman/.claude/worktrees/agent-a6594317511297181
+lane_branch: worktree-agent-a6594317511297181
 ---
 # Fleet: Kalevala across machines: towers are claims (tower:<name>), only the holder steps and watches a tower, exam.jsonl and acts merge by line, generation numbers come from a claim
 ## Raw request

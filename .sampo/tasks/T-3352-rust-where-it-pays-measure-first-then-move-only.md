@@ -36,7 +36,7 @@ builder_returned: 2026-11-06T06:10:37Z
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 2) `python3 plugin/tests/run.py test_hooks.HookMs` → exit 0 · Ran 1 tests in 104.2s (1 jobs, 16 at a time; slowest: HookMs 0s) / OK [ran] [tree 66b6276d764c] [world 2f1906870a] (2026-11-06T06:04:54Z)
+- (step 2) `python3 plugin/tests/run.py test_hooks.HookMs` → exit 0 · Ran 1 tests in 104.2s (1 jobs, 16 at a time; slowest: HookMs 0s) / OK (ran] (tree 66b6276d764c] (world 2f1906870a] (2026-11-06T06:04:54Z)
 ## Log
 - 2026-11-06T05:33:13Z created
 - 2026-11-06T05:54:45Z planned from capture
