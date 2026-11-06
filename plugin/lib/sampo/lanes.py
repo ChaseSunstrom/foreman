@@ -1876,7 +1876,9 @@ def _verify(b):
     for n, cmd in cmds:
         code, out = c.run_command(wt, cmd, c.load_scaled(600))
         if code:
-            raise c.PolicyError(f"{b.id}: criterion {n} is red in {wt}: `{cmd}` → exit {code}\n"
+            first = c.first_error_line(out)  # T-3411
+            raise c.PolicyError(f"{b.id}: criterion {n} is red in {wt}: `{cmd}` → exit {code}"
+                                + (f"\nfirst error: {first}" if first else "") + "\n"
                                 + "\n".join(out.rstrip().splitlines()[-15:]) + f"\nFix it on the branch, then merge "
                                 f"(fm lane merge {b.id} --unverified \"<reason>\" waives it, logged)")
 

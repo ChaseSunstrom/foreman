@@ -726,10 +726,66 @@ def pump(stream, sink, on_line=None, idle=None, on_idle=None):
         sel.close()
 
 
+_UNITTEST_HEAD = lazy(r"\A[ \t]*python3?[ \t]+-m[ \t]+unittest[ \t]+([^\n;&|<>$`()\\]+)\Z")
+_UNITTEST_NAME = lazy(r"(plugin\.tests\.|plugin/tests/)?(test\w*(?:\.\w+)*?)(\.py)?")
+
+
+def normalize_verify(root, cmd):
+    """T-3411: (cwd, command, note or None). `python3 -m unittest test_X.Class` imports only from the tests folder, but
+    stored verifies run from the repo root (lane merge, finish, re-verify), as do the plugin.tests.test_X and
+    plugin/tests/test_X.py forms (their `import helpers` fails there). One line, no chaining, only test names and
+    `-k PATTERN`. Where the root can't import the module: plugin/tests/run.py exists -> `python3 plugin/tests/run.py
+    <names> [-k PATTERN]` (the gates' runner; a name matches by substring of the test id); else, for plain names, the
+    folder holding test_X.py becomes the cwd (exact unittest semantics, any project). Anything else (other flags,
+    discover, a module the root has) is returned as it came."""
+    m = _UNITTEST_HEAD.match(cmd or "")
+    if not m or not root:
+        return root, cmd, None
+    try:
+        toks = shlex.split(m.group(1))
+    except ValueError:
+        return root, cmd, None
+    names, pats, plain, i = [], [], True, 0
+    while i < len(toks):
+        if toks[i] == "-k" and i + 1 < len(toks):
+            pats.append(toks[i + 1])
+            i += 2
+            continue
+        n = _UNITTEST_NAME.fullmatch(toks[i])
+        if not n or bool(n.group(3)) != (n.group(1) == "plugin/tests/"):  # .py only with the path form
+            return root, cmd, None
+        plain = plain and not n.group(1)
+        names.append(n.group(2))
+        i += 1
+    if not names:
+        return root, cmd, None
+    mods = {n.split(".")[0] for n in names}
+    if any(os.path.exists(os.path.join(root, mod + ".py")) or os.path.isdir(os.path.join(root, mod)) for mod in mods):
+        return root, cmd, None
+    if os.path.isfile(os.path.join(root, "plugin", "tests", "run.py")) \
+            and all(os.path.isfile(os.path.join(root, "plugin", "tests", mod + ".py")) for mod in mods):
+        new = "python3 plugin/tests/run.py " + shlex.join(names + [x for p in pats for x in ("-k", p)])
+        return root, new, f"runs as `{new}` (unittest imports from plugin/tests, not the root)"
+    if plain:
+        for d in ("tests", "test", os.path.join("plugin", "tests")):
+            if all(os.path.isfile(os.path.join(root, d, mod + ".py")) for mod in mods):
+                return os.path.join(root, d), cmd, f"runs from {d}/ (unittest imports test_* from there, not the root)"
+    return root, cmd, None
+
+
+def first_error_line(out):
+    """T-3411: the first ERROR:/FAIL:/Traceback/Error line of a run's output, or ''."""
+    for ln in (out or "").splitlines():
+        if re.match(r"\s*(ERROR|FAIL|FAILED|Traceback|\w*Error\b)", ln):
+            return ln.strip()
+    return ""
+
+
 def run_command(root, cmd, timeout=600, env=None, stdin=None):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output). stdin is
     /dev/null unless a caller hands it one it knows won't block (T-1766)."""
     stdin = subprocess.DEVNULL if stdin is None else stdin
+    root, cmd, _ = normalize_verify(root, cmd)  # T-3411
     if root and os.path.isdir(root):
         _drop_racy_pyc(root)
     if env is None:  # T-1114: fm check sets the skip list itself; an inherited one would leave tests out silently

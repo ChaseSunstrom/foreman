@@ -1219,6 +1219,9 @@ def _lint_verify(p, cmds):
             print(f"fm: warning: verify `{cmd}` is a typed check, not a command, and sampo task finish would run it: "
                   f"leave --verify off and record it with sampo task evidence ID --ac N CMD RESULT", file=sys.stderr)
             continue
+        note = c.normalize_verify(p.root, cmd)[2]  # T-3411
+        if note:
+            print(f"fm: note: verify `{cmd}` {note}", file=sys.stderr)
         problems = c.lint_verify(cmd, p.root)
         if problems:
             print(f"fm: warning: verify command `{cmd}`: {'; '.join(problems)}", file=sys.stderr)
