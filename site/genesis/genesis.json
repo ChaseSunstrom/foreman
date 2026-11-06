@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-06T19:52:00Z",
+ "updated": "2026-11-06T20:00:53Z",
  "rev": "8b61cb108",
  "capabilities": [
   {
@@ -38329,10 +38329,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 33954,
+   "generated": 34125,
    "write": {
-    "title": 227,
-    "line": 2031,
+    "title": 228,
+    "line": 2042,
     "payoff": 23,
     "kill test": 105,
     "code": 11
@@ -38349,7 +38349,7 @@
    },
    "merged": 678,
    "kept": 1390,
-   "pending": 110
+   "pending": 269
   },
   "families": [
    {
@@ -38387,7 +38387,7 @@
    },
    {
     "id": "F-021968",
-    "size": 171,
+    "size": 176,
     "lead": "Harmonize parallel agents via standing wave resonance",
     "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
     "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
@@ -38429,7 +38429,7 @@
    },
    {
     "id": "F-014278",
-    "size": 22,
+    "size": 23,
     "lead": "Simulate ecosystem ripple effects before releasing a single crate",
     "today": "Today you can't predict how a breaking change in your library will break thousands of downstream users' builds until they file bugs.",
     "with_this": "With this, you can see a live map of which downstream projects will fail, crash, or degrade in performance when you publish your next version.",
@@ -38450,6 +38450,24 @@
     ]
    },
    {
+    "id": "F-013971",
+    "size": 7,
+    "lead": "Simulate the social impact of a release before it ships",
+    "today": "Today you can't know how many support tickets will spike after a change until it is live",
+    "with_this": "With this, you can predict the volume and sentiment of user complaints for a specific code change in advance",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "data",
+     "features",
+     "releases"
+    ]
+   },
+   {
     "id": "F-013109",
     "size": 4,
     "lead": "Rewind the crash to isolate the exact microsecond of failure",
@@ -38465,24 +38483,6 @@
      "docs",
      "performance",
      "security"
-    ]
-   },
-   {
-    "id": "F-013971",
-    "size": 4,
-    "lead": "Simulate the social impact of a release before it ships",
-    "today": "Today you can't know how many support tickets will spike after a change until it is live",
-    "with_this": "With this, you can predict the volume and sentiment of user complaints for a specific code change in advance",
-    "tier": "extreme",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "data",
-     "features",
-     "releases"
     ]
    },
    {
@@ -39319,6 +39319,22 @@
     "evidence": "",
     "kinds": [
      "releases"
+    ]
+   },
+   {
+    "id": "F-033536",
+    "size": 1,
+    "lead": "Let the codebase dream in adversarial scenarios",
+    "today": "Today you can't anticipate how a stale configuration folder might rot and expose secrets before an attacker finds the gap.",
+    "with_this": "With this, you can see a visual map of your project's potential security leaks before they are ever committed, saving hours of emergency patching.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
     ]
    },
    {
@@ -41593,25 +41609,9 @@
     "kinds": [
      "features"
     ]
-   },
-   {
-    "id": "F-011905",
-    "size": 1,
-    "lead": "Evolve release gates from live traffic patterns",
-    "today": "Today you can't let your CI decide if a release is safe based on the actual runtime behavior of previous versions.",
-    "with_this": "With this, you can ship updates only when the system's natural error rates and load patterns confirm stability, preventing rollback chaos.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
    }
   ],
-  "families_total": 1076,
+  "families_total": 1088,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 1390
@@ -41648,7 +41648,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41671,7 +41671,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41694,7 +41694,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41717,7 +41717,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41740,7 +41740,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41763,7 +41763,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41786,7 +41786,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41809,7 +41809,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41832,7 +41832,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41855,7 +41855,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41878,7 +41878,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41901,7 +41901,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41924,7 +41924,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41947,7 +41947,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41970,7 +41970,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -41993,7 +41993,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42016,7 +42016,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42039,7 +42039,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42062,7 +42062,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42085,7 +42085,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42108,7 +42108,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42131,7 +42131,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42154,7 +42154,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42177,7 +42177,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42200,7 +42200,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -42223,7 +42223,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 17.6,
+    "idle_h": 17.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
