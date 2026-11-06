@@ -40,6 +40,11 @@ SLOT_ENV = "SAMPO_SLOT"  # T-3252: set in a class's children, so a run.py inside
 CGROUP_ROOT = "/sys/fs/cgroup"
 
 
+def _env(name):
+    """T-3442: SAMPO_X, or FOREMAN_X once importing sampo renamed it (core.mirror_env), as in every test process."""
+    return os.environ.get(name) or os.environ.get("FOREMAN_" + name[len("SAMPO_"):])
+
+
 def _cgroup_dir():
     """This process's cgroup v2 folder, or None."""
     try:
@@ -54,8 +59,8 @@ def slot_count():
     """T-3252: the CPUs every run.py on the machine shares: SAMPO_SLOTS, else the CPU count cut to the tightest cgroup
     quota above this process (sampo cpu cap 50 on 16 CPUs gives 8)."""
     try:
-        return max(0, int(os.environ["SAMPO_SLOTS"]))
-    except (KeyError, ValueError):
+        return max(0, int(_env("SAMPO_SLOTS")))
+    except (TypeError, ValueError):
         pass
     n, d = os.cpu_count() or 4, _cgroup_dir()
     while d and os.path.realpath(d).startswith(os.path.realpath(CGROUP_ROOT)):
@@ -79,7 +84,7 @@ def cpu_slot(wait=3600.0, poll=0.05):
     out (the class then runs anyway: a slow run beats a hung one). A slot is a lock file, so the kernel frees it when
     its holder dies and a crashed runner leaks nothing."""
     n = slot_count()
-    folder = _slot_folder() if n and not os.environ.get(SLOT_ENV) and fcntl else None
+    folder = _slot_folder() if n and not _env(SLOT_ENV) and fcntl else None
     if not folder:  # nested, off, no flock (Windows) or a folder that isn't safely ours: run without one
         yield None
         return
@@ -305,8 +310,7 @@ def _run_one(cid, k, timeout, deadline, slot):
         return cid, 1, f"run.py: couldn't make the class's temp folder: {e}\n", 0, 0.0
     argv, env =[sys.executable, "-X", "faulthandler", "-c", BOOT, "0" if SANDBOX else str(os.getpid()), "-q", cid,
                  *extra], child_env(tmp)
-    if slot is not None:
-        env[SLOT_ENV] = str(slot)
+    env[SLOT_ENV] = "none" if slot is None else str(slot)  # T-3442: with no slot too, its runs never queue again
     if SANDBOX:  # its own pid namespace: it dies with bwrap (--die-with-parent), not by a parent pid check
         argv, env = sandboxed(argv, tmp, env)
     p = subprocess.Popen(argv, cwd=HERE,

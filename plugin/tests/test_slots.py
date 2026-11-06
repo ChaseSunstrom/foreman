@@ -18,8 +18,35 @@ class Slots(ForemanTestCase):
         env = {"XDG_RUNTIME_DIR": self.tmp, "SAMPO_SLOTS": "1"}
         self.patch = mock.patch.dict(os.environ, env)
         self.patch.start()
-        os.environ.pop(run.SLOT_ENV, None)
+        for k in (run.SLOT_ENV, "FOREMAN_SLOT", "FOREMAN_SLOTS"):  # this test's own runner set one of them
+            os.environ.pop(k, None)
         self.addCleanup(self.patch.stop)
+
+    def test_a_slot_mark_renamed_by_importing_sampo_still_counts(self):
+        # T-3442: sampo.core's mirror_env turns SAMPO_SLOT into FOREMAN_SLOT in every test process, so a nested
+        # run.py queued behind the whole machine's pool: CheckSkip took 323-344 s with timeouts, 4 s once it was seen
+        with run.cpu_slot() as outer:
+            with mock.patch.dict(os.environ, {"FOREMAN_SLOT": str(outer)}):
+                start = time.monotonic()
+                with run.cpu_slot(wait=30) as inner:
+                    self.assertIsNone(inner)
+                self.assertLess(time.monotonic() - start, 1)
+        os.environ.pop("SAMPO_SLOTS")
+        with mock.patch.dict(os.environ, {"FOREMAN_SLOTS": "3"}):
+            self.assertEqual(run.slot_count(), 3)
+
+    def test_a_class_that_ran_without_a_slot_still_marks_its_children(self):
+        # T-3442: a class whose wait ran out (or a pool that is off) gave its children no mark: theirs queued again
+        seen = []
+        real = subprocess.Popen
+
+        def spy(argv, **kw):
+            seen.append(kw["env"].get(run.SLOT_ENV))
+            return real([sys.executable, "-c", "pass"], **{k: v for k, v in kw.items() if k != "cwd"})
+
+        with mock.patch.dict(os.environ, {"SAMPO_SLOTS": "0"}), mock.patch.object(run.subprocess, "Popen", spy):
+            run.run_one("test_nothing.Nothing", [])
+        self.assertTrue(seen and seen[0], seen)
 
     def test_a_second_holder_waits_for_the_first(self):
         held, order = threading.Event(), []
