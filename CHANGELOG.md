@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- fm sync's repo mirror is now .sampo/ (was .foreman/): one constant names it, an older .foreman/ is read until it moves once in a single logged commit (git mv), the move runs only from the checkout you stand in (a lane never moves another checkout), a user's own .sampo/ is left alone, and the guard and lint cover both names (T-3342).
 - The fmrepro import shim matches the other shims exactly, so test_rename_aliases is green again after the repro merge (T-3400).
 - test_cli.AffectedPairs gives its nested `fm check --affected` runs a 120 s base hang guard, so a loaded host stops failing every close on them (T-3390).
 - **Reproducible build check.** `sampo repro` builds the site and README figures twice and from REF, and names the nondeterministic and changed files, removals included (T-3279).
