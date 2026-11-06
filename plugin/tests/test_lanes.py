@@ -1309,7 +1309,8 @@ class LaneRecovery(ForemanTestCase):
 
     def test_a_stalled_claim_is_checked_again_when_the_lane_shows_new_work(self):
         tid, path = self.live_stalled_builder()
-        os.utime(os.path.join(path, "wip.py"))  # the builder wrote again: not stalled after all
+        future = time.time() + 600  # the builder wrote again: not stalled after all, however slowly fm starts
+        os.utime(os.path.join(path, "wip.py"), (future, future))
         r = self.fm("lane", "recover", tid, "--agent-stopped", check=False,
                     env={"FM_STALL_MIN": "0.02", "FM_STALL_CACHE_S": "0"})
         self.assertNotEqual(r.returncode, 0)

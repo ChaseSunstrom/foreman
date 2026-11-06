@@ -167,13 +167,15 @@ class Checks(unittest.TestCase):
         psi = os.path.join(self.t, "cpu")
         with open(psi, "w") as f:
             f.write("some avg10=28.72 avg60=14.95 avg300=16.51 total=17932752381\n")
-        with mock.patch.object(d, "PSI_CPU", psi), mock.patch.object(d.os, "getloadavg", lambda: (3.0, 3.0, 3.0)):
+        with mock.patch.object(d, "PSI_CPU", psi), mock.patch.object(d.os, "getloadavg", lambda: (3.0, 3.0, 3.0)), \
+                mock.patch.object(d.os, "cpu_count", lambda: 16):
             self.assertIn("cpu pressure", d.busy() or "")
             with open(psi, "w") as f:
                 f.write("some avg10=1.20 avg60=0.90 avg300=0.50 total=1\n")
             self.assertIsNone(d.busy())
         with mock.patch.object(d, "PSI_CPU", os.path.join(self.t, "absent")), \
-                mock.patch.object(d.os, "getloadavg", lambda: (40.0, 40.0, 40.0)):
+                mock.patch.object(d.os, "getloadavg", lambda: (40.0, 40.0, 40.0)), \
+                mock.patch.object(d.os, "cpu_count", lambda: 16):
             self.assertIn("load", d.busy() or "")  # no PSI (macOS): the load average still decides
 
     def test_python_below_the_floor_fails(self):

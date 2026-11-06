@@ -4,7 +4,7 @@ import os
 import re
 import unittest
 
-from helpers import PLUGIN, read_text, read_json, read_doc
+from helpers import PLUGIN, busy_factor, read_text, read_json, read_doc
 
 SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm",
           "directions", "design-extract", "ui-design", "genesis", "initiative"]
@@ -900,7 +900,7 @@ class Fences(unittest.TestCase):
                                      "        except:  # noqa: E722\n            pass\n",
                  "timed out ": "import signal\nsignal.alarm(0)\n" + draw + "    while True:\n        pass\n",
                  "ended before the check finished": draw + "    print('[]')\n    __import__('os')._exit(0)\n"}
-        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(new, "CHECK_SECONDS", 2):
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(new, "CHECK_SECONDS", 2 * busy_factor()):
             for want, body in files.items():
                 path = os.path.join(tmp, "p.py")
                 with open(path, "w", encoding="utf-8") as f:

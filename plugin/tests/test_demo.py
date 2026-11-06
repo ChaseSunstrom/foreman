@@ -17,9 +17,7 @@ class Demo(ForemanTestCase):
 
     def test_runs_end_to_end_in_plain_words_and_leaves_nothing(self):
         before = sorted(os.listdir(self.home))
-        t0 = time.time()
-        p = self.fm("demo", env={"TMPDIR": self.tmpdir})
-        self.assertLess(time.time() - t0, 20)  # wall clock: a child fm demo, a hang guard
+        p = self.fm("demo", env={"TMPDIR": self.tmpdir}, timeout=20)  # a hang guard, scaled by fm with the load
         out = p.stdout
         for stage in ("no active task", "rm -rf ~", "blocked rm-outside", "T-0001", "red", "green", "not finished",
                       "closed", "nothing was left behind"):

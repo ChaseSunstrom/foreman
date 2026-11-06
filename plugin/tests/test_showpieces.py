@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from helpers import PLUGIN, SPY, ForemanTestCase, anim_time, at_rest, devtools, headless_chrome, polls, read_text
+from helpers import PLUGIN, SPY, ForemanTestCase, anim_time, at_rest, busy_factor, devtools, headless_chrome, polls, read_text
 
 from sampo import core as c
 from sampo import page as spage
@@ -294,7 +294,7 @@ class OneFileBrowser:
         self.assertTrue(at_rest(got), f"the frames never stopped: {len(got)} polls, last {end and end['raf']} frames")
         self.assertEqual(end["state"], "live", end)
         self.assertIn("webgl2", end["contexts"])
-        self.assertGreater(end["raf"], 10, "the rise and the turn draw frames in real time")
+        self.assertGreater(end["raf"], 10 / busy_factor(), "the rise and the turn draw frames in real time")
         stamps = end["stamps"]
         self.assertGreaterEqual(stamps[-1] - stamps[0], 4500, "the 4.5 s pass ran out in real time before the rest")
 

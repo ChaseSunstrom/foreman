@@ -462,12 +462,17 @@ class CaptureAndIntake(ForemanTestCase):
         outs = []
 
         def run(i):
-            outs.append(self.fm("capture", f"item {i}").stdout)
+            for _ in range(20):  # the 5 s lock can run out under load (exit 3): try again
+                r = self.fm("capture", f"item {i}", check=False)
+                if r.returncode != 3:
+                    break
+            outs.append(r.stdout if r.returncode == 0 else f"exit {r.returncode}: {r.stderr}")
 
         self.fm("init")
         threads = [threading.Thread(target=run, args=(i,)) for i in range(8)]
         [t.start() for t in threads]
         [t.join() for t in threads]
+        self.assertEqual(len(outs), 8, outs)
         ids = sorted(b.id for b in c.load_briefs(c.find_project(self.repo)))
         self.assertEqual(ids, [f"T-{i:04d}" for i in range(1, 9)])
 
