@@ -59,11 +59,41 @@ class VerifyStrength(ForemanTestCase):
         self.assertEqual(p.returncode, 1)
         self.assertIn("passes without the change too", p.stdout)
 
-    def test_prove_needs_a_changed_test(self):
+    def test_prove_runs_an_existing_test_on_the_start_tree_when_no_test_changed(self):
+        # T-3107: the regression test already existed and was red; only the code changed
+        self.write("calc.py", "def add(a, b):\n    return a - b\n")
+        self.write("tests/test_calc.py", "import calc\nassert calc.add(2, 2) == 4\n")
+        self.commit()
+        self.new()
+        self.write("calc.py", "def add(a, b):\n    return a + b\n")
+        run = "PYTHONPATH=. python3 tests/test_calc.py"
+        p = self.fm("task", "prove", "T-0001", "--run", run, "--step", "1")
+        self.assertIn("proved", p.stdout)
+
+    def test_prove_with_no_changed_test_rejects_an_import_error_red(self):
+        self.write("tests/test_calc.py", "import nosuchmod\n")
+        self.commit()
+        self.new()
+        self.write("nosuchmod.py", "")
+        p = self.fm("task", "prove", "T-0001", "--run", "PYTHONPATH=. python3 tests/test_calc.py", check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("not proved:", p.stdout)
+        self.assertIn("broke before any test failed", p.stdout)
+
+    def test_prove_with_no_changed_test_refuses_a_script_absent_at_the_start(self):
+        self.write("a.py", "")
+        self.commit()
+        self.new()
+        self.write("check_new.py", "")
+        p = self.fm("task", "prove", "T-0001", "--run", "python3 check_new.py", check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("absent at the start tree", p.stderr)
+
+    def test_prove_with_no_changed_test_says_a_green_check_doesnt_test_the_fix(self):
         self.new()
         p = self.fm("task", "prove", "T-0001", "--run", "true", check=False)
         self.assertEqual(p.returncode, 1)
-        self.assertIn("changed no test files", p.stderr)
+        self.assertIn("passes without the change too", p.stdout)
 
     def finish_s(self):
         self.fm("task", "evidence", "T-0001", "--ac", "1", "--run", "true")

@@ -2445,9 +2445,7 @@ def task_prove(p, args):
     if not base:
         raise UsageError(f"{b.id} has no start commit on record: prove needs the tree the task started from")
     tests = [f for f in smap.changed(p.root, base) if smap._TEST.search(f) and os.path.isfile(os.path.join(p.root, f))]
-    if not tests:
-        raise UsageError(f"{b.id} changed no test files since {base[:12]}: write the test that proves it first")
-    kept = []  # T-1919: tests-folder files the start tree has, not test-named (run.py): code under change stays there
+    kept = []  # T-3107: no changed test file: the check runs on the start tree as it was; T-1919: tests-folder files the start tree has, not test-named (run.py): code under change stays there
     named = [f for f in tests if c.TESTISH.search(os.path.basename(f))]
     subjects = {re.sub(r"^test_|_test$|\.(?:test|spec)$", "", os.path.splitext(os.path.basename(f))[0]) for f in named}
     src = "\n".join(pathlib.Path(p.root, f).read_text(errors="replace") for f in named)
@@ -2469,6 +2467,17 @@ def task_prove(p, args):
                     continue
                 os.makedirs(os.path.dirname(os.path.join(wt, f)), exist_ok=True)
                 shutil.copy2(os.path.join(p.root, f), os.path.join(wt, f))
+            if not tests:  # T-3107: no anchor: a path the command names must exist at the start tree
+                import shlex
+                try:
+                    words = shlex.split(args.run)
+                except ValueError:
+                    words = args.run.split()
+                new = [w for w in words if not w.startswith("-") and os.path.exists(os.path.join(p.root, w))
+                       and not os.path.lexists(os.path.join(wt, w))]
+                if new:
+                    raise UsageError(f"{b.id}: --run names {new[0]}, absent at the start tree {base[:12]}: it would "
+                                     f"fail there as 'not found', not as the bug")
             red = c.run_command(wt, args.run, args.timeout)
         finally:
             c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
@@ -2482,8 +2491,14 @@ def task_prove(p, args):
         b.add_evidence(args.run, c.run_result(*green), step=args.step, ac=args.ac, tree=tree, ran=True)
     mutate(p, b.id, record, "prove", {"cmd": args.run[:200], "red": red[0], "green": green[0],
                                       "tests": [f for f in tests if f not in kept][:10], "kept": kept[:10]})
-    proved = bool(red[0]) and not green[0]
+    real = bool(red[0])
+    if red[0] and not tests:  # T-3107: no changed test to anchor on: the red must be a test failing, not a broken run
+        real = bool(c.failing_tests(red[1])) or (red[0] not in (5, 124, 126, 127) and not re.search(
+            r"ModuleNotFoundError|ImportError|No such file|no tests ran|no test matches", red[1] or ""))
+    proved = real and not green[0]
     verdict = ("proved: fails without the change, passes with it" if proved else
+               "not proved: the start-tree run broke before any test failed (import error, missing file, no tests):\n"
+               + "\n".join((red[1] or "").strip().splitlines()[-5:]) if red[0] and not real else
                "not proved: it passes without the change too, so it doesn't test the fix" if not red[0] else
                "not proved: it fails on the current tree")
     if kept:  # T-1845 named them after a vacuous red run; T-1919 leaves them at the start
