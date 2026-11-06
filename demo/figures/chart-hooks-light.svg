@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 503" width="440" height="503" role="img" aria-label="Hook time per call, p95, measured 2026-11-05: SessionStart 66.5; UserPromptSubmit 89; PreToolUse:Bash 40.8; PreToolUse:Bash:block 34.9; PreToolUse:Bash:script 248.6; PreToolUse:Edit 41.7; PostToolUse 35.6; PostToolUseFailure 34.7; PreCompact 42.9; Stop 54.7; TaskCompleted 28.8; SubagentStart 28.4; SubagentStop 29; MessageDisplay 27; Notification 39.5; SessionEnd 28.7">
+<title>Hook time per call, p95, measured 2026-11-05: SessionStart 66.5; UserPromptSubmit 89; PreToolUse:Bash 40.8; PreToolUse:Bash:block 34.9; PreToolUse:Bash:script 248.6; PreToolUse:Edit 41.7; PostToolUse 35.6; PostToolUseFailure 34.7; PreCompact 42.9; Stop 54.7; TaskCompleted 28.8; SubagentStart 28.4; SubagentStop 29; MessageDisplay 27; Notification 39.5; SessionEnd 28.7</title>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;fill:#3A4556}.i{fill:#0F1722}.m{fill:#5B6679}.b{font-weight:600;fill:#0F1722}.c{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#2F62E0}.l{fill:#2F62E0}</style>
+<rect x="0.5" y="0.5" width="439" height="502" rx="12" fill="#FFFFFF" stroke="#0F1722" stroke-opacity=".12"/>
+<text x="20" y="30" font-size="15" class="b">Hook time per call, p95</text>
+<text x="420" y="33" font-size="22" class="i" font-weight="650" text-anchor="end">16 of 16</text>
+<text x="420" y="49" font-size="11.5" class="m" text-anchor="end">under budget (the tick)</text>
+<text x="20" y="49" font-size="11.5" class="m" xml:space="preserve">ms, bench_hooks.py × 15, load 1 on 16 CPUs ·</text>
+<text x="20" y="64" font-size="11.5" class="m" xml:space="preserve">measured 2026-11-05</text>
+<line x1="176.0" y1="83" x2="176.0" y2="473" stroke="#0F1722" stroke-opacity=".16"/>
+<text x="176.0" y="489" font-size="11" class="m" text-anchor="middle">0</text>
+<line x1="226.0" y1="83" x2="226.0" y2="473" stroke="#0F1722" stroke-opacity=".07"/>
+<text x="226.0" y="489" font-size="11" class="m" text-anchor="middle">100</text>
+<line x1="276.0" y1="83" x2="276.0" y2="473" stroke="#0F1722" stroke-opacity=".07"/>
+<text x="276.0" y="489" font-size="11" class="m" text-anchor="middle">200</text>
+<line x1="326.0" y1="83" x2="326.0" y2="473" stroke="#0F1722" stroke-opacity=".07"/>
+<text x="326.0" y="489" font-size="11" class="m" text-anchor="middle">300</text>
+<line x1="376.0" y1="83" x2="376.0" y2="473" stroke="#0F1722" stroke-opacity=".07"/>
+<text x="376.0" y="489" font-size="11" class="m" text-anchor="middle">400</text>
+<text x="166" y="104" font-size="11.5" class="" text-anchor="end">SessionStart</text>
+<rect x="176" y="94" width="33.2" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="91" x2="251.0" y2="111" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="104" font-size="11" class="i">66.5</text>
+<text x="166" y="128" font-size="11.5" class="" text-anchor="end">UserPromptSubmit</text>
+<rect x="176" y="118" width="44.5" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="115" x2="251.0" y2="135" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="128" font-size="11" class="i">89</text>
+<text x="166" y="152" font-size="11.5" class="" text-anchor="end">PreToolUse:Bash</text>
+<rect x="176" y="142" width="20.4" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="139" x2="251.0" y2="159" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="152" font-size="11" class="i">40.8</text>
+<text x="166" y="176" font-size="11.5" class="" text-anchor="end">PreToolUse:Bash:block</text>
+<rect x="176" y="166" width="17.4" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="163" x2="251.0" y2="183" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="176" font-size="11" class="i">34.9</text>
+<text x="166" y="200" font-size="11.5" class="" text-anchor="end">PreToolUse:Bash:script</text>
+<rect x="176" y="190" width="124.3" height="14" rx="3" fill="#2F62E0"/>
+<line x1="351.0" y1="187" x2="351.0" y2="207" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="358.0" y="200" font-size="11" class="i">249</text>
+<text x="166" y="224" font-size="11.5" class="" text-anchor="end">PreToolUse:Edit</text>
+<rect x="176" y="214" width="20.9" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="211" x2="251.0" y2="231" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="224" font-size="11" class="i">41.7</text>
+<text x="166" y="248" font-size="11.5" class="" text-anchor="end">PostToolUse</text>
+<rect x="176" y="238" width="17.8" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="235" x2="251.0" y2="255" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="248" font-size="11" class="i">35.6</text>
+<text x="166" y="272" font-size="11.5" class="" text-anchor="end">PostToolUseFailure</text>
+<rect x="176" y="262" width="17.4" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="259" x2="251.0" y2="279" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="272" font-size="11" class="i">34.7</text>
+<text x="166" y="296" font-size="11.5" class="" text-anchor="end">PreCompact</text>
+<rect x="176" y="286" width="21.4" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="283" x2="251.0" y2="303" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="296" font-size="11" class="i">42.9</text>
+<text x="166" y="320" font-size="11.5" class="" text-anchor="end">Stop</text>
+<rect x="176" y="310" width="27.4" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="307" x2="251.0" y2="327" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="320" font-size="11" class="i">54.7</text>
+<text x="166" y="344" font-size="11.5" class="" text-anchor="end">TaskCompleted</text>
+<rect x="176" y="334" width="14.4" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="331" x2="251.0" y2="351" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="344" font-size="11" class="i">28.8</text>
+<text x="166" y="368" font-size="11.5" class="" text-anchor="end">SubagentStart</text>
+<rect x="176" y="358" width="14.2" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="355" x2="251.0" y2="375" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="368" font-size="11" class="i">28.4</text>
+<text x="166" y="392" font-size="11.5" class="" text-anchor="end">SubagentStop</text>
+<rect x="176" y="382" width="14.5" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="379" x2="251.0" y2="399" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="392" font-size="11" class="i">29</text>
+<text x="166" y="416" font-size="11.5" class="" text-anchor="end">MessageDisplay</text>
+<rect x="176" y="406" width="13.5" height="14" rx="3" fill="#2F62E0"/>
+<line x1="226.0" y1="403" x2="226.0" y2="423" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="233.0" y="416" font-size="11" class="i">27</text>
+<text x="166" y="440" font-size="11.5" class="" text-anchor="end">Notification</text>
+<rect x="176" y="430" width="19.8" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="427" x2="251.0" y2="447" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="440" font-size="11" class="i">39.5</text>
+<text x="166" y="464" font-size="11.5" class="" text-anchor="end">SessionEnd</text>
+<rect x="176" y="454" width="14.3" height="14" rx="3" fill="#2F62E0"/>
+<line x1="251.0" y1="451" x2="251.0" y2="471" stroke="#0F1722" stroke-width="2" stroke-opacity=".55"/>
+<text x="258.0" y="464" font-size="11" class="i">28.7</text>
+</svg>

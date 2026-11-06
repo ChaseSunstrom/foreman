@@ -29,7 +29,8 @@ PAINTS = ("fill", "stroke", "stop-color", "flood-color", "lighting-color", "colo
 NOT_COLOURS = {"none", "currentcolor", "transparent", "inherit", "initial", "unset", "context-fill", "context-stroke"}
 # bytes, shapes (low, high), palette, render width (px of the longer side)
 TYPES = {"icon": (3000, (1, 24), 3, 48), "spot": (40000, (2, 200), 12, 320),
-         "card": (120000, (2, 1500), 24, 640), "scene": (200000, (20, 3000), 64, 640)}
+         "card": (120000, (2, 1500), 24, 640), "scene": (200000, (20, 3000), 64, 640),
+         "figure": (200000, (2, 3000), 24, 1280)}  # T-3247: a README table or chart, rendered near its shown size
 THEMES = {"light": ("#ffffff", "#1b1f24"), "dark": ("#111318", "#e6e8eb")}  # page background, ink (currentColor)
 MAX_READ, MAX_ELEMENTS, MAX_DEPTH, MAX_USES = 1 << 20, 20000, 200, 5000  # MAX_USES: copies, all expanded
 MAX_RULES = 64  # T-3198: stylesheet rules naming a url(#id), each matched against every element
@@ -44,6 +45,8 @@ FRAMES, FRAME_S = 4, 0.15
 BLANK_PCT, TEXT_BAR, INK_BAR, SHARE = 0.5, 4.5, 3.0, 0.10
 MIN_TEXT, NEAR = 12, 0.03  # T-3226: pixels of one text colour on one background before its contrast is read (a glyph
 # or two); a colour within NEAR per channel of a commoner one is that colour's hinting variant
+NOISE = 2  # T-3247: a pixel the text changed by at most this many levels per channel is raster noise between the two
+# renders (a shape's edge where the tiles rasterised apart), not ink: it read 1.01:1 on a clear chart in a busy batch
 GRID, LEVEL = 24, 96  # thumb: a 24×24 grid of grey means stretched to 0-255; a cell off by over LEVEL differs
 # cells, measured on the 48 px clock: a hair wider, recoloured or thinner 0; its hand turned 16, a knob added 12, a
 # plus 224. A 544-bit dHash couldn't split them at any grid (hair wider 22 bits, hand turned 16): T-3106.
@@ -471,7 +474,9 @@ def _text_ratio(words, without):
     of the group's colours (antialiasing); the lowest ratio of all (T-3226: a small badge or one faint line under SHARE
     of the text went unread). The commonest pair when no colour reaches MIN_TEXT; None when the text changed none."""
     from sampo import design
-    pairs = collections.Counter((a, b) for a, b in zip(words, memoryview(without.rgba).cast("I")) if a != b)
+    pairs = collections.Counter((a, b) for a, b in zip(words, memoryview(without.rgba).cast("I")) if a != b
+                                and max(abs(x - y) for x, y in zip(a.to_bytes(4, "little"), b.to_bytes(4, "little")))
+                                > NOISE)
     groups = collections.defaultdict(list)
     for (a, b), n in pairs.items():
         groups[b].append((n, a))
@@ -572,6 +577,9 @@ def _judge(work, m, kept):
     bar = f"bar > {BAR} of {GRID * GRID} cells off by > {LEVEL}/255 from every earlier work that passed"
     if share < BLANK_PCT:
         gate("unique", None, "blank: nothing to compare", bar)
+        return
+    if work["type"] == "figure":  # T-3247: figures share a plate and differ by their text, which a thumb can't see
+        gate("unique", None, "a figure: told apart by its text", bar)
         return
     h = thumb(*_layout(work)[:2], light["centre"])
     dup = duplicates([(work["path"], h)], kept)

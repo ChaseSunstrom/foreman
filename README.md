@@ -36,6 +36,13 @@ Coding agents are fast. Left alone, they also edit before they understand, say "
 
 Sampo is the mill that produces by itself, on every job site, whichever agent works it: Claude Code, Codex, Gemini CLI, opencode, or `sampo smith` on a model of your choice.
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/why-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/why-light.svg">
+  <img src="demo/figures/why-dark.svg" width="880" alt="Why: a table of 7 rows (Sampo, So that); its text follows">
+</picture></p>
+<details><summary>As text</summary>
+
 | Sampo | So that |
 |---|---|
 | **Plans first** | Every request becomes a brief before any edit: type, size, what "done" means and the command that proves it. No task, no edit. |
@@ -46,11 +53,28 @@ Sampo is the mill that produces by itself, on every job site, whichever agent wo
 | **Keeps going** | Drive mode works the whole queue, then finds its own next work. `sampo run` and `sampo serve` keep it going headless. |
 | **Learns** | Your corrections and Sampo's own friction become lessons, tripwires and fixes. |
 
+</details>
+
 <details><summary>The names</summary>
 
 **The names.** They come from the Kalevala. Ilmarinen the smith forged the Sampo, the mill that makes by itself: that is **Smith**, the task loop that plans, builds and proves. Väinämöinen sang runes that made things: **Rune**, the tower that writes itself toward a goal. Louhi set impossible tasks: **Louhi**, the exam. The stolen sun and moon were forged anew: **Moons**, the ideas worth forging. Lost words were fetched back from the underworld: **Underworld**, the not-yet ledger. And the **Ward** guards.
 
 </details>
+
+## By the numbers
+
+Sampo builds itself, so its own history is the plainest measure: tasks closed a day, and the test suite those tasks grew. Drawn from git by `python3 demo/readme_figures.py --refresh`.
+
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/chart-closed-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/chart-closed-light.svg">
+  <img src="demo/figures/chart-closed-dark.svg" width="410" alt="Tasks closed per day over the last 30 days, from git log">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/chart-tests-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/chart-tests-light.svg">
+  <img src="demo/figures/chart-tests-dark.svg" width="410" alt="Test functions in the suite over time, from git grep at each date">
+</picture></p>
 
 ## How it works
 
@@ -78,11 +102,20 @@ Or from inside Claude Code:
 /plugin install foreman@foreman
 ```
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/quick-start-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/quick-start-light.svg">
+  <img src="demo/figures/quick-start-dark.svg" width="880" alt="Quick start: a table of 3 rows (Then, How); its text follows">
+</picture></p>
+<details><summary>As text</summary>
+
 | Then | How |
 |---|---|
 | **Ask for something** | `fix the login timeout on slow wifi`, in plain words. That's the whole interface. |
 | **Watch it first** | `sampo demo` runs the real `sampo` and Ward hook on a seeded bug in a throwaway repo: no model calls, nothing left behind. |
 | **See where things stand** | Bare `sampo` in a project says what's next; `sampo help` answers "can it…?" in plain words; `sampo which NEED` searches past fixes, your tools, MCP servers, binaries, skills and plugins at once, and says which hits need a grant. |
+
+</details>
 
 Starting a page, a 3D scene or an `sampo smith` panel? Start from a template that already passes the check that keeps it strict:
 
@@ -159,12 +192,21 @@ CONTEXT: Django app; don't touch migrations
 DONE-WHEN: all tests pass and the CSV opens in Excel
 ```
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/talking-to-it-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/talking-to-it-light.svg">
+  <img src="demo/figures/talking-to-it-dark.svg" width="880" alt="Talking to it: a table of 4 rows (You say, What happens); its text follows">
+</picture></p>
+<details><summary>As text</summary>
+
 | You say | What happens |
 |---|---|
 | `NOW:` · `PAUSE` · `STATUS` | switch tasks on purpose · checkpoint · where things stand |
 | "super improve it" | a brainstorm first: each idea checked against the real code, the best ones queued |
 | `FULL AUTO` | the whole queue without questions; decisions recorded, one summary at the end (`STANDARD AUTONOMY` switches back) |
 | "is sampo ok?" · "clean up" · "this repo is sensitive" | Claude runs `sampo doctor`, `sampo tidy` or `sampo sensitive on`. You never have to type a command. |
+
+</details>
 
 Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, after a baseline check.
 
@@ -186,6 +228,13 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 
 Sampo is built for bypass mode (no tool-call prompts), which the installer offers to turn on. What still stops a dangerous command is Sampo's Ward hook, plus 20 deny rules for the truly catastrophic cases.
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/the-ward-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/the-ward-light.svg">
+  <img src="demo/figures/the-ward-dark.svg" width="880" alt="The Ward: a table of 6 rows (Area, Stopped until you grant it); its text follows">
+</picture></p>
+<details><summary>As text</summary>
+
 | Area | Stopped until you grant it |
 |---|---|
 | **Deletes** | recursive deletes outside the project; recursive or world-writable `chmod`/`chown` on /, the home folder or system folders |
@@ -194,6 +243,8 @@ Sampo is built for bypass mode (no tool-call prompts), which the installer offer
 | **System** | disk, firewall and system-service changes |
 | **Outward** | publish and deploy commands; starting a remote session |
 | **Sampo itself** | direct writes to Sampo state; edits to Sampo's protected core and to Claude Code's `~/.claude.json` |
+
+</details>
 
 A blocked command says how to authorize it for the current task. Anything that needs you (Sampo's own code, a remote session, installing plugins or MCP servers, destructive categories) comes as Claude Code's own permission prompt, saying exactly what a yes grants.
 
@@ -234,6 +285,13 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 
 ## Features
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/features-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/features-light.svg">
+  <img src="demo/figures/features-dark.svg" width="880" alt="Features: a table of 14 rows (What you get, Try); its text follows">
+</picture></p>
+<details><summary>As text</summary>
+
 | | What you get | Try |
 |---|---|---|
 | **Plans** | Briefs with type, tier, criteria and steps; M and L work lists approaches first; the queue orders itself | `sampo queue` |
@@ -249,7 +307,9 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 | **Checks infra files** | Dockerfiles, compose, Terraform, Helm, Kubernetes, CI workflows, shell, systemd units: each through its own validator on a copy, offline; no validator installed, unproven | `sampo prove --infra` |
 | **Finds problems unasked** | Untested code, undeclared imports, SQL built from input, slow loops, flaky tests, stale docs, leaked keys: no model, worst first; proven on a copy | `sampo find --rank [--ladder]` (tools: trusted only), `sampo prove --capture N`/`--docs`, `/foreman:initiative` |
 | **Seeds itself** | Rune: generations toward one goal you write; a rewrite stays only if it closed more exam scenarios | `sampo rune step` |
-| **Stays light** | Only the Ward and write validators run in line; hooks take about 20 ms | `sampo doctor` |
+| **Stays light** | Only the Ward and write validators run in line; every hook call stays under its budget (the chart below) | `sampo doctor` |
+
+</details>
 
 <details>
 <summary><b>Plans</b></summary>
@@ -369,6 +429,12 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 
 Only the Ward (on tool calls that can change something) and the write validators (after a write) run synchronously; everything else that records runs async or once per turn, and nothing is injected unless it changes what Claude should do next. `sampo doctor` reports each hook's p95 latency, and the pane's hooks tank shows it live (about 20 ms here).
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/chart-hooks-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/chart-hooks-light.svg">
+  <img src="demo/figures/chart-hooks-dark.svg" width="560" alt="Each hook's p95 time per call against its budget, from plugin/tests/bench_hooks.py">
+</picture></p>
+
 </details>
 
 ## Seeing what's going on
@@ -477,12 +543,21 @@ The app never talks to a server: it runs `sampo … --json` on this machine, and
 
 ### Headless on a server
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/headless-on-a-server-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/headless-on-a-server-light.svg">
+  <img src="demo/figures/headless-on-a-server-dark.svg" width="880" alt="Headless on a server: a table of 4 rows (`sampo serve`, `sampo run`); its text follows">
+</picture></p>
+<details><summary>As text</summary>
+
 | | `sampo serve` | `sampo run` |
 |---|---|---|
 | **What** | Claude Code Remote Control as a systemd user unit | The queue in fresh `claude -p` sessions, one task each |
 | **Start** | Ask Claude to "serve this repo" (one yes grants `remote`) | `sampo run` (`--max-usd` caps the spend) |
 | **You** | Send requests from claude.ai/code or the Claude app | Come back to closed tasks |
 | **When it fails** | Restarts; stops after five failed restarts in ten minutes | Waits out a usage limit; blocks a stuck task with the reason |
+
+</details>
 
 <details>
 <summary><b>Serving, sampo run, nightly runs and the sandbox</b></summary>
@@ -587,6 +662,12 @@ Real runs of each kind are on the [Smith page](https://chasesunstrom.github.io/s
 
 ### Model layer: models advise, proof decides
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/chart-models-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/chart-models-light.svg">
+  <img src="demo/figures/chart-models-dark.svg" width="560" alt="How often each model picks a task's type right on projects it never saw (leave one project out), from research/models/bench.jsonl">
+</picture></p>
+
 <details>
 <summary><b>Rule first, then local, then cloud; live only by the exam</b></summary>
 
@@ -601,6 +682,13 @@ Some calls can go to a model: a request's type and size, whether two items are t
 
 ## When not to use Sampo
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/when-not-to-use-sampo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/when-not-to-use-sampo-light.svg">
+  <img src="demo/figures/when-not-to-use-sampo-dark.svg" width="880" alt="When not to use Sampo: a table of 6 rows (Skip it for, Why, and what instead); its text follows">
+</picture></p>
+<details><summary>As text</summary>
+
 | Skip it for | Why, and what instead |
 |---|---|
 | **Quick one-off questions or scripts** | Planning, evidence and audits are overhead for a five-minute job; even an S task has a brief. Plain Claude Code is faster. |
@@ -610,6 +698,8 @@ Some calls can go to a model: a request's type and size, whether two items are t
 | **Installing no plugins** | [`plugin/templates/CLAUDE.lite.md`](plugin/templates/CLAUDE.lite.md) is the discipline in under 40 lines for a CLAUDE.md, with nothing enforcing it. `sampo bench duel --vs snippet` measures what it's worth. |
 | **Code that must not leave the machine** | Mark the repo sensitive (`sampo sensitive on`) so outward tools are refused, or don't use cloud-facing features there. |
 
+</details>
+
 To add the lite rules to a project:
 
 ```bash
@@ -618,6 +708,13 @@ curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/plugin/tem
 
 ## Documentation
 
+<p align="center"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="demo/figures/documentation-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="demo/figures/documentation-light.svg">
+  <img src="demo/figures/documentation-dark.svg" width="880" alt="Documentation: a table of 5 rows (Doc, What&#x27;s in it); its text follows">
+</picture></p>
+<details><summary>As text</summary>
+
 | Doc | What's in it |
 |---|---|
 | [`MASTER.md`](MASTER.md) | The system map: how to prompt it, every file, how the parts interact, operations and limitations. Start here. |
@@ -625,6 +722,8 @@ curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/sampo/main/plugin/tem
 | [`CHANGELOG.md`](CHANGELOG.md) | Release notes. |
 | [`BUILD_PROMPT.md`](BUILD_PROMPT.md) | The spec Sampo was built from, including the plugin choices (§4.6 and Appendix A). |
 | [The site](https://chasesunstrom.github.io/sampo/) | A page per feature, with recorded runs. |
+
+</details>
 
 ## Updating and removing
 

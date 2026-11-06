@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 291" width="880" height="291" role="img" aria-label="Talking to it: a table of 4 rows (You say, What happens); its text follows">
+<title>Talking to it: a table of 4 rows (You say, What happens); its text follows</title>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;fill:#B4BDCE}.i{fill:#E8ECF4}.m{fill:#8893A7}.b{font-weight:600;fill:#E8ECF4}.c{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#7AA2FF}.l{fill:#7AA2FF}</style>
+<rect x="0.5" y="0.5" width="879" height="290" rx="12" fill="#131822" stroke="#FFFFFF" stroke-opacity=".12"/>
+<path d="M0.5 40V12.5A12 12 0 0 1 12.5 0.5H867.5A12 12 0 0 1 879.5 12.5V40Z" fill="#10141C"/>
+<line x1="0.5" y1="40" x2="879.5" y2="40" stroke="#FFFFFF" stroke-opacity=".12"/>
+<text x="16" y="25" font-size="11.5" class="m" font-weight="600" letter-spacing=".07em">YOU SAY</text>
+<text x="320.148" y="25" font-size="11.5" class="m" font-weight="600" letter-spacing=".07em">WHAT HAPPENS</text>
+<text x="16" y="68" font-size="14" xml:space="preserve"><tspan class="c">NOW:</tspan><tspan class="b"> · </tspan><tspan class="c">PAUSE</tspan><tspan class="b"> · </tspan><tspan class="c">STATUS</tspan></text>
+<text x="320.1" y="68" font-size="14" xml:space="preserve">switch tasks on purpose · checkpoint · where things stand</text>
+<line x1="16" y1="87" x2="864" y2="87" stroke="#FFFFFF" stroke-opacity=".07"/>
+<text x="16" y="115" font-size="14" xml:space="preserve"><tspan class="b">&quot;super improve it&quot;</tspan></text>
+<text x="320.1" y="115" font-size="14" xml:space="preserve">a brainstorm first: each idea checked against the real code, the best ones</text>
+<text x="320.1" y="136" font-size="14" xml:space="preserve">queued</text>
+<line x1="16" y1="155" x2="864" y2="155" stroke="#FFFFFF" stroke-opacity=".07"/>
+<text x="16" y="183" font-size="14" xml:space="preserve"><tspan class="c">FULL AUTO</tspan></text>
+<text x="320.1" y="183" font-size="14" xml:space="preserve">the whole queue without questions; decisions recorded, one summary at the end</text>
+<text x="320.1" y="204" font-size="14" xml:space="preserve">(<tspan class="c">STANDARD AUTONOMY</tspan> switches back)</text>
+<line x1="16" y1="223" x2="864" y2="223" stroke="#FFFFFF" stroke-opacity=".07"/>
+<text x="16" y="251" font-size="14" xml:space="preserve"><tspan class="b">&quot;is sampo ok?&quot; · &quot;clean up&quot; · &quot;this</tspan></text>
+<text x="16" y="272" font-size="14" xml:space="preserve"><tspan class="b">repo is sensitive&quot;</tspan></text>
+<text x="320.1" y="251" font-size="14" xml:space="preserve">Claude runs <tspan class="c">sampo doctor</tspan>, <tspan class="c">sampo tidy</tspan> or <tspan class="c">sampo sensitive on</tspan>. You never</text>
+<text x="320.1" y="272" font-size="14" xml:space="preserve">have to type a command.</text>
+</svg>

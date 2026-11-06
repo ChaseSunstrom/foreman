@@ -3,6 +3,7 @@ xml, safe, size, shapes, palette, grid and set (icons), blank, clip, contrast, m
 thumb within the bar of an earlier work's makes the later one a duplicate)."""
 import json
 import os
+import sys
 import tempfile
 import time
 import types
@@ -44,6 +45,22 @@ def gates(result):
 
 def failed(result):
     return sorted(g["gate"] for g in result["gates"] if g["ok"] is False)
+
+
+class TextRatio(unittest.TestCase):
+    """T-3247: raster noise between the two renders (a level per channel at a shape's edge) is no text colour."""
+
+    def test_a_one_level_raster_difference_isnt_read_as_faint_text(self):
+        class Shot:
+            def __init__(self, words):
+                self.rgba = b"".join(w.to_bytes(4, sys.byteorder) for w in words)
+        white, black, grey = works._word("#ffffff"), works._word("#000000"), works._word("#a9b1c0")
+        noise = works._word("#aab1c0")  # the bar's own grey, one level off where the tiles rasterised apart
+        with_text = [black] * 40 + [noise] * 30 + [white] * 30
+        without = Shot([white] * 40 + [grey] * 30 + [white] * 30)
+        self.assertGreater(works._text_ratio(with_text, without), 20)
+        faint = [works._word("#f4f4f4")] * 40  # faint text is still read
+        self.assertLess(works._text_ratio(faint, Shot([white] * 40)), 1.2)
 
 
 class StaticGates(unittest.TestCase):
@@ -406,6 +423,21 @@ class Rendered(ForemanTestCase):
         self.assertRegex(r.stdout, r"1 of 2 works passed")
         shots = sorted(os.listdir(os.path.join(self.tmp, "renders")))
         self.assertEqual(shots, ["card-dark.png", "card-light.png", "faint-dark.png", "faint-light.png"])
+
+    def test_a_document_figure_renders_near_its_size_and_is_told_apart_by_its_text(self):  # T-3247
+        def doc(word):
+            rows = "".join(f'<text x="20" y="{40 + 28 * i}" font-size="14" font-family="sans-serif" fill="#2F62E0">'
+                           f'{word} row {i} of a long README table</text>' for i in range(48))
+            return f'<svg {NS} viewBox="0 0 880 1400"><rect width="880" height="1400" rx="12" fill="#ffffff"/>' \
+                   f'{rows}</svg>'
+        got = self.check(("a.svg", doc("alpha")), ("b.svg", doc("beta")), ok=False)
+        self.assertIn("contrast", failed(got["b.svg"]))  # as a card: drawn at 640 px, its 14 px text blurs to 6 px
+        paths = [self.put(n, doc(w)) for n, w in (("a.svg", "alpha"), ("b.svg", "beta"))]
+        r = self.fm("works", "check", "--type", "figure", *paths, "--json", check=False, timeout=180)
+        self.assertEqual(r.returncode, 0, r.stdout[-3000:] + r.stderr[-3000:])
+        for w in json.loads(r.stdout)["works"]:
+            self.assertEqual(w["type"], "figure")
+            self.assertIsNone(gates(w)["unique"]["ok"], json.dumps(w["gates"], indent=1))
 
     def test_a_good_animated_icon_passes_whole(self):
         self.check(("pulse.svg", PULSE), ok=True)

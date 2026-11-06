@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 385" width="880" height="385" role="img" aria-label="The Ward: a table of 6 rows (Area, Stopped until you grant it); its text follows">
+<title>The Ward: a table of 6 rows (Area, Stopped until you grant it); its text follows</title>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;fill:#B4BDCE}.i{fill:#E8ECF4}.m{fill:#8893A7}.b{font-weight:600;fill:#E8ECF4}.c{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#7AA2FF}.l{fill:#7AA2FF}</style>
+<rect x="0.5" y="0.5" width="879" height="384" rx="12" fill="#131822" stroke="#FFFFFF" stroke-opacity=".12"/>
+<path d="M0.5 40V12.5A12 12 0 0 1 12.5 0.5H867.5A12 12 0 0 1 879.5 12.5V40Z" fill="#10141C"/>
+<line x1="0.5" y1="40" x2="879.5" y2="40" stroke="#FFFFFF" stroke-opacity=".12"/>
+<text x="16" y="25" font-size="11.5" class="m" font-weight="600" letter-spacing=".07em">AREA</text>
+<text x="129.488" y="25" font-size="11.5" class="m" font-weight="600" letter-spacing=".07em">STOPPED UNTIL YOU GRANT IT</text>
+<text x="16" y="68" font-size="14" xml:space="preserve"><tspan class="b">Deletes</tspan></text>
+<text x="129.5" y="68" font-size="14" xml:space="preserve">recursive deletes outside the project; recursive or world-writable <tspan class="c">chmod</tspan>/<tspan class="c">chown</tspan> on /, the home folder or</text>
+<text x="129.5" y="89" font-size="14" xml:space="preserve">system folders</text>
+<line x1="16" y1="108" x2="864" y2="108" stroke="#FFFFFF" stroke-opacity=".07"/>
+<text x="16" y="136" font-size="14" xml:space="preserve"><tspan class="b">Git</tspan></text>
+<text x="129.5" y="136" font-size="14" xml:space="preserve">force-pushes and hard resets on default branches</text>
+<line x1="16" y1="155" x2="864" y2="155" stroke="#FFFFFF" stroke-opacity=".07"/>
+<text x="16" y="183" font-size="14" xml:space="preserve"><tspan class="b">Secrets</tspan></text>
+<text x="129.5" y="183" font-size="14" xml:space="preserve">reading credential files (~/.ssh keys, ~/.aws/credentials, ~/.netrc …), sending the environment or a key</text>
+<text x="129.5" y="204" font-size="14" xml:space="preserve">over the network, <tspan class="c">curl | sh</tspan></text>
+<line x1="16" y1="223" x2="864" y2="223" stroke="#FFFFFF" stroke-opacity=".07"/>
+<text x="16" y="251" font-size="14" xml:space="preserve"><tspan class="b">System</tspan></text>
+<text x="129.5" y="251" font-size="14" xml:space="preserve">disk, firewall and system-service changes</text>
+<line x1="16" y1="270" x2="864" y2="270" stroke="#FFFFFF" stroke-opacity=".07"/>
+<text x="16" y="298" font-size="14" xml:space="preserve"><tspan class="b">Outward</tspan></text>
+<text x="129.5" y="298" font-size="14" xml:space="preserve">publish and deploy commands; starting a remote session</text>
+<line x1="16" y1="317" x2="864" y2="317" stroke="#FFFFFF" stroke-opacity=".07"/>
+<text x="16" y="345" font-size="14" xml:space="preserve"><tspan class="b">Sampo</tspan></text>
+<text x="16" y="366" font-size="14" xml:space="preserve"><tspan class="b">itself</tspan></text>
+<text x="129.5" y="345" font-size="14" xml:space="preserve">direct writes to Sampo state; edits to Sampo&#x27;s protected core and to Claude Code&#x27;s <tspan class="c">~/.claude.json</tspan></text>
+</svg>

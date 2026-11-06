@@ -6419,7 +6419,7 @@ def _build_parser(only=None):
             "shapes, palette, grid, set, loop, blank, clip, contrast, motion, unique); exit 1 when one fails (T-3106)")
     s.add_argument("action", choices=["check"])
     s.add_argument("files", nargs="+", metavar="FILE")
-    s.add_argument("--type", choices=["icon", "spot", "card", "scene"],
+    s.add_argument("--type", choices=["icon", "spot", "card", "scene", "figure"],
                    help="the gates' type (default: a square viewBox of 64 or less is an icon, else a card)")
     s.add_argument("--out", metavar="DIR", help="save each work's renders here as NAME-light.png and NAME-dark.png")
     s = add("new", lazy("sampo.new", "cmd_new"), tier=("Finding your way", 385), help="strict-by-default templates: a web "
