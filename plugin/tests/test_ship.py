@@ -310,6 +310,44 @@ class Ship(ForemanTestCase):
         self.assertIn("the test failed in the scratch tree", r.stderr + r.stdout)
         self.assertFalse(self.base())
 
+    def rerun_ship(self, alone, affected=None):
+        # T-3435: a red class is rerun alone (FM_POSTMERGE_RERUN is the seam); green alone is a flake
+        self.grant()
+        if affected:
+            with open(os.path.join(self.repo, "test_new.py"), "w") as f:
+                f.write("x = 1\n")
+            sh(self.repo, "add", "test_new.py")
+            sh(self.repo, "commit", "-qm", "add test_new")
+            self.fm("check", "affected", affected)
+        red = "sh -c 'echo \"FAIL: test_x (test_mod.Cls.test_x)\"; exit 1'"
+        return self.fm("ship", "--remote", "origin", "--test", red, check=False,
+                       env={"FM_POSTMERGE_RERUN": alone, "FOREMAN_LOAD_GATE": "0"})
+
+    def test_a_class_red_in_the_suite_but_green_alone_is_a_flake_that_ships(self):  # T-3435
+        r = self.rerun_ship("true")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("flaky", r.stdout + r.stderr)
+        self.assertIn("test_mod.Cls", r.stdout + r.stderr)
+        self.assertIn("add a", self.main_log())
+        self.assertFalse(self.base())  # the verdict is the rerun's: no baseline task
+
+    def test_a_class_red_alone_too_still_refuses(self):  # T-3435
+        r = self.rerun_ship("false")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("the test failed in the scratch tree", r.stdout + r.stderr)
+        self.assertNotIn("add a", self.main_log())
+
+    def test_a_flaky_affected_class_goes_on_to_the_suite(self):  # T-3435
+        r = self.rerun_ship("true", affected="echo 'FAIL: test_y (test_aff.Cls.test_y)'; exit 1")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("flaky", r.stdout + r.stderr)
+        self.assertIn("test_aff.Cls", r.stdout + r.stderr)
+
+    def test_an_affected_class_red_alone_too_refuses(self):  # T-3435
+        r = self.rerun_ship("false", affected="echo 'FAIL: test_y (test_aff.Cls.test_y)'; exit 1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("affected tests failed", r.stdout + r.stderr)
+
     def test_a_green_ship_records_the_footprint_and_a_red_one_does_not(self):  # T-2281
         self.grant()
         rec = os.path.join(c.find_project(self.repo).dir, "footprint.json")

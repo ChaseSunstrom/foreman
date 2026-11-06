@@ -395,6 +395,24 @@ def _ci_ignored(root, rev):
     return [_glob_re(g) for g in out if g]
 
 
+def _rerun_red(wt, out, code, env):
+    """T-3435: the classes a red run names, rerun alone after a load wait (the post-merge suite's helpers, T-3216).
+    Returns the flaky classes when every one is green alone, None when any is still red (or can't run alone)."""
+    from sampo import lanes
+    if code == 124:
+        return None
+    classes = lanes.pm_classes(out, code)
+    again = lanes.pm_rerun_cmd(wt, classes)
+    if not again:
+        return None
+    c.wait_for_load("sampo ship", out=sys.stdout)
+    print(f"{', '.join(classes)} failed in the full run; rerunning alone", flush=True)
+    if c.run_command(wt, again, c.load_scaled(900), env=env)[0]:
+        return None
+    print(f"flaky (red in the full run, green alone): {', '.join(classes)}", flush=True)
+    return classes
+
+
 def _affected_first(p, wt, base, env):
     """T-2323: fm check's affected-test selection over the range (main..the cherry-picked tip) in the scratch tree, run
     before the full suite; red stops the ship naming the failing classes. No linked test or no affected command: goes on."""
@@ -408,7 +426,7 @@ def _affected_first(p, wt, base, env):
         return
     print(f"testing the {len(tests)} affected test file(s) first", flush=True)
     code, out = c.run_command(wt, cmd, 900, env=dict(cli._skip_env({}), **{k: v for k, v in env.items() if k != "FOREMAN_SKIP_TESTS"}))
-    if code:
+    if code and _rerun_red(wt, out, code, env) is None:
         print(out[-4000:], flush=True)
         bad = sorted({m.group(1) for m in re.finditer(r"^(?:FAIL|ERROR): \S+ \(([\w.]+?)\.\w+\)", out, re.M)})
         _err("the affected tests failed in the scratch tree" + (f": {', '.join(bad)}" if bad else "") + "; nothing was pushed")
@@ -535,6 +553,8 @@ def ship(p, args):
             finally:
                 if (c.read_meta(p).get("ship_testing") or {}).get("pid") == os.getpid():
                     c.update_meta(p, ship_testing=None)
+            if failed and _rerun_red(wt, tail, failed, env) is not None:
+                failed = 0  # T-3435: green alone is a flake; the baseline capture and the verdict get the rerun's
             from sampo import cli  # the shipped tree is vouchable, so the run files (or clears) what fm check would
             try:
                 got = cli._baseline(p, [(shlex.join(test), failed, tail, None)])
