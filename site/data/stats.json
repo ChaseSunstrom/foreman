@@ -1,17 +1,17 @@
 {
- "generated": "2026-11-05",
+ "generated": "2026-11-06",
  "totals": {
-  "tasks_done": 385,
-  "evidence": 1788,
-  "proofs": 228,
-  "commits": 289,
-  "gate_runs": 222,
-  "subagents": 438,
-  "lanes_merged": 134,
-  "findings": 208,
-  "guard_blocks": 166,
-  "captures": 453,
-  "lessons_shown": 710
+  "tasks_done": 460,
+  "evidence": 2410,
+  "proofs": 284,
+  "commits": 349,
+  "gate_runs": 240,
+  "subagents": 773,
+  "lanes_merged": 171,
+  "findings": 335,
+  "guard_blocks": 229,
+  "captures": 595,
+  "lessons_shown": 908
  },
  "daily": [
   {
@@ -60,71 +60,82 @@
   },
   {
    "day": "2026-11-05",
-   "FEATURE": 7,
-   "FIX": 9,
-   "CLEAN": 1,
-   "PERFORMANCE": 0,
+   "FEATURE": 26,
+   "FIX": 42,
+   "CLEAN": 2,
+   "PERFORMANCE": 7,
+   "SECURITY": 4,
+   "RESEARCH": 1,
+   "lanes": 41,
+   "evidence": 543
+  },
+  {
+   "day": "2026-11-06",
+   "FEATURE": 2,
+   "FIX": 6,
+   "CLEAN": 0,
+   "PERFORMANCE": 2,
    "SECURITY": 0,
    "RESEARCH": 1,
-   "lanes": 7,
-   "evidence": 190
+   "lanes": 3,
+   "evidence": 269
   }
  ],
  "tiers": {
-  "S": 210,
-  "M": 161,
-  "L": 14
+  "S": 263,
+  "M": 180,
+  "L": 17
  },
  "types": {
-  "FEATURE": 176,
-  "FIX": 159,
-  "CLEAN": 29,
-  "PERFORMANCE": 4,
-  "SECURITY": 4,
-  "RESEARCH": 13
+  "FEATURE": 197,
+  "FIX": 198,
+  "CLEAN": 30,
+  "PERFORMANCE": 13,
+  "SECURITY": 8,
+  "RESEARCH": 14
  },
  "guard": {
-  "brief": 66,
-  "core": 50,
-  "system": 15,
-  "state-direct": 12,
-  "rm-outside": 6,
+  "brief": 87,
+  "core": 78,
+  "system": 21,
+  "state-direct": 15,
+  "rm-outside": 9,
+  "credentials": 7,
   "pipe-shell": 6,
-  "credentials": 5,
   "plugin": 3
  },
  "findings": {
   "lenses": {
-   "edge": 46,
-   "adversary": 42,
-   "design": 39,
-   "intent": 32,
-   "maintainer": 23,
-   "operator": 13
+   "edge": 89,
+   "adversary": 69,
+   "design": 48,
+   "intent": 45,
+   "maintainer": 38,
+   "operator": 24
   },
   "severity": {
-   "LOW": 116,
-   "MEDIUM": 77,
-   "HIGH": 15
+   "LOW": 186,
+   "MEDIUM": 127,
+   "HIGH": 22
   }
  },
  "subagents": {
-  "fm-builder": 295,
-  "general-purpose": 70,
-  "fm-reviewer": 42,
-  "fm-recon": 26,
-  "claude-code-guide": 3,
-  "fm-scout": 2
+  "fm-builder": 555,
+  "general-purpose": 99,
+  "fm-reviewer": 74,
+  "fm-recon": 31,
+  "Plan": 8,
+  "claude-code-guide": 4
  },
  "gate_seconds": {
-  "runs": 222,
-  "median": 328.9
+  "runs": 240,
+  "median": 332.1
  },
  "tools": {
   "misses": 6,
   "resolved": 0,
   "proved": 0,
-  "searches": 38,
+  "searches": 83,
   "queued": 3,
   "refused": 0
  },
@@ -242,85 +253,26 @@
   "hardware": 8
  },
  "code": {
-  "model_tests": 70,
+  "model_tests": 79,
   "endpoints": 9,
-  "tests": 6243
+  "tests": 6815
  },
- "calibration": {
-  "scored": 26,
-  "pending": 260,
-  "brier": {
-   "stated": 0.08182692307692307,
-   "base": 0.072964
-  },
-  "bars": {
-   "research": 70,
-   "race": 55
-  },
-  "races": {
-   "run": 0,
-   "judged": 0,
-   "first_lost": 0
-  },
-  "kinds": {
-   "choice": [
-    {
-     "lo": 80,
-     "hi": 94,
-     "n": 2,
-     "held": 0,
-     "pct": 0,
-     "stated": 88,
-     "gap": 88
-    }
-   ],
-   "ship": [
-    {
-     "lo": 60,
-     "hi": 79,
-     "n": 1,
-     "held": 1,
-     "pct": 100,
-     "stated": 75,
-     "gap": -25
-    },
-    {
-     "lo": 80,
-     "hi": 94,
-     "n": 22,
-     "held": 22,
-     "pct": 100,
-     "stated": 85,
-     "gap": -15
-    },
-    {
-     "lo": 95,
-     "hi": 100,
-     "n": 1,
-     "held": 1,
-     "pct": 100,
-     "stated": 95,
-     "gap": -5
-    }
-   ]
-  },
-  "interim": {}
- },
+ "calibration": {},
  "proof": {
-  "n": 810,
+  "n": 859,
   "counts": {
-   "meaning-notes": 359,
-   "meaning-user": 247,
-   "research-uncited": 33,
-   "perf-typed": 51,
-   "typed": 36,
-   "red": 75,
-   "tui-unshot": 9,
-   "docs": 112,
+   "meaning-notes": 373,
+   "meaning-user": 249,
+   "research-uncited": 34,
+   "perf-typed": 60,
+   "typed": 37,
+   "red": 86,
+   "tui-unshot": 11,
+   "docs": 126,
    "perf-noise": 1,
-   "infra": 8,
-   "ui-unshot": 29,
-   "data": 5
+   "infra": 9,
+   "ui-unshot": 41,
+   "data": 7
   },
   "history": [
    {
@@ -342,6 +294,10 @@
    {
     "day": "2026-11-05",
     "n": 810
+   },
+   {
+    "day": "2026-11-06",
+    "n": 859
    }
   ]
  },
@@ -349,20 +305,20 @@
   "triggers": [
    {
     "trigger": "discovered",
-    "fired": 773,
-    "precision": 0.772,
+    "fired": 843,
+    "precision": 0.778,
     "route": "inbox"
    },
    {
     "trigger": "followup",
-    "fired": 279,
-    "precision": 0.779,
+    "fired": 288,
+    "precision": 0.78,
     "route": "inbox"
    },
    {
     "trigger": "self",
-    "fired": 193,
-    "precision": 0.767,
+    "fired": 199,
+    "precision": 0.772,
     "route": "inbox"
    },
    {
@@ -372,21 +328,21 @@
     "route": "inbox"
    },
    {
-    "trigger": "ci",
-    "fired": 37,
-    "precision": 0.361,
-    "route": "inbox"
-   },
-   {
     "trigger": "steer",
-    "fired": 34,
+    "fired": 55,
     "precision": 0.389,
     "route": "inbox"
    },
    {
+    "trigger": "ci",
+    "fired": 39,
+    "precision": 0.368,
+    "route": "inbox"
+   },
+   {
     "trigger": "baseline",
-    "fired": 29,
-    "precision": 0.724,
+    "fired": 31,
+    "precision": 0.742,
     "route": "inbox"
    },
    {
@@ -396,21 +352,27 @@
     "route": "inbox"
    },
    {
+    "trigger": "ci-red",
+    "fired": 20,
+    "precision": 0.833,
+    "route": "inbox"
+   },
+   {
     "trigger": "scout",
     "fired": 15,
     "precision": 0.6,
     "route": "inbox"
    },
    {
-    "trigger": "ci-red",
+    "trigger": "foresight-cochange",
     "fired": 6,
-    "precision": 0.8,
+    "precision": 0.2,
     "route": "inbox"
    },
    {
-    "trigger": "foresight-cochange",
+    "trigger": "friction",
     "fired": 5,
-    "precision": 0.2,
+    "precision": 0.0,
     "route": "inbox"
    },
    {
@@ -420,21 +382,15 @@
     "route": "inbox"
    },
    {
-    "trigger": "cold",
-    "fired": 2,
-    "precision": 0.5,
-    "route": "inbox"
-   },
-   {
-    "trigger": "friction",
-    "fired": 2,
-    "precision": 0.0,
-    "route": "inbox"
-   },
-   {
     "trigger": "sentinel reverify",
-    "fired": 2,
+    "fired": 4,
     "precision": 1.0,
+    "route": "inbox"
+   },
+   {
+    "trigger": "cold",
+    "fired": 3,
+    "precision": 0.667,
     "route": "inbox"
    },
    {
@@ -470,14 +426,14 @@
   "predictions": [
    {
     "kind": "next-request",
-    "n": 94,
-    "hit": 0.436,
-    "base_hit": 0.33,
+    "n": 121,
+    "hit": 0.421,
+    "base_hit": 0.339,
     "muted": false,
-    "shown_n": 47,
-    "shown_hit": 0.426,
-    "overlap": 0.103,
-    "base_overlap": 0.097
+    "shown_n": 71,
+    "shown_hit": 0.423,
+    "overlap": 0.102,
+    "base_overlap": 0.099
    }
   ],
   "lean": [
@@ -534,6 +490,349 @@
   }
  },
  "decisions": [
+  {
+   "date": "2026-11-06",
+   "text": "No Rust rewrite now: a Bash tool call costs ~37 ms of process floor plus ~90 ms of Python handler work that tripled in three days; the handler's growth is algorithmic, a resident server can't serve th",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3358: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3355: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3351: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "Sync is off until its export is cheap: every state write re-exported all ~3,300 briefs under the project lock (sync.export inside regen_views), so captures, audits, merges and hooks hit lock busy. The",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "T-3082 closes with the drive's Stop hook not running Kalevala rounds; night runs them. Wiring the drive (and handing gen-1 seeds to sessions) is T-3249's job",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3325: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3323: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3322: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3320: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3319: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3318: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3315: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "Genesis gen-1 filing items (T-2077, T-2221, T-2230, T-2328..T-2331) are superseded: Rune has since run gens 2-4 with their own seeds, missions and critiques, so filing gen-1's narrative files through ",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3302: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "budget raised: day 200 \u2192 1000, run 200 \u2192 1000",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3284: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3267: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "Recommendation: none to act on; route to plugin/lib/sampo/ rather than the fm*.py aliases, and drop the aliases when their two releases end (T-2742). Would change if: something still imports fmcli/fmh",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3257: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "No new builder lanes until T-3252's slot pool lands",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-06",
+   "text": "read T-3251: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3082 merges with night wired and drive left for a follow-up",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "Parked T-3222 at a one-way, ambiguous step: the session tier: sampo sandbox status\\|on\\|off\\|allow writing Claude Code's sandbox settings with a backup and ssh git excluded; doctor line; plugin comman",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3219: the standing core yes now passes self-change gate holds made only of footprint, verb-count or hook-speed rows, per the user's 'I said stop asking me for things' and 'yes, merge everything, you",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3218: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3081 merges with fresh towers waiting for gen-1's seed (the builder's option A); Kalevala writing gen-1 itself (option B) is the right end state for towers that run unattended, captured as its own t",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3204: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3203: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3177 parked, branch kept (f5e8ec11): the machine-wide test slot pool at 2x cpu matches unpooled at 2 concurrent runs (19.1 vs 18.7 s) and is ~13% slower at 4 (median 45.6 vs 40.2 s, wider spread) wh",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3177: don't merge the pool at cpu_count slots (2-run bench 28.2 s pooled vs 21.4 s unpooled: test jobs wait on subprocesses, so 16 slots idle cores); default to 2x cpu_count slots (FM_TEST_SLOTS ove",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3044 builder on Opus, not the router's haiku: the user routes UI work to Opus (2026-11-05); haiku's M-lane rework record is 1/20 with too little history",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "Restart the card writer: general grid, target 12000 (all 2880 cells ~4 each), local gemma first then Haiku, 3 workers; UI grid waits for the Opus route (T-3106 family), per the user's routing",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3106 builder on Opus, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3189, T-3154, T-3164 builders on sonnet, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3168, T-3143, T-3170 builders on sonnet, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3188 builder on sonnet, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3180 and T-3176 builders on sonnet, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "Route S lanes to haiku (provisional)",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3171 builder on sonnet, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3034 and T-3101 builders on Opus, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3166 builder on sonnet, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3160 builder on Opus, not the routed haiku",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3140's test cache is not merged now: the branch (c5970e7a) is kept and the task blocked; the speed goes after the slowest classes instead (T-3166 widened: run.py runs a big class's tests in parallel",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "Hold main-checkout test runs and closes after T-3151's close until the queued merges (T-3087, T-3108, then T-3053's chain) land",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3161: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "T-3157 calling cards: approved in full autonomy after the cold plan review; built as parts, the thin slice T-3160 first (ten Opus-written cards, the call action, with/without measured) before more for",
+   "later": null,
+   "confidence": null,
+   "kind": "reversible"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3159: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
+  {
+   "date": "2026-11-05",
+   "text": "read T-3158: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
+   "later": null,
+   "confidence": null,
+   "kind": "costly"
+  },
   {
    "date": "2026-11-05",
    "text": "read T-3156: its standing rule was expanded from your words at held-out coverage 22%, under the 70% bar",
@@ -1644,358 +1943,6 @@
    "later": null,
    "confidence": null,
    "kind": "outward"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Release 1.2.51: its push step conflicted because fm ship cherry-picks left foreman/build and main with diverged histories (merge base 2026-10-27, same content). Dropped the local unpushed release comm",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Release 1.2.51 bumps foreman-ui 0.19.0 \u2192 0.20.0: its 23 changes since 1.2.50 add surfaces (the Genesis tower line, proof counts), a minor bump",
-   "later": null,
-   "confidence": null,
-   "kind": "outward"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Forever loop re-enabled: rounds 26-27 closed dry only because fm loop round --next was called 3 times to read its instructions (captured as a FIX); the loop round's brainstorm is served by the gen-3 s",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "forever loop off after round 27: 2 dry rounds in a row (20 rounds, 1117 tasks closed since 2026-10-16)",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "gen-2 seed revised after drift: the night-timer install moves to the end-of-run report (gen-0: asks at the end), and the frontier line now says it is built only from the project's own notes per the 20",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "genesis select gen-2: baseline (seed base gen-2)",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "T-2564 blocked for the user, not built: actionlint is a download, which Foreman never does itself; a clone is out of proportion; CI and test_ci_matrix cover the one workflow",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Supply-chain change on four official plugins left for the user",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Recommendation: build T-2557 (a goal session's done claim checks each stated Done-when line and requirement against the tree, or names it missing), the largest class Foreman owns (14 of 31); report th",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Long-tier keys: report, never rewrite",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "foresight-cochange: no heuristic change yet; its precision demotion handles it",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "T-2546: the already-built nudge doesn't ship; the backtest harness stays",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Genesis build stage: a deferred Mission task is carried, named, not a blocker",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Correction: Mission 3 and the loop rounds run now, bounded by fm budget",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Forever loop round 24 and Mission 3 wait for the weekly usage reset",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "loop round 24: site/build.py, plugin.json, fmlib.py stay",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "T-2530: no second interpreter in fm check",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "Correction to the T-2424 row: the door gate already stops only at irreversible AND ambiguous steps (a step the request names in an unambiguous brief runs as a costly decision); rival_split now counts ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-02",
-   "text": "One-way doors keep parking whether or not the task is ambiguous; rival_split only words and orders the park (T-2424)",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Lean substance (T-2503): growth whose capability has no exam or outcome measurement yet waits: the sweep's lean row lists it as pending (not red, no task) until a measurement exists; only growth that ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule, every generation before its Seed is written: (1) a cross-cutting cold review on a stronger model than the Missions, reading only the generation's repo diff, exam lines, fm outcomes and ",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Gen-2 Missions are written without fm ideas' four-round brainstorm while the account's weekly usage is past 80% (economy mode): each Mission grounds its briefs in its coverage area's idea cells, the c",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule: never block on the user for a question about rules, gates or process: pick the option most consistent with gen-0 and the standing intent, record it with fm decide --kind costly so it la",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule: the tower advances itself. A red sweep creates its own fix tasks and re-runs when they close; a clean sweep writes the next Seed and starts its Missions immediately, every generation, u",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule (user steer 2026-10-31 #3): don't stop or skip work for budget, pace or 'optional work dropped'; wait out real usage limits and resume where stopped; if a cap only the user can raise is ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule (user steer 2026-10-31 #2): finish round 1 completely, in order: Mission 4's remaining work, then write and build Missions 5-8, then every Mission's critique, the drift check over all mi",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule (user steer 2026-10-31 #1): pause every long-horizon exam run now; keep the tier as built and run it again only at the end of the whole run, or for one capability when a free or Haiku ar",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule: exam recall for #1 is reported per language and per bug type, with child-authored scenarios in languages and kinds fm find wasn't written for",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule for #1 Initiative: fm find stays the free first pass, and detection beyond it is never hand-written per language. In order: the repo's own and the ecosystem's standard tools found from m",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Long-horizon tier is the deciding end-of-run score for every capability except pure finders: replayed real repos rolled back to a past commit with the change that followed as the goal; planted faults ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Defer the full foreman-vs-plain exam and the long-horizon tier to the end of the run, on the production model, once Missions 1-8 are built, then repeat after any fixes they trigger; a capability the H",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Testing cadence: every task keeps red-first unit tests, fm check and fm task finish audits; every generation runs only the zero-token arms (finders, oracle, empty) on all scenarios plus at most a Haik",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Coverage per generation: the sweep's coverage passes when no cell is templated or duplicated; the empty cells are handed to the next Seed to fill first. 'No empty cells' is a condition for ending the ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "genesis select gen-1: baseline (seed base gen-1)",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Cold-read rule (tower filing): keep it, made reliable. (1) Haiku reads first; on any non-pass a Sonnet cold read with the same inputs decides, and Sonnet's verdict stands. (2) A FAIL counts only when ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "T-2462 waits with T-2441 until round 1 is done; the drive holds Foreman-filed items (ci, self, discovered) the same way",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "T-2462 (macOS 3.14 non-blocking CI jobs, filed by ci-watch for bd40b40 and again for 1d811ed) waits with T-2441 until round 1 is done",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Fold six verbs (proof, triggers, calibration, incident, sweep, instruments) into prove, outcomes, capture, projects and which, and trim skill descriptions, so gen-1's sweep lean line passes",
-   "later": null,
-   "confidence": 75,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule (user steer 2026-10-31, 3): with fm drive --pace off, usage pace drops no work (fmbudget.degrade); a real usage limit is waited out, and the fm budget cap and the risk budget stay as the",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule (user steer 2026-10-31, 2): with fm drive --round-first on, fm next offers no inbox item Foreman filed itself until the round's next seed is filed, unless it is urgent or an open task de",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Standing rule (user steer 2026-10-31, 1): session arms of fm exam long run wait for the end-of-run exam (--final) or name a capability a free or Haiku arm shows regressing (--regressing N); fm exam lo",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "T-2450 (the secrets finder reads a date as a credential) and the other captured maintenance (T-2444, T-2441) wait until round 1 is done; round 1's last steps (filing Missions 5-8 and the critiques, dr",
-   "later": {
-    "date": "2026-11-01",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-11-01",
-   "text": "Recommendation: no new lexical finder rule from these misses (none of the 26 has a pattern a rule could match); gen 2's #1 work aims at logic bugs through proofs (the session arm with fm find prove's ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Parked T-2357 at a one-way, ambiguous step: red tests: staging writes nothing outside state; guard category; install after the yes; uninstall; doctor lines",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Parallel Missions 5-8 (user steer 2026-10-31) stays: an L stays in the main thread, its open S/M briefs run in parallel fm lanes, merged in mission order",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Parallel Missions 5-8 still holds: an L stays in the main thread, its open S/M briefs run in parallel fm lanes, merged in mission order",
-   "later": {
-    "date": "2026-10-31",
-    "how": "revisited"
-   },
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Standing rule (user steer 2026-10-31): gen 2 builds a model layer, small specialist models wherever a decision, ranking or lookup is the job, backends cheapest-first (rules, local selfjev-4b/jeff via ",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Subagent pace gate hit (weekly usage 75% with 49% of the week gone; T-0320/T-0364's rule, no fm ask category): builders already out keep running; reviews and new tasks move to the main thread until th",
-   "later": null,
-   "confidence": null,
-   "kind": "costly"
-  },
-  {
-   "date": "2026-10-31",
-   "text": "Mission 3 spikes T-2414/T-2415 deferred to the critique pass (standing rule 2 order: Missions 5-8, then every critique)",
-   "later": null,
-   "confidence": null,
-   "kind": "reversible"
   }
  ],
  "louhi": {
