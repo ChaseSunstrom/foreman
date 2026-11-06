@@ -6862,6 +6862,12 @@ def _build_parser(only=None):
     s.add_argument("task", nargs="*", help="the work, e.g. make a 3D hero with motion")
     s.add_argument("--instruments", action="store_true", help="instead: the zero-token instruments, typed tools with "
                    "input schemas and line caps (sym, fail, logs, data, trace; sampo instruments until T-2461)")
+    s = add("repro", lazy("sampo.repro", "cmd"), tier=("Finding your way", 206), help="is the build reproducible: builds the "
+            "site and the README figures twice from the working tree and once from REF; names the nondeterministic and "
+            "changed files (T-3279)", description="builds the site and the README figures twice from the working tree and "
+            "once from REF, each build in a copy of the tree; exit 1 only when a build is nondeterministic, 2 when a builder "
+            "or REF can't build. Costs three copies of the tree, and up to 900 s per builder (T-3279).")
+    s.add_argument("--ref", default="HEAD", help="the commit the working tree is compared with (default HEAD)")
     s = add("scout", lazy("sampo.scout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
     s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (sampo night's)")
