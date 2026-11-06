@@ -1709,12 +1709,30 @@ def _known_flaky(p):
         return set()
 
 
+def _gates_cover(p, cmd):
+    """T-3526: the gates' full pass on this code tree (_full_pass) when `cmd` is a gate's argv plus bare module names
+    (`python3 plugin/tests/run.py` + `test_x test_y`), else None: another runner's selection isn't known to be in it."""
+    import shlex
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        return None
+    for g in c.read_meta(p).get("checks") or []:
+        try:
+            ga = shlex.split(g)
+        except ValueError:
+            continue
+        if ga and argv[:len(ga)] == ga and all(a.isidentifier() for a in argv[len(ga):]):
+            return _full_pass(p)
+    return None
+
+
 def _close_affected(p, b, runs, args):
     """T-1117: the tests linked (fm map) to what this task changed run at its close (one rerun for a flake), and a
     failure refuses it unless the last full gate run of another task already had it (then it's noted: that run's
     baseline task owns it). An environment failure, or a runner whose failing tests can't be named, is said, not
     refused; --skip-affected REASON waives it on the record. No affected-tests command, nothing linked, or the same
-    command already passed in this finish: nothing to run."""
+    command already passed in this finish, or the gates' full pass on this code tree covers it: nothing to run."""
     skip = {}
     try:
         cmd, tests, _ = affected(p, b, skipped=skip)
@@ -1728,6 +1746,12 @@ def _close_affected(p, b, runs, args):
         mutate(p, b.id, lambda x: x.append_log(f"affected tests waived: {c.plain(waive)[:200]}"), "close_affected",
                {"cmd": c.fit(cmd, 200), "waived": c.fit(waive, 200)})
         return
+    say = (lambda m: None) if getattr(args, "json", False) else print
+    if hit := _gates_cover(p, cmd):  # T-3526: a train's full suite ran these on this code tree
+        c.log_event(p, "close_affected", task=b.id, data={"cmd": c.fit(cmd, 200), "exit": 0, "reused": hit, "s": 0},
+                    session=session())
+        say(f"linked tests: covered by the gates' pass ({hit})")
+        return
     guard_stored(p, b, cmd)
     env, timeout = _skip_env(skip), c.load_scaled(args.timeout if args.timeout > 0 else None)
     t0 = time.monotonic()
@@ -1740,7 +1764,6 @@ def _close_affected(p, b, runs, args):
     names = c.failing_tests(output) if code else []
     c.log_event(p, "close_affected", task=b.id, data={"cmd": c.fit(cmd, 200), "exit": code, "failing": names[:20],
                                                       "s": round(secs, 1)}, session=session())
-    say = (lambda m: None) if getattr(args, "json", False) else print
     if not code:
         return
     if code == 124:
