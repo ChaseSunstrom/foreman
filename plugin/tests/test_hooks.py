@@ -14,6 +14,24 @@ from helpers import HOOK, RELAY, ForemanTestCase, read_json, read_text
 from sampo import core as c
 
 
+class HookSlack(unittest.TestCase):  # T-3366: a bad FOREMAN_HOOK_SLACK must never break the hooks at import
+    def test_parse(self):
+        import importlib
+        from sampo import hooks
+        old = os.environ.get("FOREMAN_HOOK_SLACK")
+        try:
+            for raw, want in [("abc", 1), ("0", 1), ("-1", 1), ("nan", 1), ("inf", 1), ("4", 4), ("99", 10)]:
+                os.environ["FOREMAN_HOOK_SLACK"] = raw
+                importlib.reload(hooks)
+                self.assertEqual(hooks.SLACK, want, raw)
+        finally:
+            if old is None:
+                os.environ.pop("FOREMAN_HOOK_SLACK", None)
+            else:
+                os.environ["FOREMAN_HOOK_SLACK"] = old
+            importlib.reload(hooks)
+
+
 def parse(proc):
     out = proc.stdout.strip()
     return json.loads(out) if out.startswith("{") else None

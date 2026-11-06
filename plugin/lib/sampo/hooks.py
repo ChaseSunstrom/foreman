@@ -24,7 +24,18 @@ PROMPT_BUDGET = 400     # UserPromptSubmit additionalContext
 NOTE_BUDGET = 200       # PreToolUse scope note
 DRIVE_MAX = 50          # consecutive drive continuations without a user prompt
 OFFERS_MAX = 3          # T-0401: queued tasks offered, one per Stop, while one set of background jobs runs
-LONG_JOB_S = 20 * 60    # T-0415: a background job running longer no longer holds the drive
+def _slack(raw):
+    """T-3366: tests under load stretch the fixed limits below; 1..10, anything else (abc, 0, -1, nan, inf) is 1.
+    For tests only: Claude Code kills a hook at its own limit (Stop at 30 s) whatever this says."""
+    try:
+        v = float(raw or 1)
+    except ValueError:
+        return 1.0
+    return min(v, 10.0) if 1 <= v < float("inf") else 1.0
+
+
+SLACK = _slack(os.environ.get("FOREMAN_HOOK_SLACK"))
+LONG_JOB_S = 20 * 60   # T-0415: a background job running longer no longer holds the drive
 CONTEXT_NOTE_PCT = 60     # context use at a task boundary worth mentioning (context rot)
 CONTEXT_NOTE_TOKENS = 200_000  # T-0703: every turn re-reads the context, so past this a 1M window costs at 20%
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
@@ -787,8 +798,12 @@ def _first_brief(p, sid, transcript=None):
         cmd = [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "new", title, "--type", type_, "--tier", tier,
                "--step", "do what the request asks", "--harness-plan=hook",  # T-2335: no readings/options to gate
                "--focus", "--json"] + [x for d in done for x in ("--ac", d)]
-        r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True, timeout=3,  # the hook's limit is 5 s
-                           env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+        try:
+            r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True, timeout=3 * SLACK,  # the hook's limit is 5 s
+                               env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+        except subprocess.TimeoutExpired:
+            log_error("PreToolUse", "first brief: fm task new timed out")
+            return None
     act = c.active_brief_fast(p, getattr(p, "lane", None))
     if r.returncode or not act:
         log_error("PreToolUse", f"first brief: {r.stderr.strip()[-300:]}")
@@ -850,7 +865,7 @@ def _queue_requests(p, sid, reqs):
         if c.active_brief_fast(p, getattr(p, "lane", None)):
             return ""  # a parallel edit's hook queued them a moment ago
         for k, text in enumerate(reqs, 1):
-            if time.monotonic() - t0 > 3.2:  # review: room left for this task and the focus within the hook's 5 s
+            if time.monotonic() - t0 > 3.2 * SLACK:  # review: room left for this task and the focus within the hook's 5 s
                 break
             r = c.parse_intake(text)
             type_ = r.items[0].type if r.items else "FEATURE"
@@ -897,8 +912,12 @@ def _next_request(p, sid, queued):
                         or [])), None)
     if not nxt:
         return None
-    r = subprocess.run([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "focus", nxt.id], cwd=p.root, capture_output=True,
-                       text=True, timeout=3, env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+    try:
+        r = subprocess.run([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "focus", nxt.id], cwd=p.root, capture_output=True,
+                           text=True, timeout=3 * SLACK, env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+    except subprocess.TimeoutExpired:
+        log_error("PreToolUse", "next request: fm focus timed out")
+        return None
     if r.returncode:
         log_error("PreToolUse", f"next request: {r.stderr.strip()[-300:]}")
         return None
@@ -1105,7 +1124,10 @@ def _leads_note(p, sid=None):
 
 
 def _tracked(p):
-    r = subprocess.run(["git", "ls-files"], cwd=p.root, capture_output=True, text=True, timeout=3)
+    try:
+        r = subprocess.run(["git", "ls-files"], cwd=p.root, capture_output=True, text=True, timeout=3 * SLACK)
+    except (OSError, subprocess.SubprocessError):
+        return []
     return r.stdout.splitlines() if not r.returncode else []
 
 
@@ -1149,7 +1171,7 @@ def _close_first_brief(p, act, sid):
     cmd = _test_gate(p, _tracked(p))
     if not cmd:
         return False, None
-    until = time.monotonic() + 25  # the Stop hook's limit is 30 s
+    until = time.monotonic() + 25 * SLACK  # the Stop hook's limit is 30 s
     proc = subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "finish", act.id, "--run", cmd,
                              "--audit", f"auto: Sampo closed the task it made for this session's one request at "
                              f"stop; {cmd} passed after the last edit", "--commit", f"{act.title} ({act.id})"],
@@ -1157,7 +1179,7 @@ def _close_first_brief(p, act, sid):
                             env=dict(os.environ, FOREMAN_SESSION_ID=sid, FOREMAN_SENTINEL="off"),
                             start_new_session=True)  # a timeout takes the test run down with it
     try:
-        out, err = proc.communicate(timeout=20)
+        out, err = proc.communicate(timeout=20 * SLACK)
     except subprocess.TimeoutExpired:
         c.kill_group(proc)
         proc.communicate()

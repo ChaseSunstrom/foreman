@@ -370,7 +370,8 @@ class SampoTestCase(unittest.TestCase):
         return json.loads(self.fm(*args, "--json", **kw).stdout)
 
     def hook(self, event, payload, env=None, timeout=10, flags=None):
-        e = dict(os.environ, FOREMAN_HOME=self.home)
+        e = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_HOOK_SLACK=str(busy_factor()))  # T-3366
+        e.pop("SAMPO_HOOK_SLACK", None)  # core.mirror_env would let it win over the value above
         e.update(env or {})
         payload = dict({"session_id": "sess-1", "cwd": self.repo, "hook_event_name": event}, **payload)
         cmd = [sys.executable, HOOK, event]
