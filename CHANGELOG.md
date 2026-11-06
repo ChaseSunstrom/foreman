@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- Test runner: each class's timer scales with machine load but never outlasts the run's deadline (the gate passes its own as FM_RUN_DEADLINE), and a class killed by its timer is recorded as slow so the next run splits it (T-3338).
 - `sampo check --affected` picks tests for a hub file such as cli.py by the symbols that changed, closed over in-file use and command verbs, and runs the whole file's tests when it can't tell (T-3306).
 - sampo.train has its fmtrain import shim, like every other module (T-3405).
 - test_cli.AffectedPairs's nested fm check --affected runs get a 300 s base hang guard; 120 s still ran out inside a close's own gate run (T-3404).
