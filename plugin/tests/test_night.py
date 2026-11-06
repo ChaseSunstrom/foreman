@@ -184,6 +184,60 @@ class Night(ForemanTestCase):
         self.assertIn("Night", self.fm("digest").stdout)
 
 
+class KalevalaNight(ForemanTestCase):  # T-3082 step 3: the night runs Kalevala's rounds until its limit or a halt
+    def setUp(self):
+        super().setUp()
+        patch = mock.patch.dict(os.environ, {"MOONS_LOCAL": ""})  # T-2916: no probe of this machine's local models
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.fm("init")
+        sessions = os.path.join(c.state_dir(), "sessions")  # usage known and low
+        os.makedirs(sessions, exist_ok=True)
+        with open(os.path.join(sessions, "s.json"), "w") as f:
+            json.dump({"rate_limits": {"seven_day": {"used_percentage": 10}}}, f)
+        path = os.path.join(self.tmp, "gen0.md")
+        with open(path, "w") as f:
+            f.write("root charter\n\n## 2. Capabilities\n1. **Bugs.** finds and fixes broken code. Exam: bug.\n")
+        self.fm("genesis", "init", "--file", path)
+        self.fm("kalevala", "start")
+
+    def project(self):
+        return c.find_project(self.repo, create=False)
+
+    def test_open_towers_put_the_kalevala_rounds_job_last(self):
+        names = [j["name"] for j in json.loads(self.fm("night", "--dry-run", "--json").stdout)["jobs"]]
+        self.assertEqual(names[-1], "kalevala rounds")
+
+    def test_the_rounds_stop_at_the_nights_spend_limit(self):
+        from sampo import budget, night
+        p = self.project()
+        budget.set_caps(day=5.0)
+        start = budget.spent()[0]
+
+        def job(argv, root, env):  # a stub child that spends 0.1 per tower
+            budget.record("kalevala", usd=0.1, runs=1, project=p.slug, detail="stub")
+            return 0
+        with mock.patch("sampo.kalevala._run", side_effect=job):
+            res = night._kalevala_rounds(p, start, 0.25)
+        self.assertEqual(res["exit"], 0)
+        self.assertIn("spend reached the limit", res["tail"])
+
+    def test_a_user_pause_stops_the_rounds_before_any_job(self):
+        from sampo import budget, night
+        p = self.project()
+        self.fm("kalevala", "pause")
+        with mock.patch("sampo.kalevala._run") as run:
+            res = night._kalevala_rounds(p, budget.spent()[0], 1.0)
+        run.assert_not_called()
+        self.assertIn("paused by the user", res["tail"])
+
+    def test_the_night_reports_its_kalevala_job_and_the_pause_that_stopped_it(self):
+        self.fm("kalevala", "pause")
+        res = json.loads(self.fm("night", "--only", "kalevala rounds", "--json").stdout)
+        self.assertEqual([x["name"] for x in res["ran"]], ["kalevala rounds"])
+        self.assertIn("paused by the user", res["ran"][0]["tail"])
+
+
 SECOND = r'''#!/usr/bin/env python3
 import json, os, sys
 sys.stdin.read()

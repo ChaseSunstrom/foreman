@@ -7,8 +7,10 @@ import fcntl
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import time
 
 from sampo import budget
 from sampo import core as c
@@ -74,7 +76,8 @@ def tower_rows(p):
             rune.set_tower(None)
         r = info.get(name, {})
         out.append({"name": name, "aspect": t["aspect"], "sealed": sealed, "generation": r.get("generation"),
-                    "select": r.get("select"), "drift": r.get("drift")})
+                    "select": r.get("select"), "drift": r.get("drift"), "paused": t.get("paused"),
+                    "restarted": t.get("restarted")})
     return out
 
 
@@ -128,8 +131,11 @@ def tower_lock(p, name):
 
 
 def order(rows):
-    """Thinnest first: the lowest generation, then the name."""
-    return [r["name"] for r in sorted(rows, key=lambda r: (r.get("generation") or 0, r["name"]))]
+    """Stalled first (its restart goes first), then thinnest first (the lowest generation, then the name), then the
+    stuck: a tower whose exam hasn't moved in two generations is last, so its slot goes to one that improves."""
+    def rank(r):
+        return (0 if r.get("state") == "stalled" else 2 if r.get("stuck") else 1, r.get("generation") or 0, r["name"])
+    return [r["name"] for r in sorted(rows, key=rank)]
 
 
 def job_argv(name, st):
@@ -210,19 +216,27 @@ def _job(p, name, st, argv, env, runner):
 def step(p, k=None, runner=None, dry_run=False):
     """Each opened tower's next genesis step as a job: at most K at once, one step per tower at a time, inside
     Kalevala's share of the day's budget. Towers past the share wait, thinnest first. The round goes in the manifest."""
+    halt = load(p).get("halted")  # the user's pause: no round starts until fm kalevala resume
+    if halt:
+        return {"halted": halt, "dry_run": dry_run, "k": 0, "est": 0.0, "share": round(share(), 4),
+                "spent": spent_today(), "results": [], "queued": [], "rounds": load(p).get("rounds", 0)}
     runner = runner or _run
     budget.check(FEATURE, EST_JOB)  # the day and per-command caps still hold for Kalevala
     env = dict(os.environ, FOREMAN_NO_BACKGROUND="1", FOREMAN_TOWER_READONLY_EXAM="1", FOREMAN_SPEND_AS=FEATURE)
+    rows = watch(p)["towers"]
+    byrow = {r["name"]: r for r in rows}
+    sat = {} if dry_run else _decide(p, rows)  # Väinämöinen's acts before any job; a dry run acts on nothing
     with contextlib.ExitStack() as held:  # a round holds the locks of the towers it charges until their jobs end
         with c.lock(p.dir):  # stages, plan and charges under one lock: no stale stage, no two steps on one headroom
-            names = order(tower_rows(p))
+            names = order(rows)
             stages = {n: _stage(p, n) for n in names}
             argvs = {n: job_argv(n, stages[n]) for n in names}
-            runnable = [n for n in names if argvs[n] and stages[n]["kind"] == "ok"]
+            runnable = [n for n in names if argvs[n] and stages[n]["kind"] == "ok" and n not in sat]
             at = c.now()
-            skipped = [{"tower": n, "stage": stages[n]["stage"], "status": "skipped", "rc": None, "at": at}
+            skipped = [{"tower": n, "stage": stages[n]["stage"], "status": sat.get(n, "skipped"), "rc": None, "at": at}
                        for n in names if n not in runnable]
             est, run, queued, width = _headroom(p, runnable, k)
+            slotted = [n for n in queued if byrow[n]["stuck"]]  # a stuck tower's slot goes to one that improves
             if dry_run:
                 results = [{"tower": n, "stage": stages[n]["stage"], "status": "planned"} for n in run]
                 return {"dry_run": True, "k": width, "est": est, "share": round(share(), 4), "spent": spent_today(),
@@ -236,11 +250,15 @@ def step(p, k=None, runner=None, dry_run=False):
                     continue
                 budget.record(FEATURE, usd=est, runs=1, project=p.slug, detail=f"{n} {stages[n]['stage']}")
                 charged.append(n)
+        for n in slotted:
+            _act(p, "slot", n, "its exam hasn't moved in two generations: this round's slot goes to a tower that improves",
+                 undo="none: it runs the round it has a slot again")
         done = [{"tower": n, "stage": stages[n]["stage"], "status": "busy", "rc": None, "at": at} for n in busy]
         try:
             if charged:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=width) as ex:
-                    futs = [ex.submit(_job, p, n, stages[n], argvs[n], env, runner) for n in charged]
+                    futs = [ex.submit(_job, p, n, stages[n], argvs[n], dict(env, FOREMAN_SPEND_TOWER=n), runner)
+                            for n in charged]
                     done += [f.result() for f in futs]
         finally:  # each job's own spend is charged under FEATURE by its child; the estimate given back leaves the real cost
             for n in charged:
@@ -399,6 +417,267 @@ def select(p, n):
     return _gen_result(n, g)
 
 
+STALL_HOURS = 24  # ponytail: one window for every tower; a window per aspect once one aspect needs its own pace
+
+
+def _tower_runs(p, name):
+    """The closed train scenarios of each graded run of a tower's exam, oldest run first (holdout never counts)."""
+    rune.set_tower(name)
+    try:
+        lines = [x for x in rune.exam_lines(p, AGENT) if x.get("split") != "holdout"]
+    finally:
+        rune.set_tower(None)
+    groups = {}  # one pass: run id -> its lines, in the order the runs first appear
+    for x in lines:
+        groups.setdefault(x.get("run"), []).append(x)
+    return [len(rune.train_scenarios(v)) for v in groups.values()]
+
+
+def _charged_to(detail):
+    """The tower a Kalevala charge names: 'NAME STAGE' for a step, 'settle NAME' for its settlement, 'tower:NAME ...'
+    for a tower's child job's own spend (budget tags it), '' for none."""
+    t = str(detail or "").split()
+    if t and t[0].startswith("tower:"):
+        return t[0][len("tower:"):]
+    if t and t[0] == "settle":
+        return t[1] if len(t) > 1 else ""
+    return t[0] if t else ""
+
+
+def _tower_state(row, stall_h):
+    """The first verdict that holds: unsealed, drifted, stalled, then the exam's (unscored, new, flat, improving, falling)."""
+    if not row["sealed"]:
+        return "unsealed"
+    if row["drift"] == "drifted":
+        return "drifted"
+    if row["idle_h"] >= stall_h:
+        return "stalled"
+    if row["closed"] is None:
+        return "unscored"
+    if row["delta"] is None:
+        return "new"
+    return "improving" if row["delta"] > 0 else "falling" if row["delta"] < 0 else "flat"
+
+
+def watch(p, now=None, stall_h=STALL_HOURS):
+    """Each opened tower's state, read only (T-3082): its generation; the closed train scenarios on its newest graded
+    run and the change from the run before; its drift verdict; hours since its newest generation (gen-0's file while it
+    has none); spend today under Kalevala's line; and the Mission files of its newest generation."""
+    now = time.time() if now is None else now
+    ledger = budget.ledger()
+    rows = []
+    for t in tower_rows(p):
+        name, runs = t["name"], _tower_runs(p, t["name"])
+        rune.set_tower(name)
+        try:
+            tdir = rune.home(p)
+            gens = sorted(int(m[1]) for x in (os.listdir(tdir) if os.path.isdir(tdir) else ())
+                          if (m := rune.GEN.fullmatch(x)) and os.path.isdir(os.path.join(tdir, x)))
+        finally:
+            rune.set_tower(None)
+        newest = os.path.join(tdir, f"gen-{gens[-1]}") if gens else os.path.join(tdir, "gen-0.md")
+        idle = (now - os.path.getmtime(newest)) / 3600 if os.path.exists(newest) else 0.0
+        missions = [x for x in os.listdir(newest) if x.startswith("mission-") and x.endswith(".md")] if gens else []
+        row = {"name": name, "aspect": t["aspect"], "sealed": t["sealed"], "generation": t["generation"],
+               "drift": t["drift"], "closed": runs[-1] if runs else None,
+               "delta": runs[-1] - runs[-2] if len(runs) > 1 else None, "idle_h": round(idle, 1),
+               "spend": round(sum(float(e.get("usd") or 0) for e in ledger if e.get("feature") == FEATURE
+                                  and _charged_to(e.get("detail")) == name), 4),
+               "missions": len(missions), "newest": newest, "restarted": t.get("restarted"),
+               "stuck": len(runs) >= 3 and runs[-1] - runs[-2] <= 0 and runs[-2] - runs[-3] <= 0}
+        row["state"] = _tower_state(row, stall_h)
+        rows.append(row)
+    return {"now": round(now), "stall_hours": stall_h, "towers": rows}
+
+
+def _watch_line(t):
+    exam = "exam none" if t["closed"] is None else f"exam {t['closed']}" + (
+        "" if t["delta"] is None else f" ({t['delta']:+d})")
+    return (f"{t['name']}: {t['state']} · gen {t['generation']} · {exam} · drift {t['drift'] or 'none'} · "
+            f"idle {t['idle_h']:g}h · ${t['spend']:.2f} today · {t['missions']} open Mission(s)")
+
+
+ACTS_SHOWN = 20  # status lists the newest this many acts; the ledger keeps every one
+FALLING_STEER = "Your exam fell since the last run: keep to gen-0's aspect and the user's steers before adding work."
+PATHS = re.compile(r"[\w.-]+(?:/[\w.-]+)+")  # ponytail: a slash-joined word is a file; upgrade: the Mission's own file list
+
+
+def _act(p, act, name, reason, undo, **extra):
+    """One act in the ledger (T-3082): what Väinämöinen did to a tower, why, and the line that undoes it."""
+    data = {"act": act, "tower": name, "reason": reason, "undo": undo, **extra}
+    c.log_event(p, "kalevala_act", data=data)
+    return data
+
+
+def acts(p):
+    """Every act logged, oldest first: each with its kind, tower, reason, undo line and time."""
+    return [dict(e.get("data") or {}, at=e.get("ts")) for e in c.ledger_events(p, ["kalevala_act"])]
+
+
+def _tower_set(p, name, **kv):
+    with c.lock(p.dir):
+        m = load(p)
+        if name not in m["towers"]:
+            raise ValueError(f"no kalevala tower {name!r}: fm kalevala start first")
+        m["towers"][name].update(kv)
+        _save(p, m)
+
+
+def pause(p, reason, name=None):
+    """Pause one tower (it sits out every round) or, with no name, the whole loop (no round starts) until resume."""
+    if name:
+        _tower_set(p, name, paused=reason)
+    else:
+        with c.lock(p.dir):
+            m = load(p)
+            m["halted"] = reason
+            _save(p, m)
+    return _act(p, "pause", name, reason, undo="fm kalevala resume" + (f" {name}" if name else ""))
+
+
+def resume(p, name=None):
+    """Clear one tower's pause, or with no name every pause and the loop's halt."""
+    with c.lock(p.dir):
+        m = load(p)
+        if name and name not in m["towers"]:
+            raise ValueError(f"no kalevala tower {name!r}: fm kalevala start first")
+        for n in [name] if name else list(m["towers"]):
+            m["towers"][n]["paused"] = None
+        if not name:
+            m.pop("halted", None)
+        _save(p, m)
+    return _act(p, "resume", name, "resumed", undo="fm kalevala pause" + (f" {name}" if name else ""))
+
+
+def steer(p, name, text):
+    """Add one steer line to a tower's steers.md (T-3082). The drift check comes first: a MUST: or NEVER: line would
+    overrule gen-0's rules, so it's refused and logged. A line already written is not written again.
+    ponytail: the check is the constraint syntax, not a reading of the steer against gen-0; upgrade: rune.drift on the
+    steer's text."""
+    line = " ".join(str(text).split())
+    if rune._constraints(line):
+        return _act(p, "steer_refused", name, "a steer can't carry a MUST: or NEVER: line: gen-0's rules stand",
+                    undo="none: nothing was written") and None
+    rune.set_tower(name)
+    try:
+        path = os.path.join(rune.home(p), "steers.md")
+    finally:
+        rune.set_tower(None)
+    with c.lock(p.dir):
+        old = ""
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as h:
+                old = h.read()
+        if f"- {line}\n" in old:
+            return None
+        c.write_atomic(path, old + f"- {line}\n")
+    return _act(p, "steer", name, line, undo=f"delete the line '- {line}' from {path}")
+
+
+def _restart(p, r):
+    """A stalled tower's restart (T-3082): its newest generation is copied into a snapshot first, and the copy is the
+    undo. Once per newest generation: a mark stops a stalled tower from snapshotting every round."""
+    name, newest = r["name"], r["newest"]
+    if not os.path.exists(newest):
+        return
+    mark = os.path.getmtime(newest)
+    if load(p)["towers"][name].get("restarted") == mark:
+        return
+    snap = os.path.join(home(p), "snapshots", f"{name}-{time.time_ns()}")
+    base = os.path.basename(newest)
+    os.makedirs(snap)
+    if os.path.isdir(newest):
+        shutil.copytree(newest, os.path.join(snap, base))
+    else:
+        shutil.copy2(newest, os.path.join(snap, base))
+    _tower_set(p, name, restarted=mark)
+    _act(p, "restart", name, f"no new generation in {r['idle_h']:g}h: restarted, its next step runs first",
+         undo=f"rm -rf {newest} && cp -r {os.path.join(snap, base)} {newest}", snapshot=snap)
+
+
+def _touches(row):
+    """The files a tower's newest Mission names: slash-joined words in its mission-*.md files (64 KB read each)."""
+    out = set()
+    if row["missions"] and os.path.isdir(row["newest"]):
+        for f in sorted(os.listdir(row["newest"])):
+            if f.startswith("mission-") and f.endswith(".md"):
+                with open(os.path.join(row["newest"], f), encoding="utf-8", errors="replace") as h:
+                    out.update(PATHS.findall(h.read(65536)))
+    return out
+
+
+def _decide(p, rows):
+    """Väinämöinen's acts before a round's jobs (T-3082): a drifted tower is paused; a stalled one is snapshotted and
+    restarted; a falling one gets a steer; of two towers on the same files the later one waits while it improves and
+    merges (pauses, pointing at the other) when it doesn't. Returns {tower: status} for those that sit out this round."""
+    out, seen = {}, []  # seen: (tower, files) of the towers that may run, ranked first
+    byname = {r["name"]: r for r in rows}
+    for n in order(rows):
+        r = byname[n]
+        if load(p)["towers"][n].get("paused"):
+            out[n] = "paused"
+            continue
+        if r["state"] == "drifted":
+            pause(p, f"drift: off gen-0's rules: the cold read drifted ({r['drift']})", n)
+            out[n] = "paused"
+            continue
+        if r["state"] == "stalled":
+            _restart(p, r)
+        if r["delta"] is not None and r["delta"] < 0:
+            steer(p, n, FALLING_STEER)
+        files = _touches(r)
+        clash = next(((e, files & ef) for e, ef in seen if files & ef), None)
+        if clash:
+            e, shared = clash
+            names = ", ".join(sorted(shared))
+            if r["state"] == "improving":
+                _act(p, "wait", n, f"shares {names} with {e}, which ranks first: it waits this round",
+                     undo="none: it runs the next round")
+                out[n] = "waiting"
+            else:
+                _tower_set(p, n, paused=f"merged into {e}: both write {names}")
+                _act(p, "merge", n, f"merged into {e}: both write {names}; paused, not deleted",
+                     undo=f"fm kalevala resume {n}")
+                out[n] = "merged"
+            continue
+        seen.append((n, files))
+    return out
+
+
+DRIFT_STOP = "drift stop: every tower is off gen-0's rules and paused for it; fm kalevala resume after a steer or a fix"
+
+
+def loop(p, runner=None, stop=None, rounds=None):
+    """Kalevala's rounds, one after another (T-3082 step 3): each round is a watch and then a step, and nothing ends the
+    loop on its own. Halts: the user's pause (fm kalevala pause, read by step); Väinämöinen's drift stop (every tower
+    paused and at least one for drift); stop(), the caller's limit (night's spend, usage or panic) checked before each
+    round; idle (a round runs no job: nothing changes until a tower does); the breaker (serve.FAILS_MAX rounds whose
+    jobs all failed). A budget cap raises budget.BudgetError out of step. rounds bounds a test only."""
+    from sampo import serve
+    n, fails = 0, 0
+    while rounds is None or n < rounds:
+        why = stop() if stop else None
+        if why:
+            return {"halted": why, "rounds": n}
+        r = step(p, runner=runner)
+        n += 1
+        if r.get("halted"):
+            return {"halted": r["halted"], "rounds": n}
+        towers = load(p)["towers"]
+        if towers and all(t.get("paused") for t in towers.values()) \
+                and any(str(t.get("paused")).startswith("drift:") for t in towers.values()):
+            pause(p, DRIFT_STOP)
+            return {"halted": DRIFT_STOP, "rounds": n}
+        ran = [x for x in r["results"] if x["status"] == "ran"]
+        failed = [x for x in r["results"] if x["status"] == "failed"]
+        fails = fails + 1 if failed and not ran else 0
+        if fails >= serve.FAILS_MAX:
+            return {"halted": f"{fails} rounds failed in a row", "rounds": n}
+        if not ran and not failed:
+            return {"idle": "no tower can run a job this round", "rounds": n}
+    return {"rounds": n}
+
+
 def cmd_kalevala(args):
     from sampo import cli as scli
     p = scli.resolve(args)
@@ -408,15 +687,38 @@ def cmd_kalevala(args):
         return scli.out(args, r, f"opened {len(r['opened'])} tower(s), {len(r['skipped'])} already open"
                                  + "".join(f"\n  {t['name']}: {t['aspect']}" for t in r["towers"]))
     if action == "status":
-        r = {"towers": tower_rows(p)}
-        return scli.out(args, r, "\n".join(f"{t['name']}: {t['aspect']} (sealed: {t['sealed']})" for t in r["towers"])
-                        or "no towers yet: sampo kalevala start")
+        m = load(p)
+        shown = acts(p)[-ACTS_SHOWN:]
+        r = {"halted": m.get("halted"), "towers": tower_rows(p), "acts": shown}
+        lines = [f"halted: {m['halted']} (fm kalevala resume)"] if m.get("halted") else []
+        lines += [f"{t['name']}: {t['aspect']} (sealed: {t['sealed']})"
+                  + (f" PAUSED: {t['paused']}" if t.get("paused") else "") for t in r["towers"]]
+        lines += [f"{a['act']} {a['tower'] or ''}: {a['reason']}\n    undo: {a['undo']}" for a in shown]
+        return scli.out(args, r, "\n".join(lines) or "no towers yet: sampo kalevala start")
+    if action == "pause":
+        name = args.tower
+        if name is not None and name not in load(p)["towers"]:
+            raise scli.UsageError(f"kalevala pause: no tower {name!r}")
+        r = pause(p, "paused by the user", name)
+        return scli.out(args, r, f"paused {name or 'the loop'}: no round starts until fm kalevala resume")
+    if action == "resume":
+        name = args.tower
+        if name is not None and name not in load(p)["towers"]:
+            raise scli.UsageError(f"kalevala resume: no tower {name!r}")
+        r = resume(p, name)
+        return scli.out(args, r, f"resumed {name or 'every tower and the loop'}")
     if action == "step":
         r = step(p, k=args.k, dry_run=args.dry_run)
         head = (f"dry run: " if r["dry_run"] else "") + (f"{len(r['results'])} tower(s), at most {r['k']} at once; "
                 f"Kalevala's share ${r['share']:.2f} today, ${r['spent']:.2f} spent")
         return scli.out(args, r, head + "".join(f"\n  {x['tower']}: {x['status']} ({x['stage']})" for x in r["results"])
                         + (f"\n  queued past the share, thinnest first: {', '.join(r['queued'])}" if r["queued"] else ""))
+    if action == "watch":
+        stall_h = STALL_HOURS if args.stall_hours is None else args.stall_hours
+        if not stall_h > 0:  # also refuses nan, which would never stall a tower
+            raise scli.UsageError("kalevala watch: --stall-hours takes a number of hours above 0")
+        r = watch(p, stall_h=stall_h)
+        return scli.out(args, r, "\n".join(_watch_line(t) for t in r["towers"]) or "no towers yet: sampo kalevala start")
     if action == "gen":
         r = gen(p)
         return scli.out(args, r, f"kalevala gen {r['gen']}: {len(r['set'])} tower(s), based on {r['based_on']}; "

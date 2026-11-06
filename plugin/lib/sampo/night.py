@@ -24,7 +24,7 @@ from sampo import serve
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
 _LEASE = None  # T-0921: the open lock file of a running night
-NAMES = ("scout", "dream", "cold files", "guard cases", "steer checks", "compost", "consolidate", "sentinel", "moons grow", "moons funnel", "model bench", "next request", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue", "draft")
+NAMES = ("scout", "dream", "cold files", "guard cases", "steer checks", "compost", "consolidate", "sentinel", "moons grow", "moons funnel", "model bench", "next request", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue", "draft", "kalevala rounds")
 
 
 def current_model(p):
@@ -117,6 +117,9 @@ def jobs(p):
     top = draft._top(p)
     if top and not os.path.exists(os.path.join(p.dir, "draft.json")):  # T-1062: a small task drafted for review, never merged
         out.append((f"draft {top.id}", ["draft"], budget.estimate("run", 1, 0.3)))
+    from sampo import kalevala
+    if kalevala.load(p)["towers"]:  # T-3082: Kalevala's rounds run last, until the night's limit or a halt stops them
+        out.append(("kalevala rounds", ["kalevala", "step"], 0.0))  # est 0: the night's own stop checks the limit each round
     return out
 
 
@@ -492,6 +495,26 @@ def tick(p, fetch_ci=None):
     return res
 
 
+def _kalevala_rounds(p, start, limit):
+    """T-3082: Kalevala's rounds (watch, then step) in this process until the night's spend limit, usage, panic or a
+    halt stops them. The stop is checked before each round, so the limit holds to the round."""
+    from sampo import kalevala
+
+    def stop():
+        if budget.spent()[0] - start >= limit:
+            return f"spend reached the limit ${limit:.2f}"
+        if budget.usage_high(p):
+            return f"usage climbed ({budget.usage_high(p)})"
+        return c.PAUSED if c.panicked() else None
+    try:
+        res = kalevala.loop(p, stop=stop)
+    except budget.BudgetError as e:  # a day or run cap: the rounds stop, the night records why
+        return {"name": "kalevala rounds", "exit": 1, "tail": c.fit(c.plain(str(e)), 160)}
+    why = res.get("halted") or res.get("idle") or ""
+    return {"name": "kalevala rounds", "exit": 1 if "failed in a row" in why else 0,
+            "tail": c.fit(c.plain(f"{res['rounds']} round(s)" + (f"; stopped: {why}" if why else "")), 160)}
+
+
 def cmd_night(args):
     from sampo import cli
     p = cli.resolve(args)
@@ -587,6 +610,9 @@ def cmd_night(args):
         if len(ran) >= serve.FAILS_MAX and all(x["exit"] for x in ran[-serve.FAILS_MAX:]):  # T-0434: the breaker
             stopped = f"{serve.FAILS_MAX} jobs failed in a row"
             break
+        if j["name"] == "kalevala rounds":  # T-3082: the rounds run here until the night's limit or a halt stops them
+            ran.append(_kalevala_rounds(p, start, limit))
+            continue
         serve.beat(p, "night", JOB_TIMEOUT, j["name"])
         try:
             left = ["--max-usd", f"{max(0.0, limit - (budget.spent()[0] - start)):.4f}"] if j["name"] == "queue" else []

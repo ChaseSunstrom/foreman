@@ -416,6 +416,25 @@ class KalevalaStep(ForemanTestCase):
         self.assertTrue(all(e.get("FOREMAN_SPEND_AS") == kalevala.FEATURE for e in envs), envs)
         self.assertEqual(kalevala.spent_today(), round(0.2 * len(ran), 4))
 
+    def test_a_round_charges_each_tower_its_own_spend(self):
+        """A real round: each tower's estimate is charged, settled, and its child's spend is tagged with its name, so
+        the tower's spend is exactly its child's spend and the estimate and settlement net to zero per tower."""
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+
+        def child(argv, cwd, env):
+            with mock.patch.dict(os.environ, env):
+                budget.record("ideas", usd=0.2, runs=1, project=p.slug, detail="child run")
+            return 0
+        res = kalevala.step(p, runner=child)
+        ran = [r["tower"] for r in res["results"] if r["status"] == "ran"]
+        self.assertTrue(ran)
+        rows = {t["name"]: t["spend"] for t in kalevala.watch(p)["towers"]}
+        for n in rows:
+            self.assertEqual(rows[n], 0.2 if n in ran else 0.0, (n, rows))
+        self.assertEqual(kalevala.spent_today(), round(0.2 * len(ran), 4))
+
     def test_the_day_cap_bounds_the_towers_a_round_starts(self):
         from sampo import budget, kalevala
         p = self.project()
@@ -839,3 +858,308 @@ class KalevalaCapabilities(ForemanTestCase):
         self.assertIn("## Capabilities built since gen-0", text)
         self.assertIn("T-0001 (rank ideas): ideas", text)
         self.assertEqual(text.count("## Capabilities built since gen-0"), 1)
+
+
+class KalevalaWatch(ForemanTestCase):
+    """Kalevala part 3, step 1 (T-3082): sampo kalevala watch reads each tower's generation, exam deltas, drift verdict,
+    stall (hours since its newest generation), spend today and open Missions, and prints one line per tower with its
+    state. Read-only: it writes nothing."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        # a Capabilities section makes each tower's next stage runnable (the acts run jobs); KalevalaStep's root charter
+        self.fm("genesis", "init", "--file", self.write(
+            "gen0.md", "root charter\n\n## 2. Capabilities\n1. **Bugs.** finds and fixes broken code. Exam: bug.\n"))
+        self.fm("kalevala", "start")  # efficiency, memory, problem-solving
+        from sampo import budget
+        budget.RUN["usd"] = 0.0
+
+    def write(self, name, text):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w") as f:
+            f.write(text)
+        return path
+
+    def project(self):
+        return c.find_project(self.repo, create=False)
+
+    def in_tower(self, tower, fn):
+        from sampo import rune
+        rune.set_tower(tower)
+        try:
+            return fn(rune.home(self.project()))
+        finally:
+            rune.set_tower(None)
+
+    def grade(self, tower, run, train):
+        def add(home):
+            with open(os.path.join(home, "exam.jsonl"), "a") as f:
+                f.write(json.dumps({"agent": "foreman", "run": run, "model": "sonnet", "split": "train",
+                                    "closed": {"train": list(train), "holdout": []}}) + "\n")
+        self.in_tower(tower, add)
+
+    def make_gen(self, tower, n, when=None, missions=()):
+        def add(home):
+            d = os.path.join(home, f"gen-{n}")
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, "seed.md"), "w") as f:
+                f.write("# Seed\n")
+            for m in missions:
+                with open(os.path.join(d, f"mission-{m}.md"), "w") as f:
+                    f.write("# Mission\n")
+            if when is not None:
+                os.utime(d, (when, when))
+        self.in_tower(tower, add)
+
+    def log_drift(self, tower, verdict):
+        from sampo import rune
+        rune.set_tower(tower)
+        try:
+            rune._log(self.project(), "genesis_drift", data={"verdict": verdict})
+        finally:
+            rune.set_tower(None)
+
+    def test_watch_reads_each_tower_and_prints_one_line_each(self):
+        from sampo import kalevala
+        self.grade("memory", "r1", ["a"])
+        self.grade("memory", "r2", ["a", "b"])
+        self.make_gen("memory", 1, missions=("a", "b"))
+        r = kalevala.watch(self.project())
+        rows = {t["name"]: t for t in r["towers"]}
+        self.assertEqual(sorted(rows), ["efficiency", "memory", "problem-solving"])
+        m = rows["memory"]
+        self.assertEqual((m["generation"], m["closed"], m["delta"], m["missions"]), (1, 2, 1, 2))
+        self.assertEqual(m["state"], "improving")
+        self.assertEqual(rows["efficiency"]["state"], "unscored")
+        self.assertEqual(rows["efficiency"]["missions"], 0)
+        lines = [x for x in self.fm("kalevala", "watch").stdout.splitlines() if x.split(":")[0] in rows]
+        self.assertEqual(len(lines), 3, lines)
+        self.assertTrue(any(x.startswith("memory: improving") and "2 open Mission" in x for x in lines), lines)
+
+    def test_each_state_has_its_own_reading_in_priority_order(self):
+        from sampo import kalevala
+        p = self.project()
+        self.log_drift("efficiency", "drifted")  # drift outranks the exam
+        self.grade("efficiency", "r1", ["a"])
+        self.in_tower("problem-solving", lambda h: (os.chmod(os.path.join(h, "gen-0.md"), 0o644),
+                                                    open(os.path.join(h, "gen-0.md"), "a").write("edited\n")))
+        self.grade("memory", "r1", ["a"])
+        self.grade("memory", "r2", ["a", "b"])
+        now = time.time()
+        self.make_gen("memory", 1, when=now - 50 * 3600)  # no new generation for 50 hours
+        rows = {t["name"]: t for t in kalevala.watch(p, now=now, stall_h=24)["towers"]}
+        self.assertEqual(rows["efficiency"]["state"], "drifted")
+        self.assertEqual(rows["efficiency"]["drift"], "drifted")
+        self.assertEqual(rows["problem-solving"]["state"], "unsealed")
+        self.assertFalse(rows["problem-solving"]["sealed"])
+        self.assertEqual(rows["memory"]["state"], "stalled")
+        self.assertGreaterEqual(rows["memory"]["idle_h"], 49.9)
+        self.assertEqual(rows["memory"]["delta"], 1)  # the exam still reads: stalled is the verdict that counts
+
+    def test_the_exam_states_compare_the_newest_run_with_the_one_before(self):
+        from sampo import kalevala
+        p = self.project()
+        self.grade("efficiency", "r1", ["a", "b"])
+        self.grade("efficiency", "r2", ["a", "b"])
+        self.grade("memory", "r1", ["a", "b"])
+        self.grade("memory", "r2", ["a"])
+        self.grade("problem-solving", "r1", ["a"])
+        rows = {t["name"]: t for t in kalevala.watch(p)["towers"]}
+        self.assertEqual((rows["efficiency"]["state"], rows["efficiency"]["delta"]), ("flat", 0))
+        self.assertEqual((rows["memory"]["state"], rows["memory"]["delta"]), ("falling", -1))
+        self.assertEqual((rows["problem-solving"]["state"], rows["problem-solving"]["delta"]), ("new", None))
+        self.assertEqual(rows["problem-solving"]["closed"], 1)
+
+    def test_watch_writes_nothing(self):
+        from sampo import kalevala
+        p = self.project()
+        self.grade("memory", "r1", ["a"])
+        self.make_gen("memory", 1, missions=("a",))
+
+        def snapshot():
+            out = {}
+            for root, _, files in os.walk(kalevala.home(p)):
+                for f in files:
+                    path = os.path.join(root, f)
+                    out[path] = (os.path.getmtime(path), os.path.getsize(path))
+            return out
+        before = snapshot()
+        kalevala.watch(p)
+        self.fm("kalevala", "watch")
+        self.assertEqual(snapshot(), before)
+
+    def test_a_stall_window_must_be_a_positive_number_of_hours(self):
+        for bad in ("nan", "0", "-3"):
+            r = self.fm("kalevala", "watch", "--stall-hours", bad, check=False)
+            self.assertNotEqual(r.returncode, 0, bad)
+        self.assertEqual(self.fm("kalevala", "watch", "--stall-hours", "0.5").returncode, 0)
+
+    # Kalevala part 3, step 2 (T-3082): the acts. Each is logged in the ledger with its reason and an undo line.
+
+    def runner(self):
+        calls = []
+
+        def run(argv, cwd, env):
+            calls.append(list(argv))
+            return 0
+        return run, calls
+
+    def steers_of(self, tower):
+        return self.in_tower(tower, lambda h: open(os.path.join(h, "steers.md")).read()
+                             if os.path.exists(os.path.join(h, "steers.md")) else "")
+
+    def test_a_drifted_tower_is_paused_and_sits_out_the_round(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+        self.log_drift("memory", "drifted")
+        run, calls = self.runner()
+        res = kalevala.step(p, runner=run)
+        self.assertEqual({x["tower"]: x["status"] for x in res["results"]}["memory"], "paused")
+        self.assertFalse(any("memory" in " ".join(a) for a in calls), calls)
+        act = [a for a in kalevala.acts(p) if a["act"] == "pause"]
+        self.assertEqual([a["tower"] for a in act], ["memory"])
+        self.assertIn("drift", act[0]["reason"])
+        self.assertEqual(kalevala.load(p)["towers"]["memory"]["paused"], act[0]["reason"])
+
+    def test_a_stalled_tower_is_snapshotted_before_its_restart_and_goes_first(self):
+        import time
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+        self.grade("memory", "r1", ["a"])
+        self.make_gen("memory", 1, when=time.time() - 30 * 3600)
+        self.assertEqual(kalevala.order(kalevala.watch(p)["towers"])[0], "memory")  # the stalled tower ranks first
+        run, _ = self.runner()
+        res = kalevala.step(p, runner=run)
+        act = [a for a in kalevala.acts(p) if a["act"] == "restart"]
+        self.assertEqual([a["tower"] for a in act], ["memory"])
+        self.assertTrue(os.path.isfile(os.path.join(act[0]["snapshot"], "gen-1", "seed.md")))
+        self.assertIn(act[0]["snapshot"], act[0]["undo"])
+        # ponytail: memory's stage is 'fatal' in this fixture, so it isn't run; the run-first order is the ranking above
+
+    def test_a_steer_passes_the_drift_check_before_it_is_written(self):
+        from sampo import kalevala
+        p = self.project()
+        self.assertIsNone(kalevala.steer(p, "memory", "MUST: drop gen-0's focus"))
+        self.assertEqual(self.steers_of("memory"), "")
+        self.assertEqual(kalevala.steer(p, "memory", "Keep gen-0's focus on this aspect.")["act"], "steer")
+        self.assertIsNone(kalevala.steer(p, "memory", "Keep gen-0's focus on this aspect."))
+        self.assertEqual(self.steers_of("memory").count("Keep gen-0"), 1)
+        self.assertIn("steer_refused", [a["act"] for a in kalevala.acts(p)])
+
+    def test_two_towers_on_the_same_files_merge_or_wait_and_a_merge_pauses(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+        self.grade("efficiency", "r1", ["a"])
+        self.grade("efficiency", "r2", ["a", "b"])
+        self.grade("memory", "r1", ["a"])
+        self.grade("memory", "r2", ["a"])
+        for t in ("efficiency", "memory"):
+            self.make_gen(t, 1, missions=("a",))
+            self.in_tower(t, lambda h: open(os.path.join(h, "gen-1", "mission-a.md"), "w").write(
+                "Touches plugin/lib/sampo/ideas.py\n"))
+        run, _ = self.runner()
+        res = kalevala.step(p, runner=run)
+        merged = [a for a in kalevala.acts(p) if a["act"] == "merge"]
+        self.assertEqual([a["tower"] for a in merged], ["memory"])
+        self.assertIn("efficiency", merged[0]["reason"])
+        self.assertTrue(kalevala.load(p)["towers"]["memory"]["paused"])
+        self.assertEqual({x["tower"]: x["status"] for x in res["results"]}["memory"], "merged")
+        kalevala.resume(p)
+        self.grade("memory", "r3", ["a", "c"])  # memory improves now: the same files make one of them wait
+        res = kalevala.step(p, runner=run)
+        self.assertEqual({x["tower"]: x["status"] for x in res["results"]}["memory"], "waiting")
+        self.assertEqual([a["tower"] for a in kalevala.acts(p) if a["act"] == "wait"], ["memory"])
+
+    def test_a_tower_flat_two_generations_gives_its_slot_to_one_that_improves(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=0.6)  # the share is half the day (0.30): one job's 0.25 estimate fits, the second is queued
+        for r, train in (("r1", ["a"]), ("r2", ["a"]), ("r3", ["a"])):
+            self.grade("memory", r, train)
+        for r, train in (("r1", ["a"]), ("r2", ["a", "b"]), ("r3", ["a", "b", "c"])):
+            self.grade("efficiency", r, train)
+        run, calls = self.runner()
+        res = kalevala.step(p, runner=run)
+        self.assertEqual(res["queued"][-1], "memory")  # the stuck tower waits last
+        slot = [a for a in kalevala.acts(p) if a["act"] == "slot"]
+        self.assertEqual([a["tower"] for a in slot], ["memory"])
+        self.assertIn("improve", slot[0]["reason"])
+
+    def test_pause_halts_every_round_until_resume_and_shows_in_status(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+        kalevala.pause(p, "user stop")
+        run, calls = self.runner()
+        res = kalevala.step(p, runner=run)
+        self.assertEqual(res["halted"], "user stop")
+        self.assertEqual(calls, [])
+        self.assertIn("pause", [a["act"] for a in self.fm_json("kalevala", "status")["acts"]])
+        kalevala.resume(p)
+        res = kalevala.step(p, runner=run)
+        self.assertNotIn("halted", res)
+        self.assertTrue(calls, res["results"])
+
+    def test_the_loop_has_no_end_of_its_own_only_the_caller_user_or_a_halt_stops_it(self):  # T-3082 step 3
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+        run, calls = self.runner()
+        seen = []
+
+        def stop():  # the caller's limit: it's asked before each round, and only this one ends the loop
+            seen.append(1)
+            return "limit reached" if len(seen) > 3 else None
+        res = kalevala.loop(p, runner=run, stop=stop)
+        self.assertEqual(res, {"halted": "limit reached", "rounds": 3})
+        self.assertTrue(calls)
+
+    def test_a_user_pause_during_a_round_halts_the_next_one(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+
+        def run_and_pause(argv, root, env):
+            kalevala.pause(p, "user stop")
+            return 0
+        res = kalevala.loop(p, runner=run_and_pause, rounds=5)
+        self.assertEqual(res, {"halted": "user stop", "rounds": 2})
+
+    def test_every_tower_off_the_rules_is_a_drift_stop_that_resume_clears(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+        for name in ("efficiency", "memory", "problem-solving"):
+            self.log_drift(name, "drifted")
+        run, calls = self.runner()
+        res = kalevala.loop(p, runner=run, rounds=5)
+        self.assertEqual(res, {"halted": kalevala.DRIFT_STOP, "rounds": 1})
+        self.assertEqual(calls, [])
+        self.assertEqual(kalevala.load(p)["halted"], kalevala.DRIFT_STOP)
+        kalevala.resume(p)
+        self.assertNotIn("halted", kalevala.step(p, runner=run))
+
+    def test_a_round_that_can_run_nothing_is_idle_not_a_spin(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=5.0)
+        for name in ("efficiency", "memory", "problem-solving"):
+            kalevala.pause(p, "hold", name)
+        run, calls = self.runner()
+        res = kalevala.loop(p, runner=run, rounds=5)
+        self.assertIn("idle", res)
+        self.assertEqual(res["rounds"], 1)
+        self.assertEqual(calls, [])
+
+    def test_the_share_and_day_cap_stop_the_loop_with_an_error_not_a_hang(self):
+        from sampo import budget, kalevala
+        p = self.project()
+        budget.set_caps(day=0.1)  # below one job's estimate: the cap refuses the round
+        run, calls = self.runner()
+        with self.assertRaises(budget.BudgetError):
+            kalevala.loop(p, runner=run, rounds=5)
+        self.assertEqual(calls, [])

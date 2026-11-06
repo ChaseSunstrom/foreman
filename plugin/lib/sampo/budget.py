@@ -88,6 +88,9 @@ RUN = {"usd": 0.0}  # T-2871: what this command has spent so far; one process is
 
 def _record(feature, usd, runs, tokens, project, detail):
     feature = os.environ.get("FOREMAN_SPEND_AS") or feature  # T-3081: a Kalevala tower's job spends under Kalevala's line
+    tower = os.environ.get("FOREMAN_SPEND_TOWER")  # T-3082: and its spend names the tower, so watch can read each tower's own
+    if tower:
+        detail = f"tower:{tower} {detail}"
     if usd:
         RUN["usd"] += usd
     e = {"ts": c.now(), "day": _today(), "feature": feature, "usd": round(usd, 4) if usd is not None else None,

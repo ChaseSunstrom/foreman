@@ -7865,10 +7865,13 @@ def _build_parser(only=None):
                                                          "publish a tower change starts)")
     s = add("kalevala", lazy("sampo.kalevala", "cmd_kalevala"), tier=("Finding your way", 459), help="Kalevala: one Genesis "
             "tower per aspect with open coverage (plus problem solving, memory, efficiency), each sealed from the root gen-0 "
-            "and its aspect; status lists them; step runs each tower's next genesis step as a job; gen writes Kalevala's "
+            "and its aspect; status lists them; watch reads each tower's state (read only, T-3082); step runs each tower's next genesis step as a job; gen writes Kalevala's "
             "next generation (its tower set and setup) and select N judges it by the towers' exam results (T-3081)")
-    s.add_argument("action", nargs="?", choices=("start", "status", "step", "gen", "select"))
+    s.add_argument("action", nargs="?", choices=("start", "status", "watch", "step", "gen", "select", "pause", "resume"))
     s.add_argument("n", nargs="?", type=int, default=None, help="select: the generation to judge")
+    s.add_argument("--tower", default=None, help="pause, resume: one tower (default: the whole loop)")
+    s.add_argument("--stall-hours", type=float, default=None, help="watch: hours with no new generation before a tower "
+                                                                    "is stalled (default 24)")
     s.add_argument("--dry-run", action="store_true", help="step: name the jobs and the share; run none")
     s.add_argument("--k", type=int, default=None, help="step: towers at once (default: the local model's slots)")
     s = add("find", lazy("sampo.find", "cmd_find"), tier=("Finding your way", 457), help="deterministic finders over a tree: "
