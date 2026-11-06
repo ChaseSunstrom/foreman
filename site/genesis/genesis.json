@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-06T03:40:32Z",
+ "updated": "2026-11-06T03:45:51Z",
  "rev": "5c403348",
  "capabilities": [
   {
@@ -37484,8 +37484,8 @@
     "novelty": 72
    },
    "merged": 263,
-   "kept": 901,
-   "pending": 18
+   "kept": 919,
+   "pending": 0
   },
   "families": [
    {
@@ -40727,7 +40727,7 @@
   "families_total": 782,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 901
+   "total": 919
   }
  },
  "steer": {
