@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T18:28:10Z",
- "rev": "4f33ca9db",
+ "updated": "2026-11-06T18:33:16Z",
+ "rev": "5a77ed1f5",
  "capabilities": [
   {
    "n": 1,
@@ -36247,13 +36247,13 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 889,
+ "unproven": 891,
  "unproven_kinds": {
   "meaning-notes": 393,
-  "meaning-user": 255,
+  "meaning-user": 256,
   "research-uncited": 34,
-  "perf-typed": 63,
-  "typed": 43,
+  "perf-typed": 65,
+  "typed": 44,
   "red": 86,
   "tui-unshot": 12,
   "docs": 129,
@@ -37481,11 +37481,11 @@
    "rejected": {
     "kill": 17074,
     "tier": 11765,
-    "novelty": 116
+    "novelty": 117
    },
    "merged": 669,
-   "kept": 1357,
-   "pending": 13
+   "kept": 1369,
+   "pending": 0
   },
   "families": [
    {
@@ -40750,7 +40750,7 @@
   "families_total": 1066,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1357
+   "total": 1369
   }
  },
  "steer": {
