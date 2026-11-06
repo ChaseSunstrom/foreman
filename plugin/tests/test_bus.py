@@ -272,7 +272,7 @@ class Lease(Base):
 
     def test_block_keeps_the_lane_pre_claim_and_drop_releases_it(self):  # T-3398 review
         p = self.project()
-        for verb, left in (("block", ["pre.py"]), ("drop", [])):
+        for verb, left in (("block", ["own.py", "pre.py"]), ("drop", [])):  # T-3432: an open task keeps all its leases
             data = {}
             bus._claim(data, p, "s1", "T-0001", "own.py", "*", 600)
             bus._claim(data, p, "lane-T-0001", "T-0001", "pre.py", "*", 600)

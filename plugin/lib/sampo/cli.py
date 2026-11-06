@@ -92,10 +92,10 @@ def mutate(p, tid, fn, event, data=None):
         before = c.stage(b)  # T-1137: in-memory only, no extra loads
         result = fn(b)
         c.save_brief(p, b)
-        if b.status in c.CLOSED or b.status in ("blocked", "deferred"):  # T-3398: a closed task holds no file leases
+        if b.status in c.CLOSED:  # T-3398: a closed task holds no file leases; open ones (blocked too) keep theirs (T-2870, T-3432)
             try:
                 from sampo import bus
-                bus.release(p, b.id, preclaim=b.status in c.CLOSED)  # a blocked lane resumes: its pre-claim stays
+                bus.release(p, b.id, preclaim=True)
             except Exception as e:  # the status changed already; a lease left to expire must not make that look failed
                 print(f"fm: warning: leases of {b.id} not released: {e}", file=sys.stderr)
         c.log_event(p, event, task=b.id, data=data or {}, session=session())
