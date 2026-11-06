@@ -135,6 +135,27 @@ class HookCase(ForemanTestCase):
             return [json.loads(l) for l in f]
 
 
+class HookMs(HookCase):
+    def test_each_hook_ms_event_names_the_tool_and_the_guards_own_ms(self):  # T-3352
+        self.fm("init")
+        self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "echo hi"}, "cwd": self.repo})
+        self.hook("PreToolUse", {"tool_name": "Read", "tool_input": {"file_path": os.path.join(self.repo, "README.md")}})
+        rows = [e for e in self.events() if e.get("kind") == "hook_ms"]
+        self.assertEqual([e.get("tool") for e in rows[-2:]], ["Bash", "Read"])
+        bash = rows[-2]
+        self.assertIsInstance(bash.get("guard_ms"), (int, float), bash)
+        self.assertLess(bash["guard_ms"], bash["ms"], "the notes after the guard take time of their own")
+        self.assertNotIn("decided", bash)
+        self.assertNotIn("guard_ms", rows[-1], "the Read path never reaches the guard's mark")
+
+    def test_other_events_carry_neither_field(self):  # T-3352
+        self.fm("init")
+        self.hook("SessionStart", {"source": "startup"})
+        ss = [e for e in self.events() if e.get("kind") == "hook_ms" and e.get("event") == "SessionStart"][-1]
+        self.assertNotIn("guard_ms", ss)
+        self.assertNotIn("tool", ss)
+
+
 class SessionStart(HookCase):
     def run_ss(self, source="startup"):
         return self.hook("SessionStart", {"source": source}, env={"CLAUDE_ENV_FILE": self.env_file})
@@ -1292,6 +1313,12 @@ class PromptApprovals(HookCase):
 
     def allow(self):
         return c.find_brief(self.project(), self.tid).meta.get("allow") or []
+
+    def test_an_ask_decision_is_marked_in_the_hook_ms_event(self):  # T-3352
+        self.call("PreToolUse")
+        e = [x for x in self.events() if x.get("kind") == "hook_ms"][-1]
+        self.assertEqual((e.get("tool"), e.get("decided")), ("Bash", "ask"), e)
+        self.assertLessEqual(e["guard_ms"], e["ms"])
 
     def test_fm_ask_raises_a_permission_prompt_that_says_what_it_grants(self):
         out = parse(self.call("PreToolUse"))["hookSpecificOutput"]

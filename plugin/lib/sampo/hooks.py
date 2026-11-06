@@ -171,13 +171,27 @@ def run(event, raw):
                                  f"(it runs again at {time.strftime('%H:%M', time.localtime(until))})")
     if event not in UNTIMED:
         ms = round((time.monotonic() - t0) * 1000, 1)
+        extra = {}
+        try:  # T-3352: PreToolUse rows name the tool and the guard's own time (only when the guard ran to its decision)
+            tm = dict(_TIMING)
+            _TIMING.clear()
+            if event == "PreToolUse":
+                extra["tool"] = tm.get("tool", "")
+                if "guard" in tm:
+                    extra["guard_ms"] = round((tm["guard"] - t0) * 1000, 1)
+                if "decided" in tm:
+                    extra["decided"] = tm["decided"]
+        except Exception:
+            extra = {}
         hl = c.host_load()  # T-2798: load per CPU, so fm doctor's SLO leaves out runs on a busy machine
         _event({"kind": "hook_ms", "event": event, "ms": ms, "rev": _rev(),  # T-0486: fm doctor's SLO by revision
+                **extra,
                 **({"load": round(hl[0] / hl[1], 2)} if hl and hl[1] > 0 else {})})
     return code
 
 
 _REV = None
+_TIMING = {}  # T-3352: the PreToolUse call's tool name and the instant the guard had decided
 
 
 def _rev():
@@ -1957,6 +1971,7 @@ def _pre_tool_use(raw):
     try:
         pl = json.loads(raw)
         tool = pl.get("tool_name", "")
+        _TIMING["tool"] = tool if isinstance(tool, str) else ""
         if os.environ.get("FOREMAN_FAULT_LANE"):  # T-2384: an exam's planted stop; one env read when unset
             stop = _lane_fault(pl)
             if stop:
@@ -2132,7 +2147,9 @@ def _pre_tool_use(raw):
     except Exception:
         log_error("PreToolUse", _tb())
         decision = None
+    _TIMING["guard"] = time.monotonic()  # the guard has decided (before the snapshot note and the builders)
     if decision:  # fm ask: Claude Code's own permission prompt carries the request to the user
+        _TIMING["decided"] = decision[0]
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision[0],
                                                  "permissionDecisionReason": decision[1]}}))
         return 2 if decision[0] == "deny" else 0
