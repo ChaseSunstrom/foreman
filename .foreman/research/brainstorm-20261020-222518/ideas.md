@@ -1,0 +1,786 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 522 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Diagnose a silent run in the first ten seconds — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Preflight the runner before the first request — near T-0897 (done): Fm spec starts from the input/output examples the user alre…
+- Slim nested workers by default — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Make `fm code` answer "what should I work on?" — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Pick the runner per task automatically, and show why — near T-0960 (done): New verbs: fm oops, fm round close, fm show, fm release-che…
+- Resume any interrupted run exactly where it stopped
+- Auto-brainstorm from friction, with a visible receipt — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Quote-back the request into a checkable definition of done — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Show per-project cost and time spent, weekly — near T-0116 (done): Size words with meaning: typical time per type and size, ti…
+- Run the whole queue unattended with one stop-line — near T-0778 (done): Phone push when the user is needed or the queue drains: the…
+- Wild: Adopt an existing Claude Code session into fm code — near T-1086 (done): Builder sandbox and outbound ledger: builders run under Cla…
+- Wild: Type a sentence, get the runner — near T-1063 (done): Steers compile to checkers: a steer or interrupt is typed (…
+- Wild: A "rubber duck" runner that only asks questions
+- Diagnose a silent run before the user asks — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Cap and price every runner call up front — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Self-trigger the friction-to-round loop — near T-0187 (done): Self-improvement scoreboard: the friction digest rechecks e…
+- Preflight a project before the first run — near T-1085 (done): State rollback on upgrade: fm keeps a snapshot of state bef…
+- Detect Foreman-inside-Foreman at the process level — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Survive the closed lid: resumable runs — near T-0693 (done): Milestone: Intelligence — Reasoning and thought process
+- Choose the runner by evidence, per request kind — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Fleet view: one project's stuck, another's done — near T-1007 (done): A one-off session leaves the project's briefs untouched thr…
+- Wild: Foreman as a menu-bar/tmux "shift supervisor"
+- Wild: Complaint-to-check compiler — near T-1063 (done): Steers compile to checkers: a steer or interrupt is typed (…
+- Wild: Ask any project from anywhere — near T-1085 (done): State rollback on upgrade: fm keeps a snapshot of state bef…
+- Make config one file with a doctor that explains itself — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Ratchet "first five minutes" in CI — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Audition every runner on my own repo — near T-0672 (done): Milestone: Features — Guard and safety
+- Show a roll call on first launch — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Quote the startup tax before a worker runs — near T-1284 (done): macOS: fm code --worker, the guard's /tmp case, the reaper,…
+- Type a request and see where it goes before Enter — near T-1283 (done): Foreman Code TUI: a beautiful, customizable, extendable ter…
+- Jump to a project by name — near T-1183 (done): `fm task block` and `fm task defer` accept `--until "when C…
+- Show a lineage badge for who is running whom
+- Show "You said / we did" on the home screen — near T-0674 (done): Milestone: Features — Observability, replay and trust
+- Talk to settings in plain words — near T-1220 (done): Feature pages for the site: one page per Foreman capability…
+- Name every run like a journal entry — near T-1194 (done): Guard parses python -c code like quoted heredoc bodies befo…
+- Sweep one request across many projects — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Let a second CLI cross-examine the diff
+- Make the home screen greet you with the state of play
+- Print a heads-up when the run is waiting on the CLI, not on you — near T-0960 (done): New verbs: fm oops, fm round close, fm show, fm release-che…
+- Diagnose silent runs and say why — near T-0438 (done): Capture flags a re-ask of dropped work and a veto contradic…
+- Detect duplicate Foreman installs and fix them — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Measure and cap the worker launch tax
+- Probe every runner into a capability matrix — near T-0442 (done): Guard parity across harnesses: same decision on codex, gemi…
+- Layer config with an explainer and a first-run wizard — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Route steps across runners by role, cost and failure — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Schedule the cross-project queue with caps and fairness — near T-0328 (done): FEATURE: Foreman Desktop v2 — clean up the UI so it looks l…
+- Run each lane in its own git worktree — near T-1106 (done): - `fmtidy.unblocked` (fmtidy.py:118) has the same lane and …
+- Serve fm code as an editor agent over ACP and MCP — near T-0945 (done): fm lib source: index third-party skill repos read-only (rea…
+- File a task automatically from a stalled or failed run — near T-1117 (done): Close enforces the gates: fm task finish runs fm check --af…
+- Wild: Resolve the project from the request — near T-1320 (done): Can you show better examples of fm code on the website? and…
+- Wild: Race two runners on one task and keep the cheaper green one — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Wild: Learn the default runner per kind of request — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Run workers in a lean, isolated profile — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Diagnose stalls and offer a fix — near T-0207 (done): Debugging ledger: hypotheses in the brief that fm next driv…
+- Probe each runner before the first real request — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Reap orphans after a hard kill
+- Make bare `fm` open the app and `fm setup` fix PATH
+- Show where every config value came from — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Schedule runs across projects with runner quotas and fallback
+- Run a nightly canary of the request kinds on every runner — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Expose the harness as an MCP server — near T-0946 (done): MCP: a great Foreman MCP server (state, stack library, zero…
+- Discover projects on its own — near T-1131 (done): Fm check --affected runs nothing when the change is only a …
+- Learn a runner from its own `--help` — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Race two runners on the plan and keep the better one — near T-1320 (done): Can you show better examples of fm code on the website? and…
+- Supervise a human-driven interactive CLI through a pty
+- Speak Agent Client Protocol to agent CLIs
+- Reap orphaned runners with a process registry — near T-1094 (done): Fmbench.py:259-267` already kills the process group on time…
+- Add a stall watchdog with a named diagnosis
+- Journal every run so `fm code --resume` continues after a crash — near T-1188 (done): `fm release VERSION` chains release-check, canary, the rele…
+- Preflight every runner with a one-token probe — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Budget and cap nested planner calls — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Fall back across runners on classified failures — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Run worker turns in a throwaway worktree — near T-1294 (done): fm code --worker: a worker's own edits count as the run's f…
+- Stop nested Foreman with a depth marker — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Lock tasks across projects and app instances — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Write config atomically, validate it, and self-repair — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Self-notice friction and open a diagnostic — near T-0690 (done): Milestone: Intelligence — Metacognition and calibration
+- Kill the process at random points and compare the end state — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Cover every CLI adapter with a scripted misbehaving fake
+- Snapshot each step to a shadow ref for instant rollback
+- Make bare `fm code` do the one obvious thing — near T-1258 (done): A context-tax ratchet: a replayed hook session's injected b…
+- Collapse runner setup to zero questions plus one line — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Add one `fm code why` command that answers "is it doing anything?" — near T-1220 (done): Feature pages for the site: one page per Foreman capability…
+- Run nested workers with a bare profile by default
+- Make one process group the unit of a run — near T-1094 (done): Fmbench.py:259-267` already kills the process group on time…
+- Show the project list from what's already on disk, no registry — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Print a plain status line when not a tty — near T-1039 (done): Band tree polish (screenshot 22:28): sticky, fixed height w…
+- Delete the panels and settings nobody uses, measured locally
+- Wild: Make the whole TUI one sentence that grows — near T-1039 (done): Band tree polish (screenshot 22:28): sticky, fixed height w…
+- Wild: Let Foreman file its own friction tickets from your words — near T-0950 (done): fm scout: Foreman finds its own work (Claude Code updates, …
+- Wild: Offer `fm code` as a shell prompt segment instead of an app
+- Replace the many themes with one palette plus an accent flag — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Preflight every runner before its first real call — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Add a silence watchdog that diagnoses and acts
+- Detect duplicate Foreman installs and name the live one — near T-0707 (done): Frontier 07 — Knowledge graph
+- Route tasks to the cheapest runner that has passed that kind — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Run a supervisor daemon so the TUI is only a client — near T-1300 (done): Foreman Code TUI in motion: a truecolor renderer, eased ani…
+- Reap orphans and offer to resume interrupted runs — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Teach Foreman an unknown CLI by probing it — near T-1214 (done): fm code --worker: an external CLI does the work, and the ha…
+- Wild: Offer fm code as an MCP tool that other agents call — near T-1031 (done): Chat UI matches the panel look: section-style headers (bold…
+- Wild: Let Foreman dogfood itself nightly across all runners
+- Wild: Open the home screen on "what needs you", ranked across projects — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Design the home screen as a project deck, not a list — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Show a "no progress" diagnosis in place of a silent spinner — near T-1300 (done): Foreman Code TUI in motion: a truecolor renderer, eased ani…
+- Add a runner picker that looks like a fleet bay
+- Make first launch a guided, zero-text setup strip
+- Draw duplicate-Foreman detection as a visible "who's in charge" badge
+- Animate orphan cleanup on quit — near T-0108 (done): foreman-ui 0.4.0: mascot, whole-queue progress, size words,…
+- Ghost-lane for multi-project runs — near T-1164 (done): Feed a task's brief with the defect classes confirmed by re…
+- Put a token-weight meter on every worker launch
+- Wild: Let the home screen be a harbor map
+- Wild: Auto-open a "what's wrong" overlay when friction is detected — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Wild: Command line that doubles as a request box — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Dock-pane trailing mode for use beside Claude Code — near T-1033 (done): Chat window: a live tree like the Agents graph, the session…
+- Persist the last view so reopening feels like resuming
+- Add `fm code setup` as a one-screen first-run wizard that is also the doctor — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Put every setting in one layered config with `fm code config` get/set/explain — near T-1279 (done): Reply format in the rules; fm install-user stops setting Fo…
+- Detect and refuse duplicate Foreman when run as a Claude plugin worker — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Run a preflight "can this runner work here?" probe per project and runner — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Store per-project overrides in `.foreman/code.toml`, committed or ignored by choice — near T-0707 (done): Frontier 07 — Knowledge graph
+- Import runner config from other tools (Claude settings, Aider config, Codex config, env API keys)
+- Validate config at load with line-accurate errors and a safe fallback to last-good
+- Add `fm code install-check` that audits shell integration (PATH, completions, tmux, terminal capability)
+- Wild: Let Foreman notice setup friction itself and repair it unprompted
+- Wild: Offer a "token diet" profile that reports and trims what nested workers load
+- Wild: Support a shareable setup as one pasteable code (runners, theme, defaults, no secrets)
+- Add a "which runner for which task" router with learned defaults from bench grades
+
+## Round 2
+- Answer "what should I do next?" from the home screen — near T-0917 (done): Bare fm inside a project answers what now: the next action …
+- Make a run's first 30 seconds visibly alive — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Turn a stalled run into a task automatically — near T-1032 (done): Learn a fix once, apply it every time: when a session hits …
+- Ship `fm code doctor` that fixes the first-five-minutes path — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Show the cost of a request before it runs — near T-0977 (done): Skills get used without asking: a zero-token UserPromptSubm…
+- Keep one conversation across runs, per project — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Hand the user a "while you were away" digest across all projects — near T-1320 (done): Can you show better examples of fm code on the website? and…
+- Let one sentence reroute a running task to another runner
+- Wild: Adopt an already-running Claude Code session as a lane — near T-1086 (done): Builder sandbox and outbound ledger: builders run under Cla…
+- Wild: Say the project in the request, let Foreman find it — near T-1036 (done): Cards actually used, and many more of them: inject framewor…
+- Wild: Rehearse a request against a dry-run runner first
+- Wild: Publish a per-runner report card from the user's own history — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+- Answer "did my words land?" with a request echo before any work starts — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Make every silent minute self-explaining with a live "what it's waiting on" line — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Turn friction phrases into a standing, self-filed diagnostic round — near T-0125 (done): Recursive self-improvement loop: fm friction digests Forema…
+- Offer "what should I work on?" as the bare-`fm code` landing answer — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Make wrong-directory runs impossible to miss — near T-1215 (done): fm code bench: grade any model or worker as a Foreman worke…
+- Ship `fm code why`: one command that explains the last run or the current silence
+- Price and time the first call before it runs, with a one-key cheaper path — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Let Foreman keep a "last session" so reopening resumes the thing you were doing — near T-0887 (done): Count bare keep-going prompts (continue, keep going, go on)…
+- Install check that fixes the shell itself (wild) — near T-1183 (done): `fm task block` and `fm task defer` accept `--until "when C…
+- Dock beside Claude Code as a live companion, not a separate app (wild)
+- Hand the user a morning digest across all projects when unattended runs end (wild)
+- Suggest the next request from the repo — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Offer a follow-up after every close — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Reveal the result with one key — near T-1254 (done): Benchmarks page: cost per fully-correct session (long sessi…
+- Paste a screenshot into the request
+- Say goodnight to start an unattended shift
+- Rotate "you haven't tried this" tips from local usage
+- Show what the first call is loading, live — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Give each runner a career card — near T-0938 (done): Pane stays put: volatile cards hold their height and linger…
+- Ask for a mid-run status in plain words
+- Wild: Add a "ghost of Foreman past" that predicts the run's length
+- Wild: Turn the home screen into a living desk of project cards — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Wild: Let the user name a runner a nickname and a voice
+- Close each run with a one-line "what I'd do next" — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Wild: Hand off a live Claude Code session by saying "take this to fm code" — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Continue a closed run with a follow-up — near T-1188 (done): `fm release VERSION` chains release-check, canary, the rele…
+- Mention files and images in the request — near T-0286 (done): Self-improvement pass 4: guard heredoc precision, test lock…
+- Write one rules file per CLI from a single source — near T-0981 (done): Guard: a cat >> heredoc append to plugin/tests/*.py (or a w…
+- Pause on a runner's usage limit and resume at reset — near T-0973 (done): Fm cost --forecast: when the 5-hour and weekly windows fill…
+- Open a PR from a proved run — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Turn an issue into a run — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Pack a repo map for small local models — near T-0707 (done): Frontier 07 — Knowledge graph
+- Record recipes for repeatable requests — near T-1212 (done): fm code: the harness-run loop, where the model fills slots …
+- Pin and watch the CLI versions of every adapter — near T-1076 (done): Upstream watch: fm doctor matches recurring Claude Code err…
+- Wild: Fix the command I just ran — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Review my own hand edits as I make them — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Do it like that commit — near T-1283 (done): Foreman Code TUI: a beautiful, customizable, extendable ter…
+- Wild: Dictate a request — near T-1086 (done): Builder sandbox and outbound ledger: builders run under Cla…
+- Undo a whole run in one command — near T-1033 (done): Chat window: a live tree like the Agents graph, the session…
+- Keep one resident worker session per project and runner — near T-0775 (done): One-off headless claude -p sessions answer their prompt and…
+- Plan routine requests without a model — near T-1283 (done): Foreman Code TUI: a beautiful, customizable, extendable ter…
+- Give every runner call a deadline, token ceiling and /proc probe
+- Describe runners as data manifests — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Project one rules source into each CLI's native instruction channel — near T-1165 (done): Add `fm inbox spec FILE` that captures each unchecked `- [ …
+- Cage the worker in bubblewrap or sandbox-exec
+- Wrap hand-launched CLIs with PATH shims — near T-1214 (done): fm code --worker: an external CLI does the work, and the ha…
+- Let a new runner earn trust on probation
+- Store run ledgers in git refs so they travel with the repo
+- Run a worker on another machine over ssh — near T-0711 (done): Frontier 11 — Cockpit UI
+- For Claude users, make bare `fm code` a thin launcher — near T-1294 (done): fm code --worker: a worker's own edits count as the run's f…
+- Show the cost of a session before it starts — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Mine the user's own complaints into a regression suite — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Write a run journal and resume from it — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Run every runner adapter against a misbehaving fake — near T-0901 (done): Commands fm stores and runs later bypass the guard: a verif…
+- Write config atomically with a last-good copy and a doctor line — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Wild: Mutate real logs to fuzz the whole app
+- Wild: Quarantine a crash loop into safe mode — near T-1081 (done): Colourblind palette and a time scrubber for the pane (catal…
+- Route every runner launch through one `spawn_runner()` — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Define runners as 8-line spec files — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- End every fm code failure with one "Next:" command — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Pipe stdin in as the request context — near T-1123 (done): Guard gaps a review found: (1) non-recursive rm fed targets…
+- Give `fm code` one grammar: `fm code [REQUEST]`, everything else a flag — near T-0707 (done): Frontier 07 — Knowledge graph
+- Cap `fm code --help` at one screen and ratchet it — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Make prompts optional, with every decision logged for review — near T-0676 (done): Milestone: Features — Performance and cost
+- Ship `fm.pyz`, a single-file zipapp, so fm works with no plugin or PATH setup
+- Lint a six-noun vocabulary in all UI strings
+- Wild: Treat a `TODO.fm` file in any project as the queue — near T-1073 (done): Cross-repo memory: fm recall searches the user's other Fore…
+- Wild: Pick a runner by intent: `--careful`, `--cheap`, `--free`
+- Wild: Print the whole app state as a single sentence when you run `fm code` without a tty
+- Wild: Make `fm code` refuse to start a second copy of itself, then adopt the first
+- Make fm code a persistent supervisor daemon with the TUI as a thin client
+- Add a runner "audition" that races all detected CLIs on a user's real repo and writes a routing table
+- Detect and collapse duplicate Foreman by a lineage marker in the process environment
+- Run a silence watchdog that classifies why a run is quiet and acts
+- Make friction detection a built-in hook that opens a brainstorm task with a receipt — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Ship an MCP/ACP server so Claude Code, Zed and Cursor can call fm code as a tool — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Add a cross-project scheduler with runner quotas, fairness and fallback on classified failure
+- Wild: Resolve the project and runner from a sentence typed on the home screen — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Wild: Adopt a live interactive Claude Code session into fm code through a pty — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Wild: Nightly self-dogfood canary that runs every request kind on every runner and files regressions
+- Add a one-line `fm code why` plus a shareable diagnostic bundle — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Layer config as global, project and env with `fm code config explain` and last-good fallback — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Project deck home screen with live cards — near T-0939 (done): Pane shows skill use: skills invoked, stack cards read, and…
+- Silent-run face: a "waiting on the CLI" scene
+- Runner bay picker with capability lamps
+- Orphan-reap choreography on quit
+- Lineage ribbon for who runs whom
+- First-launch roll call as the setup wizard
+- Cross-project attention strip — near T-0054 (done): Opt-in cross-project lessons with a privacy filter (paths, …
+- Config explainer view with provenance chips
+- Wild: Harbor map of projects — near T-1085 (done): State rollback on upgrade: fm keeps a snapshot of state bef…
+- Wild: "Startup tax" bar that fills as the worker boots
+- Wild: Type-ahead router preview
+- Run-state tab title and prompt segment
+- Skeleton-to-content load for the project deck
+- Run a first-launch wizard that is also the doctor — near T-0950 (done): fm scout: Foreman finds its own work (Claude Code updates, …
+- Probe every runner for its real startup tax — near T-1284 (done): macOS: fm code --worker, the guard's /tmp case, the reaper,…
+- Detect duplicate Foreman installs and choose one owner — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Write layered project config that travels with the repo — near T-1107 (done): Guard gap: an Edit/Write (and fm edit) to a repo's .git/con…
+- Import runners from the tools already on the machine — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Learn an unknown CLI from its help text — near T-0274 (done): Gate and CLI friction: flake ledger in fm check, nearest-co…
+- Run setup friction through the self-notice loop — near T-0187 (done): Self-improvement scoreboard: the friction digest rechecks e…
+- Wild: Accept a pasteable setup code
+- Wild: Hold a "rehearsal" run before trusting a new runner — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Wild: Ask for config in plain words
+- Wild: Offer a "token diet" profile for nested Claude
+
+## Round 3
+- Finish the job for the user: land a proved run as a merged PR or local merge in one key — near T-0280 (done): Bench family: judged cases, plugin duels, version replays, …
+- Make the first request after install succeed or explain in under 60 seconds — near T-0276 (done): fm second: one primitive for independent second reads — riv…
+- Keep the user's own phrase-to-action vocabulary: learn "do the usual" — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Show a weekly "what Foreman did for you" report across projects — near T-1320 (done): Can you show better examples of fm code on the website? and…
+- Resolve a request that spans projects into linked tasks
+- Make user complaints into standing regression checks automatically — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Offer "explain this repo to me" as the zero-risk first run — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Price every runner by real outcome: cost per proved task, per kind — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Wild: Let the user text a request from their phone and get the receipt back
+- Wild: Run a "second opinion" from a different runner only when the first one's proof is thin — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Wild: Take over a project the user abandoned: "what was I doing here?" — near T-1061 (done): Calibration ledger: a plan predicts its size (files touched…
+- Wild: Say "stop being annoying" and have Foreman trim its own prompts and notes — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Trust the first minute: show "alive" evidence before any model answers — near T-0674 (done): Milestone: Features — Observability, replay and trust
+- Warn when the cwd isn't the project you meant — near T-0855 (done): A fresh install is clean and works from a shell: doctor pas…
+- Make Enter cancel-safe: Ctrl-C always returns a summary and leaves no processes
+- Show the money before it burns: a startup-tax estimate per runner, per project
+- Turn the user's complaint into the next task automatically (friction receipt) — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Keep a "standing permission" record so release and push never ask again — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Put a "did you mean this project?" resolver on the home screen — near T-0909 (done): Can you super improve the UI, better animations/visuals for…
+- Export a one-paste bug report for Foreman's own failures — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Wild: Let Foreman say "I'm stuck" in your own notifications, with the fix attached
+- Wild: A "second opinion" button that sends the stuck step to another runner
+- Make duplicate-Foreman detection a visible fact, not just a silent fix — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Record each friction-free first run as a regression fixture — near T-0705 (done): Frontier 05 — Ambient verification and test intelligence
+- Greet by project, not by banner
+- Show the first-call wait as a named countdown — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Say "done" in one sentence a person would say — near T-1258 (done): A context-tax ratchet: a replayed hook session's injected b…
+- Offer the next request as a ghost placeholder
+- Let a failed guard refusal teach once, then go quiet — near T-0817 (done): Guard refusals read better: /dev/null on a data-only python…
+- Remember a run's last words when the terminal closes — near T-0116 (done): Size words with meaning: typical time per type and size, ti…
+- Give every runner a one-line "hello" on selection — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Wild: Let the home screen keep a tiny desk plant per project
+- Wild: Hum a different bell per outcome
+- Wild: Print a postcard to the shell when you quit
+- Rename the thing to what the user typed — near T-0009 (done): Autonomy: plain-chat approvals, Claude runs everything, mul…
+- Make the wait for a worker feel like a workshop, not a spinner
+- Constrain the model's slot output at the decoder
+- Ask one question when a request is ambiguous — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Add a slash-command prompt box — near T-1157 (done): Add `fm todo`, the list of what only the user can do (pendi…
+- Store API keys in the OS keychain
+- Advise which local model fits this machine — near T-0711 (done): Frontier 11 — Cockpit UI
+- Classify a red check as flaky or real — near T-0682 (done): Milestone: Features — Verification and product checking
+- Enforce a declared file scope per plan — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Fire user hooks and webhooks on run events — near T-0957 (done): Hooks: idle stops recorded, plan mode holds drive, the user…
+- Lay prompts out for provider caching
+- Ship install channels that fix `fm` not being on PATH
+- Wild: Backtest a runner on the repo's own history — near T-0707 (done): Frontier 07 — Knowledge graph
+- Wild: Discover model servers across the LAN — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Wild: Run the queue only when the machine is idle and plugged in — near T-0955 (done): fm run and night: quarantine a no-progress task across runs…
+- Split a big request into a dependency graph of tasks — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Tail the CLI's own session transcript for progress — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Detect the harness by process ancestry, not only the env marker — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Promote deferred tasks when matching evidence appears
+- Keep prompt prefixes byte-stable so provider caching works
+- Turn a red CI run into a queued task — near T-1277 (done): CI red on Linux 3.12: a long multi-request prompt queues on…
+- Pass workers an environment allowlist — near T-0682 (done): Milestone: Features — Verification and product checking
+- Carry lessons between projects through stack cards — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Run every command in the docs in CI — near T-1011 (done): Self-docs check: every fm command is in one of fm help's ti…
+- Plan speculatively while the request is being typed (wild) — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Plant honeytokens to catch a hijacked worker (wild)
+- Learn a new CLI by watching you use it once (wild) — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Run each worker in a systemd user scope when available (wild) — near T-1086 (done): Builder sandbox and outbound ledger: builders run under Cla…
+- Close only on a checkable failure reason — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Re-verify each close from a clean checkout of the commit — near T-0710 (done): Frontier 10 — Milestone work compiler and merge train
+- Outlive the harness's death: pdeathsig plus a sidecar reaper
+- Judge liveness by a lease, not a PID — near T-1294 (done): fm code --worker: a worker's own edits count as the run's f…
+- Replay a run offline from recorded model slots (cassettes) — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Detect runner output schema drift at runtime — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Quarantine flaky checks instead of trusting one pass — near T-0682 (done): Milestone: Features — Verification and product checking
+- Spend-aware retry budget for endpoint calls — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Bound runner output with a ring buffer that spills to disk
+- Wild: Honeypot slots that catch a model ignoring the schema
+- Wild: A cheat corpus the harness must beat every release — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Wild: Environment fingerprint that explains "works here, not there"
+- Make bare `fm code` print one answer before anything else — near T-0974 (done): Opt-in auto-approve of read-only Bash the guard classifies …
+- Collapse the ~300 listed TUI ideas into a frozen "v1 screen" budget
+- Refuse to nest by one environment variable — near T-0682 (done): Milestone: Features — Verification and product checking
+- Run workers bare by default — near T-1222 (done): Benchmarks page: Foreman against plain Claude Code (and oth…
+- Let the project be the current directory, nothing else — near T-0777 (done): Never idle without tmux: a plugin monitor streams this sess…
+- Use one config line, and derive everything else — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Print `Next:` on every failure and delete the rest of the explainers — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Show a single "last heard from the runner N s ago" line — near T-1155 (done): Show a return-after-gap summary (`fm away`, also once at se…
+- Wild: Make `fm code` a plain prompt that never leaves the shell — near T-0286 (done): Self-improvement pass 4: guard heredoc precision, test lock…
+- Wild: Treat the user's complaint as the spec by echoing it
+- Wild: Ship Foreman as one file that deletes itself from the plugin copy — near T-0224 (done): Fm evolve — a bench-gated self-improvement loop: a mutation…
+- Wild: Make "nothing happening" impossible by running the worker visibly in a split
+- Make `fm code` a launch-time contract: a 10-second "first sign of life" SLA — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Adopt a "lineage" env marker so any Foreman-in-Foreman collapses to one owner
+- Compile every complaint into a standing regression check ("friction → check") — near T-1063 (done): Steers compile to checkers: a steer or interrupt is typed (…
+- Add a `fm code` portable runner "audition" that writes the routing table from the user's own repos — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Make a project's "resume point" a first-class object across app launches
+- Ship `fm code` as a Claude-style bare launcher with a shell integration installer
+- Give each worker CLI a measured "startup tax" that gates the launch — near T-1284 (done): macOS: fm code --worker, the guard's /tmp case, the reaper,…
+- Cross-project "what needs me" ranking that reads only existing task state — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Wild: Let Foreman write its own next brainstorm brief at the end of every release — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Wild: Adopt a running interactive Claude Code session as a lane through its transcript file — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Wild: Rehearse a request against a "ghost" runner that returns canned plan shapes before spending anything
+- Wild: Pasteable setup code that carries runners, theme and defaults, never secrets — near T-0004 (done): Phase 6: fm tidy and fm doctor
+- Hold a per-project lock so two app instances cannot run the same task — near T-1165 (done): Add `fm inbox spec FILE` that captures each unchecked `- [ …
+- Morph a project card into its run screen — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Slide drawers over the run, not full-screen views — near T-0711 (done): Frontier 11 — Cockpit UI
+- Show a typed-ahead request as resolved chips — near T-1320 (done): Can you show better examples of fm code on the website? and…
+- Draw the queue as a dependency graph with flowing edges — near T-0707 (done): Frontier 07 — Knowledge graph
+- Add a transcript minimap scrollbar — near T-0328 (done): FEATURE: Foreman Desktop v2 — clean up the UI so it looks l…
+- Paste a folder path to adopt a project — near T-1183 (done): `fm task block` and `fm task defer` accept `--until "when C…
+- Fold the breadcrumb into a morphing header path
+- Use the full width on big monitors — near T-0783 (done): Big Bash outputs reach the model as head, tail and failure …
+- Show inline screenshots when the task is about UI (wild) — near T-0903 (done): Showcase: a recording of the real Claude Code UI with the f…
+- Send a runner to the pit lane when rate-limited (wild)
+- Show a shared "now" spotlight across all projects (wild) — near T-1073 (done): Cross-repo memory: fm recall searches the user's other Fore…
+- Give errors one three-row face: happened, did, next
+- Pick the whole look from a preview strip of live frames (wild)
+- Make `fm code` own the setup contract as one resolved-config object — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Add a first-run self-install that fixes PATH and shell — near T-1183 (done): `fm task block` and `fm task defer` accept `--until "when C…
+- Refuse a second Foreman when the worker is Claude Code with the plugin loaded — near T-1294 (done): fm code --worker: a worker's own edits count as the run's f…
+- Probe a project on first open and write its setup card — near T-0947 (done): Enforce: validators run on every write and block until fixe…
+- Preflight "can this run work here?" before the first model call — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Make config schema-versioned with migration and a typed editor in the TUI — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Detect which Foreman is live across plugin, pip/pyz and dev checkout — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Keep secrets out of config by reference — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Wild: Let a pasted error or complaint configure the setup
+- Wild: Offer a config time machine — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Generate a setup that matches the machine's idle resources
+- Wild: Keep a project-local `fm code` shim that travels with the repo — near T-1073 (done): Cross-repo memory: fm recall searches the user's other Fore…
+- Set a per-runner startup budget in config and enforce it — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Document config from the registry, and fail CI on drift — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+
+## Round 4
+- Stop re-asking answered questions — near T-0778 (done): Phone push when the user is needed or the queue drains: the…
+- Hand a stuck run to a live CLI in one key — near T-1283 (done): Foreman Code TUI: a beautiful, customizable, extendable ter…
+- Put a time and money box in the request — near T-0286 (done): Self-improvement pass 4: guard heredoc precision, test lock…
+- Review finished runs as a deck, and reopen with a reason — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Say no early with a fit check — near T-1196 (done): Builder brief names the main checkout to stay out of and sa…
+- Show it working with a demo artifact — near T-0979 (done): Re-record the README demo from a real Claude Code session w…
+- Answer "why is it like this?" from history — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Offer three plans with prices — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Run standing orders on events — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Train a free apprentice by shadowing (wild)
+- Bisect a bug from a sentence (wild) — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Play a skeptical user against the result (wild) — near T-0280 (done): Bench family: judged cases, plugin duels, version replays, …
+- Trust the cwd before the first call — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Make the first-sign-of-life deadline a failing test — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Convert "it just isn't doing anything" into a stall record automatically — near T-1032 (done): Learn a fix once, apply it every time: when a session hits …
+- Keep the user's standing permissions as a ledger Foreman reads — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Rank "what needs you" across projects by age and blocking — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Show the startup tax before launching a worker, and offer the lean profile — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Write the release notes the user reads from their own requests — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Pin the rule that `fm` must be on PATH as a doctor failure — near T-0855 (done): A fresh install is clean and works from a shell: doctor pas…
+- Let a complaint become a check, and show which check it became (wild) — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Offer a one-key "take it from here" when Claude Code itself stalls (wild)
+- Leave a morning digest of what the unattended runs did (wild) — near T-0298 (done): Unattended checks: fm bench stranger (a newcomer session fr…
+- Name the duplicate-Foreman fact on screen (wild) — near T-1039 (done): Band tree polish (screenshot 22:28): sticky, fixed height w…
+- Greet with a one-line "welcome back" that names where you left off — near T-0781 (done): Sessions are named after their task: SessionStart and UserP…
+- Make the wait feel like a workshop with a "what it's doing" line from the process itself — near T-0950 (done): fm scout: Foreman finds its own work (Claude Code updates, …
+- Wild: Ask "are you still there?" back from the harness — near T-1271 (done): fm code --worker --verify: the worker can't change the file…
+- Celebrate a first-ever success in a project, once — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+- Probe the local model's real context window — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Run every child non-interactive and name the prompt it hangs on — near T-0691 (done): Milestone: Intelligence — Planning and decomposition (1)
+- Serve the project's dependency docs from the installed versions — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Cap spend globally across projects and runners
+- Hand off a half-done task between runners with a packet — near T-0704 (done): Frontier 04 — Zero-call bookkeeping and session lifecycle
+- Compile a pasted stack trace or bug report into a failing test first — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Select only the tests the change touches during verify — near T-0705 (done): Frontier 05 — Ambient verification and test intelligence
+- Honour proxy, custom CA and offline mirrors in the model client
+- Enforce an org policy file for allowed runners, endpoints and paths
+- Turn the user's hand edits after a run into lessons — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: Expose the runner router as a local OpenAI-compatible endpoint — near T-1211 (done): fm code: fmmodels, one stdlib client for OpenAI-compatible …
+- Wild: Pre-mortem the plan with a second runner and turn its failure modes into checks — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: Bisect a regression with the harness — near T-1060 (done): Survival grading: fm outcomes grades each closed task by wh…
+- Scope runs to a monorepo package with its own gates and runner — near T-0855 (done): A fresh install is clean and works from a shell: doctor pas…
+- Make bare `fm code` a thin exec into the user's best CLI, wrapped by Foreman
+- Gate every worker launch on a lineage env marker, not a detection heuristic
+- Show a 10-second sign-of-life contract with a named wait
+- Treat the project as cwd plus a warn-on-mismatch, no registry — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Describe runners as 8-line data manifests and ship five — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Auto-file a friction task from the user's own phrases via a prompt hook — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Run `fm code doctor` as the first-run wizard and the install fixer — near T-1279 (done): Reply format in the rules; fm install-user stops setting Fo…
+- Race two runners on the plan only, keep the cheaper green plan — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: Make `fm code` ask which project from a sentence — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Reap children with a process-group lease, not a PID list — near T-1094 (done): Fmbench.py:259-267` already kills the process group on time…
+- Add a first-byte deadline to every runner launch — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Name the silence with a stall classifier — near T-0693 (done): Milestone: Intelligence — Reasoning and thought process
+- Run every runner in a process group with a parent-death reaper — near T-1044 (done): Process-group reaper and a startup orphan sweep for the cla…
+- Journal each step before acting so a run can resume — near T-0887 (done): Count bare keep-going prompts (continue, keep going, go on)…
+- Kill-at-random-point chaos test in CI — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Give each runner a circuit breaker with classified fallback — near T-0434 (done): Heartbeat and breaker for unattended runs
+- Pin down the nested-Foreman depth marker at the environment and process level
+- Lease the project so two app instances can't run the same task — near T-1294 (done): fm code --worker: a worker's own edits count as the run's f…
+- Repair the terminal after any death — near T-0962 (done): Surfaces: NO_COLOR, step N/M in the statusline, fm ui --dem…
+- Wild: Run a canary that auditions every runner nightly on a scratch repo — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+- Wild: Make a self-healing safe mode after a crash loop — near T-1059 (done): Every self-change is a pre-registered trial: fm evolve and …
+- Cluster the idea catalog before every round — near T-1085 (done): State rollback on upgrade: fm keeps a snapshot of state bef…
+- Turn on an autonomy dial: `fm trust 0-3` — near T-0950 (done): fm scout: Foreman finds its own work (Claude Code updates, …
+- Release when the queue drains (wild) — near T-1062 (done): Speculative next task: while Claude waits on the user or a …
+- Expire "Later from" tasks after N releases without evidence — near T-1084 (done): Weekly decision digest and sunset clauses: decisions made w…
+- Add `fm where`, one command listing every path Foreman reads or writes — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Classify a task's verify command by why it is red at creation — near T-0672 (done): Milestone: Features — Guard and safety
+- Scale the ceremony to the request
+- Make an unknown command do the nearest sensible thing and say so — near T-1180 (done): A small static alias table (task list/ls/all to the queue v…
+- Run `fm gate`, one command for the three gates — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Use seven outcomes everywhere — near T-1074 (done): Hotspots in plans: files that keep getting fixed after edit…
+- Print a "won't do this session" line at start (wild) — near T-1276 (done): fm output: measure it right (fm-only commands), then trim t…
+- Give each setting a sunset test (wild) — near T-1084 (done): Weekly decision digest and sunset clauses: decisions made w…
+- Serve the harness as an OpenAI-compatible model — near T-1211 (done): fm code: fmmodels, one stdlib client for OpenAI-compatible …
+- Hold out blind acceptance checks — near T-1101 (done): Fm check should not fail one task's close on another checkp…
+- Promote a repeated correction into a standing rule — near T-1063 (done): Steers compile to checkers: a steer or interrupt is typed (…
+- Escalate a stuck step up a runner ladder — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Warm a clean-tree baseline at launch — near T-0682 (done): Milestone: Features — Verification and product checking
+- Mutation-prove every diff — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Log whether the user kept the result — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Recall proved runs as few-shot exemplars for small models
+- Decide with a timeout when the user is away — near T-1270 (done): fm code --worker: the user's own uncommitted work that a wo…
+- Tune its own config overnight and show the evidence — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Transplant a session between CLIs — near T-0707 (done): Frontier 07 — Knowledge graph
+- Read the editor's cursor as request context — near T-0977 (done): Skills get used without asking: a zero-token UserPromptSubm…
+- Open a shadow week before acting — near T-1194 (done): Guard parses python -c code like quoted heredoc bodies befo…
+- Zoom is the only navigation
+- Let one thing move at a time — near T-1258 (done): A context-tax ratchet: a replayed hook session's injected b…
+- Show a which-key popup after a pause — near T-1255 (done): Every bench result records the Claude Code version it ran o…
+- Ship a TUI inspector for extension authors
+- Show the CLI command behind every key — near T-1300 (done): Foreman Code TUI in motion: a truecolor renderer, eased ani…
+- Hold to confirm kill and stop — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Draw a project heat calendar on the home screen
+- Turn type-ahead into pending tickets
+- Add a presenter mode with double-height headings
+- Pick up a ticket and reorder the queue — near T-0955 (done): fm run and night: quarantine a no-progress task across runs…
+- Wild: Pin run requests to a ticket rail
+- Wild: Light the room from run state — near T-1085 (done): State rollback on upgrade: fm keeps a snapshot of state bef…
+- Wild: Cross-fade between projects as scenes with their own accent
+- Probe the render path at launch and record the result — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Pin trust to the hash of a project's `.foreman/code.toml` — near T-0672 (done): Milestone: Features — Guard and safety
+- Reject shell-string runner templates and pass the prompt as argv — near T-0345 (done): Guard: commands python code spawns (subprocess, os.system/e…
+- Derive a project's gates from its own CI files — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Keep an install ledger and add `fm code uninstall`/`reset` — near T-0940 (done): Guard false blocks from the friction pass: cd; heredoc mess…
+- Respect read-only and XDG-managed config
+- Offer config changes as diffs, never apply them — near T-1072 (done): Rule and hint hygiene: cards, known fixes, rules and lesson…
+- Switch whole named profiles in one key — near T-1211 (done): fm code: fmmodels, one stdlib client for OpenAI-compatible …
+- Ship conservative default caps and say so at first run — near T-0676 (done): Milestone: Features — Performance and cost
+- Scope gates by sub-package in monorepos and worktrees — near T-0672 (done): Milestone: Features — Guard and safety
+- Generate every `FM_CODE_*` env override from the config schema
+- Wild: Fuzz the config loader with generated configs and corrupted files
+- Wild: Let `fm code setup` write itself from the user's shell history — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Emit a "why it behaved this way" config receipt on every run — near T-1077 (done): Stale plan sweep: queued briefs whose files or premises cha…
+- Wild: Hold a "fresh machine" CI job that runs setup from nothing
+
+## Deepened: reliability
+- Make the run journal the single source of truth — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Put every spawned CLI in one process group with a lease file — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Classify silence with a stall doctor — near T-0693 (done): Milestone: Intelligence — Reasoning and thought process
+- Probe each runner with a canary before real work
+- Bound every run by budget, deadline and no-progress limit — near T-0676 (done): Milestone: Features — Performance and cost
+- Pause on rate limits and sleep through them — near T-0198 (done): Economy mode: past 80% weekly (or 90% five-hour) usage, the…
+- Fall back along a runner chain with a reason on record
+- Fence the config with schema, last-good and a repair command — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Wild: Run the harness in a rehearsal sandbox first — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Wild: Record real runner failures into a replayable chaos suite — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+- Wild: Let a sentinel process supervise the TUI and the runs
+- Detect Foreman-in-Foreman by a marker in the environment and lease — near T-0016 (done): Approved plugin/marketplace installs on demand; conflict-fr…
+- Wild: Have a self-heal pass at launch that fixes what it can — near T-1147 (done): Builders self-review before they report: the builder contra…
+
+## Deepened: runners
+- Build a runner ledger that grades every runner per task kind — near T-1059 (done): Every self-change is a pre-registered trial: fm evolve and …
+- Route each step to a runner by ledger and budget — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Run a startup-tax doctor that trims nested CLI cost
+- Detect a silent runner and say so within 20 seconds — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Define runners as 8-line manifests, learned by probing — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Let a runner prove it can't see outside its project — near T-0672 (done): Milestone: Features — Guard and safety
+- Build a runner pit-crew that auto-heals setup
+- Replay a recorded run on a different runner — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Run a runner that is a human
+- Pool runners as a fleet with per-runner concurrency lanes
+
+## Deepened: config
+- Resolve one config object, then print it as a receipt — near T-1283 (done): Foreman Code TUI: a beautiful, customizable, extendable ter…
+- Show the resolved plan before the first token — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Make config self-diagnosing with `fm code doctor` — near T-0768 (done): Subagents: effort, maxTurns and omitClaudeMd in Foreman's a…
+- Probe every runner for real and cache a capability card — near T-1220 (done): Feature pages for the site: one page per Foreman capability…
+- Keep project config in the repo, and trust it deliberately — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Detect duplicate Foreman and say who wins — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Write config as typed schema with migration and last-good fallback — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Edit config inside the TUI with live preview — near T-1283 (done): Foreman Code TUI: a beautiful, customizable, extendable ter…
+- Wild: Say "make it faster and cheaper" and get a config diff
+- Wild: Retire settings that never matter — near T-1072 (done): Rule and hint hygiene: cards, known fixes, rules and lesson…
+- Make the stall watchdog a config policy, not a hope
+- Notice friction and open the config fix by itself — near T-0950 (done): fm scout: Foreman finds its own work (Claude Code updates, …
+
+## New ideas per lens
+- user value: 49
+- unspoken needs: 48
+- delight: 43
+- capability map: 55
+- approaches: 49
+- reliability: 42
+- simplicity: 49
+- bold bets: 48
+- beautiful UI and motion: 53
+- setup and configuration: 51
+
+## Coverage (ideas per category)
+- reliability 22
+- runners 21
+- config 21
+- setup 18
+- liveness 12
+- self-improvement 12
+- routing 11
+- trust 10
+- multi-project 9
+- continuity 9
+- home screen 9
+- intake 8
+- projects 8
+- cost 7
+- onboarding 7
+- proof 7
+- duplicates 6
+- input 6
+- unattended 5
+- local models 5
+- autonomy 4
+- observability 4
+- history 4
+- delight 4
+- safety 4
+- testing 4
+- debugging 4
+- install 4
+- first-run 4
+- close-out 4
+- app home 3
+- developer experience 3
+- isolation 3
+- integration 3
+- lifecycle 3
+- architecture 3
+- nesting 3
+- diagnosis 3
+- handoff 3
+- transparency 3
+- motion 3
+- fleet 2
+- review 2
+- performance 2
+- surfaces 2
+- launch 2
+- recovery 2
+- resilience 2
+- concurrency 2
+- scope 2
+- ui 2
+- surface 2
+- dedupe 2
+- self-repair 2
+- personality 2
+- ambient 2
+- any cli 2
+- durability 2
+- regression 2
+- errors 2
+- cli grammar 2
+- supervision 2
+- support 2
+- motion / honesty 2
+- attention 2
+- microcopy 2
+- sound 2
+- secrets 2
+- evaluation 2
+- planning 2
+- docs 2
+- layout 2
+- navigation 2
+- project config 2
+- preflight 2
+- self-notice 2
+- first-launch 2
+- failover 2
+- config core 2
+- reliability/trust 1
+- cost/speed 1
+- agents 1
+- user value 1
+- devices 1
+- honesty 1
+- home 1
+- workers 1
+- scheduler 1
+- watchdog 1
+- cost guard 1
+- self-awareness 1
+- chaos testing 1
+- contract tests 1
+- rollback 1
+- entry 1
+- simplicity 1
+- app shell 1
+- cost visibility 1
+- self-diagnosis 1
+- cost clarity 1
+- runner control 1
+- interop 1
+- confidence 1
+- runner choice 1
+- payoff 1
+- ritual 1
+- discovery 1
+- reassurance 1
+- anticipation 1
+- conversation 1
+- git workflow 1
+- workflow 1
+- adapter drift 1
+- shell integration 1
+- codemod 1
+- voice 1
+- speed 1
+- do less 1
+- stalls 1
+- parity 1
+- sandbox 1
+- reuse 1
+- recursion 1
+- self-monitoring 1
+- fuzzing 1
+- complexity budget 1
+- language 1
+- status 1
+- single instance 1
+- orchestration 1
+- ux 1
+- quality 1
+- waiting states 1
+- runner picker 1
+- header 1
+- settings 1
+- request box 1
+- ambient status 1
+- loading states 1
+- sharing 1
+- outcome 1
+- personalization 1
+- reporting 1
+- remote 1
+- resume 1
+- noise 1
+- plugin hygiene 1
+- silence 1
+- echo 1
+- app ux 1
+- verification 1
+- guard 1
+- integrations 1
+- distribution 1
+- scheduling 1
+- duplicate foreman 1
+- token tax 1
+- unspoken need 1
+- worker isolation 1
+- latency 1
+- injection defense 1
+- orphan control 1
+- processes 1
+- state 1
+- models 1
+- memory 1
+- reproducibility 1
+- startup tax 1
+- interface 1
+- queue view 1
+- wayfinding 1
+- graphics 1
+- error states 1
+- theming 1
+- portability 1
+- interruptions 1
+- escalation 1
+- budgets 1
+- triage 1
+- project memory 1
+- choice 1
+- automation 1
+- qa 1
+- prompt 1
+- hangs 1
+- context 1
+- verify 1
+- policy 1
+- learning 1
+- gateway 1
+- adoption 1
+- orphans 1
+- crash-recovery 1
+- locking 1
+- terminal 1
+- ideation 1
+- permissions 1
+- release 1
+- backlog 1
+- debuggability 1
+- task quality 1
+- harness 1
+- cli 1
+- vocabulary 1
+- speed and truth 1
+- outcome truth 1
+- discoverability 1
+- teaching 1
+- safety feel 1
+- demo 1
+- queue 1
+- runner templates 1
+- project setup 1
+- reversibility 1
+- dotfiles 1
+- self-tuning 1
+- profiles 1
+- safe defaults 1
+- project resolution 1
+- config schema 1
+- provenance 1
+- first five minutes 1
+- process control 1
+- limits 1
+- duplication 1
+- startup 1
+- budget 1
+- setup ux 1
+- doctor 1
+- plugin conflict 1
+- tui settings 1
+- plain-words config 1
+- config hygiene 1
+Thin (0-1 ideas): user value, security, privacy, devices, agents, simplicity

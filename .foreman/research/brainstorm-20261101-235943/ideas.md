@@ -1,0 +1,594 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 344 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Exclude Foreman's own test inputs from the user model — near T-0711 (done): Frontier 11 — Cockpit UI
+- Complete the DONE-WHEN for a raw capture
+- Check literal tokens from the request against the built surface
+- Draft the third ask of a series
+- Keep a per-machine profile of what breaks here
+- Add a web UI Anticipation page with accept and dismiss
+- Flag a task that restates a dropped self-filed class
+- Show the lead time of each anticipation hit — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Wild: run a blind "is this the user's voice?" test on drafted asks
+- Wild: turn a typed correction into a draft check before the user finishes the sentence
+- Wild: write the "sorry, already built" note before the ask is typed
+- Wild: print a "things you will probably ask about this one" list at task close
+- Tag every line in the model-of-me stream by origin — near T-1394 (done): fm code fences untrusted text: repo listings and tool resul…
+- Quarantine captures fed from tests and debugging — near T-0682 (done): Milestone: Features — Verification and product checking
+- Forecast the ship before running the suite — near T-2323 (done): fm ship runs the affected tests over its range before the f…
+- Make foresight act instead of announce
+- Lift a steer when its own end condition is observed
+- Tie machine quirks to pre-flight checks
+- Predict which self-filed tasks the user will drop, before filing
+- Count a cell only if a past incident could have used it — near T-2471 (done): Cold read made reliable: Haiku first and Sonnet decides on …
+- Show a per-path correction density map that sets foresight depth
+- Wild: Run a bandit draft that sometimes drafts the second most likely request
+- Wild: Keep a hindsight court of the last 20 closed asks
+- Wild: Open each session with the one thing the user is most likely to type first
+- Ghost-text the next request — near T-0095 (done): foreman-ui 0.3.0: animated cards everywhere, quick capture,…
+- Make dismissal a lesson
+- Expand "the usual"
+- Forgive the typo from personal history
+- Keep missed guesses on a "not today" shelf
+- Show restraint as a status-line pride line — near T-2078 (done): fm genesis: the tower's home: init saves gen-0 verbatim and…
+- Close each task with a doorway line
+- Add a "told you so" receipt for problems flagged early
+- Wild: Hold a "guess my next ask" mini-game in the web UI
+- Wild: Publish a shareable "Foreman Wrapped" page
+- Wild: Tip the hard hat when trouble is coming
+- Offer a one-line "because" for any nudge
+- Fill the 58 cells as a flipbook of "moments"
+- Forecast tmpfs and disk runway before spawning lanes
+- Keep a per-machine failure profile — near T-0955 (done): fm run and night: quarantine a no-progress task across runs…
+- Show a hotspot-times-reopen risk line at plan time — near T-0490 (done): Plan-time rigour (C053, value 3/5, effort M, risk low)
+- Rank tests by learned failure likelihood — near T-2335 (done): Plan gate asks for readings and each approach's outcome (Mi…
+- Pre-empt flag and verb mistakes with a generated synonym table
+- Suggest the likely next verb from verb n-grams
+- Queue sibling edits from the user's uncommitted hand edits
+- Read every harness's transcripts into one user model — near T-2486 (done): The user's four model rules as tests: no model import in fm…
+- Score dependencies for abandonment risk — near T-0594 (done): Dependency truth (I085, value 5/5, effort M, risk low)
+- Warn at departure about unpushed work on the other machine
+- Run a future canary on the gate at faketime +90d with latest deps
+- Pre-read the next likely file into the graph cache
+- Print one annoyance forecast at session start
+- Lock each family probe to a cell and a session path
+- Backtest each cell before writing it — near T-2341 (done): A cold rival reads the request (Mission 5, #2): for an L pl…
+- Fold the 58 cells into predictor families
+- Predict machine breakage from the package log
+- Next-verb Markov table from the event log
+- Compute the model of me on demand from transcripts
+- Reuse shell history and git co-change for habits and breakage
+- Mark each cell with its reach path — near T-0992 (done): T-0990's ~/.local/bin fallback bypasses the tests' claude l…
+- Negative model from the dropped ledger — near T-0220 (done): Replay diagnostics — each bench case keeps a summary of the…
+- Prefetch context instead of drafting requests
+- Wild: stub-user twin written from steers only
+- Wild: a cell is a bet with a Brier score
+- Wild: search for counterexamples to every "n/a"
+- Re-run each cell's probe every sweep — near T-2474 (done): fm genesis sweep applies the whole-run coverage bar to each…
+- Gate every prediction heuristic on a walk-forward backtest
+- Resolve every prediction to hit, miss or expired
+- Make the forecaster say "abstained" or "failed", never an empty list
+- Stamp each speculative draft with its tree hash and steer set, and refuse adoption when either moved
+- Strip captured-by-mistake and dropped items from the user model's input
+- Cap problem flags per session and mute a signature after two dismissals
+- Rebuild the user model from its append-only sources and prove it matches
+- Check that all four non-Claude harness formats yield the same asked records
+- Give each of the 58 cells a planted-history probe with a known next request
+- Wild: run a shuffled-history control arm alongside the real forecaster
+- Wild: add a time-machine mode that replays the forecaster at each past commit date
+- Wild: plant a fake habit and check the forecaster does not over-learn it
+- Give the forecaster a no-network deterministic mode and diff its output
+- Show the forecast as a ranked row in fm next, not a new verb
+- Give foresight a slot, not an addition
+- Stay silent below an evidence floor
+- Make fmforesight stateless over the ledgers that already exist
+- Put a read receipt on every foresight output and delete the unread
+- Diff `fm doctor` snapshots per host to flag drift before it bites
+- Park a predicted ask as a title-only deferred task, spend tokens only on a yes
+- Cap live forecasts at three per project
+- Exclude test-run captures from fm intake
+- Predict by grep: nearest past ask through fm recall, no learning
+- Add a weekday-and-hour seasonality predictor as a one-line baseline
+- Forecast only "skip": name the queue item the user is about to drop
+- Gate every cell on retrodiction
+- Measure problem-flag cells in warning lead time
+- Fail on predictor outputs nothing reads — near T-0821 (done): Round-1 review fixes (low): outward-tool gate fails closed,…
+- Forecast machine exhaustion with an ETA
+- Predict the user's drop before filing
+- Show the predicted next ask as ghost text in the foreman-ui prompt
+- Project the user model into every harness's first message
+- Let the user model forget — near T-2486 (done): The user's four model rules as tests: no model import in fm…
+- Ration anticipation flags by expected loss
+- Wild: run a prediction market among cheap lanes
+- Wild: build an option book of pre-made stubs
+- Wild: compare the dream diff with the real diff
+- Wild: print one "you'll wish you'd known by Friday" line at session start
+- Transfer the user's first-hour priors to a new repo — near T-2187 (done): Moonshot Mission each generation from gen 2 (steer 2026-10-…
+- Beat-check the forecaster itself
+- Check "already built" before any predicted draft is lane-ed — near T-2407 (done): Draft ahead: the top prediction that beats the baseline is …
+- Refuse a predicted draft without a grounding line
+- Meter the forecaster's cost in the lean ratchet
+- Ablate each forecast source
+- Backtest on the asked stream before any predictor may draft
+- Triage the 58 cells into one capability list before writing prose
+- Re-check cited files still behave as claimed — near T-1837 (done): Fm lease drop leaves lane claims held ('still held: N lane …
+- Read dropped-as-built asks at session start — near T-2192 (done): The foreman arm still trails the free finders on s31-006 wi…
+- Wild: "What I would have told you" card on resume
+- Wild: Predict which gate will trip before ship
+- Wild: Replay the last 20 asks through today's forecaster
+
+## Round 2
+- Show "already built" before the user finishes asking
+- Draft the ask the user is about to make from their own steer chain
+- Bind each of the 58 empty cells to a past incident or mark it unreached
+- Put one ranked "heads-up" slot in `fm next`
+- Dismissal teaches: mute a signature after two dismissals
+- Quarantine test and debug captures from the user model — near T-0682 (done): Milestone: Features — Verification and product checking
+- Backtest every predictor walk-forward before it may draft
+- Predict the user's drop before Foreman files a self-filed task
+- State the likely re-scope at capture — near T-0438 (done): Capture flags a re-ask of dropped work and a veto contradic…
+- Cap foresight at one line and mute it after two dismissals
+- Resolve every prediction to hit, miss or expired, and show the abstain case
+- Wild: add a "things I'd have told you" card at task close
+- Wild: add a time-machine replay of the forecaster
+- Print "already built" before the ask is finished
+- Flip the 58 cells into a "moments" flipbook
+- Add a "told you so" receipt — near T-1783 (done): fm code app: g pressed during a run waits for it, then work…
+- Make dismissal teach, with a tiny "not today" shelf
+- Let "again" resolve to the right autonomous act
+- Give each forecast a one-line "because"
+- Print a "things you'll probably ask next" list at task close, from co-change
+- Checkpoint before the context window runs out — near T-0267 (done): Shared-prefix child prompts: the context pack goes before t…
+- Flag open tasks a commit made moot — near T-2525 (done): T-2334's late start point applies only to open tasks, and t…
+- Quote a task's time and cost when it is created — near T-1851 (done): 3D showpiece: terrain, a heightfield of churn or cost over …
+- Dry-run the plan's steps through the guard at plan time — near T-1212 (done): fm code: the harness-run loop, where the model fills slots …
+- Run the cold-read charter on your own diff before filing
+- Answer the user's usual follow-up questions in the close receipt
+- Learn the reply-style profile from corrections
+- Weight cell re-verification by churn of the cited file
+- Sweep pinned model IDs, flags and API versions for retirements — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Wild: Tired-hour mode — near T-0198 (done): Economy mode: past 80% weekly (or 90% five-hour) usage, the…
+- Wild: Unwritten-rules extraction — near T-1664 (done): Backlog extras: good-first list, deferred swipe, learned pr…
+- Wild: Weekly duel against a blind predictor
+- Wild: Pre-answer "why didn't you warn me"
+- Race four predictor approaches on the asked stream
+- Cover the 58 cells with a minimal probe set
+- Fill in a sweep-in-the-loop ratchet — near T-2005 (done): run.py suggests the test a -k meant, the loop's main-thread…
+- Start from the eight missed asks and work backwards
+- Show a read-only Foresight panel in the web UI — near T-1521 (done): Fm lib show accepts a card name with its group prefix (web/…
+- Fill from a fixture history with a planted next ask
+- Inherit from Initiative with a mandatory delta
+- Plot the learning curve: hit@3 against history length
+- Re-run each cell's cited behaviour, not just its file
+- Wild: let a stub user write the cells' complaints
+- Wild: shuffled-history control arm
+- Wild: delete `fmforesight` in a scratch copy and diff the exam
+- Strip mistaken and test-fed captures out of the user model
+- Fail the sweep on predictor outputs that no session path reads
+- Collapse the 58 cells into one predictor-family table
+- Read forecasts from `fm next`, add no new verb — near T-2409 (done): #3 exam kinds forecast and breakage: next-request predictio…
+- Strip test captures from the user model's input — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Wild: Predict by grep alone
+- Delete forecasts nobody read
+- Track user words per landed task as Anticipation's north star
+- Mine ask-to-ask transformation operators — near T-1203 (done): fm guard mine from a linked worktree reads the main checkou…
+- Build a signal→reaction latency table — near T-2356 (done): Watchers start work with no session: CI, issues and file ev…
+- Run champion/challenger forecasters in shadow
+- Detect steers the user's behaviour now contradicts
+- Graduate recurring ask classes to accept-by-default
+- Detect when an arc has ended
+- Forecast Foreman's own failures for the day — near T-2386 (done): Migration proof for real repos (Mission 7, #6/#10): fm prov…
+- Wild: Write a weekly letter of predicted asks that the user strikes through
+- Wild: Keep a "thesis of the user" and watch it drift
+- Wild: Pre-write tomorrow's drafts as title-only stubs scored at wake
+- Wild: Compute a "regret of silence" score
+- Make the forecaster report its own liveness — near T-2342 (done): Stop only at an irreversible, ambiguous step (Mission 5, #8…
+- Tag every user-model input with its origin and drop Foreman-authored ones
+- Make the cell probe a per-cell planted-history replay — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Add a shuffled-history control arm to every predictor
+- Flag silent changes in what a gauge omits, per predictor
+- Rank the anticipation outputs nothing reads for deletion
+- Test the same predictor on all five harnesses' transcript shapes
+- Wild: Hold a "silent day" drill for anticipation
+- Wild: Print "things I'd have told you if you'd asked" at resume
+- Add expiry to cell n/a rulings, with a counterexample search
+
+## Round 3
+- Warn about habit-breaking changes from the user's own history — near T-2408 (done): fmforesight warns of breakage before it bites: dates about …
+- Show a retro demo at install: "what I'd have caught last month"
+- Put one anticipation dial per project
+- Review the Anticipation capability on a schedule, and demote it if it doesn't pay
+- Size lanes to the user's review capacity — near T-1069 (done): Racing builders: for an M task marked race, two builders wo…
+- Predict reviewer comments from past review history
+- Add a regret button for misses
+- Rank the 58 cells by minutes lost, not by row order
+- Replay review: show hit-rate by what the user asked — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Wild: Offer a swipe deck that calibrates the user's annoyance threshold
+- Wild: Print the ask you'd probably send, with a one-word "go"
+- Wild: Watch upstream issues for the functions the user actually imports
+- Tell the user which cells are really one capability before filling any
+- Make every cell name the session path that reads it — near T-2270 (done): Capability-miss trigger (Mission 6, #5): a missing command …
+- Print one ranked heads-up line in `fm next`, not a new verb
+- Tell the user "already built" at the moment they type the ask
+- Show a read-only Foresight panel with last-seen age and a stale banner
+- Add a web UI Anticipation card on Today — near T-2044 (done): Web cards: 24 UI, motion and creative-coding library cards
+- Forecast the queue's finish date with a confidence band — near T-0106 (done): Band looks nearly finished while a long queue waits: show o…
+- Learn the user's reviewer taste from reviews they wrote — near T-1537 (done): Round 3 (T-1520): Taste ledger: learn from what the user ke…
+- Score predictions from git outcomes, not clicks
+- Filter the user model by git author identity
+- Add a handoff packet for mid-task harness switches
+- Watch pinned dependencies for yanks, maintainer transfers and relicensing
+- Count avoidable asks per session as the anticipation north star
+- Answer "what will this break?" on demand with `fm foresee`
+- Match commit and PR text to the user's historical style — near T-0707 (done): Frontier 07 — Knowledge graph
+- Wild: publish a planted-history anticipation benchmark
+- Wild: draft a "letter from last month's me" at each generation end
+- Wild: open a "contradiction court" between the user's steers and their recent behaviour
+- Set-cover the 58 cells over MASTER.md's module clauses
+- Collapse cells by signature analysis before writing anything
+- Pivot the grid by signal source, then project back to stages
+- Fill only evidenced cells this generation and hand the rest to the next Seed — near T-2474 (done): fm genesis sweep applies the whole-run coverage bar to each…
+- Stamp stage and surface at the call site and fill from the trace
+- Cite the founding commit for each cell with git pickaxe
+- Sample-audit the filled cells with lot-acceptance rules
+- Reverse-map the dropped-as-built ledger onto cells
+- Crawl the web UI as the probe for its surface columns
+- Wild: Pickaxe the plain-vs-foreman exam transcripts for anticipation moments
+- Wild: Fill cells by deletion order
+- Wild: Let the empty cells compete for the user's attention
+- Stamp every forecast with the tree hash and steer set it was computed on
+- Add a shuffled-history control arm to the foresight probe
+- Plant a known next-ask in a fixture history and require the forecaster to find it
+- Make cell citations re-run, not just resolve
+- Wild: time-machine replay — run the forecaster at each past commit date and score it on what was asked next
+- Wild: weekly canary where a stub user asks a scripted request and the whole anticipation chain is timed end to end
+- Run the sweep's n/a counterexample search before accepting any n/a
+- Run a shadow-user twin that pre-answers every yes-card
+- Backtest every cell by retrodiction on history — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+- Make forecasts a single ranked heads-up row in fm next
+- Run a purge-resistant prediction ledger that resolves hit, miss or expired
+- Verify each cell's cited behaviour, not its file, every sweep
+- Wild: open the session with "what I would have told you if you had asked"
+- Fuzz every verb with empty, bare and lookalike arguments
+- Audit every `hash % len` selection for instability
+- Flag every flipped assertion at task finish — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Count-parity lint for every generated list artifact — near T-2069 (done): Audit diffs list a generated file (a changed line over 4000…
+- Inventory the host's hook events against what Foreman handles
+- Fingerprint the environment on every gate flip — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Sweep steers and decisions for dangling references
+- Audit persistent keys for state aliasing
+- Wild: Typo-twin verbs.
+- Wild: Opposite-day gate. — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+- Wild: Obituary cards for dead steers.
+- Show the user what the guard saw but did not ask about
+
+## Round 4
+- Show "already built" at capture time, with the clause and task id — near T-2546 (done): Already built, at birth: fm capture and fm task new name th…
+- Draft the third ask of a series from the user's steer chain
+- Warn when a new feature collides with a standing steer — near T-2246 (done): A cold-read FAIL blocks only when it quotes, verbatim, the …
+- Wild: Time-machine replay of the forecaster across past commit dates
+- Fill the 58 cells from the user's own correction history, not the grid
+- Ghost-text the predicted next ask, with a one-word go — near T-0095 (done): foreman-ui 0.3.0: animated cards everywhere, quick capture,…
+- Print "already built" while the user is still typing
+- Make dismissal teach, and say so
+- Wild: Publish "Foreman Wrapped" for the user's own month
+- Add a ⌘K command palette to the web UI that ranks actions by the forecast
+- Clip the last failing command or a browser selection into the inbox
+- Detect a regime change in the user model — near T-1549 (done): Round 3 (T-1520): Session and release care: the user's own …
+- Tag user-model fields with a sharing class that the pack builder enforces
+- Publish foresight flags as SARIF diagnostics
+- Show "needs N more asks" readiness per predictor — near T-2216 (done): Exam kinds for gen-0 #2 Exhaustive thinking, #9 Orchestrati…
+- Check Foreman's own upgrade against a copy of the real state first — near T-2381 (done): Docs proof (Mission 7, #6/#10): fm prove --docs checks the …
+- Add per-field provenance and an edit log to the user model — near T-0671 (done): Milestone: Features — Autonomy and the user
+- Hold a forecast-versus-baseline scoreboard in the web UI
+- Wild: warm the model's prompt cache before the user's habitual start
+- Wild: let a local model write the night's "dream journal" of tomorrow's likely work
+- Wild: replay a stranger's repository history as a free anticipation benchmark
+- Anchor each cell to a public `fmforesight` symbol
+- Write each cell as a three-field form: predicts, read by, backtest
+- Check each cell's quoted user phrase as a substring of the asked stream
+- Contract-test the foresight JSON that the web UI consumes
+- Fill in dependency order so later cells cite earlier ones
+- Drip-fill three cells per night from the night tick
+- Count a real gap as a filled cell, only when it is filed with a task — near T-2159 (done): Coverage must be real: reset coverage.md's templated cells …
+- Settle conflicting fills by a blind second filler
+- Wild: Feed the 58 cell prompts to `fmforesight` itself
+- Wild: Rebuild the API from the grid alone
+- Wild: Let filler children bid by confidence and leave low bids as gaps
+- Do less: file only the cells a past incident touched, and mark the rest "unreached" with an expiry
+- Replace the exhaustive grid pass with a shared evidence file each filler appends to
+- Make the forecaster fail loudly, never empty
+- Check all five harness transcript shapes yield the same asked records
+- Surface foresight only as one ranked line in `fm next` — near T-2118 (done): FEATURE M: Genesis on every surface gen-0 names: fm code (f…
+- Gate every predictor on one walk-forward backtest and nothing else
+- Make foresight stateless over existing ledgers — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Fill a cell only with a re-runnable one-line probe
+- Replace the 58 cells with one executable predictor-family table
+- Backtest-gate every predictor on the asked stream
+- Feed `fm next` one ranked heads-up row from foresight
+- Make foresight stateless and resolvable
+- Check "already built" as the user types — near T-2546 (done): Already built, at birth: fm capture and fm task new name th…
+- Plant a known next-ask in a fixture history — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Wild: Write tomorrow's first-request stub tonight as a title-only task
+- Wild: Hold a "contradiction court" between standing steers and recent behaviour
+- Re-run each cell's cited behaviour in the sweep — near T-2474 (done): fm genesis sweep applies the whole-run coverage bar to each…
+- Require a planted-history probe per predictor family
+- Make the forecaster report abstained, failed or empty distinctly
+- Check pairs of generated lists for count parity — near T-2069 (done): Audit diffs list a generated file (a changed line over 4000…
+- Answer "already built" at the moment of capture, for forecasts too
+- Score each predictor against a dumb baseline and mute the loser
+- Wild: run a shuffled-history control arm beside every forecast
+- Wild: weekly canary where a stub user sends a scripted ask through the whole chain
+
+## Deepened: coverage
+- Make the sweep re-run each cell's probe, not just resolve its file — near T-2474 (done): fm genesis sweep applies the whole-run coverage bar to each…
+- Backtest each family on real history before it fills a cell
+- Seed cells from the eight missed asks
+- Run the n/a counterexample search as a gate on every n/a — near T-2335 (done): Plan gate asks for readings and each approach's outcome (Mi…
+- Expire n/a rulings when a new capability lands
+- Rank the empty cells by minutes lost from the ledger
+- Check that every filled cell's output is read by a session path
+- Wild: Let a stub user file the complaints a cell should prevent
+
+## Deepened: anticipation
+- Run a predictor tournament on the asked stream — near T-2449 (done): The next-request predictor's paths trail the naive baseline…
+- Gate every predicted draft on already-built, grounding and a planted-history probe
+- Make foresight act: prefetch context into the lane before the ask
+- Plot the anticipation learning curve
+- Check "already built" as the request is typed — near T-2546 (done): Already built, at birth: fm capture and fm task new name th…
+- Add a sealed-prediction scoreboard that survives generations — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Fill the 58 cells through a probe set, not 58 writings
+- Predict machine breakage from the ledger before it happens — near T-2409 (done): #3 exam kinds forecast and breakage: next-request predictio…
+
+## Deepened: delight
+- Fold the "things I'd have told you" cards into one forecast object
+- Score every forecast as hit, miss or ignored
+- Ground each warning in its one past incident — near T-2281 (done): Lean ratchet (Mission 8/#12): each ship records the always-…
+- Learn the annoyance threshold from behavior, not a swipe deck
+- Offer a ghost next task in `fm next` — near T-2460 (done): Round first holds the self-improvement (friction) pass too:…
+- Show a Foresight page in the web UI with predicted versus actual
+- Fix flag typos from the user's own history — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Wild: Write a monthly letter from last month's me
+- Wild: Read the machine's weather report — near T-0367 (done): fm doctor doesn't time hooks on a busy machine: one bench r…
+- Wild: Reveal sealed predictions at each generation end — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+
+## Cross-bred
+- Build an origin ledger for the user model — near T-2437 (done): Gen 2: a model layer (user steer 2026-10-31, start after ro…
+- Run an Anticipation inbox that learns from every verdict — near T-2355 (done): One trigger table routes every event to inbox, queue, lane …
+- Wild: Pre-answer asks before they are typed
+- Make foresight act through machine-aware pre-flight
+- Wild: Hold a restraint court for self-filed tasks
+- Wild: Ghost-text the next request with a voice check — near T-0095 (done): foreman-ui 0.3.0: animated cards everywhere, quick capture,…
+
+## New ideas per lens
+- user value: 33
+- unspoken needs: 26
+- delight: 25
+- capability map: 51
+- approaches: 50
+- reliability: 23
+- simplicity: 22
+- bold bets: 40
+- blind spots: 42
+
+## Coverage (ideas per category)
+- coverage 46
+- anticipation 28
+- delight 16
+- reach 15
+- user model 14
+- web ui 13
+- data hygiene 12
+- reliability 12
+- measurement 12
+- calibration 9
+- machines 8
+- restraint 8
+- backtest 7
+- coverage rot 6
+- prompt ux 5
+- close-out 5
+- foresight 5
+- harness parity 5
+- lean 5
+- observability 5
+- trust 4
+- capture 4
+- evaluation 4
+- steers 3
+- machine model 3
+- forecasting 3
+- pre-flight 3
+- prediction 3
+- process 3
+- verification 3
+- liveness 3
+- honesty 3
+- drafting 3
+- correction forecast 2
+- next request 2
+- intake 2
+- speculation 2
+- session start 2
+- cli 2
+- status line 2
+- testing 2
+- privacy 2
+- wild 2
+- silent failure 2
+- cell probes 2
+- architecture 2
+- cost 2
+- attention 2
+- exam 2
+- simplicity 2
+- queue hygiene 2
+- genesis 2
+- robustness 2
+- baseline 2
+- speculative drafts 2
+- forewarning 2
+- forecast integrity 2
+- devices 2
+- grounding 2
+- prioritisation 2
+- noise control 2
+- draft on spec 1
+- noise 1
+- proof of value 1
+- draft quality 1
+- ship 1
+- filing 1
+- feedback loop 1
+- waste to value 1
+- shareable recap 1
+- motion 1
+- explainability 1
+- coverage grid 1
+- risk 1
+- friction 1
+- ghost-next 1
+- next-edit 1
+- user-model 1
+- supply 1
+- time bombs 1
+- warm 1
+- habits 1
+- reuse 1
+- precision 1
+- prediction ledger 1
+- drafts 1
+- alert fatigue 1
+- model integrity 1
+- determinism 1
+- surface 1
+- dropped ledger 1
+- web/pane 1
+- harnesses 1
+- privacy/decay 1
+- speculative lanes 1
+- taste learning 1
+- projects 1
+- data quality 1
+- predictor gating 1
+- initiative 1
+- premise check 1
+- steer check 1
+- speculative lane 1
+- coverage ui 1
+- estimation 1
+- breakage 1
+- pre-review 1
+- external drift 1
+- draft safety 1
+- control arm 1
+- retrodiction 1
+- metrics 1
+- triggers 1
+- autonomy 1
+- labels 1
+- strategic model 1
+- filing precision 1
+- onboarding 1
+- control 1
+- accountability 1
+- lanes 1
+- feedback 1
+- transparency 1
+- coverage triage 1
+- data integrity 1
+- delivery 1
+- duplicate prevention 1
+- validation 1
+- site 1
+- planning 1
+- evidence 1
+- coverage integrity 1
+- rot 1
+- tests 1
+- tower 1
+- hooks 1
+- state 1
+- user value 1
+- noise reduction 1
+- latency 1
+- local-first 1
+- evals 1
+- unattended 1
+- dogfood 1
+- tooling 1
+- anticipation reliability 1
+- prediction gating 1
+- adversarial testing 1
+- approach 1
+- ablation 1
+- ledger 1
+- consistency 1
+- duplication 1
+- sweep 1
+- personalization 1
+- reflection 1
+Thin (0-1 ideas): user value, performance, security, agents, developer experience, docs
+
+## Kill it fast (the quickest test that would show it isn't worth building)
+- Exclude Foreman's own test inputs from the user model — Grep the user-model input log for test-run session IDs; if they're under ~2% of lines, the filter isn't worth building.
+- Complete the DONE-WHEN for a raw capture — Pull the last 20 raw captures and check how many the user later edited a DONE-WHEN into; if under 3, skip.
+- Check literal tokens from the request against the built surface — Take 10 past requests, grep their quoted tokens against the built output by hand; if misses are under 1 in 10, skip.
+- Draft the third ask of a series — Look at the last 5 series of asks; if the third ask differs in intent from a template of the first two in most, drafting can't work.
+- Keep a per-machine profile of what breaks here — Diff the last 10 failures across machines; if over 80% reproduce on both, a per-machine profile adds nothing.
+- Add a web UI Anticipation page with accept and dismiss — Check the dismiss/accept data you'd have: if the CLI already surfaces anticipations and none were dismissed in two weeks, the page has no users.
+- Flag a task that restates a dropped self-filed class — List dropped self-filed tasks and see if any later task restated one; zero restatements kills it.
+- Show the lead time of each anticipation hit — Compute lead time from existing timestamps for 10 hits; if the median is under a minute, the metric is noise.
+- Wild: run a blind "is this the user's voice?" test on drafted asks — Show 10 drafted asks mixed with 10 real ones to the user once; if they guess right at chance, drafts are fine and the test shows nothing, and if they spot every fake, drafts are unusable.
+- Wild: turn a typed correction into a draft check before the user finishes the sentence — Time how long the user's corrections take to type; if under 5 seconds, no prediction can beat them.
+- Wild: write the "sorry, already built" note before the ask is typed — Count past "already built" replies; if fewer than 3 in a month, there's nothing to preempt.
+- Wild: print a "things you will probably ask about this one" list at task close — Check 10 closed tasks against the user's follow-up asks; if the list's hit rate is under 20%, it's clutter.
+- Tag every line in the model-of-me stream by origin — Look at the stream for an origin field; if one source is over 95% of lines, tagging changes nothing.
+- Quarantine captures fed from tests and debugging — Count test-origin lines in captures; under 1% means quarantine is pointless.
+- Forecast the ship before running the suite — Compare the last 20 suite results to a "last run passed" baseline; if that predicts 95% or better, forecasting adds nothing.
+- Make foresight act instead of announce — Check whether the user ever acts on an announced foresight; if they never do, acting autonomously is a trust issue, not a feature.
+- Lift a steer when its own end condition is observed — Grep existing steers for ones with observable end conditions; fewer than 3 means no case.
+- Tie machine quirks to pre-flight checks — List machine quirks and see how many map to a checkable precondition; if under 3, skip.
+- Predict which self-filed tasks the user will drop, before filing — Compare dropped vs. kept self-filed tasks on length and keyword; if no feature separates them, there's no predictor.
+- Count a cell only if a past incident could have used it — Replay incidents against the cells; if under 10% of cells match any incident, the rule prunes nearly everything and signals the model is empty.
+- Show a per-path correction density map that sets foresight depth — Plot correction counts per path for 30 days; if flat, the map is uniform.
+- Wild: Run a bandit draft that sometimes drafts the second most likely request — Check whether your top-1 hit rate is already above 70%; if so, exploration costs more than it learns.
+- Wild: Keep a hindsight court of the last 20 closed asks — Review 5 closed asks by hand; if you can't find any verdict that would change behavior, drop it.
+- Wild: Open each session with the one thing the user is most likely to type first — Look at the user's last 20 first messages; if they're all different, no single prediction can hit.
+- Ghost-text the next request — Check how many next requests the user types that are under 4 words; short ones don't benefit from ghost text.
+- Make dismissal a lesson — Count dismissals in the log; fewer than 10 gives nothing to learn from.
+- Expand "the usual" — Grep for the phrase "the usual"; if it appears fewer than 3 times, skip.
+- Forgive the typo from personal history — Count typos in the user's recent asks that led to a wrong action; zero kills it.
+- Keep missed guesses on a "not today" shelf — Count missed guesses that later came true within a week; under 5% means the shelf is dead weight.
+- Show restraint as a status-line pride line — Ask whether the user glances at the status line at all; if it already has more than 3 fields, they don't.
+- Close each task with a doorway line — Check whether the user's follow-ups after a close are predictable from the task type; if not, the doorway is generic.
+- Add a "told you so" receipt for problems flagged early — Count early flags that later proved right; fewer than 3 per month means no receipts.
+- Wild: Hold a "guess my next ask" mini-game in the web UI — Ask the user if they'd play it once; if the answer is no, done.
+- Wild: Publish a shareable "Foreman Wrapped" page — Check that there's at least a month of data per user worth summarizing; under that, it's an empty page.
+- Wild: Tip the hard hat when trouble is coming — Count past warnings that preceded real trouble; if precision is under 30%, it's crying wolf.
+- Offer a one-line "because" for any nudge — Check if existing nudges already carry a reason; if over 80% do, there's no gap.
+- Fill the 58 cells as a flipbook of "moments" — Count distinct moments the 58 cells describe; if they cluster into under 10, a flipbook is repetitive.
+- Forecast tmpfs and disk runway before spawning lanes — Run `df` and look at tmpfs headroom; if it's never been under 50% free during lanes, skip.
+- Keep a per-machine failure profile — Same as 5: check whether the failures reproduce across machines; if they do, one profile suffices.
+- Show a hotspot-times-reopen risk line at plan time — Correlate hotspot score with reopens on 20 past tasks; no correlation kills it.
+- Rank tests by learned failure likelihood — Check whether failing tests are already the first ones run; if the whole suite runs under a minute, ranking is moot.
+- Pre-empt flag and verb mistakes with a generated synonym table — Count flag/verb errors in the last 100 commands; under 5 means no synonym table is needed.
+- Suggest the likely next verb from verb n-grams — Compute top-1 next-verb accuracy from a bigram table on the log; under 40% kills it.
+- Queue sibling edits from the user's uncommitted hand edits — Look at uncommitted hand edits that had unedited siblings; if fewer than 3, skip.
+- Read every harness's transcripts into one user model — List which harness transcripts actually exist on disk; if only one has data, merging is moot.
+- Score dependencies for abandonment risk — Check dependency update history; if none of yours have been abandoned in 2 years, skip.
+- Warn at departure about unpushed work on the other machine — Run `git status` on the other machine's repos; if unpushed work has never been stranded, there's no problem.
+- Run a future canary on the gate at faketime +90d with latest deps — Run the gate once under faketime +90d with latest deps; if it passes, the canary has nothing to catch.
+- Pre-read the next likely file into the graph cache — Check cache hit rates; if the graph cache is already warm for 90% of reads, prefetching adds nothing.
+- Print one annoyance forecast at session start — Review past sessions' first annoyance; if the forecast would've been right less than half the time, drop it.
+- Lock each family probe to a cell and a session path — Check whether each probe family already maps to one cell; if the mapping is many-to-many, locking breaks it.
+- Backtest each cell before writing it — Backtest on one cell by hand; if the backtest data is under 10 events, you can't test.
+- Fold the 58 cells into predictor families — Cluster the 58 cells by their input features; if they fall into over 30 clusters, folding gains nothing.
+- Predict machine breakage from the package log — Read the package log for the last 5 breakages; if none follow an upgrade, skip.
+- Next-verb Markov table from the event log — Compute Markov perplexity vs. uniform; if barely different, kill it.
+- Compute the model of me on demand from transcripts — Time a full transcript pass; if it takes over 10 seconds, on-demand is too slow to be useful.
+- Reuse shell history and git co-change for habits and breakage — Check `~/.bash_history` size and git co-change coverage; if history is truncated or empty, skip.
+- Mark each cell with its reach path — Check whether every cell already declares a reach path; if most do, the marking is redundant.
+- Negative model from the dropped ledger — Count dropped-ledger entries; under 20 means no negative model can be trained.
+- Prefetch context instead of drafting requests — Measure how often a prefetched file was actually read in the next turn; under 30% makes it wasted tokens.

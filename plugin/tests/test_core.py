@@ -217,6 +217,16 @@ class WritesAndLocks(ForemanTestCase):
             self.assertEqual(f.read(), "two")
         self.assertEqual(os.listdir(os.path.dirname(path)), ["f.txt"])
 
+    def test_write_atomic_takes_a_name_near_the_length_limit(self):
+        # T-3336: the temp name was '.' + the whole name + '.XXXXXXXX.tmp'; sync refused a 250-byte brainstorm file
+        for name in ("n" * 246 + ".md", "é" * 125 + ".md"):  # 249 and 253 bytes
+            path = os.path.join(self.tmp, "long", name)
+            c.write_atomic(path, "text")
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "text")
+            os.unlink(path)
+        self.assertEqual(os.listdir(os.path.join(self.tmp, "long")), [])
+
     def test_lock_times_out_when_held_by_another_process(self):
         d = os.path.join(self.tmp, "lockdir")
         os.makedirs(d)

@@ -153,6 +153,26 @@ class Secrets(ForemanTestCase):
         for ph in ("AKIA" + "IOSFODNN7EXAMPLE", "sk-ant-EXAMPLE" + "0123456789abcdef", "sk-" + "x" * 20, "sk-your-key-here-" + "0123456789"):
             self.assertEqual(secrets.scan_text(f"x {ph}\n"), [], ph)
 
+    def test_a_placeholder_password_in_a_url_is_not_a_secret(self):
+        # T-3336: a review quoting https://user:pass@host blocked every commit of the synced state mirror
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
+        from sampo import secrets
+        for pw in ("pass", "password", "PASSWORD", "pw", "secret", "example", "changeme", "***"):
+            self.assertEqual(secrets.scan_text(f"a `https://user:{pw}@host` url\n"), [], pw)  # pragma: allowlist secret
+        real = "Zq8L" + "m2Xv9R"
+        self.assertTrue(secrets.scan_text(f"a https://user:{real}@host url\n"))  # pragma: allowlist secret
+        self.assertTrue(secrets.scan_text(f"a https://user:{real}pass@host url\n"))  # pragma: allowlist secret
+
+    def test_an_iso_date_under_a_secret_name_is_not_a_secret(self):
+        # T-3336 (T-2450's case): token_expires = "2030-01-01" blocked a commit of the synced mirror
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
+        from sampo import secrets
+        for v in ("2030-01-01", "2030-01-01T12:00:00Z", "2030-01-01 12:00:00+02:00"):
+            self.assertEqual(secrets.scan_text(f'token_expires = "{v}"\n'), [], v)
+        self.assertTrue(secrets.scan_text('token = "2030-01-01' + 'Zq8Lm2Xv"\n'))
+
 
 if __name__ == "__main__":
     unittest.main()

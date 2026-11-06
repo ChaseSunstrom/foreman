@@ -1,0 +1,820 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 552 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- List what blocks only the user, with one action each — near T-1157 (done): Add `fm todo`, the list of what only the user can do (pendi…
+- Mark a check that couldn't run as UNPROVEN, never as pass
+- Record hand overrides as overrides, not proof — near T-2398 (done): Each proof run records the world it leaned on; fm doctor na…
+- Audit "proven" labels that were later reversed — near T-0682 (done): Milestone: Features — Verification and product checking
+- Publish an honest duel scorecard, losses included
+- Drill a host wipe: restore Foreman state on a scratch directory
+- Let each ledger reader declare the record classes it needs
+- Add an outside tripwire for ops gauges Foreman wrote itself
+- Log the commands the user types to check verdicts via an opt-in `fm run` wrapper
+- Ship a trial mode with an eject command (wild)
+- Replay a past commit overnight, Foreman vs plain, on the user's own repo (wild)
+- Approve `fm ask` prompts from a phone push (wild) — near T-1226 (done): Chat approvals can't be self-granted: a non-interactive cla…
+- Show a sealed-prediction hit rate (wild) — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Send a weekly "what Foreman did for you" receipt
+- Record every override of an unproven row as "not proof" — near T-2391 (done): Unproven rollup by domain (Mission 7, #6): one proof-kinds …
+- Label UI checks that couldn't run as "unproven (no display)" — near T-2394 (done): #6/#10 exam kinds (Mission 7): fm exam gains proof and beyo…
+- Audit past "proven" labels against later reversals
+- Rehearse a host wipe with `fm restore --drill`
+- Cross-check every ops gauge against a signal Foreman didn't write
+- Check each ledger reader against a missing record class — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Log the commands the user types to check Foreman, via a `fm verify` alias — near T-1639 (done): fm flow FILE: a user journey (goto, click, type, expect) ru…
+- Record which proof artifacts get opened after a finish receipt
+- Wild: Chaos-month for the guard — replay your own near-misses
+- Wild: A "second opinion" button that has a different model re-judge any green receipt
+- Wild: A weekly "what I would have told you" letter from the user model — near T-1800 (done): Foreman reasons ahead: names why usage burns, unasked (sess…
+- Wild: Dead-man's switch for the whole tower
+- Warn when a steer's automatic check has gone stale
+- Show the receipt as a one-glance "proof card"
+- Make the hard hat wink when the guard saves you
+- Add a "Friday recap" that tells the week as a story
+- Animate the stage rail so state is felt, not read
+- Clickable task ids everywhere
+- Give the first run a 90-second guided win — near T-1309 (done): Fm code tui --tour: a 30-second guided demo run with captio…
+- Show "what I almost did" on the override
+- Play the queue as a train timetable — near T-0243 (done): Shadow-user soak — a child plays the user from their record…
+- Wild: Let the hard hat have moods from the calibration data
+- Wild: Turn a finished day into a 20-second replay clip
+- Wild: A "ghost pair" that argues the other side in the pane
+- Quiet the doctor with a "all clear" moment
+- Name a settled bet in the feed as a small celebration
+- Sign proof receipts as in-toto attestations
+- Mark unrunnable checks "unproven" in every receipt
+- Record human overrides as an override ledger — near T-1137 (done): Record stage changes on the ledger (a stage_change event wh…
+- Validate "test fails without the change" with mutation testing — near T-0224 (done): Fm evolve — a bench-gated self-improvement loop: a mutation…
+- Add a PR bot that posts the proof receipt as a comment
+- Export the guard as shareable policy packs
+- Run a restore drill
+- Check ops gauges against an outside signal
+- Quarantine and track flaky tests
+- Export Foreman data as SARIF and OpenTelemetry
+- Wild: replay a past session against a new model or Foreman version — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+- Wild: let two agents on different models cross-check each other's proof
+- Wild: turn the guard into an on-device "what would have been blocked" dry-run for any shell
+- Wild: publish a claims-versus-evidence page that rebuilds itself nightly
+- Add cost and token budgets per task, not just per account — near T-1824 (done): FEATURE: fm cost shows the retry tax per task: tokens spent…
+- Spend idle usage on a whitelist of measurement-only runs
+- Mark every overridden or unrun proof as "unproven" in a third state
+- Audit past "proven" labels read-only — near T-2397 (done): Research claims say how they were learned (ran, read, recal…
+- Mine the transcript's bash-input records for the user's hand checks
+- Cross-check each ops gauge against a second source
+- Delete one ledger record class at a time and watch the readers (wild)
+- Mutate each finished task's fix to see whether its proof notices (wild) — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Convene a cross-harness jury on disputed "proven" rows (wild)
+- Run blind-language scenario generation overnight
+- Add a "gap-only" first-hour check instead of a tutorial
+- Split foreman-ui `register.tsx` while the budget is idle
+- Stage a self-writing "cheat sheet of unopened proofs" (wild)
+- Delete-a-record-class drill — near T-2512 (done): macOS: a shebang script named claude counts as Claude Code …
+- Make "unproven" a first-class receipt state
+- Record overrides as overrides
+- Track reversed "proven" labels — near T-2397 (done): Research claims say how they were learned (ran, read, recal…
+- Cross-check self-written gauges against outside signals
+- Restore drill for a replaced host — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Hook circuit breaker: fail open on slow, fail closed on guard — near T-0087 (done): Hook circuit breaker: a hook failing 3 times in a row pause…
+- Flake quarantine with rates
+- Version-skew check across installed parts
+- Torn-write fuzz for ledgers — near T-2337 (done): Calibration ledger (Mission 5, #8): every stated confidence…
+- Chaos run (wild)
+- Reproduce a sample of proofs cold (wild)
+- Flight recorder for hook decisions (wild) — near T-2281 (done): Lean ratchet (Mission 8/#12): each ship records the always-…
+- Log the user's own verification commands (wild) — near T-1639 (done): fm flow FILE: a user journey (goto, click, type, expect) ru…
+- Ship Lite mode: guard, plan, prove only
+- Turn ablation results into removal tasks — near T-0224 (done): Fm evolve — a bench-gated self-improvement loop: a mutation…
+- Fold the 30+ deferred "Later from" tasks into a few catalog files
+- Collapse the steers into a superseding rule set
+- Give every receipt exactly three states: proven, unproven, overridden
+- Cap Foreman-filed inbox items at 5 in `fm next` — near T-0125 (done): Recursive self-improvement loop: fm friction digests Forema…
+- Hide verbs the user hasn't used in 30 days from `fm help`
+- Close or tier the long-blocked adapter tasks (T-0335, T-0336, T-0337) — near T-0676 (done): Milestone: Features — Performance and cost
+- Merge Foreman's ledgers into one append-only record with a class field
+- Wild: `fm eject` leaves a standalone guard and removes Foreman
+- Wild: a 100-line guard a person can audit in five minutes
+- Wild: a weekly "diet" digest with a negative-growth goal
+- Wild: a one-command home screen where plain `fm` shows only what to do now
+- Run a mutation test on every ledger
+- Add an "unproven" receipt state that overrides can't turn into "proven"
+- Log hand-typed verification commands from the Claude Code bash-input channel
+- Add an outside witness for ops gauges
+- Check that stored steer checks aren't vacuous
+- Fuzz the guard with an adversarial agent — near T-0411 (done): FEATURE: the guard reads a for loop over literal words (for…
+- Replay a finished task from its recorded commands — near T-2606 (done): A criterion whose every recorded run matched no test can ha…
+- Publish a signed duel scoreboard against plain Claude — near T-1222 (done): Benchmarks page: Foreman against plain Claude Code (and oth…
+- Let the user bet against Foreman — near T-2406 (done): Prediction book: Foreman predicts the user's next request f…
+- Pick ceremony by nightly ablation
+- Add a cross-vendor judge to the finish gate
+- Give every receipt one visual verdict grammar
+- Draw "unproven" as hatched, never green
+- Animate the stage rail to explain state
+- Ship designed empty, loading and error states for every web screen
+- Show the calibration as a reliability diagram — near T-2498 (done): Interim calibration reads and reliability bins: fm outcomes…
+- Make the Today charts one shared chart kit — near T-1012 (done): Pane: History takes only the rows it fills; spare rows go t…
+- Fix the pane background mismatch
+- Add a ledger-health strip with outside-signal ticks
+- Wild: Play the session back as a scrubbable timeline
+- Wild: Show the guard as a visible tripwire
+- Wild: Turn the tower into a living map
+- Wild: Give the hard hat a mood
+- Add a keyboard command palette to the web UI — near T-1053 (done): Tainted web/MCP content: commands built from text a web or …
+- Mark override and unproven rows with a persistent badge
+- Subtraction (T-2534/35/36):
+- Unattended liveness (T-2542):
+- Duplicates and grounding (T-2546/47):
+- Input authorship (T-2554):
+- Silent abstention (T-2566):
+- Make every decider report its coverage — near T-2347 (done): Price a parked door: the final report (fm decide --review) …
+- Tag every record with its author and filter readers by it
+- Run a drill that deletes one ledger record class at a time
+- Lint the criteria in a task against their own examples — near T-2406 (done): Prediction book: Foreman predicts the user's next request f…
+- Give exam items stable IDs and versions
+- Make an override record that it is not proof — near T-2398 (done): Each proof run records the world it leaned on; fm doctor na…
+- Give every check a third state, "could not run", with a reason — near T-2295 (done): Fmfriction give-up lines name task ids only: append each ta…
+- Prove a restore drill on a clean home directory
+- Log the commands the user types by hand to check verdicts — near T-2416 (done): fm goal verdict judges a done-when by a hand-written list o…
+- Run a fuzzer that tries to make the gauges lie
+- Add a negative-space map of what Foreman never observes
+- Sweep a whole class of siblings after every user correction
+
+## Round 2
+- Undo a landed task in one command — near T-2342 (done): Stop only at an irreversible, ambiguous step (Mission 5, #8…
+- Batch the user's decisions with timed safe defaults
+- Forecast duration and cost before starting, then score the forecast — near T-1878 (done): Fm queue --cost quotes the queue before it starts: a per-ti…
+- Order the diff for a one-minute human review — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Draft release notes and PR text from closed tasks — near T-0752 (done): Milestone: Learning, paid half — evals on block, bench hold…
+- Learn queue order from what the user actually picks
+- Park and resume cards for interrupted work — near T-1226 (done): Chat approvals can't be self-granted: a non-interactive cla…
+- Show why a line exists — near T-2588 (done): fm doctor's reflex-prompts row says no prompts were recorde…
+- Spend idle usage on speculative drafts of the top queue items (wild)
+- Run the same ask on two models and show a diff of diffs (wild)
+- Dictate asks and hear the morning brief from your phone (wild)
+- Teach a newcomer the repo from its task history — near T-0222 (done): Fm bench build --commits RANGE --verify CMD — bench cases f…
+- Show the ask the diff actually answered — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Answer a re-pasted steer with the task that already did it
+- Pick standing rules per task instead of injecting all of them — near T-1290 (done): The builder rules live once, in plugin/agents/fm-builder.md…
+- Add a veto window to costly decisions Foreman made for you
+- Print how many minutes of review today's work asks of you
+- Draft the standing rule and its check from a user correction — near T-2167 (done): Every user steer is a standing rule plus an automatic check…
+- Give removed flags a tombstone instead of an error
+- Scrub a pasted secret from every stored copy and say to rotate it
+- Forecast the end of a long run — near T-2327 (done): Enforce the user's 2026-10-31 steers as automatic checks: s…
+- Generate a per-harness parity table from a conformance run
+- Wild: Interview the user for five minutes a week
+- Wild: Pre-mortem every long run
+- Wild: Keep a changelog of the user's changing mind — near T-1085 (done): State rollback on upgrade: fm keeps a snapshot of state bef…
+- Surface open tasks that only the user's hardware or credentials unblock, on their own screen
+- Show a "close call" shelf for the guard — near T-0870 (done): fm demo: see Foreman work in a minute without model calls (…
+- Give every task a one-line headline written at close — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Add a "why this one next" whisper to fm next — near T-1969 (done): The Stop drive and fm next say 'Usage is ahead of pace (<wh…
+- Make the demo SVG regenerate from the latest real session — near T-0979 (done): Re-record the README demo from a real Claude Code session w…
+- Name each settled bet in the feed with a tiny result line
+- Offer a `fm doctor --calm` view that prints one line when all is well
+- Let the web UI theme follow the host terminal palette
+- Wild: Write the weekly changelog as the project's own release notes in the project's voice
+- Wild: Let the user "adopt" a lesson by naming it
+- Wild: Offer an end-of-day "tool belt" screen that shows only the three verbs you used
+- Play a soft chime or terminal bell when a long run finishes with a pass
+- Print the cost of each finished task in plain money and minutes
+- Re-run proven tasks nightly and bisect the break — near T-0888 (done): Fm night runs fm sentinel (closed tasks' checks against HEA…
+- Taint untrusted content in the guard — near T-1327 (done): Nested Claude sessions that fm code starts run without Fore…
+- Run bypass-mode sessions in a bwrap/Landlock sandbox
+- Gate diffs for secrets and new dependencies — near T-2121 (done): fm find: deterministic language-agnostic finders (untested,…
+- Add a diff-coverage proof kind — near T-2288 (done): Data/migration proof kind (#10, #6): fm prove --migration r…
+- Hand a task between harnesses
+- Review someone else's PR with the proof discipline
+- Unit-test the guard rules with examples — near T-2296 (done): Batch: The friction digest's guard example is …; Fmfriction…
+- Add an event bus with notification sinks
+- Generate release notes from closed tasks and their receipts
+- Sync the queue with GitHub Issues or Linear in both directions
+- Wild: Make Foreman an MCP server for any agent — near T-2395 (done): Proof surfaces (Mission 7, #6/#10): the rollup by kind on M…
+- Wild: Replay a session against a new model before upgrading
+- Wild: Stage a "lessons passport" shared across repos
+- Plan the idle spend as a budget, not a loop — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Probe every blocked task against today's world
+- Run a cold newcomer persona against the README
+- Test install on clean distros with no `claude` on PATH — near T-2389 (done): Release proof (Mission 7, #10): fm prove --release builds t…
+- Run the fenced command blocks in README and MASTER nightly — near T-2395 (done): Proof surfaces (Mission 7, #6/#10): the rollup by kind on M…
+- Replay the credential-redaction path against a public secret-format corpus
+- Add `fm why` for any verdict, hook note or refusal — near T-0228 (done): foreman-ui catch-up: budget, bench and evolve, research ask…
+- Auto-bisect an exam regression to a commit — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Fetch a ceremony-per-task-kind table from a Haiku-vs-Sonnet replay of finished tasks
+- Wild: Hold a constitution court
+- Wild: Run a read-only status page that works over a local network and nothing else
+- Wild: Run a "dream" pass that picks random old closed tasks and re-derives them from the current repo
+- Sweep crash points on the drive — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Probe the guard from the timer's environment — near T-1224 (done): Guard: stop credential reads, environment exfiltration and …
+- Inject a fake clock into every windowed reader
+- Reap orphaned children on a drive kill
+- Add a stale-safe claim heartbeat to tasks — near T-1667 (done): fm fsck: a read-only report of broken worktrees, stale lock…
+- Queue publishes and retry them idempotently offline
+- Check repo hazards before a finish or ship — near T-1980 (done): Batch keeps DONE-WHEN verify, gates name why-not-caught, fm…
+- Degrade to notes when the disk is full or read-only — near T-1889 (done): The fm check is piped note is given in full once per session
+- Calibrate the noise floor for the self-change gate — near T-2605 (done): The self-change gate's loaded wall-time check compares medi…
+- Replay old ledger fixtures through the current readers
+- Shadow twin on the last good release (wild)
+- Bisect Foreman's own regressions automatically (wild)
+- Replay real poison inputs through every hook (wild)
+- Pull the plug on a whole session (wild)
+- Retire one-shot steers when their task closes
+- Collapse `fm doctor` to red items only — near T-2104 (done): fm genesis drift/sweep — gen-0 MUST/NEVER drift check with …
+- Replace flags and env vars with three presets
+- Give every new capability an expiry date — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Auto-close stale Foreman-filed items
+- Move Genesis out of the core install
+- Generate the README feature list from MASTER.md clauses — near T-2136 (done): fm goal plan: a grounded contents list from the user's word…
+- Collapse the exam arms into "with" and "without" in the scorecard
+- Unload skills that haven't triggered in 60 days
+- Route plain sentences to verbs — near T-1699 (done): fm which TASK: route a task in plain words to the Foreman s…
+- Ship Foreman as a single zipapp
+- Show only the day's next move on bare `fm`
+- Enforce the guard at the OS, not the hook — near T-2352 (done): Self-change gate at lane merge: guard replay, hook p95 and …
+- Expose discipline as an MCP server — near T-2371 (done): One find across every shelf (Mission 6, #5): fm which NEED …
+- Explain any line with `fm why file:line` — near T-1872 (done): Fm inbox prefer --why T-xxxx explains a learned priority (t…
+- Route each task to the cheapest model that historically passes — near T-2291 (done): History-based model router (Mission 8, #9): fm lane brief p…
+- Gate package installs — near T-2377 (done): Long-horizon missing fault (Mission 6, #5): fm exam long ru…
+- Check the diff against the plan's scope — near T-2497 (done): The plan's percent against its base rate: when a plan's Cho…
+- Write release notes from receipts — near T-1282 (done): Release Foreman 1.2.42 and push (CI fixes T-1281, macOS T-1…
+- Judge cold reads with a local model — near T-2341 (done): A cold rival reads the request (Mission 5, #2): for an L pl…
+- Wild: Apprentice mode for the user's own commits
+- Wild: Turn a bug report into a task from a screen recording
+- Wild: Install an andon light
+- Wild: Brief the day by voice
+- Define one design-token sheet for every surface — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Draw calibration as a reliability diagram with live bet dots
+- Make clickable task ids and verdicts one component
+- Fix the docked pane background and add a contrast test — near T-1002 (done): Pane readability: zones with dividers, breathing room betwe…
+- Wild: Play a finished day back as a scrubbable timeline
+- Wild: Let the hard hat carry the mood of the calibration
+- Wild: Hatched "unproven" rendered as a visible fog over unrun checks
+- Publish-time leak scan for auto-published data
+- Print the denominator on every "nothing found" — near T-1271 (done): fm code --worker --verify: the worker can't change the file…
+- Scan for deciders that carry no sample size
+- Bind task-text numbers to the code constants — near T-2322 (done): Long goals state every literal their checks pin, or are dro…
+- Boundary-test every windowed metric against clock changes
+- Run a hook × failure-mode matrix — near T-2344 (done): #2 and #8 on every surface (Mission 5): fm code's planner w…
+- Detect circular evidence in Foreman's own scores — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Report alive-but-idle timers — near T-2542 (done): Installed Foreman timers known alive: systemd's last trigge…
+- Check new requests against standing rules — near T-2409 (done): #3 exam kinds forecast and breakage: next-request predictio…
+- Measure blind-spot latency per bug class (wild)
+- Simulate a newcomer from README alone (wild)
+- Plant canaries to detect exam contamination (wild)
+- Generate task histories to test state-machine readers (wild)
+
+## Round 3
+- Keep one warm hook daemon — near T-1829 (done): fm release-check keeps FOREMAN_DOCTOR_BENCH so the suite's …
+- Run only impacted tests in the ship gate, full suite nightly — near T-2323 (done): fm ship runs the affected tests over its range before the f…
+- Cache prove results by tree hash
+- Show Foreman in the editor status bar — near T-2078 (done): fm genesis: the tower's home: init saves gen-0 verbatim and…
+- Spike two approaches in parallel lanes and keep the smaller proof
+- Rehearse tonight's plan before the user leaves
+- Cap interruptions per day — near T-2498 (done): Interim calibration reads and reliability bins: fm outcomes…
+- Let `fm doctor --fix` apply the safe repairs — near T-1184 (done): `fm doctor --fix` applies only the findings that already ha…
+- Quiz the user on a big diff (wild)
+- Open the whole queue as one offline HTML file (wild)
+- Meter the ceremony tax per task
+- Rebuild `fm map` incrementally
+- Explain what each waiting task is waiting on — near T-1359 (done): fm code config: every effective fm code setting with its so…
+- Give conditional steers a machine-readable release condition
+- Run affected tests first at ship, full suite as the backstop — near T-2323 (done): fm ship runs the affected tests over its range before the f…
+- Cache cold-read verdicts by content hash — near T-2471 (done): Cold read made reliable: Haiku first and Sonnet decides on …
+- Store steers and criteria verbatim, and flag truncated ones
+- Map every MASTER.md clause to a test or exam line — near T-2587 (done): Remove the failed MASTER-clause matcher (fmrecall covered_m…
+- Predict file overlap before spawning parallel lanes — near T-2407 (done): Draft ahead: the top prediction that beats the baseline is …
+- Ship a status-bar module instead of a tray icon
+- Budget each verb's cold-start time and import cost
+- Schedule work to resume when a usage limit lifts — near T-1356 (done): fm code limits and failover: a worker turn's failure is sor…
+- Replay last month's tasks with one steer removed (wild)
+- Keep a graveyard page of removed features and rejected ideas (wild)
+- Pre-answer every `fm ask` from the user model and score the guess (wild)
+- Rehearse a steer's check against the diff that would break it (wild)
+- Show the red-to-green flipbook — near T-2388 (done): Incident ritual (Mission 7, #10): fm incident opens an urge…
+- Offer the safe alternative when the guard blocks — near T-0185 (done): Guard block messages name one safe rewrite when the guard c…
+- Give every lane a name and colour that follow it everywhere
+- Slide before/after on UI receipts — near T-2387 (done): Data proof (Mission 7, #10): fm prove --data runs a data co…
+- Collect earned stickers for firsts
+- Ask the duck
+- Complete verbs with a reason and a next guess
+- Read a fixed bug's gravestone
+- Hear the factory
+- Show the morning as a map of the repo — near T-2341 (done): A cold rival reads the request (Mission 5, #2): for an L pl…
+- Name the ship — near T-2611 (done): fm ship --chance names the ship record when the chance sits…
+- Print a progress bar that is honest about uncertainty
+- Replay a mistake as a kind post-mortem card
+- Run hooks through a warm daemon — near T-1007 (done): A one-off session leaves the project's briefs untouched thr…
+- Select tests by impact during a task, run the full suite at ship — near T-2323 (done): fm ship runs the affected tests over its range before the f…
+- Predict file overlap between queued tasks and schedule lanes around it
+- Profile a session's time as a flame bar
+- Speak Agent Client Protocol so editors can host `fm code`
+- Install the guard and the task-id check as git hooks — near T-1107 (done): Guard gap: an Edit/Write (and fm edit) to a repo's .git/con…
+- Complete `fm` in bash, zsh and fish, including task ids and verbs — near T-0924 (done): Shell completion: fm complete prints verbs and live task id…
+- Keep the injected prefix byte-stable to hit the prompt cache
+- Resolve `fm config` values with their source
+- Wild: Make ledgers merge cleanly across machines
+- Wild: Hover any `T-####` in the editor to see its receipt
+- Wild: Land the best verified partial when a task runs out of time
+- Wild: Run a task's proof in a throwaway container as the arbiter
+- Offer a single-file `fm doctor` fix-it mode that applies safe repairs — near T-1184 (done): `fm doctor --fix` applies only the findings that already ha…
+- Run a public benchmark slice as the outside referee
+- Race three framings of an L task, keep the proven smallest
+- Spike deferred tasks under a cap to learn their real effort
+- Keep a warm hook daemon instead of cold Python starts — near T-0676 (done): Milestone: Features — Performance and cost
+- Make doctor repair its own warnings — near T-2257 (done): A lane whose worktree creation was cut off is found and rep…
+- Generate shell completion and did-you-mean from the verb table
+- Replay the ledgers under other ceremony profiles with zero tokens
+- Add an adaptive-difficulty exam so plain stays near 50%
+- Measure cold-read agreement between Haiku and Sonnet — near T-2471 (done): Cold read made reliable: Haiku first and Sonnet decides on …
+- Wild: A/B the user's own queue by randomizing ceremony per task
+- Wild: Adopt-an-issue, spending idle quota on local draft PRs
+- Wild: Let the proof ask a stranger model to break it first
+- Wild: Run a nightly dream pass that re-derives one old fix cold
+- Journal multi-step verbs before running them
+- Cap unattended side effects per hour
+- Add a HALT file every unattended path checks
+- Run a synthetic task through the installed copy hourly
+- Check cross-ledger references with `fm fsck` — near T-2339 (done): Race at plan time, chosen by evidence (Mission 5, #2): fm l…
+- Schema-validate and retry every headless child's output
+- Bound ledger growth with verified compaction — near T-0676 (done): Milestone: Features — Performance and cost
+- Run the suite in a hostile environment matrix nightly
+- Roll self-changes out to one lane first, with auto-rollback
+- Verify the pushed tree equals the tested tree
+- Wild: Emit a repro bundle on any hook or verb crash
+- Wild: Hold a suspend-and-resume test for the whole day
+- Wild: Compare a second implementation of the guard
+- Mark sessions that ended without a clean close
+- Collapse the calibration readers into one module
+- Swap rule: a new verb must retire one — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Delete-a-module drill
+- Pack the 1,388 skill files into on-demand bundles — near T-0933 (done): Stack library: 400+ on-demand implementation cards (fm lib)…
+- Cap default output at ten lines — near T-1276 (done): fm output: measure it right (fm-only commands), then trim t…
+- Verb death certificates
+- Knob census
+- Run only the tests a diff can affect
+- One hook dispatcher process — near T-1277 (done): CI red on Linux 3.12: a long multi-request prompt queues on…
+- Wild: A 100-line kernel that boots everything else
+- Wild: Compact ledgers into signed summaries
+- Wild: Say it in one sentence
+- Run a cold-start apprentice that re-derives each closed task from its ask alone
+- Add a spend-the-idle-budget planner that queues only measurement runs — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Give every receipt a hatched third state with a reason code
+- Make the steers a compiled policy with a conflict detector
+- Wild: Dead-reckoning twin that predicts the next session's first hour
+- Wild: Adversarial twin agent that tries to get a false "done" past the finish gate
+- Wild: Fossil mode: boot Foreman against a six-month-old ledger snapshot
+- Wild: Let Foreman bet its own budget on whether a deferred task is worth doing
+- Cache hook verdicts per input hash to cut hook p95
+- Ship a single-file `fm doctor --explain` that turns each warning into one command
+- Add a cross-harness conformance run that fills T-0335/36/37 with evidence
+- Wild: Hand the whole queue to a phone-sized "pocket foreman" read model
+- Build a UI gallery with golden screenshots — near T-1649 (done): Looks gallery: fm page builds one living specimen per look …
+- Fade values as they go stale — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Open a number's provenance on click — near T-2591 (done): CHANGELOG's Unreleased section opens with a short Highlight…
+- Make every motion map to a state-machine edge
+- Allow one pulsing element per screen
+- Degrade colour for NO_COLOR, 16-colour and non-truecolor terminals
+- Encode verdicts with shape, not colour alone, and respect reduced motion
+- Show which diff hunks the proof command exercised
+- Reflow the pane across narrow, medium and wide terminals
+- Put inline sparklines in CLI status lines
+- Draw the forecast as a range on the work bar
+- Render proof coverage as a repo treemap
+- Show the night's work as a sunrise strip
+- Print the daily report on a thermal-receipt stylesheet
+- Fingerprint Foreman's own output so echoes can't pass as user input
+- Age every pending decision and escalate stale ones
+- Detect dead deciders by their abstain rate
+- Check installed units still execute after an OS upgrade
+- Scaffold deciders with the blind-spot checks built in
+- Time ledger readers against 10× ledger size — near T-2339 (done): Race at plan time, chosen by evidence (Mission 5, #2): fm l…
+- Stamp records with a host id so two machines can't blur ledgers
+- Mutate each DONE-WHEN to find vacuous passes — near T-2453 (done): Outside authors for tool-build, tool-find, tool-grant, proo…
+- Run the nightly on awkward repo shapes
+- Wild: Run the placebo shuffle to expose circular readers
+- Wild: Validate brainstorm questions against past misses
+- Wild: Canary a rolling-distro upgrade before pacman runs it
+- Wild: Show the user which of their own words each rule came from
+- Alert when a user correction repeats a class a prior ask fixed
+
+## Round 4
+- Earn autonomy per task kind
+- Keep test fixtures out of the live ledger — near T-0207 (done): Debugging ledger: hypotheses in the brief that fm next driv…
+- Learn from hand edits after landing — near T-0705 (done): Frontier 05 — Ambient verification and test intelligence
+- Mine closed FIX tasks into finder rules — near T-2241 (done): fm find blind spots: a closed FIX whose lines no finder fla…
+- Triage the deferred pile in five minutes
+- Show the three hunks you'd reject
+- Audit your plain sessions for what Foreman would have caught
+- Define-on-first-use lint plus `fm glossary`
+- Offer a plan menu on L tasks — near T-2464 (done): The Stop hook's drive offers inbox items fm drive --round-f…
+- Emit the user's way of working for other harnesses
+- Add a one-key regret button on landed work
+- Verify host changes with commands, not hope — near T-0943 (done): lint_verify warns when a criterion's verify command touches…
+- Print a "while you were away" card — near T-0117 (done): While-you-were-away row: what drive finished since the user…
+- Stop brainstorming when it starts repeating itself — near T-1388 (done): A coding CLI that fm code runs only reads Foreman's state: …
+- Score intake precision from the user's own drops — near T-2554 (done): The user model reads only the user's own asks: Mission brie…
+- Run the user's examples as red-first tests — near T-2266 (done): Ship red after T-2072: rules over the 6,400-char always-on …
+- Make two cold readers interpret each DONE-WHEN independently
+- Wake deferred tasks when matching evidence arrives
+- Spool child output off tmpfs before the session ends
+- Stamp each result with a model fingerprint and canary it
+- Record guard blocks the user worked around — near T-0298 (done): Unattended checks: fm bench stranger (a newcomer session fr…
+- Promote steers across repos only when they recur
+- Rank capabilities by correction regret — near T-2482 (done): fm genesis seed's draft fails its cold read: it ranks polis…
+- Bet on whether each idea will ship and be used — near T-2496 (done): Ship bets: fm ship --chance NN records a write-once "ship" …
+- Sign an absence contract before leaving
+- Schedule heavy runs around the user's own rhythm
+- Produce a redacted support bundle
+- Show the red-to-green moment as a one-line "flip" on close — near T-0913 (done): foreman-ui closing moment: when a task closes the hero show…
+- Name the guard's save in plain words — near T-0394 (done): CLEAN: the guard's refusal of a plain git merge on Foreman'…
+- Greet a clean `fm doctor` with one calm line — near T-1736 (done): Small cleanups: one WCAG contrast function, unique help-tie…
+- Add a "morning on the site" strip from last night's tick
+- Give the hard hat a mood from today's record
+- Chime softly when a long run lands a pass
+- Let a task finish with a tiny "first of its kind" badge
+- Mine the user's hand edits after a landing
+- Turn each fixed bug into a lint rule — near T-1628 (done): Afterglow lint: a state change with no transition, as a rul…
+- Add a performance proof kind — near T-2616 (done): The docs proof kind reads the lines a task itself landed, n…
+- Take shadow checkpoints before each edit batch — near T-2338 (done): Confidence routes the next step (Mission 5, #8): an M/L cho…
+- Run proofs in remote CI as an arbiter
+- Turn an error report into a task with a repro — near T-2297 (done): Sessions account for every fm find lead they were shown: fi…
+- Add a codemod mode with a repo-wide proof
+- Watch dependencies with a proof lane — near T-0751 (done): Milestone: Runtime — usage-limit failover, revert with depe…
+- Route bugs to the commit that introduced them
+- Make a team ledger with author-tagged steers
+- Seed bugs into the user's repo as a skill drill
+- Learn the user's review taste from reverted commits — near T-1537 (done): Round 3 (T-1520): Taste ledger: learn from what the user ke…
+- Let a pocket CLI reply to `fm ask` over a webhook
+- Spend the expiring quota first — near T-0676 (done): Milestone: Features — Performance and cost
+- Lint the spend plan against the steers
+- Yield to the user: idle work preempts itself
+- Run Foreman on thirty foreign repos, zero tokens
+- Fill missing stack cards from the corpus
+- Print a spend receipt with yield per dollar
+- Offer three spend plans with a timed default
+- Map churn hotspots from task history — near T-2238 (done): fm find hotspots: rank files by git bug-fix history
+- Test answerability of the status verbs — near T-0959 (done): Brainstorm and cost: keep a child's partial answer, a run m…
+- Make zero spend the default with a named payoff
+- Duel Foreman against its past self — wild — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+- Build a rival from the README, then duel it — wild
+- Write the smallest-diff retrospective — wild
+- Probe the upstream CLI contract daily
+- Make foreman-ui disarm itself on a version mismatch
+- Ship a POSIX-sh rescue doctor for when `fm` won't start
+- Audit where durable state lives against tmpfs and logout
+- Chain ledger records with hashes and scrub them nightly
+- Fence ledger writes across concurrent writers
+- Soak the drive with a scripted fake agent
+- Freeze feature work when a verb burns its error budget
+- Quarantine a lesson that preceded a failure — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Refresh test fixtures from real captures and flag drift
+- Wild: Rewind Foreman state to before a bad write
+- Wild: Run a bare-minimum shell tripwire in a second language
+- Wild: Replay each release against its own past inputs before it installs
+- Run a prose-only arm in the duel — near T-2536 (done): fm bench duel --ablate captures one subtraction candidate p…
+- Cap the vocabulary with a glossary lint
+- Find modules no session path reaches — near T-2270 (done): Capability-miss trigger (Mission 6, #5): a missing command …
+- Allow one check per task
+- Classify every state file as source or derived, then rebuild derived ones nightly
+- Print one next command on every nonzero exit
+- Ratchet function length and nesting, starting with `register.tsx` — near T-1041 (done): Register.tsx:68` resets `treeTall` only in turn.start. `fee…
+- Table-drive near-duplicate tests — near T-1834 (done): Playbook use: followed books recorded at finish, unused and…
+- Set a reading budget per doc
+- Wild: Probe legibility with a cold reader
+- Wild: Keep a one-page napkin contract
+- Wild: Hold a weekly one-key "Delete Tuesday"
+- Wild: Fold the Genesis files into one readable page
+- Predict each proof command's result before running it — near T-2387 (done): Data proof (Mission 7, #10): fm prove --data runs a data co…
+- Harvest the user's rewrites of landed Foreman lines into lessons
+- Write the acceptance test blind
+- File repro tasks from the user's own runtime failures — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Run bypass sessions on a copy-on-write overlay of $HOME with a side-effect diff
+- Fork a finished or live session at any step into a counterfactual branch
+- Run lanes on the user's other machines over ssh — near T-0711 (done): Frontier 11 — Cockpit UI
+- Compile steers, lessons and guard rules into AGENTS.md, GEMINI.md and .cursor/rules
+- Distill repeated winning trajectories into skills, kept only if they cut cost
+- Measure real-session code coverage of Foreman itself and file deletion candidates
+- Guard with a local small-model intent check for commands no rule matches
+- Git-native team mode: the queue, claims and receipts in `refs/foreman/*`
+- Keep a pre-registered prediction on every self-change and settle it from data — near T-1059 (done): Every self-change is a pre-registered trial: fm evolve and …
+- Ship a motion budget linter for the web UI
+- Render every receipt state from one verdict component with a state table
+- Add a "settle" transition when a number changes — near T-2594 (done): Gen-2 review: measurements that read wrong (model arm 0/0, …
+- Design the "nothing here yet" screen per web view, each with the one command that fills it
+- Show a diff-of-state scrubber on the stage rail
+- Add a "since you looked" ribbon at the top of every surface
+- Give the guard block a designed "stop" card with the safe alternative
+- Ship a contrast and colour-depth gate for all themes
+- Typeset the daily report as a printable one-page broadsheet
+- Wild: Make the guard a visible tripwire that snaps in the pane
+- Wild: Let the web UI become an ambient dashboard on a spare monitor
+- Wild: Print a tiny sparkline "heartbeat" of the drive in the terminal prompt
+- Make every chart keyboard- and screen-reader-navigable with a data-table twin
+- Stamp every pack section with its age
+- Verify every quoted line in a cold-read FAIL exists — near T-2471 (done): Cold read made reliable: Haiku first and Sonnet decides on …
+- Check conservation laws across the ledgers
+- Probe that every pinned model ID still answers
+- Tell a sleeping machine from a dead timer
+- Count the commands the guard couldn't parse — near T-2342 (done): Stop only at an irreversible, ambiguous step (Mission 5, #8…
+- Watch for regret after every subtraction — near T-1946 (done): Fm ship --watch runs fm ci-watch on the pushed sha after th…
+- Dedupe the idea ledger and count re-proposals — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Audit Foreman state kept on volatile paths
+- Measure how often injected lines get used — near T-0051 (done): Measure how often each injected Next procedure is ignored (…
+- Bisect an abstain-rate jump to the commit behind it
+- Wild: Plant a honeypot in the inbox
+- Wild: Ask the user the question the user model is least sure of
+- Wild: Print an anti-changelog each morning
+
+## Deepened: guard
+- Keep one guard ledger of every verdict — near T-1910 (done): The guard keeps a builder's write inside its worktree named…
+- Replay the ledger against every guard change — near T-2352 (done): Self-change gate at lane merge: guard replay, hook p95 and …
+- Run an unattended red-team loop — near T-1401 (done): Unattended fm code and fm release --push refuse on a stale …
+- Fail closed on the unparseable, in tiers — near T-2556 (done): Diagnose the long tier's false dones: class every failed hi…
+- Preview what a block would have done — near T-1157 (done): Add `fm todo`, the list of what only the user can do (pendi…
+- Record overrides as not-proof, with an expiry — near T-2398 (done): Each proof run records the world it leaned on; fm doctor na…
+- Turn repeated workarounds into rule proposals — near T-1042 (done): Corrections that recur become proposed rules on their own: …
+- Probe guard liveness from outside — near T-0883 (done): Guard tests keep their temp folder outside /tmp when ~/.cac…
+- Test guard parity across harnesses — near T-0442 (done): Guard parity across harnesses: same decision on codex, gemi…
+- Subtract guard rules by evidence — near T-2486 (done): The user's four model rules as tests: no model import in fm…
+- Wild: run blocked commands in a throwaway overlay
+- Wild: a Guard Dojo to try to sneak past it
+- Wild: a 100-line shadow guard that must agree
+- Share guard packs as tested, signed bundles
+
+## Deepened: proof
+- Make the proof state a four-valued lattice
+- Rank proof kinds by their measured reversal rate
+- Add mutation proof: break the fix, watch the test fail — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Quarantine proofs by independent author — near T-2453 (done): Outside authors for tool-build, tool-find, tool-grant, proo…
+- Log the user's hand-checks as proof evidence — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Spot-check proofs cold on a schedule
+- Tie every MASTER.md clause to a proof row
+- Make the receipt a signed, hash-chained bundle
+- Run a proof court: an adversary tries to refute each "proven" (wild)
+- Hand out a proof "warranty" that expires (wild)
+- Prove the headless case: UI checks that say why they didn't run
+- Restore drill: prove the proofs survive a wiped host
+
+## Deepened: calibration
+- Reversal ledger for "proven" labels — near T-2397 (done): Research claims say how they were learned (ran, read, recal…
+- Predict-then-run proof commands — near T-2391 (done): Unproven rollup by domain (Mission 7, #6): one proof-kinds …
+- Confidence-gated ceremony
+- Outside-signal contradiction check
+- Calibration drift alarm
+- Settled-bet one-liners in the feed (wild)
+- Calibration court (wild)
+- Forecast the whole queue (wild) — near T-0108 (done): foreman-ui 0.4.0: mascot, whole-queue progress, size words,…
+- Restore drill with calibration carried over (wild)
+- Calibration card in the session start — near T-2589 (done): The session-start note fits one 1,500-character budget, app…
+
+## New ideas per lens
+- user value: 52
+- unspoken needs: 54
+- delight: 45
+- capability map: 56
+- approaches: 50
+- reliability: 55
+- simplicity: 50
+- bold bets: 48
+- beautiful UI and motion: 48
+- blind spots: 58
+
+## Coverage (ideas per category)
+- guard 27
+- proof 26
+- calibration 21
+- developer experience 10
+- receipts 9
+- measurement 9
+- user model 8
+- delight 8
+- ops 8
+- steers 8
+- trust 8
+- reliability 7
+- legibility 6
+- recovery 6
+- motion 6
+- docs 6
+- devices 6
+- performance 6
+- ledger integrity 5
+- ops trust 5
+- accessibility 5
+- learning 5
+- portability 5
+- agents 5
+- proof honesty 4
+- verification 4
+- web ui 4
+- review 4
+- subtraction 4
+- lean 4
+- intake 4
+- user value 4
+- observability 4
+- cost 4
+- simplicity 4
+- speed 4
+- unattended 4
+- resilience 3
+- onboarding 3
+- provenance 3
+- adapters 3
+- integrity 3
+- planning 3
+- terminal 3
+- durability 3
+- unblock 2
+- credibility 2
+- adoption 2
+- surfaces 2
+- foresight 2
+- close-out 2
+- polish 2
+- proof strength 2
+- integration 2
+- regression 2
+- hooks 2
+- tests 2
+- debuggability 2
+- backlog 2
+- inbox 2
+- ledgers 2
+- design language 2
+- states 2
+- coverage 2
+- attention 2
+- initiative 2
+- context 2
+- queue 2
+- doctor 2
+- notifications 2
+- supply chain 2
+- budget 2
+- security 2
+- time 2
+- concurrency 2
+- reporting 2
+- skills 2
+- design system 2
+- progress 2
+- debugging 2
+- compatibility 2
+- prioritization 2
+- trust cues 2
+- silent abstention 2
+- brainstorm 2
+- criteria 2
+- maintenance 2
+- team 2
+- proof integrity 1
+- ledger safety 1
+- user habits 1
+- digest 1
+- terminal ui 1
+- personality 1
+- sharing 1
+- audit 1
+- test health 1
+- interoperability 1
+- guard reach 1
+- spend 1
+- capacity 1
+- cold review 1
+- exam 1
+- maintainability 1
+- proof / calibration 1
+- install 1
+- fault injection 1
+- unspoken checks 1
+- slimming 1
+- rules 1
+- help 1
+- exit 1
+- entry 1
+- reproducibility 1
+- data viz 1
+- observability ui 1
+- navigation 1
+- task quality 1
+- exam integrity 1
+- adversarial 1
+- expectations 1
+- output 1
+- ranking 1
+- continuity 1
+- choice 1
+- voice 1
+- fidelity 1
+- autonomy 1
+- cli 1
+- secrets 1
+- blockers 1
+- guard delight 1
+- showcase 1
+- ui polish 1
+- injection 1
+- sandbox 1
+- platform 1
+- model change 1
+- knowledge 1
+- queue hygiene 1
+- processes 1
+- network 1
+- git 1
+- storage 1
+- gates 1
+- migration 1
+- drift 1
+- self-repair 1
+- robustness 1
+- settings 1
+- packaging 1
+- discipline 1
+- privacy/cost 1
+- charts 1
+- consistency 1
+- replay 1
+- visualization 1
+- honesty ui 1
+- privacy 1
+- understanding 1
+- value 1
+- queue clarity 1
+- ship speed 1
+- data integrity 1
+- agent fleet 1
+- desktop surface 1
+- cli speed 1
+- unattended runs 1
+- rule checks 1
+- identity 1
+- ambient 1
+- overview 1
+- ceremony 1
+- test speed 1
+- crash safety 1
+- blast radius 1
+- kill switch 1
+- synthetic monitor 1
+- child contracts 1
+- retention 1
+- determinism 1
+- staged rollout 1
+- ship integrity 1
+- session hygiene 1
+- consolidation 1
+- lean ratchet 1
+- modularity 1
+- footprint 1
+- pruning 1
+- configuration 1
+- governance 1
+- red team 1
+- ui testing 1
+- diff view 1
+- responsive 1
+- input authorship 1
+- unattended liveness 1
+- criteria quality 1
+- measurement integrity 1
+- meta-process 1
+- steer provenance 1
+- ask clustering 1
+- ledger hygiene 1
+- feedback 1
+- reentry 1
+- support 1
+- narrative 1
+- refactor 1
+- evaluation 1
+- surface 1
+- scheduling 1
+- guardrails 1
+- stacks 1
+- decisions 1
+- doing less 1
+- evidence 1
+- lite mode 1
+- mod safety 1
+- testing 1
+- slo 1
+- memory safety 1
+- test realism 1
+- dead code 1
+- task model 1
+- state 1
+- errors 1
+- code size 1
+- scope 1
+- self-audit 1
+- empty states 1
+- timeline 1
+- orientation 1
+- guard ux 1
+- reports 1
+- ambient display 1
+- cold reads 1
+- deciders 1
+Thin (0-1 ideas): none

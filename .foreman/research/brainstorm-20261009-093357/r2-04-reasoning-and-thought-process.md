@@ -1,0 +1,3 @@
+# Brainstorm — lens: reasoning and thought process
+
+FAILED: no ideas in the required format: 1. **Lint acceptance criteria for joint satisfiability** — FEATURE — value 4 — effort M — risk low — category: planningWhy: T-0342's criterion 1 had …

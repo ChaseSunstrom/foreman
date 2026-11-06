@@ -1,0 +1,660 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 393 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Reject web actions fired from a stale tab
+- Retype the task id to confirm irreversible web actions
+- Serve every page render from one ledger epoch
+- Require a "not checked" field in every lane hand-back — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Coalesce simultaneous `fm ask` questions into one card
+- Run `fm doctor` from inside each harness's own sandbox
+- Show a headless-safe line for a missing Desktop tray dependency
+- Let hooks degrade visibly when the user can't tell they're off
+- Record the Genesis site's published commit on every page — near T-2090 (done): Genesis keeps the site live: fm genesis live on + detached …
+- Wild: Mint a grid cell from "this surprised me"
+- Wild: Open a failure atlas as the web UI's home
+- Wild: Replay a recorded worst-day ledger through every surface on each release
+- Reply to Foreman by editing a file
+- Write every task title in plain words and lint for jargon at filing
+- Send a try-it card the moment a capability lands
+- Declare a plateau and go quiet
+- Show a standing-intent drift gauge per generation
+- Digest what reached main under the push grant
+- Batch every question into one dated decision sheet with a default and a deadline
+- Rank the blocked list by what one user action would free — near T-1157 (done): Add `fm todo`, the list of what only the user can do (pendi…
+- Wild: let the user scrub a week of the tower as a short "season recap"
+- Wild: let the user veto a past Foreman decision and replay the run without it
+- Wild: grade Foreman's work by a stand-in for the user's taste, trained on their drops
+- Report the cost of ownership of Foreman's own standing rules
+- Reuse past answers to process questions — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Write a behaviour changelog of what the model is told — near T-0031 (done): Fm audit prep: --note '<text>' adds round/slice-specific fo…
+- Declare `needs:` when filing and check a host profile
+- Make a hand edit win, and say so — near T-0400 (done): Foreman 1.2.8: builder briefs say edit with Edit/Write (T-0…
+- Learn what "simplify" means for this user — near T-1537 (done): Round 3 (T-1520): Taste ledger: learn from what the user ke…
+- Gate generation growth on the user's read receipt
+- Give each steer a review-by date and an evidence query (wild)
+- Keep a "what I assumed about you" file the user can strike through (wild)
+- Stage a nightly fake-clock month for unattended timers (wild)
+- Print a first-minute card after any fail-open, and test it
+- Fold repeat user corrections into the next pack's "do not repeat" slice
+- Make a catalogue entry carry its use evidence (wild) — near T-1084 (done): Weekly decision digest and sunset clauses: decisions made w…
+- Bootstrap any clone to first green
+- Adopt existing agent-rule files on first contact
+- Print upgrade notes filtered to the verbs you use
+- Route CODEOWNERS-sensitive changes to a sign-off row
+- Run downstream consumers' proofs on a library change
+- Mine the forge's past review comments into repo-scoped lessons
+- Write an ADR for each costly decision into docs/adr
+- Plan a git-history secret purge, rotation first
+- Sign unattended commits with a dedicated, revocable key
+- Ship `fm top`, a standalone live view for non-Claude harnesses
+- Package Foreman for Nix, Homebrew and pipx
+- (wild) Map receipts to SOC 2 and ISO change-management controls
+- (wild) Bridge `fm ask` and status to Matrix, Slack or Discord
+- (wild) Teach the user one thing a week from the agent's own diffs
+- (wild) Open a third-party extension registry with a lean budget
+- Score a recency baseline first — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Mine ask-sequence n-grams from the ledgers
+- Predict by task-kind follow-up table — near T-2409 (done): #3 exam kinds forecast and breakage: next-request predictio…
+- Treat drops as negative evidence — near T-0726 (done): Fm capture prints 'Dropped before: T-0260 (Evidence quality…
+- Fire anticipation from external events, not history
+- Pre-draft the top predicted ask during idle quota
+- Turn every "Next question" into a scored forecast
+- Run a cold child that tries to be surprised — near T-2341 (done): A cold rival reads the request (Mission 5, #2): for an L pl…
+- Reuse the host's own history — near T-2321 (done): Long goals from Foreman's own history carry the task brief'…
+- Wild: sell the prediction back as a bet
+- Wild: replay the user's week and predict only the gaps
+- Wild: let the predictor retire itself
+- Count what the user types after Foreman's last output
+- Run the unattended drive through a real suspend/resume and network-loss soak
+- Make every ledger writer kill-safe, proven by a kill-point sweep — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Add a two-phase grant spend so a crash cannot double-push or lose a grant
+- Print a one-line "running degraded" status that survives every fail-open
+- Check which side wins when the user's hand and Foreman both change tree, queue or ledger
+- Wild: Pull-the-plug day, a seeded random SIGKILL of the real drive on a scratch repo
+- Wild: Run the guard in two independent implementations and block on disagreement
+- Wild: Fall back to the last good install generation when a hook fails to import
+- Fuzz the readers with a fake clock and ledgers at 10× size
+- Settle hand-vs-Foreman precedence in one table
+- Suspend a real microVM mid-drive
+- Show the user a harmless fail-open on install day
+- Rebuild a module from MASTER.md alone — near T-1736 (done): Small cleanups: one WCAG contrast function, unique help-tie…
+- Mine `--help` examples from real invocations
+- Open one intake socket for mail, Matrix and share-sheet
+- Bootstrap taste from the user's merged PR reviews
+- Ship a hermetic Nix flake for Foreman
+- Guard the user's own typing (wild) — near T-1064 (done): User proxy for asks: under standard autonomy an ask identic…
+- Publish DisciplineBench for any harness (wild)
+- Hold a lesson-trial court that sentences rules to expire (wild)
+- Run a zero-token self-explaining doctor (wild)
+- Offer to ship when a session ends with landed, unshipped work
+- Recheck a brief's claims when it is picked up, not just when it is filed
+- Lint that every verb has a MASTER.md anchor with a "use when" line — near T-2659 (done): The brainstorm skill's grounding step asks for MASTER.md fi…
+- Record effort before and after grounding, per lens — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Run the suite and hooks under a different uid, an unset HOME and a path with spaces
+- Fire every never-fired hook, verb and guard rule once in a scratch home
+- Replay the same ask in three phrasings and require intake to file one task
+- Give new guard and gauge tests a mandatory "fails on the planted defect" twin
+- Show a "closest existing thing" line when a user ask is filed
+- (wild) Hold a weekly "what surprised me" interview with a cold child that has only the last week's ledger
+- (wild) Keep a "nobody asked, nobody noticed" shelf of Foreman's own silent behaviours, each with a check that someone would notice if it broke
+- (wild) Play the user's recent asks back as a test the harness must pass
+
+## Round 2
+- Precompute the anticipation card at Stop, read it at SessionStart
+- Keep only normalised n-grams and task ids, not raw asks
+- Put a hit-rate line in `fm doctor` and mute any predictor below its baseline
+- Bind each prediction to the ledger epoch and HEAD, and drop it when the user's first message contradicts it
+- Show a predicted-asks shelf in the web UI with evidence and a never button
+- Inject a per-model, per-task-kind pre-warning only where that model has failed three or more times
+- Require a lane to hand back "what the user will ask about this" in two lines
+- Confine speculative overnight work to a branch that expires in 3 days
+- Show the first-minute "Foreman is degraded" card from the same file the anticipation card uses
+- Warn when the state directory or ledger growth will cross a ceiling inside a week
+- Wild: seal tomorrow's three likely asks at day close and show only the hits
+- Wild: read a local calendar file to plan unattended work around the user's day
+- Wild: let the predictor retire itself once it stops beating its baseline for 30 days
+- Wild: keep a trust-the-prediction dial the user can see and set
+- Keep a promise ledger — near T-1537 (done): Round 3 (T-1520): Taste ledger: learn from what the user ke…
+- Tokenise identifiers reversibly before any cloud send
+- Classify repo sensitivity from its contents on first contact
+- Log the waits the user feels — near T-2327 (done): Enforce the user's 2026-10-31 steers as automatic checks: s…
+- Pre-run the user's habitual first commands — near T-2493 (done): Two fm CLI fixes: fm decide refuses a user-steer row withou…
+- Detect a bad stretch and go quiet — near T-1000 (done): Pane: no gaps, everything visual — sections sized to what t…
+- Ratify costly decisions the user never vetoed — near T-0251 (done): The user's "no" as a veto — a correction that says don't/ne…
+- Tell questions from requests at intake — near T-2554 (done): The user model reads only the user's own asks: Mission brie…
+- Whisper when the user opens a file a deferred task covers
+- Count hours given back, net of false alarms
+- Hold a Sunday-night "week ahead" draft built only from the user's own history
+- Make the ledger size and age visible to the user's disk
+- Mine Foreman's own follow-up fixes as missed anticipation
+- Attach a generated implied-siblings checklist to every new verb, flag or gauge brief
+- Book every anticipation as a sealed prediction with a recency baseline and a mute
+- Reopen an unattended decision when its premise changes
+- Diff host facts per session and probe on change
+- Forecast the date each hard cap will bind
+- Turn each left-over "Next question" into a zero-token probe or a filed experiment
+- Learn predictor rules from the asks that surprised the ledger — near T-2076 (done): Brainstorms learn from what they missed: asks no idea predi…
+- Wild: Add a frustration key that captures the state it was pressed in
+- Wild: Track asks that went quiet and check whether they were solved or abandoned
+- Wild: Forecast the user's complaint a month ahead and score it
+- Stamp each filed item with the first-screen question it expects the user to ask
+- Fetch upstream on every tick and flag queued tasks it just invalidated
+- Warn when a request names things the current repo doesn't have
+- Checkpoint before a predicted compaction — near T-2504 (done): Proof before presentation: the sweep compares the site's an…
+- Raise a mid-flight overrun alarm at a fraction of the median cost
+- Keep a change-freeze calendar the guard honours — near T-0935 (done): Guard: git reset --soft/--mixed changes no files; only --ha…
+- Detect the user's recurring rituals and propose them as scheduled tasks
+- Prime session-start caches from the previous session's first reads
+- Serve hash-keyed digests of big files in place of repeat full reads
+- Learn per-path sensitivity from the user's own redactions and overrides
+- Wild: Hold an 02:00 "tomorrow rehearsal" that dry-runs the top queue item to a scratch worktree
+- Wild: Publish a "surprise index" for each week: how much of what the user asked wasn't predictable from the ledger
+- Wild: Add a local sensitivity red team that guesses what private facts each new pack section reveals
+- Wild: Brief the user once a month on upstream deprecations and end-of-life dates for their own dependencies, runtimes and CI actions
+- Build a leave-one-out backtest for any predictor
+- Do less: print one "you usually ask X next" line at finish
+- Detect periodic asks and schedule them
+- Predict from coverage-grid neighbours — near T-2093 (done): Genesis check: coverage grid + not-yet ledger validation (f…
+- Extract a promise ledger from the user's deferral words
+- Prefetch read-only verb output from verb-transition counts — near T-0276 (done): fm second: one primitive for independent second reads — riv…
+- Keep the predictor local-only and show what it read — near T-0871 (done): install.sh asks before turning on bypass permissions, showi…
+- Pool follow-up tables across the user's registered repos
+- Retire the predictor when it loses to the baseline — near T-2449 (done): The next-request predictor's paths trail the naive baseline…
+- Wild: Draft the follow-up as a task title with a one-word veto
+- Run readers under shuffled determinism inputs
+- Detect refile livelock in the self-advancing tower
+- Open a landing breaker with a cooldown after a red main
+- Clear provably stale lockfiles
+- Mirror ledgers continuously to a second filesystem
+- Share one retry budget and jitter across all lanes
+- Snapshot `--json` schemas and gate breaking changes — near T-1790 (done): Baseline red: `python3 plugin/tests/run.py` fails test_rela…
+- Run hooks and verbs from a deleted, unreadable or symlinked cwd
+- Generate a runbook line per drill fault — near T-2648 (done): fm drill gains a fault that drops one ledger event class (e…
+- Soak the long-lived web server
+- Score a "clean morning" forecast before each unattended night (wild)
+- Fuzz the verbs with an impatient user in a pty (wild)
+- Drill a split-brain with two Foremen on one repo (wild)
+- Rank forecasts by regret, not likelihood
+- Replace guard regexes with a linear-time matcher
+- Build outbound packs from a field allowlist
+- Test the forecaster for memorising secrets
+- Precompute forecasts in the tick and read a file at session start — near T-2356 (done): Watchers start work with no session: CI, issues and file ev…
+- Transfer habit predictions across the user's repos
+- Hold out anticipation to measure induced demand
+- Mine editable event→ask rules
+- Pick unattended windows from power and idle state
+- Sync forecast tables, never ledgers, between the user's machines
+- Show an honest "I can't read you this week" state
+- Suggest the next ask as ghost text on the prompt line — near T-0095 (done): foreman-ui 0.3.0: animated cards everywhere, quick capture,…
+- Read a local calendar file to switch to lean mode in crunch weeks
+- Show a forecast only when two independent predictors agree
+- Cross every verb and hook with the four recurring blind-spot questions
+- Bench hook start on a cold page cache
+- Gauge Foreman's tmpfs footprint and daily write volume
+- Pseudonymise identifiers in every outbound model prompt
+- Give every verbatim-user-text store a retention clock
+- Reset the stall clock only on closes whose diff survives 24 hours
+- Make every Done-when carry a one-line vacuous-pass sentence — near T-2636 (done): fm prove --steer: a user-steer rule's [check: CMD] that als…
+- Normalise timing-test bars by a same-process reference loop
+- Wild: reboot rehearsal in a throwaway VM
+- Wild: reverse-engineer the pack from the slate
+- Wild: file one "what I suspect I'm wrong about" item per day
+
+## Round 3
+- Prove a prefetched verb is read-only — near T-2461 (done): Lean: fold six verbs into the verbs that already hold their…
+- Tag each predicted next command with the guard's verdict — near T-1289 (done): The guard's refusal of a script written and run in one comm…
+- Record whether the anticipation card reached the agent
+- Hold a quota floor for the user's habitual first hour
+- Stamp speculative drafts with their file-set hash
+- Score the Genesis site's hit rate on user-authored asks only — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Gauge card age at the user's first keystroke
+- Name overnight drafts as drafted, landed or discarded on the morning card
+- Reserve a "who was I predicting for" tag on lane hand-backs
+- Wild: let `fm ?` answer with the one thing Foreman expects you to ask
+- Wild: have a cold child read only the morning card and say what happened overnight, then diff it against the ledger
+- Wild: write a "why I was wrong" line when a confident prediction misses
+- Test the anticipation card across ledger gaps and a clock jump
+- Web UI × any × slow:
+- Site × agent: — near T-2395 (done): Proof surfaces (Mission 7, #6/#10): the rollup by kind on M…
+- Other lanes × unsafe:
+- All "missing" cells for the user on the CLI: — near T-2493 (done): Two fm CLI fixes: fm decide refuses a user-steer row withou…
+- Print a one-line repo hello on `cd`
+- Offer time-boxed work bundles
+- Learn ceremony per task kind from the user's turns-to-close — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Explain every cost outlier on its receipt
+- Snooze with a reason and a wake condition
+- Split-offer oversized forecasts at pick time
+- Compute lesson confidence with zero tokens (unblock T-0217)
+- Cache claim-resolution results by tree hash
+- Show a minutes-saved estimate before enabling anticipation
+- Wild: alert on a missing ritual
+- Wild: preview a month of silence on request
+- Wild: name an "ask under the ask" at intake
+- Rank stalled work by days since the user last mentioned it
+- Collapse the catalogue into a "what I'd actually do Monday" list of five
+- Ask what "simplify" means once, then store it as a measurable preference
+- Mark each blocked task with the single user action that frees it, ranked by count freed
+- Test the first minute after a silent fail-open
+- Pre-answer "did it do what I meant" with their own sentence beside the evidence
+- Estimate review minutes a day's work asks of the user
+- Keep the catalogue's use evidence next to each entry — near T-0775 (done): One-off headless claude -p sessions answer their prompt and…
+- Arbitrate every anticipation through one slot per surface
+- Record every anticipation as its own ledger class with an outcome
+- Add conditional reminders: `fm remind when <predicate> "<note>"` — near T-2290 (done): Foreman predicts and scores (Mission 8, #8/#3): at focus it…
+- Detect expected events that did not happen
+- Hold the unattended drive on provider incidents and model sunset dates
+- Seed predictors with stack-card priors for repos with no history — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Export the anticipation card into AGENTS.md and GEMINI.md
+- Print an "expected to need you at" line when an unattended run starts
+- Show the user's open editor buffers as a next-ask hint, opt-in and local
+- Score Foreman's surprise to the user before any costly decision
+- Open 90-day project predictions and settle them on the date
+- Pause on hesitation at an `fm ask` card — near T-0591 (done): Fm pause gaps: fm session start, fm ideas, fm research ask,…
+- Mine the finish text's own caveats as predicted asks
+- Capture a one-line "tomorrow:" note at session close — near T-0729 (done): Friction: lane rm unlocks a finished builder's worktree; no…
+- Settle predictions by the first thing touched next session
+- Treat the user's own new TODO/FIXME lines and stashes as asks-in-waiting
+- Look up what followed the nearest past asks (local TF-IDF)
+- Ship a cold-start prior for fresh installs
+- Allocate the single anticipation slot with a bandit
+- Show predicted tasks as dimmed ghost rows in `fm next`
+- Hold non-urgent `fm ask` questions until the user's usual reply window
+- Tag each prediction with a horizon and score it against that horizon only — near T-0690 (done): Milestone: Intelligence — Metacognition and calibration
+- Say what a close unblocked — near T-2648 (done): fm drill gains a fault that drops one ledger event class (e…
+- Dowse attention from the compositor and editor state (wild)
+- Write tomorrow's morning note in the user's voice and learn from their edits (wild)
+- Send a next-morning second-thoughts letter on yesterday's closes (wild)
+- Run a ledger kill-point sweep on the real writers
+- Make grant spending two-phase
+- Print a degraded line after any fail-open
+- Precedence table for hand vs Foreman edits — near T-1652 (done): Brand assets, Figma-as-data import, inferred tokens, a toke…
+- Gate ceremony on a learned regret score
+- Run one anticipation governor
+- Prime other harnesses with the anticipation card
+- Pre-merge the futures
+- Park `fm ask` for the user's learned present window
+- Seal the claim–consumer pair on every new gauge
+- Ledger-gap anticipation: forecast the day each reader goes wrong
+- Hand-wins precedence table with a surfaced conflict
+- Wild: Turing-test the predictor on the user — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Wild: Keep a "things you've stopped asking about" shelf
+- Wild: Replay the user's worst day on every release
+- Count anticipation hits only if the user did not have to be told
+- Run the `fm` commands quoted in skills against a scratch home — near T-1458 (done): Guard reads a quoted name after a provable cd where python …
+- Lint a new brief against the other open briefs for contradictions — near T-0438 (done): Capture flags a re-ask of dropped work and a veto contradic…
+- Fold co-filed same-file briefs into one task with a checklist
+- Revert-replay every FIX commit's test — near T-2054 (done): fm ship replays merged builder lanes: picks the branch's fi…
+- Keep a durable blind-spot question bank that every lens must answer
+- Tag every filed item with which brainstorm question would have caught it
+- Quarantine "dropped with a noted remainder" into a visible one-line shelf
+- Check at close that a gauge's own test would fail on the unit it replaced — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Wild: pay a different-vendor model to find gaps from `fm --help` alone
+- Wild: audit the user's 90 days of asks for needs no slate item ever mentioned
+- Wild: plant a wrong fact in a skill each week and time its discovery
+- Check which side wins when hand edits and Foreman edits meet, per file class
+
+## Round 4
+- Require a human-input witness for web UI approvals
+- Show a stale-data badge with age on every web UI card
+- Make anticipation cards declare which surface they were rendered on
+- Give lanes a "blocked by policy" hand-back with the widening command
+- Time-box the unattended drive's own startup on a slow disk and cold cache
+- Show a "what changed since you last looked" diff in the pane header
+- Quarantine the site's data publish when a user-authored ask is in the diff — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Make `fm doctor` print one cause line per red, with the command that clears it — near T-2653 (done): Every nonzero fm exit prints one Next: command, not only a …
+- Wild: Let the web UI replay a recorded worst day against each release
+- Wild: Add a "heard nothing" lamp to the status line for each unattended path
+- Wild: Have a cold child guess each surface's next click from a screenshot and score it
+- Stamp each lane's landed commit with lane id and model — near T-0710 (done): Frontier 10 — Milestone work compiler and merge train
+- Gate every brief on a 90-day incident count — near T-2610 (done): Calibration reads compare like with like: a close or a task…
+- Run the unattended tick on an always-on host
+- Add a one-word cost-of-delay field to tasks — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- End every finish card with a verdict and its flip condition
+- Let the user strike an idea mid-brainstorm and re-aim the remaining lenses
+- Turn a read-later list into a repo impact digest — near T-2151 (done): The recorded list persists for a day across unrelated later…
+- Add `fm bye <capability>` for per-capability removal
+- Prototype both options of a stalled user decision overnight (wild)
+- Watch a manual debugging session and write the regression test afterwards (wild)
+- Propose aliases and git hooks from the user's repeated commands (wild) — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Rescore dropped ideas only when new incidents appear
+- Test the first minute after install with the user's own settings — near T-2357 (done): Installs are queued for one yes: night and tick timers stag…
+- Look back at the last Mission's use counts when the next one opens
+- Redact ledger records in place with chain-preserving tombstones
+- Learn phrasing aliases from every "already built" drop — near T-2659 (done): The brainstorm skill's grounding step asks for MASTER.md fi…
+- Stamp records written under a pinned clock as simulated
+- Log every grounding canary result to measure the search's own recall
+- Mark the pack's sections with the question each one answers for the lens
+- Pre-brief each Mission on which user-owned inputs it will need
+- Replace "ideas so far" with a verb-and-idea coverage grid
+- Wild: write a letter from the Foreman of a year ago and score what it got wrong
+- Wild: let the user say "I keep…" and have Foreman count it
+- Wild: prove the first minute after a silent fail-open by deliberately triggering one on install day
+- Run tasks from `fm:` comments in source
+- Pin legacy behaviour with characterization tests before editing — near T-1503 (done): Engineering playbooks: SQL, migrations, text/time/bytes, de…
+- Write tests for surviving mutants — near T-1953 (done): fm ship remembers its --test and survives a failed ref write
+- Attach a debugger-evidence lane (DAP)
+- Detect stuck loops from tool-call n-grams
+- Check `.env.example`, config reads and docs for drift
+- Janitor lane worktrees, branches and stashes — near T-0803 (done): Builder lanes start from the branch being worked: Foreman's…
+- Learn a repo's change-completeness conventions
+- Lint the user project's UI strings for terminology and tone
+- Stand up a local offline forge for review
+- Wild: Render an architecture diagram diff on every finish card
+- Wild: Map bus factor and queue the docs tasks
+- Wild: Offer a pair-programming handback with "I'll watch"
+- Wild: Run the user's project under network and clock chaos during a proof
+- Extend `fm doctor` with a toolchain-manager check (mise, asdf, nvm, pyenv)
+- Extrapolate numbered series in the user's asks
+- Log the show-probability of every anticipation for offline evaluation
+- Fit every anticipation window and half-life by backtest on the user's own history
+- Detect new vocabulary in the user's recent messages that no verb or MASTER.md clause covers
+- Show a prediction only when a conformal set has size one
+- Make `fm anticipate` a stateless pure function over the ledgers
+- Use zlib compression distance as the nearest-neighbour finder for asks
+- Replay the first 100 historical asks through today's Foreman to measure the pre-emption rate
+- Write a prospective receipt for each filed task and score it at close
+- Write tomorrow's expected ledger in the real schema and diff it against the actual one — near T-0682 (done): Milestone: Features — Verification and product checking
+- Run a weekly tournament of three shadow predictors and let the held-out week choose the live one
+- Run compound-fault drills in pairs — near T-1669 (done): Fm drill: compound fault days in a temp home, promotion by …
+- Diff every cache against its uncached twin nightly
+- Hold tower files in a pending state until their cold read lands
+- Prove every alert channel delivers, and fall back when it doesn't
+- Make each hook time itself out before the host kills it
+- Single-flight every scheduled job and record overlaps
+- Key project state by repo identity and offer re-attach on move
+- Run task start, finish and ship through a git-state matrix
+- List ambient override variables at every unattended entry
+- Measure the judges against themselves — near T-2632 (done): The steer expander returns a Rule (acted on) and Proposals …
+- Wild: rebuild the task index from git history alone
+- Wild: have a Murphy child write the 3am sequences from MASTER.md
+- Wild: run a monthly fire drill for the human
+- Land unattended work on a probation ref
+- Run an N-version hunk consensus on risky tasks
+- Let peer Foremen negotiate cross-repo contracts
+- Set autonomy by value-at-risk — near T-1080 (done): Risk budget: one daily autonomy budget (destructive asks, r…
+- Govern chatter with a churn-hazard score
+- Finish the safe tail of an interrupted session
+- Solve the night's schedule as one constraint problem
+- Run every capability through a lifecycle ladder with auto-demotion
+- Emit one typed Verdict record from guard, prove, finish gate and doctor
+- Wild: pool expiring quota across the user's accounts and machines
+- Wild: run a release radar from drift hashes
+- Wild: run a bet-to-ship contract that the user can cancel in advance
+- Wild: audit by an oracle that carries the user's disbelief
+- Write the injection ledger at emit time — near T-0691 (done): Milestone: Intelligence — Planning and decomposition (1)
+- Harvest a slow-input corpus from real hook timings
+- Stop a retry loop by its error fingerprint
+- Build a grounding lexicon from help strings and MASTER anchors — near T-2659 (done): The brainstorm skill's grounding step asks for MASTER.md fi…
+- Feed every "already built" drop back into the lexicon — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Collapse the repeated Mission request into one command
+- Carry follow-up measurements into the next Mission's brief automatically — near T-2392 (done): Unproven where the user sees it (Mission 7, #6): a reply cl…
+- Mine other agent trackers for bug classes Foreman hasn't asked about
+- Report ask-debt: asks Foreman now handles unprompted
+- Wild: Run a "stranger's first PR" drill against the guard's timing
+- Wild: Fail a gauge's tests unless it knows its own zero
+- Wild: Hold a monthly "what did the user have to say twice" report
+- Wild: Name the blind-spot class on every user-filed FIX at intake
+
+## Cross-bred
+- Bind each web action to the epoch and task it was rendered from
+- Answer one dated decision sheet by editing a file
+- Make `fm doctor` run in each sandbox and list what it didn't check
+- Replay the worst-day ledger, and let the user veto a decision and replay
+- Declare a plateau from drift and taste, then wait for a read receipt
+- Make the home page a season recap, atlas and try-it feed
+
+## New ideas per lens
+- grid: 55
+- user value: 49
+- unspoken needs: 42
+- capability map: 55
+- approaches: 48
+- reliability: 39
+- bold bets: 51
+- blind spots: 48
+
+## Coverage (ideas per category)
+- anticipation 27
+- measurement 18
+- reliability 11
+- privacy 11
+- observability 9
+- user value 8
+- delight 8
+- unattended 8
+- trust 7
+- prediction 7
+- docs 6
+- intake 6
+- queue 6
+- proof 6
+- legibility 5
+- simplicity 5
+- learning 5
+- developer experience 4
+- lean 4
+- brainstorm 4
+- performance 4
+- durability 4
+- web ui 3
+- attention 3
+- wild 3
+- concurrency 3
+- lanes 3
+- autonomy 3
+- environment 3
+- continuity 3
+- scheduling 3
+- calibration 3
+- brainstorm quality 3
+- agents 2
+- spend 2
+- onboarding 2
+- security 2
+- provenance 2
+- devices 2
+- do-less 2
+- reuse 2
+- hooks 2
+- liveness 2
+- unattended safety 2
+- latency 2
+- unattended spend 2
+- grounding 2
+- ledger 2
+- pack 2
+- drills 2
+- notifications 2
+- verification 2
+- guard performance 2
+- user attention 1
+- harness parity 1
+- tray 1
+- feedback 1
+- ui 1
+- adoption 1
+- unblocking 1
+- control 1
+- judgement 1
+- team workflow 1
+- multi-repo 1
+- distribution 1
+- compliance 1
+- ecosystem 1
+- triggers 1
+- speculative work 1
+- feedback loop 1
+- adversarial check 1
+- ground truth 1
+- ledgers 1
+- ship safety 1
+- gates 1
+- chaos 1
+- guard 1
+- install 1
+- readers 1
+- hook latency 1
+- staleness 1
+- agent steering 1
+- unclear failure 1
+- unattended resilience 1
+- user control 1
+- editor 1
+- value 1
+- footprint 1
+- decisions 1
+- capacity 1
+- felt cost 1
+- user model 1
+- wrong-target 1
+- performance/budget 1
+- performance/privacy 1
+- finish card 1
+- cadence 1
+- grid 1
+- transfer 1
+- determinism 1
+- loops 1
+- crash recovery 1
+- thundering herd 1
+- contracts 1
+- diagnosability 1
+- soak 1
+- interruption 1
+- guard speed 1
+- session start 1
+- anticipation quality 1
+- coverage 1
+- briefs 1
+- test reliability 1
+- unattended soak 1
+- self-doubt 1
+- anticipation safety 1
+- delivery receipts 1
+- legibility exam 1
+- robustness 1
+- surfaces 1
+- receipts 1
+- planning 1
+- triage 1
+- steers 1
+- preferences 1
+- blocked work 1
+- safety 1
+- reminders 1
+- cold start 1
+- harness reach 1
+- intent signals 1
+- timing 1
+- ambient context 1
+- re-verification 1
+- visibility 1
+- consistency 1
+- shipping 1
+- portability 1
+- scale 1
+- doc drift 1
+- queue shape 1
+- test honesty 1
+- dropped work 1
+- precedence 1
+- web-ui safety 1
+- web-ui clarity 1
+- degraded-state 1
+- multi-agent 1
+- pane 1
+- site leak 1
+- clarity 1
+- regression 1
+- ux test 1
+- attribution 1
+- finish 1
+- unblock 1
+- catalogue 1
+- unspoken needs 1
+- debugging 1
+- hygiene 1
+- conventions 1
+- quality 1
+- collaboration 1
+- initiative 1
+- interaction 1
+- caches 1
+- genesis 1
+- state 1
+- git 1
+- env 1
+- cold reads 1
+- recovery 1
+- landing 1
+- fleet 1
+- user trust 1
+- host canary 1
+- runaway spend 1
+- process automation 1
+- blind spots 1
+- process 1
+Thin (0-1 ideas): none
+
+## Kill it fast (the quickest test that would show it isn't worth building)
+- Reject web actions fired from a stale tab — Grep the web access logs for actions where the tab's age exceeded an hour; if there are none, the stale-tab problem never occurred.
+- Retype the task id to confirm irreversible web actions — Count irreversible web actions in the ledger that were later reverted or regretted; if there are zero, typing the id just adds friction.
+- Serve every page render from one ledger epoch — Diff two renders of the same page taken mid-write; if no page ever mixed epochs, a single-epoch guarantee isn't needed.
+- Require a "not checked" field in every lane hand-back — Read the last 20 lane hand-backs; if the omissions of unchecked items were already visible, or none caused a miss, the field adds nothing.
+- Coalesce simultaneous `fm ask` questions into one card — Check how often two `fm ask` calls land within a minute of each other; if it's under 5% of asks, coalescing isn't worth it.
+- Run `fm doctor` from inside each harness's own sandbox — Run `fm doctor` by hand in each sandbox once; if the output matches the unsandboxed run, in-sandbox execution adds nothing.
+- Show a headless-safe line for a missing Desktop tray dependency — Launch the Desktop tray path headless with the dependency missing; if it already exits with a clear message, there's nothing to build.
+- Let hooks degrade visibly when the user can't tell they're off — Disable one hook on purpose and see whether the user notices within a day; if they notice quickly, visible degradation is redundant.
+- Record the Genesis site's published commit on every page — Check whether the site's footer or deploy log already shows the commit; if it does, per-page recording duplicates it.
+- Wild: Mint a grid cell from "this surprised me" — Ask the user for their last 5 surprises; if they can't produce 5 in a week, the surprise stream is too thin to mint cells.
+- Wild: Open a failure atlas as the web UI's home — Look at web UI analytics for which page the user opens first; if it's not failures, a failure-atlas home loses to the current one.
+- Wild: Replay a recorded worst-day ledger through every surface on each release — Find a real worst-day ledger; if none exists, replay has nothing to run and the corpus would need to be fabricated.
+- Reply to Foreman by editing a file — Try replying through a file once; if the round trip takes longer than `fm ask` answering, it loses.
+- Write every task title in plain words and lint for jargon at filing — Run a jargon linter over the last 50 task titles; if under 10% trip it, the lint is noise.
+- Send a try-it card the moment a capability lands — Look at how many capabilities landed in a month; if it's fewer than 4, a card trigger fires too rarely to justify a system.
+- Declare a plateau and go quiet — Check whether any past stretch of output genuinely stalled; if output never plateaued, a declared plateau is hypothetical.
+- Show a standing-intent drift gauge per generation — Compare standing-intent text across generations with a plain diff; if it barely changes, a gauge shows a flat line.
+- Digest what reached main under the push grant — Run `git log` on main for the push-grant window; if the commits are already summarized in the existing digest, skip it.
+- Batch every question into one dated decision sheet with a default and a deadline — Check the average time a question waits today; if answers arrive within hours, batching with deadlines slows things down.
+- Rank the blocked list by what one user action would free — Sort the blocked list by hand once; if the top item is obvious at a glance, ranking doesn't help.
+- Wild: let the user scrub a week of the tower as a short "season recap" — Ask the user whether they've ever scrolled back past a day of the tower; if not, a season recap has no audience.
+- Wild: let the user veto a past Foreman decision and replay the run without it — Pick one past decision and check whether its downstream state can be isolated; if the run can't be replayed deterministically, vetoing is impossible.
+- Wild: grade Foreman's work by a stand-in for the user's taste, trained on their drops — Count the user's drops available as labels; if there are under a few hundred, a taste model can't be trained.
+- Report the cost of ownership of Foreman's own standing rules — List the standing rules and tally their token and time cost; if the total is under 2% of a run, there's nothing to report.
+- Reuse past answers to process questions — Sample 20 process questions and check whether any near-duplicates exist; if they're unique, reuse hits nothing.
+- Write a behaviour changelog of what the model is told — Check whether the prompt files are versioned in git already; if so, `git log -p` is the changelog.
+- Declare `needs:` when filing and check a host profile — Look at the last 30 filed tasks for host-dependent failures; if none failed for missing capabilities, `needs:` is unnecessary.
+- Make a hand edit win, and say so — Count how often a hand edit was overwritten; if it never happened, precedence needs no rule.
+- Learn what "simplify" means for this user — Collect the user's last uses of "simplify" and compare the resulting diffs; if they have no pattern, nothing is learnable.
+- Gate generation growth on the user's read receipt — Ask the user whether they would actually mark things read; if they'd skip it, growth stalls on a gate nobody opens.
+- Give each steer a review-by date and an evidence query (wild) — Review ten past steers and check whether any has a testable evidence query; if most don't, review-by dates expire unreviewed.
+- Keep a "what I assumed about you" file the user can strike through (wild) — Generate the assumptions file from memory once; if the user strikes nothing, it's a ritual and not a correction channel.
+- Stage a nightly fake-clock month for unattended timers (wild) — Run the timers once with a mocked clock for a week; if the output matches a plain unit test, the nightly month adds nothing.
+- Print a first-minute card after any fail-open, and test it — Cause a fail-open and see whether the existing error output already tells the user what to do first; if so, skip the card.
+- Fold repeat user corrections into the next pack's "do not repeat" slice — Scan the user's corrections for repeats; if the same correction recurs under 3 times, folding it in isn't worth it.
+- Make a catalogue entry carry its use evidence (wild) — Check how many catalogue entries have ever been used; if most were never used, evidence fields will be empty.
+- Bootstrap any clone to first green — Clone fresh into a temp directory and time the run to green; if it's already under 5 minutes with no manual steps, the bootstrap exists.
+- Adopt existing agent-rule files on first contact — Run first contact on two repos with existing rule files; if the files are rare, adoption has few cases.
+- Print upgrade notes filtered to the verbs you use — Compare the changelog against the verbs one user actually runs; if most entries apply to everyone, the filter removes nothing.
+- Route CODEOWNERS-sensitive changes to a sign-off row — Check whether the repo has a CODEOWNERS file with sensitive paths; if it doesn't, there is nothing to route.
+- Run downstream consumers' proofs on a library change — Count downstream consumers of the library; if there's fewer than 2 or none have proofs, there's nothing to run.
+- Mine the forge's past review comments into repo-scoped lessons — Fetch the forge's past review comments; if fewer than 50 exist or most are nits, there are no lessons to mine.
+- Write an ADR for each costly decision into docs/adr — Look at the last 10 costly decisions and see whether the rationale is already in commit messages; if it is, an ADR duplicates it.
+- Plan a git-history secret purge, rotation first — Run a secret scanner on the history; if nothing is found, no purge is needed.
+- Sign unattended commits with a dedicated, revocable key — Check whether the unattended commits are already signed or whether the forge requires it; if neither, a signing key is overhead.
+- Ship `fm top`, a standalone live view for non-Claude harnesses — Ask whether any non-Claude harness user exists; if there are none, a standalone view serves nobody.
+- Package Foreman for Nix, Homebrew and pipx — Check package-manager install counts or requests; if nobody has asked for Nix, brew or pipx, the effort goes unused.
+- (wild) Map receipts to SOC 2 and ISO change-management controls — Ask one prospective auditor whether receipts would count as evidence; if the answer is no, a control map is just a document.
+- (wild) Bridge `fm ask` and status to Matrix, Slack or Discord — Check whether the user already reads `fm ask` in the terminal; if they don't use Matrix, Slack or Discord daily, a bridge is unused.
+- (wild) Teach the user one thing a week from the agent's own diffs — Run a weekly lesson on one past diff and ask the user whether it taught them anything; if they say no, it fails.
+- (wild) Open a third-party extension registry with a lean budget — Search for anyone who has asked to build an extension; if there's no outside demand, an open registry would sit empty.
+- Score a recency baseline first — Score a recency baseline on the ledger; if it already hits most of the accuracy of anything fancier, stop there.
+- Mine ask-sequence n-grams from the ledgers — Count distinct ask n-grams in the ledgers; if the corpus is small or the sequences mostly unique, there's no pattern to mine.
+- Predict by task-kind follow-up table — Tabulate follow-ups by task kind for one month; if the distribution is near-uniform, prediction is no better than a guess.
+- Treat drops as negative evidence — Compare drop rates with later-regretted drops; if drops carry no signal about quality, treating them as negative evidence misleads.
+- Fire anticipation from external events, not history — List external events that actually precede asks; if fewer than a few map to real asks, there's nothing to trigger on.
+- Pre-draft the top predicted ask during idle quota — Measure the top-1 prediction hit rate; if it's under 30%, pre-drafts are mostly wasted quota.
+- Turn every "Next question" into a scored forecast — Score ten past "Next question" lines against what the user actually asked; if few matched, forecasts will be noise.
+- Run a cold child that tries to be surprised — Run one cold child and check whether it finds anything not already in the notes; if it reports nothing new, the cost isn't justified.
+- Reuse the host's own history — Check what the host's own history file contains and its permission; if it's sparse or unreadable, reuse yields nothing.

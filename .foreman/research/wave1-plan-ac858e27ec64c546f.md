@@ -1,0 +1,54 @@
+=== T-1077
+INTERPRETATION: `fm digest` and `fm tidy` flag queued (planned) briefs whose plan has gone stale. A brief is stale when a scope file changed after the plan was made, a scope file is gone, or a dependency was dropped. Each flagged brief reads "re-plan: <why>". Nothing is changed, and every idea in C21 is in scope. "Sweep queued plans" is the only C21 idea with no code. Of the others, `fm task defer --until` (fmcli.py:4272, fmcore.py:2312 `deferral_due`) already covers "start-ready deferred". `fm tidy` already surfaces `unblocked` blocked work (fmtidy.py:105) and `inbox_stale` (fmtidy.py:141).
+APPROACH: (a) a new ledger event on each plan edit, (b) compare scope file mtimes with the brief's `updated`, (c) `git log --since`. Choice is (b). It is the same technique as `fmtidy.unblocked` (fmtidy.py:105-121), so there is no new state. Add `stale_plan(p, b, status)` in fmtidy.py. `check_project` emits a `stale_plan` warn finding for each planned brief (fmtidy.py:155 loop). `cmd_digest` (fmcost.py:340) appends the line "Plans to re-plan: T-x (why)" and adds a `stale_plans` JSON key. Use `c.parse_ts(b.meta["updated"])`.
+AC: A planned brief whose scope file is newer than `updated` shows up in `fm digest` and `fm tidy` as a re-plan item; a fresh one doesn't. :: python3 plugin/tests/run.py test_tidy
+STEP: Failing tests (add to test_tidy.py): make a planned brief with scope=a.py, then touch a.py with a later mtime. Assert `fm tidy` output contains "stale_plan" and "a.py changed since it was planned". Assert `fm digest --json` has the id in `stale_plans`. A brief whose scope file is older gives no finding, and a done brief gives none.
+STEP: Add `stale_plan()` to fmtidy.py (planned status only; scope changed, missing, or a dependency dropped) and call it from `check_project`.
+STEP: In `cmd_digest`, import `fmtidy.stale_plan`, add the line and the JSON key.
+SCOPE: plugin/lib/fmtidy.py, plugin/lib/fmcost.py, plugin/tests/test_tidy.py
+TIER: S
+
+=== T-1072
+INTERPRETATION: `fm tidy` lists stack cards, known fixes, and lessons that never fired, or never helped, in 60 days. It retires them only with `--apply`. Covered in C15, in scope: ignored hints, card use ("card examples in CI" is not in scope), fix contraindications, and unused rules. Already present: card injection counts in `fm lib stats` (fmlib.py:812-832); fix tallies worked/misses/offered with a `_losing` check (fmfixes.py:241, `fixes-stats.json` has a `last` stamp); `retired_lessons` (fmrecall.py:453, retired via fmrecall.py:553); and guard rule fire counts (fmfriction.py:138). Hint "ignored" counts: `hints_quiet`, fmcore.py:2252.
+APPROACH: (a) a new `fmhygiene.py`, (b) extend fmtidy `check_project`, (c) a `fm hygiene` command. Choice is (b). Add `_hygiene(p, apply, actions)` in fmtidy.py. Cards: the library minus the `card_injected` events in the ledger within 60 days. Fixes: `known(p)` joined with stats where `last` is older than 60 days or `_losing`. Lessons: skipped, because there is no fire record. Findings use severity "warn", with the fix text "fm tidy --apply retires". With `--apply`, fixes go through `fmfixes.remove`. Cards are only listed (retiring a shipped card file is not allowed), and the finding says so.
+AC: A fix with no use in 60 days, or one that is losing, is listed by `fm tidy` and removed by `fm tidy --apply`. Unused cards are listed. :: python3 plugin/tests/run.py test_tidy test_fixes
+STEP: Failing tests: seed `fixes-stats.json` with `last` 90 days old for fix A and fresh for fix B. Assert the dry run prints "stale_fix" for A only, and that `fm fix list` still shows A. Assert `--apply` removes A and not B. A `card_injected` event 5 days ago makes that card not listed; a card with none gets an "unused_card" finding.
+STEP: Implement `_hygiene` and call it from `check_project`; use `fmlib.cards()` and `fmfixes._stats_path`.
+SCOPE: plugin/lib/fmtidy.py, plugin/lib/fmfixes.py, plugin/tests/test_tidy.py
+TIER: M
+
+=== T-1048
+INTERPRETATION: Each deferred brief gets a proposal in `fm digest` and `fm tidy`: drop, do, or ask. "do" means the `--until` date or file change has come, or its scope is untouched and it is young. "drop" means it is old (90+ days) with no activity and no evidence, such as a dead scope file. "ask" is the rest. Nothing is applied. `deferral_due` (fmcore.py:2312) and the next-action hint (fmcore.py:2451) cover the "due back" case only.
+APPROACH: (a) rules in `fmcore`, (b) a function in fmtidy, (c) an LLM triage. Choice is (b), deterministic and cheap. Add `triage_deferred(p, briefs)` to fmtidy.py. It returns [(id, verdict, why)] using `c.age_days(updated)`, `deferral_due(revisit)`, and scope file existence. `check_project` emits a `deferred_triage` finding of severity info or warn, with the verdict in the fix column (`fm task drop ID "<why>"`). `cmd_digest` prints "Deferred: T-x → drop (why)".
+AC: A 120-day-old deferred brief with a missing scope file shows "drop"; one that is due shows "do"; the rest show "ask". :: python3 plugin/tests/run.py test_tidy
+STEP: Failing tests: build deferred briefs with a back-dated `updated` field, one with `revisit` set to a past date, and one with a missing scope file. Assert the verdict words in `fm tidy` output and in `fm digest --json["deferred_triage"]`. Assert no status changes.
+STEP: Implement `triage_deferred`, call it from `check_project` and `cmd_digest`.
+SCOPE: plugin/lib/fmtidy.py, plugin/lib/fmcost.py, plugin/tests/test_tidy.py
+TIER: S
+
+=== T-1084
+INTERPRETATION: The weekly digest lists decisions made without the user, and a decision or rule can carry an expiry. C16 ideas in scope: the weekly decide digest and sunset clauses. "Deferred triage" is T-1048; "rank by evidence" is not in this task. Mostly present: `_week` collects costly/outward decisions (fmcost.py:292), and `weekly_line` runs once a week at SessionStart (fmcost.py:307). `--revisit "after DATE"` already stores a date trigger (fmcore.py:2297) that `fired_decisions` reports (fmcore.py:2328). Missing: an expiry that retires the decision, and the digest's "all decisions" list (it keeps only costly/outward rows).
+APPROACH: (a) a new `[sunset: DATE]` tag, (b) reuse `--revisit` as the sunset, (c) a separate file. Choice is (a), but implemented as `fm decide --sunset YYYY-MM-DD`. `revisit_tag` stays untouched. `_write_decision` writes the tag. `fired_decisions` also reports "expired" for past-date sunsets. `fm tidy` adds an "expired decision" warn. `_week` returns every decision row since the cutoff, which `cmd_digest` lists under "Decided without you:".
+AC: `fm decide X --sunset 2020-01-01` appears as expired in `fm tidy`, and `fm digest` lists the week's decisions, not only costly ones. :: python3 plugin/tests/run.py test_cli test_tidy
+STEP: Failing tests: `--sunset` with a bad date is a UsageError. A past sunset gives "sunset" in `fm tidy`. A reversible decision recorded today shows under "Decided without you" in `fm digest`.
+STEP: Add the `--sunset` argument (fmcli.py:4058 area), `_write_decision` tag, tidy finding, and digest section.
+SCOPE: plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmcost.py, plugin/lib/fmtidy.py, plugin/tests/test_tidy.py, plugin/tests/test_cli.py
+TIER: M
+
+=== T-1085
+INTERPRETATION: When Foreman's version changes, `fm` snapshots the state first; `fm rollback` lists snapshots and restores the chosen one (the latest by default). Already present: `_backup_state` writes per-project tarballs on `tidy --apply` (fmtidy.py:203, BACKUP_PARTS), and the upgrade is detected via `seen-version` in `_whats_new_note` (fmhooks.py:381-408). There is no restore, and no snapshot at upgrade.
+APPROACH: (a) reuse the tidy backups, (b) a new snapshot at upgrade, (c) git for state. Choice is (b), reusing the BACKUP_PARTS logic. In `_whats_new_note`, when `old` exists and differs from `rev`, call `fmtidy.snapshot_upgrade(old)`. It tars each project's BACKUP_PARTS into `state/snapshots/<old>-<ts>.tar.gz`, keeping the last 3. Add `cmd_rollback` in fmtidy.py with `fm rollback [--list] [--to NAME] --yes`. It refuses without `--yes`, makes a safety tar first, then extracts.
+AC: After a simulated upgrade, `fm rollback --yes` restores a deleted brief. :: python3 plugin/tests/run.py test_tidy
+STEP: Failing tests: write `seen-version=0.1`, run the SessionStart hook (the version differs), assert a snapshot file exists. Delete a brief, run `fm rollback` (it refuses, exit nonzero, says "--yes"), then `fm rollback --yes` brings the brief back. `fm rollback --list` names the snapshot.
+STEP: Implement `snapshot_upgrade` and `cmd_rollback`; register the parser entry near `tidy` (fmcli.py:4669); call the snapshot from fmhooks.py.
+SCOPE: plugin/lib/fmtidy.py, plugin/lib/fmhooks.py, plugin/lib/fmcli.py, plugin/tests/test_tidy.py
+TIER: M
+
+=== T-1061
+INTERPRETATION: A plan states predicted files touched, minutes, and attempts. The close compares them with what happened and records a calibration event. When the last 5+ closes mostly missed, the project's autonomy slows, so M tier needs approval until the closes recover. Present: `planned`/`changed` file counts already recorded at close (fmcli.py:600; the digest uses them at fmcost.py:367); the Brier calibration over stated confidence (fmoutcomes.py:134); `needs_approval` (fmcore.py:1866), which only gates L and explore items. Missing: minute and attempt predictions, a miss rule, and the slowdown.
+APPROACH: (a) a new calibration module, (b) extend fmoutcomes plus `needs_approval`, (c) a meta flag set at close. Choice is (b). Add `predict_minutes=` and `predict_attempts=` task fields (via `fm task set`). Add `misses(p)` in fmoutcomes.py, which scores the last 8 closes. A close misses when changed > 2×planned, or minutes > 2×predicted, or attempts > predicted. A project is "slow" at ≥5 closes and ≥60% missed, and the digest prints a "Calibration ledger" line. The autonomy value is computed at fmcore.py:2478 and 2568; return "slow" there. `needs_approval` then gates tier M when autonomy is "slow" (not for full autonomy).
+AC: After 5 missed closes an M brief reports needing plan approval; after 3 good closes it doesn't. :: python3 plugin/tests/run.py test_outcomes test_planning
+STEP: Failing tests: seed `task_done` events carrying planned/changed/predictions. Assert `outcomes.misses` is true at 3 of 5 and false at 1 of 5. Assert `needs_approval(M, "slow")` is true and `needs_approval(S, "slow")` is false. Assert `fm digest` shows the "slows to approval for M" line.
+STEP: Record the predictions in the `task_done` data at fmcli.py:600; add `misses()` and the `slow_autonomy()` helper; wire up the two autonomy lines in fmcore.py and `needs_approval`.
+SCOPE: plugin/lib/fmoutcomes.py, plugin/lib/fmcore.py, plugin/lib/fmcli.py, plugin/lib/fmcost.py, plugin/tests/test_outcomes.py, plugin/tests/test_planning.py
+TIER: L

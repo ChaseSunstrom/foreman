@@ -1,0 +1,96 @@
+# Ideas by round (deduplicated titles; details in the lens files)
+
+## Round 1
+- Offer a one-yes commit at task done
+- Ship a bounded "read pack" at focus
+- Detect edits made outside Claude mid-task
+- Cache code-question answers by file fingerprint
+- Brief and cap read-only subagents
+- File audit findings as queued follow-ups automatically
+- Record a demo transcript of the new behaviour in the outcome report
+- Log every guard denial and its aftermath
+- Record every skipped or fail-open gate and list them at done
+- Canary-check cached passes
+- Validate brainstorm child output and account for lens failures
+- Retract lessons on contradiction
+- Replay old-version state fixtures through upgrades
+- Test against odd repo shapes
+- Auto-draft the lesson at done; confirm or skip
+- Derive tier from the tree, with a one-way ratchet
+- Pick audit lenses from diff signals, not tier
+- Replace cost/usage/digest with one incremental transcript scan
+- Make prove, sentinel, evals add and `--affected` modes of one stored check
+- Give lessons hit counts and auto-retire the ones that never fire
+- Give brainstorm packs only the nearest already-considered ideas
+- Offload exploration to a cheap read-only scout
+- Build a task-shaped context pack at focus
+- Localize regressions by delta-debugging hunks
+- Apply edits as one atomic transaction with check and auto-revert
+- Run a pre-mortem at plan time for L and security tasks
+- Draft plans for queued tasks while idle
+- Lint new code against sibling conventions
+
+## Round 2
+- Answer state questions in the hook with zero model tokens
+- Detect rework after "done" and feed it back
+- Resolve "undo that" by description
+- Suppress questions that were already answered
+- Alarm on Foreman's own efficiency trend
+- Map the user's phrases to code entities
+- Make `fm check` prove its verify commands are pure
+- Order scope and evidence by sequence number, not mtime
+- Pause on usage limits instead of failing
+- Smoke-test the plugin whenever its version changes
+- Rebind the task when the branch or HEAD changes mid-task
+- Inject IO faults into state writes
+- Check that checkpoints stand alone before compaction
+- Route every injected note through one arbiter
+- Require evidence per criterion, not per step, for S and M
+- Merge tiers M and L into one "full" tier
+- Make hooks pure decision functions
+- Enforce a core/extras import boundary
+- Prune notes the model ignores
+- Report duplicated code in `fm doctor`
+- Turn `fm decide` records into machine-checked invariants
+- Add `fm peek` as a budgeted search-then-read macro
+- Delegate mechanical edits to a cheap model under a patch contract
+- Run disjoint-scope queued tasks in parallel worktrees
+- Learn the affected-test map from history
+- Add `fm why FILE:LINE` for line-level provenance
+- Confirm L-task intent in three plain sentences before executing
+
+## Round 3
+- Trace each part of the request to its evidence
+- Turn pasted errors into a repro at intake
+- Check the final message's claims against evidence
+- Suggest a codemod when the same edit repeats
+- Check that verify commands can run here at plan time
+- Let the user's wording set ceremony for one task
+- Queue an offline dependency and vulnerability sweep
+- Journal compound commands so a crash can't half-finish them
+- Mutation-test Foreman's own gates
+- Journal edits per hunk and undo only Foreman's own
+- Track gate false positives and record audited waivers
+- Reap orphaned worktrees, temp files and stale locks
+- Canary the transcript format behind cost and usage
+- Run the suite across interpreter, locale, timezone and encoding variants
+- Report every unmet done-requirement in one pass
+- Add `fm task done --fix` for mechanical gaps
+- Compute a mechanical simplicity delta at done
+- Flag non-functional churn in the diff
+- Keep a gate-yield ledger and demote gates that never catch anything
+- Add one-call task abandon and restart
+- Distill lessons into a bounded per-project handbook
+- Lint plan shape at focus
+- Add holdout checks the executor never sees
+- Gate manifest and lockfile changes as supply-chain events
+- Run README and docs code fences as checks
+- Set a blast-radius budget and abandon criteria at plan time
+- Cap the final chat message and put the detail in the outcome report
+- Rank gates by catches per token and minute, then auto-tune the profile
+
+## New ideas per lens
+- user value: 20
+- reliability: 21
+- simplicity: 22
+- bold bets: 20

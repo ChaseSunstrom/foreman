@@ -1,0 +1,3 @@
+# Brainstorm — lens: delight
+
+FAILED: no ideas in the required format: 1. **Lay a scab over a fresh wound** — FEATURE — value 4 — effort M — risk low — category: guard   Why: assumption: the risk budget is global and a F…

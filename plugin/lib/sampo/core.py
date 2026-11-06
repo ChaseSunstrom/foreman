@@ -1161,7 +1161,9 @@ def write_atomic(path, text):
         mode = 0o644
     # T-0291 review: a fresh, exclusive temp file (mkstemp: O_EXCL, unguessable) — a guessable name could be a planted
     # symlink that sends the write elsewhere
-    fd, tmp = tempfile.mkstemp(dir=d, prefix=f".{os.path.basename(path)}.", suffix=".tmp")
+    # T-3336: the name is cut (40 characters, at most 160 bytes) so a name near the 255-byte limit still has room
+    # for the random part and '.tmp'
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=f".{os.path.basename(path)[:40]}.", suffix=".tmp")
     try:
         os.fchmod(fd, mode)
         with os.fdopen(fd, "wb") as f:

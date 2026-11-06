@@ -1,0 +1,18 @@
+# Claude Code features a plugin can use (verified 2026-10-14, CC 2.1.299 installed; claude-code-guide from docs + CHANGELOG)
+Foreman uses: 14 hook events, 4 async hooks, 6 agents (tools/model/color only), output style, statusline.
+
+Unused hook events: PermissionDenied (retry:true, 2.1.89) · StopFailure (2.1.78) · PostCompact (2.1.76) · TaskCreated (2.1.84) · CwdChanged/FileChanged (2.1.83) · DirectoryAdded · PreModelSwitch/PostModelSwitch (2.1.251) · InstructionsLoaded (2.1.69) · TeammateIdle · WorktreeCreate/WorktreeRemove · PostToolBatch · UserPromptExpansion · Setup · Elicitation.
+Unused hook fields: `if` condition on tool events (2.1.85: skip the process spawn) · updatedToolOutput on PostToolUse (2.1.121: rewrite/compress any tool's output) · additionalContext on Stop/SubagentStop (2.1.163) · terminalSequence (2.1.141) · asyncRewake handler option · onFailure (2.1.295) · handler types http/prompt/agent · SessionStart sessionTitle/watchPaths/initialUserMessage/reloadSkills (version unverified) · PreToolUse permissionDecision "defer".
+Unused agent frontmatter: effort (2.1.78) · maxTurns · memory (user/project/local) · background · disallowedTools · skills preload · omitClaudeMd (2.1.271) · experimental.cacheTtl 5m/1h (2.1.248) · Agent tool per-call effort (2.1.292). Plugin agents ignore hooks/mcpServers/permissionMode/initialPrompt.
+Unused plugin parts: monitors/monitors.json (2.1.105; when: always | on-skill-invoke:<skill>; interactive only) · workflows/ (2.1.154) · userConfig (2.1.83) · bin/ on PATH · dependencies/defaultEnabled (2.1.154) · settings.json (agent, subagentStatusLine) · CLAUDE_PLUGIN_DATA · claude plugin validate --strict --json (2.1.259) · .lsp.json.
+Model tools: Monitor (2.1.98, 30-min deadline) · ScheduleWakeup (/loop) · CronCreate (session, restored on --resume) · RemoteTrigger (/schedule routines) · PushNotification · SendMessage/ListAgents (cross-session 2.1.224) · EnterWorktree/ExitWorktree · Workflow (needs user opt-in) · ReportFindings · Artifact (+ArtifactData/Comments).
+CLI: claude -p --effort (… ultracode) · --json-schema · --max-budget-usd (2.1.217) · --max-turns · --bg · --agents · --include-hook-events · --permission-prompts none · claude plugin eval (2.1.269) · /skill-doctor (2.1.261).
+
+## Verified details (docs, 2026-10-14)
+- monitors/monitors.json: [{name, command, description, when: "always"|"on-skill-invoke:<skill>"}]; strict keys (unknown key = plugin fails to load); output reaches Claude as notifications; session-long; interactive only; ${CLAUDE_PLUGIN_ROOT}/${CLAUDE_PLUGIN_DATA}/${CLAUDE_PROJECT_DIR} substituted; session id env UNVERIFIED.
+- PostToolUse updatedToolOutput (2.1.121): Bash shape {stdout, stderr, interrupted, isImage}; replaces what Claude sees; needs a sync hook (Foreman's PostToolUse is async).
+- hook `if` (2.1.85): one permission-rule string ("Bash(git *)"), tool events only; non-match skips the process spawn; best-effort.
+- Plugin agents honor effort (low..max), maxTurns, omitClaudeMd (2.1.271: skips user/project/local CLAUDE.md); ignore hooks/mcpServers/permissionMode/initialPrompt.
+- SessionStart hookSpecificOutput.sessionTitle (= /rename; startup/resume/fork) and watchPaths; FileChanged has no decision control or context.
+- Plugin workflows/: .js with export const meta {name, description}; run as /<plugin>:<name>; model launch without user words UNVERIFIED (ultracode only).
+- StopFailure (2.1.78): input error ∈ rate_limit|overloaded|authentication_failed|billing_error|server_error|max_output_tokens|…, error_details, last_assistant_message; output ignored except terminalSequence; logging/alerts only.

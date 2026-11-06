@@ -1,0 +1,3 @@
+# Brainstorm — lens: grid
+
+FAILED: no ideas in the required format: Surfaces: the web UI, the `sampo`/`fm` CLI with its hooks, the site, and the lane worktrees (the pack lists only "web UI", so I added the others from…

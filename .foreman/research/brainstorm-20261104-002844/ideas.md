@@ -1,0 +1,579 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 368 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Resolve state from the git common dir in worktrees
+- Check a done claim against goal clauses, not task text — near T-2557 (done): A goal's done claim is checked against each stated Done-whe…
+- Replay planted faults on a scratch goal nightly
+- Rebuild the goal capsule after compaction under a line budget
+- Fence leases with a token that goes stale on crash
+- Make a cold different-model child list unmet clauses before done — near T-2341 (done): A cold rival reads the request (Mission 5, #2): for an L pl…
+- Show clause status in the pane as proven, unproven or unmeasured
+- Mark guessed clauses and let the user strike them
+- Flag a stalled goal by clause movement
+- Mark an unreadable evidence record as "could not run" — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Run a saboteur against the finished goal — near T-2845 (done): Every parser that reads typed commands or goals accepts sam…
+- Write a one-line will before each risky step — near T-0672 (done): Milestone: Features — Guard and safety
+- Send a daily goal pulse to the phone
+- Site × unattended and web UI × other agents: — near T-2395 (done): Proof surfaces (Mission 7, #6/#10): the rollup by kind on M…
+- Smith TUI × all actors:
+- Slow × user in the CLI:
+- Write a goal charter file at intake that survives compaction
+- Make every done-claim a clause-by-clause receipt — near T-2138 (done): Stop wiring: a done claim while the last request has unacco…
+- Stamp a checkpoint at every tool-boundary, not just at Stop — near T-1388 (done): A coding CLI that fm code runs only reads Foreman's state: …
+- Reconcile on resume: re-derive state from git and ledgers, then diff against the checkpoint — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Run a compaction drill as a long-tier fault — near T-2377 (done): Long-horizon missing fault (Mission 6, #5): fm exam long ru…
+- Keep a plan ledger with per-item states and dependencies — near T-1061 (done): Calibration ledger: a plan predicts its size (files touched…
+- Detect goal drift after compaction by diffing the agent's restated goal
+- Wild: Hold a "dead-man done" hold for 24 hours
+- Wild: Stage a nightly "amnesia test" on the live goal
+- Wild: Leave a "note to self" letter at each checkpoint in the agent's own words
+- Replay a crash into a scratch worktree before trusting the resume fix
+- Pin the clause-to-evidence binding by content hash
+- Bind evidence to a tree hash — near T-2339 (done): Race at plan time, chosen by evidence (Mission 5, #2): fm l…
+- Map each goal clause to proof, or refuse "done"
+- Replay recorded proofs on resume — near T-2746 (done): sampo migrate: move ~/.claude/foreman and its siblings (for…
+- Re-inject the open-clause list at PreCompact and SessionStart
+- Gate the word "done" on the Stop hook — near T-2032 (done): Stop hook's claim check flags a future 'when the gates pass…
+- Run a cold adversary on every done claim — near T-2400 (done): Cold read: a line that honestly reports a requirement as un…
+- Turn the six known false dones into a regression corpus
+- Write the goal-level acceptance check before building
+- Add a "decayed" status that re-runs proofs 24 hours later
+- Wild: Have a ghost user type the "but did you also…" follow-up
+- Wild: Seal a done-forecast before the first edit
+- Wild: Pay lanes a bounty for finding unmet clauses
+- Make crash-left leases self-describing on resume
+- Resume from a single checkpoint file, not scattered ledgers — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Make evidence and lease commands work inside the builder worktree — near T-1910 (done): The guard keeps a builder's write inside its worktree named…
+- Write a "where I was" handoff note at every compaction and kill — near T-0821 (done): Round-1 review fixes (low): outward-tool gate fails closed,…
+- Keep a plan ledger with a per-step "done means" check — near T-2339 (done): Race at plan time, chosen by evidence (Mission 5, #2): fm l…
+- Re-run every step's check at goal close, from cold — near T-2401 (done): #4 exam defect: the oracle misses test-first on goal-rust-8…
+- Replay the goal's original words at every resume
+- Add a resume drill that kills at every ledger write — near T-2868 (done): Moonscale part 1: the candidate store (research/genesis/moo…
+- Detect a dead owner of a lease and reclaim it safely
+- Estimate remaining work and say "not done" with a number — near T-2144 (done): Goal remaining distance as one number on the statusline and…
+- Wild: Hold a goal "fire drill" that kills the session on purpose mid-goal
+- Wild: Make a stranger finish the goal from the handoff alone
+- Wild: Write the goal's "I'd know it's done when…" sentence first and test against it at the end
+- Warn when the worktree and the main checkout disagree about the goal
+- Run a worktree and cwd parity matrix over every verb the goal path calls
+- Score every goal against a "plain host plus one paragraph" arm
+- Compile a goal into a standalone `done.sh` the repo owns — near T-2136 (done): fm goal plan: a grounded contents list from the user's word…
+- Mutate each goal clause away and require the done check to notice
+- Measure what Foreman's resume adds over the host's own compaction summary
+- Mirror the plan into the host's native task list and make the ledger a view
+- Rebuild goal state from git plus one GOAL.md alone
+- Keep a retire-when counter on each goal-path capability, fed by the long-horizon tier
+- Wild: add `fm goodbye --rehearse` to price leaving Foreman for one goal
+- Wild: shrink Foreman to a verdict endpoint any agent can call
+- Wild: hold a monthly "native-parity week" where the host's goal feature drives and Foreman only audits
+- Resolve state from the main repo inside lane worktrees
+- Compile a goal into done-predicates, and compute done from them
+- Journal intent and result per step, and resume from the journal
+- Kill the goal run at every plan step and compare it with an uninterrupted run
+- Re-inject a 40-line goal anchor at PreCompact and SessionStart — near T-2139 (done): Goal across days: SessionStart, PreCompact, fm resume and f…
+- Take over a dead holder's lease with proof of death
+- Carry evidence across a lane merge, rebased onto the landed commit
+- Hold done as provisional for 72 hours, then re-run the predicates — near T-2752 (done): fmbudget.rate_limits reads this session's own statusline sn…
+- Converge two planners that see only the goal
+- Judge done from the goal's words and the final evidence only
+- Write the goal as a plain file any harness can resume (GOAL.md) — near T-2140 (done): #4 exam: G-goal and G-resume kinds, child-authored contents…
+- Wild: write the 2030 post-mortem first
+- Wild: make the goal hand-off model-swappable
+- Wild: race two decompositions and keep the one that gets green first
+- Resolve state from any worktree — near T-2265 (done): test_orchestration's conflict-brief test reads T-2208's res…
+- Run a worktree drill in `fm doctor` — near T-2257 (done): A lane whose worktree creation was cut off is found and rep…
+- Gate every self-edit on the long-tier replays — near T-2352 (done): Self-change gate at lane merge: guard replay, hook p95 and …
+- Turn each false done into a regression scenario — near T-2299 (done): fm exam grade splits false alarms by scenario kind, so I-cl…
+- Draft done-gate patches from false-done evidence — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Roll a self-change back automatically on worse outcomes
+- Keep a self-edit ledger — near T-2786 (done): fm task ac ID edit N --text reads a verify command typed in…
+- Write the resume card before compaction — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Wild: Hold a gate tournament overnight — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Wild: Generate a per-goal verifier script
+- Wild: Fork a probation self
+- Run an adversarial completer on every close
+- Pin the self-edit protected core by hash
+- Wild: Sampo files its own obituary for dead gate clauses
+- Run every verb across a worktree matrix — near T-2371 (done): One find across every shelf (Mission 6, #5): fm which NEED …
+- Pin state with an env var at lane spawn
+- Replay all evidence in a fresh worktree before accepting done — near T-0020 (done): Audits that match the current worktree id stay fresh after …
+- Store the plan as clauses, each needing evidence at a reachable commit
+- Add a handoff note the builder rewrites each step — near T-2850 (done): Port 12's logo system and tokens into design/sampo: mark, s…
+- Take over a stale lease safely on resume
+- Re-attach a moved or missing worktree on resume
+- Print a worktree-aware Next line on every failure
+- Probe the verb classes at lane start
+- Wild: kill the builder at random and require the same verdict
+- Wild: ghost builder tries to pass done without the work
+- Wild: leave a "morning after" bundle for each multi-day goal
+- Wild: score done-ness forecasts against the later outcome
+
+## Round 2
+- Run the done-gate as a verifier loop for harnesses with no Stop hook — near T-2466 (done): The Stop hook pushes the forever loop's next round while fm…
+- Make clause status writable only by the verdict command
+- Skip steps whose change already landed on resume
+- Namespace evidence and leases by goal id
+- Refuse `fm ship` while the goal's done is provisional or unproven
+- Capture "must still hold" clauses at goal start
+- Require a captured run for user-visible clauses — near T-2546 (done): Already built, at birth: fm capture and fm task new name th…
+- Invalidate evidence by the files its command read, not the whole tree — near T-2303 (done): fm task evidence --bench runs the start tree's own entry po…
+- Bench resume time-to-first-useful-action
+- Add "seams" markers to the web goal page
+- Turn each reopened goal into a long-tier scenario — near T-2556 (done): Diagnose the long tier's false dones: class every failed hi…
+- Wild: Mine the dead session's transcript for unwritten intent on resume
+- Wild: Ask for an "I'll be annoyed if…" line at intake and compile it into a clause
+- Wild: Give each false done a signature and match new claims against it
+- Run a resume-point audit that kills the builder at every ledger write
+- Make evidence and lease commands resolve state from the main repo inside any worktree
+- Write the goal charter as one file the model can't compact away
+- Bind each done-clause to evidence by tree hash and re-check at close
+- Turn the six false dones into a permanent regression corpus run by the zero-token arm
+- Hold done as provisional for a time window and re-run the proofs
+- Reconcile on resume by diffing git and ledgers against the last checkpoint — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Wild: Run an amnesia drill on the live goal each night
+- Wild: Fork a probation self for every change to the done-gate — near T-2605 (done): The self-change gate's loaded wall-time check compares medi…
+- Make "done" require one real-path firing — near T-2629 (done): The guard reads a redirect's fd number as the fd, not a wri…
+- Spool evidence to a lane-local outbox
+- Harvest false dones from the user's follow-up words
+- Detect proof that touched something else — near T-0707 (done): Frontier 07 — Knowledge graph
+- Floor the test count on every pass — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Turn mid-run user messages into clauses — near T-0385 (done): FIX: an urgent tag (CLEAN!:, FIX!: …) mid-task only got 'Me…
+- Hold done on hedge words in the final message
+- Keep clause tombstones for any dropped or weakened clause
+- Require a failing parent receipt for a close with no code change
+- Build denominators for "all" and "every" with grep
+- Turn the saboteur's winning cheat into a new clause check
+- Require a recorded demo of the feature in use — near T-2682 (done): with commits main lacks, the queue closed and the user's st…
+- Build a memorial wall of false-done mechanisms
+- Resume from one checkpoint file written at every tool boundary — near T-2294 (done): fm-builder.md: scratch and batch files are written with the…
+- Hold "done" as provisional, then re-run proofs from cold — near T-2461 (done): Lean: fold six verbs into the verbs that already hold their…
+- Ablate one goal mechanism at a time on the planted-fault tier
+- Plan so no step outlives a context window — near T-2269 (done): Plan gate checks content by tier (Mission 5, #2): M/L Appro…
+- Ladder the discipline prompt: 0, 30 lines, full verbs
+- Engage goal machinery only above a predicted horizon
+- Cite the false done behind every done-gate clause
+- Test fixes on a host-release day — near T-2822 (done): CI failed on this branch: run 41676727022
+- Count nudges the user or model ignores on the goal path
+- Use per-model gate necessity — near T-2486 (done): The user's four model rules as tests: no model import in fm…
+- Publish the false-done corpus as an upstream benchmark
+- Run a blind pair review on real goals
+- Uninstall Foreman mid-goal and finish with the plain host
+- Make `done` a status vector, not a boolean
+- Report the goal tax per goal — near T-2343 (done): #2 and #8 exam kinds (Mission 5): race, fork, door and unsu…
+- Run a state broker so lanes never touch state by path — near T-1667 (done): fm fsck: a read-only report of broken worktrees, stale lock…
+- Tombstone every clause removal — near T-2641 (done): A removed fm verb or flag prints its tombstone (what replac…
+- Count only user-origin clauses toward done — near T-2137 (done): fm goal verdict: finished vs stopped with the stop's cause,…
+- Retrieve the nearest closed goal's clause list to complete a vague plan
+- Harvest the user's real closed goals into the long-horizon tier automatically — near T-2160 (done): Write the steer's standing rules (testing cadence, real cov…
+- Measure resume as time to the first correct action — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Bill spend per clause and flag the outliers
+- Export a goal as a portable bundle another harness can resume
+- Run a model-swap continuity test mid-goal
+- Wild: Leave a will for the unattended goal
+- Wild: Write a letter from the 2030 maintainer at goal start
+- Wild: Run a goal séance after compaction
+- Wild: Bet on a done-date and sweep stalls
+- Turn each worktree failure into a repro test and a patch proposal
+- Queue self-edits and apply them only at a goal boundary
+- Let self-edits tighten the done gate freely and require the user to loosen it
+- Replay the failed resume with the edited text before accepting a skill or hook change
+- Bisect the self-edit ledger when a hook starts failing
+- Migrate in-flight ledgers when a self-edit changes their schema
+- Add a self-modification digest to the resume card
+- Self-tune the resume card from which lines the agent actually used
+- Fence self-edits to the failure's own blast radius
+- Wild: Write tripwire tests that guard against Sampo's own future shortcuts
+- Wild: Collect agent confessions about what Sampo made harder
+- Wild: Hold a nightly self-surgery rehearsal on a throwaway clone
+- Wild: Keep a self-version pinned to each goal as a receipt
+- Preflight the closing path at task start — near T-2781 (done): The hook's committed-library fallback runs only HEAD code: …
+- Materialise the brief into the worktree
+- Write evidence into the shared git object store
+- Add an evidence outbox for denied writes
+- Print a resolution trace on every worktree failure
+- Adopt a foreign worktree on first verb call
+- Beat the lease with a heartbeat file in the worktree
+- Split-world detector
+- Run a canary builder through the harness's own worktree call
+- Fail finish when .sampo files would be committed — near T-2781 (done): The hook's committed-library fallback runs only HEAD code: …
+- Wild: Message the parent from the worktree with `fm whisper`
+- Wild: Pack a lane as a capsule and resume it on another machine
+- Wild: Let a ghost builder try to close a task from inside a worktree with no real work
+- Wild: Have a builder write one "where I stood" line before every risky call, and replay it after a kill
+
+## Round 3
+- Pin each open plan step to the base it assumed
+- Stamp plan steps with the steer set they were planned under
+- Set lease TTL from the task's measured duration
+- Redact secrets at evidence-write time with a local pointer
+- Plan once, execute small — near T-2335 (done): Plan gate asks for readings and each approach's outcome (Mi…
+- Pin reviewer lanes to the commit they review — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Make each goal declare its outward-action envelope
+- Show a "last verified" age on every clause in the web UI
+- Wild: Make a tool-less child say what a clause's evidence proves
+- Wild: Schedule heavy proofs for predicted quiet quota hours
+- Wild: Hold a séance interview for every dead lane
+- Wild: Add a "boring goal" mode that refuses cleverness
+- Write the resume card from the ledger, not from the model — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Spool evidence to a worktree-local outbox, merge on landing
+- Kill the builder at every ledger write and compare verdicts
+- Make the leases fenced and self-describing for takeover
+- Run a nightly amnesia drill on a scratch goal
+- Write a "where I stood" line before every risky call
+- Dead-man done: a cold different-model child lists unmet clauses before closing
+- Strip unproven "completed" claims from compaction summaries
+- Tag every handoff-note line as observed or asserted
+- Flag evidence substitution — near T-0058 (done): Flag instruction-like text quoted from repo files into brie…
+- Mutate the six false-done scenarios into held-out variants
+- Pair every false-done scenario with an honest twin
+- Attribute every diff hunk to a clause or flag it — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Track discovery rate and distrust a plan that never grew
+- Lint the final message's assertions against the ledger
+- Re-run time-sensitive evidence with a shifted clock
+- Mine public overfitting-patch trajectories for the false-done corpus
+- Plant an unsatisfiable clause as a honeypot
+- Ask for the one more hour list at done — near T-2873 (done): The drive misses running subagents twice more: Claude Code'…
+- Hold a "wrong-done" recording when a user says it was not done — near T-2635 (done): A close with an unproven proof kind records it: the receipt…
+- Make resume a single replayable "resume.sh" the harness runs before the agent speaks
+- Print a resolution trace when a verb can't find its state
+- Write a goal anchor at every tool boundary and re-inject it at PreCompact and SessionStart
+- Hold "done" as provisional and re-run the proofs from cold in a fresh worktree
+- Wild: A "will" file the agent writes before each risky step and the resumer reads first
+- Wild: Hand the goal to a stranger model mid-run to prove the handoff is model-swappable
+- Resume from a plain GOAL.md any harness can read — near T-2140 (done): #4 exam: G-goal and G-resume kinds, child-authored contents…
+- Capture evidence passively from the PostToolUse hook and transcript
+- Use a git ref as the lease — near T-2256 (done): Recover git after the interrupted T-2072 builder worktree (…
+- Render the "done" message from the clause ledger — near T-0595 (done): Split a message into its parts (I001, value 4/5, effort S, …
+- Keep a sealed holdout acceptance check the builder can't read
+- Build a cheapest-catcher table for each false done
+- Mine plain-host sessions as a natural control
+- Require a "most likely still wrong" line in every done claim
+- Go dormant when the host's compaction rate drops
+- Lint plan steps for restartability with pre- and post-checks
+- Add a critic-only profile for hosts with a native goal loop
+- Wild: Cut a real transcript at a random turn and replay the continuation
+- Wild: Have each new model interview the harness — near T-2739 (done): fm code starts a run on the --escalate model when its own c…
+- Wild: Earn the veto with a shadow Foreman
+- Seal a held-out acceptance check from the builder — near T-2453 (done): Outside authors for tool-build, tool-find, tool-grant, proo…
+- Replay every historical compaction and crash through the resume-card builder
+- Keep a detour stack so a tangent returns to the goal
+- Park a goal on a world event with a wake predicate
+- Run a local-model sentry that checks each stretch of work against the goal capsule
+- Let child goals be full goals bound by verdict hash
+- Graduate a finished goal's clauses into permanent checks
+- Fence goals taken from tickets and issues
+- Tune resume-card size per model from a closed-book recall score
+- Write fault scripts in a ten-line scenario DSL
+- Build the goal walkthrough in the docs from a recorded real goal
+- Draw a goal flight chart as one SVG
+- Mirror clause status as forge check runs under a versioned `goal status --json` schema
+- Run today's goal path against a simulated 2030 host (wild)
+- Ask the dead session three questions (wild)
+- Compost abandoned goals for intake to search (wild)
+- Run the gate from a frozen release copy while a goal edits plugin/
+- Tier self-edits by surface, with a different bar for each
+- Keep a goal-local "tried and failed" file that reloads after compaction
+- Record a self-edit's prediction when it is made and score it at 14 days — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Detect a gate clause that keeps being patched and rewrite it
+- Distil a repo playbook from each finished goal — near T-2136 (done): fm goal plan: a grounded contents list from the user's word…
+- Let a goal tune its own caps inside a signed envelope
+- Dry-run a candidate self-edit by resuming the live goal's snapshot headless
+- Harvest goals that recovered from a fault as positive resume examples
+- Synthesize goal-local macros from repeated command sequences
+- Keep an out-of-tree witness that re-judges the done verdict — near T-1727 (done): Guard: touch into protected folders, $D resolved across ; a…
+- Make an edit's effect undoable by replaying the ledger without it
+- Show what a self-edit would have changed on the user's last 10 goals
+- Copy the untracked files a fresh worktree needs
+- Fence edits to the assigned worktree — near T-2630 (done): An Edit or Write that adds a top-level def, class or assign…
+- Say which Sampo code is running — near T-2809 (done): The operating rules and the hook scripts' display text say …
+- Keep a shadow ref of the worktree's work — near T-2256 (done): Recover git after the interrupted T-2072 builder worktree (…
+- Show base drift before the builder finishes — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Detect which harness made the worktree
+- Tile each builder in the pane — near T-2850 (done): Port 12's logo system and tokens into design/sampo: mark, s…
+- Heal a failed verb through the parent, then log it
+- Re-run a builder's closing call as the parent — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Run a ghost builder through a harness worktree each night — near T-1910 (done): The guard keeps a builder's write inside its worktree named…
+- Overlay main's state read-only under the worktree — near T-1607 (done): Landlock confinement for fm code workers, Linux, optional (…
+- Have a cold child read the builder's last 20 verb calls
+- Warn when a worktree outlives its task
+
+## Round 4
+- Ideas 1–3, 5–6:
+- Idea 4 and ideas 7–10, 12:
+- Trace the done-gate on each of the six false dones
+- Score the long tier by clauses met, not only true/false done — near T-2366 (done): The cold read's exam tail carries the numbers critiques cit…
+- Check that resuming a finished goal changes nothing — near T-2139 (done): Goal across days: SessionStart, PreCompact, fm resume and f…
+- Carry an in-flight goal across the Foreman→Sampo migration — near T-2139 (done): Goal across days: SessionStart, PreCompact, fm resume and f…
+- Give each hook event one owner across the shim and real plugin
+- Replay real engine shapes through the drive's running-set function
+- Bisect a once-proven clause with `fm goal bisect <clause>`
+- Constrain local builders to a grammar of goal verbs
+- Pin ambiguous goal words in a glossary every lane reads
+- Run a five-sample local-model jury on every done claim
+- Add a kill-and-compaction variant to `roundtrip.py` — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Run ambient chaos in dogfood
+- Show a finish-without-you colour in the tray and pane
+- Make leases fenced and reclaimable with proof of death
+- Bind each clause's evidence to a tree hash and the files its command read — near T-2303 (done): fm task evidence --bench runs the start tree's own entry po…
+- (wild) Run a nightly amnesia drill on a scratch goal and open a self-edit task when it fails
+- (wild) Have the agent write a "where I stood" line before every risky call and have the resumer read it first
+- (wild) Hand a half-finished goal to a stranger model, with only the capsule and ledgers, as the handoff test
+- (wild) Plant a dead-man hold: before done is accepted, a cold child must list unmet clauses and cite none
+- Grade the long tier instead of scoring it 0/6 — near T-2613 (done): fm exam long grade splits false dones into misses on names …
+- Refuse done while the last evidence or lease call errored
+- Audit the Stop hook's loop breaker — near T-2466 (done): The Stop hook pushes the forever loop's next round while fm…
+- Flag done claims made under suspicious conditions
+- Scan the diff for stubs and test-fitting — near T-0278 (done): Outside view: fm landscape (diff the harness landscape agai…
+- Reject additions nothing calls
+- Require each satisfied clause to cite a changed line
+- Flag goals that finish suspiciously fast — near T-0690 (done): Milestone: Intelligence — Metacognition and calibration
+- Revert one hunk at a time and rerun the proofs — near T-0682 (done): Milestone: Features — Verification and product checking
+- Probe for sycophancy at the done moment
+- Audit a random share of live done claims
+- Run a seeded post-mortem on every closed goal
+- Show a stopped-open card in place of silence
+- Resume from a ledger-derived checkpoint, not the model's memory
+- Fence evidence writes with a spool outbox inside the worktree
+- Detect a split world between worktree and main checkout
+- Run a hooks-off drill on the goal path
+- Run the six false dones against every harness's native goal mode — near T-2556 (done): Diagnose the long tier's false dones: class every failed hi…
+- Date the first host and model version that passes each false done — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Bind clause evidence to the repo's own CI and test commands — near T-2303 (done): fm task evidence --bench runs the start tree's own entry po…
+- Report the share of goals finished with no user message after the first
+- Tie every README and site claim to a measured delta — near T-2504 (done): Proof before presentation: the sweep compares the site's an…
+- Sample-audit a dormant goal path and re-arm it on a miss
+- Export the user's definition of done as a host-neutral profile
+- Census the environments where goal verbs fail
+- Wild: Race two hosts on the same goal and let the verdict pick
+- Wild: Have a successor model write the retirement notice for each gate
+- Wild: Give the goal path a public, hard sunset test
+- Run a cheap pilot of the plan in a scratch clone before committing days
+- Record a replayable world bootstrap — near T-2398 (done): Each proof run records the world it leaned on; fm doctor na…
+- Sweep for orphaned done-claims — near T-2504 (done): Proof before presentation: the sweep compares the site's an…
+- Hand over a remainder packet when the goal is done except for user-only steps
+- Snapshot the red tests at goal start — near T-2589 (done): The session-start note fits one 1,500-character budget, app…
+- Compute an amendment's blast radius when the goal changes on day 3
+- Stamp evidence with an environment fingerprint and tell drift from regression
+- Re-anchor evidence after a history rewrite
+- Keep every plan prefix shippable — near T-1457 (done): fm tidy's ledger roll keeps a crash-damaged (NUL) line in t…
+- Lint open goals against each other for conflicting clauses and files
+- Wild: Delta-debug the finished diff to its smallest passing form
+- Wild: Rehearse the undo at done
+- Wild: Agree the acceptance demo before any work
+- Gate every self-edit on a goal-path replay — near T-2352 (done): Self-change gate at lane merge: guard replay, hook p95 and …
+- Turn each false done into a self-written regression and a draft patch
+- Keep a self-edit ledger with a 14-day prediction — near T-2124 (done): Scout project probes: fm find + prove on the user's own pro…
+- Run a probation self for done-gate changes — near T-2605 (done): The self-change gate's loaded wall-time check compares medi…
+- Ratchet: a self-edit may tighten the done gate freely, loosening needs the user
+- Wild: Fork a probation self nightly on a throwaway clone
+- Roll back an edit automatically when outcomes get worse
+- Run a worktree parity matrix in CI
+- Detect a dead lease holder from inside the worktree
+
+## Cross-bred
+- Issue a hash-pinned clause receipt, or refuse "done"
+- Run a cold audit and a saboteur before accepting done
+- Reconcile every resume against a tool-boundary checkpoint with a fenced lease
+- Hold the goal's memory to a nightly amnesia test
+- Replay planted faults and real crashes in a scratch worktree before trusting a fix
+- Show clause truth in the pane, on the phone, and with a dead-man hold
+
+## New ideas per lens
+- grid: 57
+- crash and compaction survival: 34
+- false done: 52
+- resume after anything: 25
+- inversion: what makes Foreman obsolete: 49
+- 2030 worked back: 56
+- self-modification: 47
+- invented: the builder in its worktree: 42
+
+## Coverage (ideas per category)
+- resume 53
+- done-gate 20
+- worktree 13
+- evidence 13
+- true done 12
+- portability 12
+- reliability 11
+- planning 11
+- measurement 8
+- testing 7
+- leases 7
+- false done 7
+- done gate 7
+- compaction 5
+- false-done 5
+- obsolescence 5
+- intake 4
+- goal 4
+- lanes 3
+- unattended 3
+- true-done 3
+- plan 3
+- honesty 3
+- necessity 3
+- delight 3
+- handoff 3
+- diagnosability 3
+- worktree state 3
+- eval 3
+- drill 3
+- user value 3
+- goal-state 2
+- crash-resume 2
+- review 2
+- durability 2
+- calibration 2
+- agents 2
+- continuity 2
+- trust 2
+- lease 2
+- observability 2
+- self-change safety 2
+- guard 2
+- collateral damage 2
+- web ui 2
+- simplicity 2
+- provenance 2
+- exam 2
+- self-repair 2
+- hygiene 2
+- resume testing 2
+- docs 2
+- self-edit accountability 2
+- self-edit verification 2
+- resilience 2
+- drills 2
+- self-edit safety 2
+- ui 1
+- devices 1
+- tests 1
+- intent 1
+- resume tests 1
+- done signal 1
+- evals 1
+- self-improvement 1
+- done detection 1
+- plan and done 1
+- dx 1
+- resume drills 1
+- concurrent goals 1
+- push safety 1
+- eval corpus 1
+- self-edit 1
+- worktree and resume 1
+- vacuous pass 1
+- resume and intake 1
+- scope shrink 1
+- adversarial 1
+- host drift 1
+- model drift 1
+- overhead 1
+- cost 1
+- forecasting 1
+- resume stability 1
+- gate ratchet 1
+- counterfactual replay 1
+- rollback 1
+- migration 1
+- transparency 1
+- self-tuning 1
+- scope fence 1
+- anti-gaming 1
+- feedback 1
+- dry run 1
+- builder flow 1
+- smith / local models 1
+- scheduling 1
+- done claim 1
+- goal evidence 1
+- crash resume 1
+- role inversion 1
+- long tier 1
+- waiting 1
+- local-first 1
+- regression 1
+- developer experience 1
+- devices/forge 1
+- self-hosting 1
+- self-edit pipeline 1
+- gate hygiene 1
+- learning 1
+- goal config 1
+- crash recovery 1
+- black box 1
+- janitor 1
+- benchmark 1
+- delegation 1
+- lean 1
+- multi-day 1
+- portfolio 1
+- staged rollout 1
+- gate integrity 1
+- compatibility 1
+- scoped change 1
+Thin (0-1 ideas): performance, security, privacy, developer experience
+
+## Kill it fast (the quickest test that would show it isn't worth building)
+- Resolve state from the git common dir in worktrees — Run `git rev-parse --git-common-dir` from a worktree and from main. If your current state already resolves identically in both, there's nothing to build.
+- Check a done claim against goal clauses, not task text — Take the last 10 false-done claims and hand-check each against the goal text. If fewer than half fail on a clause the task text didn't cover, drop it.
+- Replay planted faults on a scratch goal nightly — Plant 5 faults by hand on a scratch goal. If a single manual run catches them all, nightly replay adds nothing.
+- Rebuild the goal capsule after compaction under a line budget — Compact a real goal 3 times and diff the restated goal against the original. If nothing drifts, the capsule isn't needed.
+- Fence leases with a token that goes stale on crash — Kill -9 a lease holder and check whether the existing lease expiry already blocks a stale writer. If it does, fencing is redundant.
+- Make a cold different-model child list unmet clauses before done — Run a cold different-model child on 10 known false-dones. If it lists the unmet clause in fewer than 7, kill it.
+- Show clause status in the pane as proven, unproven or unmeasured — Mock the pane with proven/unproven/unmeasured and show it to the user for 5 seconds. If they can't tell what to do next, kill it.
+- Mark guessed clauses and let the user strike them — Count how many clauses the user actually strikes in the last 10 goals. If it's near zero, the marking is noise.
+- Flag a stalled goal by clause movement — Replay clause timestamps from 10 stalled goals. If wall-clock idle time flags the same ones, clause movement isn't needed.
+- Mark an unreadable evidence record as "could not run" — Grep the evidence store for unreadable records in the last month. If there are none, this is a hypothetical.
+- Run a saboteur against the finished goal — Run a saboteur on 3 finished goals. If it finds nothing a normal test run misses, skip it.
+- Write a one-line will before each risky step — Read 20 past risky steps and ask whether a one-line will would have changed any decision. If not, it's ceremony.
+- Send a daily goal pulse to the phone — Check phone-notification open rate on any existing digest after one week. If it's under 20%, the pulse is spam.
+- Site × unattended and web UI × other agents: — Fragment with no claim or failure mode. Name the specific failure it would catch, or drop it.
+- Smith TUI × all actors: — Fragment with no claim or failure mode. State the failure per actor, or drop it.
+- Slow × user in the CLI: — Fragment with no claim or failure mode. Say what "slow" breaks for the CLI user, or drop it.
+- Write a goal charter file at intake that survives compaction — Diff the charter against the first user message after compaction. If the host summary already preserves it, drop the charter.
+- Make every done-claim a clause-by-clause receipt — Write one receipt by hand for a recent goal. If it takes the reader longer than rereading the diff, kill it.
+- Stamp a checkpoint at every tool-boundary, not just at Stop — Count tool calls per goal. If checkpoint writes at every boundary add over 5% latency, or the Stop-time checkpoint recovers just as well, kill it.
+- Reconcile on resume: re-derive state from git and ledgers, then diff against the checkpoint — Kill a session mid-goal and resume from git plus ledgers only. If the result already matches the checkpoint, the diff is moot.
+- Run a compaction drill as a long-tier fault — Force a compaction mid-run once. If the goal survives intact, a drill tier is overkill.
+- Keep a plan ledger with per-item states and dependencies — Check whether the last 10 goals had any inter-item dependencies. If they were linear, a flat list suffices.
+- Detect goal drift after compaction by diffing the agent's restated goal — Ask the agent to restate the goal after 3 compactions and diff it. If drift is under 1 clause, skip detection.
+- Wild: Hold a "dead-man done" hold for 24 hours — Check how many true-dones were later reversed within 24h. If none, the hold only delays value.
+- Wild: Stage a nightly "amnesia test" on the live goal — Run the amnesia test once by hand. If the agent recovers the goal from the files alone, nightly runs are redundant.
+- Wild: Leave a "note to self" letter at each checkpoint in the agent's own words — Compare a resume with and without the note on 5 goals. If the outcomes are identical, the note is flavor.
+- Replay a crash into a scratch worktree before trusting the resume fix — Reproduce the crash in a scratch worktree once. If the resume fix is obviously right from the diff, skip the replay machinery.
+- Pin the clause-to-evidence binding by content hash — Edit a proven artifact trivially and see if the hash breaks the binding. If trivial edits invalidate most bindings, the false-stale rate kills it.
+- Bind evidence to a tree hash — Compare tree-hash churn against a path-scoped hash across 10 commits. If the tree hash invalidates evidence on unrelated files, kill it.
+- Map each goal clause to proof, or refuse "done" — Try mapping clauses to proof on 5 goals. If over a third of the clauses can't be provable, the refusal rule blocks legitimate dones.
+- Replay recorded proofs on resume — Time a replay of the recorded proofs. If it exceeds the resume budget or any proof is non-idempotent, kill it.
+- Re-inject the open-clause list at PreCompact and SessionStart — Check whether PreCompact and SessionStart hooks already inject the clause list. If they do, skip.
+- Gate the word "done" on the Stop hook — Say "done" in a session with a Stop hook that blocks it. If the agent just rephrases it as "finished", the gate is bypassed.
+- Run a cold adversary on every done claim — Run the adversary on 10 true-dones. If it raises false objections on more than 3, it's a nuisance.
+- Turn the six known false dones into a regression corpus — Collect the six false dones and run them through the current check. If it already rejects them, the corpus adds no signal yet.
+- Write the goal-level acceptance check before building — Look at the last 5 goals. If the acceptance check could not be written before the build existed, it's fiction.
+- Add a "decayed" status that re-runs proofs 24 hours later — Re-run proofs from 10 old goals. If fewer than 1 decays, the status is dead weight.
+- Wild: Have a ghost user type the "but did you also…" follow-up — Ask a human for the follow-up "but did you also…" on 5 goals. If the ghost can't reproduce them, it's useless.
+- Wild: Seal a done-forecast before the first edit — Compare sealed forecasts to actuals on 5 goals. If the error is larger than the effect size, it's noise.
+- Wild: Pay lanes a bounty for finding unmet clauses — Pay a bounty on 3 dummy goals. If lanes inflate clauses to claim it, the incentive is gamed.
+- Make crash-left leases self-describing on resume — Look at a crash-left lease file. If it already names owner, pid and time, it's self-describing.
+- Resume from a single checkpoint file, not scattered ledgers — List where resume actually reads state from. If it's already one file, skip the consolidation.
+- Make evidence and lease commands work inside the builder worktree — Run the evidence and lease verbs from inside the builder worktree. If they pass, there's no bug.
+- Write a "where I was" handoff note at every compaction and kill — Compare resume quality with and without handoff notes on 5 kills. If no difference, kill it.
+- Keep a plan ledger with a per-step "done means" check — Check the last 10 plan steps for ones that had a meaningful "done means". If most were just "tests pass", it's redundant.
+- Re-run every step's check at goal close, from cold — Time a cold rerun of all step checks at close. If it's longer than the goal itself, cut it.
+- Replay the goal's original words at every resume — Diff the original words against the capsule at resume. If the capsule already quotes them verbatim, skip.
+- Add a resume drill that kills at every ledger write — Count ledger write sites. If there are too many to kill at each (over ~30), sample instead of exhaustive drills.
+- Detect a dead owner of a lease and reclaim it safely — Check whether pid liveness is reliable across containers. If pids are reused or invisible, the reclaim is unsafe.
+- Estimate remaining work and say "not done" with a number — Predict remaining work on 5 past goals at midpoint and compare to actuals. If the error is over 2x, the number is false precision.
+- Wild: Hold a goal "fire drill" that kills the session on purpose mid-goal — Do one manual mid-goal kill. If resume works, a recurring fire drill is redundant.
+- Wild: Make a stranger finish the goal from the handoff alone — Hand the handoff to a stranger on one goal. If they need the original chat, the handoff isn't the issue, so don't build more of it.
+- Wild: Write the goal's "I'd know it's done when…" sentence first and test against it at the end — Write the sentence for 5 goals. If it just restates the title, there's no test power.
+- Warn when the worktree and the main checkout disagree about the goal — Run `git status` and the goal read from both locations. If they never disagree in practice, skip the warning.
+- Run a worktree and cwd parity matrix over every verb the goal path calls — List the verbs the goal path calls and run each from worktree and main. If all pass, the matrix is unneeded.
+- Score every goal against a "plain host plus one paragraph" arm — Run 5 goals as plain host plus a paragraph. If the pass rate matches the full Foreman, the machinery isn't earning its keep.
+- Compile a goal into a standalone `done.sh` the repo owns — Compile one goal into `done.sh`. If most clauses compile to "ask a human", the repo can't own it.
+- Mutate each goal clause away and require the done check to notice — Remove one clause from 5 goals and run the done check. If it doesn't notice any, you've got the answer without building anything new, so just fix that check.
+- Measure what Foreman's resume adds over the host's own compaction summary — Run resume with and without Foreman on 5 compacted goals. If recovery is the same, Foreman adds nothing.
+- Mirror the plan into the host's native task list and make the ledger a view — Check whether the host's native task list is writable by hooks. If it isn't, the mirror can't be built.

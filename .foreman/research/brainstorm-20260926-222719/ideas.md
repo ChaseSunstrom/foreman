@@ -1,0 +1,91 @@
+# Ideas by round (deduplicated titles; details in the lens files)
+
+## Round 1
+- Let the user attest subjective criteria with one yes/no
+- Redact secrets at capture, at evidence and in the diff
+- Park and preempt for urgent requests
+- Bootstrap a minimal gate for projects with none
+- Detect conflicts between repo instructions and Foreman defaults
+- Verify UI and HTTP changes with a stdlib fetch-and-assert check
+- Draft a PR description from the brief behind one outward-facing yes
+- Split the guard into a fail-closed safety core and fail-open workflow gates
+- Redact secrets at the single state-write chokepoint
+- Dedupe hook events by tool_use_id
+- Bind evidence to a hash of the criterion text and verify command
+- Keep rolling, bounded snapshots of the state dir with a one-yes restore
+- Make the suite hermetic and order-shuffled, with a HOME tripwire
+- Pin the project root per session and flag writes that escape it
+- Compile-check plugin edits immediately when developing Foreman itself
+- Put new gates on an advisory-to-blocking ladder
+- Fold every ledger into one typed event log
+- Measure ceremony on canonical tasks as a test
+- Default the verify command from the project map
+- Key gates on a declared proof kind, not the task type
+- Make `fm task done` choose the S fast path itself
+- Diff the public surface and entry-point behavior at done
+- Verify in a clean-room copy before done
+- Mirror CI: derive gates from the project's CI config and flag the gap
+- Model cross-repo tasks with linked projects
+- Audit with a different model than the executor
+- Harvest inline TODO/FIXME into ranked queued briefs
+- Calibrate estimates against actuals
+
+## Round 2
+- Check imported names and attributes against installed packages after each edit
+- Close the loop with CI and PR review results after a push
+- Cite-check research answers
+- Add polyglot adapters for outline, symbol lookup and test↔source links
+- Sweep the queue for briefs made obsolete by later work
+- Add recurring standing orders checked at session start
+- Queue a PERFORMANCE brief when gate time dominates task time
+- Reject test evidence when the run proves nothing
+- Detect test tampering at done
+- Validate audit verdicts as structured data
+- Put an error boundary around every `fm` command
+- Check that every command reference resolves
+- Run every child process non-interactively
+- Make mutating `fm` commands retry-safe
+- Route command parsing through one shared module
+- Generate the command list from one registry and fail tests on drift
+- Replace free-form verify shell with a tiny check vocabulary
+- Keep one bounded "state of play" block per task instead of separate checkpoint, resume note and handoff
+- Give every new gate, command and note a sunset date in the registry
+- Pre-grant permissions from the plan's own commands and scope
+- Prove changed lines were executed by the evidence commands
+- Warn about missing companion edits from git co-change history
+- Price a proposed rule or gate against past transcripts with `fm whatif`
+- Order `fm check` by failure likelihood and fail fast in the red loop
+- Recall abandoned and reverted approaches at plan time
+
+## Round 3
+- Audit the session's fixed context overhead beyond Foreman
+- Collect a one-tap verdict on selected finished tasks as ground truth
+- Nudge parallel and batched tool calls from observed serial patterns
+- Park tasks on machine-checkable external waits and auto-resume
+- Spend leftover weekly budget on queued low-risk work
+- Serve installed-dependency API facts locally with `fm api`
+- Re-arm change-suppressed notes after compaction, clear and resume
+- Fuzz the brief round-trip with hostile text
+- Handshake hook, CLI and state versions at every entry
+- Detect out-of-band state edits with a transition hash chain
+- Probe the `claude` CLI's capabilities once per version
+- Attribute hook events to main agent or subagent
+- Run the full loop under a missing-tool matrix
+- Create the task lazily, on the first edit
+- Make hooks inert outside a detected project root
+- Define a glossary of at most 15 terms and lint every text surface against it
+- Replace pre-approval with act-then-undo for local reversible actions
+- Log flag and env-var usage, not only command usage, and delete the dead ones
+- Verify Foreman changes with the last-known-good runner
+- Add `fm refactor` (rename, move, change-signature) built on `ast` and `tokenize`
+- Sweep for dangling references to anything the diff removed or renamed
+- Find the culprit commit for FIX tasks with `fm bisect`
+- Nudge when independent read-only calls are issued one per turn
+- Diff runtime call traces between the start tree and now
+- Attack risky diffs with a scratch-copy test writer
+
+## New ideas per lens
+- user value: 20
+- reliability: 22
+- simplicity: 16
+- bold bets: 20

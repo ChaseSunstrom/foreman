@@ -33,9 +33,20 @@ PROJECT_CONFIG = (".mcp.json", os.path.join(".claude", "settings.json"), os.path
 TOKEN_PLACEHOLDER = re.compile(r"(?i)example|placeholder|changeme|dummy|redacted|your[-_]|yourkey|x{6,}")
 
 
+ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?")
+
+
 def is_placeholder(value, token=False):
-    """T-1273: the one rule for a fake value; the commit refusal and the close warning both ask it."""
-    return bool((TOKEN_PLACEHOLDER if token else PLACEHOLDER).search(value))
+    """T-1273: the one rule for a fake value; the commit refusal and the close warning both ask it. A plain ISO date
+    or time (token_expires = "2030-01-01") is never a credential (T-3336, T-2450's case)."""
+    return bool((TOKEN_PLACEHOLDER if token else PLACEHOLDER).search(value)) or not token and bool(ISO_DATE.fullmatch(value))
+
+
+URL_FAKE = {"pass", "password", "passwd", "pw", "pwd", "secret", "token"}  # T-3336: user:pass@host, as docs write it
+
+
+def _fake_url_password(pw):
+    return pw.lower() in URL_FAKE or is_placeholder(pw)
 
 
 def scan_text(text, config=False):
@@ -45,6 +56,8 @@ def scan_text(text, config=False):
         for m in rx.finditer(text):
             n = text.count("\n", 0, m.start())
             if n in found or ALLOW in lines[n] or rx in (LITERAL, BARE, TOKEN) and is_placeholder(m.group(1 if rx != TOKEN else 0), rx == TOKEN):
+                continue
+            if rx == URL_CRED and _fake_url_password(m.group(0)[len(m.group(1)):-1]):
                 continue
             found[n] = kind or next(k for p, k in PREFIXES if m.group(0).startswith(p))
     return sorted((n + 1, k) for n, k in found.items())

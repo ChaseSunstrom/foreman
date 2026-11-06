@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- `sampo sync on` works on this repo's state: atomic writes cut the file name in their temp name (a 250-byte brainstorm file refused the mirror), and the commit scan no longer takes a placeholder URL password (`user:pass@host`) or an ISO date under a secret-like name (`token_expires = "2030-01-01"`) for a credential (T-3336).
 - Test runs share the machine: every `run.py` draws its classes from one slot pool sized to the CPUs (or the cgroup's quota), so ten runs at once queue for 16 slots instead of starting 160 workers; the tests' `fm()` calls go through a fork server that imports Sampo once (2.4x cheaper per call); `perf_bench.py` records suite and CLI timings with host load; `sampo lane max` goes up to 100 builders (T-3297, part 1 of T-3252).
 - A builder's edit inside its own lane worktree counts for the lane's task, never for the main checkout's active task, so a close no longer fails its scope gate while builders work (T-3256).
 - The live page's modern look draws every panel with one small chart kit (no library, under the strict CSP): calls per minute by model and spend over the day as time series, GPU memory stacked per model, the moons funnel, sparklines, running jobs' progress bars with percent, rate and ETA, and steps done of total for tasks and lanes; each chart has a text equivalent, and the network canvas turns light in the light scheme (T-3092).

@@ -1,0 +1,265 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 158 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Build `fm code`, a provider-agnostic agent loop in stdlib Python — near T-1086 (done): Builder sandbox and outbound ledger: builders run under Cla…
+- Drive the loop deterministically, with the model filling small slots
+- Add a tool-call shim for models without native function calling — near T-0977 (done): Skills get used without asking: a zero-token UserPromptSubm…
+- Offer an edit-format ladder (whole file, search/replace, unified diff) chosen per model — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Add a model registry with routing, fallback and cost ledger — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Make external CLIs interchangeable workers behind one `fm worker` interface — near T-0682 (done): Milestone: Features — Verification and product checking
+- Add an MCP client and server host with per-tool guard policy — near T-0245 (done): Foreman MCP server — fm mcp serves read-only tools over std…
+- Speak Agent Client Protocol so editors can host `fm code`
+- Run bash and edits in an OS sandbox (bwrap or Landlock) in addition to the guard
+- Support session checkpoints, rewind and resume in `fm code` — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Add a context manager with a repo map, compaction and prompt caching — near T-0215 (done): Session codebase map — the first prompt of a session in a r…
+- Wild: Add a race mode that runs one brief on three different models in parallel lanes and merges the one that passes the gates — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Wild: Derive a per-model capability profile from past task evidence and tighten the harness for weak models
+- Wild: Add a "fm code --teach" mode where a strong model writes the plan and slot templates once and a free local model executes them offline
+- Add headless and SDK entry points with JSON event streaming — near T-0941 (done): Stack cards for building Claude Code extensions (plugins, h…
+- Orchestrate existing CLIs as workers under Foreman's loop (fm conduct) — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Build a native loop where the harness owns the phases and the model fills slots (fm code)
+- Ship a minimal OpenAI-compatible provider layer in stdlib (urllib)
+- Route the Foreman guard as a local MCP/shim proxy for any tool-running agent
+- Do less: first make `fm agents` live-verified and fix the blocked trio before anything new — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Capability-tiered slot sizing (small-model mode)
+- Make `fm code` an ACP/Zed-style server so editors and other harnesses drive it
+- Reuse by embedding: treat opencode or aider as the interactive shell and Foreman as the policy layer
+- Replayable deterministic transcripts for loop testing (fm code replay) — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Wild: Model tournament per slot — run the same slot on 3 cheap models and let the verifier pick — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Wild: Distill Foreman's own history into a fine-tuning/few-shot set for local models
+- Wild: Cross-harness referee — one worker writes, a different vendor's model reviews — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Wild: Harness-in-a-sandbox — run `fm code` in a disposable container/namespace so the guard is defense in depth
+- Build `fm code`: Foreman's own agent loop with model-filled slots — near T-0941 (done): Stack cards for building Claude Code extensions (plugins, h…
+- Add a provider layer for any OpenAI-compatible endpoint
+- Make the guard the single tool executor for every worker — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Run claude, codex, gemini, opencode and aider as interchangeable lane workers — near T-0442 (done): Guard parity across harnesses: same decision on codex, gemi…
+- Route each step to the cheapest capable model from measured pass rates — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Add a model capability probe that tunes the harness to the model
+- Add edit-by-structured-slot with automatic repair
+- Replay any session against a different model (wild) — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Make a model tournament lane (wild) — near T-1071 (done): Night gardening: fm night composts merged or abandoned work…
+- Serve Foreman Code as an MCP and ACP server so other editors drive it — near T-0950 (done): fm scout: Foreman finds its own work (Claude Code updates, …
+- Show a live web-UI session view for the native loop — near T-1033 (done): Chat window: a live tree like the Agents graph, the session…
+- Make a crash-proof loop that resumes from its last checkpoint (wild) — near T-1072 (done): Rule and hint hygiene: cards, known fixes, rules and lesson…
+- Offer a one-command local-model setup that downloads nothing silently
+- Let the harness pair a small model with a big one only at stuck points (wild) — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Ship `fm code` as a ~400-line loop over one OpenAI-compatible HTTP call — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Make the model fill slots, not drive: fixed intake→plan→edit→verify state machine — near T-0711 (done): Frontier 11 — Cockpit UI
+- Reuse the existing guard in-process as the only tool gate — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Limit the tool set to five: read, search, edit, run, finish — near T-0962 (done): Surfaces: NO_COLOR, step N/M in the statusline, fm ui --dem…
+- Treat other CLIs as workers via one `--worker CMD` template, not per-tool adapters
+- Define the worker contract as "exit code + diff + evidence file" — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Make the model profile a single TOML of three numbers (context, tools-ok, json-ok) — near T-0207 (done): Debugging ledger: hypotheses in the brief that fm next driv…
+- Do less: ship `fm code` without a TUI, streaming to the existing web UI and plain stdout — near T-0777 (done): Never idle without tmux: a plugin monitor streams this sess…
+- Add a `fm code --dry-plan` that prints the plan slots and stops — near T-0674 (done): Milestone: Features — Observability, replay and trust
+- Cap the loop by a fixed step and token budget from `fm budget` — near T-1080 (done): Risk budget: one daily autonomy budget (destructive asks, r…
+- Wild: run the whole agent as a replay-able log, so any session can be re-executed against a different model — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Wild: model ladder, try the cheapest local model first and escalate to a bigger one only when a gate fails — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Wild: one-file agent, `fm code` is a single-file script that can be copied onto any machine and run with only Python — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wrap every model call in a slot-schema validator with bounded repair — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Make the guard a mandatory choke point for every worker, with a fail-closed self-test — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Add a worker health-probe and circuit breaker per backend
+- Journal every agent-loop step so a crashed run resumes exactly — near T-1184 (done): `fm doctor --fix` applies only the findings that already ha…
+- Record and replay model sessions as deterministic fixtures — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Build a capability-conformance suite that grades any model before it gets work — near T-0786 (done): fm page: the queue (and optionally a brainstorm catalogue) …
+- Make every edit atomic with a checkpoint and one-command rollback — near T-0710 (done): Frontier 10 — Milestone work compiler and merge train
+- Detect model loops and stalls and break them deterministically — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Fail the gate when a criterion's verify command can't run — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Run a shadow-model audit that re-derives every "done" claim independently — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Chaos mode that injects failures into the harness itself
+- Wild: Checksum and signed-seal the state ledger so tampering is detectable — near T-1065 (done): Tamper-evident ledger: each ledger line carries the hash of…
+- Pin and sandbox the worker environment per lane
+- Ship a provider-neutral model adapter with a local-model slot-filling loop
+- Run the existing guard inside Foreman's own tool executor — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Treat claude, codex, gemini, opencode and aider as interchangeable workers behind one driver interface
+- Route each step to the cheapest model that passes, and learn the routing from outcomes — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Run a conformance suite that scores any model or CLI as a Foreman worker
+- Make every session resumable and portable between workers — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Show a plain-language "why this model, why this step" trace in the web UI
+- Replay any past session through a different model — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Wild: Let a weak model ask a strong one only when stuck — near T-0676 (done): Milestone: Features — Performance and cost
+- Wild: Self-hosting, where `fm code` builds Foreman's next release with a local model overnight
+- Wild: Pair-programming mode where two different models must agree before a commit — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Detect the missing CLI and say how to get it, instead of failing — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Give the new harness a name and a first-run path that works with no Claude account — near T-0707 (done): Frontier 07 — Knowledge graph
+
+## Round 2
+- Read every harness's rule files and commands as one config — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Feed LSP diagnostics back after every edit — near T-0962 (done): Surfaces: NO_COLOR, step N/M in the statusline, fm ui --dem…
+- Add plan mode and approval modes to `fm code` — near T-0974 (done): Opt-in auto-approve of read-only Bash the guard classifies …
+- Manage background processes as a first-class tool — near T-0705 (done): Frontier 05 — Ambient verification and test intelligence
+- Add web fetch and search tools behind a domain allowlist — near T-0206 (done): fm research ask: recall first, parallel web researchers per…
+- Run as a CI and PR-review action (headless GitHub Action) — near T-1186 (done): `fm audit run ID` runs the audit lenses as headless `claude…
+- Add an auto-commit-per-edit mode with `/undo` — near T-0707 (done): Frontier 07 — Knowledge graph
+- Export and share a session as a redacted transcript — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Add image input and screenshot verification — near T-0711 (done): Frontier 11 — Cockpit UI
+- Wild: Let the model set its own reasoning budget per slot, measured — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Wild: Provide a pocket "fm code" over SSH and phone
+- Wild: Add a cross-model "second opinion" gate before every irreversible action — near T-0672 (done): Milestone: Features — Guard and safety
+- Publish a settings layering and managed-policy file
+- Run Claude Code on any model through a local gateway — near T-0903 (done): Showcase: a recording of the real Claude Code UI with the f…
+- Use installed CLIs as completion providers — near T-0924 (done): Shell completion: fm complete prints verbs and live task id…
+- Judge the diff, not the process — near T-0978 (done): Small and local models: measure first — fm bench stranger r…
+- Constrain slot decoding with grammars
+- Define the harness as an editable workflow file — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Do the mechanical work with tools, leave the decision to the model — near T-0978 (done): Small and local models: measure first — fm bench stranger r…
+- Compile skills into per-model prompt packs — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Run a bake-off of the approaches on replayed history — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Unblock the trio with recorded fake CLIs
+- Compile one rules source into every CLI's native config — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Supervise hookless CLIs through a PTY
+- Red-team the guard every night with a model (wild) — near T-0752 (done): Milestone: Learning, paid half — evals on block, bench hold…
+- Run the work as an email-style patch series (wild)
+- Run the harness in the browser on a local WebGPU model (wild) — near T-0978 (done): Small and local models: measure first — fm bench stranger r…
+- Ship a "contract-first" worker protocol, not adapters — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Make the gate the product: `fm verify` as a standalone referee for any agent's diff — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Add a "proof receipt" every task emits: signed, portable, replayable — near T-0672 (done): Milestone: Features — Guard and safety
+- Run a nightly "foreman on foreman" self-improvement lane with a local model — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Wild: Publish a public leaderboard of models scored by Foreman's own conformance suite — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Wild: "Foreman Code pocket edition": one `fm` binary on a USB stick with a quantized model manifest
+- Wild: Let the guard learn from `fm guard mine` and propose its own new rules as reviewable briefs — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Add a failure-class router: classify why a step failed and pick the remedy — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Treat criteria quality as a gate: lint briefs before any worker starts — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Add a worker "cost of being wrong" budget: cheap models get small blast radius — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Wild: A spectator view where you watch two models race the same brief, live, in the web UI
+- Generate the Pages site's demo from real recorded `fm code` sessions — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Collapse the three plans into one `fm code` verb with a `--worker` switch — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Add a zero-config first run that picks a model from what is already on the machine — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Reuse `fm run` as the loop's outer shell instead of writing a new queue runner
+- Cut the native tool set to what the guard already understands — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Make the model profile a plain file with defaults for unknown models — near T-1123 (done): Guard gaps a review found: (1) non-recursive rm fed targets…
+- Delete adapter code that the worker template makes redundant
+- Print one status line per step instead of a TUI — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Fail with the exact command to run when a prerequisite is missing — near T-0710 (done): Frontier 10 — Milestone work compiler and merge train
+- Wild: Make the whole harness one stdlib file that regenerates itself from the repo
+- Wild: Let the brief itself be the whole config
+- Wild: Ship a "do nothing" dry mode that proves the harness works with no model at all
+- Hold the first release to one provider call shape — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Add a write-ahead step journal with fsync'd intent records — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Make tool calls idempotent with step IDs and effect receipts
+- Run a guard fail-closed canary at every session start — near T-0676 (done): Milestone: Features — Performance and cost
+- Quarantine unverified worker claims behind an independent evidence re-run
+- Detect and heal state-ledger divergence from the git tree
+- Add per-backend circuit breakers with automatic model failover mid-task
+- Bound every external CLI worker with a process-group watchdog
+- Snapshot the worktree and rewind on any gate regression — near T-0884 (done): Snapshot uncommitted work before a Bash command discards it…
+- Wild: Run a continuous soak harness that replays old sessions against every release — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Wild: Add a deterministic "fault dial" that makes any model act like a flaky one
+- Wild: Seal each closed task with a reproducible-proof bundle anyone can re-verify offline — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Cap and report non-determinism by running flaky gates N times — near T-0682 (done): Milestone: Features — Verification and product checking
+- Enforce a global lease on the main checkout for all non-Claude workers — near T-0775 (done): One-off headless claude -p sessions answer their prompt and…
+- Lint briefs for false premises at capture — near T-0438 (done): Capture flags a re-ask of dropped work and a veto contradic…
+- Remember dropped and steered ideas at capture — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Track a live parity scoreboard against Claude Code — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Replay recorded codex, gemini and opencode sessions to unblock the blocked trio
+- Normalise tool names so one guard corpus covers every harness — near T-0817 (done): Guard refusals read better: /dev/null on a data-only python…
+- Let `fm code` borrow the user's existing login through `claude -p` — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Import Claude Code settings in one step — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Fall back to Claude Code when `fm code` fails a task — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Keep a human-only inbox with copy-paste commands — near T-0004 (done): Phase 6: fm tidy and fm doctor
+- Show spend and remaining budget before a lane starts — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Wild: Turn Claude Code's release notes into capability-gap briefs — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: Publish a live model leaderboard on the GitHub Pages site
+- Wild: Write a morning digest of what changed overnight — near T-1061 (done): Calibration ledger: a plan predicts its size (files touched…
+
+## New ideas per lens
+- capability map: 28
+- approaches: 27
+- bold bets: 26
+- simplicity: 25
+- reliability: 26
+- unspoken needs: 26
+
+## Coverage (ideas per category)
+- orchestration 6
+- guard 6
+- reliability 5
+- safety 5
+- verification 5
+- harness core 4
+- testing 4
+- small models 3
+- routing 3
+- evals 3
+- onboarding 3
+- cost 3
+- tools 3
+- scope 3
+- trust 3
+- edit quality 2
+- context 2
+- models 2
+- recovery 2
+- agent loop 2
+- isolation 2
+- providers 2
+- config 2
+- core harness 1
+- model compat 1
+- integrations 1
+- ide 1
+- sandbox 1
+- sessions 1
+- ensembles 1
+- adaptive 1
+- hybrid 1
+- automation 1
+- lanes 1
+- interop 1
+- web ui 1
+- eval 1
+- gates 1
+- resilience 1
+- integrity 1
+- continuity 1
+- legibility 1
+- escalation 1
+- dogfood 1
+- setup 1
+- compatibility 1
+- permissions 1
+- integration 1
+- git 1
+- observability 1
+- multimodal 1
+- surfaces 1
+- configuration 1
+- admission control 1
+- extensibility 1
+- decision 1
+- do less 1
+- fallback 1
+- workflow 1
+- zero install 1
+- workers 1
+- autonomy 1
+- community 1
+- portability 1
+- intake 1
+- delight 1
+- docs 1
+- simplicity 1
+- reuse 1
+- pruning 1
+- output 1
+- errors 1
+- packaging 1
+- durability 1
+- idempotency 1
+- consistency 1
+- availability 1
+- process control 1
+- rollback 1
+- regression 1
+- auditability 1
+- flake control 1
+- planning 1
+- product 1
+- provider 1
+- migration 1
+- handoff 1
+- watch 1
+- website 1
+- report 1
+Thin (0-1 ideas): user value, performance, security, privacy, devices, agents, simplicity, developer experience, observability, docs, delight

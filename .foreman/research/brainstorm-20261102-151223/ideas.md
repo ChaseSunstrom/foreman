@@ -1,0 +1,270 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 163 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Run a yield auction for the queue
+- Open a forecast market on task outcomes — near T-2276 (done): Trigger routing learns from outcomes (Mission 8/#11): fm tr…
+- Hold a Vickrey auction for model and backend choice
+- Issue warranties on landed commits — near T-2598 (done): fm release's push lands on a main that fm ship fed by cherr…
+- Auction injected context slots — near T-2667 (done): fm burden counts SessionStart context delivered as hook_suc…
+- Price authority as expiring capability options
+- Halt runs with market circuit breakers — near T-0087 (done): Hook circuit breaker: a hook failing 3 times in a row pause…
+- Size budgets with Kelly sizing — near T-1446 (done): Supply check blind spot: a plugin file over 4 MB (or past t…
+- Sell proofs by forgery cost — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Charge the user's attention a price (wild)
+- Quote before building (wild) — near T-2340 (done): L plans race their design (Mission 5, #2): an L task under …
+- Make an idea market for Genesis (wild) — near T-2666 (done): Genesis gen-3 Mission 5 (#12 staying lean and safe): ground…
+- Run a spot market on idle quota (wild)
+- Escrow tools for blocked sub-agents — near T-2344 (done): #2 and #8 on every surface (Mission 5): fm code's planner w…
+- Run the bare-model ablation to see what Foreman still adds
+- Price each gate by catches per dollar and auction budget to them
+- Run a reverse auction for each brief across backends
+- Bond every landed change with a warranty window
+- Make Foreman's discipline a portable spec any harness can enforce
+- Watch vendor release notes and mark verbs the harness now does natively
+- Move the guard from command strings to effects at a sandbox boundary
+- Hand the user a signed audit pack a third party can verify
+- Prune skills and verbs automatically as models improve — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Wild: let spare quota run a bounty board overnight
+- Wild: act as escrow between a client and an agent
+- Wild: forecast the cost and finish time of the whole backlog as a futures curve
+- Wild: sell guard coverage as insurance with a premium and a deductible
+- Run a task auction between lanes and models — near T-2291 (done): History-based model router (Mission 8, #9): fm lane brief p…
+- Replay the ledger under a changed policy (a harness digital twin)
+- Swap the model under the tower and prove nothing regressed
+- Pay an adversarial auditor lane per defect found in other lanes' closes
+- Put a warranty on every landed change and bill regressions to the producer
+- Keep a per-model, per-task-type reputation (Elo) from verified closes
+- Hold out a random verb-off sample to measure what each verb is worth
+- Issue portable signed proof receipts that other CI or harnesses verify
+- Run low-priority work on idle quota like spot instances
+- Ship a whole small app from a goal sentence, end to end (wild)
+- Federate Foremen to trade proven lessons with priced provenance (wild)
+- Let tasks bet their own odds, and fund runs from the calibrated ones (wild)
+- Name sub-agent deadlocks instead of failing silently
+- Auction the queue by expected yield per dollar
+- Run a prediction market among deciders
+- Bill each model a spot price per task type
+- Price guard rules by regret — near T-1972 (done): Fm risk lists the guard rules that spend risk first: today …
+- Make every child spend a capability token — near T-2655 (done): The drive's end-of-run receipt adds yield per dollar (tasks…
+- Stage a bounty board with human prices
+- Warrant landed work for 14 days
+- Rehearse tasks in a digital twin
+- Run Foreman with a feature off to test obsolescence
+- Take a product request to shipped, under a warranty (wild)
+- Bid for expiring quota overnight (wild)
+- Swap lessons across installs by consent (wild)
+- Pay a red team to break the proof (wild) — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Run lane tournaments with heritable strategy genomes
+- Give every guard rule and lesson a fitness and let it senesce
+- Run a Red Queen arms race between a bypass adversary and the guard
+- Knock out a capability in a sandbox and measure the cascade (keystone test)
+- Govern spend with a logistic carrying capacity
+- Quarantine invasive processes: spawned children inherit no authority by default
+- Report a diversity index across deciders and reviewers (monoculture risk)
+- Read the ledger as stratigraphy to date regressions — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Cross-breed failed plans — near T-2339 (done): Race at plan time, chosen by evidence (Mission 5, #2): fm l…
+- Wild: run a digital terrarium that forecasts which verbs and rules go extinct
+- Wild: share lessons between installs by signed horizontal gene transfer
+- Wild: send predator agents after weak tests
+- Choose work by succession stage
+- Preregister every brief's proof before the first edit — near T-2616 (done): The docs proof kind reads the lines a task itself landed, n…
+- Run a null-distribution check on every proof
+- Replicate closed tasks with an independent agent — near T-0276 (done): fm second: one primitive for independent second reads — riv…
+- Randomize Foreman's own rule changes into trials — near T-1059 (done): Every self-change is a pre-registered trial: fm evolve and …
+- Keep a negative-results journal the planner reads first
+- Blind the reviewer to the author's claims — near T-2394 (done): #6/#10 exam kinds (Mission 7): fm exam gains proof and beyo…
+- Stage adversarial collaborations for disputed decisions
+- Put error bars and a calibration phantom on every gauge
+- Wild: Detect paradigm shifts from accumulated anomalies
+- Wild: Estimate causal effects of past features by synthetic control
+- Wild: Publish Genesis generations as peer-reviewed papers with a citation graph
+- Wild: Pool effect sizes across consenting users' projects as a meta-analysis
+- Require a cheapest falsifying experiment for every tower idea, and run it unattended
+
+## Round 2
+- Keep double-entry books for every dollar
+- Publish a task-price index
+- Learn the user's price from revealed preference
+- Set audit rates by probation bond
+- Charge queue rent and evict the unwanted
+- Net lane file intents through a clearinghouse
+- Price each retry, hedge and fallback on the receipt
+- Hold big tasks for model price drops
+- Give each hook a latency allowance — near T-1705 (done): Free listing room: skills the model never loads itself (the…
+- Wild: run a bankruptcy court for exhausted budgets
+- Wild: crowdfund missions all-or-nothing — near T-2336 (done): Blast radius reaches real plans (Mission 5, #2): T-2277's l…
+- Wild: route work through a privacy dark pool
+- Run the necessity corpus on every new model ID
+- Tag every lesson and rule with the model that taught it
+- Forecast the date Foreman's measured delta reaches zero
+- Review any agent's PR with plan, proof and guard checks — near T-2176 (done): Foreman works and reads as harness-neutral: copy says codin…
+- Canary the host's hook protocol against beta CLI versions nightly
+- Show a weekly "what Foreman stopped that you'd have wanted" receipt
+- Define and ship the irreducible core
+- Detect features the host now does natively from live transcripts
+- Export verified-close data as a training and eval set
+- Make the ledger an open attestation format other tools can read
+- Pay a "Foreman-killer" lane to prove a gate unnecessary
+- Write the self-dissolution plan on demand
+- Keep shadow mode as the default for new rules — near T-2488 (done): The first uses in shadow mode: intake type and tier, fm fin…
+- Keep an intent ledger every run is checked against — near T-1537 (done): Round 3 (T-1520): Taste ledger: learn from what the user ke…
+- Taint-track untrusted content through to commands — near T-1053 (done): Tainted web/MCP content: commands built from text a web or …
+- Make source the intent and the code a regenerable cache — near T-1744 (done): Guard: mv SOURCE out of a protected folder (mv ~/.claude/pl…
+- Own the pager: turn production crashes into failing tests and fixes
+- Record enough to re-derive any close on a successor model
+- Attach a retire-when predicate to every verb and skill
+- Run a shared ledger and lane-claim protocol for several humans
+- Rehearse migrations and infra changes on a cloned snapshot
+- Take a morning voice briefing and approve decisions by voice
+- Appoint an heir and keep a dead man's switch
+- Prove a quote against a reference implementation (differential twin)
+- Cap what a swarm can do per hour of human review
+- Name every authority a spawned child inherits, and print it
+- Let outsiders replay your proofs without your machine (wild)
+- Fork the session at any ledger point — near T-2343 (done): #2 and #8 exam kinds (Mission 5): race, fork, door and unsu…
+- Cap each close at a reviewable size — near T-1061 (done): Calibration ledger: a plan predicts its size (files touched…
+- Score proofs by mutation — near T-2453 (done): Outside authors for tool-build, tool-find, tool-grant, proo…
+- Run the user-from-the-README tester
+- Declare a living intent spec and flag drift — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Undo a day with dependency order — near T-2626 (done): Every Genesis generation advances the moonshot campaign (MO…
+- Pocket-approve from phone or watch
+- Draw a blast-radius map before each task — near T-2277 (done): Blast radius in the plan (Mission 5, #2): focusing an M/L t…
+- Keep fossil tests of every fixed bug
+- Wild: dream consolidation — near T-1071 (done): Night gardening: fm night composts merged or abandoned work…
+- Wild: take over an open-source maintainer's inbox
+- Wild: dependency upgrade autopilot
+- Wild: talk to the daily standup by voice
+- Map the fitness landscape per task
+- Partition lane niches by competitive exclusion
+- Meter the error threshold for self-edits
+- Gate lessons by expression conditions (epigenetics)
+- Keep a guard refugium for recolonization — near T-1910 (done): The guard keeps a builder's write inside its worktree named…
+- Detect convergent reinvention at intake
+- Report trophic efficiency of spend
+- Detect inbreeding depression in the lesson pool
+- Give lanes inclusive-fitness credit
+- Run a mycorrhizal context bus for lanes — near T-2517 (done): fm lane brief says when the task's own content passes 4k ch…
+- Speciate per repo and test hybrid viability — near T-1232 (done): Spec suite: a neutral toy repo of fully specified tasks wit…
+- Mine the fossil record for the cause of extinctions
+- Quarantine Foreman's own invasive processes by default
+- Debug by hypothesis tree — near T-1075 (done): Refuted hypotheses: fm task hypo keeps what was ruled out a…
+- Retract lessons by cascade
+- Correct for multiple comparisons
+- Reproduce any landed task from a manifest
+- Detect forking paths in proofs — near T-2389 (done): Release proof (Mission 7, #10): fm prove --release builds t…
+- Run a standing assay on a seeded-bug repo — near T-0870 (done): fm demo: see Foreman work in a minute without model calls (…
+- Flag Simpson's paradox in digests
+- Stamp the instrument version on every series
+- Chart dose-response curves for the knobs
+- Add a limitations line to every receipt
+- Measure brief ambiguity by many analysts
+- Run ring tests across harnesses — near T-0442 (done): Guard parity across harnesses: same decision on codex, gemi…
+- Infer unseen work from ledger residuals
+
+## Cross-bred
+- Clear every brief through one task market — near T-0821 (done): Round-1 review fixes (low): outward-tool gate fails closed,…
+- Quote, size and breaker-guard every run — near T-2231 (done): fm genesis put: a wrapped paragraph is one logical line, so…
+- Bond landed commits, priced by gate economics
+- Replay the ledger as a harness twin to prove swaps and prune verbs
+- Wild: Escrow delivery with a signed, effect-level audit pack
+- Wild: Run an overnight bounty board priced by your attention
+
+## New ideas per lens
+- markets and auctions: 26
+- inversion: what makes Foreman obsolete: 26
+- 2030 worked back: 27
+- bold bets: 26
+- ecology and evolution: 26
+- science itself: 26
+
+## Coverage (ideas per category)
+- spend 6
+- guard 5
+- planning 5
+- measurement 5
+- routing 4
+- verification 4
+- markets 4
+- authority 4
+- coordination 4
+- observability 4
+- reliability 4
+- calibration 3
+- learning 3
+- simulation 3
+- footprint 2
+- agents 2
+- accountability 2
+- slimming 2
+- prediction 2
+- inversion 2
+- federation 2
+- trust 2
+- security 2
+- proof 2
+- tower 2
+- obsolescence 2
+- honesty 2
+- proof kinds 2
+- user value 2
+- devices 2
+- massive scope 2
+- scheduling 1
+- interruption 1
+- genesis 1
+- self-obsolescence 1
+- gate economics 1
+- protocol 1
+- obsolescence watch 1
+- evidence 1
+- unattended work 1
+- contracts 1
+- risk pricing 1
+- continuity 1
+- attestation 1
+- massive 1
+- transparency 1
+- end-to-end 1
+- forensics 1
+- triage 1
+- self-measurement 1
+- memory 1
+- review 1
+- self-repair 1
+- spend accounting 1
+- user model 1
+- queue hygiene 1
+- cost 1
+- budgets 1
+- privacy 1
+- staleness 1
+- surfaces 1
+- simplicity 1
+- overlap 1
+- data 1
+- portability 1
+- adversarial 1
+- lifecycle 1
+- false-positive cost 1
+- intent 1
+- operations 1
+- durability 1
+- teams 1
+- attention 1
+- time travel 1
+- docs and delight 1
+- context cost 1
+- guard resilience 1
+- dedupe 1
+- credit assignment 1
+- self-adaptation 1
+- archaeology 1
+- debugging 1
+- provenance 1
+- reproducibility 1
+- proof integrity 1
+- evaluation 1
+- tuning 1
+- benchmarking 1
+Thin (0-1 ideas): performance, privacy, ui, simplicity, developer experience, docs, delight

@@ -1,0 +1,613 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 366 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Batch drafts by loaded model — near T-1705 (done): Free listing room: skills the model never loads itself (the…
+- Fill briefs from cited slots only — near T-1212 (done): fm code: the harness-run loop, where the model fills slots …
+- Show a draft's three nearest past briefs
+- Settle predictions by text similarity — near T-2731 (done): c.append_line ends a non-empty text with a newline, so no w…
+- Preempt speculative file claims — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Edit a draft to teach the predictor — near T-2407 (done): Draft ahead: the top prediction that beats the baseline is …
+- Gate drafts on the surface being in use — near T-2344 (done): #2 and #8 on every surface (Mission 5): fm code's planner w…
+- Probe the local endpoint's uptime by hour
+- Test that an agent ignores a false prediction — near T-2790 (done): The Stop drive ignores a background Bash job or Monitor the…
+- Probe with a draft, keep only the problem — near T-2746 (done): sampo migrate: move ~/.claude/foreman and its siblings (for…
+- Slip in a decoy draft to measure over-trust
+- Rerun last night's rejected drafts on the other model
+- Forecast Arch updates that break the gates
+- Draft the next ask as a filed, dormant brief
+- Forecast sibling fixes after any FIX closes — near T-2473 (done): The cold reader's exam summary drops the per-kind closed co…
+- Hold a "wild enough" gate on moons before the user sees them
+- Pre-warn on the local-model switch cost
+- Predict naming and terminology corrections — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Flag a brief whose premise the machine has already changed — near T-1077 (done): Stale plan sweep: queued briefs whose files or premises cha…
+- Pre-stage the "ship the landed commits" ask — near T-2864 (done): Ship the landed commits to main: T-2848, T-2840, T-2850, T-…
+- Forecast the drive's false waits — near T-2901 (done): The drive's wait counts a new running set only when its age…
+- Wild: Seal the user's next three asks before the night starts
+- Wild: Let the predictor write the morning's first message as a draft
+- Wild: Run a rehearsal lane on the top predicted task in a scratch worktree overnight
+- Mine the user's pushbacks as negative priors
+- Warn when a predicted ask needs a user-only grant
+- Keep one estate file of machines, endpoints, models and repos
+- Order queued local-model work by resident model — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Check machine prerequisites before a task is picked — near T-1328 (done): Runners: fm code finds every model and coding CLI on the ma…
+- Predict installed-vs-source drift per machine
+- Learn which model passes which task kind on this machine
+- Move a fix to sibling repos on the same toolchain
+- Warn when a resource will run out before the night does
+- Plan the night as a machine-aware schedule
+- Probe the endpoint's state without waiting on it
+- Wild: Dry-run a placement on a clone of the estate
+- Wild: Give each machine a one-line mood in the pane and status line
+- Wild: Grade the user-model against the user, weekly, using only the estate
+- Wild: Ask the machines what they would like fixed
+- Verify local drafts with the brief's own Exam
+- Force briefs through a grammar — near T-1007 (done): A one-off session leaves the project's briefs untouched thr…
+- Queue local jobs by loaded model — near T-2822 (done): CI failed on this branch: run 41676727022
+- Draft the predicted ask speculatively and verify it cheaply
+- Pick the scaffold rung per task kind and model
+- Escalate to frontier only when local models disagree
+- Few-shot from the user's own accepted briefs
+- Turn each local failure class into a targeted scaffold and a regression case
+- Set the reasoning switch per step — near T-2893 (done): Local generation done right: per-profile request extras and…
+- Wild: Simulate the user and score the simulator
+- Wild: Pin the user profile as a persistent KV-cache prefix
+- Wild: Let local models write the test before the code
+- Compare local+scaffold against frontier and publish the gap
+- Ablate each scaffold step per local model — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Switch token-thrift machinery off for free local models
+- Replay the last 30 days with Foreman off — near T-2365 (done): fm doctor shows one line for the last 7 days of self-fix tr…
+- Sweep the backlog for tasks whose premise is already met — near T-1077 (done): Stale plan sweep: queued briefs whose files or premises cha…
+- Graduate nudges to shadow per user and model — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Make the drive runner-pluggable
+- Draw the discipline Pareto curve
+- Test recall and map against just reading the repo — near T-2502 (done): Redraw the gap map each generation against current code (on…
+- Layer over host-native tasks instead of beside them
+- Draft the self-deleting migration when the host ships an equivalent
+- Ask the model to fire Foreman line by line — near T-0672 (done): Milestone: Features — Guard and safety
+- Run a frontier-optional week
+- Spar nightly with a rival plugin's default config
+- Pre-load the model the first hour needs
+- Rerank candidate asks with a decision model — near T-2437 (done): Gen 2: a model layer (user steer 2026-10-31, start after ro…
+- Gate drafting on a dry-runnable Exam
+- Learn which draft fields the user rewrites
+- Mine the user's own reverts into personal pre-mortems — near T-0691 (done): Milestone: Intelligence — Planning and decomposition (1)
+- Detect focus shifts and re-window the predictor
+- Forecast model-server failure from its own telemetry — near T-0676 (done): Milestone: Features — Performance and cost
+- Make one user-model file the shared source — near T-2554 (done): The user model reads only the user's own asks: Mission brie…
+- Wild: run the predictor against synthetic futures
+- Wild: seed the cold-start prior from public repo histories
+- Wild: seal a 2030 time capsule at install
+- Show anticipation's mistakes in plain words, ranked by cost
+- Mute self-filed detectors by their own drop rate
+- Mutable-surface manifest with bounds
+- Self-repair prose and Exam references after a move
+- Drive shadow-audits its own wait decisions — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Champion/challenger for decision models — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Rewrite skill descriptions from observed mis-triggers — near T-1704 (done): Static trigger eval: phrased requests per skill must match …
+- Every missed prediction becomes a red test — near T-2774 (done): Rune's anticipation gaps are consumed, not dropped: the nex…
+- Cross-family second reader for self-changes
+- Prune MASTER.md and injected notes by whether they were read
+- Wild: Self-surgery in a clone
+- Wild: Parliament of sizes
+- Wild: Dream shift
+- Wild: Self-description the user can strike through
+- Run a bedtime preflight canary
+- Release a phantom-held drive after 20 quiet minutes
+- Batch the night's local work by model, one switch per night — near T-2488 (done): The first uses in shadow mode: intake type and tier, fm fin…
+- Reserve the last 90 minutes for re-proof on merged main — near T-2054 (done): fm ship replays merged builder lanes: picks the branch's fi…
+- Fall back to local models during a usage-limit wait — near T-1360 (done): Local models' real context: a local server's profile takes …
+- Review the day's landed commits overnight with a different model
+- Set a zero-wake pager policy
+- Run a night league of local models on Sampo's own closed tasks
+- Compare the night's spend and progress against a sealed plan
+- Wild: Turn the night into a dial on the astrolabe
+- Wild: Hold a nightly "ghost user" that predicts a handful of asks and is scored by the morning
+- Wild: Keep a sleeping-lamp status that tells you at a glance if the night is safe
+
+## Round 2
+- Refuse to ship commits born from a prediction
+- Re-grade the queue when the user changes the bar — near T-2299 (done): fm exam grade splits false alarms by scenario kind, so I-cl…
+- Withdraw a warning when its cause goes away
+- Carry a one-line repro on every flagged problem — near T-0682 (done): Milestone: Features — Verification and product checking
+- Leave disputed draft fields blank
+- Sweep the site, README and scenes for banned terms from steers
+- Size the anticipation card to the model's context window
+- Back off the local model server when the user needs it — near T-1360 (done): Local models' real context: a local server's profile takes …
+- Wild: Draft the user's rejection before the draft — near T-2341 (done): A cold rival reads the request (Mission 5, #2): for an L pl…
+- Wild: Keep only what a hasty and a stern persona both accept
+- Wild: Put a "predicted, not asked" watermark on everything speculative
+- Show a draft's provenance in one sentence in the web UI
+- Meter drive idle gaps while the queue is non-empty — near T-0415 (done): Drive: long-lived jobs and an empty queue never leave a ses…
+- Verify each counted running agent against a live OS process
+- Lint public surfaces for private names and brand-bound orchestrators
+- Render UI changes to an SVG at task close — near T-2791 (done): A close is asked for a red→green proof only for .fmproved f…
+- Census leftover old-name spellings by surface
+- Rewrite stale path references in open items after a module move
+- Keep an interrupt ledger with a zero target — near T-2665 (done): Guard over-refusals from the friction pass: git apply's rea…
+- Learn the user's vocabulary from corrections — near T-1045 (done): What Foreman learned: fixes new/worked/missed, rules from c…
+- Generate per-estate routing defaults from the model bench — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Diff the landing pages visually at ship
+- Wild: run a moon tournament bracket — near T-2858 (done): Moons go wild: the cold reviewer scores each moonshot's wil…
+- Wild: ratchet a moon's wildness with a local mutator — near T-2858 (done): Moons go wild: the cold reviewer scores each moonshot's wil…
+- Wild: invent moons only this hardware makes possible
+- Draft the predicted ask as a grammar-constrained brief
+- Verify every local draft by dry-running its own Exam
+- Cite-only slot filling for briefs — near T-1212 (done): fm code: the harness-run loop, where the model fills slots …
+- Queue local jobs by resident model, one swap per night
+- Run a scaffold-ablation league per local model
+- Switch thinking mode per step
+- Skip local drafts when the endpoint is cold or busy
+- Wild: Hold a night league that runs local models on closed tasks and promotes the winner
+- Race the engineered predictor against the raw ledger in a long-context model
+- Draft only when the draft beats the next queued task — near T-2681 (done): fmforesight.lines shows the newest unscored next-request pr…
+- Render the 80 standing steers as one CLAUDE.md and use it as the baseline — near T-2772 (done): Sampo reimagined: a new logo and a completely redesigned si…
+- Tag every capability with its moat class and spend on the user-specific ones
+- Compare against the host's own next-prompt suggestion
+- Harvest what a capability learned before it retires
+- Add an obsolescence watch to `fm doctor` with four measured tripwires
+- Measure whether the drafted brief beats the raw ask, per model
+- Time how fast the user-model rebuilds from scratch
+- Wild: Race today's build against the one from 90 days ago on a sealed set
+- Wild: Run a goal-file-only day
+- Wild: Hold an obituary writer, a cold child that argues for each tripwire
+- Version the user-model as a portable file
+- Gate model swaps on an inheritance exam — near T-2437 (done): Gen 2: a model layer (user steer 2026-10-31, start after ro…
+- Harvest every draft and the user's edit as preference pairs
+- Backcast a dated 2030 ladder, and make rung one the Mission
+- Defer to the host's native next-prompt suggestion when it beats ours
+- Freeze monthly predictor vintages and score them all forever
+- Re-baseline after a long absence or regime change
+- Promote drafts by per-kind trust — near T-2112 (done): fm genesis exam: #13's held-out exam (draft kinds graded by…
+- Rebuild the estate from probes on a new machine
+- Wild: Summarise a "what you are building" paragraph from years of asks
+- Wild: Let the user write a north-star sentence and score drift from it
+- Wild: Make the predictor keep a "letter to the 2030 me" of its own known weak spots
+- Cap user-model growth with epoch summaries
+- Land every self-edit as a typed commit with a sealed prediction
+- Freeze the judge during a self-edit
+- Give the tuner a sealed holdout week
+- Edit data, never code, overnight — near T-1138 (done): Lane pre-claims are advisory: a builder's file-wide pre-cla…
+- Hold self-edits for a morning digest with per-edit revert
+- Replay old vs new brief templates on closed briefs — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Compile frontier traces into local scaffolds
+- Remember rejected self-edits and stop proposing them
+- Cap unsettled self-edits
+- Tier self-edit surfaces with promotion clocks
+- Keep self-written skills in a personal overlay, not core
+- Wild: breed lens prompts — near T-2858 (done): Moons go wild: the cold reviewer scores each moonshot's wil…
+- Wild: duel today's build against a 30-day-old self
+- Wild: add a fuse that reverts to last-good after two interrupts
+- Seal a night plan before sleep
+- Batch the night by loaded model — near T-2582 (done): The model-versus-rule exam line says the model arm wasn't r…
+- Add a wake-nobody pager policy
+- Print the morning card from the sealed plan
+- Run a self-shrinking spend plan — near T-0573 (done): Super brainstorm: Foreman's intelligence (planning, brainst…
+
+## Round 3
+- Forecast tonight's stop reason from the last nights' stops
+- Infer the user's sleep window from ledger gaps
+- Mine hand-edits after agent landings into brief defaults
+- Warn at commit when the touched files co-fail with a gate — near T-0821 (done): Round-1 review fixes (low): outward-tool gate fails closed,…
+- Serialise lanes by predicted file conflict — near T-2407 (done): Draft ahead: the top prediction that beats the baseline is …
+- Fingerprint the local endpoint with a golden prompt set
+- Tell "nothing to do" from "could not do" in the morning card — near T-0900 (done): A close names the criteria nothing here could prove as a ch…
+- Cap every prediction at what the user can check in 10 seconds — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Wild: Rehearse the morning from yesterday's ledger
+- Wild: Cast the other agents as characters who predict each other
+- Wild: Give the tower a pulse the user can feel when away
+- Draft the "ship the landed commits" ask before the user types it
+- Re-ask detector for drive-wait bugs — near T-0364 (done): Foreman keeps working while background jobs run, plans and …
+- Warn before a local model switch costs 3 minutes
+- Lint public surfaces for banned names
+- Make every moon carry a wildness score before the user sees it
+- Predict the next question from the last close's caveats — near T-2774 (done): Rune's anticipation gaps are consumed, not dropped: the nex…
+- Pre-flight a request against the open work it duplicates
+- Hold the morning card as a sealed forecast
+- Wild: Score a ghost user's three asks each night
+- Wild: Offer "wilder" as a single key on any moon
+- Check a brief's machine needs before it is picked — near T-2480 (done): Sweep fix tasks are filed unplanned (tier M, no criterion, …
+- Shadow the frontier turn by turn — near T-2377 (done): Long-horizon missing fault (Mission 6, #5): fm exam long ru…
+- Drive weak models by numbered menus
+- Escalate on logprobs, not on a second opinion
+- Pick the draft by running N samples against the Exam
+- Pre-read the repo for the frontier model — near T-2341 (done): A cold rival reads the request (Mission 5, #2): for an L pl…
+- Keep a hint bank triggered by local failures
+- Measure each model's effective context — near T-2594 (done): Gen-2 review: measurements that read wrong (model arm 0/0, …
+- Optimise scaffold prompts overnight against the Exam
+- Pair a small draft model with the 27B for speculative decoding
+- Repair broken structured output without a model
+- Calibrate the local judge against frontier verdicts
+- Run a three-model jury where the frontier only breaks ties
+- Give local models a frontier-token allowance they must justify
+- Train a per-repo LoRA overnight from accepted work
+- Bound every predictor by its ceiling before building it
+- Measure each warning's lead time over the next tool that would have caught it
+- Shadow-compare each hand-rolled detector with the host's native signal, and delete it when they agree
+- Fold the vocabulary across the Foreman→Sampo rename in the predictor
+- Detect the predictor feeding on its own output — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Catch rubber-stamping of drafts and of Exam readings
+- Predict which host-blocked tasks the next upstream release will unblock
+- Census where asks are typed (CLI, web UI, pasted, voice)
+- Skip drafts for asks cheaper to type than to review — near T-2624 (done): The session review captures no credential lines or asks alr…
+- Run a Challenger Foreman nightly against the real one (wild)
+- Teach through accepted drafts so the user's own file can replace Foreman (wild)
+- Fit a lift-versus-capability curve across the model ladder (wild)
+- Backfill the 2030 questions into today's ledger — near T-2840 (done): fm outcomes --questions [--since TS] [--none]: count the qu…
+- Score a draft by running its Exam on what the user actually did
+- Cap drafts by a daily review-minutes budget
+- Infer a goal graph from the asks and draft only at its leaves
+- Track the delegation frontier
+- Key the user model by identity from day one — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Version every ledger schema and keep a golden fixture per version
+- Model teammates' review objections for team repos
+- Chart words per ask as the single anticipation metric
+- Write a "manual for working with me" that a new agent or human reads first
+- Test the user model for re-identification before any export — near T-2341 (done): A cold rival reads the request (Mission 5, #2): for an L pl…
+- Red-team the predictor with an adversarial history — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Bisect self-edits automatically — near T-0741 (done): MASTER.md names fm bisect (T-0686 left it out; fm doctor's …
+- Test pairs of pending self-edits together — near T-0952 (done): --affected also runs tests that historically change togethe…
+- Gate self-edits on the weakest model — near T-0286 (done): Self-improvement pass 4: guard heredoc precision, test lock…
+- Re-tune scaffolds when the served model changes
+- Put a lease on every self-edit — near T-1271 (done): fm code --worker --verify: the worker can't change the file…
+- Make the explain-back gate — near T-1359 (done): fm code config: every effective fm code setting with its so…
+- Set edit quiet hours — near T-0333 (done): fm task ac ID edit N: set a criterion's text or verify comm…
+- Govern the edit rate by revert rate — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Cap what the editor can touch with a time-lock — near T-1809 (done): CI's macOS job names what makes it time out: run.py --deadl…
+- Wild: Delete a new feature on day 3 if unused
+- Wild: Run a test-only night
+- Wild: Let a local model keep a rival Sampo
+- Wild: Seal a self-edit prediction in a sentence
+- Gate each night phase on the last phase's yield
+- Refuse to start work that can't finish before wake time — near T-0704 (done): Frontier 04 — Zero-call bookkeeping and session lifecycle
+- Hand the GPU back to the user's morning model — near T-1556 (done): Round 3 (T-1520): Playful extras: fold a run into a printab…
+- Align frontier bursts to quota-window resets
+- Add `fm peek`: a state-at-any-hour snapshot — near T-2752 (done): fmbudget.rate_limits reads this session's own statusline sn…
+- Stop the night at the yield knee — near T-1291 (done): The guard corpus's /tmp hard-reset case means the same on m…
+- Order the morning review by minutes-to-accept
+- Freshen overnight drafts onto current main at dawn
+- Wild: Write a dream journal of untested hypotheses
+- Wild: Keep the night quiet by acoustics
+- Wild: Seal three bets on "what Sampo will have done by 7am" and grade them
+- Leave a "wake me" tripwire list the user can edit
+
+## Round 4
+- Predict the follow-up to the user's own hand commit — near T-1611 (done): Fm code app settings scope picker (this run, this project, …
+- Resolve near-miss ids, paths and verbs in typed asks
+- Limit a speculative lane's writes to the draft's declared file set
+- Pre-flight a predicted ask's grants before it is drafted
+- Split the morning card into "done", "waiting on you" and "I'm unsure"
+- Time-box the local-model switch inside the predictor
+- Cross-check each draft against open and recently dropped tasks
+- Keep the wildness score on the anticipation card
+- Wild: Make the user type their guess blind before the card shows
+- Wild: Predict the user's next pushback on what was just built — near T-2076 (done): Brainstorms learn from what they missed: asks no idea predi…
+- Wild: Keep a "would I have asked?" shelf of overnight work the user never wanted
+- Stop and log when a draft loops — near T-2466 (done): The Stop hook pushes the forever loop's next round while fm…
+- Tag every injected anticipation note with its surface
+- Draft "ship the landed commits" at idle — near T-2864 (done): Ship the landed commits to main: T-2848, T-2840, T-2850, T-…
+- Pre-check every drive-wait claim against live processes
+- Block moons that score under wild 4 before display
+- Turn each typed correction into a sibling sweep
+- Predict "also do it for X" after a rename or port — near T-2855 (done): Two tests red after today's renames: test_claims expects 'f…
+- Show a morning "what happened, what I need" card — near T-1762 (done): fm code app action cards: a failure or a stall shows a card…
+- Wild: Seal tonight's three guesses, score them at wake
+- Count asks the user repeats and promote at three — near T-1606 (done): Guard trust: pasted secrets, approval fatigue, fm doctor --…
+- Hold a draft until its premise is checked against the live endpoint
+- Join machine and project into one `estate.json` graph — near T-0707 (done): Frontier 07 — Knowledge graph
+- Predict blocked-by-machine before pickup — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Order the night by resident model — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Forecast the date each machine resource binds
+- Flag installed-vs-source drift per machine at session start
+- Port a fix to sibling repos on the same stack
+- Draft the predicted ask only if the machine can verify it
+- Wild: Rehearse the top predicted task on a cloned estate
+- Wild: Seal a night plan across machines, graded in the morning
+- Warn when a request names things this machine lacks
+- Bounce long outputs through a quote-only reader
+- Let the frontier edit a local draft, billed by delta
+- Verify drafts with atomic yes/no checklists — near T-1369 (done): fm code --task runs a task still waiting for the user's yes…
+- Keep a bank of the model's own passing rollouts — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Bias decoding toward the repo's real vocabulary
+- Quiz-verify the user-model summary — near T-1212 (done): fm code: the harness-run loop, where the model fills slots …
+- Graduate repeated frontier corrections into code — near T-2361 (done): #7 exam kinds recur and correction: a root-cause fix from r…
+- Compile frontier playbooks into scripts the local model steps through
+- Cache local calls by prompt hash and endpoint fingerprint
+- Draft in a tool-less cell with repo text fenced as data — near T-1394 (done): fm code fences untrusted text: repo listings and tool resul…
+- Mine surprise to build the hint bank (wild)
+- Distil the scaffolded 27B into the small decision models (wild)
+- Draft in the night voice and the morning voice (wild)
+- Count Sampo vocabulary in the user's own asks
+- Scan the user's own tooling for hand-built twins
+- Rank guard classes by undo time, not command shape — near T-2342 (done): Stop only at an irreversible, ambiguous step (Mission 5, #8…
+- Remove Exam readings that CI already runs — near T-2375 (done): #5 exam kinds tool-build and tool-find (Mission 6): a reque…
+- Track the zero-user-turn share by task kind
+- Diff the anticipation card against the host's own memory file
+- Run a monthly replacement bid
+- Give every capability a sunset date that only evidence can extend
+- Write a one-page Sampo-less manual and score it as the baseline
+- Fire a tripwire from the model's own release — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Hold a "Sampo went away" rehearsal for the morning
+- Let a cold child write the obituary of each capability from ledger data
+- Graduate stable predictions into plain recipes
+- Seal replayable state→outcome cases as a private model bench — near T-0223 (done): Fm bench models — replay the cases once per model and recom…
+- Keep one surface-use ledger that grounding, drafting and the Exam all read — near T-2746 (done): sampo migrate: move ~/.claude/foreman and its siblings (for…
+- Give each predictor rule a measured half-life — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Draft renewals for everything that expires, 7 days early
+- Replay each Exam on the parent commit and on a fake-empty world at filing
+- Run a canary on a draft's nouns before the user sees it
+- Score drafts by edit distance to what the user finally typed, per field
+- Reserve an exploration slot for the grid cell the user never touches
+- Wild: Hold a dojo where the user guesses what Sampo will predict
+- Wild: Have a cold child play the user in 2030 and write its five complaints
+- Wild: Run a season league of every model on the sealed cases
+- Make the predictor deletable on purpose
+- Stack self-edits as an independently removable patch quilt
+- Require a mandate on every self-edit — near T-0224 (done): Fm evolve — a bench-gated self-improvement loop: a mutation…
+- Stamp an edit epoch on every injected line and ledger row
+- Roll overnight edits out to a third of sessions first
+- Compute the judge closure by tracing, and freeze it
+- Write self-edits to a sidecar when the user hand-edited the file
+- Cold-read self-edits locally first, on a redacted evidence pack
+- Make red-first cases accumulate as a scar bank across edits
+- Feed cold-read FAIL history back into the writers' prompts
+- Cap edit proposals by surface using the user's accept rate
+- Wild: Pause self-modification when nobody reads the morning card
+- Wild: Paraphrase-sweep every steer to find brittle wording
+- Wild: Revert roulette, a monthly drill that drops a random live self-edit
+- Wild: Ship each edit with a sealed "you'll notice this" sentence
+- Scope a steer to the night — near T-2350 (done): A user-steer rule whose check fails becomes a fix, and the …
+- Guard half-asleep replies
+- Print a night egress receipt — near T-2655 (done): The drive's end-of-run receipt adds yield per dollar (tasks…
+- Stop the night on thermal or disk limits
+- Run a night CI on the user's hand-made commits — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Draft doc patches for the day's landed behaviour
+- Take quiet-machine benchmark readings at 04:00
+- Show a 3 a.m. visitor card and yield at once
+- Retry not-yet items when their blocker predicate flips
+- Reap whatever the night left running
+- Wild: Wake the machine in phases
+- Wild: Shadow the user's hand overnight
+- Wild: Show a night strip of eight embers on the site and in the pane
+- Wild: Mark each night's work "unwitnessed" until a human has seen it
+
+## Cross-bred
+- Close the prediction loop with edits, pushbacks and text-similarity settling
+- Run a trust audit on drafts: decoys, false predictions and cited-slot fills
+- Keep one estate file with preflight checks, drift forecasts and false-wait forecasts
+- Schedule local-model work by resident model with switch-cost warnings and cross-model reruns
+
+## New ideas per lens
+- grid: 49
+- what the user asks next: 45
+- machines and projects as one model: 24
+- small-model uplift: local models scaffolded to frontier: 48
+- inversion: what makes Foreman obsolete: 49
+- 2030 worked back: 50
+- self-modification: 54
+- invented: eight hours asleep: 43
+
+## Coverage (ideas per category)
+- anticipation 27
+- local models 20
+- user model 15
+- unattended 13
+- scaffolding 8
+- delight 8
+- overnight 8
+- scheduling 7
+- calibration 7
+- moons 6
+- measurement 5
+- models 5
+- devices 5
+- obsolescence 5
+- routing 4
+- reliability 4
+- intake 4
+- verification 4
+- lanes 3
+- grounding 3
+- drift 3
+- honesty 3
+- learning 3
+- self-tuning 3
+- drive 3
+- strategy 3
+- provenance 3
+- user-model 3
+- privacy 3
+- self-edit safety 3
+- machines 2
+- injection 2
+- machine model 2
+- cross-project 2
+- capacity 2
+- simulation 2
+- simplicity 2
+- queue hygiene 2
+- portability 2
+- exam 2
+- robustness 2
+- observability 2
+- review 2
+- user value 2
+- autonomy 2
+- durability 2
+- lean 2
+- regression 2
+- speed 2
+- trust 2
+- surfaces 2
+- legibility 2
+- self-edit governance 2
+- unspoken needs 2
+- self-edit 2
+- web ui 1
+- early warning 1
+- anticipation core 1
+- problems before they happen 1
+- ship 1
+- blockers 1
+- model 1
+- preflight 1
+- endpoints 1
+- machine voice 1
+- local verifiers 1
+- constrained output 1
+- cost routing 1
+- retrieval 1
+- failure atlas 1
+- thinking budget 1
+- latency 1
+- execution feedback 1
+- stand-down 1
+- context 1
+- integration 1
+- prediction 1
+- flagging problems 1
+- cold start 1
+- self-change 1
+- self-healing 1
+- skills 1
+- self-upgrade 1
+- governance 1
+- transparency 1
+- morning trust 1
+- quota and local 1
+- notifications 1
+- model bench 1
+- site/docs 1
+- ui 1
+- rename 1
+- site 1
+- local drafting 1
+- verification scaffold 1
+- reasoning budget 1
+- red-first 1
+- necessity 1
+- exit value 1
+- moat 1
+- planning 1
+- retirement 1
+- understanding 1
+- intent 1
+- scale 1
+- self-guard 1
+- goodhart 1
+- safe-mutation 1
+- user control 1
+- self-eval 1
+- memory 1
+- edit debt 1
+- authority 1
+- brainstorm 1
+- safe mode 1
+- resilience 1
+- budget 1
+- gates 1
+- agents 1
+- steer enforcement 1
+- briefs 1
+- cost 1
+- judging 1
+- problem flagging 1
+- host drift 1
+- exit ramp 1
+- instrumentation 1
+- attention 1
+- collaboration 1
+- self-repair 1
+- self-edit lifecycle 1
+- quota 1
+- morning handoff 1
+- safety 1
+- clarity 1
+- duplicates 1
+- waste 1
+- drive reliability 1
+- moonshots 1
+- observation 1
+- forecast 1
+- token cost 1
+- few-shot 1
+- constrained decoding 1
+- orchestration 1
+- guard 1
+- dedupe 1
+- host overlap 1
+- obligations 1
+- canaries 1
+- foresight 1
+- staged rollout 1
+- ownership 1
+- edit taste 1
+- unattended safety 1
+- reversibility 1
+- steers 1
+- docs 1
+- performance 1
+- genesis 1
+Thin (0-1 ideas): performance, security, agents, developer experience
+
+## Kill it fast (the quickest test that would show it isn't worth building)
+- Batch drafts by loaded model — Count model swaps in last week's draft log and time one swap; if swaps are under 3 or each costs under 10s, batching saves nothing.
+- Fill briefs from cited slots only — Re-fill 10 past briefs using only their cited slots; if more than 2 need an uncited fact, it's dead.
+- Show a draft's three nearest past briefs — Show the nearest-3 briefs for 10 drafts to the user; if they can't say what they'd change in under a minute, skip it.
+- Settle predictions by text similarity — Score last month's predictions with text similarity against a hand-judged 20; if agreement is under 80%, it's dead.
+- Preempt speculative file claims — Grep the logs for claims on files that ended up untouched; if under 5% of claims were speculative and wasted, skip it.
+- Edit a draft to teach the predictor — Check whether the user has ever edited a draft; if under 1 edit a week, there's no teaching signal.
+- Gate drafts on the surface being in use — Check how often "surface in use" is knowable without asking; if it requires a poll the user would notice, drop it.
+- Probe the local endpoint's uptime by hour — Ping the endpoint hourly for 24h; if it's up more than 95% of the time, hour-of-day patterns are noise.
+- Test that an agent ignores a false prediction — Feed an agent one false prediction and watch; if it acts on it once in 5 tries, fix the prompt instead of building anything.
+- Probe with a draft, keep only the problem — Compare the problem-only extract with the full draft on 10 cases; if the user can't tell which is which, it's a prompt tweak, not a feature.
+- Slip in a decoy draft to measure over-trust — Run decoy drafts for one night; if the user spots every one, over-trust isn't the risk and the test isn't needed.
+- Rerun last night's rejected drafts on the other model — Rerun 10 rejected drafts on the other model; if fewer than 2 are now accepted, the model isn't the problem.
+- Forecast Arch updates that break the gates — List the last 6 months of Arch updates against your gates; if fewer than 2 broke them, a forecaster has no data.
+- Draft the next ask as a filed, dormant brief — Count dormant briefs the user ever activated; if under 20%, it's clutter.
+- Forecast sibling fixes after any FIX closes — Check the last 10 closed FIXes for same-day siblings; if fewer than 3 had them, the forecast would mostly be wrong.
+- Hold a "wild enough" gate on moons before the user sees them — Show 10 moons to the user and ask which they'd have gated; if they disagree with any rubric, "wild enough" can't be defined.
+- Pre-warn on the local-model switch cost — Time a local-model switch; if it's under 15s, a warning is more annoying than useful.
+- Predict naming and terminology corrections — Grep past corrections for naming and terminology; if there are fewer than 5 in a month, a glossary file covers it.
+- Flag a brief whose premise the machine has already changed — Check 10 old briefs against current machine state by hand; if under 2 are stale, skip it.
+- Pre-stage the "ship the landed commits" ask — Count how many times the "ship the landed commits" ask was sent last month; if it's the same words every time, a shell alias does it.
+- Forecast the drive's false waits — Log drive waits for a week and classify them; if under 20% are false, skip it.
+- Wild: Seal the user's next three asks before the night starts — Seal 3 predicted asks and compare against what the user actually asked the next day; if fewer than 1 in 3 match, it's dead.
+- Wild: Let the predictor write the morning's first message as a draft — Write the morning's first message from yesterday's state by hand; if the user would have rewritten it, kill it.
+- Wild: Run a rehearsal lane on the top predicted task in a scratch worktree overnight — Check the top-1 predicted task hit rate; if it's under 40%, the overnight lane burns compute for nothing.
+- Mine the user's pushbacks as negative priors — Collect pushbacks from the last month; if fewer than 10, there's too little data to use as priors.
+- Warn when a predicted ask needs a user-only grant — List the grants a predicted ask needs; if the user would already be prompted at run time, the warning adds nothing.
+- Keep one estate file of machines, endpoints, models and repos — Check whether the existing notes already list machines, endpoints, models and repos; if they do, only keep them current.
+- Order queued local-model work by resident model — Look at queue depth on a typical night; if under 5 local jobs, ordering is irrelevant.
+- Check machine prerequisites before a task is picked — Count tasks that failed on a missing prerequisite last month; if it's 0 or 1, skip it.
+- Predict installed-vs-source drift per machine — Diff installed vs source on each machine today; if there's no drift, there's nothing to predict.
+- Learn which model passes which task kind on this machine — Run 10 tasks of each kind through both models; if pass rates are within 10 points, per-model learning is noise.
+- Move a fix to sibling repos on the same toolchain — List sibling repos sharing a toolchain; if there are fewer than 2, skip it.
+- Warn when a resource will run out before the night does — Check what resource ran out last month; if nothing did, the warning has no job.
+- Plan the night as a machine-aware schedule — Hand-draft tonight's machine-aware plan and compare it with a plain FIFO; if the makespan is within 10%, it's dead.
+- Probe the endpoint's state without waiting on it — Time a direct state probe against the wait; if the probe takes as long as the wait, nothing is saved.
+- Wild: Dry-run a placement on a clone of the estate — Clone the estate once and try a placement; if the clone takes over 10 minutes or can't reproduce state, it's dead.
+- Wild: Give each machine a one-line mood in the pane and status line — Ask the user whether they'd read a one-line mood; if the answer is "meh", kill it.
+- Wild: Grade the user-model against the user, weekly, using only the estate — Check whether the estate holds enough signal to grade the model; if there are under 20 user decisions a week, skip it.
+- Wild: Ask the machines what they would like fixed — Ask each machine for its logs and look at the top 5 complaints; if they're all already ticketed, skip it.
+- Verify local drafts with the brief's own Exam — Run the brief's Exam on 10 failed local drafts; if it passes more than 2 of them, the Exam is too weak to verify with.
+- Force briefs through a grammar — Constrain 10 briefs with a grammar; if output quality is the same as a plain prompt plus a validator, skip it.
+- Queue local jobs by loaded model — Check this against #28 and #1; if they share one mechanism, it's a duplicate.
+- Draft the predicted ask speculatively and verify it cheaply — Draft 10 predicted asks and count accepted drafts; if under 3, the speculative spend is waste.
+- Pick the scaffold rung per task kind and model — Run 3 rungs on one task kind; if the cheapest rung already passes, the picker is unnecessary.
+- Escalate to frontier only when local models disagree — Check how often local models disagree on 20 tasks; if disagreement doesn't correlate with the frontier being right, drop it.
+- Few-shot from the user's own accepted briefs — Add 5 accepted briefs as few-shot examples to a draft and compare; if there's no gain over zero-shot, skip it.
+- Turn each local failure class into a targeted scaffold and a regression case — Classify the last 30 local failures; if no class holds more than 3, targeted scaffolds won't pay back.
+- Set the reasoning switch per step — Run 20 steps with reasoning on and off; if results are identical on over 90%, a global default is enough.
+- Wild: Simulate the user and score the simulator — Have the simulator predict 20 real user replies; if it's under 50% on intent, it's dead.
+- Wild: Pin the user profile as a persistent KV-cache prefix — Measure prefill time for the profile prefix; if it's under 2s without a cache, pinning gains nothing.
+- Wild: Let local models write the test before the code — Have a local model write tests for 10 solved tasks and run them on the known-good code; if over 30% fail, the tests mislead.
+- Compare local+scaffold against frontier and publish the gap — Run the same 20 tasks on local+scaffold and frontier; if the gap is obvious in the first 5, stop there.
+- Ablate each scaffold step per local model — Ablate one scaffold step on one model; if nothing changes, ablating the rest is a waste.
+- Switch token-thrift machinery off for free local models — Measure thrift overhead against local runtime on one job; if it's under 5%, leave it on.
+- Replay the last 30 days with Foreman off — Replay 5 days with Foreman off; if the user can't tell the difference in outcomes, Foreman is the thing in question, not the replay.
+- Sweep the backlog for tasks whose premise is already met — Sample 20 backlog items and check them; if under 3 are already satisfied, a sweep isn't worth automating.
+- Graduate nudges to shadow per user and model — Count shadow-eligible nudges per user per model; if under 10 each, there's no way to graduate any of them.
+- Make the drive runner-pluggable — List the runners you'd really plug in; if there's only one, a hardcoded call is enough.
+- Draw the discipline Pareto curve — Plot 5 discipline settings on one task set; if the curve is monotonic with no knee, there's nothing to draw.
+- Test recall and map against just reading the repo — Time answering 10 repo questions by reading the repo against by recall and map; if reading is as fast and as right, kill it.

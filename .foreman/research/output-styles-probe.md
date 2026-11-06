@@ -1,0 +1,1 @@
+Live probe (claude -p --plugin-dir scratch plugin "stylepr", style frontmatter name "Pineapple", haiku): outputStyle "stylepr:Pineapple" applied the style; "Pineapple", "pineapple", "stylepr:pineapple" did not. So a plugin style is selected as "<plugin>:<frontmatter name>", case-sensitive → Foreman: "foreman:Foreman". keep-coding-instructions: true accepted.
