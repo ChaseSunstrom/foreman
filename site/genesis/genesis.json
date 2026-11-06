@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T14:07:07Z",
- "rev": "74e8d98a0",
+ "updated": "2026-11-06T14:48:27Z",
+ "rev": "566a10869",
  "capabilities": [
   {
    "n": 1,
@@ -36247,9 +36247,9 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 883,
+ "unproven": 884,
  "unproven_kinds": {
-  "meaning-notes": 390,
+  "meaning-notes": 391,
   "meaning-user": 252,
   "research-uncited": 34,
   "perf-typed": 63,
@@ -37465,27 +37465,27 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 30207,
+   "generated": 30609,
    "write": {
-    "title": 199,
-    "line": 1916,
+    "title": 203,
+    "line": 1933,
     "payoff": 21,
     "kill test": 90,
     "code": 11
    },
    "dups": {
     "exact": 15,
-    "embed": 54,
+    "embed": 55,
     "shingle": 0
    },
    "rejected": {
-    "kill": 15390,
-    "tier": 10501,
+    "kill": 15437,
+    "tier": 10610,
     "novelty": 94
    },
-   "merged": 517,
-   "kept": 1248,
-   "pending": 151
+   "merged": 534,
+   "kept": 1273,
+   "pending": 333
   },
   "families": [
    {
@@ -37523,7 +37523,7 @@
    },
    {
     "id": "F-016366",
-    "size": 127,
+    "size": 139,
     "lead": "Compress your debugging history into a single replayable tape",
     "today": "Today you can't rewind your entire session to a specific logical state and see which of your past edits actually prevented a future bug.",
     "with_this": "With this, Sampo can store a compact, causal tape of your decisions, allowing it to instantly simulate counterfactual fixes and verify if a current change would have broken the system had you chosen a different path earlier.",
@@ -40744,10 +40744,10 @@
     ]
    }
   ],
-  "families_total": 999,
+  "families_total": 1017,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1248
+   "total": 1273
   }
  },
  "steer": {
