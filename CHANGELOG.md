@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- Two or more finished lanes are offered as one sampo lane train (one gate run, a red set bisected) instead of one sampo lane merge each; sampo which and capture's done-work note now find the train (T-3467).
 - sampo lane merge records each criterion pass on the lane's clean tip tree and reuses it while that tree is unchanged, and sampo lane precheck ID runs a lane's criteria ahead of its merge, so a queue runner checks the next lanes in parallel while one merge lands (T-3444).
 - A child sampo (an exam's Smith under a temp home) logs its model calls to the parent's call log again: the path lives under FOREMAN_CALLS, the name core.mirror_env leaves (T-3448).
 - Re-landed T-3377 (scope+=PATH): a post-merge runner at a pre-T-3442 sha reverted it on the slot-pool false reds (T-3454).
