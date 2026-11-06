@@ -248,7 +248,7 @@ def leading(p, rows, r, need=0):
     leads its baseline over `need` rows; None when neither does."""
     kinds = {k["kind"]: k for k in prediction_kinds(p)}
     leads = lambda k, n: (k and not k["muted"] and k["n"] >= n and k["hit"] is not None  # noqa: E731
-                          and all(b is not None and k["hit"] > b for b in (k["base_hit"], k.get("naive_hit", 0))))
+                          and k["lead"] and k["lead"][0] and k.get("naive_lead", (True,))[0])  # T-3069: a significant lead, not a tie
     lp = next((x["pred"] for x in rows if x.get("kind") == "local" and x["id"] == r["id"] and x.get("pred")), None)
     if lp and leads(kinds.get(LOCAL_KIND), MUTE_MIN):
         return kinds[LOCAL_KIND], lp
@@ -484,6 +484,25 @@ def _rate(xs):
     return round(sum(xs) / len(xs), 3) if xs else None
 
 
+def paired_lead(mine, base, alpha=0.05, min_diff=10, min_gap=0.02):
+    """T-3069: (leads, p, wins, losses) of hit flags over the same rows: an exact one-sided sign test on the rows where
+    the two disagree; a lead is p < alpha over at least min_diff disagreeing rows and min_gap of all rows."""
+    from math import comb
+    w = sum(1 for a, b in zip(mine, base) if a and not b)
+    l = sum(1 for a, b in zip(mine, base) if b and not a)
+    n, d = len(mine), w + l
+    pv = sum(comb(d, i) for i in range(w, d + 1)) / 2 ** d if d else 1.0
+    return (d >= min_diff and w > l and pv < alpha and (w - l) / n >= min_gap), pv, w, l
+
+
+def lead_text(lead):
+    """T-3069: how a paired_lead reads: leads, trailing, or level with naive, with the counts and p; None: no baseline."""
+    if not lead:
+        return "no baseline"
+    ok, pv, w, l = lead
+    return f"{'leads' if ok else 'trailing' if l > w else 'level with naive'}: {w} wins to {l} losses, p={pv:.3f}"
+
+
 def prediction_kinds(p):
     """T-2406: per prediction kind, scored rows, the hit rate beside the naive baseline's, and whether it is muted (it
     trailed the baseline over MUTE_MIN+ rows scored since its last unmute). next-request: the type hit (the path
@@ -503,6 +522,8 @@ def prediction_kinds(p):
         hit, base = _rate([h for h, _ in fresh]), _rate([bh for _, bh in fresh])
         kinds.append(dict({"kind": name, "n": len(rows), "hit": _rate([h for _, h, _ in rows]),
                            "base_hit": _rate([bh for _, _, bh in rows if bh is not None]),
+                           "lead": paired_lead([h for _, h, _ in rows], [bh for _, _, bh in rows])
+                           if rows and all(bh is not None for _, _, bh in rows) else None,  # None: no baseline
                            "muted": len(fresh) >= MUTE_MIN and hit is not None and base is not None and hit < base},
                           **(extra or {})))
     shown = {r.get("id"): r.get("arm") for r in book if r.get("kind") == "shown"}  # T-2681: seen at session start
@@ -517,7 +538,9 @@ def prediction_kinds(p):
     ls = [r for r in scores if r.get("local_type_hit") is not None]  # T-2912: its base is the transition guess, same rows
     avg = lambda k: _rate([r[k] for r in ls if isinstance(r.get(k), (int, float))])  # noqa: E731
     kind(LOCAL_KIND, [(str(r.get("at") or ""), r["local_type_hit"] is True, r.get("type_hit") is True) for r in ls],
-         {"naive_hit": _rate([r.get("base_type_hit") is True for r in ls]), "overlap": avg("local_overlap"),
+         {"naive_hit": _rate([r.get("base_type_hit") is True for r in ls]),
+          "naive_lead": paired_lead([r["local_type_hit"] is True for r in ls], [r.get("base_type_hit") is True for r in ls]),
+          "overlap": avg("local_overlap"),
           "base_overlap": avg("overlap"), "word_overlap": avg("local_word_overlap")})
     effort, seen = [], {}
     for r in outcomes._closes(p):

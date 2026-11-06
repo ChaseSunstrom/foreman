@@ -295,6 +295,8 @@ def self_running(p, briefs=None):
     if due:
         parts.append(f"{s(due, 'self-fix trial')} due")
     if pk and pk["n"] and pk["hit"] is not None and pk["base_hit"] is not None:
-        parts.append(f"next-request predictions {pk['hit']:.0%} vs baseline {pk['base_hit']:.0%}")
+        from sampo import foresight  # T-3069: a lead is a paired sign test, not a gap of a few rows
+        parts.append(f"next-request predictions {pk['hit']:.0%} vs baseline {pk['base_hit']:.0%}"
+                     f" ({foresight.lead_text(pk['lead'])})")
     return {"fired": fired, "installs": installs, "recovering": recovering, "trials_due": due, "predictions": pk,
             "line": ("Self-running: " + " · ".join(parts)) if parts else ""}

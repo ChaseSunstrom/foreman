@@ -202,6 +202,34 @@ def _run(name, conclusion, sha=SHA, status="completed"):
     return {"name": name, "status": status, "conclusion": conclusion, "head_sha": sha}
 
 
+class PairedLead(unittest.TestCase):  # T-3069: a lead over the naive guess is a paired sign test, not a few rows
+
+    @staticmethod
+    def rows(w, l, both, n=376):
+        mine = [True] * w + [False] * l + [True] * both
+        base = [False] * w + [True] * l + [True] * both
+        return mine + [False] * (n - len(mine)), base + [False] * (n - len(base))
+
+    def test_259_against_256_of_376_is_level(self):
+        lead, pv, w, l = fs.paired_lead(*self.rows(13, 10, 246))
+        self.assertEqual((w, l, lead), (13, 10, False))
+        self.assertGreater(pv, 0.05)
+
+    def test_a_clear_lead_leads_and_a_thin_sample_does_not(self):
+        lead, pv, w, l = fs.paired_lead(*self.rows(50, 6, 250))  # 300 against 256
+        self.assertTrue(lead)
+        self.assertLess(pv, 0.001)
+        self.assertFalse(fs.paired_lead([True] * 5, [False] * 5)[0])  # 5 disagreeing rows: too few
+
+    def test_no_rows_all_ties_and_trailing_read_without_a_lead(self):
+        self.assertEqual(fs.paired_lead([], [])[0], False)  # n=0: no division
+        lead = fs.paired_lead([True] * 40, [True] * 40)
+        self.assertEqual((lead[0], lead[2], lead[3]), (False, 0, 0))
+        self.assertIn("level with naive", fs.lead_text(lead))
+        self.assertIn("trailing", fs.lead_text(fs.paired_lead(*self.rows(5, 40, 100))))
+        self.assertEqual(fs.lead_text(None), "no baseline")
+
+
 class CiMain(unittest.TestCase):
     def test_each_workflows_newest_finished_run_decides_and_the_red_runs_sha_is_named(self):
         old = "b" * 40
@@ -370,7 +398,7 @@ class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ah
         import subprocess
         self.setup_requests()
         self.assertIsNone(self.ahead())  # no scored rows yet: nothing beats anything
-        self.book(6)
+        self.book(12)
         table = os.path.join(self.p.dir, "trigger-table.json")
         with open(table, "w", encoding="utf-8") as f:
             json.dump({"draft-ahead": {"route": "muted"}}, f)
@@ -392,7 +420,7 @@ class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ah
 
     def test_a_draft_older_than_three_days_is_removed_and_scored_as_expired(self):
         self.setup_requests()
-        self.book(6)
+        self.book(12)
         d = self.ahead()
         from sampo import draft as sdraft
         path = os.path.join(self.p.dir, sdraft.AHEAD)
@@ -405,7 +433,7 @@ class DraftAhead(ForemanTestCase):  # T-2407 (#3): the top prediction planned ah
 
     def test_a_request_overlapping_the_draft_gets_its_plan_and_one_that_does_not_leaves_it(self):
         self.setup_requests()
-        self.book(6)
+        self.book(12)
         d = self.ahead()
         other = self.ask("Rename the login page title", "FEATURE", "login.py")
         self.assertNotIn("Drafted ahead", c.find_brief(self.p, other).section("Drafted ahead") or "")
