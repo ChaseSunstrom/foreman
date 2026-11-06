@@ -395,6 +395,52 @@ def _ci_ignored(root, rev):
     return [_glob_re(g) for g in out if g]
 
 
+def _gated_pass(p, root, wt, base, said):
+    """T-3468: the gates' pass (a train's or a full fm check's) that already covers the tree about to be pushed, or
+    None. It holds when the ship's test is the gates' own (the default fm check, or one of the configured checks),
+    HEAD's code tree passed every configured gate, the shipped commits change no CI workflow (they supply the ignore
+    globs), and the pushed tree differs from HEAD's only in files that CI never tests (paths-ignore: the tower's
+    shards) or the sync mirror's notes; a tower move in a file tests read (the stats) or a CHANGELOG.md main changed
+    still runs the suite. After a train the ship ran the whole suite again on the same code (14-20 min at load)."""
+    import shlex
+    from sampo import cli
+    checks = list(c.read_meta(p).get("checks") or [])
+    norm = lambda s: shlex.join(shlex.split(s))  # noqa: E731
+    head = _git(root, "rev-parse", "HEAD^{tree}").strip()
+    pushed = _git(wt, "rev-parse", "HEAD^{tree}").strip()
+    if not checks or not head or not pushed or (said and norm(said) not in {norm(x) for x in checks}):
+        return None
+    if _git(wt, "diff", "--name-only", base, "HEAD", "--", ".github").strip():
+        return None
+    ignored = _ci_ignored(wt, "HEAD")
+    for f in _git(root, "diff", "--name-only", "--no-renames", head, pushed).splitlines():
+        if not ((f.startswith(c.MIRROR_DIRS) and f.endswith(".md")) or any(g.match(f) for g in ignored)):
+            return None
+    return cli._cached_pass(p, checks, head[:12], (), c.code_tree(root, head))
+
+
+def _run_test(p, wt, base, env, test, log):
+    """The ship's own run in the scratch tree, streamed: the affected tests first, then `test`. (exit code, the last
+    1 MB of its output)."""
+    _affected_first(p, wt, base, env)  # T-2323: a red linked test stops the ship in minutes, not after the suite
+    with open(log, "wb") as out, open(log, "rb") as rd:
+        try:
+            proc = subprocess.Popen(test, cwd=wt, stdin=subprocess.DEVNULL, env=env, stdout=out, stderr=subprocess.STDOUT)
+        except OSError as e:
+            _err(f"--test {test[0]!r} couldn't run ({e.strerror}); nothing was pushed")
+        dec = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        while True:
+            done = proc.poll() is not None
+            chunk = rd.read()
+            if chunk:
+                print(dec.decode(chunk), end="", flush=True)
+            if done:
+                break
+            time.sleep(0.1)
+        rd.seek(max(0, os.path.getsize(log) - 1_000_000))  # the last 1 MB, for the baseline capture
+        return proc.returncode, rd.read().decode("utf-8", errors="replace")
+
+
 def _rerun_red(wt, out, code, env):
     """T-3435: the classes a red run names, rerun alone after a load wait (the post-merge suite's helpers, T-3216).
     Returns the flaky classes when every one is green alone, None when any is still red (or can't run alone)."""
@@ -530,26 +576,17 @@ def ship(p, args):
             c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": os.path.realpath(wt)})
             env.setdefault("PYTHONUNBUFFERED", "1")
             log = os.path.join(tmp, "test.log")  # T-2255: a file, not a pipe: a background process holding it can't hang the ship
+            failed, tail, hit = 0, "", None
             try:  # a full fm check here waits for this run; the ship's own fm check (in wt) doesn't
-                _affected_first(p, wt, base, env)  # T-2323: a red linked test stops the ship in minutes, not after the suite
-                with open(log, "wb") as out, open(log, "rb") as rd:
-                    try:
-                        proc = subprocess.Popen(test, cwd=wt, stdin=subprocess.DEVNULL, env=env, stdout=out,
-                                                stderr=subprocess.STDOUT)
-                    except OSError as e:
-                        _err(f"--test {test[0]!r} couldn't run ({e.strerror}); nothing was pushed")
-                    dec = codecs.getincrementaldecoder("utf-8")(errors="replace")
-                    while True:
-                        done = proc.poll() is not None
-                        chunk = rd.read()
-                        if chunk:
-                            print(dec.decode(chunk), end="", flush=True)
-                        if done:
-                            break
-                        time.sleep(0.1)
-                    failed = proc.returncode
-                    rd.seek(max(0, os.path.getsize(log) - 1_000_000))  # the last 1 MB, for the baseline capture
-                    tail = rd.read().decode("utf-8", errors="replace")
+                try:
+                    hit = _gated_pass(p, root, wt, base, said)  # T-3468
+                except Exception as e:  # review: a check that can't run falls back to the suite
+                    print(f"gates pass reuse skipped: {c.fit(c.plain(str(e)), 120)}", flush=True)
+                if hit:
+                    print(f"reusing the gates' pass ({hit}): the pushed tree differs from it only in files its CI "
+                          "skips, CHANGELOG.md or the sync mirror, so the suite isn't run again", flush=True)
+                else:
+                    failed, tail = _run_test(p, wt, base, env, test, log)
             finally:
                 if (c.read_meta(p).get("ship_testing") or {}).get("pid") == os.getpid():
                     c.update_meta(p, ship_testing=None)
@@ -557,7 +594,7 @@ def ship(p, args):
                 failed = 0  # T-3435: green alone is a flake; the baseline capture and the verdict get the rerun's
             from sampo import cli  # the shipped tree is vouchable, so the run files (or clears) what fm check would
             try:
-                got = cli._baseline(p, [(shlex.join(test), failed, tail, None)])
+                got = [] if hit else cli._baseline(p, [(shlex.join(test), failed, tail, None)])  # a reuse ran nothing
             except Exception as e:  # the verdict stands; the capture is a convenience
                 got = []
                 print(f"baseline capture failed: {e}")

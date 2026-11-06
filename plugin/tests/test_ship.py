@@ -197,6 +197,51 @@ class Ship(ForemanTestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.main_log()[:4], ["ci", "add b", "add a", "tower update"])
 
+    FAILS = "sh -c 'exit 1'"  # T-3468: the gate on record passed; run again here it would fail, so a ship shows reuse
+
+    def _gated_with_a_tower_move(self, rel, gated=True):
+        """T-3468: main's CI (which this branch shares) skips the moons shards; main then took a tower move in rel;
+        HEAD's code tree passed the gates (as a train records it) or not."""
+        self.ci_ignores("site/genesis/moons-catalogue*.json")
+        sh(self.repo, "fetch", "-q", "origin", "main")
+        sh(self.repo, "rebase", "-q", "origin/main")  # the workflow is main's, not one of the shipped commits
+        subprocess.run(["sh", self.mover(rel)], check=True, capture_output=True)
+        self.fm("check", "add", self.FAILS)
+        p = c.find_project(self.repo)
+        tree = sh(self.repo, "rev-parse", "HEAD^{tree}").strip()
+        if gated:
+            c.log_event(p, "check_run", data={"tree": tree[:12], "code_tree": c.code_tree(self.repo, tree),
+                                              "env": c.env_id(), "train": [self.tid],
+                                              "results": [{"cmd": self.FAILS, "exit": 0, "s": 1.0}]})
+        self.grant()
+
+    def test_a_ship_reuses_the_gates_pass_when_only_ci_skipped_tower_files_differ(self):
+        # T-3468: after a train gated these very files, the ship ran the whole suite again (14-20 min) on them
+        self._gated_with_a_tower_move("site/genesis/moons-catalogue-002.json")
+        r = self.ship("--test", self.FAILS)  # a run would fail: the reuse is what ships
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("reusing the gates' pass", r.stdout)
+        self.assertEqual(self.main_log()[:3], ["add b", "add a", "tower update"])
+
+    def test_no_pass_or_a_tested_file_moved_runs_the_suite(self):
+        self._gated_with_a_tower_move("site/genesis/moons-catalogue-002.json", gated=False)
+        r = self.ship("--test", self.FAILS)
+        self.assertNotEqual(r.returncode, 0, "no gates pass on record: the suite runs and fails")
+        self.assertNotIn("reusing the gates' pass", r.stdout)
+
+    def test_a_tower_move_in_a_file_tests_read_runs_the_suite(self):
+        self._gated_with_a_tower_move("site/genesis/stats.json")  # not CI-skipped: test_docs reads the stats
+        r = self.ship("--test", self.FAILS)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("reusing the gates' pass", r.stdout)
+
+    def test_a_ship_test_other_than_the_gates_still_runs(self):
+        # review: a saved or given --test (another runtime's suite) is not what the gates ran
+        self._gated_with_a_tower_move("site/genesis/moons-catalogue-002.json")
+        r = self.ship("--test", "false")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("reusing the gates' pass", r.stdout)
+
     def test_a_main_that_moved_in_a_shipped_file_still_refuses(self):  # T-2511
         self.grant()
         r = self.ship("--test", f"sh {self.mover('a.txt')}")
