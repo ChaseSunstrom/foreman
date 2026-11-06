@@ -403,6 +403,40 @@ class CaptureAndIntake(ForemanTestCase):
         self.fm("task", "set", "T-0002", "status=captured")
         self.assertEqual(status("T-0002"), "captured")  # set by hand: kept
 
+    def test_task_set_scope_plus_and_minus_edit_the_list(self):  # T-3377
+        def scope():
+            return json.loads(self.fm("task", "show", "T-0001", "--json").stdout)["scope"]
+        self.fm("capture", "one")
+        self.fm("task", "set", "T-0001", "scope=[a, b]")
+        self.fm("task", "set", "T-0001", "scope+=c,a")
+        self.assertEqual(scope(), ["a", "b", "c"])
+        self.fm("task", "set", "T-0001", "scope-=b")
+        self.assertEqual(scope(), ["a", "c"])
+        self.fm("task", "set", "T-0001", "scope-=zzz")
+        self.assertEqual(scope(), ["a", "c"])
+        p = self.fm("task", "set", "T-0001", "title+=x", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("can't set 'title+'", p.stderr)
+
+    def test_task_set_list_ops_no_scope_depends_glob_chain_and_race(self):  # T-3377
+        def get(k):
+            return json.loads(self.fm("task", "show", "T-0001", "--json").stdout)[k]
+        self.fm("capture", "one")
+        self.fm("capture", "two")
+        self.fm("task", "set", "T-0001", "scope+=src/**/*.py")  # no scope yet; a glob stays whole
+        self.assertEqual(get("scope"), ["src/**/*.py"])
+        self.fm("task", "set", "T-0001", "depends_on+=T-0002")
+        self.assertEqual(get("depends"), ["T-0002"])
+        self.fm("task", "set", "T-0001", "depends_on-=T-0002")
+        self.assertEqual(get("depends"), [])
+        self.fm("task", "set", "T-0001", "scope=[a]", "scope+=b", "scope-=a")  # in order, in one call
+        self.assertEqual(get("scope"), ["b"])
+        self.fm("task", "set", "T-0001", "scope=[]")
+        ts = [threading.Thread(target=self.fm, args=("task", "set", "T-0001", f"scope+=f{i}")) for i in range(4)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        self.assertEqual(sorted(get("scope")), ["f0", "f1", "f2", "f3"])
+
     def test_ac_edit_text_carrying_a_verify_phrase_sets_the_verify(self):
         # T-2786: --text 'X — verify with `cmd`' stored the phrase as text and kept the old verify: two verifies
         self.fm("capture", "one")
