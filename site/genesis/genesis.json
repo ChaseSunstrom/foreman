@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T04:38:30Z",
- "rev": "5c403348",
+ "updated": "2026-11-06T04:43:57Z",
+ "rev": "a6a471ef",
  "capabilities": [
   {
    "n": 1,
@@ -36247,20 +36247,20 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 855,
+ "unproven": 856,
  "unproven_kinds": {
   "meaning-notes": 372,
   "meaning-user": 249,
   "research-uncited": 34,
-  "perf-typed": 58,
+  "perf-typed": 59,
   "typed": 37,
   "red": 84,
   "tui-unshot": 11,
-  "docs": 125,
+  "docs": 126,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 41,
-  "data": 6
+  "data": 7
  },
  "next": {
   "stage": "sweep",
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 21947,
+   "generated": 22161,
    "write": {
     "title": 153,
-    "line": 1554,
+    "line": 1574,
     "payoff": 18,
     "kill test": 65,
     "code": 8
@@ -37480,12 +37480,12 @@
    },
    "rejected": {
     "kill": 11006,
-    "tier": 7686,
+    "tier": 7809,
     "novelty": 72
    },
-   "merged": 271,
-   "kept": 932,
-   "pending": 144
+   "merged": 287,
+   "kept": 937,
+   "pending": 194
   },
   "families": [
    {
@@ -40733,10 +40733,10 @@
     ]
    }
   ],
-  "families_total": 804,
+  "families_total": 806,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 932
+   "total": 937
   }
  },
  "steer": {
