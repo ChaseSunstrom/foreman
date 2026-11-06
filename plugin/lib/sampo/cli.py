@@ -3479,6 +3479,11 @@ def task_set(p, args):
         if "=" not in kv:
             raise UsageError(f"expected key=value, got {kv!r}")
         k, v = kv.split("=", 1)
+        op = k[-1] if k[-1:] in ("+", "-") and k[:-1] in LIST_FIELDS else ""  # T-3377: scope+=a,b appends; scope-=a removes
+        if op:
+            k = k[:-1]
+            changes[k] = (changes.get(k) or ([("=", [])] if k in changes else [])) + [(op, _list_value(v))]  # resolved in apply(), under the lock
+            continue
         if k not in EDITABLE:
             sec = next((h.split(" (")[0].strip() for h, _ in need_brief(p, args.id).sections  # T-1925
                         if h.split(" (")[0].strip().lower() == k.lower().replace("_", " ")), None)
@@ -3531,13 +3536,20 @@ def task_set(p, args):
                 raise UsageError(f"{k} is fixed once work has started (sampo focus); the close scores it as planned")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
-        changes[k] = _list_value(v) if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
+        changes[k] = [("=", _list_value(v))] if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
     pairs = _section_pairs(args)
 
     def apply(b):
         if changes.get("status") in ("active", "verifying") and b.status not in ("active", "verifying"):
             raise c.PolicyError(f"{b.id}: start a task with sampo focus {b.id}, which keeps one active task per checkout "
                                 f"(T-0134 review)")
+        for k in LIST_FIELDS & changes.keys():  # T-3377: resolve =, +=, -= in order against the list as saved now
+            if changes[k] is not None:
+                cur = list(b.meta.get(k) or [])
+                for op, items in changes[k]:
+                    cur = list(items) if op == "=" else cur + [x for x in items if x not in cur] if op == "+" else \
+                        [x for x in cur if x not in items]
+                changes[k] = cur
         tiers = "SML"
         if "tier" in changes and changes["tier"] in tiers and b.tier in tiers and \
                 tiers.index(changes["tier"]) < tiers.index(b.tier) and b.evidence():
@@ -6841,7 +6853,7 @@ def _build_parser(only=None):
                    "ssh-keygen -Y verify line that checks it (T-1547)")
     t = tadd("set")
     t.add_argument("id")
-    t.add_argument("assignments", nargs="*")
+    t.add_argument("assignments", nargs="*", help="key=value; scope and depends_on also take key+=a,b (append) and key-=a (remove)")
     t.add_argument("--allow", action="append")
     t.add_argument("--section", action="append", help="a brief section to fill (Interpretation, Assumptions, "
                    "Acceptance criteria, Non-goals, Approach, Risks and rollback, Execution prompt, Docs impact); "

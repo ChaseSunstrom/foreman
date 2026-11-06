@@ -90,7 +90,7 @@ def commands():
     out = [{"name": n, "load": f"fm {n}", "summary": cli._no_ids(" ".join(h.split())), "text": t}
            for n, (h, t) in sorted(recall.verb_docs().items()) if n.split()[0] not in SELF | FOREMAN_ONLY]
     out.append({"name": "task set ID scope=[...]", "load": "fm task set ID scope=[...]",
-                "summary": "widen task scope: set the scope assignments on a task", "text": "task set ID scope= widen task scope"})
+                "summary": "widen task scope: set the scope assignments on a task (scope+=PATH appends, scope-=PATH removes)", "text": "task set ID scope= widen task scope"})
     out.append({"name": "task set ID approved=true", "load": "fm task set ID approved=true",
                 "summary": "approve a task: mark it approved", "text": "task set ID approved=true approve a task"})
     out.append({"name": "task set ID --allow CATEGORY", "load": "fm task set ID --allow CATEGORY",
