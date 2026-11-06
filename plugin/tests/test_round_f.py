@@ -5,7 +5,7 @@ import json
 import os
 import subprocess
 
-from helpers import ForemanTestCase
+from helpers import FM, ForemanTestCase
 
 from sampo import core as c
 from sampo import recall
@@ -45,6 +45,135 @@ class RoundF(ForemanTestCase):
         out = self.fm("check").stdout
         self.assertIn("changed during the gates: stamp.txt", out)  # T-1149: named, and honest that it may be the session's
         self.assertIn("your own edit", out)
+
+    def _counting_gate(self):
+        runs = os.path.join(self.tmp, "gate-runs")
+        self.fm("check", "add", f"echo x >> {runs}")
+        self.fm("check")
+        return runs
+
+    def _write(self, rel, text):
+        with open(os.path.join(self.repo, rel), "a") as f:
+            f.write(text)
+
+    def test_a_full_pass_holds_for_another_task_when_only_the_changelog_changed(self):
+        # T-3120: a close's own CHANGELOG line (and the sync mirror) must not force a fresh suite on the next close
+        runs = self._counting_gate()
+        self._write("CHANGELOG.md", "- T-9999: a line\n")
+        out = self.fm("check").stdout
+        self.assertIn("reusing the full run", out)
+        self.assertIn("same code tree", out)
+        self.assertRegex(out, r"run \d{4}-\d\d-\d\d \d\d:\d\d UTC, code_tree [0-9a-f]{12}, from \S+")  # provenance
+        self.assertEqual(len(open(runs).read().split()), 1, "the gate did not run again")
+
+    def test_a_changed_changelog_is_read_by_its_test_before_the_pass_is_reused(self):
+        # T-3120: the code tree leaves CHANGELOG.md out, so a malformed line must still meet the test that reads it
+        os.makedirs(os.path.join(self.repo, "plugin", "tests"))
+        self._write("plugin/tests/run.py", "import sys\nsys.exit(1 if 'BAD' in open('CHANGELOG.md').read() else 0)\n")
+        runs = self._counting_gate()
+        self._write("CHANGELOG.md", "- T-9999: fine\n")
+        self.assertIn("reusing the full run", self.fm("check").stdout)
+        self._write("CHANGELOG.md", "- T-9999: BAD\n")
+        out = self.fm("check").stdout
+        self.assertNotIn("reusing", out)
+        self.assertEqual(len(open(runs).read().split()), 2, "a CHANGELOG the test rejects gets the full gates")
+
+    def test_a_pass_without_a_readable_time_is_stale(self):
+        self.fm("check", "add", "true")
+        tree = c.worktree_id(self.repo)
+        with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:
+            f.write(json.dumps({"event": "check_run", "data": {"tree": tree, "env": c.env_id(), "results": [
+                {"cmd": "true", "exit": 0, "s": 0.1}]}}) + "\n")
+        self.assertNotIn("cached", self.fm("check").stdout)
+
+    def test_no_reuse_when_code_changed(self):
+        runs = self._counting_gate()
+        self._write("a.py", "y = 1\n")
+        self.assertNotIn("reusing", self.fm("check").stdout)
+        self.assertEqual(len(open(runs).read().split()), 2)
+
+    def test_no_reuse_when_a_gate_command_changed(self):
+        self._counting_gate()
+        self._write("CHANGELOG.md", "- a line\n")
+        self.fm("check", "add", "true")
+        self.assertNotIn("reusing", self.fm("check").stdout)
+
+    def _check_runs(self):
+        with open(os.path.join(self.p.dir, "ledger.jsonl")) as f:
+            return [e for e in map(json.loads, f) if e.get("event") == "check_run"]
+
+    def test_an_affected_run_is_no_full_pass_and_leaves_the_full_one_standing(self):
+        runs = self._counting_gate()
+        self.fm("check", "affected", "true {tests}")
+        self._write("CHANGELOG.md", "- a line\n")
+        self.fm("check", "--affected", check=False)
+        self.assertEqual(len(self._check_runs()), 1, "an affected run logs no full check_run")
+        self.assertIn("reusing the full run", self.fm("check").stdout)
+        self.assertEqual(len(open(runs).read().split()), 1)
+
+    def test_a_failing_prior_run_on_the_same_code_tree_is_not_reused(self):
+        runs = os.path.join(self.tmp, "gate-runs")
+        flag = os.path.join(self.tmp, "red")
+        open(flag, "w").close()
+        self.fm("check", "add", f"echo x >> {runs}; test ! -e {flag}")
+        self.fm("check", check=False)
+        os.remove(flag)
+        self._write("CHANGELOG.md", "- a line\n")
+        self.assertNotIn("reusing", self.fm("check").stdout)
+        self.assertEqual(len(open(runs).read().split()), 3)  # the red run and its flaky rerun, then this one
+
+    def test_a_run_older_than_twelve_hours_is_not_reused(self):
+        runs = self._counting_gate()
+        path = os.path.join(self.p.dir, "ledger.jsonl")
+        with open(path) as f:
+            lines = [json.loads(x) for x in f]
+        for e in lines:
+            if e.get("event") == "check_run":
+                e["ts"] = "2000-01-01T00:00:00Z"
+        with open(path, "w") as f:
+            f.write("".join(json.dumps(e) + "\n" for e in lines))
+        self._write("CHANGELOG.md", "- a line\n")
+        self.assertNotIn("reusing", self.fm("check").stdout)
+        self.assertEqual(len(open(runs).read().split()), 2)
+
+    def test_a_changed_skip_set_is_not_reused(self):
+        self._counting_gate()
+        last = self._check_runs()[-1]["data"]
+        with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:  # a newer full run that left test files out
+            f.write(json.dumps({"ts": c.now(), "event": "check_run", "data": dict(last, skip_tests=["test_x.py"])}) + "\n")
+        self._write("CHANGELOG.md", "- a line\n")
+        self.assertNotIn("reusing", self.fm("check").stdout)
+
+    def test_fresh_after_a_changelog_only_change_reruns(self):
+        runs = self._counting_gate()
+        self._write("CHANGELOG.md", "- a line\n")
+        self.assertNotIn("reusing", self.fm("check", "--fresh").stdout)
+        self.assertEqual(len(open(runs).read().split()), 2)
+
+    def test_a_non_markdown_file_in_the_mirror_is_code(self):
+        # T-3120: .sampo/policy.toml is read as repo policy; only the mirror's .md files are bookkeeping
+        os.makedirs(os.path.join(self.repo, ".sampo"), exist_ok=True)
+        self._write(".sampo/notes.md", "a\n")
+        self._write(".sampo/policy.toml", "x = 1\n")
+        base = c.code_tree(self.repo)
+        self._write(".sampo/notes.md", "b\n")
+        self._write("CHANGELOG.md", "- a line\n")
+        self.assertEqual(c.code_tree(self.repo), base, "mirror .md and CHANGELOG.md are not code")
+        self._write(".sampo/policy.toml", "x = 2\n")
+        self.assertNotEqual(c.code_tree(self.repo), base)
+
+    def test_a_close_on_another_task_reuses_the_full_pass_and_says_so(self):
+        # T-3120: the full gates cost the close; task B, whose only change is a CHANGELOG line, doesn't rerun them
+        runs = self._counting_gate()
+        self.fm("task", "new", "A", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a :: true", "--focus")
+        out = self.fm("task", "finish", "T-0001", "--run", f"{FM} check", "--audit", "checked").stdout
+        self.assertIn("reusing the full run", out)
+        self._write("CHANGELOG.md", "- T-0001: closed\n")
+        self.fm("task", "new", "B", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a :: true", "--focus")
+        out = self.fm("task", "finish", "T-0002", "--run", f"{FM} check", "--audit", "checked").stdout
+        self.assertIn("reusing the full run", out)
+        self.assertIn("same code tree", out)
+        self.assertEqual(len(open(runs).read().split()), 1, "the gates never ran again")
 
     def test_a_tree_changed_during_the_gates_gets_no_cached_pass(self):
         # T-1963: the pass was recorded under the changed tree, so an edit made meanwhile got a pass it never earned

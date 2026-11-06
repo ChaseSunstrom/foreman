@@ -323,7 +323,9 @@ def mirror_ignored(root, name=MIRROR):
         return False
 
 
-CODE_TREE_SKIP = ("CHANGELOG.md",) + MIRRORS  # T-3380: what every task close rewrites, not the code
+# T-3380: what every task close rewrites, not the code. T-3120: only the mirror's .md files, as worktree_tree skips
+# them; a policy.toml in the mirror is read as repo policy and stays part of the code tree.
+CODE_TREE_SKIP = ("CHANGELOG.md",) + tuple(f":(glob){m}/**/*.md" for m in MIRRORS)
 
 
 def code_tree(root, tree=None):
