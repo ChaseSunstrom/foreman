@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/lane_overlap.py plugin/lib/fmlane_overlap.py plugin/lib
 depends_on: []
 source: user
 created: 2026-11-06T02:34:16Z
-updated: 2026-11-06T05:36:08Z
+updated: 2026-11-06T05:37:20Z
 builder: 2026-11-06T02:34:32Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
@@ -20,6 +20,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:43:11Z
 plan0_scope: [plugin/lib/sampo/lane_overlap.py, plugin/lib/sampo/lanes.py, plugin/tests/test_lane_overlap.py, CHANGELOG.md]
+builder_returned: 2026-11-06T05:37:20Z
 ---
 # Moon C-005835: tell the lead which open builder lanes overlap (same files or same new function) so one can be merged or stopped
 ## Raw request

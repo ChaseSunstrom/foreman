@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/serve.py, plugin/lib/sampo/cli.py, plugin/lib/sampo/lan
 depends_on: []
 source: user
 created: 2026-11-06T02:40:07Z
-updated: 2026-11-06T04:53:40Z
+updated: 2026-11-06T05:39:24Z
 rival_at: 2026-11-06T02:41:04Z
 rival_split: true
 builder: 2026-11-06T02:42:03Z
@@ -22,7 +22,7 @@ predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:45:19Z
 plan0_scope: [plugin/lib/sampo/serve.py, plugin/lib/sampo/cli.py, plugin/tests/test_parallel.py, plugin/tests/test_run.py, CHANGELOG.md]
-builder_returned: 2026-11-06T04:53:40Z
+builder_returned: 2026-11-06T05:39:24Z
 ---
 # Batch spawn, headless: sampo run --parallel N is a rolling pool up to lane max, not batches of 3 with fully disjoint scopes
 ## Raw request
@@ -60,6 +60,7 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 - (step 1) `python3 plugin/tests/run.py test_parallel` → exit 0 · Ran 18 tests in 105.5s (18 jobs, 2 at a time; slowest: Parallel.test_a_pool_starts_the_next_task_as_soon_as_any_lane_ends 24s, Parallel.test_the_pool_is_capped_by_lane_max_not_three 21s, Parallel.test [ran] [tree 382d922868c1] [world 2f1906870a] (2026-11-06T03:30:08Z)
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_cli test_code test_design_tokens test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_hooks test_inbox_spec test_kalevala test_lane_twins test_lanes test_left_out test_library test_louhi_models test_mcp test_mint test_models test_moons_scale test_parallel test_proof test_rename_scan test_scaffold test_serve test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_ui_signals test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 2575 tests in 3282.6s (824 jobs, 2 at a time; slowest: Worker 381s, TaskLifecycle 167s, Stop 160s) / FAILED (1 classes: test_doctor.Checks) [ran] [tree 382d922868c1] [world 2f1906870a] (2026-11-06T04:24:56Z)
 - (step 1) `python3 plugin/tests/run.py test_parallel test_run` → ✗ exit 1 · Ran 118 tests in 589.8s (103 jobs, 2 at a time; slowest: Parallel.test_no_new_lane_while_the_unmerged_ones_are_at_the_cap 52s, Parallel.test_the_pool_is_capped_by_lane_max_not_three 50s, Parallel.test [ran] [tree 6353724687fb] [world 2f1906870a] (2026-11-06T04:52:55Z)
+- `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_ambient test_board_export test_bookkeeping test_bus test_cli test_code test_design_tokens test_docs test_docsdrift test_doctor test_exam test_find test_genesis test_goal test_hooks test_inbox_spec test_kalevala test_lane_twins test_lanes test_left_out test_library test_louhi_models test_mcp test_mint test_models test_moons_scale test_parallel test_proof test_rename_scan test_scaffold test_serve test_session_fixes test_showpieces test_site_build test_small_cards test_snapshots test_ui_signals test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · Ran 2584 tests in 2622.4s (1614 jobs, 2 at a time; slowest: Worker 156s, LeanKindGateSessionLine 152s, LeanKindGateHookDelay 115s) / FAILED (2 classes: test_doctor.Checks, test_docs.MapShards) [ran] [tree 6353724687fb] [world 2f1906870a] (2026-11-06T05:38:36Z)
 ## Log
 - 2026-11-06T02:40:07Z created
 - 2026-11-06T02:40:32Z set scope=['plugin/lib/sampo/serve.py', 'plugin/lib/sampo/cli.py', 'plugin/tests/test_parallel.py', 'plugin/tests/test_run.py', 'CHANGELOG.md']

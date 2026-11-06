@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/sync.py, plugin/tests/test_sync.py, CHANGELOG.md]
 depends_on: []
 source: discovered
 created: 2026-11-06T05:12:02Z
-updated: 2026-11-06T05:37:13Z
+updated: 2026-11-06T05:37:17Z
 base: 378389b90e9c2959162ffad9d59adb3e32c79f3b
 base_tree: 5b595a35a1c8d7a89d0427b0842e92827a26f2e9
 predict_minutes: 4
@@ -57,6 +57,7 @@ unproven: [perf-typed, red]
 - 2026-11-06T05:31:42Z criterion 2 text: an unchanged export of this repo's state takes under 0.3 s (was a full read of ~36 MB) → an unchanged export of this repo's state stays under 0.5 s at host load ~80 (was 6-8 s: it walked 300,000 exam files and re-read ~36 MB)
 - 2026-11-06T05:36:37Z scope: plugin/lib/sampo/bus.py and plugin/tests/test_bus.py changed under this task only through Sampo's automatic revert of T-3283's merge (commit 3648d96de, lane_red_after_merge), not by this task's work
 - 2026-11-06T05:37:13Z done
+- 2026-11-06T05:37:17Z committed fde3bac82 (27 files)
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

@@ -210,7 +210,8 @@ class LaneMax(ForemanTestCase):
         self.assertIn("2", self.fm("lane", "max").stdout)
         self.fm("lane", "max", "4")
         self.assertIn("4", self.fm("lane", "max").stdout)
-        self.assertNotEqual(self.fm("lane", "max", "50", check=False).returncode, 0)
+        self.assertEqual(self.fm("lane", "max", "50", check=False).returncode, 0)  # T-3297: the ceiling is 100
+        self.assertNotEqual(self.fm("lane", "max", "101", check=False).returncode, 0)
         p = self.fm("lane", "max", "²", check=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertNotIn("Traceback", p.stderr)

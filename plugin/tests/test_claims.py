@@ -142,7 +142,7 @@ class Claims(Base):
         self.assertIn(tid, out)
         self.assertNotIn("lib/*.py", out, "a glob isn't claimed")
         r = self.fm("lease", "take", "x.py::f", env=B, check=False)
-        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(r.returncode, 0, "a lane's pre-claim is advisory: the take notes it (T-3283)")
         self.assertIn(tid, r.stderr + r.stdout)
 
 
