@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- plugin/tests/run.py accepts test file paths (plugin/tests/test_X.py, ./…, test_X.py, an absolute path into the tests dir) as the module name test_X; any other path is a clear error (T-3428).
 - sampo task finish and sampo check reuse a passing full-gates run from any task on the same code tree (CHANGELOG.md and the mirror's .md files aside; a changed CHANGELOG still gets its own docs check), printing "gates: reusing the full run … on the same code tree" with the run's date, tree and task; the red-gate refusal and the post-close sentinel honour it too (T-3120).
 - sampo task ac ID list prints the criteria and ac ID rm N removes one (refused when it or a later criterion has evidence); a lone lowercase word after ac ID is refused as a mistyped verb instead of becoming a criterion (T-3372).
 - An automatic test run no longer checks off the task's current step because it shares a runner with a verify command; only the step's or a criterion's verify command, or a project gate command, does (normalised for a leading cd, a trailing tail/head/grep and spacing) (T-2911).
