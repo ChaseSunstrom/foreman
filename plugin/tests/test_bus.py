@@ -5,7 +5,7 @@ import os
 
 from test_hooks import HookCase, parse
 
-from sampo import core as c
+from sampo import bus, core as c
 
 MOD = "def f(x):\n    a = x + 1\n    return a\n\n\ndef g(y):\n    b = y * 2\n    return b\n"
 
@@ -243,6 +243,54 @@ class Lease(Base):
         self.assertIn("dropped: b.py::*", out)
         self.assertNotIn("c.py", out, "another session's lease isn't the drop's result")
         self.assertIn("c.py", self.fm("lease", "list").stdout)
+
+    def test_closing_a_task_releases_its_leases_at_once_and_leaves_another_tasks(self):  # T-3398
+        a = {"CLAUDE_CODE_SESSION_ID": "sess-a"}
+        self.fm("lease", "take", "a.py", env=a)
+        other = json.loads(self.fm("task", "new", "Other", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                                   "--step", "s", "--json").stdout)["id"]
+        self.fm("focus", other)
+        self.fm("lease", "take", "c.py", env=a)
+        self.fm("task", "drop", "T-0001", "--reason", "test")
+        out = self.fm("lease", "list").stdout
+        self.assertNotIn("a.py", out, "the closed task's lease is gone now, not in 20 minutes")
+        self.assertIn("c.py", out, "another task's lease stays")
+
+    def lease_files(self):
+        return sorted(v["file"] for v in bus._leases().values())
+
+    def test_a_release_leaves_another_projects_lease_of_the_same_task_id(self):  # T-3398 review
+        p = self.project()
+        other = type("P", (), {"slug": "other-proj"})()
+        data = {}
+        bus._claim(data, p, "s1", "T-0001", "mine.py", "*", 600)
+        bus._claim(data, other, "s1", "T-0001", "theirs.py", "*", 600)
+        bus._claim(data, other, "lane-T-0001", "T-0001", "theirs2.py", "*", 600)
+        bus._write_leases(data)
+        bus.release(p, "T-0001")
+        self.assertEqual(self.lease_files(), ["theirs.py", "theirs2.py"])
+
+    def test_block_keeps_the_lane_pre_claim_and_drop_releases_it(self):  # T-3398 review
+        p = self.project()
+        for verb, left in (("block", ["pre.py"]), ("drop", [])):
+            data = {}
+            bus._claim(data, p, "s1", "T-0001", "own.py", "*", 600)
+            bus._claim(data, p, "lane-T-0001", "T-0001", "pre.py", "*", 600)
+            bus._write_leases(data)
+            self.fm("task", verb, "T-0001", "--reason", "x", "--force") if verb == "drop" else self.fm(
+                "task", verb, "T-0001", "x")
+            self.assertEqual(self.lease_files(), left, verb)
+
+    def test_a_failing_release_never_fails_the_close(self):  # T-3398 review
+        data = {}
+        bus._claim(data, self.project(), "s1", "T-0001", "own.py", "*", 600)
+        bus._write_leases(data)
+        d = bus._dir()
+        os.chmod(d, 0o555)
+        self.addCleanup(lambda: os.path.isdir(d) and os.chmod(d, 0o755))
+        r = self.fm("task", "drop", "T-0001", "--reason", "x", "--force")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("not released", r.stderr)
 
     def test_take_confirms_what_it_took_and_lists_no_other_lease(self):  # T-1748
         a, b = {"CLAUDE_CODE_SESSION_ID": "sess-a"}, {"CLAUDE_CODE_SESSION_ID": "sess-b"}

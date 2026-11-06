@@ -530,12 +530,17 @@ def preclaim(p, task_id, files, seconds=LEASE_S):
     return skipped
 
 
-def release(p, task_id):
+def release(p, task_id, preclaim=True):
     """T-1068: drop a lane's pre-claims (its lane is merged, removed or being resumed), and (T-1588) the leases its
-    builder's edits and takes made under the task."""
+    builder's edits and takes made under the task. T-3398: only this project's (task ids repeat across projects);
+    preclaim=False keeps the lane pre-claim (a blocked lane resumes)."""
     with c.lock(_dir()):
         data = _leases()
-        _write_leases({k: v for k, v in data.items() if v["session"] != f"lane-{task_id}" and v.get("task") != task_id})
+        lane = lambda v: v["session"] == f"lane-{task_id}"  # its pre-claim is tagged with the task too
+        keep = {k: v for k, v in data.items() if v.get("project") != p.slug
+                or (lane(v) and not preclaim) or (not lane(v) and v.get("task") != task_id)}
+        if len(keep) != len(data):
+            _write_leases(keep)
 
 
 def conflict(pl, p, path):
