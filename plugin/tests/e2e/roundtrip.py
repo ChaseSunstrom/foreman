@@ -63,7 +63,13 @@ def main():
         orig_md = read(os.path.join(claude_dir, "CLAUDE.md"))
         branch = subprocess.run(["git", "-C", REPO, "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
                                 text=True).stdout.strip()
-        rc, out = run(["git", "clone", "-q", "--branch", branch, REPO, fhome], os.environ)
+        # detached HEAD (a lane train's scratch tree): no --branch, the clone checks out the source's commit
+        rc, out = run(["git", "clone", "-q"] + ([] if branch == "HEAD" else ["--branch", branch]) + [REPO, fhome],
+                      os.environ)
+        want = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        got = subprocess.run(["git", "-C", fhome, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        if rc == 0 and got != want:  # clone landed elsewhere: pin to the source commit
+            rc, out = run(["git", "-C", fhome, "checkout", "-q", want], os.environ)
         check("clone repo into sandbox FOREMAN_HOME", rc == 0, out.strip()[-200:])
         env = dict(os.environ, HOME=home, FOREMAN_HOME=fhome)
         env.pop("CLAUDE_CONFIG_DIR", None)
