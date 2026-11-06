@@ -260,6 +260,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmtidy` [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmrepro` (`sampo repro [--ref REF] [--json]`, T-3279: builds the site and the README figures twice from the working tree and once from a git worktree of REF; names the nondeterministic and the changed files; exit 1 only when a build is nondeterministic, 2 when a builder or REF can't build [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmtoolproof` (T-2372: a task that ran `sampo new tool` or `sampo mcp new`… [→ files-lib-3](docs/map/files-lib-3.md)
+- `fmtrain` (T-3405: shim for the old import path, kept for two releases (T-2742); the module is `sampo.train`) [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmtraces` (T-2995: green exam Smith runs as training data: the journal kept beside… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmtrials` (T-1059: a self-change as a pre-registered trial, graded by the… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmtriggers` (`sampo triggers [--days N] [--json]`, T-2276): capture events… [→ files-lib-3](docs/map/files-lib-3.md)
