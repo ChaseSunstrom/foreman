@@ -1732,7 +1732,19 @@ class AffectedPairs(ForemanTestCase):
         edits (under tests/) changed since A's focus. B's id."""
         self.fm("init")
         os.makedirs(os.path.join(self.repo, "tests"))
-        shutil.copy(os.path.join(os.path.dirname(__file__), "run.py"), os.path.join(self.repo, "tests", "run.py"))
+        # T-3417: a stand-in for tests/run.py, which cost 6-34 s per nested run here (interpreter, CPU-slot wait, a
+        # process per class) while every assertion only needs "runs the named modules; a name it can't find or was told
+        # to skip fails 'no test matches'" (T-1999)
+        with open(os.path.join(self.repo, "tests", "run.py"), "w") as f:
+            f.write("import os, sys, unittest\n"
+                    "here = os.path.dirname(os.path.abspath(__file__))\n"
+                    "sys.path.insert(0, here)\n"
+                    "skip = os.environ.get('FOREMAN_SKIP_TESTS', '').split(',')\n"
+                    "gone = [n for n in sys.argv[1:] if n in skip or not os.path.isfile(os.path.join(here, n + '.py'))]\n"
+                    "if gone:\n"
+                    "    sys.exit('run.py: no test matches ' + ', '.join(gone))\n"
+                    "r = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromNames(sys.argv[1:]))\n"
+                    "sys.exit(not r.wasSuccessful())\n")
         green = "import unittest\n\n\nclass G(unittest.TestCase):\n    def test_g(self):\n        pass\n"
         with open(os.path.join(self.repo, "tests", "test_green.py"), "w") as f:
             f.write(green)
@@ -1756,7 +1768,7 @@ class AffectedPairs(ForemanTestCase):
         # T-1718: --affected said it skipped another lane's red-first test_red, then named it to run.py, which failed
         # "no test matches test_red"
         b = self.red_lane(["test_green.py", "test_red.py"])  # A's edit, and B's (its lane goes on) since A's focus
-        r = self.fm("check", "--affected", check=False, timeout=300)  # T-3390/T-3404: a nested test run, ~70 s idle
+        r = self.fm("check", "--affected", check=False, timeout=300)  # T-3390/T-3404: a nested test run; T-3417: ~0.2 s now, the 300 s is a hang backstop
         self.assertIn(f"only task {b}'s red-first tests: test_red", r.stdout)
         self.assertNotIn("no test matches", r.stdout + r.stderr)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
