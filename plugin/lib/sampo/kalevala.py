@@ -223,7 +223,8 @@ def step(p, k=None, runner=None, dry_run=False):
     runner = runner or _run
     budget.check(FEATURE, EST_JOB)  # the day and per-command caps still hold for Kalevala
     env = dict(os.environ, FOREMAN_NO_BACKGROUND="1", FOREMAN_TOWER_READONLY_EXAM="1", FOREMAN_SPEND_AS=FEATURE)
-    rows = watch(p)["towers"]
+    allrows = watch(p)["towers"]
+    rows = [r for r in allrows if not r.get("error")]  # an unreadable tower sits out and is listed as skipped
     byrow = {r["name"]: r for r in rows}
     sat = {} if dry_run else _decide(p, rows)  # Väinämöinen's acts before any job; a dry run acts on nothing
     with contextlib.ExitStack() as held:  # a round holds the locks of the towers it charges until their jobs end
@@ -235,6 +236,8 @@ def step(p, k=None, runner=None, dry_run=False):
             at = c.now()
             skipped = [{"tower": n, "stage": stages[n]["stage"], "status": sat.get(n, "skipped"), "rc": None, "at": at}
                        for n in names if n not in runnable]
+            skipped += [{"tower": r["name"], "stage": "?", "status": "unreadable", "rc": None, "at": at,
+                         "error": r["error"]} for r in allrows if r.get("error")]
             est, run, queued, width = _headroom(p, runnable, k)
             slotted = [n for n in queued if byrow[n]["stuck"]]  # a stuck tower's slot goes to one that improves
             if dry_run:
@@ -462,35 +465,48 @@ def _tower_state(row, stall_h):
 def watch(p, now=None, stall_h=STALL_HOURS):
     """Each opened tower's state, read only (T-3082): its generation; the closed train scenarios on its newest graded
     run and the change from the run before; its drift verdict; hours since its newest generation (gen-0's file while it
-    has none); spend today under Kalevala's line; and the Mission files of its newest generation."""
+    has none); spend today under Kalevala's line; and the Mission files of its newest generation. A tower whose files
+    can't be read (T-3376) is a row of state "unreadable" with the short reason under "error"; the others still read."""
     now = time.time() if now is None else now
     ledger = budget.ledger()
     rows = []
     for t in tower_rows(p):
-        name, runs = t["name"], _tower_runs(p, t["name"])
-        rune.set_tower(name)
         try:
-            tdir = rune.home(p)
-            gens = sorted(int(m[1]) for x in (os.listdir(tdir) if os.path.isdir(tdir) else ())
-                          if (m := rune.GEN.fullmatch(x)) and os.path.isdir(os.path.join(tdir, x)))
-        finally:
-            rune.set_tower(None)
-        newest = os.path.join(tdir, f"gen-{gens[-1]}") if gens else os.path.join(tdir, "gen-0.md")
-        idle = (now - os.path.getmtime(newest)) / 3600 if os.path.exists(newest) else 0.0
-        missions = [x for x in os.listdir(newest) if x.startswith("mission-") and x.endswith(".md")] if gens else []
-        row = {"name": name, "aspect": t["aspect"], "sealed": t["sealed"], "generation": t["generation"],
-               "drift": t["drift"], "closed": runs[-1] if runs else None,
-               "delta": runs[-1] - runs[-2] if len(runs) > 1 else None, "idle_h": round(idle, 1),
-               "spend": round(sum(float(e.get("usd") or 0) for e in ledger if e.get("feature") == FEATURE
-                                  and _charged_to(e.get("detail")) == name), 4),
-               "missions": len(missions), "newest": newest, "restarted": t.get("restarted"),
-               "stuck": len(runs) >= 3 and runs[-1] - runs[-2] <= 0 and runs[-2] - runs[-3] <= 0}
-        row["state"] = _tower_state(row, stall_h)
-        rows.append(row)
+            rows.append(_watch_row(p, t, now, stall_h, ledger))
+        except Exception as e:  # T-3376: one unreadable tower file shows as that tower's row, not a blank block
+            rows.append({"name": t["name"], "aspect": t["aspect"], "sealed": t["sealed"], "generation": t["generation"],
+                         "drift": t["drift"], "closed": None, "delta": None, "idle_h": 0.0, "spend": 0.0, "missions": 0,
+                         "newest": "", "restarted": t.get("restarted"), "stuck": False, "state": "unreadable",
+                         "error": c.fit(f"{type(e).__name__}: {e}", 80)})
     return {"now": round(now), "stall_hours": stall_h, "towers": rows}
 
 
+def _watch_row(p, t, now, stall_h, ledger):
+    name, runs = t["name"], _tower_runs(p, t["name"])
+    rune.set_tower(name)
+    try:
+        tdir = rune.home(p)
+        gens = sorted(int(m[1]) for x in (os.listdir(tdir) if os.path.isdir(tdir) else ())
+                      if (m := rune.GEN.fullmatch(x)) and os.path.isdir(os.path.join(tdir, x)))
+    finally:
+        rune.set_tower(None)
+    newest = os.path.join(tdir, f"gen-{gens[-1]}") if gens else os.path.join(tdir, "gen-0.md")
+    idle = (now - os.path.getmtime(newest)) / 3600 if os.path.exists(newest) else 0.0
+    missions = [x for x in os.listdir(newest) if x.startswith("mission-") and x.endswith(".md")] if gens else []
+    row = {"name": name, "aspect": t["aspect"], "sealed": t["sealed"], "generation": t["generation"],
+           "drift": t["drift"], "closed": runs[-1] if runs else None,
+           "delta": runs[-1] - runs[-2] if len(runs) > 1 else None, "idle_h": round(idle, 1),
+           "spend": round(sum(float(e.get("usd") or 0) for e in ledger if e.get("feature") == FEATURE
+                              and _charged_to(e.get("detail")) == name), 4),
+           "missions": len(missions), "newest": newest, "restarted": t.get("restarted"),
+           "stuck": len(runs) >= 3 and runs[-1] - runs[-2] <= 0 and runs[-2] - runs[-3] <= 0}
+    row["state"] = _tower_state(row, stall_h)
+    return row
+
+
 def _watch_line(t):
+    if t.get("error"):
+        return f"{t['name']}: unreadable · {t['error']}"
     exam = "exam none" if t["closed"] is None else f"exam {t['closed']}" + (
         "" if t["delta"] is None else f" ({t['delta']:+d})")
     return (f"{t['name']}: {t['state']} · gen {t['generation']} · {exam} · drift {t['drift'] or 'none'} · "
@@ -674,7 +690,8 @@ def loop(p, runner=None, stop=None, rounds=None):
         if fails >= serve.FAILS_MAX:
             return {"halted": f"{fails} rounds failed in a row", "rounds": n}
         if not ran and not failed:
-            return {"idle": "no tower can run a job this round", "rounds": n}
+            why = "; ".join(f"{x['tower']}: {x['error']}" for x in r["results"] if x.get("error"))
+            return {"idle": "no tower can run a job this round" + (f" ({why})" if why else ""), "rounds": n}
     return {"rounds": n}
 
 

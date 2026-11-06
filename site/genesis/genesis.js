@@ -1470,10 +1470,10 @@
     dlg.scrollTop = 0;
     if (dlg.open) $("dr-title").focus();  // T-2083: the chip that was clicked is gone; keep focus in the drawer
     else if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "");
-    try { history.replaceState(null, "", hash ? "#" + hash : location.pathname); } catch (e) {}
+    try { history.replaceState(null, "", hash ? "#" + hash : location.pathname + location.search); } catch (e) {}
   }
   function close() { if (dlg.close) dlg.close(); else dlg.removeAttribute("open"); }
-  dlg.addEventListener("close", function () { try { history.replaceState(null, "", location.pathname); } catch (e) {} });
+  dlg.addEventListener("close", function () { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} });
   $("dr-close").addEventListener("click", close);
   dlg.addEventListener("click", function (e) { if (e.target === dlg) close(); });
   function title(text, fallback) { var m = /^#\s+(.+)$/m.exec(text || ""); return m ? m[1] : fallback; }

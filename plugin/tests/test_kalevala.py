@@ -937,6 +937,34 @@ class KalevalaWatch(ForemanTestCase):
         self.assertEqual(len(lines), 3, lines)
         self.assertTrue(any(x.startswith("memory: improving") and "2 open Mission" in x for x in lines), lines)
 
+    def test_one_corrupt_tower_file_blanks_only_its_own_row(self):  # T-3376
+        from sampo import kalevala
+        self.grade("memory", "r1", ["a"])
+        self.in_tower("efficiency", lambda h: open(os.path.join(h, "exam.jsonl"), "w").write(
+            json.dumps({"agent": "foreman", "run": "r1", "split": "train", "closed": {"train": [["x"]]}}) + "\n"))
+        r = kalevala.watch(self.project())
+        rows = {t["name"]: t for t in r["towers"]}
+        self.assertEqual(sorted(rows), ["efficiency", "memory", "problem-solving"])
+        self.assertEqual(rows["efficiency"]["state"], "unreadable")
+        self.assertTrue(rows["efficiency"]["error"])
+        self.assertEqual(rows["memory"]["state"], "new")
+        self.assertNotIn("error", rows["memory"])
+        out = self.fm("kalevala", "watch").stdout
+        self.assertIn("efficiency: unreadable", out)
+        self.assertIn("memory: new", out)
+
+    def test_a_round_lists_an_unreadable_tower_as_skipped_and_plans_the_rest(self):  # T-3376
+        from sampo import kalevala
+        self.in_tower("efficiency", lambda h: open(os.path.join(h, "exam.jsonl"), "w").write(
+            json.dumps({"agent": "foreman", "run": "r1", "split": "train", "closed": {"train": [["x"]]}}) + "\n"))
+        res = kalevala.step(self.project(), dry_run=True)
+        by = {r["tower"]: r for r in res["results"]}
+        self.assertEqual(by["efficiency"]["status"], "unreadable")
+        self.assertTrue(by["efficiency"]["error"])
+        planned = [t for t, r in by.items() if r["status"] == "planned"]
+        self.assertTrue(planned)
+        self.assertNotIn("efficiency", planned + res["queued"])
+
     def test_each_state_has_its_own_reading_in_priority_order(self):
         from sampo import kalevala
         p = self.project()

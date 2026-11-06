@@ -175,6 +175,12 @@ class GenesisExport(ForemanTestCase):
         self.assertIn("exam", data)
         self.assertNotIn("scorecard", data)  # T-2154: no graded line yet, so the optional key is left out
 
+    def test_the_drawer_close_keeps_the_query_string(self):  # T-3376
+        js = read_text(os.path.join(os.path.dirname(__file__), "..", "..", "site", "genesis", "genesis.js"))
+        close = re.search(r'addEventListener\("close".*', js).group(0)
+        self.assertIn("location.pathname + location.search", close)
+        self.assertNotIn('"", location.pathname)', js)
+
     def test_the_scorecard_rows_ride_in_genesis_json_plain_and_cut(self):  # T-2154
         from unittest import mock
         from sampo import core as c
