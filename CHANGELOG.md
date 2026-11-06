@@ -11,6 +11,8 @@
 
 ### Everything else
 
+- Hook timing events (`hook_ms`) from PreToolUse record the tool name and the guard's own decision time (`guard_ms`, plus `decided` when it asked or denied), so a slow handler can be pinned to the guard or to the notes after it (T-3352).
+- Self-checks in sampo next and the drive, in every state: landed commits unshipped 2+ h after the last sampo ship, a retired mirror folder tracked beside the current one, and the user's asks from the last 3 days not landed, oldest first (T-3127).
 - Two or more finished lanes are offered as one sampo lane train (one gate run, a red set bisected) instead of one sampo lane merge each; sampo which and capture's done-work note now find the train (T-3467).
 - sampo lane merge records each criterion pass on the lane's clean tip tree and reuses it while that tree is unchanged, and sampo lane precheck ID runs a lane's criteria ahead of its merge, so a queue runner checks the next lanes in parallel while one merge lands (T-3444).
 - A child sampo (an exam's Smith under a temp home) logs its model calls to the parent's call log again: the path lives under FOREMAN_CALLS, the name core.mirror_env leaves (T-3448).
