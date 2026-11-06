@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- MASTER.md and the docs/map shard list the fmtrain shim (T-3405's old import path, kept for two releases), so test_docs.MapShards and test_docs.PluginFiles pass again (T-3410).
 - Hook time limits stretch under test load through one clamped FOREMAN_HOOK_SLACK factor (1-10, tests only), and slow fm task new/focus calls in hooks time out cleanly instead of blocking an edit (T-3366).
 - Test runner: each class's timer scales with machine load but never outlasts the run's deadline (the gate passes its own as FM_RUN_DEADLINE), and a class killed by its timer is recorded as slow so the next run splits it (T-3338).
 - `sampo check --affected` picks tests for a hub file such as cli.py by the symbols that changed, closed over in-file use and command verbs, and runs the whole file's tests when it can't tell (T-3306).
