@@ -2424,6 +2424,30 @@ class PostMergeVerify(ForemanTestCase):
         self.assertEqual(len(read_text(runs).splitlines()), 1, "one suite run stands for all three")
         self.assertEqual(slanes.pm_records(self.p)[shas[0]].get("covered_by"), shas[2])
 
+    def test_merges_requeued_after_a_revert_are_still_settled_by_the_newest(self):
+        # T-3456: after one revert every pending record carried after_reverts, which skipped the probe: 20 merges
+        # ran oldest first on trees without the slot-pool fix and their false reds reverted good merges again
+        runs = os.path.join(self.tmp, "runs.txt")
+        os.environ["FM_POSTMERGE_CMD"] = f"echo run >> {runs}; " + self.RED
+        shas = [self.land(n) for n in ("a", "b", "n")]
+        for s in shas:
+            slanes.pm_set(self.p, s, after_reverts=["0" * 40], requeued=True)
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual([self.state(s) for s in shas], ["green"] * 3)
+        self.assertEqual(len(read_text(runs).splitlines()), 1, "one suite run stands for all three")
+
+    def test_a_merge_leaning_on_a_reverted_one_is_not_covered_by_a_tree_that_still_has_it(self):
+        # T-3456 review: the newest merge's tree still held the reverted r, so a green there passed s, which needs r
+        os.environ["FM_POSTMERGE_CMD"] = "if [ -f s.txt ] && [ ! -f r.txt ]; then echo 'FAIL: t (test_mod.Cls.t)'; exit 1; fi"
+        r, s, t = self.land("r"), self.land("s"), self.land("t")
+        self.git("revert", "-m", "1", "--no-edit", r)
+        slanes.pm_set(self.p, r, state="reverted")
+        for x in (s, t):
+            slanes.pm_set(self.p, x, after_reverts=[r], requeued=True)
+        slanes.pm_run(self.p, self.repo)
+        self.assertNotIn("covered_by", slanes.pm_records(self.p)[s])
+        self.assertEqual(self.state(s), "reverted")
+
     def test_a_red_newest_merge_still_finds_the_culprit_oldest_first(self):
         runs = os.path.join(self.tmp, "runs.txt")
         os.environ["FM_POSTMERGE_CMD"] = f"echo run >> {runs}; " + self.RED

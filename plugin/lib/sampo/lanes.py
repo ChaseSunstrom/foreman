@@ -2389,7 +2389,9 @@ def _pm_dead(r):
 
 def pm_run(p, main):
     """Settle every red merge, then verify every pending one, oldest first (the detached process's whole job). T-3446:
-    with several pending, one suite run on the newest goes first; green there stands for every one in its history."""
+    with several pending, one suite run on main as it stands goes first; green there stands for every one in its history.
+    T-3456: main's HEAD, not the newest merge: its tree has every revert in it, so a merge requeued after one (whose
+    change may lean on the reverted merge) is judged without it, as pm_verify would; the newest merge may predate it."""
     probed = set()
     for _ in range(1000):  # bounded: a requeue loop can't spin forever
         recs = pm_records(p)
@@ -2400,15 +2402,16 @@ def pm_run(p, main):
             continue
         todo = [s for s, r in recs.items() if r["state"] == "pending" or (r["state"] == "running" and _pm_dead(r))]
         newest = todo[-1] if todo else None
-        if len(todo) > 1 and newest not in probed and not any(recs[s].get("after_reverts") for s in todo):
+        if len(todo) > 1 and newest not in probed:  # once per newest merge: a red probe isn't rerun until one lands
             probed.add(newest)
-            if _pm_claim(p, todo[0]):  # holds the queue (other runners stop at the oldest) while the newest runs
+            head = _git(main, "rev-parse", "HEAD").stdout.strip()
+            if head and _pm_claim(p, todo[0]):  # holds the queue (other runners stop at the oldest) while HEAD runs
                 try:
-                    green = _pm_green_at(main, newest)
+                    green = _pm_green_at(main, head)
                 finally:
                     pm_set(p, todo[0], state="pending")
                 if green:
-                    _pm_cover(p, main, todo, newest)
+                    _pm_cover(p, main, todo, head)
                     continue
         if not todo or not pm_verify(p, main, todo[0]):  # a red newest: oldest first finds whose red it is
             return
