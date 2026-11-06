@@ -1299,7 +1299,7 @@ class Yield(_Funnel):
 
 
 class KeepGrow(_Moons):  # T-3046: the goal counts kept moons, so grow and the funnel take turns until N survive
-    def run_keep(self, keep, per_funnel=3, grow_stop="target", fun_calls=2, grow_add=5, **kw):
+    def run_keep(self, keep, per_funnel=3, grow_stop="target", fun_calls=2, grow_add=5, stops=None, **kw):
         st, seen = {"s": 0, "n": 0}, []
 
         def funnel(p, stage=None, max_calls=None, local_only=False):
@@ -1311,7 +1311,8 @@ class KeepGrow(_Moons):  # T-3046: the goal counts kept moons, so grow and the f
         def grow(p, target=None, batch=8, seed=0, max_calls=None, workers=None, think=None, local_only=False):
             seen.append(("grow", max_calls, local_only))
             st["n"] += grow_add
-            return {"calls": 4, "added": grow_add, "kept": grow_add, "rejected": 0, "stopped": grow_stop, "error": "",
+            return {"calls": 4, "added": grow_add, "kept": grow_add, "rejected": 0,
+                    "stopped": next(stops, grow_stop) if stops else grow_stop, "error": "",
                     "models": {"jarvis": 4}, "total": st["n"], "reasons": {}}
         with mock.patch.object(self.ms, "survivors", side_effect=lambda p: st["s"]), \
                 mock.patch.object(self.ms, "funnel", funnel), mock.patch.object(self.ms, "grow", grow):
@@ -1328,9 +1329,53 @@ class KeepGrow(_Moons):  # T-3046: the goal counts kept moons, so grow and the f
         r, seen = self.run_keep(1000, max_calls=7)
         self.assertEqual(r["stopped"], "max_calls")
         self.assertEqual([s[1] for s in seen], [7, 5, 1], "each job gets what the run has left")
-        for stop in ("budget", "failed", "local"):
+        for stop in ("budget", "failed"):
             r, _ = self.run_keep(1000, grow_stop=stop)
             self.assertEqual(r["stopped"], stop)
+
+    def test_a_busy_local_model_is_waited_out_and_a_sustained_outage_stops_with_why(self):  # T-3096
+        sleeps = []
+        with mock.patch.object(self.ms, "_sleep", sleeps.append):
+            r, seen = self.run_keep(1000, grow_stop="local")
+            self.assertEqual((r["stopped"], sleeps), ("local", [30, 60, 120, 240]))
+            self.assertEqual(r["waited"], 450)
+            self.assertIn("after waiting 450 s", self.ms.grow_line(r))
+            sleeps.clear()
+            r, _ = self.run_keep(10, stops=iter(["local", "local"]))  # two failed rounds, then it answers
+            self.assertEqual((r["stopped"], sleeps), ("keep", [30, 60]))
+
+    def test_a_timed_out_default_profile_is_asked_again_after_the_wait(self):  # T-3096: a failure marks it down for DOWN_S
+        from sampo import models
+        st, sleeps, calls = {"s": 0}, [], []
+
+        def complete(prof, *a, **kw):
+            calls.append(1)
+            if len(calls) == 1:
+                raise models.ModelError("timed out")
+            return {"text": reply(4)}
+
+        def funnel(p, stage=None, max_calls=None, local_only=False):
+            st["s"] = 1 if self.ms.rows(p) else 0
+            return {"stages": {}, "calls": 0, "stopped": "done", "error": "", "models": {}}
+        self.ms._down.clear()
+        with mock.patch.dict(os.environ, {"MOONS_TEST_KEY": "k"}), mock.patch.object(self.ms, "_sleep", sleeps.append), \
+                mock.patch.object(self.ms, "_generative", return_value=[dict(PROFILE, name="jarvis")]), \
+                mock.patch.object(self.ms, "_up", return_value=True), mock.patch.object(models, "complete", complete), \
+                mock.patch.object(self.ms, "survivors", side_effect=lambda p: st["s"]), mock.patch.object(self.ms, "funnel", funnel), \
+                mock.patch.object(self.ms, "_embedder", return_value=None), mock.patch.object(models, "embed", side_effect=AssertionError), \
+                mock.patch.object(self.ms, "sampo_areas", return_value=[]):
+            os.environ.pop("MOONS_LOCAL", None)  # the default path: no named profile, so _down applies
+            r = self.ms._keep(self.p, 1, local_only=True)
+        self.ms._down.clear()
+        self.assertEqual((r["stopped"], sleeps, len(calls) > 1), ("keep", [30], True))
+        self.assertGreater(r["added"], 0)
+
+    def test_a_wait_is_skipped_when_max_calls_is_spent(self):  # T-3096
+        sleeps = []
+        with mock.patch.object(self.ms, "_sleep", sleeps.append):
+            r, _ = self.run_keep(1000, grow_stop="local", max_calls=6)
+        self.assertEqual(sleeps, [])  # funnel 2 + grow 4 = 6 calls: nothing left to retry with, so no wait
+        self.assertEqual(r["calls"], 6)
 
     def test_three_rounds_that_raise_no_survivor_stop_as_stalled(self):
         r, seen = self.run_keep(1000, per_funnel=0, grow_add=0)

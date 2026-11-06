@@ -14,6 +14,7 @@ import math
 import os
 import random
 import re
+import sys
 import threading
 import time
 import urllib.parse
@@ -782,6 +783,8 @@ def _grow(p, target, batch, seed, max_calls, workers, think, local_only):
 
 
 ROUND, STALL = 400, 3  # T-3046: rows a keep round grows before the funnel judges them; flat rounds before "stalled"
+BACKOFF, _sleep = (30, 60, 120, 240), time.sleep  # T-3096: waits (~7.5 min) before a silent local model ends a keep run; tests swap _sleep
+assert sum(BACKOFF) < DOWN_S, "a retry must not land inside DOWN_S; _keep also clears _down after each wait"
 _STOPS = ("budget", "failed", "local")  # a job stopping for one of these ends a keep run; "done", "target" end only a round
 
 
@@ -794,7 +797,7 @@ def _keep(p, keep, **kw):
     cap, local_only = kw.pop("max_calls", None), kw.get("local_only", False)
     if cap is not None and cap < 0:
         raise ValueError("--max-calls can't be negative")
-    r = {"calls": 0, "added": 0, "kept": 0, "rejected": 0, "rounds": 0, "stopped": "", "error": "", "keep": keep,
+    r = {"calls": 0, "added": 0, "kept": 0, "rejected": 0, "rounds": 0, "stopped": "", "error": "", "keep": keep, "waited": 0,
          "models": collections.Counter(), "reasons": {}, "target": keep, "total": len(rows(p))}
     flat, last = 0, survivors(p)
     try:
@@ -814,17 +817,25 @@ def _keep(p, keep, **kw):
             r["rounds"] += 1
             for job in ("funnel", "grow"):
                 left = None if cap is None else cap - r["calls"]
-                if job == "funnel":
-                    g = funnel(p, max_calls=left, local_only=local_only)
-                else:
-                    if survivors(p) >= keep or (left is not None and left <= 0):
+                if job == "grow" and (survivors(p) >= keep or (left is not None and left <= 0)):
+                    break
+                for wait in (*BACKOFF, None):  # T-3096: a busy local model gets waited out, then asked again
+                    g = (funnel(p, max_calls=left, local_only=local_only) if job == "funnel"
+                         else grow(p, r["total"] + ROUND, max_calls=left, **kw))
+                    if job == "grow":  # every attempt's rows count, the failed ones too
+                        r["total"] = g["total"]
+                        for k in ("added", "kept", "rejected"):
+                            r[k] += g[k]
+                        r["models"].update(g["models"])
+                    r["calls"] += g["calls"]
+                    left = None if cap is None else cap - r["calls"]
+                    if g["stopped"] != "local" or wait is None or (left is not None and left <= 0):
                         break
-                    g = grow(p, r["total"] + ROUND, max_calls=left, **kw)
-                    r["total"] = g["total"]
-                    for k in ("added", "kept", "rejected"):
-                        r[k] += g[k]
-                    r["models"].update(g["models"])
-                r["calls"] += g["calls"]
+                    r["waited"] += wait
+                    print(f"moons: the local model gave no answer; waiting {wait} s ({r['waited']} s so far)", file=sys.stderr)
+                    _sleep(wait)
+                    with _lock:  # the failed call marked the profile down for DOWN_S (> the whole backoff): ask it again
+                        _down.clear()
                 if g["stopped"] in _STOPS:
                     r["stopped"], r["error"] = g["stopped"], g["error"]
                     break
@@ -838,6 +849,7 @@ def grow_line(r):
     if "survivors" in r:  # a --keep run
         return (f"Moons grow: {r['rounds']} round(s), {r['calls']} call(s), {r['added']} added; {r['survivors']} kept of "
                 f"{r['keep']} ({r['total']} in the store); stopped: {r['stopped']}"
+                + (f" after waiting {r['waited']} s" if r["stopped"] == "local" and r["waited"] else "")
                 + (f" ({r['error']})" if r["error"] else "")
                 + ("; " + ", ".join(f"{m} {n}" for m, n in r["models"].items()) if r["models"] else ""))
     return (f"Moons grow: {r['calls']} call(s), {r['added']} added ({r['kept']} kept, {r['rejected']} rejected), "
