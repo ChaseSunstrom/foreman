@@ -1532,7 +1532,7 @@ def user_prompt_submit(pl):
                      + "".join(f"; {c.stranded_note(s)}" for s in sd.get("stranded", ())))
     try:
         if a or sd["queue"] or not _headless():  # T-1231: a one-request unattended run has no queue to finish
-            nb, nst, action = c.next_for(p, briefs)
+            nb, nst, action = c.next_for(p, briefs, checks=False)  # T-3127 review: the drive and sampo next show them
             state.append("Next: " + action)
             hint = c.skill_for(nb, nst)
     except Exception:

@@ -4298,7 +4298,7 @@ def merge_hint(done):
             + (f"; {more} more after it" if more > 0 else "") + ")")
 
 
-def next_for(p, briefs=None):
+def next_for(p, briefs=None, checks=True):
     """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111);
     T-0247: a decision whose revisit trigger fired rides along."""
     briefs = briefs if briefs is not None else load_briefs(p)  # T-2016: one load for every check below
@@ -4378,6 +4378,16 @@ def next_for(p, briefs=None):
                       '--step "sampo ship" --focus, sampo task set ID --allow publish, sampo ship · ' + action)
         elif ship:
             action += f" · {ship[0]} commit(s) main lacks: sampo ship (needs a publish grant)"
+    if checks and not p.lane:  # T-3127: what the user would otherwise point out, in every state (cached: hooks call
+        # this often); not in the prompt note, whose 400 characters it would crowd out (review)
+        try:
+            from sampo import selfcheck
+            seen = [x for x in selfcheck.lines(p, briefs)
+                    if not ("→ sampo ship" in x and "main lacks" in action)]  # review: ship_waiting said it
+        except Exception:  # noqa: BLE001 — a self-check never costs the next action
+            seen = []
+        if seen:
+            action += " · self-check: " + " · ".join(seen)
     return b, st, action
 
 

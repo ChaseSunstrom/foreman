@@ -239,6 +239,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmsecond` (`sampo second`: plan, debate and session second reads; objections… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmsecrets` (`sampo secrets`: the credential audit, and the scan behind… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmselfaware` (`sampo misses [--days N --sweep]`, T-3126: a user message that points something out is… [→ files-lib-3](docs/map/files-lib-3.md)
+- `fmselfcheck` (T-3127: self-checks in `sampo next` and the drive: unshipped work, a retired mirror, the user's asks not landed… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmselfgate` (T-2352: the self-change gate `sampo lane merge` and… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmserve` (`sampo serve` / `sampo run`; `--fit` small tasks first… [→ files-lib-3](docs/map/files-lib-3.md)
 - `fmsession` (`sampo session`: detached agent sessions for claude, codex, gemini… [→ files-lib-3](docs/map/files-lib-3.md)
