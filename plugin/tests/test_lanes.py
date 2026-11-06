@@ -2446,6 +2446,83 @@ class PostMergeVerify(ForemanTestCase):
         self.assertTrue(os.path.exists(os.path.join(self.repo, "b.txt")), "not reverted")
         self.assertTrue(c.ledger_events(self.p, ["postmerge_inherited"]))
 
+    def land_files(self, name, files):
+        """Like land(), with the given {path: text} in the one commit."""
+        self.git("checkout", "-qb", f"b-{name}")
+        for rel, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(self.repo, rel)), exist_ok=True)
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write(text)
+        self.git("add", "-A")
+        self.git("commit", "-qm", name)
+        self.git("checkout", "-q", "-")
+        self.git("merge", "-q", "--no-ff", "-m", f"Merge {name}", f"b-{name}")
+        sha = self.git("rev-parse", "HEAD")
+        with unittest.mock.patch.object(slanes, "pm_spawn"):
+            slanes.pm_record(self.p, sha, self.tid, self.repo)
+        return sha
+
+    def base(self):
+        sha = self.land_files("base", {"src/mod.py": "x = 1\n", "tests/test_mod.py": "import unittest\n",
+                                       "tests/test_docs.py": "MASTER = 'MASTER.md'\n"})
+        slanes.pm_set(self.p, sha, state="green")  # settled: only the merge under test is verified
+
+    def red(self, cls="test_mod.Cls", full=None, alone_if="docs/note.md"):
+        """The full suite names `cls` red; alone it is red only while `alone_if` exists (so the first parent is green)."""
+        fail = f"echo 'FAIL: test_x ({cls}.test_x)'; exit 1"
+        os.environ["FM_POSTMERGE_CMD"] = full or fail
+        os.environ["FM_POSTMERGE_RERUN"] = f"ls {alone_if} >/dev/null 2>&1 || exit 0; {fail}"
+        self.addCleanup(os.environ.pop, "FM_POSTMERGE_RERUN", None)
+
+    def test_a_docs_only_merge_is_not_blamed_for_a_red_class_that_reads_none_of_its_files(self):
+        # T-3425: T-3410 added a MASTER.md bullet and was reverted for load-sensitive classes a docs line cannot touch
+        self.base()
+        self.red()
+        sha = self.land_files("docs", {"docs/note.md": "a line\n"})
+        slanes.pm_run(self.p, self.repo)
+        r = slanes.pm_records(self.p)[sha]
+        self.assertEqual((r["state"], r.get("unrelated")), ("green", ["test_mod.Cls"]))
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "docs", "note.md")), "not reverted")
+        self.assertTrue(c.ledger_events(self.p, ["postmerge_unrelated"]))
+
+    def test_a_docs_only_merge_that_breaks_a_test_reading_its_file_is_reverted(self):
+        self.base()
+        self.red("test_docs.Cls", alone_if="MASTER.md")
+        sha = self.land_files("docs", {"MASTER.md": "a bullet\n"})
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "reverted")
+        self.assertIn("reached by: MASTER.md", c.find_brief(self.p, self.tid).section("Log"))
+
+    def test_a_code_merge_with_a_red_unlinked_class_is_reverted(self):
+        self.base()
+        self.red(alone_if="src/util.py")
+        sha = self.land_files("code", {"src/util.py": "y = 1\n"})
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "reverted")
+
+    def test_a_product_markdown_merge_is_not_a_docs_merge_and_is_reverted(self):
+        self.base()
+        self.red(alone_if="plugin/commands/x.md")
+        sha = self.land_files("cmd", {"plugin/commands/x.md": "a command\n"})
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "reverted")
+
+    def test_no_alone_rerun_means_no_excuse(self):
+        self.base()
+        self.red()
+        os.environ.pop("FM_POSTMERGE_RERUN")
+        sha = self.land_files("docs", {"docs/note.md": "a line\n"})
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "reverted")
+
+    def test_a_crash_is_never_excused_even_for_a_docs_only_merge(self):
+        self.base()
+        self.red("unittest.loader._FailedTest",
+                 full="echo 'ERROR: t (unittest.loader._FailedTest.t)'; exit 1")
+        sha = self.land_files("docs", {"docs/note.md": "a line\n"})
+        slanes.pm_run(self.p, self.repo)
+        self.assertEqual(self.state(sha), "reverted")
+
     def test_a_second_run_reverts_nothing_more(self):
         sha = self.land("a", bad=True)
         slanes.pm_run(self.p, self.repo)

@@ -2221,6 +2221,38 @@ def _pm_claim(p, sha):
         return r
 
 
+def _pm_files(main, sha):
+    """The files a merge changed against its first parent."""
+    return [f for f in _git(main, "diff", "--name-only", "--no-renames", f"{sha}^1", sha).stdout.split("\n") if f]
+
+
+# An allowlist: only these are prose no product behaviour reads. Every other .md (skills, commands, agents, rules, cards)
+# is read by tests through globs and by lib code, so it keeps the blame. The "test source names the file" check below is
+# a heuristic, safe only for this allowlist.
+_DOCISH = re.compile(r"^((MASTER|README|CHANGELOG)\.md|docs/.*)$")
+
+
+def _pm_unread(main, sha, files, classes):
+    """T-3425: the red classes a docs-only merge cannot have broken: every changed file is prose (.md, docs/, CHANGELOG)
+    or the state mirror, and the class is a test_* module whose source names none of those files (by path or basename).
+    test_docs reads MASTER.md and CHANGELOG, so it stays blamed. Code, .json, templates, hook config or tests in the
+    merge, and any non-test class (a crash, an import error, "suite exit N"), keep the blame: [] then."""
+    mirror = lambda f: any(f == m or f.startswith(m.rstrip("/") + "/") for m in c.MIRRORS)  # noqa: E731
+    if not files or not all(_DOCISH.search(f) or mirror(f) for f in files):
+        return []
+    tree = _git(main, "ls-tree", "-r", "--name-only", sha).stdout.split("\n")
+    out = []
+    for k in classes:
+        mod = k.rpartition(".")[0]  # the full dotted module, resolved to exactly one file or the class stays blamed
+        path = mod.replace(".", "/") + ".py"
+        hit = [f for f in tree if f == path or f.endswith("/" + path)] if mod.rpartition(".")[2].startswith("test_") else []
+        src = hit[0] if len(hit) == 1 else None
+        text = _git(main, "show", f"{sha}:{src}").stdout if src else None
+        if text is not None and not any(f in text or os.path.basename(f) in text for f in files):
+            out.append(k)
+    return out
+
+
 def pm_verify(p, main, sha):
     """Run the full suite on the merge in a throwaway worktree; green records it, red reverts that commit."""
     from sampo import cli
@@ -2243,26 +2275,44 @@ def pm_verify(p, main, sha):
             c.log_event(p, "lane_revert_conflict", task=r["task"], data={"sha": sha, "reverts": gone})
             return True
         code, out = c.run_command(wt, pm_cmd(main), c.load_scaled(3600))
-        flaky = inherited = []
+        flaky = inherited = unrelated = []
+        reds = pm_classes(out, code) if code and code != 124 else []
+        files, reach = _pm_files(main, sha), reds
+        if reds and isinstance(reds, list):  # T-3425: a docs-only merge is not blamed for a test that reads none of its files
+            unrelated = _pm_unread(main, sha, files, reds)
+            reach = [k for k in reds if k not in unrelated]
         if code and code != 124:  # T-3216: red in the full suite but green alone is a flake, not this merge's
-            again = pm_rerun_cmd(main, pm_classes(out, code))
+            again = pm_rerun_cmd(main, reds)
+            if not again:  # T-3425: excused only after a real red alone-rerun
+                reach, unrelated = reds, []
+            if again:
+                c.wait_for_load(f"lane verify {sha[:9]}")  # T-3425: the alone-rerun waits for load like a gate
             if again and not c.run_command(wt, again, c.load_scaled(900))[0]:
-                flaky = pm_classes(out, code)
+                flaky = reds
+            elif again and isinstance(reach, list) and not reach:
+                pass  # red alone, but only in classes the docs-only merge cannot reach: no parent run needed
             elif again:  # T-3213: red alone too; does main just before this merge fail the same classes?
                 _git(wt, "reset", "--hard", "-q", f"{sha}^1")
                 if not gone or not _git(wt, "revert", "-m", "1", "--no-commit", "--no-edit", *reversed(gone)).returncode:
                     pcode, pout = c.run_command(wt, again, c.load_scaled(900))
                     # T-3224: inherited only when the parent names each red class failing; a parent run that
                     # names none ("no test matches" for a class the merge added, a crash) leaves the red this merge's
-                    reds, named = pm_classes(out, code), {m.rpartition(".")[0] or m for m in _FAILED.findall(pout)}
-                    if pcode and set(reds) <= named:
-                        inherited = reds
+                    named = {m.rpartition(".")[0] or m for m in _FAILED.findall(pout)}
+                    if pcode and set(reach) <= named:
+                        inherited = reach
     finally:
         _git(main, "worktree", "remove", "--force", wt)
         shutil.rmtree(tmp, ignore_errors=True)
+    if unrelated and not (flaky or inherited) and not reach:
+        note = f"verified: green on {sha[:9]}; {', '.join(unrelated)} red but read none of {c.joinmore(files, 5)} (docs-only merge, unrelated)"
+        pm_set(p, sha, state="green", unrelated=unrelated)
+        c.log_event(p, "postmerge_unrelated", task=r["task"], data={"sha": sha, "classes": unrelated, "files": files[:20]})
+        cli.mutate(p, r["task"], lambda x: (x.append_log(note), x.meta.update(lane_verified=sha)),
+                   "lane_verified", {"sha": sha})
+        return True
     if flaky:
-        pm_set(p, sha, state="green", flaky=flaky)
-        c.log_event(p, "postmerge_flaky", task=r["task"], data={"sha": sha, "classes": flaky})
+        pm_set(p, sha, state="green", flaky=flaky, **({"unrelated": unrelated} if unrelated else {}))
+        c.log_event(p, "postmerge_flaky", task=r["task"], data={"sha": sha, "classes": flaky, "unrelated": unrelated})
         note = f"verified: green on {sha[:9]}; {', '.join(flaky)} failed only inside the full suite, green alone (flaky)"
         cli.mutate(p, r["task"], lambda x: (x.append_log(note), x.meta.update(lane_verified=sha)),
                    "lane_verified", {"sha": sha})
@@ -2283,7 +2333,7 @@ def pm_verify(p, main, sha):
         cli.mutate(p, r["task"], lambda x: (x.append_log(f"verified: the full suite is green on {sha[:9]}"),
                                             x.meta.update(lane_verified=sha)), "lane_verified", {"sha": sha})
         return True
-    pm_set(p, sha, state="red", classes=pm_classes(out, code))
+    pm_set(p, sha, state="red", classes=reach or reds or pm_classes(out, code), reached_by=files[:20])
     return _pm_revert(p, main, sha) or True
 
 
@@ -2313,10 +2363,11 @@ def _pm_revert(p, main, sha):
                 o.update(state="pending", requeued=True, tries=0, after_reverts=(o.get("after_reverts") or []) + [sha])
                 c.write_atomic(os.path.join(_pm_dir(p), f"{o['sha']}.json"), json.dumps(o))
     why = ", ".join(classes)
-    cli.mutate(p, r["task"], lambda x: (x.append_log(f"red after merge: {why}; {sha[:9]} reverted"),
+    by = c.joinmore(r.get("reached_by") or [], 5)
+    cli.mutate(p, r["task"], lambda x: (x.append_log(f"red after merge: {why}; {sha[:9]} reverted" + (f" (reached by: {by})" if by else "")),
                                         x.meta.update(lane_stop=f"refused {c.now()}", postmerge_red=why,
                                                       postmerge_sha=sha)),
-               "lane_red_after_merge", {"sha": sha, "classes": classes})
+               "lane_red_after_merge", {"sha": sha, "classes": classes, "reached_by": r.get("reached_by") or []})
     return True
 
 
