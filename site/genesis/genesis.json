@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-06T03:12:35Z",
+ "updated": "2026-11-06T03:17:56Z",
  "rev": "5c403348",
  "capabilities": [
   {
@@ -37465,11 +37465,11 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 20981,
+   "generated": 21188,
    "write": {
     "title": 151,
-    "line": 1519,
-    "payoff": 17,
+    "line": 1531,
+    "payoff": 18,
     "kill test": 64,
     "code": 7
    },
@@ -37484,8 +37484,8 @@
     "novelty": 72
    },
    "merged": 253,
-   "kept": 882,
-   "pending": 19
+   "kept": 901,
+   "pending": 194
   },
   "families": [
    {
@@ -38286,7 +38286,7 @@
    },
    {
     "id": "F-015679",
-    "size": 18,
+    "size": 19,
     "lead": "Evolve Sampo's collaboration patterns with other agents",
     "today": "Today you can't have Sampo automatically discover more effective ways to coordinate with other agents in a multi-agent system based on past collaboration outcomes.",
     "with_this": "With this, Sampo can improve the efficiency and accuracy of multi-agent systems by evolving its communication and coordination protocols to find the most effective division of labor.",
@@ -38298,6 +38298,7 @@
     "evidence": "",
     "kinds": [
      "anticipation",
+     "efficiency",
      "getting the tools it lacks",
      "goal to finish",
      "initiative",
@@ -40723,10 +40724,10 @@
     ]
    }
   ],
-  "families_total": 768,
+  "families_total": 782,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 882
+   "total": 901
   }
  },
  "steer": {
