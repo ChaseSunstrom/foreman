@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- sampo task ac ID list prints the criteria and ac ID rm N removes one (refused when it or a later criterion has evidence); a lone lowercase word after ac ID is refused as a mistyped verb instead of becoming a criterion (T-3372).
 - An automatic test run no longer checks off the task's current step because it shares a runner with a verify command; only the step's or a criterion's verify command, or a project gate command, does (normalised for a leading cd, a trailing tail/head/grep and spacing) (T-2911).
 - rune.step and rune.towers share one ledger scan per ledger state (keyed by each file's path, mtime, size and inode) instead of one per tower: the 27-tower step loop drops from 3.05 s to 0.27 s with byte-identical output (T-3375).
 - Closing a task (sampo task finish, done, drop, block, defer) releases its file leases at once instead of holding hub files from other lanes for about 20 minutes; the release touches only that project's leases, and a blocked or deferred lane keeps its pre-claim (T-3398).
