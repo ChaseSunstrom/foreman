@@ -253,6 +253,20 @@ class Lease(Base):
         self.assertIn("took: b.py::*", out)
         self.assertNotIn("c.py", out, "another session's lease isn't the take's result")
 
+    def test_a_take_over_another_lanes_pre_claim_succeeds_with_a_note_and_an_explicit_lease_still_refuses(self):
+        # T-3283: a builder lane's brief pre-claims its scope file-wide; edits treat that as advisory (T-1138), so a
+        # take over it must not refuse either (a builder waited 25 min on it); another session's explicit lease still does
+        from sampo import bus as sbus
+        a, b = {"CLAUDE_CODE_SESSION_ID": "sess-a"}, {"CLAUDE_CODE_SESSION_ID": "sess-b"}
+        sbus.preclaim(self.project(), "T-0002", ["cli.py"])
+        r = self.fm("lease", "take", "cli.py::x", env=a)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Took 1 lease(s)", r.stdout)
+        self.assertIn("lane-T-0002", r.stderr, "the take names the pre-claim it went over")
+        r = self.fm("lease", "take", "cli.py::x", env=b, check=False)
+        self.assertEqual(r.returncode, 1, "an explicit lease of another session still refuses")
+        self.assertIn("overlaps session sess-a", r.stderr)
+
     def test_a_long_drop_is_cut_and_a_lanes_claims_still_held_are_said(self):
         # T-1731 review: one line per lease uncapped; a lane's bare drop said "Dropped 0" with its pre-claims held
         from sampo import bus as sbus
