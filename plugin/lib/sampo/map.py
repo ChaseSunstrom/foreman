@@ -309,6 +309,129 @@ def tests_for(m, paths):
                           or (s.endswith("/") and g.startswith(s)) for s in srcs for g in paths)})
 
 
+_HUNK = re.compile(r"(?m)^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+def _bound(node):
+    """Names a top-level assignment or import binds; None for module-level code that runs something (T-3306)."""
+    import ast
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        return {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if any(a.name == "*" for a in node.names):  # binds names we can't list
+            return None
+        return {(a.asname or a.name).split(".")[0] for a in node.names}
+    return None
+
+
+def _defined(node):
+    import ast
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return {node.name}
+    return _bound(node)
+
+
+def _verbs(tree, names):
+    """Verbs registered as add("verb", handler) or add("verb", lazy(mod, "cmd_x")) with a handler in names."""
+    import ast
+    out = set()
+    for n in ast.walk(tree):
+        if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "add" and len(n.args) >= 2
+                and isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str)):
+            continue
+        h = n.args[1]
+        if (isinstance(h, ast.Name) and h.id in names) or (
+                isinstance(h, ast.Call) and isinstance(h.func, ast.Name) and h.func.id == "lazy" and len(h.args) >= 2
+                and isinstance(h.args[1], ast.Constant) and h.args[1].value in names):
+            out.add(n.args[0].value)
+    return out
+
+
+def _close(src, names):
+    """names plus every top-level name whose code (body, defaults, decorators) mentions one, repeated until nothing
+    is added, plus the verbs registered to a handler in the set (and x for a cmd_x). None when module-level code that
+    runs something mentions one (T-3306 review: a dropped test hides a regression, so over-select)."""
+    import ast
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return None
+    names, seen = set(names), True
+    while seen:
+        seen = False
+        for node in tree.body:
+            if not any(isinstance(x, ast.Name) and x.id in names for x in ast.walk(node)):
+                continue
+            if (d := _defined(node)) is None:
+                if not isinstance(node, ast.Expr):  # a bare docstring mentions nothing
+                    return None
+                continue
+            if not d <= names:
+                names |= d
+                seen = True
+    names |= {n[4:] for n in names if n.startswith("cmd_")}
+    return names | _verbs(tree, names)
+
+
+def _names_at(src, lines):
+    """Symbols of the top-level defs, classes and bindings that source lines `lines` (1-based) touch; None when one
+    can't be told (syntax error, a docstring or code that runs at module level)."""
+    import ast
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        return None
+    rows, found = src.splitlines(), set()
+    for n in lines:
+        node = next((x for x in tree.body if min([x.lineno] + [d.lineno for d in getattr(x, "decorator_list", [])]) <= n
+                     <= x.end_lineno), None)
+        if node is None:  # between nodes: a blank line or comment is nothing, anything else we can't place
+            if 0 < n <= len(rows) and rows[n - 1].strip() and not rows[n - 1].lstrip().startswith("#"):
+                return None
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            found.add(node.name)
+            for sub in getattr(node, "body", []) if isinstance(node, ast.ClassDef) else []:
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.lineno <= n <= sub.end_lineno:
+                    found.add(sub.name)
+        elif (b := _bound(node)) is not None:
+            found |= b
+        else:
+            return None
+    return found
+
+
+def changed_symbols(root, base, tree, paths):
+    """{path: set of top-level names (and methods) | None}: the names whose lines differ between `base` and git tree
+    `tree`, from one `git diff -U0` mapped through ast on both versions, then closed over in-file use (_close); None
+    when that can't be told, so the caller falls back to the whole file (T-3306)."""
+    out = {p: None for p in paths}
+    if not tree or not paths:
+        return out
+    diff = c._git(root, "diff", "-U0", "--no-renames", base, tree, "--", *paths, timeout=300, fail=None)
+    if not diff:
+        return out
+    parts = re.split(r"(?m)^diff --git ", diff)
+    for p in paths:
+        sec = next((s for s in parts if s.startswith(f"a/{p} b/{p}\n")), None)
+        old = c._git(root, "show", f"{base}:{p}", fail=None)
+        new = c._git(root, "show", f"{tree}:{p}", fail=None)
+        if sec is None or old is None or new is None or not _HUNK.search(sec):
+            continue
+        ranges = ([], [])
+        for a, b, x, y in _HUNK.findall(sec):
+            ranges[0].extend(range(int(a), int(a) + int(b or 1)) if b != "0" else [])
+            ranges[1].extend(range(int(x), int(x) + int(y or 1)) if y != "0" else [])
+        olds, news = _names_at(old, ranges[0]), _names_at(new, ranges[1])
+        if olds is None or news is None:
+            continue
+        names = olds | news
+        co, cn = _close(old, names), _close(new, names)
+        out[p] = None if co is None or cn is None else co | cn
+    return out
+
+
 def render(m):
     lines = [f"Project map ({m['files']} files, HEAD {m['head'][:8]}; data, rebuilt when HEAD moves):"]
     lines.append("gates: " + ("; ".join(m["gates"]) or "none found (fm check add '<cmd>')"))

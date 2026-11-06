@@ -1,3 +1,4 @@
+# map-links: plugin/lib/sampo/cli.py plugin/lib/sampo/map.py
 """T-1467: a file that co-changes with many tests (CHANGELOG.md, edited by every task) carries no signal: its co-change
 pairs ran ~28 test files on every close. A narrow pair (hooks.json and its wiring test) still runs."""
 import os

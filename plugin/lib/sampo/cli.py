@@ -5620,7 +5620,56 @@ RULE_TESTS = ("test_doctor", "test_models", "test_left_out", "test_rename_scan")
 HUB_PAIRS = 10 # T-1467: more co-changed tests than this and a file's pairs are noise
 
 
-def affected(p, b=None, skipped=None, since=None):
+HUB_SHARE = 4  # T-3306: a file linked to over 1/HUB_SHARE of the tests (and to HUB_MIN) is a hub,
+HUB_MIN = 8
+HUB_WEIGHT = 100  # as is one whose linked test files hold this many test methods (cli.py: 5 files, 162)
+
+
+def _hub_tests(p, m, base, changed, detail=None, tree=None):
+    """{hub file: the tests chosen by what changed in it} for each changed file linked to over a quarter of the tests
+    (any cli.py edit used to run ~2,000). Chosen: the linked tests that name a changed symbol (a .py file; the symbols
+    are closed over in-file use and handler verbs) or the file's name (md, json), the test named after the file, and
+    any test that names the file on a map-links line or is linked by folder. A code file whose change can't be mapped
+    stays out (the caller runs all its links); detail gets {file: {mode, symbols, tests}} for every hub (T-3306)."""
+    from sampo import map as smap
+    picked, hubs = {}, {}
+    for f in changed:
+        linked = smap.tests_for(m, [f])
+        if len(linked) < 2 or not os.path.isfile(os.path.join(p.root, f)):
+            continue
+        texts = {}
+        for t in linked:
+            try:
+                with open(os.path.join(p.root, t), encoding="utf-8", errors="replace") as fh:
+                    texts[t] = fh.read(200_000)
+            except OSError:
+                texts[t] = ""
+        weight = sum(x.count("def test_") for x in texts.values())  # a few big files cost as much as many small
+        if not (len(linked) >= HUB_MIN and len(linked) * HUB_SHARE > len(m["tests"])) and weight < HUB_WEIGHT:
+            continue
+        hubs[f] = (linked, texts)
+    pys = [f for f in hubs if f.endswith(".py")]
+    syms = smap.changed_symbols(p.root, base, tree, pys) if pys else {}
+    for f, (linked, texts) in hubs.items():
+        py = f.endswith(".py")
+        names = syms.get(f) if py else (None if c.CODE.search(f) else {os.path.basename(f)})
+        info = {"mode": "file", "symbols": None, "tests": None, "linked": len(linked)}
+        if names is not None:
+            rx = re.compile(r"\b(?:" + "|".join(map(re.escape, sorted(names))) + r")\b") if names else None
+            keep = []
+            for t in linked:
+                marked = any(f in line.split() for line in smap._MARKED.findall(texts[t]))
+                if (smap._name_stem(t) == smap._name_stem(f) or marked or f not in m["tests"].get(t, ())
+                        or (rx and rx.search(texts[t]))):
+                    keep.append(t)
+            picked[f] = keep
+            info = {"mode": "symbols" if py else "path", "symbols": sorted(names) if py else None, "tests": keep}
+        if detail is not None:
+            detail[f] = info
+    return picked
+
+
+def affected(p, b=None, skipped=None, since=None, detail=None):
     """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
     project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705).
     Another open task's red-first test files are left out (T-1718); a dict passed as skipped gets them {module: task}."""
@@ -5656,7 +5705,9 @@ def affected(p, b=None, skipped=None, since=None):
     budget = {HOOK_BUDGET[1]} if changed & set(HOOK_BUDGET[0]) and os.path.isfile(os.path.join(p.root, HOOK_BUDGET[1])) else set()
     rules = {f"plugin/tests/{t}.py" for t in RULE_TESTS if os.path.isfile(os.path.join(p.root, "plugin", "tests", t + ".py"))} \
         if changed else set()  # T-2992: a builder's missing MASTER bullet or fm shim fails in its own lane
-    every = sorted(set(smap.tests_for(m, sorted(changed))) | own | paired | broke | budget | rules)
+    picked = _hub_tests(p, m, base, sorted(changed), detail, c.worktree_tree(p.root) if changed else None)  # T-3306: a hub file's symbols, not the whole file
+    every = sorted(set(smap.tests_for(m, sorted(changed - set(picked)))) | set().union(*picked.values())
+                   | own | paired | broke | budget | rules)
     fill = lambda tpl, ts: tpl.replace("{tests}", " ".join(shlex.quote(t) for t in ts)).replace(  # noqa: E731
         "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in ts))
 
@@ -5685,7 +5736,8 @@ def affected(p, b=None, skipped=None, since=None):
 def _check_affected(p, args):
     """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
     skip = {}  # T-1101: another open task's red-first test files, left out as the full gates leave them out
-    cmd, tests, changed = affected(p, skipped=skip)
+    hubs = {}  # T-3306: per changed hub file, the symbols and tests chosen
+    cmd, tests, changed = affected(p, skipped=skip, detail=hubs)
     act = c.active_brief(c.load_briefs(p), p.lane)
     if cmd:
         guard_stored(p, act, cmd)  # T-0901: the template is a stored command
@@ -5695,7 +5747,7 @@ def _check_affected(p, args):
     note = (f"\n! {len(odd)} changed test file(s) this affected command can't run: {', '.join(odd[:5])}"
             f"{' …' if len(odd) > 5 else ''}; run their own suite") if odd else ""
     if not tests:
-        return out(args, {"tests": [], "changed": sorted(changed), "unrunnable": odd, "skipped_tests": skip},
+        return out(args, {"tests": [], "changed": sorted(changed), "unrunnable": odd, "skipped_tests": skip, "hubs": hubs},
                    (f"all {len(skip)} linked test module(s) skipped (other lanes' red-first tests); run the full "
                     f"gates: sampo check\n! {_left_out(skip)}" if skip else
                     f"No tests linked to the {len(changed)} changed file(s); run the full gates: sampo check") + note) or 0
@@ -5707,8 +5759,12 @@ def _check_affected(p, args):
             c.AFFECTED_LABEL + cmd, result[:600], step=args.step, ac=args.ac,
             tree=c.worktree_id(p.root), ran=True),
             "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check --affected", "result": result[:200]})
-    out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip, "unrunnable": odd},
+    out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip, "unrunnable": odd,
+               "hubs": hubs},
         f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → {c.run_result(code, output)}"
+        + "".join(f"\n  hub {f}: " + (f"{len(i['tests'])} test(s) by {', '.join((i['symbols'] or [])[:6]) or 'its path'}"
+                                      if i["tests"] is not None else f"all {i['linked']} linked (change not mappable)")
+                  for f, i in hubs.items())
         + (f"\n! {_left_out(skip)}" if skip else "") + note
         + "\n(the full gates still decide before commit and done: sampo check)")
     return 1 if code else 0
