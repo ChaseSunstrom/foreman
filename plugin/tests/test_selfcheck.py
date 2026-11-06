@@ -97,6 +97,21 @@ class SelfCheck(ForemanTestCase):
             self.fm("task", "drop", tid, "done elsewhere")
         self.assertIsNone(selfcheck.asks_waiting(self.p, c.load_briefs(self.p), time.time()))
 
+    def test_a_pile_of_waiting_lanes_is_named_with_its_landing_rate(self):
+        # T-3478: "why is this stuff taking so long just to push?": 50+ lanes waited at ~15 min each, never said
+        from unittest import mock
+        from sampo import lanes as slanes
+        waiting = [f"T-00{n:02d}" for n in range(10, 16)]
+        with mock.patch.object(slanes, "awaiting_merge", return_value=waiting):
+            self.assertIn("6 finished lanes wait and none landed in the last 2 h",
+                          selfcheck.landing_rate(self.p, [], time.time()))
+            for tid in ("T-0001", "T-0002", "T-0003"):
+                c.log_event(self.p, "lane_merge", task=tid, data={"train": ["T-0001", "T-0002", "T-0003"]})
+            self.assertIn("6 finished lanes wait; 3 landed in the last 2 h (~40 min each), so the pile clears in ~4 h",
+                          selfcheck.landing_rate(self.p, [], time.time()))
+        with mock.patch.object(slanes, "awaiting_merge", return_value=waiting[:4]):
+            self.assertIsNone(selfcheck.landing_rate(self.p, [], time.time()), "a short pile says nothing")
+
     def test_lines_are_cached_and_reach_sampo_next(self):
         self.ask("remake the rune page as kalevala", 20)
         now = time.time()

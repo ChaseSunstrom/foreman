@@ -70,7 +70,28 @@ def asks_waiting(p, briefs, now):
             + " → land or unblock the oldest first")
 
 
-CHECKS = (unshipped, old_mirror, asks_waiting)
+WAIT_MIN, RATE_H = 5, 2  # T-3478: lanes waiting before the rate is worth a line; the window it is measured over
+
+
+def landing_rate(p, briefs, now):
+    """T-3478: finished lanes waiting on a merge, the landings of the last RATE_H hours (minutes each) and the hours
+    the pile takes to clear at that rate: 'why is this taking so long just to push?' was asked with ~50 waiting at
+    ~15 min each, a number nobody had said."""
+    from sampo import lanes as slanes
+    waiting = slanes.awaiting_merge(p, briefs)
+    if len(waiting) < WAIT_MIN:
+        return None
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - RATE_H * 3600))
+    landed = {e.get("task") for e in c.ledger_events(p, ("lane_merge",), since=since)
+              if str(e.get("ts", "")) >= since and not (e.get("data") or {}).get("undone")}
+    if not landed:
+        return f"{len(waiting)} finished lanes wait and none landed in the last {RATE_H} h → {c.merge_hint(waiting)}"
+    each = RATE_H * 60 / len(landed)
+    return (f"{len(waiting)} finished lanes wait; {len(landed)} landed in the last {RATE_H} h (~{each:.0f} min each), "
+            f"so the pile clears in ~{len(waiting) * each / 60:.0f} h at this rate → measure the slowest step and cut it")
+
+
+CHECKS = (unshipped, old_mirror, asks_waiting, landing_rate)
 
 
 def lines(p, briefs=None, now=None):
