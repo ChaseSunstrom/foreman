@@ -175,9 +175,11 @@ class Ablate(_Case):
 
     def test_a_slow_run_is_cut_at_the_deadline(self):
         self.write("calc.py", AFTER)  # the reverted f() sleeps; the baseline is fast
-        self.write("test_calc.py", "import calc, time\nif calc.f() != 2:\n    time.sleep(5)\nassert calc.f() == 2\n")
+        self.write("test_calc.py", "import calc, time\nif calc.f() != 2:\n    time.sleep(60)\nassert calc.f() == 2\n")
         t = time.time()
         p = self.finish(env={"FM_ABLATE_BUDGET": "1"})
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertRegex(p.stdout, r"not run|timed out")
-        self.assertLess(time.time() - t, 5)  # wall clock: FM_ABLATE_BUDGET deadline; uncapped, the 5 s sleep alone would exceed this
+        # T-3253: uncapped, the 60 s sleep alone exceeds the bar; capped, a finish under load (2026-11-05: over 5 s at
+        # load 60 on 16 CPUs) stays far below it, so the bar shows the cut without timing the rest of the close
+        self.assertLess(time.time() - t, 30)
