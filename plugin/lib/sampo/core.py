@@ -4387,7 +4387,7 @@ def worked_in(p, briefs=None):
     return any(b.status in CLOSED for b in (load_briefs(p) if briefs is None else briefs))
 
 
-FOREMAN_SOURCES = ("discovered", "self", "followup", "baseline", "ci", "scout", "cross-project")
+FOREMAN_SOURCES = ("discovered", "self", "followup", "baseline", "ci", "scout", "cross-project", "predicted")
 
 
 def _round_first(p):

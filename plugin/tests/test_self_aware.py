@@ -69,3 +69,65 @@ class Ledger(ForemanTestCase):
             hooks.user_prompt_submit({"session_id": "s2", "cwd": self.repo, "prompt": text})
         rows = c.ledger_events(self.p, ["miss"])
         self.assertEqual([r["data"]["cls"] for r in rows], ["invisible"])
+
+
+class Boundary(ForemanTestCase):
+    """T-3128 (T-3123 part 3): at a task boundary the predicted asks no open task covers become 'predicted' captures;
+    a later user message that matches one is a catch."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo, create=False)
+        from sampo import selfaware
+        self.sa = selfaware
+        self._orig = selfaware.predicted_asks
+        selfaware.predicted_asks = lambda p: [
+            ("FEATURE", "dashboard chart for merge queue wait times"), ("FIX", "retry flaky deploy script"),
+            ("CLEAN", "remove stale lanes folder"), ("PERF", "faster ledger scan"), ]
+        self.addCleanup(setattr, selfaware, "predicted_asks", self._orig)
+
+    def _predicted(self):
+        return [b for b in c.load_briefs(self.p) if b.meta.get("source") == "predicted"]
+
+    def test_a_boundary_files_at_most_three_predicted_captures(self):
+        self.assertEqual(len(self.sa.boundary(self.p)), 3)
+        got = self._predicted()
+        self.assertEqual(len(got), 3)
+        self.assertTrue(all(b.status == "captured" for b in got))
+
+    def test_an_ask_an_open_task_covers_or_already_filed_is_not_filed_again(self):
+        self.fm("capture", "FEATURE: dashboard chart for merge queue wait times")
+        self.sa.boundary(self.p)
+        titles = [b.title for b in self._predicted()]
+        self.assertFalse(any("dashboard chart" in t for t in titles), titles)
+        n = len(self._predicted())
+        self.sa.boundary(self.p)  # a second boundary files nothing new from the same guesses beyond the cap's next
+        self.assertEqual(len({b.title for b in self._predicted()}), len(self._predicted()))
+        self.assertGreaterEqual(len(self._predicted()), n)
+
+    def test_a_later_matching_user_request_records_a_catch_and_misses_shows_it(self):
+        self.sa.boundary(self.p)
+        self.assertEqual(self.sa.catch(self.p, "add a dashboard chart of the merge queue wait times please"), [self._predicted()[0].id])
+        self.assertEqual(self.sa.catch(self.p, "rename the settings page"), [])
+        self.assertEqual(len(c.ledger_events(self.p, ["predicted_catch"])), 1)
+        self.assertEqual(self.sa.catch(self.p, "add a dashboard chart of the merge queue wait times"), [])  # once each
+        self.assertIn("1 catch", self.fm("misses").stdout)
+
+    def test_a_dropped_guess_is_not_refiled_and_open_predicted_captures_are_capped_at_three(self):
+        self.sa.boundary(self.p)
+        self.assertEqual(self.sa.boundary(self.p), [])  # three are open: the cap is full, the 4th guess waits
+        for b in self._predicted():
+            self.fm("task", "drop", b.id, "--reason", "not wanted")
+        self.assertEqual(len(self.sa.boundary(self.p)), 1)  # only the never-filed 4th guess; the dropped three stay dropped
+        self.assertEqual(len(self._predicted()), 4)
+        self.assertEqual(self.sa.boundary(self.p), [])
+
+    def test_a_short_guess_neither_catches_nor_counts_as_covered(self):
+        self.sa.predicted_asks = lambda p: [("FIX", "work")]
+        self.fm("capture", "FIX: work through the backlog of stale branches")
+        self.assertEqual(len(self.sa.boundary(self.p)), 1)  # one word never counts as covered
+        self.assertEqual(self.sa.catch(self.p, "work on the settings page"), [])
+        self.sa.predicted_asks = lambda p: [("FIX", "retry flaky deploy script")]
+        self.sa.boundary(self.p)
+        self.assertEqual(self.sa.catch(self.p, "do the retry work"), [])  # one matched word of four
+        self.assertEqual(len(self.sa.catch(self.p, "retry the flaky deploy")), 1)

@@ -970,6 +970,7 @@ def cmd_task(args):
         from sampo import outcomes
         outcomes.record_close(p, logged)  # T-1061
         outcomes.maintain(p)  # T-2337: the calibration ledger's due outcomes and bar check, each close
+        _boundary(p)
         try:  # T-2351: a task a trigger filed is a trial on its trigger's own key
             from sampo import trials
             trials.register_fix(p, b)
@@ -1129,8 +1130,19 @@ def cmd_task(args):
                 print(f"fm: warning: no eval case written ({type(e).__name__})", file=sys.stderr)
         if status == "dropped" and b.meta.get("batch"):  # T-0257: a dropped batch hands its members back
             _settle_batch(p, b, done=False)
+        if status == "dropped":
+            _boundary(p)
         return out(args, c.brief_summary(b), f"{b.id} {status}." + (f" Reason: {reason}" if reason else ""))
     raise UsageError(f"unknown task subcommand {sub}")
+
+
+def _boundary(p):
+    """T-3128: a close or drop is a task boundary: the predicted next asks nothing covers are captured (no model)."""
+    try:
+        from sampo import selfaware
+        selfaware.boundary(p)
+    except Exception as e:  # the task is closed already; a missing guess must not make that look failed
+        print(f"fm: warning: no predicted captures at this boundary ({type(e).__name__})", file=sys.stderr)
 
 
 def _repro(b):

@@ -1400,6 +1400,10 @@ def user_prompt_submit(pl):
     if logged and not r.overrides:  # T-3126: a message that points something out is a miss, filed with its class
         from sampo import selfaware
         selfaware.note(p, text, session=sid)
+        try:  # T-3128: a user ask Sampo predicted and filed is a catch
+            selfaware.catch(p, text)
+        except Exception:
+            log_error("UserPromptSubmit", _tb())
     hc = None
     try:
         hc = _hook_claude()

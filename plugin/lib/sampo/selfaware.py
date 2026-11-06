@@ -4,6 +4,8 @@ plain patterns pick the class; a message with no pattern is never sent to a mode
 turn). `sampo misses` counts the logged `miss` events by class and day; `sampo misses --sweep` asks the user's local
 model about recent unmatched questions, naming only the fixed classes below (the model's answer is accepted only if it
 is one of them; no Claude-written label ever trains or decides anything). A request or a thanks is not a miss."""
+import contextlib
+import os
 import re
 
 from sampo import core as c
@@ -68,7 +70,8 @@ def report(p, days=30):
         by_class[cls] = by_class.get(cls, 0) + 1
         day = str(e.get("ts") or "")[:10]
         by_day[day] = by_day.get(day, 0) + 1
-    return {"total": sum(by_class.values()), "by_class": by_class, "by_day": dict(sorted(by_day.items()))}
+    return {"total": sum(by_class.values()), "by_class": by_class, "by_day": dict(sorted(by_day.items())),
+            "catches": len(c.ledger_events(p, ["predicted_catch"], since=since))}
 
 
 def local_ask(p):
@@ -124,4 +127,87 @@ def cmd_misses(args):
     if r["by_day"]:
         lines.append("per day:")
         lines += [f"  {d}  {n}  {'#' * min(n, 40)}" for d, n in r["by_day"].items()]
+    lines.append(f"{r['catches']} catch{'es' if r['catches'] != 1 else ''} (asks Sampo predicted and filed before "
+                 f"the user made them)")
     cli.out(args, r, "\n".join(lines))
+
+
+# ---- T-3128 (T-3123 part 3): the boundary review. No model on the close path: it reads the predictions the tick keeps.
+BOUNDARY_CAP, COVERED = 3, 0.6  # captures per boundary; share of a guess's words an open task or a user message must hold
+
+
+def predicted_asks(p):
+    """[(type, text)] the next-request predictor last guessed, best first: the local arm's words, then the structural
+    guess's type and files. Reads the stored rows only (foresight.prediction_tick wrote them)."""
+    from sampo import foresight
+    rows = foresight._book(p)
+    out = []
+    for r in [r for r in rows if r.get("kind") == "next-request-local"][-1:]:
+        pr = r.get("pred") or {}
+        if pr.get("words") and pr.get("type") in c.TYPES:
+            out.append((pr["type"], " ".join(pr["words"])))
+    for r in [r for r in rows if r.get("kind") == "next-request"][-1:]:
+        pr = r.get("pred") or {}
+        if pr.get("type") in c.TYPES and pr.get("paths"):
+            out.append((pr["type"], "work on " + c.joinmore(pr["paths"], 3)))
+    return out
+
+
+MIN_GUESS, MIN_MATCH, OPEN_CAP, REFILE_DAYS = 3, 2, 3, 7  # words a guess needs, words that must match, open predicted captures, days a title stays filed
+FLAG = "predicted_open"  # p.dir marker: a boundary filed something; catch() reads no briefs while it is absent
+
+
+def _held(ask_words, text):
+    from sampo import foresight
+    hit = len(ask_words & foresight._words(text))
+    return len(ask_words) >= MIN_GUESS and hit >= MIN_MATCH and hit / len(ask_words) >= COVERED
+
+
+def boundary(p):
+    """At a task boundary (a close or a drop): the top BOUNDARY_CAP predicted asks no open task covers become inbox
+    captures with source 'predicted' (eco.capture_once also dedupes an identical open title). Returns the briefs filed."""
+    if c.read_meta(p).get("sensitive"):
+        return []
+    from sampo import eco, foresight
+    open_text = [" ".join([b.title, b.section("Raw request")] + [a.text for a in b.acceptance()])
+                 for b in c.load_briefs(p) if b.status not in c.CLOSED]
+    every = c.load_briefs(p, include_archive=True)
+    room = OPEN_CAP - sum(1 for b in every if b.meta.get("source") == "predicted" and b.status not in c.CLOSED)
+    recent = {" ".join(b.title.lower().split()) for b in every if b.meta.get("source") == "predicted"
+              and (c.age_days(b.meta.get("created")) or 0) < REFILE_DAYS}  # any status: a dropped guess stays dropped
+    filed = []
+    for typ, text in predicted_asks(p):
+        if len(filed) >= min(BOUNDARY_CAP, room):
+            break
+        text = c.fit(c.redact(c.plain(text)), 160)
+        if " ".join(text.lower().split()) in recent or any(_held(foresight._words(text), t) for t in open_text):
+            continue
+        b, new = eco.capture_once(p, text, typ, "predicted")
+        if new:
+            filed.append(b)
+            open_text.append(b.title)
+    if filed:
+        c.write_atomic(os.path.join(p.dir, FLAG), "1")
+    return filed
+
+
+def catch(p, text):
+    """A user message that matches an open predicted capture is a catch: logs `predicted_catch`, marks the capture;
+    returns the ids caught (each once)."""
+    from sampo import foresight
+    got, flag = [], os.path.join(p.dir, FLAG)
+    if not os.path.exists(flag):
+        return got
+    live = False
+    for b in c.load_briefs(p):
+        live = live or (b.meta.get("source") == "predicted" and b.status not in c.CLOSED)
+        if b.meta.get("source") == "predicted" and b.status not in c.CLOSED and not b.meta.get("caught") \
+                and _held(foresight._words(b.title), text):
+            b.meta["caught"] = c.now()
+            c.save_brief(p, b)
+            c.log_event(p, "predicted_catch", task=b.id, data={"text": c.fit(c.redact(c.plain(text)), MAX_TEXT)})
+            got.append(b.id)
+    if not live:
+        with contextlib.suppress(OSError):
+            os.remove(flag)
+    return got
