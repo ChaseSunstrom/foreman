@@ -1101,6 +1101,20 @@ class Queue(unittest.TestCase):
         self.assertEqual([b.id for b in q], ["T-0001"])
         self.assertEqual(dangling, [("T-0001", "T-0009")])
 
+    def test_archived_dependency_is_satisfied_unknown_still_dangling(self):  # T-3430
+        briefs = [_b("T-0001", "FIX", deps=["T-0008", "T-0009"])]
+        q, _, dangling = c.order_queue(briefs, {"T-0008"})
+        self.assertEqual([b.id for b in q], ["T-0001"])
+        self.assertEqual(dangling, [("T-0001", "T-0009")])
+
+    def test_archived_ids_reads_file_names(self):  # T-3430
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "archive", "2026-10"))
+            for f in ("T-0008-x.md", "T-0010.md", "notes.md"):
+                open(os.path.join(d, "archive", "2026-10", f), "w").close()
+            self.assertEqual(c.archived_ids(type("P", (), {"dir": d})()), {"T-0008", "T-0010"})
+
     def test_cycles_are_reported_not_dropped(self):
         briefs = [_b("T-0001", "FIX", deps=["T-0002"]), _b("T-0002", "FIX", deps=["T-0001"]), _b("T-0003", "CLEAN")]
         q, cycles, _ = c.order_queue(briefs)

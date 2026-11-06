@@ -284,7 +284,7 @@ def check_project(p, apply, actions):
         elif b.status == "captured" and age > INBOX_STALE_DAYS:
             out.append(finding(slug, "inbox_stale", "warn", f"{b.id} captured {int(age)}d ago: {b.title}",
                                f"keep (fm task new … --from {b.id}) or drop (fm task drop {b.id} \"<why>\")"))
-    _, cycles, dangling = c.order_queue(briefs)
+    _, cycles, dangling = c.order_queue(briefs, c.archived_ids(p))
     by_id = {b.id: b for b in briefs}
     for cyc in cycles:  # T-0383: a cycle through an edge fm relate inferred is undone there
         guess = next(((a, d) for a in cyc for d in c._deps(by_id[a]) if d in cyc

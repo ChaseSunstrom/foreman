@@ -2657,8 +2657,14 @@ def title_tilt(weights, title):
     return max(-2, min(2, sum(weights.get(w, 0) for w in pref_words(title)) / 2))
 
 
-def order_queue(briefs):
-    """Runnable briefs in canonical order with dependencies respected. Returns (queue, cycles, dangling)."""
+def archived_ids(p):
+    """T-3430: ids of the briefs fm tidy archived, from file names alone (no parsing)."""
+    return {m.group(1) for _, _, fs in os.walk(os.path.join(p.dir, "archive")) for f in fs if (m := _BRIEF_FILE.match(f))}
+
+
+def order_queue(briefs, archived=()):
+    """Runnable briefs in canonical order with dependencies respected. Returns (queue, cycles, dangling).
+    `archived`: ids of archived (closed) tasks: a dependency on one is satisfied, not dangling (T-3430)."""
     by_id = {b.id: b for b in briefs}
     runnable = [b for b in briefs if b.status in RUNNABLE and not batched(b, by_id)]  # T-0257: its host runs
     rid = {b.id for b in runnable}
@@ -2668,7 +2674,7 @@ def order_queue(briefs):
         for d in _deps(b):
             if d in rid:
                 ds.append(d)
-            elif d not in by_id and d in (b.meta.get("depends_on") or []):  # an inferred one was checked when made
+            elif d not in by_id and d not in archived and d in (b.meta.get("depends_on") or []):  # an inferred one was checked when made
                 dangling.append((b.id, d))
         deps[b.id] = ds
     key = {b.id: _key(b) for b in runnable}
@@ -4591,6 +4597,9 @@ def state_dict(p, briefs=None):
     briefs = lane_view(everything, p.lane)  # T-0134: another lane's work shows only under "lanes"
     meta = read_meta(p)
     queue, cycles, dangling = order_queue(briefs)
+    if dangling:  # T-3430: walk the archive only when something looks dangling
+        gone = archived_ids(p)
+        dangling = [d for d in dangling if d[1] not in gone]
     act = active_brief(briefs, p.lane)
     since = meta.get("last_tidy") or meta.get("created")
     days = age_days(since)

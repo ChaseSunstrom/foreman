@@ -3979,7 +3979,7 @@ def _queue_preview(p, args, order, briefs):
 def cmd_queue(args):
     p = resolve(args)
     briefs = c.lane_view(c.load_briefs(p), p.lane)  # T-0134: another lane's work isn't this side's queue
-    order, cycles, dangling = c.order_queue(briefs)
+    order, cycles, dangling = c.order_queue(briefs, c.archived_ids(p))
     if args.preview:
         return _queue_preview(p, args, order, briefs)
     if args.replan:

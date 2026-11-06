@@ -104,6 +104,15 @@ class Progress(VisibilityCase):
     def sd(self):
         return c.state_dict(c.find_project(self.repo))
 
+    def test_archived_dependency_is_not_dangling(self):  # T-3430
+        self.fm("task", "new", "Next", "--type", "FIX", "--tier", "S")
+        self.fm("task", "set", "T-0002", "depends_on=T-0099,T-0098")
+        p = c.find_project(self.repo)
+        self.assertEqual(self.sd()["dangling"], [["T-0002", "T-0099"], ["T-0002", "T-0098"]])
+        os.makedirs(os.path.join(p.dir, "archive", "2026-10"))
+        open(os.path.join(p.dir, "archive", "2026-10", "T-0099-x.md"), "w").close()
+        self.assertEqual(self.sd()["dangling"], [["T-0002", "T-0098"]])
+
     def test_active_task_carries_its_stage_and_audit_progress(self):
         a = self.sd()["active"]
         self.assertEqual((a["stage"], a["audits"]), ("executing", {"done": 0, "required": 1}))
