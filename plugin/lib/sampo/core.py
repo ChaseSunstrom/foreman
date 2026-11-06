@@ -1335,9 +1335,27 @@ def session_id():
     return os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("FOREMAN_SESSION_ID")
 
 
+LEDGER_LIST_CAP, LEDGER_STR_CAP = 200, 4000
+
+
+def cap_payload(data):
+    """T-3403: top-level lists cut to LEDGER_LIST_CAP with the true count in <key>_n (a caller's own count stays);
+    strings cut to LEDGER_STR_CAP. ponytail: top level only, nested values are the caller's."""
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    for k, v in data.items():
+        if isinstance(v, list) and len(v) > LEDGER_LIST_CAP:
+            out[k] = v[:LEDGER_LIST_CAP]
+            out.setdefault(f"{k}_n", len(v))
+        elif isinstance(v, str) and len(v) > LEDGER_STR_CAP:
+            out[k] = v[:LEDGER_STR_CAP - 1] + "…"
+    return out
+
+
 def log_event(p, event, task=None, data=None, session=None):
     rec = {"ts": now(), "session_id": session or session_id(), "project": p.slug,
-           "task": task, "event": event, "data": redact_obj(data or {})}
+           "task": task, "event": event, "data": cap_payload(redact_obj(data or {}))}
     os.makedirs(p.dir, exist_ok=True)
     # T-1065: each line carries prev, the hash of the line before it (fm verify-ledger walks the chain). Under an flock
     # on the ledger, so racing writers chain in the order they land: read the last line, then one O_APPEND write.

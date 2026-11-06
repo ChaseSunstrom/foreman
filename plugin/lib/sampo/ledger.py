@@ -107,8 +107,10 @@ def accept_damage(p, anchor=None):
     if not r.get("damage_only") or (anchor and not r["anchor"]["found"]):
         return []
     new = [d for d in r["damaged"] if not d.get("accepted")]
-    c.log_event(p, DAMAGE_ACK, data={"keys": [d["key"] for d in new], "lines": [f"{d['at']} ({d['what']})"
-                                                                              for d in new]})
+    n = c.LEDGER_LIST_CAP  # T-3403: log_event cuts longer lists, so ack in chunks it keeps whole
+    for i in range(0, len(new), n):
+        c.log_event(p, DAMAGE_ACK, data={"keys": [d["key"] for d in new[i:i + n]],
+                                         "lines": [f"{d['at']} ({d['what']})" for d in new[i:i + n]]})
     return new
 
 

@@ -455,6 +455,31 @@ class Chain(ForemanTestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
+class Cap(Chain):
+    """T-3403: log_event caps list and string fields before hashing."""
+    def test_caps_lists_and_strings_and_chain_holds(self):
+        c.log_event(self.p, "x", data={"files": list(range(500)), "short": [1], "s": "a" * 50000,
+                                       "failed": list(range(300)), "failed_n": 999})
+        d = json.loads(self.lines()[-1])["data"]
+        self.assertEqual((len(d["files"]), d["files_n"]), (c.LEDGER_LIST_CAP, 500))
+        self.assertNotIn("short_n", d)
+        self.assertEqual((len(d["failed"]), d["failed_n"]), (c.LEDGER_LIST_CAP, 999))
+        self.assertLess(len(d["s"]), 50000)
+        c.log_event(self.p, "y")
+        self.assertEqual(self.verify().returncode, 0)
+        self.assertEqual(len(c.cap_payload({"s": "a" * 9999})["s"]), c.LEDGER_STR_CAP)
+        self.assertEqual(c.cap_payload(None), None)
+
+    def test_accept_damage_acks_every_key_in_chunks(self):
+        from sampo import ledger
+        dmg = [{"key": f"k{i}", "at": f"ledger.jsonl:{i}", "what": "zeroed"} for i in range(250)]
+        with mock.patch.object(ledger, "chain", return_value={"damage_only": True, "damaged": dmg}):
+            self.assertEqual(len(ledger.accept_damage(self.p)), 250)
+        acks = [json.loads(x)["data"] for x in self.lines() if '"ledger_damage_ack"' in x]
+        self.assertEqual(sorted(k for a in acks for k in a["keys"]), sorted(d["key"] for d in dmg))
+        self.assertTrue(all(len(a["keys"]) <= c.LEDGER_LIST_CAP and "keys_n" not in a for a in acks))
+
+
 MARCH = "2026-03-02T00:00:00Z"
 
 
