@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T07:46:57Z",
- "rev": "1e1c29e31",
+ "updated": "2026-11-06T07:52:03Z",
+ "rev": "d93df53c7",
  "capabilities": [
   {
    "n": 1,
@@ -36247,16 +36247,16 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 862,
+ "unproven": 863,
  "unproven_kinds": {
   "meaning-notes": 374,
   "meaning-user": 251,
   "research-uncited": 34,
   "perf-typed": 60,
-  "typed": 38,
+  "typed": 39,
   "red": 86,
-  "tui-unshot": 11,
-  "docs": 127,
+  "tui-unshot": 12,
+  "docs": 128,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 41,
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 24065,
+   "generated": 24233,
    "write": {
     "title": 168,
-    "line": 1626,
+    "line": 1636,
     "payoff": 19,
     "kill test": 65,
     "code": 8
@@ -37485,7 +37485,7 @@
    },
    "merged": 332,
    "kept": 1007,
-   "pending": 96
+   "pending": 254
   },
   "families": [
    {
@@ -38347,6 +38347,22 @@
     "evidence": "",
     "kinds": [
      "docs"
+    ]
+   },
+   {
+    "id": "F-023664",
+    "size": 1,
+    "lead": "Isolate bugs via causal entanglement in parallel builds",
+    "today": "Today you can't determine if two simultaneous bugs in different teams are interacting or independent.",
+    "with_this": "With this, you can avoid wasting time fixing a bug that is actually caused by an unrelated change in another department, saving weeks of cross-team debugging.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
     ]
    },
    {
@@ -40715,25 +40731,9 @@
     "kinds": [
      "releases"
     ]
-   },
-   {
-    "id": "F-012000",
-    "size": 1,
-    "lead": "Let agents play 'Rock Paper Scissors' to resolve merge conflicts",
-    "today": "Today you can't resolve complex merge conflicts without a human manually deciding who gets the code",
-    "with_this": "With this, you can let competing agents negotiate code ownership through a lightweight game, speeding up resolution and reducing human bias",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "design"
-    ]
    }
   ],
-  "families_total": 847,
+  "families_total": 857,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 1007
