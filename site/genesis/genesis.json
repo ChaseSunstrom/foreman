@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T13:28:53Z",
- "rev": "c9e81561b",
+ "updated": "2026-11-06T14:06:57Z",
+ "rev": "74e8d98a0",
  "capabilities": [
   {
    "n": 1,
@@ -36247,9 +36247,9 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 882,
+ "unproven": 883,
  "unproven_kinds": {
-  "meaning-notes": 389,
+  "meaning-notes": 390,
   "meaning-user": 252,
   "research-uncited": 34,
   "perf-typed": 63,
@@ -37465,27 +37465,27 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 29657,
+   "generated": 30207,
    "write": {
-    "title": 197,
-    "line": 1904,
+    "title": 199,
+    "line": 1916,
     "payoff": 21,
     "kill test": 90,
     "code": 11
    },
    "dups": {
     "exact": 15,
-    "embed": 52,
+    "embed": 54,
     "shingle": 0
    },
    "rejected": {
-    "kill": 14955,
-    "tier": 10367,
-    "novelty": 88
+    "kill": 15390,
+    "tier": 10486,
+    "novelty": 94
    },
-   "merged": 502,
-   "kept": 1225,
-   "pending": 230
+   "merged": 515,
+   "kept": 1248,
+   "pending": 168
   },
   "families": [
    {
@@ -37519,6 +37519,48 @@
     "evidence": "",
     "kinds": [
      "migrations"
+    ]
+   },
+   {
+    "id": "F-016366",
+    "size": 127,
+    "lead": "Compress your debugging history into a single replayable tape",
+    "today": "Today you can't rewind your entire session to a specific logical state and see which of your past edits actually prevented a future bug.",
+    "with_this": "With this, Sampo can store a compact, causal tape of your decisions, allowing it to instantly simulate counterfactual fixes and verify if a current change would have broken the system had you chosen a different path earlier.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "anticipation",
+     "beyond code",
+     "calibrated judgment",
+     "docs",
+     "ecosystem",
+     "efficiency",
+     "exhaustive thinking",
+     "genesis as a feature",
+     "getting the tools it lacks",
+     "goal to finish",
+     "initiative",
+     "memory",
+     "model layer",
+     "multi-user",
+     "observability",
+     "onboarding",
+     "ops",
+     "orchestration",
+     "performance",
+     "portability",
+     "problem solving",
+     "security",
+     "self-repair and self-improvement",
+     "self-triggering",
+     "staying lean and safe",
+     "ux",
+     "verifying anything"
     ]
    },
    {
@@ -37642,23 +37684,6 @@
     "evidence": "",
     "kinds": [
      "releases"
-    ]
-   },
-   {
-    "id": "F-016366",
-    "size": 2,
-    "lead": "Compress your debugging history into a single replayable tape",
-    "today": "Today you can't rewind your entire session to a specific logical state and see which of your past edits actually prevented a future bug.",
-    "with_this": "With this, Sampo can store a compact, causal tape of your decisions, allowing it to instantly simulate counterfactual fixes and verify if a current change would have broken the system had you chosen a different path earlier.",
-    "tier": "extreme",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "docs",
-     "ecosystem"
     ]
    },
    {
@@ -38444,47 +38469,6 @@
     "evidence": "",
     "kinds": [
      "releases"
-    ]
-   },
-   {
-    "id": "F-025245",
-    "size": 105,
-    "lead": "Synchronize parallel agents via shared semantic attention heads",
-    "today": "Today you can't make parallel Sampo agents stop duplicating effort when they realize they are solving the same sub-problem.",
-    "with_this": "With this, Sampo can reduce total compute by allowing agents to share 'attention weights' for common sub-problems, so they only diverge when their contexts genuinely differ.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 5,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "anticipation",
-     "beyond code",
-     "calibrated judgment",
-     "ecosystem",
-     "efficiency",
-     "exhaustive thinking",
-     "genesis as a feature",
-     "getting the tools it lacks",
-     "goal to finish",
-     "initiative",
-     "memory",
-     "model layer",
-     "multi-user",
-     "observability",
-     "onboarding",
-     "ops",
-     "orchestration",
-     "performance",
-     "portability",
-     "problem solving",
-     "security",
-     "self-repair and self-improvement",
-     "self-triggering",
-     "staying lean and safe",
-     "ux",
-     "verifying anything"
     ]
    },
    {
@@ -40742,12 +40726,28 @@
     "kinds": [
      "features"
     ]
+   },
+   {
+    "id": "F-011896",
+    "size": 1,
+    "lead": "Liquidate the value of untested child scenarios",
+    "today": "Today you can't recover value from scenarios that were written but never executed",
+    "with_this": "With this, you can sell the latent value of untested scenarios to other teams who can run them",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
    }
   ],
-  "families_total": 998,
+  "families_total": 999,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1225
+   "total": 1248
   }
  },
  "steer": {
