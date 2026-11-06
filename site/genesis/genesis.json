@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-06T02:33:21Z",
+ "updated": "2026-11-06T02:49:57Z",
  "rev": "5c403348",
  "capabilities": [
   {
@@ -37465,27 +37465,27 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 20576,
+   "generated": 20981,
    "write": {
-    "title": 148,
-    "line": 1500,
+    "title": 151,
+    "line": 1519,
     "payoff": 17,
     "kill test": 64,
-    "code": 6
+    "code": 7
    },
    "dups": {
     "exact": 14,
-    "embed": 20,
+    "embed": 23,
     "shingle": 0
    },
    "rejected": {
     "kill": 10341,
     "tier": 7271,
-    "novelty": 71
+    "novelty": 72
    },
    "merged": 241,
-   "kept": 869,
-   "pending": 14
+   "kept": 882,
+   "pending": 379
   },
   "families": [
    {
@@ -38253,8 +38253,40 @@
     ]
    },
    {
+    "id": "F-020202",
+    "size": 1,
+    "lead": "Game the social engineering of your own team's slack",
+    "today": "Today you can't know if a sophisticated phishing prompt injected into your chat history would actually convince your junior engineers to paste secrets.",
+    "with_this": "With this, you can run a safe, simulated 'red team' chat agent that tries to extract credentials from your historical context, revealing your team's susceptibility patterns before a real attacker does.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-020442",
+    "size": 1,
+    "lead": "Resolve all memory conflicts via quantum superposition collapse",
+    "today": "Today you can't predict which variable access will crash a multithreaded app before it happens in production.",
+    "with_this": "With this, Sampo can verify concurrency safety by simulating all possible memory states simultaneously and collapsing them only when a definitive conflict is observed, proving safety without executing code.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "verifying anything"
+    ]
+   },
+   {
     "id": "F-015679",
-    "size": 6,
+    "size": 18,
     "lead": "Evolve Sampo's collaboration patterns with other agents",
     "today": "Today you can't have Sampo automatically discover more effective ways to coordinate with other agents in a multi-agent system based on past collaboration outcomes.",
     "with_this": "With this, Sampo can improve the efficiency and accuracy of multi-agent systems by evolving its communication and coordination protocols to find the most effective division of labor.",
@@ -38265,11 +38297,17 @@
     "stage": "candidate",
     "evidence": "",
     "kinds": [
+     "anticipation",
      "getting the tools it lacks",
      "goal to finish",
      "initiative",
+     "observability",
      "orchestration",
-     "self-triggering"
+     "portability",
+     "problem solving",
+     "self-repair and self-improvement",
+     "self-triggering",
+     "ux"
     ]
    },
    {
@@ -40683,44 +40721,12 @@
     "kinds": [
      "performance"
     ]
-   },
-   {
-    "id": "F-012464",
-    "size": 1,
-    "lead": "Release in parallel universes that merge on success",
-    "today": "Today you can't test a release in a copy of the production environment without affecting real users or requiring a full duplicate data set.",
-    "with_this": "With this, you can validate a release in a realistic simulation without any production risk, then promote it with confidence.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "releases"
-    ]
-   },
-   {
-    "id": "F-012491",
-    "size": 1,
-    "lead": "Pool risk of undocumented features by trading 'doc debt' notes",
-    "today": "Today you can't assign responsibility for missing documentation without creating a bottleneck for one person.",
-    "with_this": "With this, you can distribute the liability for undocumented features across the team, ensuring that the most capable or interested developers step up to document them.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "docs"
-    ]
    }
   ],
-  "families_total": 764,
+  "families_total": 768,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 869
+   "total": 882
   }
  },
  "steer": {
