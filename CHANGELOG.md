@@ -11,6 +11,8 @@
 
 ### Everything else
 
+- sampo next and the drive name the finished lanes waiting on a merge with the last 2 h landing rate and the hours the pile takes to clear (T-3478).
+- sampo ship reuses the gates' pass (a merge train's or a full sampo check's) when its test is the gates' own and the pushed tree differs from the gated one only in files its CI skips, so a ship after a train no longer reruns the whole suite (T-3468).
 - Sampo's sentinel treats a re-verify that times out (run_command's "timed out after Ns", or run.py stopping at its deadline, which now exits 124) as inconclusive: no "Re-verify failed" FIX is filed, the entry stays queued for up to 3 timeouts and is then dropped with a notice, a rerun that times out no longer masks the first failure, and --json counts inconclusive (T-2944).
 - last_change and first_touch date a Bash-sourced edit by its file mtime (data.at), floored at the Bash call's start and the task's creation, so an audit recorded between the edit and a late hook event no longer looks stale (T-3378).
 - Kalevala: one tower's decide-and-act runs under its own per-tower lock with a 30 s deadline, so two concurrent steps snapshot a stalled tower and log each act once, and a busy tower is skipped instead of hanging (T-3332).
