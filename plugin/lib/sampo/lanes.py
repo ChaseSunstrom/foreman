@@ -997,10 +997,15 @@ def _fails_on_base(p, x, main, checks):
     real = []
     for cmd in checks:
         cli.guard_stored(p, x, cmd)
-        code = c.run_command(main, cmd, 600)[0]
+        code = c.run_command(main, cmd, c.load_scaled(1200))[0]  # T-3418
         if code not in (0, 124, 127) and not c.lint_verify(cmd, main):
             real.append(cmd)
     return real
+
+
+def _timed_out(code, out):
+    """T-3418: run_command's own timeout (124 plus its line), not a `timeout N` inside the command."""
+    return code == 124 and "timed out after" in (out or "")
 
 
 def _failing(p, x, path, checks):
@@ -1008,7 +1013,8 @@ def _failing(p, x, path, checks):
     bad = []
     for cmd in checks:
         cli.guard_stored(p, x, cmd)
-        if c.run_command(path, cmd, 600)[0]:
+        code, out = c.run_command(path, cmd, c.load_scaled(1200))  # T-3418
+        if code and not _timed_out(code, out):  # a real timeout says nothing about red, like _fails_on_base
             bad.append(cmd)
     return bad
 
@@ -1910,7 +1916,14 @@ def _verify(b, p=None):
         if cmd in passed:
             print(f"fm: criterion {n} passed on this lane tree ({tree[:9]}) before: reused", file=sys.stderr)
             continue
-        code, out = c.run_command(wt, cmd, c.load_scaled(600))
+        cap = c.load_scaled(1200)  # T-3418: 600 timed out whole-module criteria at load 20 (load_scaled only stretches past 1/CPU)
+        code, out = c.run_command(wt, cmd, cap)
+        if _timed_out(code, out):
+            hl = c.host_load()
+            load = f"{hl[0]:.0f}" if hl else "?"
+            raise c.PolicyError(f"{b.id}: criterion {n} timed out after {cap:.0f}s under load {load}: "
+                                f"`{cmd}`: rerun, or narrow the criterion to the classes changed (fm lane merge "
+                                f"{b.id} --unverified \"<reason>\" waives it, logged)")
         if code:
             first = c.first_error_line(out)  # T-3411
             raise c.PolicyError(f"{b.id}: criterion {n} is red in {wt}: `{cmd}` → exit {code}"

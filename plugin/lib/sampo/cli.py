@@ -808,6 +808,7 @@ def cmd_task(args):
                                  or not 1 <= args.repeat <= REPEAT_MAX):
             raise UsageError(f"--repeat N (1–{REPEAT_MAX}) times a passing --run; a typed result or an --expect-fail "
                              f"red run is one run")
+        took = None
         if bench is not None:  # T-2284: timed on the start tree and on this one, by Foreman
             pre = need_brief(p, args.id)
             cmd = bench
@@ -818,8 +819,10 @@ def cmd_task(args):
             if getattr(args, "expect_fail", False) and args.step is None:
                 raise UsageError("--expect-fail is for a step's red run (--step N); a criterion only takes a passing run")
             pre = need_brief(p, args.id)
+            t0 = time.monotonic()
             code, output, timing = _repeat_runs(p.root, args.run, args.repeat,
                                                 c.load_scaled(args.timeout if args.timeout > 0 else None))
+            took = round((time.monotonic() - t0) / max(args.repeat, 1), 1)  # T-3418: the slow-verify note reads it
             cmd, result, shown = args.run, c.run_result(code, output, args.run), "\n".join(output.rstrip().splitlines()[-20:])
             if code and not getattr(args, "expect_fail", False):  # T-2370: fm ran it, so no hook is needed for the miss
                 try:
@@ -863,6 +866,7 @@ def cmd_task(args):
                 b.append_log(f"tried: `{cmd}` ×{tried} on step {args.step}, failing the same way")
         b, _ = mutate(p, args.id, record,
                       "evidence", {"step": args.step, "ac": args.ac, "cmd": cmd, "result": result[:300],
+                                   **({"s": took} if took is not None and not code else {}),
                                    **({"inconclusive": True} if args.inconclusive else {})})
         for w in _evidence_notes(b, args.step, result, tried):
             print(f"fm: warning: {w}", file=sys.stderr)
@@ -1232,8 +1236,34 @@ def _refuse_unrunnable(p, cmds):
                              f"can't be edited later")
 
 
+def _slow_verify_note(p, cmd):
+    """T-3418: a note when cmd names whole test modules (no .Class) and the newest check_run that ran this exact command
+    took over 120 s; None without such timing (no guessing)."""
+    mods = re.findall(r"\b(test_\w+)\b(?!\.)", cmd)
+    if not mods:
+        return None
+    for e in reversed(c.ledger_tail(p, 5000)):
+        d = e.get("data") or {}
+        if e.get("event") == "check_run":
+            runs = [r.get("s") for r in d.get("results") or () if r.get("cmd") == cmd]
+        elif e.get("event") == "evidence" and d.get("cmd") == cmd:
+            runs = [d.get("s")]  # a timed `evidence --run`
+        else:
+            continue
+        for s in runs:
+            if isinstance(s, (int, float)):
+                if s > 120:
+                    return (f"verify runs whole modules ({', '.join(mods)}); its last recorded run took {s:.0f}s: "
+                            f"name the classes you changed (test_x.Class) so a loaded lane merge doesn't time out")
+                return None
+    return None
+
+
 def _lint_verify(p, cmds):
     for cmd in filter(None, cmds):
+        note = _slow_verify_note(p, cmd)
+        if note:
+            print(f"fm: note: {note}", file=sys.stderr)
         if cmd.lstrip().startswith("typed:"):  # T-0333: fm task finish runs a verify; a typed check is evidence
             print(f"fm: warning: verify `{cmd}` is a typed check, not a command, and sampo task finish would run it: "
                   f"leave --verify off and record it with sampo task evidence ID --ac N CMD RESULT", file=sys.stderr)

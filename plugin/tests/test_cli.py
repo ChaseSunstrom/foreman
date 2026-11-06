@@ -1661,6 +1661,42 @@ class AskClosed(ForemanTestCase):
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
 
 
+class SlowVerifyNote(ForemanTestCase):  # T-3418
+    CMD = "python3 plugin/tests/run.py test_lanes test_cli.Foo"
+
+    def ran(self, cmd, s):
+        self.fm("init")
+        p = c.find_project(self.repo)
+        c.log_event(p, "check_run", data={"results": [{"cmd": cmd, "exit": 0, "s": s}]})
+        return p
+
+    def test_a_slow_whole_module_run_is_noted_with_class_scoped_advice(self):
+        note = cli._slow_verify_note(self.ran(self.CMD, 300), self.CMD)
+        self.assertIn("test_lanes", note)
+        self.assertIn("300", note)
+        self.assertNotIn("test_cli", note)  # a class-scoped name is already narrow
+
+    def test_a_timed_evidence_run_counts(self):
+        self.fm("init")
+        p = c.find_project(self.repo)
+        c.log_event(p, "evidence", data={"cmd": self.CMD, "s": 200.0})
+        self.assertIn("200", cli._slow_verify_note(p, self.CMD))
+
+    def test_evidence_run_records_its_seconds(self):
+        self.fm("init")
+        tid = json.loads(self.fm("task", "new", "X", "--type", "FIX", "--tier", "S", "--json",
+                                 "--ac", "ok :: true").stdout)["id"]
+        self.fm("task", "evidence", tid, "--run", "true")
+        ev = [e for e in c.ledger_tail(c.find_project(self.repo), 50) if e.get("event") == "evidence"]
+        self.assertIsInstance(ev[-1]["data"].get("s"), float)
+
+    def test_no_note_for_a_fast_run_a_scoped_command_or_no_timing(self):
+        self.assertIsNone(cli._slow_verify_note(self.ran(self.CMD, 30), self.CMD))
+        scoped = "python3 plugin/tests/run.py test_cli.Foo"
+        self.assertIsNone(cli._slow_verify_note(self.ran(scoped, 300), scoped))
+        self.assertIsNone(cli._slow_verify_note(self.ran("true", 300), self.CMD))
+
+
 if __name__ == "__main__":
     unittest.main()
 

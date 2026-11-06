@@ -2792,5 +2792,45 @@ class LanePrecheck(ForemanTestCase):
         self.assertNotIn("lane_passed", c.find_brief(c.find_project(self.repo), self.tid).meta)
 
 
+class VerifyTimeout(ForemanTestCase):  # T-3418
+    def brief(self):
+        wt = os.path.join(self.tmp, "wt")
+        os.makedirs(wt, exist_ok=True)
+        b = mock.Mock(id="T-9")
+        b.meta = {"lane": wt}
+        b.verify_cmds.return_value = [(1, "slow")]
+        return b
+
+    def run_verify(self, code, out):
+        with mock.patch.object(c, "run_command", return_value=(code, out)) as run, \
+                mock.patch.object(c, "wait_for_load"), \
+                mock.patch.dict(os.environ, {"FOREMAN_HOST": "load=20,cpus=4"}):
+            with self.assertRaises(c.PolicyError) as cm:
+                slanes._verify(self.brief())
+        return str(cm.exception), run.call_args[0][2]
+
+    def test_a_timeout_inside_the_command_is_red_not_ours(self):
+        msg, _ = self.run_verify(124, "partial")  # `timeout N …` in the verify: no "timed out after" line
+        self.assertIn("is red", msg)
+
+    def test_failing_counts_a_real_timeout_as_no_red(self):
+        p = mock.Mock()
+        with mock.patch.object(c, "run_command", side_effect=[(124, "x\ntimed out after 9s"), (124, "x"), (1, "")]), \
+                mock.patch("sampo.cli.guard_stored"):
+            self.assertEqual(slanes._failing(p, None, "/", ["a", "b", "c"]), ["b", "c"])
+
+    def test_a_timeout_says_so_and_the_cap_is_load_scaled(self):
+        msg, cap = self.run_verify(124, "partial\ntimed out after 1s")
+        self.assertIn("timed out after", msg)
+        self.assertIn("load 20", msg)
+        self.assertIn("narrow the criterion", msg)
+        self.assertNotIn("is red", msg)
+        self.assertGreater(cap, 1200)  # load 20 on 4 cpus: 5x the base
+
+    def test_a_red_criterion_is_still_red(self):
+        msg, _ = self.run_verify(1, "boom")
+        self.assertIn("is red", msg)
+
+
 if __name__ == "__main__":
     unittest.main()
