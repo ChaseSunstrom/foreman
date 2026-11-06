@@ -218,6 +218,44 @@ class Reverify(_Repo):
         self.fm("sentinel", "--last", "0", check=False)
         self.assertEqual(len(self.fixes()), 1, "no second capture")
 
+    def test_a_timed_out_reverify_is_inconclusive_files_nothing_and_stays_queued(self):  # T-2944
+        from sampo import reverify
+        self.queue({"task": "T-0001", "cmd": "sleep 30"})
+        p = self.fm("sentinel", "--last", "0", "--timeout", "1", check=False)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("timed out", p.stdout)
+        self.assertIn("inconclusive", p.stdout)
+        self.assertEqual(self.fixes(), [])
+        q = reverify.load(self.p)["queue"]
+        self.assertEqual([(e["cmd"], e["tries"]) for e in q], [("sleep 30", 1)], "retried next time, counted")
+        d = json.loads(self.fm("sentinel", "--last", "0", "--timeout", "1", "--json", check=False).stdout)
+        self.assertEqual(d["inconclusive"], 1)
+
+    def test_a_run_py_deadline_stop_is_inconclusive_but_a_bare_exit_124_is_a_failure(self):  # T-2944
+        self.queue({"task": "T-0001", "cmd": "echo 'run.py: stopped at its deadline'; exit 124"})
+        p = self.fm("sentinel", "--last", "0", check=False)
+        self.assertEqual((p.returncode, self.fixes()), (0, []), p.stdout + p.stderr)
+        self.assertIn("inconclusive", p.stdout)
+        self.queue({"task": "T-0001", "cmd": "exit 124"})  # its own exit code, no timeout marker
+        p = self.fm("sentinel", "--last", "0", check=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(len(self.fixes()), 1)
+
+    def test_a_failure_the_rerun_times_out_on_is_still_filed(self):  # T-2944
+        self.queue({"task": "T-0001", "cmd": "if [ -f once ]; then sleep 30; else touch once; exit 1; fi"})
+        p = self.fm("sentinel", "--last", "0", "--timeout", "1", check=False)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(len(self.fixes()), 1)
+
+    def test_the_third_timeout_drops_the_entry_with_a_notice(self):  # T-2944
+        from sampo import reverify
+        self.queue({"task": "T-0001", "cmd": "sleep 30", "tries": 2})
+        p = self.fm("sentinel", "--last", "0", "--timeout", "1", check=False)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("dropped after 3 timeouts", p.stdout)
+        self.assertEqual(reverify.load(self.p)["queue"], [])
+        self.assertEqual(self.fixes(), [])
+
     def test_side_effects_and_tasks_no_longer_done_are_dropped_unrun(self):
         from sampo import reverify
         self.write("keep", "1")

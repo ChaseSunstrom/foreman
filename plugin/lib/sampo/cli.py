@@ -5246,6 +5246,13 @@ _SIDE_EFFECTS = re.compile(r"\b(push|deploy|publish|release|install|uninstall|me
 _POINT_IN_TIME = re.compile(r"\borigin/|@\{u(?:pstream)?\}|\bls-remote\b")  # T-1380: a remote's state, then
 
 
+def _timed_out(code, output, timeout):
+    """T-2944: a run that ended at its cap: run_command's marker, or run.py's own deadline stop. A command that
+    merely exits 124 is a failure."""
+    t = (output or "").rstrip()
+    return code == 124 and (t.endswith(f"timed out after {timeout:g}s") or t.endswith("run.py: stopped at its deadline"))
+
+
 def cmd_sentinel(args):
     """Re-run the checks that passed for the last N finished tasks (their [ran] evidence) and report any that fail
     now: a later change broke what an earlier task proved. Commands with side effects are skipped. T-1663: first, the
@@ -5296,15 +5303,20 @@ def cmd_sentinel(args):
               + "; ".join(c.fit(x, 60) for x in refused[:3]), file=sys.stderr)
     for cmd, tid in list(cmds.items())[:args.max]:
         code, output = c.run_command(p.root, cmd, args.timeout)
-        flaky = bool(code and code != 124)
+        timed = _timed_out(code, output, args.timeout)
+        flaky = bool(code and not timed)
         if flaky:  # T-1380: a failure that passes on a second run is a flake (canaries ran side by side, loaded)
-            code, output = c.run_command(p.root, cmd, args.timeout)
-        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output),
+            code2, output2 = c.run_command(p.root, cmd, args.timeout)
+            if not _timed_out(code2, output2, args.timeout):  # a rerun that timed out must not mask the failure
+                code, output = code2, output2
+        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output), "timed": timed,
                         "flaky": flaky and not code})
     for cmd, (tid, fact) in list(checks.items())[:args.max]:
         code, output = c.run_command(p.root, cmd, args.timeout)
-        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output), "assumption": fact})
-        if code:
+        timed = _timed_out(code, output, args.timeout)
+        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output), "assumption": fact,
+                        "timed": timed})
+        if code and not timed:  # T-2944: a timeout (busy machine) is inconclusive
             title = _title(f"Assumption broke for {tid}: {fact}")
             if not any(x.title == title for x in c.load_briefs(p) if x.status not in c.CLOSED):
                 with c.lock(p.dir):
@@ -5313,7 +5325,7 @@ def cmd_sentinel(args):
                     c.log_event(p, "capture", task=nb.id, data={"source": "sentinel", "assumption_of": tid})
                     c.regen_views(p)
     for r in results:  # T-1663: a queued re-verify that fails reopens attention on its task
-        e = queued.get(r["cmd"]) if r["exit"] and not r.get("assumption") else None
+        e = queued.get(r["cmd"]) if r["exit"] and not r["timed"] and not r.get("assumption") else None
         if not e:
             continue
         safe = lambda s, n: c.defang(c.fit(c.plain(c.redact(str(s or ""))), n))  # noqa: E731 output and subject
@@ -5326,19 +5338,23 @@ def cmd_sentinel(args):
                                  f"{safe(e.get('subject'), 120)})")
                 c.log_event(p, "capture", task=nb.id, data={"source": "sentinel reverify", "of": r["task"]})
                 c.regen_views(p)
-    later = set(list(cmds)[args.max:])  # cut by --max: the next run takes them
+    timed = [r for r in results if r["timed"]]  # T-2944: inconclusive: stay queued, up to MAX_TRIES
+    capped = reverify.timed_out(p, {(r["task"], r["cmd"]) for r in timed if r["cmd"] in queued})
+    later = set(list(cmds)[args.max:]) | {r["cmd"] for r in timed}  # cut by --max: the next run takes them
     unrun |= {(e.get("task"), e["cmd"]) for e in reverify.load(p)["queue"] if e["cmd"] in refused}
     if queued or unrun:
         reverify.drop(p, unrun | {(e.get("task"), e["cmd"]) for e in reverify.load(p)["queue"]
                                     if e["cmd"] in queued and e["cmd"] not in later})
-    failed = [r for r in results if r["exit"]]
-    c.log_event(p, "sentinel", data={"ran": len(results), "failed": [(r["task"], r["cmd"][:120]) for r in failed]},
+    failed = [r for r in results if r["exit"] and not r["timed"]]
+    c.log_event(p, "sentinel", data={"ran": len(results), "inconclusive": len(timed), "failed": [(r["task"], r["cmd"][:120]) for r in failed]},
                 session=session())
     culprits = [_bisect(p, r, args.timeout) for r in failed if not r.get("assumption")] if \
         getattr(args, "bisect", False) else []  # T-0458
     out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x],
-               "reverify_dropped": len(unrun)},
+               "reverify_dropped": len(unrun), "inconclusive": len(timed),
+               "timeout_dropped": [e["cmd"] for e in capped]},
         f"Sentinel: {len(results)} past check(s) from {len(done)} finished task(s); {len(failed)} failing now"
+        + (f"; {len(timed)} timed out (inconclusive, retried next time)" if timed else "")
         + (f"; {skipped} with side effects skipped" if skipped else "")
         + (f"; {dated} point-in-time skipped" if dated else "")
         + (f"; {len(unrun)} queued re-verify entries dropped (side effects, point-in-time, refused or task not done)"
@@ -5347,6 +5363,8 @@ def cmd_sentinel(args):
            if any(r.get("flaky") for r in results) else "") + "".join(
             f"\n  ✗ {r['task']}: " + (f"assumption \"{r['assumption']}\": " if r.get("assumption") else "")
             + f"{r['cmd']} → {r['result']}" for r in failed)
+        + "".join(f"\n  ? {r['task']}: {r['cmd']} → {r['result']} (inconclusive)" for r in timed)
+        + "".join(f"\n  ⌫ {e.get('task')}: {e['cmd']}: dropped after {reverify.MAX_TRIES} timeouts" for e in capped)
         + "".join(f"\n  ↳ broke at {x['sha'][:10]} {x['subject']}" + (f" ({x['task']})" if x["task"] else "")
                   + f": {x['captured']}" for x in culprits if x))
     return 1 if failed else 0

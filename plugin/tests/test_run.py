@@ -354,7 +354,8 @@ class Hang(unittest.TestCase):
                     mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), \
                     contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 code = run.main()
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 124)  # T-2944: stopped at its deadline, nothing really failed: a timeout
+        self.assertTrue(err.getvalue().rstrip().endswith("run.py: stopped at its deadline"))
         self.assertIn("not started (the run's 60s deadline): test_late.L", err.getvalue())
         self.assertIn("::error title=run.py::1 classes never started", out.getvalue())
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
@@ -533,7 +534,7 @@ class PerTestJobs(unittest.TestCase):
 
     def test_a_deadline_kill_is_not_recorded_as_slow_and_the_env_sets_the_deadline(self):  # T-3338 review
         r, got = nested(["test_run.HangsWhenAsked"], env={"FM_RUN_HANG": "1", "FM_RUN_DEADLINE": "3"})
-        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertEqual(r.returncode, 124, r.stderr)  # T-2944: only the deadline stopped it: a timeout
         self.assertIn("deadline", r.stderr)  # killed at it, or still waiting for a CPU slot under load
         self.assertNotIn("test_run.HangsWhenAsked", got or {})
 

@@ -108,3 +108,24 @@ def drop(p, handled):
         state = load(p)
         state["queue"] = [e for e in state["queue"] if (e.get("task"), e["cmd"]) not in handled]
         c.write_atomic(_path(p), json.dumps(state, indent=1))
+
+
+MAX_TRIES = 3  # T-2944: timeouts one entry may have before it is dropped (each costs a full timeout per sentinel run)
+
+
+def timed_out(p, keys):
+    """Count a timeout on each queued (task, cmd) in keys; return those now at MAX_TRIES, removed from the queue."""
+    gone = []
+    with c.lock(p.dir):
+        state = load(p)
+        keep = []
+        for e in state["queue"]:
+            if (e.get("task"), e["cmd"]) in keys:
+                e["tries"] = int(e.get("tries") or 0) + 1
+                if e["tries"] >= MAX_TRIES:
+                    gone.append(e)
+                    continue
+            keep.append(e)
+        state["queue"] = keep
+        c.write_atomic(_path(p), json.dumps(state, indent=1))
+    return gone

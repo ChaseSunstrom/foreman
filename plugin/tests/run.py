@@ -522,6 +522,12 @@ def main():
     said = ", ".join(names[:5]) + (f", +{len(names) - 5} more" if len(names) > 5 else "")
     sys.stderr.write(f"\nRan {total} tests in {time.time() - t0:.1f}s ({len(todo)} jobs, {a.j} at a time; "
                      f"slowest: {slow})\n\n{f'FAILED ({len(failed)} classes: {said})' if failed else 'OK' if total else 'NO TESTS RAN'}\n")
+    # T-2944: stopped at its own deadline with nothing really failed: exit 124 and say so last, so a caller (the
+    # sentinel's re-verify) reads a busy machine, not a regression
+    stopped = [r for r in failed if r[2] == NOT_STARTED or "the run's deadline" in r[2]]
+    if stopped and len(stopped) == len(failed):
+        sys.stderr.write("run.py: stopped at its deadline\n")
+        return 124
     return 1 if failed or not total else 0
 
 
