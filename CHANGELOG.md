@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- `sampo check --affected` picks tests for a hub file such as cli.py by the symbols that changed, closed over in-file use and command verbs, and runs the whole file's tests when it can't tell (T-3306).
 - sampo.train has its fmtrain import shim, like every other module (T-3405).
 - test_cli.AffectedPairs's nested fm check --affected runs get a 300 s base hang guard; 120 s still ran out inside a close's own gate run (T-3404).
 - `sampo lane train T-1,T-2` merges the named lanes in a scratch worktree, re-runs each lane's criteria, gates once, bisects a red set to the culprit lanes and fast-forwards the branch; `sampo check` reuses the pass while only CHANGELOG.md and the sync mirror change (T-3380).
