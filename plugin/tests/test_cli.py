@@ -1753,6 +1753,32 @@ class SetLists(ForemanTestCase):
             self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta["scope"], ["plugin/a.py", "plugin/b.py"])
 
 
+    def test_depends_on_refuses_unknown_and_self_accepts_archived(self):
+        # T-3420
+        self.fm("init")
+        a, b = (json.loads(self.fm("task", "new", n, "--type", "FIX", "--tier", "S", "--json").stdout)["id"]
+                for n in ("A", "B"))
+        r = self.fm("task", "set", a, "depends_on=T-9999", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("unknown task T-9999", r.stdout + r.stderr)
+        r = self.fm("task", "set", a, f"depends_on={a}", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("a task can't depend on itself", r.stdout + r.stderr)
+        p = c.find_project(self.repo)
+        old = c.find_brief(p, b).path
+        os.makedirs(os.path.join(p.dir, "archive"), exist_ok=True)
+        os.rename(old, os.path.join(p.dir, "archive", os.path.basename(old)))
+        self.fm("task", "set", a, f"depends_on={b}")
+        self.assertEqual(c.find_brief(p, a).meta["depends_on"], [b])
+        r = self.fm("task", "set", a, f"depends_on=[{b},T-9999]", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("unknown task T-9999", r.stdout + r.stderr)
+        r = self.fm("task", "set", a, "depends_on+=T-9999", check=False)  # the T-3377 append form too
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("unknown task T-9999", r.stdout + r.stderr)
+        self.fm("task", "set", a, f"depends_on={b.lower()}")
+        self.assertEqual(c.find_brief(p, a).meta["depends_on"], [b])
+
     def test_several_sections_in_one_call_all_land(self):
         # T-1124: only the last --section/--text pair was applied, silently
         self.fm("init")

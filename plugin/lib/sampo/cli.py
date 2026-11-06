@@ -3519,6 +3519,19 @@ def _section_pairs(args):
     return list(zip(secs, texts))
 
 
+def _check_deps(p, tid, deps):
+    """T-3420: depends_on names real tasks (archived or closed count) and never the task itself."""
+    known = {m.group(1) for f in c.brief_paths(p, include_archive=True)
+             if (m := c._BRIEF_FILE.match(os.path.basename(f)))}
+    deps = [d.upper() for d in deps]
+    for d in deps:
+        if d == (tid or "").upper():
+            raise UsageError(f"a task can't depend on itself ({d})")
+        if d not in known:
+            raise UsageError(f"unknown task {d}; depends_on takes ids from sampo queue or sampo task list")
+    return deps
+
+
 def task_set(p, args):
     import fmguard
     for cat in args.allow or []:
@@ -3536,7 +3549,8 @@ def task_set(p, args):
         op = k[-1] if k[-1:] in ("+", "-") and k[:-1] in LIST_FIELDS else ""  # T-3377: scope+=a,b appends; scope-=a removes
         if op:
             k = k[:-1]
-            changes[k] = (changes.get(k) or ([("=", [])] if k in changes else [])) + [(op, _list_value(v))]  # resolved in apply(), under the lock
+            items = _check_deps(p, args.id, _list_value(v)) if k == "depends_on" and op == "+" else _list_value(v)  # T-3420
+            changes[k] = (changes.get(k) or ([("=", [])] if k in changes else [])) + [(op, items)]  # resolved in apply(), under the lock
             continue
         if k not in EDITABLE:
             sec = next((h.split(" (")[0].strip() for h, _ in need_brief(p, args.id).sections  # T-1925
@@ -3590,7 +3604,8 @@ def task_set(p, args):
                 raise UsageError(f"{k} is fixed once work has started (sampo focus); the close scores it as planned")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
-        changes[k] = [("=", _list_value(v))] if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
+        changes[k] = [("=", _check_deps(p, args.id, _list_value(v)) if k == "depends_on" else _list_value(v))] \
+            if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
     pairs = _section_pairs(args)
 
     def apply(b):

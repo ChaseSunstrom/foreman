@@ -106,8 +106,10 @@ class Progress(VisibilityCase):
 
     def test_archived_dependency_is_not_dangling(self):  # T-3430
         self.fm("task", "new", "Next", "--type", "FIX", "--tier", "S")
-        self.fm("task", "set", "T-0002", "depends_on=T-0099,T-0098")
         p = c.find_project(self.repo)
+        b = c.find_brief(p, "T-0002")  # written directly: task set refuses unknown ids (T-3420), a hand edit doesn't
+        b.meta["depends_on"] = ["T-0099", "T-0098"]
+        c.save_brief(p, b)
         self.assertEqual(self.sd()["dangling"], [["T-0002", "T-0099"], ["T-0002", "T-0098"]])
         os.makedirs(os.path.join(p.dir, "archive", "2026-10"))
         open(os.path.join(p.dir, "archive", "2026-10", "T-0099-x.md"), "w").close()
