@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- Doctor shows each lane class's subagent effort (builder, reviewer, scout), notes when CLAUDE_CODE_SUBAGENT_EFFORT (Claude Code 2.1.316) overrides them, and gates builder worktree reliance on Claude Code 2.1.311 (T-3384).
 - sampo task set takes scope+=PATH[,PATH…] and scope-=PATH (also depends_on) to widen or trim a list without re-listing it, resolved under the task lock so concurrent widenings keep each other's paths (T-3377).
 - plugin/tests/run.py accepts test file paths (plugin/tests/test_X.py, ./…, test_X.py, an absolute path into the tests dir) as the module name test_X; any other path is a clear error (T-3428).
 - sampo task finish and sampo check reuse a passing full-gates run from any task on the same code tree (CHANGELOG.md and the mirror's .md files aside; a changed CHANGELOG still gets its own docs check), printing "gates: reusing the full run … on the same code tree" with the run's date, tree and task; the red-gate refusal and the post-close sentinel honour it too (T-3120).
