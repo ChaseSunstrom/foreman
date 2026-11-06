@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T12:58:31Z",
- "rev": "bde7afc07",
+ "updated": "2026-11-06T13:28:53Z",
+ "rev": "c9e81561b",
  "capabilities": [
   {
    "n": 1,
@@ -36247,9 +36247,9 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 881,
+ "unproven": 882,
  "unproven_kinds": {
-  "meaning-notes": 388,
+  "meaning-notes": 389,
   "meaning-user": 252,
   "research-uncited": 34,
   "perf-typed": 63,
@@ -37465,27 +37465,27 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 29002,
+   "generated": 29657,
    "write": {
     "title": 197,
-    "line": 1867,
+    "line": 1904,
     "payoff": 21,
     "kill test": 90,
     "code": 11
    },
    "dups": {
     "exact": 15,
-    "embed": 51,
+    "embed": 52,
     "shingle": 0
    },
    "rejected": {
-    "kill": 14720,
-    "tier": 10248,
+    "kill": 14955,
+    "tier": 10367,
     "novelty": 88
    },
-   "merged": 485,
-   "kept": 1209,
-   "pending": 0
+   "merged": 502,
+   "kept": 1225,
+   "pending": 230
   },
   "families": [
    {
@@ -38415,8 +38415,40 @@
     ]
    },
    {
+    "id": "F-028704",
+    "size": 1,
+    "lead": "Heal ecosystem-wide race conditions via causal resonance",
+    "today": "Today you can't fix a race condition in Service A that is triggered by a timing shift in Service B.",
+    "with_this": "With this, you can see the exact microsecond offset in the remote service that causes the local bug, and apply a compensatory delay automatically.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
+    ]
+   },
+   {
+    "id": "F-028707",
+    "size": 1,
+    "lead": "Detect release timing based on the harmonic convergence of pending changes",
+    "today": "Today you can't know if your current branch is structurally stable enough to ship or if the pending commits create harmonic dissonance that will break downstream.",
+    "with_this": "With this, you can wait for the exact moment when all open tasks align into a stable chord, releasing only when the codebase is in harmonic equilibrium.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "releases"
+    ]
+   },
+   {
     "id": "F-025245",
-    "size": 101,
+    "size": 105,
     "lead": "Synchronize parallel agents via shared semantic attention heads",
     "today": "Today you can't make parallel Sampo agents stop duplicating effort when they realize they are solving the same sub-problem.",
     "with_this": "With this, Sampo can reduce total compute by allowing agents to share 'attention weights' for common sub-problems, so they only diverge when their contexts genuinely differ.",
@@ -38457,7 +38489,7 @@
    },
    {
     "id": "F-010989",
-    "size": 8,
+    "size": 9,
     "lead": "Run parallel refactors that share a single moving history",
     "today": "Today you can't run multiple large refactors in parallel without them diverging, merging, or destroying each other's context.",
     "with_this": "With this, you can spin up a dozen isolated refactors against the same living codebase, and each one sees a consistent, evolving state without manual rebasing.",
@@ -40710,44 +40742,12 @@
     "kinds": [
      "features"
     ]
-   },
-   {
-    "id": "F-011896",
-    "size": 1,
-    "lead": "Liquidate the value of untested child scenarios",
-    "today": "Today you can't recover value from scenarios that were written but never executed",
-    "with_this": "With this, you can sell the latent value of untested scenarios to other teams who can run them",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
-   },
-   {
-    "id": "F-011897",
-    "size": 1,
-    "lead": "Index the market price of per-language exam stability",
-    "today": "Today you can't see a live market price for the stability of your language-specific tests",
-    "with_this": "With this, you can track a live index that reflects the community's confidence in your language tests",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
    }
   ],
-  "families_total": 976,
+  "families_total": 998,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1209
+   "total": 1225
   }
  },
  "steer": {
