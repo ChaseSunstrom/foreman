@@ -48,6 +48,14 @@ class Reproducible(unittest.TestCase):
                      for out in outs]
             self.assertEqual(files[0], files[1])
             self.assertTrue(any(f.startswith("stories" + os.sep) for f in files[0]))
+            # T-3059: the source assets are links into design/; the published tree must hold real files
+            for d, ds, fs in os.walk(outs[0]):
+                for n in ds + fs:
+                    self.assertFalse(os.path.islink(os.path.join(d, n)), f"{n} is published as a symlink")
+            share = os.path.join(outs[0], "assets", "share.png")
+            self.assertGreater(os.path.getsize(share), 10_000)
+            with open(share, "rb") as f:
+                self.assertEqual(f.read(8), b"\x89PNG\r\n\x1a\n")
             for rel in files[0]:
                 with open(os.path.join(outs[0], rel), "rb") as a, open(os.path.join(outs[1], rel), "rb") as b:
                     self.assertTrue(a.read() == b.read(), f"{rel} differs between two builds")
