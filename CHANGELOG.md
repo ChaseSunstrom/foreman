@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- The post-merge suite settles pending merges with one run on main's HEAD even after a revert: requeued merges no longer fall back to one oldest-first run each on old trees (T-3456).
 - A task's close no longer counts another task's merged-in doc (named in its Docs impact) or a revert of another task's merge as its own out-of-scope edit (T-3452).
 - The post-merge suite runs once on the newest pending merge first: green there verifies every older pending merge in its history, so one 20-40 min run covers a night of merges instead of one run each; a red newest merge still finds the culprit oldest first (T-3446).
 - T-3120 is back: sampo task finish reuses a full-gates pass on the same tree when the only change since is CHANGELOG.md lines. The post-merge suite had reverted it on CheckSkip, Claims and CloseGates reds that the slot-pool bug (T-3442) caused (T-3450).
