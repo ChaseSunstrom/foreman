@@ -607,14 +607,15 @@ def task_base(root, b):
 
 def merged_in(root, b):
     """T-2784: {file: the task} for files that `fm lane merge` commits ("Merge T-XXXX: …") of other tasks brought in
-    since this task's start commit: theirs to answer for, not this task's edits."""
+    since this task's start commit: theirs to answer for, not this task's edits. T-3452: and their reverts (the
+    post-merge suite's 'Revert "Merge T-XXXX: …"'), which change files under a task that started after the merge."""
     base = b.meta.get("base")
     if not base or _git(root, "cat-file", "-t", base, timeout=10).strip() != "commit":
         return {}
     out = {}
-    for line in _git(root, "log", "--merges", "--format=%H %s", f"{base}..HEAD", timeout=30).splitlines():
+    for line in _git(root, "log", "--format=%H %s", f"{base}..HEAD", timeout=30).splitlines():
         sha, _, subj = line.partition(" ")
-        m = re.match(r"Merge (T-\d+)\b", subj)
+        m = re.match(r'(?:Revert ")?Merge (T-\d+)\b', subj)
         if m and m.group(1) != b.id:
             for f in _git(root, "diff", "--name-only", "--no-renames", f"{sha}^1", sha, timeout=30).splitlines():
                 out.setdefault(f, m.group(1))

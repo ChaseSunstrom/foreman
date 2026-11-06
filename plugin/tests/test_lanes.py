@@ -111,6 +111,30 @@ class Lanes(ForemanTestCase):
         p = self.fm("task", "done", mine, "--lesson", "none: test", check=False)
         self.assertEqual(p.returncode, 0, p.stderr)
 
+    def test_a_closed_tasks_merged_doc_named_in_docs_impact_stays_theirs(self):
+        # T-3452: a doc named in passing was claimed once the task that merged it closed: T-3442 refused for MASTER.md
+        mine = self._audited_task_then_two_merges("elsewhere/b.md", "elsewhere/c.py")
+        theirs = c.merged_in(self.repo, c.find_brief(c.find_project(self.repo), mine))["elsewhere/b.md"]
+        self.fm("task", "drop", theirs, "closed", "--force")
+        self.fm("task", "set", mine, "--section", "Docs impact", "--text", "the builder updated elsewhere/b.md")
+        p = self.fm("task", "done", mine, "--lesson", "none: test", check=False)
+        self.assertNotIn("elsewhere/b.md", p.stderr)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_a_revert_of_another_tasks_merge_is_not_this_tasks_scope(self):
+        # T-3452: the post-merge revert of a merge older than this task's start changed which.py under T-3442's close
+        other = self.new("Theirs", self.lane)
+        self._write(self.lane, "elsewhere/b.py")
+        self.git("add", "elsewhere/b.py", cwd=self.lane)
+        self.git("commit", "-qm", "theirs", cwd=self.lane)
+        self.fm("lane", "merge", other)
+        mine = first(self.fm("task", "new", "Mine", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                             "--scope", "src/**", "--json", "--focus").stdout)["id"]
+        self._write(self.repo, "src/a.py")
+        self.git("revert", "--no-edit", "-m", "1", "HEAD", cwd=self.repo)
+        p = self.fm("task", "done", mine, "--lesson", "none: test", check=False)
+        self.assertNotIn("elsewhere/b.py", p.stderr)
+
     def test_finish_after_two_other_merges_has_no_audit_gap(self):
         # T-2784: fm task finish's pre-check judged the audit against the merged tree
         mine = self._audited_task_then_two_merges("elsewhere/b.py", "elsewhere/c.py")

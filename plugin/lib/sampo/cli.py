@@ -1867,10 +1867,11 @@ def _claimed(p, b, others=None):
     docs = b.section("Docs impact").strip()
     soft = [] if docs.lower().startswith("none") else re.split(r"[\s,;()`*\[\]]+", docs)  # the docs it names
     others = _others(p, b) if others is None else others
+    merged = c.merged_in(p.root, b) if soft else {}  # T-3452: another task's merge stays its own, open or closed
     for n in soft:
         n = os.path.normpath(n.strip("'\"").rstrip(".:") or ".")
         # T-2251: a doc only named in passing waits for an open task still editing it (its half-done hunks)
-        if ok(n) and all(_closed(p, t) for t in others.get(n, ())):
+        if ok(n) and n not in merged and all(_closed(p, t) for t in others.get(n, ())):
             out.add(n)
     return out
 
