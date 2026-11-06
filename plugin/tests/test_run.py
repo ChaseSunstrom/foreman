@@ -23,6 +23,16 @@ def nested(args, seed=None, env=None):
         return r, (json.load(open(p)) if os.path.exists(p) else None)
 
 
+class NoCore(unittest.TestCase):
+    def test_run_py_drops_core_dumps_for_itself_and_its_workers(self):  # T-3503
+        import subprocess
+        code = ("import sys, resource, run\nsys.argv = ['run.py', '-h']\n"
+                "try:\n    run.main()\nexcept SystemExit:\n    pass\nprint(resource.getrlimit(resource.RLIMIT_CORE))")
+        r = subprocess.run([sys.executable, "-c", code], cwd=os.path.dirname(__file__), capture_output=True, text=True,
+                           env=dict(os.environ, PYTHONPATH=os.path.dirname(__file__)))
+        self.assertEqual(r.stdout.strip().splitlines()[-1], "(0, 0)", r.stderr)
+
+
 class Args(unittest.TestCase):
     def test_names_are_k_patterns(self):
         a = run.parse(["test_lanes", "-k", "Stop", "test_cli"])

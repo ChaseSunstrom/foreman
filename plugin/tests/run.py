@@ -442,6 +442,11 @@ def parse(argv=None):
 
 
 def main():
+    try:  # T-3503: a worker killed with SIGABRT must not leave a core dump; children inherit the limit
+        import resource
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    except (ImportError, ValueError, OSError):
+        pass
     a = parse()
     ap = a
     if any(re.search(r"\s", k) for k in a.k + a.names):  # T-0357: '-k "a or b"' matched nothing and failed only at the end

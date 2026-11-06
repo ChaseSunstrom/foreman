@@ -2696,6 +2696,12 @@ def _model_env(bench):
     return c.sandbox_env({k: v for k, v in os.environ.items() if not bench.CREDENTIALS.match(k)}, **ENV)
 
 
+def _nocore():
+    """preexec for the exam's children: a crashing test binary leaves no core dump (T-3503: 7,455 dumps in a day)."""
+    import resource
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+
 def _run(key, target, test_file, slow=False):
     """Run one test file in target with the key's commands. (ok, why)."""
     from sampo import bench  # the code run here is model-written: no forge, cloud or registry credentials reach it
@@ -2708,7 +2714,7 @@ def _run(key, target, test_file, slow=False):
             argv = [a.replace("@F@", test_file).replace("@OUT@", out) for a in shlex.split(cmds[step])]
             try:
                 r = subprocess.run(argv, cwd=target, env=env, capture_output=True, text=True, timeout=limit,
-                                   stdin=subprocess.DEVNULL)
+                                   stdin=subprocess.DEVNULL, preexec_fn=_nocore)
             except subprocess.TimeoutExpired:
                 return False, f"{step} timed out after {limit}s"
             except OSError as e:
@@ -2988,7 +2994,7 @@ def _sh(cmd, cwd, limit=BUILD_T):
     env = _model_env(bench)
     try:
         return subprocess.run(["bash", "-c", cmd], cwd=cwd, env=env, capture_output=True, timeout=limit,
-                              stdin=subprocess.DEVNULL).returncode == 0
+                              stdin=subprocess.DEVNULL, preexec_fn=_nocore).returncode == 0
     except (subprocess.TimeoutExpired, OSError):
         return False
 

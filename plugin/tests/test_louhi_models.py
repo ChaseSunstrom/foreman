@@ -3,6 +3,7 @@ backends) and the embedding arm (title to brief recall). Fake servers only; no l
 import http.server
 import json
 import os
+import tempfile
 import threading
 
 from helpers import ForemanTestCase, read_text
@@ -60,6 +61,14 @@ class Server:
     def close(self):
         self.srv.shutdown()
         self.srv.server_close()
+
+
+class ExamChildNoCore(ForemanTestCase):
+    def test_the_exam_runs_its_children_with_no_core_dump_limit(self):  # T-3503
+        probe = "python3 -c 'import resource,sys; sys.exit(resource.getrlimit(resource.RLIMIT_CORE)[0] != 0)'"
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(louhi._run({"commands": {"exec": probe}}, d, "x"), (True, ""))
+            self.assertTrue(louhi._sh(probe, d))
 
 
 class LouhiModels(ForemanTestCase):
