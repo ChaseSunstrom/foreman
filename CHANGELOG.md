@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- Kalevala watch shows a tower whose files can't be read as its own "unreadable" row with the reason instead of blanking the whole block, a round lists it as skipped, and the genesis drawer's close keeps the page's query string (T-3376).
 - Task boundaries file the predicted next asks that no open task covers as predicted captures (at most 3 open project-wide, no refiling within 7 days, guesses of 3+ words), and sampo misses counts a catch when the user later asks for one (T-3128).
 - An edit made while sampo task finish runs is noted ("a close of ID is running: this edit isn't part of it") and journalled to no task, only in the closing tree: a close in the main checkout leaves lane builders' edits attributed, and concurrent closes each keep their own marker (T-3030).
 - The next-request predictor counts as leading only when a paired sign test over the replay gives p < 0.05 with at least a 2-point lead, so 259 against 256 of 376 reads "level with naive"; trailing and no-baseline kinds say so, and the self-running line shows the counts and p-value (T-3069).
