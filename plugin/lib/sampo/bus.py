@@ -619,9 +619,6 @@ def cmd_lease(args):
                 rel = os.path.relpath(os.path.abspath(rel), p.root)
                 todo.append((rel, sym or "*"))
             hits = [(f"{r}::{s}", v) for r, s in todo for v in claim_overlaps(p, r, s, me, act, data)]
-            # T-3283: a lane's pre-claim (lane-<id>) is advisory, as edits treat it (T-1138): a take notes it, never refuses
-            lanes = [(t, v) for t, v in hits if v["session"].startswith("lane-")]
-            hits = [(t, v) for t, v in hits if not v["session"].startswith("lane-")]
             if args.action == "take" and hits and not args.warn:  # T-1068: refuse the whole claim, taking none of it
                 if getattr(args, "json", False):
                     cli.out(args, {"refused": [{"target": t, "session": v["session"], "task": v.get("task")}
@@ -631,16 +628,13 @@ def cmd_lease(args):
                                        + " (--warn takes it anyway)")
             for t, v in hits if args.action == "take" else []:
                 print(f"warning: {t} overlaps {_who(v)}", file=sys.stderr)
-            for t, v in lanes if args.action == "take" else []:
-                print(f"note: {t} overlaps lane pre-claim {_who(v)}; taken (pre-claims are advisory)", file=sys.stderr)
             for rel, sym in todo:
                 if args.action == "drop":  # T-1216: a file named alone drops each of its symbol leases too
                     data = {k: v for k, v in data.items() if not (mine(v) and v["file"] == rel
                                                                    and (sym == "*" or v["symbol"] == sym))}
                 else:
                     _claim(data, p, me, act.id if act else None, rel, sym, args.minutes * 60,
-                           advisory=any(not v["session"].startswith("lane-")  # T-3283: a lane's pre-claim alone isn't a hold
-                                        for v in claim_overlaps(p, rel, sym, me, act, data)))
+                           advisory=bool(claim_overlaps(p, rel, sym, me, act, data)))
             _write_leases(data)
     rows = [v for v in data.values() if v["project"] == p.slug]
     if args.action == "drop":  # T-1205, T-1729: what this drop released, only that (fm lease list shows the rest)
