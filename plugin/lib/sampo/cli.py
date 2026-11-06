@@ -5,6 +5,7 @@ refused a near-duplicate (T-1662).
 """
 import argparse
 import collections
+import hashlib
 import json
 import os
 import re
@@ -1293,11 +1294,17 @@ def _ablate(p, b, args):
 def _red_full_check(p):
     """T-2526: (gate, failing tests) when the newest full check_run on this tree (no skipped tests) had a gate fail;
     None when it passed, or no full run is on this tree (an edit since changes the tree: the close's own runs judge)."""
-    tree = c.worktree_id(p.root)
+    snap = c.worktree_tree(p.root)
+    tree = snap[:12] if snap else None
+    ctree = None
     for e in reversed(c.ledger_tail(p, 3000)):
         d = e.get("data") if isinstance(e.get("data"), dict) else {}
-        if e.get("event") != "check_run" or not tree or d.get("tree") != tree or d.get("skip_tests"):
+        if e.get("event") != "check_run" or not tree or d.get("skip_tests"):
             continue
+        if d.get("tree") != tree:  # T-3120: a run on the same code tree (a close's CHANGELOG/mirror edits aside) counts
+            ctree = ctree or c.code_tree(p.root, snap)
+            if not d.get("code_tree") or d["code_tree"] != ctree:
+                continue
         bad = [r for r in d.get("results") or [] if isinstance(r, dict) and r.get("exit")]
         return (str(bad[0].get("cmd") or "a gate"), [str(t) for t in bad[0].get("failing") or []]) if bad else None
     return None
@@ -1368,8 +1375,13 @@ def _task_finish(p, args):
     args.reused = []
 
     def run(cmd):
+        if cmd not in runs and FULL_CHECK.fullmatch(cmd.strip()) and (hit := _full_pass(p)):
+            # T-3120: the full gates passed on this code tree (any task's run; only CHANGELOG/mirror lines differ)
+            args.reused.append(f"{cmd} ({hit})")  # the summary names the hit, not "this tree and world"
+            runs[cmd] = (0, f"✓ gates: reusing the full {hit}")
+            print(runs[cmd][1])
         if cmd not in runs and (at := b.passed_here(cmd, *here)):  # T-2644: it just passed on these very files
-            args.reused.append(cmd)
+            args.reused.append(f"{cmd} (this tree and world)")
             runs[cmd] = (0, f"reused: the same command passed on this tree and world at {at}")
         if cmd not in runs:
             guard_stored(p, b, cmd)  # T-0901
@@ -1503,7 +1515,7 @@ def _task_finish(p, args):
         cmd, secs = max(args.timings, key=lambda t: t[1])
         print(f"Slowest: {c.fit(c.plain(cmd), 80)} {secs:.0f} s (of {total:.0f} s)")
     if not rc and not getattr(args, "json", False) and getattr(args, "reused", None):  # T-2644
-        print(f"Reused {len(args.reused)} run(s) that already passed on this tree and world: "
+        print(f"Reused {len(args.reused)} run(s) that already passed: "
               + "; ".join(c.fit(c.plain(x), 60) for x in args.reused[:3]))
     started = None
     if not rc:
@@ -1780,7 +1792,7 @@ def _sentinel(p):
         closes += e.get("event") == "task_done"
     if last and closes < SENTINEL_CLOSES and time.time() - last.timestamp() < SENTINEL_MIN * 60:
         return None
-    if c.host_strain():
+    if c.host_strain() or _full_pass(p):  # T-3120: a pass on this code tree already holds
         return None
     env = dict(os.environ, FOREMAN_SENTINEL_RUN="1", FOREMAN_SENTINEL_TREE=c.worktree_id(p.root) or "")
     argv = [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "check"]
@@ -5020,10 +5032,12 @@ def _cmd_check(args):
     if (c.gates_live(p, key="ship_testing") or {}).get("root", p.root) != p.root:  # T-1978: not the ship's own check
         c.wait_while(lambda: c.gates_live(p, key="ship_testing"), "sampo ship's test run", "sampo check")
     act = c.active_brief(c.load_briefs(p), p.lane)
-    tree = c.worktree_id(p.root)
+    snap = c.worktree_tree(p.root)  # T-3120: one snapshot gives both ids
+    tree = snap[:12] if snap else None
+    ctree = c.code_tree(p.root, snap) if snap else None
     skip = red_first_tests(p, act, checks)  # T-1101
     env, left_out = _skip_env(skip), _left_out(skip)
-    cached = None if args.fresh else _cached_pass(p, checks, tree, skip)
+    cached = None if args.fresh else _cached_pass(p, checks, tree, skip, ctree)
     if cached:  # the same gates already passed on this exact tree: rerunning them only costs time
         results, notes = [(cmd, 0, f"cached pass ({cached})", 0.0) for cmd in checks], {}
         if args.evidence:
@@ -5034,7 +5048,8 @@ def _cmd_check(args):
                 "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check", "result": "cached pass"})
         out(args, {"results": [{"cmd": x, "exit": 0, "cached": cached} for x in checks], "failed": 0,
                    "skipped_tests": skip},
-            f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (sampo check --fresh reruns)"
+            (f"✓ gates: reusing the full {cached}; cached (sampo check --fresh reruns)" if "same code tree" in cached else
+             f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (sampo check --fresh reruns)")
             + (f"\n! {left_out}" if left_out else ""))
         return 0
     marked = args.evidence or not getattr(args, "affected", False)  # T-1963: a full run, for the edit hook's note too
@@ -5108,7 +5123,8 @@ def _cmd_check(args):
     except Exception:
         pass  # failure memory is a hint; the gate's verdict stands either way
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
-                data={"tree": tree, "env": c.env_id(), **({"load": round(os.getloadavg()[0] / (os.cpu_count() or 1), 2)} if hasattr(os, "getloadavg") else {}),
+                data={"tree": tree, "env": c.env_id(), "code_tree": ctree, "changelog": _changelog_hash(p.root),  # T-3120: a later close that changes only CHANGELOG/mirrors reuses this pass
+                      **({"load": round(os.getloadavg()[0] / (os.cpu_count() or 1), 2)} if hasattr(os, "getloadavg") else {}),
                       "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
                                                                      **({"failing": c.failing_tests(out_)[:50]} if code else {}),
                                                                      **skipped.get(cmd, {})} for cmd, code, out_, s in results],
@@ -5588,7 +5604,7 @@ def _paths_unchanged(p, cmd, globs, tree):
         if r is None:
             continue
         since, base = r.get("since") or e.get("ts"), r.get("tree") or d.get("tree")
-        if r.get("exit") or d.get("env") != c.env_id() or not base or (c.age_days(since) or 0) >= CACHE_DAYS:
+        if r.get("exit") or d.get("env") != c.env_id() or not base or (c.age_days(since) or CACHE_DAYS) >= CACHE_DAYS:  # T-3120: no readable time is stale
             return None
         top = c.git_root(p.root)  # --no-renames: a file moved out of the paths counts under its old name too
         names = c._git(top, "diff", "--name-only", "--no-renames", base, tree, timeout=60, fail=None)
@@ -5662,8 +5678,22 @@ def _left_out(skip):
                      for tid, ns in by.items())
 
 
-def _cached_pass(p, checks, tree, skip=()):
-    """When the newest full fm check run was on this exact tree, with these gates, and all passed: its time."""
+FULL_CHECK = re.compile(r"(?:sampo|fm|\S*/bin/(?:sampo|fm)) check")
+
+
+def _full_pass(p):
+    """T-3120: the reusable pass for the configured gates on the working files now (see _cached_pass), else None."""
+    checks = list(c.read_meta(p).get("checks") or [])
+    snap = c.worktree_tree(p.root)
+    if not checks or not snap:
+        return None
+    skip = red_first_tests(p, c.active_brief(c.load_briefs(p), p.lane), checks)
+    return _cached_pass(p, checks, snap[:12], skip, c.code_tree(p.root, snap))
+
+
+def _cached_pass(p, checks, tree, skip=(), ctree=None):
+    """When the newest full fm check run was on this tree (or its code tree: T-3380, T-3120), with these gates, and
+    all passed: its time. `ctree`: the code tree of the same snapshot as `tree` (computed here when not given)."""
     if not tree:
         return None
     for e in reversed(c.ledger_tail(p, 2000)):
@@ -5671,14 +5701,41 @@ def _cached_pass(p, checks, tree, skip=()):
             d = e.get("data") or {}
             rs = d.get("results") or []
             # T-3380: a merge train's pass also holds for the same code tree (a close's CHANGELOG and mirror edits aside)
-            if d.get("code_tree") and d.get("tree") != tree and d["code_tree"] != c.code_tree(p.root):
-                return None
+            if d.get("code_tree") and d.get("tree") != tree:
+                ctree = ctree or c.code_tree(p.root)
+                if d["code_tree"] != ctree:
+                    return None
+            age = c.age_days(e.get("ts"))  # T-3120: no readable time is stale, not fresh
             if (d.get("tree") == tree or d.get("code_tree")) and d.get("env") == c.env_id() and [r.get("cmd") for r in rs] == checks \
                     and (d.get("skip_tests") or []) == sorted(skip) \
-                    and not any(r.get("exit") for r in rs) and (c.age_days(e.get("ts")) or 0) < CACHE_DAYS:
-                return f"run at {str(e.get('ts', ''))[11:16]} UTC"
+                    and not any(r.get("exit") for r in rs) and age is not None and age < CACHE_DAYS:
+                ts = str(e.get("ts", ""))  # provenance: when, which code tree, whose run (the ledger's check_run)
+                at = f"run {ts[:10]} {ts[11:16]} UTC, code_tree {(d.get('code_tree') or d.get('tree') or '')[:12]}, from {e.get('task') or 'a train'}"
+                if d.get("tree") == tree:
+                    return at
+                if d.get("changelog") != _changelog_hash(p.root) and not _changelog_reads_clean(p):
+                    return None  # the pass never read this CHANGELOG: a malformed line must not ride in on it
+                return f"{at} on the same code tree"
             return None
     return None
+
+
+def _changelog_hash(root):
+    """T-3120: the CHANGELOG.md a full run saw (the code tree leaves it out), as a short digest."""
+    try:
+        with open(os.path.join(root, "CHANGELOG.md"), "rb") as f:
+            return hashlib.sha1(f.read()).hexdigest()[:12]
+    except OSError:
+        return None
+
+
+def _changelog_reads_clean(p):
+    """T-3120: a code-tree reuse over a changed CHANGELOG still runs the test that reads it (test_docs.Judgment)."""
+    run = os.path.join(p.root, "plugin", "tests", "run.py")
+    if not os.path.isfile(run):
+        return True  # no such test in this project: nothing to read it with
+    rc, _ = c.run_command(p.root, "python3 plugin/tests/run.py test_docs.Judgment", c.load_scaled(300))
+    return rc == 0
 
 
 # T-0994: the test files a runner can run, by the words in its command; an unknown runner takes them all
