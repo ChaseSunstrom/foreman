@@ -11,6 +11,8 @@
 
 ### Everything else
 
+- test_cli.AffectedPairs's nested fm check --affected runs get a 300 s base hang guard; 120 s still ran out inside a close's own gate run (T-3404).
+- `sampo lane train T-1,T-2` merges the named lanes in a scratch worktree, re-runs each lane's criteria, gates once, bisects a red set to the culprit lanes and fast-forwards the branch; `sampo check` reuses the pass while only CHANGELOG.md and the sync mirror change (T-3380).
 - fm sync's repo mirror is now .sampo/ (was .foreman/): one constant names it, an older .foreman/ is read until it moves once in a single logged commit (git mv), the move runs only from the checkout you stand in (a lane never moves another checkout), a user's own .sampo/ is left alone, and the guard and lint cover both names (T-3342).
 - The fmrepro import shim matches the other shims exactly, so test_rename_aliases is green again after the repro merge (T-3400).
 - test_cli.AffectedPairs gives its nested `fm check --affected` runs a 120 s base hang guard, so a loaded host stops failing every close on them (T-3390).
