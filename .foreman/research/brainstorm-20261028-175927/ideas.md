@@ -1,0 +1,265 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 170 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Make the guard's refusal name the safe rewrite — near T-0185 (done): Guard block messages name one safe rewrite when the guard c…
+- Add one `fm triage` entry that picks the backlog surface
+- Undo and count-left in swipe --serve
+- Add GitHub issues to `fm inbox ticket` — near T-0926 (done): fm inbox alone lists the inbox (captured requests), as fm -…
+- Refresh a fetched ticket brief instead of making a second one
+- Report how often a known fix was offered, accepted and wrong
+- Explain why one backlog item outranks another
+- Serve one index of every servable page — near T-1858 (done): Fm inbox swipe: a served swipe page through fm serve
+- Wild: Send a morning "needs you" digest with paste-ready answers
+- Wild: Bill-of-effort quote for a queue before it starts
+- Wild: "Did I already decide this?" lookup against the user's own words
+- Gallery index for scenes with a one-line caption and a render-time test
+- Unused-token report for DESIGN.md — near T-1717 (done): Foreman-ui pane: load a custom palette (the JSON fm design …
+- Re-sync a fetched ticket into its existing brief — near T-1859 (done): Fm inbox ticket: fetch a Jira or Linear issue by key, not o…
+- Report known-fix hit rates and demote bad signatures
+- Count self-collisions apart from real risk, and show the rewrite
+- Serve every page from one `fm serve` hub — near T-1858 (done): Fm inbox swipe: a served swipe page through fm serve
+- Audit DESIGN.md tokens against the CSS — near T-1651 (done): fm design tokens: DESIGN.md tokens compile to CSS variables…
+- Add a scene gallery with captions and a render budget
+- Offer a standing push authorization after the third "push X to main"
+- Make closing a FEATURE open its docs step — near T-1662 (done): Capture refuses a near-duplicate naming the open task and f…
+- Wild: Run a persona walkthrough that writes the next round's review
+- Wild: Turn each "I shouldn't have had to tell you" into a detector
+- Wild: Reproduce CI-only failures locally with a quirk profile
+- Wild: Surface hidden settings verbs when the user repeats a change by hand
+- Show the swipe stack's remaining count as a thinning deck
+- Add a one-key undo to swipe with a rewinding card animation
+- Give `fm serve` one index page that lists every servable page with a shared style
+- Caption every scene with "what this is telling you"
+- Open a scene gallery with live thumbnails — near T-1650 (done): Looks gallery extras: shader sketchbook live thumbnails, tr…
+- Make a guard refusal print the literal-path rewrite that would succeed — near T-0927 (done): Guard: the mktemp-as-literal rewrite is also skipped for an…
+- Celebrate a first-try fix after a refusal with a "clean retry" tick
+- Offer macros inside `fm settings newcomer`
+- Wild: Let the swipe deck throw a confetti of closed tasks when the inbox hits zero
+- Wild: Play a "card of the day" from the user's own past verdicts as a second-guess game
+- Wild: Print the scene gallery as a trading-card sheet of the week's shipped work
+- Unused-token report that lights up in DESIGN.md as a "wardrobe"
+- Rewrite guard refusals into the literal-path retry — near T-0927 (done): Guard: the mktemp-as-literal rewrite is also skipped for an…
+- Refresh a fetched ticket brief in place — near T-1859 (done): Fm inbox ticket: fetch a Jira or Linear issue by key, not o…
+- Fetch GitHub issues and comment threads in `fm inbox ticket`
+- Post the close link back to the source ticket
+- Offer the settings macros from `fm settings newcomer` — near T-1658 (done): Settings extras: log, macro, duel, replay (what-breaks), wo…
+- Wild: Wake a stale backlog card with a spoken one-liner
+- Wild: Turn the guard's near-misses into a two-minute practice quiz
+- Wild: Print one weekly "triage zine" from swipe verdicts
+- Make ticket briefs idempotent by key — near T-1859 (done): Fm inbox ticket: fetch a Jira or Linear issue by key, not o…
+- Give swipe a verdict journal with undo and a cards-left count
+- Explain learned priorities with a `prefer --why T-xxxx` line
+- Report offered vs accepted known fixes in `fm doctor`
+- Render every scene under a 1 s budget and index them in a gallery
+- Wild: Replace the "forever loop" with a one-page round verdict — near T-1066 (done): Mutation-test the guard: fm bench guard --mutate drops or w…
+- Wild: Try a "guard collision" replay from the user's own shell history
+- Pin every hook to a declared fail-open or fail-closed policy, tested by injected faults
+- Reap a dead run's edit leases, gate lock and children together
+- Make state writes crash-proof with checksums and last-good fallback
+- Classify CI failures by cause before filing a task
+- Rehearse crash recovery nightly on the user's own finished runs
+- Wild: Keep a last-known-good Foreman install that boots when the new one fails its first gates
+- Make a rerun that passes a flake entry, then quarantine on repeat
+- Retire verbs with zero runs in 90 days behind `fm prune`
+- Make `fm` with no arguments print one next command
+- Fold the four triage surfaces into `fm triage`
+- Cap files at 300 lines with a shrinking ratchet — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Share one stylesheet across all served pages
+- Fold the finish verbs into `fm done`
+- Wild: Delete a feature and keep an obituary line
+- Close the deferred 'Later from' piles with a single yes/no sweep
+- Replace the gate with a content-addressed proof cache shared across machines
+- Run Foreman's whole loop as one Claude Code slash command with zero child processes
+- Make every refusal self-healing: the guard returns the one rewrite that would pass
+- Ticket sync that updates instead of duplicating, and posts the commit back
+- Report known-fix hit rate: offered, accepted, wrong
+- Wild: Run a nightly "new user, old repo" rehearsal that files its own bugs
+- Wild: Make the queue a git ref so any machine can pick up lanes
+- Wild: Price every queued task in dollars before it runs and refuse what can't finish before the reset
+- Scene gallery with a render-under-1s test and a caption per scene
+
+## Round 2
+- Chart round-over-round improvement on a fixed corpus
+- Give each task a ship ladder: closed, on main, live
+- Verify review findings against the code before filing
+- Turn review severity into test-first fix tasks automatically — near T-0257 (done): fm batch: several small requests worked as one task — one p…
+- Measure orchestrator idle time and fill it
+- Split a stalled lane into two tasks and keep its partial diff
+- Reopen the closed task whose commit turned main red
+- Rerun only what failed last time with `fm test --last-red` — near T-0047 (done): Smarter fm check — rerun a failing gate once (flaky), label…
+- Run Desktop without the tray and say how to get it back
+- Wild: Rehearse the round and show the user-only list first — near T-1066 (done): Mutation-test the guard: fm bench guard --mutate drops or w…
+- Wild: Keep a pre-gated integration branch of everything proved but unpushed
+- Wild: Turn every stalled or killed lane into a stall-classifier fixture
+- Raise a lesson's confidence only when recall preceded a first-time pass — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Pre-mark the checklist page with predicted build/skip
+- Accept ranges and lists wherever a task id goes
+- Reserve registry slots per lane at launch
+- Give the idea ledger a theme map with a saturation count
+- Keep a ledger of tests skipped in CI, each with an expiry — near T-1829 (done): fm release-check keeps FOREMAN_DOCTOR_BENCH so the suite's …
+- Pin each review finding to a line hash and drop it on filing if the line changed
+- Build commands through a guard-safe wrapper
+- Preview the rendered site diff before a push to main
+- Run a weekly canary on the next CI runner image
+- Fill gate and build waits with S-sized chores — near T-1743 (done): fm check --affected and --evidence step runs take the machi…
+- Record a reason code on every swipe skip — near T-1234 (done): Fewer turns spent on Foreman itself: active-task default, e…
+- Use hesitation on swipe cards as a signal
+- Slow bulk approvals when the verdicts come too fast
+- Rewind the swipe card on undo
+- Clean-retry tick after a guard refusal — near T-0394 (done): CLEAN: the guard's refusal of a plain git merge on Foreman'…
+- Say "closed, and here's what to do" with a gentle receipt line — near T-1819 (done): Session-start CI line points at a closed task: say it's clo…
+- Explain a learned priority in one line with a tiny bar
+- Greet a first-try fix with the one-line "known fix" outcome
+- Keep a living capability map with evidence per cell
+- Snapshot the public surface and gate breaking changes
+- Refuse unparseable edits before they land
+- Add a boot-smoke evidence kind — near T-1518 (done): Brainstorm T-1479 round 2 (cluster 23): a noise-aware perf …
+- Harden loopback servers against rebinding and CSRF
+- Infer import-layer rules and ratchet them
+- Mint a pattern rule from each fixed bug class
+- Show failing-test locals as a digest — near T-1824 (done): FEATURE: fm cost shows the retry tax per task: tokens spent…
+- Draft a Claude Code upstream bug report from a local repro
+- Draft a postmortem when main goes red or a run is abandoned
+- Import other agents' rule files at init — near T-1290 (done): The builder rules live once, in plugin/agents/fm-builder.md…
+- Let ADRs carry a check that rejects violating diffs
+- Reimplement from the criteria alone to find ambiguity
+- Turn the user's manual poke at the app into a smoke script
+- Capture a rival CLI's output as the target for a "lacks" row
+- Admit review findings only with a reproducer that fails at HEAD
+- Make triage one JSON-lines engine with thin clients
+- Load ticket providers as `fm-ticket-<name>` executables
+- Race the last round's tag against this build on the frozen bench
+- Crawl every served page and assert its security and a11y contract
+- Author the round review from friction in the journal — near T-0348 (done): Desktop round 4: a Review tab with the week's digest and th…
+- Prime each session with the model's own top collisions
+- Backtest known fixes against the journal before reporting hit rates — near T-0682 (done): Milestone: Features — Verification and product checking
+- Express perf assertions in CPU time against a calibration loop
+- Stop the swipe deck once the ranking is stable
+- Ship the swipe deck as a self-contained HTML file — near T-0786 (done): fm page: the queue (and optionally a brainstorm catalogue) …
+- Wild: let the guard search for its own safe rewrite
+- Wild: serve bookmarkable pages by socket activation
+- Wild: add a silence-as-consent countdown mode to triage
+- Make every import and convert verb balance its books
+- Fuzz every file-reading verb with malformed content and treat a traceback as a failure
+- Run every mutating verb twice and assert the second run is a no-op
+- Give served pages a lifecycle: idle timeout, orphan reaping and a port-in-use fallback
+- Check Host and Origin on every served-page request — near T-1858 (done): Fm inbox swipe: a served swipe page through fm serve
+- Give the swipe page a local outbox so a dead server never eats verdicts
+- Put registry entries in per-feature fragment files, merged at build
+- Allocate task ids atomically under concurrent creation
+- Test each learned known-fix against a negative corpus before it's saved
+- Replay each closing lane's diff in a clean checkout — near T-1731 (done): Lane and close friction: finish --commit and shared files, …
+- Check every co-released version string agrees in `fm release-check` — near T-1188 (done): `fm release VERSION` chains release-check, canary, the rele…
+- Stamp each verb and surface with the date it was last verified on its real path
+- Verify served pages in two tiers: a stdlib structural check always, a real browser nightly
+- Add a nightly crasher farm that grows the fuzz corpus and minimises each crasher
+- Record API payloads for ticket fetch and detect schema drift
+- Delete the TTY swipe and keep the served page — near T-1858 (done): Fm inbox swipe: a served swipe page through fm serve
+- Write swipe as a static HTML file with no server
+- Take ticket fetching from the user's own CLI
+- Cut `fm settings` to get/set/undo and make the extras a plain file
+- Drop Figma import and accept only DTCG JSON
+- Delete unused design tokens instead of reporting them
+- Cut the scene catalogue to scenes that render under 1 s
+- Expire deferred tasks after 60 days untouched
+- Remove help position numbers and sort help by group then name
+- Make known-fix matching exact-string only — near T-1865 (done): Known fixes: a learned or vague signature never matches an …
+- Turn the round review into a checklist file the gate reads — near T-0928 (done): Round-7 review LOWs: fm complete skips sync; tidy backs up …
+- Let the top five verbs earn one-letter aliases from the journal
+- Hold a round to a net-negative budget: no new verb unless one is deleted
+- Make every guard refusal self-healing — near T-1781 (done): Guard false refusal: cd /abs/scratch && date && for f in a …
+- Quote and enforce a queue's cost before it starts
+- Unify ticket sync: GitHub issues, in-place refresh, post-back on close
+- Ship `fm triage` as the single backlog entry with undo and a count
+- Wild: Replay the user's own words as a nightly "new user, old repo" rehearsal
+- Report DESIGN.md tokens that no CSS uses — near T-1651 (done): fm design tokens: DESIGN.md tokens compile to CSS variables…
+
+## New ideas per lens
+- user value: 26
+- unspoken needs: 25
+- delight: 17
+- capability map: 23
+- approaches: 21
+- reliability: 22
+- simplicity: 21
+- bold bets: 15
+
+## Coverage (ideas per category)
+- backlog 21
+- guard 12
+- intake 10
+- scenes 10
+- design 10
+- web ui 7
+- served pages 7
+- reliability 6
+- ci 6
+- triage 6
+- observability 5
+- delight 5
+- settings 4
+- lanes 4
+- guard ux 3
+- recovery 3
+- tests 3
+- gates 3
+- architecture 3
+- integrations 3
+- memory 2
+- autonomy 2
+- docs 2
+- discoverability 2
+- known fixes 2
+- proof 2
+- state 2
+- budget 2
+- help 2
+- onboarding 2
+- shipping 2
+- review 2
+- swipe 2
+- unattended 1
+- cost 1
+- self-review 1
+- self-noticing 1
+- feedback 1
+- loop control 1
+- honesty 1
+- hooks 1
+- install 1
+- surface area 1
+- code health 1
+- workflow 1
+- dogfood 1
+- fleet 1
+- usage 1
+- measurement 1
+- review quality 1
+- review loop 1
+- developer experience 1
+- desktop 1
+- cli 1
+- brainstorm 1
+- site 1
+- serve 1
+- close-out 1
+- known-fixes 1
+- planning 1
+- compatibility 1
+- edit safety 1
+- regression 1
+- debugging 1
+- upstream 1
+- verification 1
+- feedback loop 1
+- correctness 1
+- robustness 1
+- idempotence 1
+- parallel lanes 1
+- concurrency 1
+- release 1
+- inbox 1
+- learning 1
+- self-test 1
+Thin (0-1 ideas): user value, performance, security, privacy, devices, agents, developer experience

@@ -1,0 +1,19 @@
+## Verdict: changes needed
+
+## Findings
+
+**MEDIUM** — `plugin/lib/fmplugins.py:388-398` (`content_hash`) — For a plugin that is not locally mirrored by its marketplace (a genuinely remote source, e.g. a bare git URL with no local checkout), the pin hashes only the marketplace's JSON entry (`known["entry_hash"]`), not the plugin's actual code — because there is no local copy to hash at ask-time. The docstring says this itself: "the entry alone for a remote source (which pins the code only as far as the entry names a ref or sha)." If the marketplace entry references a mutable ref (a branch, not a pinned sha), the upstream content can change without the entry JSON changing, so `--pin` would not catch it and the install would go through unchanged as "unchanged content." This is a real, if disclosed, gap against the user's literal ask: "re-ask when upstream content changed." It is honestly surfaced in `MASTER.md:30` ("a remote-source entry pins the code only as far as it names a ref or sha") and in the docstring, so it is not hidden — but it means the feature does not fully deliver "upstream content" tracking for that class of plugin. Fix (or accept as scoped-out and say so more prominently, e.g. in the `fm ask` dialog itself when the target is remote-source-only): resolve/fetch the actual upstream ref before hashing, or explicitly flag in the dialog text when a plugin's pin can only be as strong as its declared ref.
+Confidence: high (confirmed by reading `fmplugins.py:388-398` and the docstring/MASTER.md language directly).
+
+**LOW** — `MASTER.md:30` — same file also newly documents "Plugin changes made from interpreter code or a prompt's slash command spend the one-shot yes without a pin" — i.e. the pin enforcement only covers the Bash-intercepted `fm plugins`/`claude plugin` command surface the guard already covered pre-T-0036. This is a pre-existing guard limitation (not a regression), correctly disclosed, not a new surprise. No fix required beyond the existing disclosure.
+
+No other departures found: `--pin` is validated and refused for unknown ids at both `fm ask` (`plugin/lib/fmcli.py:107-111`) and the dialog path (`plugin/lib/fmhooks.py:303-306`); the dialog names the plugin (`fmhooks.py:314`); pins are recorded on both chat (`fmhooks.py:192-193`) and permission-dialog (`fmhooks.py:341`) grant paths; install/enable enforce id-match, unchanged-content and 24h TTL and leave the grant unspent on failure (`fmhooks.py:201-245`, exercised by `test_hooks.py:525-574`); pins are stripped by `fm sync` (`fmsync.py:413`, tested `test_sync.py:637`); the behavior change (install/enable now requiring a pin) is scoped only to `install`/`enable`/`i` (`fmguard.py:158`), leaving disable/marketplace-add unpinned as before — this matches what the acceptance criteria and done-when actually ask for, not unrequested scope creep.
+
+## Acceptance criteria
+- Pin recorded + dialog names PID + unknown PID refused: **met** (`fmcli.py:107-111`, `fmhooks.py:303-306,314`).
+- Install/enable spend plugin yes only for pinned id/unchanged content/within 24h, else blocked+unspent: **met** (`fmhooks.py:201-245`, tests `test_hooks.py:525-562`).
+- Pins never travel through `fm sync`: **met** (`fmsync.py:413`, `test_sync.py:637`).
+- All gates green; docs/rules updated: docs/rules updates present (`CHANGELOG.md:9`, `MASTER.md:21-22,30`, `plugin/rules/foreman.md:426`); gate/test pass status is **not verifiable from the diff alone** (read-only review, no commands run).
+
+## Not checked
+Did not run the test suite, doctor, roundtrip or bench gates. Did not verify exact MASTER.md §9/§10 section numbering. Did not review security/race-condition details beyond what's needed to assess intent-fidelity (left to the security lens). Did not check code style/type-design/other checklists (out of scope for the intent lens per the brief).

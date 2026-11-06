@@ -1,0 +1,3 @@
+# Brainstorm — lens: blind spots
+
+FAILED: no ideas in the required format: **Replay the eight blind-spot asks as held-out regression probes** — FIX — 4 — M — low — reliabilityWhy: The pack lists eight asks (T-3312 depth, T-3…

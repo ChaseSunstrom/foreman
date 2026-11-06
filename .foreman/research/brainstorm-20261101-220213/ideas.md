@@ -1,0 +1,598 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 379 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Fix the brief-guard path false positives — near T-1141 (done): Guard false positive: 'fm edit <<EOF … import fmcli … EOF' …
+- Split the SessionStart note into a hash and a delta — near T-1472 (done): A repo's own Claude config is named on its first Foreman se…
+- Break down the 387k context per reply by source
+- Teach the model from its own guard blocks — near T-0870 (done): fm demo: see Foreman work in a minute without model calls (…
+- Stop shipping the 1214 unused stack cards
+- Make `fm doctor` name the slowest hook and its cause — near T-2279 (done): fm doctor times each check: ms on Result, the three slowest…
+- Require a retired-verb name for every new verb — near T-2186 (done): Wire the four verbs gen-1's missions name that no session p…
+- Re-run the guard corpus when the host CLI updates
+- Keep one lean-budget file that every coverage cell cites
+- Wild: Show Foreman's own cost on the status line — near T-1820 (done): fm cost judges each cache bust by the session's own cache T…
+- Wild: Prove "leave no trace" with an install-then-eject round trip
+- Wild: Send a weekly "what the guard stopped" note in plain words
+- Replay the user's real command history through the guard — near T-0189 (done): fm replay: the guard replayed on the real commands of recen…
+- Turn the top repeated block into a hint before it fires
+- Print a guard parity matrix per harness — near T-0442 (done): Guard parity across harnesses: same decision on codex, gemi…
+- Inject the SessionStart note once, then only deltas — near T-1889 (done): The fm check is piped note is given in full once per session
+- Attribute per-reply context by source — near T-0945 (done): fm lib source: index third-party skill repos read-only (rea…
+- Move unused stack cards to a cold shelf — near T-2371 (done): One find across every shelf (Mission 6, #5): fm which NEED …
+- Give each surface its own latency and bytes budget in doctor
+- Lint the 61 new coverage cells for templating before they are written
+- Show carrying cost per use for each capability — near T-1824 (done): FEATURE: fm cost shows the retry tax per task: tokens spent…
+- Wild: Run an airplane-mode proof
+- Wild: Slim the hard hat on the status line
+- Wild: Hold a nightly guard-drift rehearsal against the newest host builds
+- Show the lean ratchet as a visible weigh-in
+- Celebrate a deletion with a receipt
+- Print the guard's save as a story line — near T-1575 (done): Guard gaps (noticed in T-1561): awk '{print | "sh"}' FILE (…
+- Explain a false positive and fix it in one step — near T-1669 (done): Fm drill: compound fault days in a temp home, promotion by …
+- Give the SessionStart note a diet plan — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Make the stack-card library earn its seat — near T-1251 (done): Stack cards cover the 8 androidx dependencies fm scout foun…
+- Add a hook stopwatch strip to the pane — near T-2396 (done): ui-unshot counts terminal UIs (TUI screens, statuslines, th…
+- Wild: Run a "diet week" game
+- Wild: Let the guard play a "red team morning" at login
+- Wild: Print a "how heavy is my Foreman" score on the site
+- Name pending lean growth gently — near T-2358 (done): The lean ratchet measures what gen-0 names: hook p95 and in…
+- Add a one-key "slim this session" switch — near T-1315 (done): fm code tui widget firewall: a user extension's panel, comm…
+- Hook flame budget per event — near T-2355 (done): One trigger table routes every event to inbox, queue, lane …
+- Context ledger by injected block — near T-2503 (done): Lean measures substance: code and test lines per module, ho…
+- Brief-guard false-positive corpus — near T-1141 (done): Guard false positive: 'fm edit <<EOF … import fmcli … EOF' …
+- Block-reason receipts with the safe alternative
+- Dead-verb and dead-card sweeper — near T-2461 (done): Lean: fold six verbs into the verbs that already hold their…
+- Lazy card loading with a size cap
+- Guard rule coverage map — near T-2160 (done): Write the steer's standing rules (testing cadence, real cov…
+- Hook-bypass tripwire across hosts
+- Lean ratchet in CI with a substance baseline — near T-2503 (done): Lean measures substance: code and test lines per module, ho…
+- Dependency and supply-chain diff on ship — near T-0479 (done): Supply-chain and install trust (C032, value 3/5, effort M, …
+- Offline-only mode proof — near T-2389 (done): Release proof (Mission 7, #10): fm prove --release builds t…
+- Wild: Hook cold-start race against a Rust shim
+- Wild: Footprint budget as a visible fuel gauge
+- Wild: Guard red-team lane overnight
+- Wild: Forget-a-feature trial week
+- Per-surface byte allowance in the coverage grid
+- Fill each cell from a probe's own output
+- Parse briefs before the guard reads them — near T-0408 (done): fm lane rm treats tool caches (.pytest_cache, .mypy_cache, …
+- Replay the guard's block log on every surface — near T-1162 (done): Add `fm guard wrong "<cmd>" --should allow|block` to store …
+- Retire the unused cards to a cold archive
+- Charge MCP tool schemas to the context budget
+- Split injected context by source and cap each source — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Pay for new verbs with a deletion in the same task
+- Budget the non-hook surfaces too
+- Wild: write the guard's hot path as a startup-free binary
+- Wild: ablate the shipped skills one at a time
+- Wild: a guard drill that attacks the hook latency budget
+- Wild: delete Foreman in a scratch copy to see what holds
+- Hook latency budget per event, enforced in CI — near T-0001 (done): Phase 3: hooks — one dispatcher per event, guard, stop gate…
+- Guard mutation night: delete each rule in a copy, see a test fail
+- SessionStart note dedupe by hash — near T-2117 (done): CLEAN S: the SessionStart project note averages 1,932 chars…
+- Context-per-reply budget with named top contributors
+- Withhold-one-block A/B to prove each injection earns its bytes
+- Fail-open vs fail-closed table for every hook, tested by crashing it
+- Dead-weight ratchet: unused verbs and cards listed, retired softly
+- Guard-block explainer with the safe alternative — near T-0185 (done): Guard block messages name one safe rewrite when the guard c…
+- Wild: Hostile-session replay — feed the guard a week of real hook inputs plus child-written evasions
+- Wild: Lean twin — run the same task with Foreman's hooks off and compare cost and time
+- Wild: Hook black-box recorder with one-command replay
+- Warm-daemon hooks with cold fallback, guard stays in-process — near T-0676 (done): Milestone: Features — Performance and cost
+- Pay for every new verb with a deleted one
+- Expire stack cards nobody loaded
+- Shrink the SessionStart note to a delta — near T-2117 (done): CLEAN S: the SessionStart project note averages 1,932 chars…
+- Replace the 61-cell grid with a cell-count budget
+- Collapse the 28 "Later from T-07xx" bundles
+- Give the guard one false-positive path — near T-1141 (done): Guard false positive: 'fm edit <<EOF … import fmcli … EOF' …
+- Make `fm doctor` print one lean line — near T-2398 (done): Each proof run records the world it leaned on; fm doctor na…
+- Skip hooks with a shell prefilter — near T-1236 (done): Hook's Claude Code process found by a fixed shape (one pyth…
+- Wild: One-file Foreman
+- Wild: Weigh the repo on the way out
+- Wild: Delete-a-feature Friday
+- Cap each hook's context at one budget — near T-2503 (done): Lean measures substance: code and test lines per module, ho…
+- Prove the guard is alive every session — near T-1875 (done): Fm risk lists the week's guard collisions by rule with the …
+- Compile one guard rule file into every enforcement point — near T-2167 (done): Every user steer is a standing rule plus an automatic check…
+- Run any agent inside a kernel jail with `fm jail`
+- Meter Foreman's share of every reply's context — near T-1257 (done): Fm cost shows Foreman's own share of the context: its skill…
+- Cold-store unused cards and skills
+- Move verbs unused for 60 days into `fm lab`
+- Show the minimum dose of Foreman's injection per task kind
+- Hold a monthly lean court that tries to delete the least-used 5%
+- Ship a hot-path guard as a tiny precompiled binary with a Python fallback
+- Replay all logged guard decisions against every candidate rule change — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Serve the web UI safely by default for headless and server use
+- Lint that every ledger row carries its dimensions
+- Attribute injected bytes to their source per reply
+- Prove the guard fires on every surface with a deny-class matrix
+- Run the unattended paths under the same guard and hook budget
+- Fuzz the ordering of task-state writes — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Check lean claims in public text against their producing command
+- Archive stack cards unused for 90 days into a cold index
+- Wild: Plant a weekly harmless forbidden command to prove the guard is alive
+- Wild: Run the exam with every optional hook off to show what the weight earns
+- Wild: Show a "weight class" scale in the pane with a budget per hook event
+
+## Round 2
+- Show what the guard saved me, in plain words — near T-2229 (done): fm genesis put shows each stray quote: a cold reader's FAIL…
+- Fix the two brief-guard false positives and keep a corpus — near T-1141 (done): Guard false positive: 'fm edit <<EOF … import fmcli … EOF' …
+- Fill the 61 empty coverage cells from probes, not prose — near T-2474 (done): fm genesis sweep applies the whole-run coverage bar to each…
+- Name the slowest hook and why — near T-2358 (done): The lean ratchet measures what gen-0 names: hook p95 and in…
+- Wild: Hostile-week replay
+- Wild: Lean twin
+- Make the guard's "no" teach the safe command — near T-2342 (done): Stop only at an irreversible, ambiguous step (Mission 5, #8…
+- Backfill the lean baseline over git history
+- Name the commit that made it heavier — near T-2468 (done): fm ci-watch reuses the open or blocked FIX brief that alrea…
+- Make "n/a" cells expire
+- Turn rotted coverage cells red
+- Budget the tail, not only p95 — near T-1777 (done): PreToolUse:Bash:script hook runs at about 90% of its 300 ms…
+- Quiet the injection when the session is plain chat
+- Publish the guard's known gaps, each with a test — near T-1585 (done): Batch: Guard: interpreter one-liners that read…; Guard: env…
+- Run `fm doctor` in hostile environments — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Budget idle cost and page weight on the web surfaces
+- Show what the cold reads cost against what they caught — near T-0188 (done): fm cost says where the time went: the model's against each …
+- Give every capability a sunset clock at birth (wild)
+- Grow the coverage rows from what the user actually does (wild)
+- Let a guard block quote the user's own steer (wild) — near T-0435 (done): fm friction reads every project's friction, labelled by pro…
+- Show the lean weigh-in as a receipt on every task close
+- Turn each guard block into a one-line story with the safe alternative — near T-0185 (done): Guard block messages name one safe rewrite when the guard c…
+- Make false positives one-keystroke fixable — near T-1669 (done): Fm drill: compound fault days in a temp home, promotion by …
+- Add a weight-class gauge to the pane and status line
+- Give the SessionStart note a diet: hash first, delta after
+- Add a "how heavy is my Foreman" card on the site's Genesis page — near T-2087 (done): Genesis page matches the site: shared header, footer and st…
+- Warm the stack library by use, shelve the rest — near T-1251 (done): Stack cards cover the 8 androidx dependencies fm scout foun…
+- Wild: Run a "diet week" mode that disables one optional hook per day and reports what nobody noticed
+- Wild: Show a "since you left" lean line on resume
+- Print the guard's weekly save as plain words
+- Lint the 61 coverage cells as they are written, with a friendly nudge
+- Parse commands with a real shell tokenizer in the brief guard — near T-2342 (done): Stop only at an irreversible, ambiguous step (Mission 5, #8…
+- Gate hook import time with a per-module budget — near T-2307 (done): fm check --affected pulls test_core's import-budget tests i…
+- Scan every task's diff for secrets before finish and ship — near T-0672 (done): Milestone: Features — Guard and safety
+- Pin MCP tool descriptions and flag changes at session start — near T-0672 (done): Milestone: Features — Guard and safety
+- Reject foreign Host and Origin headers on the web UI and require a token off loopback
+- Measure a silence ratio: the share of turns where Foreman injects zero bytes
+- Collect old state, research packs and run logs under a retention policy
+- Cap each lane's memory, CPU and wall time with a cgroup or `ulimit` wrapper
+- Run brainstorm and cold-read children with an allowlisted environment
+- Add a weight and accessibility budget for `site/genesis`
+- Compact stored lessons by merging duplicates and capping injected bytes
+- Wild: Plant honeytoken credentials and alert if any agent reads them
+- Wild: Offer a guard playground on the site where a visitor pastes a command and sees the verdict
+- Wild: Run a nightly prompt-injection corpus against Foreman's own fenced inputs
+- Derive cells from probes, not prose
+- Mark most cells n/a by rule, with a recorded reason
+- Fill cells by pointing at existing features — near T-0211 (done): A failure that names a library API that doesn't exist point…
+- Use one lean budget file as the single source for all cells
+- Reuse the existing guard corpus as the safety proof for every surface
+- Cold-shelve unused stack cards
+- Get the grid status from a pending-growth ledger, not red rows
+- Wild: Prove leanness by an eject round trip
+- Wild: Run the exam with all optional hooks off
+- Wild: Let a tool-less child invent the 61 cells blind, then diff
+- Declare the unguarded surface at session start
+- Differential-test the guard's command parser against a real shell parse
+- Keep a flake ledger behind `fm task finish`'s full-check refusal
+- Run the hook hot path on the oldest supported Python — near T-1805 (done): Before a push to main or a release, run the suite once unde…
+- Run the hostile-environment matrix for headless/server
+- Test hook coexistence with other plugins — near T-1744 (done): Guard: mv SOURCE out of a protected folder (mv ~/.claude/pl…
+- Swap plugin files atomically and pin running sessions — near T-0039 (done): setup-plugins.sh refuses a real run inside a Claude Code se…
+- Kill hooks at every write boundary — near T-1438 (done): fm code hardening nits from T-1432's review: no re-kill aft…
+- Pre-stage a gated revert for every `fm ship`
+- Detect evasion after a guard block — near T-0672 (done): Milestone: Features — Guard and safety
+- Wild: Run an N-version shadow guard — near T-0906 (done): Guard: the mktemp-as-literal rewrite (T-0892) is skipped wh…
+- Wild: Run a CPU-starved dogfood day
+- Wild: Give each area a reliability error budget
+- Measure hook latency under parallel builder lanes
+- Replace the 61-cell grid with one lean line per surface
+- Require a deletion with every new verb
+- Say "unmeasured" instead of a placeholder in every lean cell
+- Run Foreman on a weight budget enforced by deletion
+- Attribute every reply's context to its source — near T-0945 (done): fm lib source: index third-party skill repos read-only (rea…
+- Kill the SessionStart note after the first turn: inject a hash and a delta
+- Session-bound work — near T-0098 (done): Long sessions stay fresh: compact at task boundaries
+- Stale maps
+- Sibling premises
+- Form-only gauges
+- Lean and safe surfaces
+- Audit every loop that only advances inside a session
+- Stamp every injected derived artifact with its age in commits
+- Tag each test with the premise it asserts, and list siblings at finish
+- Add an "inflated by" line to every `fm doctor` gauge
+- Derive the guard's destructive-verb list from installed tools' help
+- Make the README demo carry its host version and go stale visibly
+- Give each standing rule a last-fired date and a proposed retirement card
+- Budget the Desktop app's idle CPU and memory
+- Scan the state directory for secrets and loose file modes
+- Test shared-server isolation for headless use — near T-0014 (done): Headless remote forever mode: fm serve runs Claude Code Rem…
+- Wild: Re-read every closed FIX's premise nightly — near T-0888 (done): Fm night runs fm sentinel (closed tasks' checks against HEA…
+- Wild: Run `fm code` on a 4k-context local model as a lean torture test — near T-1360 (done): Local models' real context: a local server's profile takes …
+- Wild: Time a stranger's VPS with no `claude` on it
+
+## Round 3
+- Answer "is Foreman worth its weight?" in one command
+- Fill the 61 empty cells from probes the user can re-run — near T-2159 (done): Coverage must be real: reset coverage.md's templated cells …
+- Make every guard block say the safe command to run instead — near T-1351 (done): fm code run-event hooks: code.toml [on] closed, blocked and…
+- Add a deletion receipt to every task that adds a verb — near T-2371 (done): One find across every shelf (Mission 6, #5): fm which NEED …
+- Run `fm doctor` in a hostile headless box and report honestly
+- Wild: Lean twin: run a task with Foreman off and on, and show the difference
+- Wild: A diet week that disables one optional hook per day
+- Replace the 61-cell grid with a cell ledger that fills from probes
+- Show the lean cost of every capability on one line — near T-1824 (done): FEATURE: fm cost shows the retry tax per task: tokens spent…
+- Wild: Offer a guard playground on the site
+- Track untrusted text into the guard — near T-0286 (done): Self-improvement pass 4: guard heredoc precision, test lock…
+- Import public injection benchmarks as an exam kind — near T-2376 (done): #5 exam kind tool-grant (Mission 6): a request whose obviou…
+- Lint the permission rules themselves — near T-1628 (done): Afterglow lint: a state change with no transition, as a rul…
+- Add a managed-policy layer for headless/server use
+- Log writes outside the repo and checkpoint them — near T-2453 (done): Outside authors for tool-build, tool-find, tool-grant, proo…
+- Export hook and guard events to a local OpenTelemetry collector (opt-in)
+- Sign releases with SBOM, hash-chained provenance and an offline vulnerability check
+- Add one panic button, `fm halt`
+- Find dead code by sampling line coverage from real sessions — near T-0180 (done): Guard: a standing or trusted yes covers a finding's plain p…
+- Wild: Make the hooks drop their own privileges with Landlock
+- Wild: Plant a canary token in the injected context to detect leaks
+- Wild: Fuzz the guard with a shell-grammar generator, compared against real bash parsing
+- Wild: Meter the cost of Foreman's overhead per reply and show it to the user as a receipt
+- Mark n/a by rule with an expiring reason — near T-2171 (done): fm genesis select doesn't mark lineage.md choices provision…
+- Attribute injected context by source, then cap each source
+- Inject the SessionStart note as hash plus delta
+- Budget the hook tail, with a per-event latency check in CI — near T-2015 (done): Hooks load briefs and today's ledger events faster: section…
+- Fail `fm task finish` on a hook that crashed silently — near T-1523 (done): Round 3 (T-1520): Playbooks drafted from finished runs and …
+- Run a guard liveness canary at session start — near T-1327 (done): Nested Claude sessions that fm code starts run without Fore…
+- Fail closed with a table of every hook's failure mode — near T-0371 (done): Guard hook fails closed in Claude Code itself: onFailure: "…
+- Quarantine flaky tests behind the full-check refusal — near T-0682 (done): Milestone: Features — Verification and product checking
+- Make state writes crash-safe with a kill-at-every-boundary test — near T-0494 (done): Crash-safe state (C094, value 3/5, effort M, risk low)
+- Collapse the 28 deferred "Later from T-07xx" bundles into one dated parking file
+- Fix the two brief-guard false positives with a shell tokenizer — near T-0344 (done): Guard false positives: str.replace isn't a write; curl | py…
+- Show pending lean growth as "unmeasured", never as a green
+- Run the exam once with every optional hook off
+- Pick the lean cell wording from a single budget file
+- Cut a verb for every verb added, enforced at ship — near T-1987 (done): Ambient waits out fm ship's run, titles cut at a word, budg…
+- Wild: Lean twin — same task with hooks off
+- Score each brainstorm by the asks it missed — near T-2076 (done): Brainstorms learn from what they missed: asks no idea predi…
+- Time hooks from outside the harness — near T-1719 (done): Test_hooks.NoTaskGate hook calls time out at their 10 s lim…
+- Make a lean hook-latency watchdog run in the night tick
+- Measure each guard rule's precision from what happens after a block — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Report the effective guard settings and name any typo'd key
+- Fuzz the guard and brief-guard for pathological input
+- Find write-only ledger fields — near T-2337 (done): Calibration ledger (Mission 5, #8): every stated confidence…
+- Quote the cost before a fan-out
+- Garbage-collect state for repos that moved or vanished — near T-0836 (done): Stop tracking the stray repo-root skill-index.json (a cache…
+- Count the attention the user is asked for — near T-2357 (done): Installs are queued for one yes: night and tick timers stag…
+- Wild: Backtest the brainstormer on its own missed asks — near T-2076 (done): Brainstorms learn from what they missed: asks no idea predi…
+- Wild: Corrupt a settings copy nightly and check the guard stays closed
+- Wild: Show a "this week's blind spot" card
+
+## Round 4
+- Add a user-owned protected-paths file the guard enforces for every agent
+- Add a timed, scoped guard release valve
+- Treat an interrupt after an allowed call as a guard-miss signal
+- Add an untrusted-checkout mode
+- Refuse any spawn that has no default cost ceiling
+- Warn on secrets pasted into a prompt, before they are sent
+- Ship a minimal install profile for headless and server use
+- Print the guard state at session start in one line — near T-1327 (done): Nested Claude sessions that fm code starts run without Fore…
+- Wild: Export a dated guard receipt bundle for a team lead
+- Wild: Let a user's "that was dumb" word promote any past tool call into a rule draft
+- Wild: Show a "weight versus saved" ticker on the status line
+- Add a "why is this cell n/a" page for the user, not the tower
+- Stamp the host version beside every guard claim
+- Print a steer receipt with queue impact
+- Add a tower runaway breaker — near T-2110 (done): fm genesis seed` isn't blocked while the tower is stopped, …
+- File sweep fix tasks already planned — near T-2480 (done): Sweep fix tasks are filed unplanned (tier M, no criterion, …
+- Show held-back items with age and release condition
+- Require every coverage cell to name a session path that calls it — near T-2186 (done): Wire the four verbs gen-1's missions name that no session p…
+- Default headless and server installs to a core profile
+- Add a user-minted one-shot allow for a guard block — near T-1162 (done): Add `fm guard wrong "<cmd>" --should allow|block` to store …
+- Cap scratch use under the tmpfs children directory
+- Charge the tower's own cost to a ledger — near T-2437 (done): Gen 2: a model layer (user steer 2026-10-31, start after ro…
+- Wild: Generate "letter defeats intent" scenarios for each steer
+- Wild: Plot growth rings on the Genesis site
+- Wild: Forecast the date the lean ratchet will bite
+- Wild: Let each generation write its own obituary list for cells
+- Run a diet week mode
+- Publish a guard playground on the site — near T-2504 (done): Proof before presentation: the sweep compares the site's an…
+- Run a lean twin on the same task
+- Wrap hookless agents in a guarded shell — near T-0318 (done): FEATURE: beautiful modern animated desktop app wrapping For…
+- Flag the lethal trifecta at session start
+- Enforce an install cooldown
+- Allowlist egress per lane
+- Meter prompt-cache stability
+- Prune permissions that were never used
+- Break retry storms
+- Emit SARIF from `fm check`
+- Publish a guard changelog as a verdict diff — near T-0189 (done): fm replay: the guard replayed on the real commands of recen…
+- Run a platform matrix for hooks and the guard — near T-2352 (done): Self-change gate at lane merge: guard replay, hook p95 and …
+- Roll back a bypass-mode session with a copy-on-write snapshot
+- Downgrade bypass when the screen locks
+- Define an `agents.deny` file honoured by every agent
+- Cover cells by mechanism, not one by one — near T-2474 (done): fm genesis sweep applies the whole-run coverage bar to each…
+- Tag every hook, guard and context event with its surface — near T-1351 (done): fm code run-event hooks: code.toml [on] closed, blocked and…
+- Make each cell a test marker
+- Record protocol cassettes for the other agents and MCP
+- Import an outside taxonomy as the safe half's rows
+- Give each n/a an adversary check
+- Run the fill as 8 surface lanes with a cross-lane duplicate lint
+- Ablate per surface to find what each cell earns
+- Wild: Surface safari
+- Wild: Per-cell red team that must find a counterexample
+- Wild: Treemap of the grid in the web UI
+- Lock the grid with probe-output hashes
+- Table every hook's failure mode, tested by crashing it
+- Fill cells from verb tags, not prose
+- Freeze other-agent support at guard-only — near T-0411 (done): FEATURE: the guard reads a for loop over literal words (for…
+- Make the brief-guard path check stat-based — near T-2370 (done): Wider miss detection (Mission 6, #5): a non-Bash tool failu…
+- Collapse overlapping standing steers into canonical rules — near T-2167 (done): Every user steer is a standing rule plus an automatic check…
+- Merge all hooks of one event into a single process
+- Ship a standalone single-file guard for headless/server
+- Auto-shelve stack cards by last load
+- Let each verb declare its retirement trigger at creation
+- Wild: Keep a "negative space" file instead of the grid
+- Wild: Make one append-only event log the only state — near T-2244 (done): fm log EVENT appends any event name, so every gate that rea…
+- Wild: Cap the guard at 50 lines for "mini mode"
+- Wild: Hold a monthly "delete the least-loved verb" vote the code tallies
+- Default `fm doctor` to one section per surface — near T-2489 (done): Model layer surfaces: MCP decide tool, fm doctor backend he…
+- Make the lean ratchet pay by deletion at ship — near T-2281 (done): Lean ratchet (Mission 8/#12): each ship records the always-…
+- Show a guard block with the safe command to run instead — near T-0172 (done): Guard blocks log a short redacted command, and the friction…
+- Make hook latency a CI gate per event, tail included — near T-0001 (done): Phase 3: hooks — one dispatcher per event, guard, stop gate…
+- Fuzz the guard against real shell parsing — near T-0180 (done): Guard: a standing or trusted yes covers a finding's plain p…
+- Wild: One-file Foreman eject round trip — near T-0006 (done): Phase 8: MASTER.md, README, CHANGELOG, uninstall round-trip…
+- T-2499
+- T-2500
+- T-2501/2502
+- T-2503/2504
+- T-2525
+- Probe hooks from the night tick, not from sessions — near T-2499 (done): Bets settle with no session: the night tick runs fmoutcomes…
+- Split hook and guard ledgers by harness, host version and Python
+- Add a time-boxed ratchet waiver
+- Lock ratchet baselines against quiet rebasing
+- Check guard rules for shadowing and conflicts — near T-1972 (done): Fm risk lists the guard rules that spend risk first: today …
+- Pair every guard false-positive fix with a mirrored evasion case
+- Define a headless blocked-command contract
+- Fence strings from untrusted sources in the SessionStart note
+- Budget instruction count, not only bytes — near T-2266 (done): Ship red after T-2072: rules over the 6,400-char always-on …
+- Switch to safe mode when the host version drifts
+- Meter the lean machinery's own cost — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Map every verb back to a grid cell (reverse coverage)
+- Wild: Add phantom mode
+- Wild: Ship a standalone guard in one stdlib file
+- Wild: Add a steer replay drill
+
+## Deepened: guard
+- Build a guard verdict corpus that every surface replays — near T-1291 (done): The guard corpus's /tmp hard-reset case means the same on m…
+- Replace the brief guard's path regex with a shell tokenizer, pinned by the false-positive pair — near T-0344 (done): Guard false positives: str.replace isn't a write; curl | py…
+- Make every block a three-part receipt: rule, why, safe command
+- Add a scoped, expiring release valve that the guard itself mints
+- Print a guard parity matrix at session start and in `fm doctor`
+- Fuzz and mutate the guard on a schedule, inside `fm night`
+- Lint the permission and guard rules for shadowing, conflicts and typo'd keys
+- Wild: Plant a harmless forbidden command weekly as a liveness canary
+- Wild: Hostile-session replay with a red-team child
+
+## Deepened: lean
+- Make the lean ledger one table per surface-by-stage cell
+- Charge every new verb a deletion at `fm task finish`
+- Ablate injection blocks by withholding one per session — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Retire stack cards by use, softly and reversibly
+- Show what each cold read cost against what it caught — near T-2229 (done): fm genesis put shows each stray quote: a cold reader's FAIL…
+
+## Deepened: coverage
+- Build a cell compiler that emits coverage.md from probes
+- Gate cell writes on a templating linter with a diff-to-neighbours check
+- Pair every cell with a lean cost line (bytes, p95 ms)
+- Make n/a cells carry an expiry and an adversary probe
+- Reverse-map every verb to a cell and flag orphans
+- Weight cells by user-visible risk, and fill the heavy ones first
+- Show a one-screen coverage heatmap on the web UI
+- Rot detector: re-run each cell's probe on every sweep and turn stale ones red
+- Wild: Let a tool-less child guess each cell blind, then score the gap against reality
+- Wild: Treat coverage as a game of cell mutation testing
+- Wild: Each cell gets a one-line "last time this saved the user" receipt
+- Add a lean budget row to the grid, so cells compete for bytes
+
+## Cross-bred
+- Run one context ledger that attributes every reply by source and enforces the lean budget
+- Rehearse the guard nightly against real history and the newest host builds
+- Turn repeated guard blocks into pre-emptive hints and a plain-words weekly digest
+- Make `fm doctor` a budget court for surfaces, hooks and verbs
+- Issue an install-use-eject certificate that also proves airplane-mode operation
+- Show a slim status line with Foreman's own cost, weigh-ins and deletion receipts
+
+## New ideas per lens
+- user value: 39
+- unspoken needs: 40
+- delight: 27
+- capability map: 56
+- approaches: 38
+- reliability: 32
+- simplicity: 33
+- bold bets: 21
+- blind spots: 61
+
+## Coverage (ideas per category)
+- guard 77
+- lean 41
+- coverage 35
+- context 27
+- hooks 24
+- subtraction 11
+- observability 7
+- safety 7
+- library 7
+- guard ux 7
+- delight 6
+- trust 6
+- privacy 5
+- lean ratchet 5
+- supply chain 4
+- site 4
+- other agents 4
+- lean proof 4
+- gates 4
+- headless 4
+- measurement 4
+- performance 3
+- security 3
+- ratchet 3
+- mcp 3
+- server 3
+- headless/server 3
+- resume 3
+- operate 3
+- learn 3
+- install 3
+- state 3
+- legibility 3
+- lean/library 2
+- lean/game 2
+- guard parity 2
+- surfaces 2
+- ship 2
+- injection 2
+- portability 2
+- honesty 2
+- dead weight 2
+- safety net 2
+- queue 2
+- tower 2
+- reliability 2
+- safety / devices 1
+- lean/ui 1
+- guard/trust 1
+- guard/polish 1
+- lean/context 1
+- ui/motion 1
+- guard/delight 1
+- site/proof 1
+- lean/clarity 1
+- lean/ux 1
+- simplicity 1
+- backlog 1
+- bold 1
+- guard and context 1
+- sandbox 1
+- data schema 1
+- injected context 1
+- sessionless safety 1
+- state invariants 1
+- proof before presentation 1
+- guard liveness 1
+- lean evidence 1
+- delight/lean 1
+- attribution 1
+- lean ux 1
+- lean/motion 1
+- motion/ui 1
+- context size 1
+- site/trust 1
+- guard/proof 1
+- children 1
+- lean budget 1
+- sweep 1
+- crash safety 1
+- lean substance 1
+- operate/headless 1
+- verify 1
+- docs/claims 1
+- desktop 1
+- regression 1
+- lean/local 1
+- lean value 1
+- proof of value 1
+- exam 1
+- docs 1
+- red team 1
+- meta-measure 1
+- budget 1
+- attention 1
+- audit 1
+- intake 1
+- steers 1
+- lean delight 1
+- guard accuracy 1
+- guard story 1
+- library diet 1
+- network 1
+- least privilege 1
+- ci 1
+- recovery 1
+- presence 1
+- cross-agent 1
+- telemetry 1
+- process 1
+- ui 1
+- integrity 1
+- rules 1
+- proof 1
+- blind spots 1
+- lean grid 1
+- ablation 1
+- budgets 1
+- profiles 1
+- watchdog 1
+- tower cost 1
+- lean twin 1
+- eject 1
+- lifecycle 1
+- forecast 1
+Thin (0-1 ideas): user value, devices, developer experience
+
+## Kill it fast (the quickest test that would show it isn't worth building)
+- Fix the brief-guard path false positives — Grep the guard block log for the last 30 days; if fewer than 3 distinct brief-path false positives, stop.
+- Split the SessionStart note into a hash and a delta — Diff 10 consecutive SessionStart notes; if over 90% of bytes are identical hash-and-all, a delta saves under 1% of context, so stop.
+- Break down the 387k context per reply by source — Dump one reply's context and sum bytes by source; if one source is over 80% and already known, the breakdown tells you nothing new.
+- Teach the model from its own guard blocks — Count blocks where the same model repeats the identical blocked command within 3 turns; if under 5%, there's nothing to teach.
+- Stop shipping the 1214 unused stack cards — Check the last 90 days of logs for card loads; if the 1214 cards cost 0 bytes in context unless loaded, it's disk clutter only.
+- Make `fm doctor` name the slowest hook and its cause — Run `fm doctor` with a deliberate 2s sleep in one hook; if the existing output already shows per-hook timing, stop.
+- Require a retired-verb name for every new verb — Look at the last 10 verbs added; if 8+ already replaced something, the rule is solving a non-problem.
+- Re-run the guard corpus when the host CLI updates — Check the last 5 host CLI updates for guard behavior changes; if none altered a result, a re-run is ceremony.
+- Keep one lean-budget file that every coverage cell cites — Count the coverage cells that cite a budget; if they already all point at one number, a file adds nothing.
+- Wild: Show Foreman's own cost on the status line — Ask 5 users to name the last time they looked at the status line; if none do, the cost number goes unseen.
+- Wild: Prove "leave no trace" with an install-then-eject round trip — Run install then eject in a scratch HOME and `diff -r`; if the trees are identical already, the proof is already done.
+- Wild: Send a weekly "what the guard stopped" note in plain words — Count weekly blocks per user; if the median is under 2, the note is empty and gets ignored.
+- Replay the user's real command history through the guard — Pipe one user's shell history through the guard; if the block rate is under 0.5%, replay finds little.
+- Turn the top repeated block into a hint before it fires — Rank blocks by repeat count; if the top one is under 10% of all blocks, a hint covers too little.
+- Print a guard parity matrix per harness — Diff guard source across harnesses; if it is the same code path, a matrix is a table of all "yes".
+- Inject the SessionStart note once, then only deltas — Same test as 2: measure how much of the note repeats; if the repeated part is tiny, the cost isn't worth it.
+- Attribute per-reply context by source — Same as 3: sum bytes by source on one reply; if the top source is obvious, attribution adds nothing.
+- Move unused stack cards to a cold shelf — Move 1000 cards to a subfolder and time startup; if there's no change, there's no gain.
+- Give each surface its own latency and bytes budget in doctor — Time each surface over 20 runs; if all are well under any plausible budget, the budgets never trip.
+- Lint the 61 new coverage cells for templating before they are written — Run a similarity check on 10 existing cells; if their pairwise similarity is low, templating isn't happening.
+- Show carrying cost per use for each capability — Compute cost per use for the top 5 capabilities; if usage counts are all near zero, you've learned only that nobody uses the data.
+- Wild: Run an airplane-mode proof — Run the test suite with the network off (`unshare -n`); if it already passes, the proof exists.
+- Wild: Slim the hard hat on the status line — Measure the status line's width and bytes; if it's already under 40 chars, there's nothing to slim.
+- Wild: Hold a nightly guard-drift rehearsal against the newest host builds — Check how often a host build changed behavior in the last quarter; if under once, a nightly rehearsal is a waste.
+- Show the lean ratchet as a visible weigh-in — Plot the last 20 commits' lean size; if it's flat, a weigh-in shows a flat line.
+- Celebrate a deletion with a receipt — Ask whether anyone has deleted anything in the last month; if none, there is nothing to celebrate.
+- Print the guard's save as a story line — Read 10 recent block entries; if they have no meaningful story beyond "blocked X", the story line is filler.
+- Explain a false positive and fix it in one step — Hand-fix the last 3 false positives and time it; if each takes under 2 minutes, a one-step flow saves seconds.
+- Give the SessionStart note a diet plan — Measure the note's bytes against the total context; if under 2%, a diet is not worth it.
+- Make the stack-card library earn its seat — Count the card loads per card; if the top 50 account for over 95%, just delete the rest instead of building a "earn its seat" system.
+- Add a hook stopwatch strip to the pane — Run `time` on each hook once; if all are under 50ms, a stopwatch strip shows noise.
+- Wild: Run a "diet week" game — Ask 3 users whether they'd play; if nobody says yes, it dies.
+- Wild: Let the guard play a "red team morning" at login — Run the guard on 20 canned attacks; if they all pass, a morning ritual just repeats a CI job.
+- Wild: Print a "how heavy is my Foreman" score on the site — Check whether the site has any traffic to this page; if analytics shows under 50 visits a month, no one sees the score.
+- Name pending lean growth gently — Review the last 5 growth warnings; if people already ignore them, a gentler tone won't fix that.
+- Add a one-key "slim this session" switch — Check whether `/clear` or an existing flag already trims the session; if so, a switch duplicates it.
+- Hook flame budget per event — Time each event's hooks; if all are under 100ms, a budget never trips.
+- Context ledger by injected block — Same as 3 and 17: if the injected blocks are already listed in one place, a ledger adds nothing.
+- Brief-guard false-positive corpus — Count the false positives captured in the log; if under 10, a corpus has too few samples to test with.
+- Block-reason receipts with the safe alternative — Sample 10 block messages; if they already name an alternative, receipts add nothing.
+- Dead-verb and dead-card sweeper — Grep for verbs and cards with zero calls in 90 days; if the list is empty or tiny, there's nothing to sweep.
+- Lazy card loading with a size cap — Measure the actual bytes loaded per card; if the largest is small, a size cap never binds.
+- Guard rule coverage map — List the guard rules and the tests that touch them; if coverage is already 100%, the map is a green wall.
+- Hook-bypass tripwire across hosts — Try bypassing the hook on each host with a known trick; if all hosts already refuse it, no tripwire is needed.
+- Lean ratchet in CI with a substance baseline — Check how often lean regressions have occurred in CI; if never, a ratchet guards against nothing.
+- Dependency and supply-chain diff on ship — Run `diff` on lockfiles for the last 5 ships; if no deps changed, the diff is empty every time.
+- Offline-only mode proof — Same as 22: run it offline; if it already passes, the mode is already proven.
+- Wild: Hook cold-start race against a Rust shim — Time the current hook cold start; if under 20ms, a Rust shim saves nothing noticeable.
+- Wild: Footprint budget as a visible fuel gauge — Check whether the footprint number moves over a week; if it's flat, the gauge never moves.
+- Wild: Guard red-team lane overnight — Count the past red-team findings; if the last 3 runs found nothing, overnight lanes burn compute for zero finds.
+- Wild: Forget-a-feature trial week — Ask a user to disable one feature for a week and see if they notice; the trial only makes sense if they'd honestly report back, and most won't.
+- Per-surface byte allowance in the coverage grid — Measure bytes per surface now; if they're all small, an allowance has no pressure.
+- Fill each cell from a probe's own output — Compare 5 probe outputs against the hand-written cells; if they're identical, the fill is not worth automating.
+- Parse briefs before the guard reads them — Check how many guard misses come from unparsed brief syntax; if under 3, parsing is overkill.
+- Replay the guard's block log on every surface — Replay one surface's log by hand; if every surface logs in the same format already, one replay covers them all.
+- Retire the unused cards to a cold archive — Same as 5 and 18: moving cards changes nothing if unloaded cards cost no context.
+- Charge MCP tool schemas to the context budget — Sum the MCP tool schema bytes in one session; if they are under 5% of context, charging them is pedantic.
+- Split injected context by source and cap each source — Same as 3: if one source dominates, a cap on it alone is simpler than a split system.
+- Pay for new verbs with a deletion in the same task — Look at the last 10 verb additions; if deletions already came with them, the rule is a formality.
+- Budget the non-hook surfaces too — Measure the non-hook surfaces' bytes; if they're under 1% of the total, a budget protects nothing.

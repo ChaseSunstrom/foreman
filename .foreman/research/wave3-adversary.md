@@ -1,0 +1,3 @@
+Wave 3 adversary audit. Verdict: changes needed.
+CRITICAL fmcore.state_dir honors a fallback marker (.foreman-state.json in $XDG_STATE_HOME/foreman or $TMPDIR/foreman-state-<uid>) before checking default writability; marker "auth" is just default path equality. Guard only protects ctx.state_dir/foreman_home/state, so one Bash call can plant forged state (active brief with allow: [core]) + marker, redirecting hooks and fm → core without the user's yes; gates bypassed. Fix: guard all fallback locations as state-direct unconditionally; restrict when markers are trusted.
+Other: _YES treats "yes, don't worry" as cancel (safe direction). asks binding sound.

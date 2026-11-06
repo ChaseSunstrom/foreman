@@ -1,0 +1,31 @@
+---
+id: T-0054
+type: FEATURE
+tier: M
+status: done
+priority: normal
+scope: []
+depends_on: []
+source: followup
+created: 2026-09-27T00:58:28Z
+updated: 2026-09-27T03:10:28Z
+done_in: T-0071
+---
+# Opt-in cross-project lessons with a privacy filter (paths, names, tokens stripped), recall
+## Raw request
+> Opt-in cross-project lessons with a privacy filter (paths, names, tokens stripped), recalled in repos with a matching stack
+## Interpretation
+## Assumptions (confidence)
+## Acceptance criteria
+## Non-goals
+## Approach (options → choice → why)
+## Risks and rollback
+## Execution prompt
+## Steps
+## Resume here
+## Docs impact
+## Verification evidence
+## Log
+- 2026-09-27T00:58:28Z created
+- 2026-09-27T03:10:28Z done in T-0071
+## Follow-ups captured

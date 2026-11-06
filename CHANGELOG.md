@@ -11,6 +11,8 @@
 
 ### Everything else
 
+- test_cli.AffectedPairs gives its nested `fm check --affected` runs a 120 s base hang guard, so a loaded host stops failing every close on them (T-3390).
+- **Reproducible build check.** `sampo repro` builds the site and README figures twice and from REF, and names the nondeterministic and changed files, removals included (T-3279).
 - `sampo sync` is cheap again: an export walks only the folders that travel and skips every file whose source and mirror copy are unchanged since the last export (a size-and-mtime stamp per file), so an unchanged export takes ~0.3-0.5 s instead of 6-8 s under the project lock on every state write (T-3349).
 - A builder's `sampo lease take` is no longer refused by another lane's brief pre-claim (pre-claims stay advisory, with a one-line note naming them); an explicit lease of another session still refuses (T-3283).
 - `sampo sync on` works on this repo's state: atomic writes cut the file name in their temp name (a 250-byte brainstorm file refused the mirror), and the commit scan no longer takes a placeholder URL password (`user:pass@host`) or an ISO date under a secret-like name (`token_expires = "2030-01-01"`) for a credential (T-3336).

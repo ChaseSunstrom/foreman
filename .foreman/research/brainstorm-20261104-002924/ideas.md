@@ -1,0 +1,641 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 399 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Collapse the double SessionStart injection to one copy
+- Split MASTER.md into a generated index plus sections that Read accepts
+- Answer "how do I X" from the anchors without reading the doc
+- Add `sampo prune --plan` for the 2.4 GB state, with apply going to a TTL trash
+- Scan state for secret-shaped strings before any size-driven archive or publish
+- Gate per-turn and per-start characters with one budget file at ship — near T-2589 (done): The session-start note fits one 1,500-character budget, app…
+- Run a Ward canary through the real hook path at session start, silent unless it fails
+- Bench hooks under N parallel lanes, not just one session — near T-1829 (done): fm release-check keeps FOREMAN_DOCTOR_BENCH so the suite's …
+- Give non-Claude harnesses a smaller injection card than Claude Code gets
+- Show "what Sampo costs you" as one web UI card
+- Wild: starve the session-start text nightly in a lane until a held-out exam regresses
+- Wild: a luggage tag in the pane header, weighed in grams per injected character
+- Wild: a cold child tries to use Sampo from the injection alone and reports what it couldn't do
+- Fire SessionStart once per session id — near T-2870 (done): Sampo lease drop run from a builder lane drops every lease …
+- Shard MASTER.md into a readable index plus per-verb pages
+- Add a per-turn context budget table with an owner per line
+- Replace repeated reminders with a content-hash stamp
+- Compress the session-start block to a stable prefix plus a delta
+- Set a retention policy for the 2.4 GB project state — near T-1611 (done): Fm code app settings scope picker (this run, this project, …
+- Fail the ship gate when injected context grows without a waiver
+- Wild: Read the context as a diet — a daily "calories" card
+- Wild: Make the agent answer "what did you learn from the injected text" at turn 5
+- Wild: Hold a "one-page Foreman" turn — first prompt gets a 300-character context
+- Serve MASTER.md sections through a tiny `fm doc <verb>` verb
+- Wild: Give every injected line a "last used" date and let unused lines die
+- Log hook output sizes per event in the bench — near T-2532 (done): A non-tool hook event runs from the committed library when …
+- Break the 2.4 GB into a measured census first (`fm state du`) — near T-2408 (done): fmforesight warns of breakage before it bites: dates about …
+- Give each state class a retention policy and a hard byte budget
+- Split state into hot, warm and cold tiers so hooks only touch hot
+- Replace MASTER.md with a sectioned, indexed doc that Read can open
+- Dedupe the SessionStart injection by content hash against what the session already holds
+- Make a state manifest that says which files are rebuildable
+- Compact each ledger into a snapshot plus a short tail, losslessly
+- Store transcripts and lane artifacts once, by content hash
+- Wild: Make state "snow-load" aware, so the oldest cold segment is archived to a compressed pack and restored on demand
+- Wild: Add a "state diet" receipt at every session close
+- Wild: Mount a tmpfs-only mode where nothing survives except a manifest-listed keep set
+- Check disk pressure before writing, and degrade instead of failing
+- Wild: Garden the lane worktrees by last-touched age and branch merge status
+- Chart state growth per commit to catch the next 2.4 GB early
+- Pin every shim to the one guard — near T-2780 (done): test_evolve_never_revises_the_guards_own_files tries the gu…
+- Gate every context cut on a guard-clause index
+- Keep exactly one guard line through SessionStart dedupe — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Show Ward liveness in the existing per-turn line
+- Protect guard state from the state pruner — near T-2779 (done): Hook notes and library messages say Sampo (T-2742 step 5a):…
+- Rotate ledgers with hash-chain checkpoints — near T-2664 (done): fm verify-ledger --accept-damage covers a line a crash cut …
+- Prove the hook prefilter has zero false negatives
+- Make every off-switch alias equally hard to flip
+- Ship a guard card that fits Read — near T-1938 (done): Guard speed test fits a slow CI runner
+- Prove prose removal doesn't change guard behaviour
+- Wild: Add a guard-only floor profile
+- Wild: Make the minimiser blind to covered lines
+- Wild: Run a 5 ms self-bait at SessionStart — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+- Measure Sampo's marginal value against the bare model on every capability
+- Attach a "native-in-host-by" probe to every discipline rule
+- Split the package into a 200-line portable core and optional shells
+- Cap session-start injection at a hard token budget with overflow behind a pull verb
+- Make MASTER.md a generated index plus per-verb shards each under 8k tokens
+- Report "days since Foreman changed an outcome" per capability
+- Auto-dormant mode: capabilities that stop earning their tokens go silent until a trigger fires
+- Shrink the 2.4 GB project state with age-based compaction and a size ceiling
+- Wild: Run a quarterly "host catches up" duel against a stock agent with Sampo removed
+- Wild: Let Sampo write its own retirement plan on demand
+- Wild: Have a cold child explain Sampo in five sentences from the README alone, and fail the docs if it cannot
+- Gate every new hook byte on a measured outcome change — near T-2605 (done): The self-change gate's loaded wall-time check compares medi…
+- Inject SessionStart once, then a pointer — near T-1193 (done): Stack-card notes once per session, then a one-line pointer …
+- Shard MASTER.md under a Read-safe ceiling
+- Emit per-turn context as a delta against the last turn — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Roll ledgers into sealed segments with an equivalence proof
+- Extrapolate state growth at ship time
+- Make injected text byte-stable for prompt-cache hits
+- Declare retention per ledger in one table that `fm doctor` enforces
+- Ship a hook-latency scaling curve, not a single bar
+- Wild: run a 2030 post-mortem pre-mortem
+- Wild: write a time-capsule letter that a cold maintainer must act on
+- Wild: hibernate the tower to a small seed and wake it by replay
+- Freeze the guard's size and exam outside the lean pressure
+- Emit each SessionStart payload once per session — near T-2870 (done): Sampo lease drop run from a builder lane drops every lease …
+- Shard MASTER.md into a generated index and per-area files
+- Gate self-edits to guard and hook files on a verdict-diff — near T-2352 (done): Self-change gate at lane merge: guard replay, hook p95 and …
+- Ratchet every self-change against the hook benchmark — near T-2605 (done): The self-change gate's loaded wall-time check compares medi…
+- Replay recorded hook payloads through the old and new hook
+- Compile injected text from one source with a character budget — near T-2667 (done): fm burden counts SessionStart context delivered as hook_suc…
+- Prune the 2.4 GB state by tier, with a dry run and an undo
+- Wild: Compress prose with a local model and accept it only if a quiz still passes
+- Wild: Mute one injected line per week as a pre-registered experiment
+- Wild: Regenerate the shipped docs and injections from source and diff them (quine check)
+- Wild: Make the guard test itself with mutants of its recent blocks — near T-0371 (done): Guard hook fails closed in Claude Code itself: onFailure: "…
+- Budget skill descriptions and flag low-trigger skills — near T-1704 (done): Static trigger eval: phrased requests per skill must match …
+- Print the install-versus-source hash drift at session start only when it differs
+- Split MASTER.md into a map plus anchored section files — near T-2053 (done): MASTER.md: section 9 grouped under headings with a map tabl…
+- Find who registers SessionStart twice
+- Make SessionStart source-aware — near T-2900 (done): A resumed session (SessionStart source resume, a new proces…
+- Replace the injected block with a pointer to `sampo map`
+- Guide any oversized Read with an outline
+- Check the guard is intact at every start — near T-1921 (done): Guard reads a substitution behind 'cd /abs &&' from the sta…
+- Archive old ledger segments behind an index
+- Let the session read its own context gauge — near T-1327 (done): Nested Claude sessions that fm code starts run without Fore…
+- Wild: Let a session mute a channel for itself
+- Wild: Record a trail of every Read and leave it for the next session — near T-2681 (done): fmforesight.lines shows the newest unscored next-request pr…
+- Wild: Show the user the same one-line map as the status line
+- Register every lean number with the command that reproduces it
+
+## Round 2
+- Log every refused Read, not only MASTER.md — near T-2656 (done): A capture that near-duplicates a deferred task of its type …
+- Lint that every file the injection names fits one Read — near T-2376 (done): #5 exam kind tool-grant (Mission 6): a request whose obviou…
+- Attribute injected characters by actor — near T-2667 (done): fm burden counts SessionStart context delivered as hook_suc…
+- Make prune apply verify the plan against live state — near T-0943 (done): lint_verify warns when a criterion's verify command touches…
+- Rehearse prune-then-resume
+- Add a web UI "bytes read" footer
+- Stamp injected facts with their age
+- Show the user one line saying which copy of the guard text won
+- Wild: Record a guard black box
+- Wild: Dim the context a session never touched
+- Wild: Fill the tmpfs on purpose
+- Wild: Split guard.md from the session text — near T-2847 (done): Hook, guard, drive and Next-line messages print sampo spell…
+- Count the user's re-Reads of a sharded doc
+- Gate turn type before injecting — near T-0691 (done): Milestone: Intelligence — Planning and decomposition (1)
+- Steer the compactor with PreCompact instructions
+- Census the tool-result channel by verb
+- Fail the repo on any doc over a Read-safe size
+- Replace the per-turn sentence with a ≤12-character state code
+- Give subagents a role-sized injection
+- Measure survival of injected facts across turns
+- Write the model's own wish-list note at session close — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Wild: Run a "first prompt, 300 characters" week
+- Wild: Put the context diet on a nightly receipt, bisected
+- Wild: Let the agent mute a channel for its own session
+- Hash-stamp repeated reminders instead of repeating them — near T-2777 (done): The Moons page reads tiers from sampo.moons: site/pages.py …
+- Split state into XDG state, cache and runtime roots — near T-0836 (done): Stop tracking the stray repo-root skill-index.json (a cache…
+- Drop a CACHEDIR.TAG and a backup-exclude marker in rebuildable dirs
+- Put ledger-scale hot files on a tiny SQLite index, with the text ledgers kept as the source of truth
+- Check that `/run/user/1000/fm-children` is tmpfs and cap what children write there
+- Rehearse disk-full and ENOSPC on every writer — near T-1449 (done): Hook notes survive one failing builder
+- Hardlink-dedupe identical lane artifacts and transcripts at session close
+- Add an inode and file-count ceiling beside the byte ceiling
+- Compress sealed ledger segments with zstd, readable in place
+- Wild: Make the state directory a git-style object store you can `fsck`
+- Wild: Show the state as a disk-usage sunburst in the web UI, with an age ring
+- Wild: Hold a nightly "move house" drill that copies state to a fresh path and runs the suite
+- Stamp a schema version and writer version on every state file
+- Atomic-write helper audit: fsync policy per file class
+- Detect state on a network or sync filesystem and warn — near T-2639 (done): fm doctor warns when Foreman's state directory sits on a vo…
+- Test every enabled-plugin set for exactly one Ward — near T-2745 (done): Ward knows Sampo: the guard treats sampo (and plugin/bin/sa…
+- Warn when a shim's dependency didn't resolve
+- Keep every `MASTER.md#anchor` reference resolving after sharding
+- Track the retry-after-block rate as a lean regression metric
+- Fuzz the state pruner for containment — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Hold unattended prune to rebuildable classes
+- Protect standing intent and steers when cutting context — near T-2246 (done): A cold-read FAIL blocks only when it quotes, verbatim, the …
+- Resolve conflicting off-switch aliases to the safer value
+- Key the Ward's rule cache by content, not mtime
+- Keep shims out of the hook import path — near T-2307 (done): fm check --affected pulls test_core's import-budget tests i…
+- Make the pruner pass the Ward first (wild)
+- Add a rolling guard digest to the per-turn line (wild)
+- Generate bypass attempts overnight on the local model, classify only (wild)
+- Teach at the block, not at the start — near T-1810 (done): Session start sweeps for problems nobody raised: CI on main…
+- Run the Ward exam through the host's own permission check
+- Ablate the 2.4 GB state itself
+- Enforce the floor from git hooks when host hooks vanish
+- Defer to the host's native plan mode at runtime
+- Log what happened just before every switch-off — near T-1307 (done): Fm code tui replay scrubber: in --events replay, left/right…
+- Lint that every pointer in injected text is readable
+- Shed non-Ward injection when the context window is crowded
+- Express hook overhead as a share of the host's own turn time
+- Chart each capability's delta against model strength
+- Wild: Hold a monthly obsolescence pre-mortem written by a cold child
+- Wild: Draft each capability's retirement as an upstream feature request
+- Wild: Have the user stop paying for a capability by default, and make it re-earn a slot on request
+- Strip hooks from the thin `foreman` and `foreman-ui` shim plugins — near T-2780 (done): test_evolve_never_revises_the_guards_own_files tries the gu…
+- Run an install-state matrix for exactly-once hooks — near T-1757 (done): fm code warns once at start when fm doctor sees two Foreman…
+- Lint every file the injections and skills tell agents to read against the Read cap
+- Put a sunset clock on every rename alias
+- Gate on event-total hook latency from the merged hook table — near T-0001 (done): Phase 3: hooks — one dispatcher per event, guard, stop gate…
+- Attach provenance to each Ward rule — near T-2636 (done): fm prove --steer: a user-steer rule's [check: CMD] that als…
+- Project the 2030 state size under each retention policy
+- Classify state paths as RAM-backed or disk-backed
+- Wild: Run Sampo against a simulated 2030 host
+- Wild: Give the state directory a hard filesystem quota
+- Wild: Hold a six-month rule-regret review in the Genesis report
+- Count characters injected per turn broken down by owner
+- Wild: Make the guard readable as the seed of an independent reimplementation
+- Run the builder on generation N-1 and the checker on N
+- Ship every protected-surface self-edit with a pre-tested inverse and a tripwire
+- Make shim plugins hookless and test the count of hook registrations — near T-2780 (done): test_evolve_never_revises_the_guards_own_files tries the gu…
+- Tighten-only auto-tuning for safety thresholds
+- Refuse growth of MASTER.md past the Read ceiling at write time
+- Write a self-surgery ledger with plain-word weekly digest
+- Rate-limit protected-surface self-edits with a breaker
+- Promote a repeated lesson into a check, then delete its prose — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Wild: deletion-only mutation of the injected text, scored by a cold quiz
+- Wild: a frozen outside-tree Ward twin that overrules by strictness
+- Wild: let a session mute one injected line for itself and report what it missed
+- Wild: a weekly "live without me" drill that disables one capability in lanes
+- Inject a one-line map pointer instead of the SessionStart block
+- Shard MASTER.md into an index plus Read-safe sections
+- Add `sampo doc <verb>` that prints one section — near T-2766 (done): sampo's verbs, SAMPO_* env and the Sampo-Task trailer (T-27…
+- Prune the 2.4 GB state with a plan, a trash and an undo
+
+## Round 3
+- Gate a prune with a hook-latency drill — near T-0001 (done): Phase 3: hooks — one dispatcher per event, guard, stop gate…
+- Log every doc search that finds nothing
+- Make the per-turn line three-state: ok, stale or silent
+- Print what the injected context gained and lost since the previous release
+- Pause lanes while a prune applies
+- Mark injected steers with their origin and fence them
+- Time the resume start against a full-size state
+- Check that lanes believe in real verbs only — near T-2843 (done): Inside a builder lane, bare 'fm lib check' (and other fm ve…
+- Block ship on a lean ratchet only when two runs agree — near T-2281 (done): Lean ratchet (Mission 8/#12): each ship records the always-…
+- Ship a one-file Ward that every lane worktree carries
+- Print a one-page "Sampo is broken" card
+- Run a ghost session without the injection — near T-2667 (done): fm burden counts SessionStart context delivered as hook_suc…
+- Let a cold child use Sampo from the injected card alone
+- Inject a fake bait command every start and check the Ward answers
+- Cache the session-start block by content hash and inject once per session id — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Put a per-turn byte budget table in the repo and fail the ship gate when a turn exceeds it
+- Generate MASTER.md as an index of at most 3k tokens plus sections of at most 8k tokens each
+- Add a context-weight line in `sampo doctor` that splits injected characters by owner and by channel
+- Emit the per-turn line as a delta, silent when unchanged
+- Test that the Ward survives every context cut by naming each guard clause in a required list
+- Plan the 2.4 GB state prune with a dry run, a TTL trash and a class table
+- Cap hook-path output size per event in the bench and record it with the timing
+- Wild: Mute one injected line per week as a pre-registered trial and keep it muted only if outcomes hold
+- Wild: Show a "weight card" in the pane that prices each injected line in characters and in how often the model referenced it
+- Expire the rename's backup once it has proved itself
+- Lay out state by lifetime, not by type
+- Attribute every state byte to the task that wrote it
+- Check that ledger pointers still resolve after pruning
+- Point at host transcripts instead of copying them — near T-1290 (done): The builder rules live once, in plugin/agents/fm-builder.md…
+- Store embeddings as quantized binary beside the text
+- Detect whole-file rewrites
+- Adapt retention to free disk and growth rate
+- Sweep orphaned temp files from crashed writes
+- Fork the whole state cheaply for drills and exams
+- Wild: Offer opt-in cold storage to the user's own NAS or bucket with local stubs
+- Wild: Add a read-heat map of state files
+- Wild: Hold a monthly Burn Night that packs and signs the cold state
+- Alarm when the Ward goes quiet
+- Record a per-harness block rate — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Pin the Ward's read-set
+- Resolve protected paths from the install-time repo root
+- Give every guard sentence a home — near T-2732 (done): fm prove --steer and --bugs say the yes is the user's to gi…
+- Pass the Ward its own recovery test, with a local agent
+- Spend a guard-adjacency budget on lean cuts
+- Publish guard changes as verdict flips — near T-0189 (done): fm replay: the guard replayed on the real commands of recen…
+- Mark time-to-armed at session start — near T-1023 (done): Can you have a graph of sub agents/worktrees/brainstorms?
+- Run the Ward canary from outside the plugin (wild)
+- Have a cold child try to dodge the Ward from the injection alone (wild)
+- Keep a frozen strictness floor outside the tree (wild)
+- Show a weigh-in before any bypass session (wild) — near T-0871 (done): install.sh asks before turning on bypass permissions, showi…
+- Move discipline from injection to a post-hoc transcript audit
+- Make MASTER.md a build artifact, not a committed file — near T-2849 (done): Ship the landed commits to main: T-2834 through T-2846 on f…
+- Fade nudges per user once the habit is unprompted
+- Skip ceremony the user's own CI already enforces — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Require every injected line to carry an expiry — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Run a "ten-line Sampo" duel
+- Downgrade the Ward to audit-only when the host enforces it natively
+- Keep a "needed share" in doctor, with a Lite recommendation
+- Wild: make the product a 4 KB seed prompt — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Wild: have a rival harness write the obsolescence report
+- Wild: stage a "host catch-up day" each quarter
+- Measure the cost of having the fallback ready
+- Run a rollover drill on every counter and width — near T-2512 (done): macOS: a shebang script named claude counts as Claude Code …
+- Replace line-count windows with cursor or time windows — near T-1730 (done): Load-proof tests: hook-call timeouts, redaction and loop-re…
+- Keep a frozen 2026 state fixture and migrate it to HEAD on every ship
+- Stamp every embedding with model id and dimension, and never mix them
+- Make child sessions leave no host transcripts
+- List local model weights as part of Sampo's footprint
+- Give pruned state a tombstone so readers never return silent empty
+- Self-probe model quirks instead of hardcoding profiles
+- A/B the Ward line's position before SessionStart dedupe lands
+- Wild: Run a small-window maintainer exam
+- Wild: Generate a doomsday card and prove a stranger can use it
+- Wild: Build a parallel-hooks fake host
+- Verify that every printed lean number can be re-measured by anyone
+- Rebuild the install from release plus a patch log
+- Predict a self-edit's behaviour change, then check it — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Flag a commit that changes both a gauge and the thing it measures
+- Put protected-surface self-edits on probation
+- Let state go dark for seven days before it is deleted
+- Rewrite MASTER.md's layout from Read trails
+- Tune skill descriptions from misfire and miss logs
+- Wild: Molt monthly into a clean install
+- Wild: Make the editor and the explainer different parties
+- Wild: Let Sampo propose one deletion of itself each night
+- Wild: Keep a hash-sealed frozen twin of Sampo's current self for audits
+- Preserve the user's local patches across self-updates
+- Cap how much a lane may change in the guard on one night
+- Slice the map to the open task
+- Rewrite an oversized Read into the matching section — near T-2772 (done): Sampo reimagined: a new logo and a completely redesigned si…
+- Mine wandering into map lines
+- Recall from my own pre-compaction transcript — near T-0707 (done): Frontier 07 — Knowledge graph
+- Resume with bookmarks, not a re-read
+- Preview the Ward rules for this repo before they bite
+- Resolve the map per worktree and commit — near T-2265 (done): test_orchestration's conflict-brief test reads T-2208's res…
+- Sign every map claim with the check that earned it
+- Run the cartographer lane
+- Answer "where is X" from a local map oracle — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Show a session minimap with a you-are-here dot
+- Print a map-version stamp the model can echo
+
+## Round 4
+- Rows:
+- Actors:
+- Name the two hook entries behind the double SessionStart
+- Inject one product name only — near T-2810 (done): MASTER.md says Sampo: the system map names the product Samp…
+- Measure the shim import tax — near T-2748 (done): Internals become Sampo (T-2742 step 4): plugin/lib/fmX.py m…
+- Redirect `rm` of state to `sampo prune --plan`
+- Scan injected text for personal data before a non-local model sees it
+- Give each harness its own injection card, tested per harness
+- Show a live "resume cost" line when a drive restarts — near T-0138 (done): Drive survives a restart: a resumed session with drive on, …
+- Make the site's Genesis data carry a scrubbed-by-construction flag
+- Wild: Plant a canary sentence in MASTER.md
+- Wild: Run a tmpfs fire drill for the child dir
+- Wild: Let the agent file a "what I wish I knew" note on turn 1
+- Wild: Print a one-line "Sampo cost" on the Ward-block message itself
+- Pin MASTER.md anchors with a redirect map after sharding
+- Route each hook line to the user or the model, never both — near T-1705 (done): Free listing room: skills the model never loads itself (the…
+- Move the invariant block into the system-prompt position
+- Detect cache breaks from usage fields
+- Inject the plan-before-edit contract at the first Edit or Write — near T-0012 (done): Harness-enforced procedure: stage machine, next-action inje…
+- Keep Sampo state out of Grep, Glob and Read results
+- Dedupe the injection against the user's own CLAUDE.md, memory and steers
+- Let a local model pick the 3 rules this prompt needs, with a fixed fallback
+- Spend a per-turn character allowance from a token bucket
+- Price injections in token-turns, not characters
+- Draw a context flame chart per session in the web UI
+- Read 'MASTER.md refused' as a signal and answer it — near T-2688 (done): each AskUserQuestion answer becomes a question_answered led…
+- Print the card's own price inside it
+- Run the hostile-slow session soak: 500 turns, 3 compactions, 4 lanes
+- Audit every hook's file opens — near T-2466 (done): The Stop hook pushes the forever loop's next round while fm…
+- Keep full fidelity around trouble, thin the quiet
+- Sweep state by reachability from roots — near T-2091 (done): fm tidy: drop a project state dir whose root folder is gone…
+- Stamp every record with its own time-to-live at write — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Test concurrent appends larger than PIPE_BUF
+- Make downgrades safe for state files — near T-0494 (done): Crash-safe state (C094, value 3/5, effort M, risk low)
+- Reflink-snapshot state before any prune or migration — near T-1085 (done): State rollback on upgrade: fm keeps a snapshot of state bef…
+- Checkpoint lane work before `/run/user` goes away — near T-2340 (done): L plans race their design (Mission 5, #2): an L task under …
+- Cap the write rate of every ledger writer — near T-2337 (done): Calibration ledger (Mission 5, #8): every stated confidence…
+- Keep sensitive intermediates on tmpfs only — near T-2437 (done): Gen 2: a model layer (user steer 2026-10-31, start after ro…
+- Compost before deleting (wild) — near T-2824 (done): Treat the user's visual preference as standing for all Samp…
+- Quiz the restore, not just the copy (wild)
+- Make every file writer forecast its own readership (wild) — near T-2229 (done): fm genesis put shows each stray quote: a cold reader's FAIL…
+- Cache Ward verdicts by rules hash
+- Generate the Ward exam from the rename's alias map — near T-2626 (done): Every Genesis generation advances the moonshot campaign (MO…
+- Make a block independent of its log write — near T-2868 (done): Moonscale part 1: the candidate store (research/genesis/moo…
+- Fail closed to an embedded floor on a torn rules file — near T-2812 (done): FIX: the eval cases embed the current rules again: T-2809 r…
+- Let repo-local Ward config only tighten
+- Store blocked commands as shapes, not raw strings
+- Diff the Ward against the host's own permission classifier
+- Price every context cut with one new guard test — near T-2893 (done): Local generation done right: per-profile request extras and…
+- Show the Ward's armed state in the per-turn line at no extra length
+- Run a start-of-session Ward self-check with a time cap — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Wild: plant a honeypot section in the sharded docs
+- Wild: have a tool-less child try to talk the Ward down from the trimmed injection alone
+- Wild: print a "what the Ward stopped this week" receipt in plain words
+- Run a bare-model duel on every capability, monthly
+- Keep a Lite profile that is the Ward and nothing else
+- Add a needed-share line to `sampo doctor` — near T-2853 (done): Port 12's palette to the panel (the foreman-ui mod's colour…
+- Probe the host's Read limit and size every doc shard to it
+- Hash-pin doc shards and verify them on every served read
+- Test that a planted `sampo` package cannot shadow the plugin's modules — near T-2782 (done): fm doctor's module-map check scans the sampo package: missi…
+- Price the injected text over a year and gate on it
+- Scan the hook path for stdlib features slated for removal
+- Add an algorithm id to every ledger hash and signature — near T-2337 (done): Calibration ledger (Mission 5, #8): every stated confidence…
+- Add an evidence-hold class that pruner and redactor both respect
+- Tag every Ward verdict with the principal that issued the command
+- Re-run the Ward exam when a stronger model ID appears — near T-2626 (done): Every Genesis generation advances the moonshot campaign (MO…
+- Give every lean waiver a fuse date that fails CI when it lapses
+- Keep a 2030 backcast file that each Mission must move — near T-2104 (done): fm genesis drift/sweep — gen-0 MUST/NEVER drift check with …
+- Wild: Open a cold-return mode after 90 days away
+- Wild: Print a one-page paper Ward card with a hash you can read by eye
+- Wild: Share a cross-harness denial note
+- Confirm every live self-apply or revert it — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Measure delivered bytes from the host transcript
+- Map each path to exactly one self-edit class
+- Bisect lean regressions to the commit automatically
+- Shrink injected text with the local model, keeping a clause index
+- Warn before a retirement hits the user's own habits
+- Detect Sampo generation skew across synced machines
+- Sign Sampo's own injected text with a per-session tag
+- Wild: let wording perturbation prove the text isn't brittle
+- Wild: self-heal host-protocol drift with a patch that must earn its way in
+- Wild: replay a self-edit as a before/after "what the model sees" film
+- Keep a "why this sentence exists" provenance for every injected line
+- Write one self-map file every session can Read — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+- Report what compaction lost — near T-2648 (done): fm drill gains a fault that drops one ledger event class (e…
+- Look up where an instruction came from — near T-0318 (done): FEATURE: beautiful modern animated desktop app wrapping For…
+- Fence recursive scans of the state directory
+- Cap tool output by remaining headroom
+- Flag version skew inside a live session
+- Let the session file map corrections — near T-1254 (done): Benchmarks page: cost per fully-correct session (long sessi…
+- Write each session's own start card, fact-checked — near T-1327 (done): Nested Claude sessions that fm code starts run without Fore…
+- Make injection demand-driven with "want" bids
+- Replay what the session held when it erred — near T-2831 (done): Publish the current state of the work's artifacts (reports,…
+- Hand each lane a map slice and take back its delta
+- Hold a conversation with a frozen past session's map
+- Detect a session that cannot see its own map
+
+## Cross-bred
+- Ship one injection per session, held to a budget file — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Serve docs by verb: index card in the injection, `fm doc <verb>` for the rest
+- Add a state lifecycle: census, tiers, plan, trash, and a secret scan gate
+- Run a hook health lane: Ward canary, parallel bench and size log in one harness
+- Add a cold-child exam that trims the injection to what gets used (wild)
+- Show a "what Sampo costs you" card with a calories and luggage-tag skin (wild)
+- Give non-Claude harnesses a smaller injection card (supporting item)
+
+## New ideas per lens
+- grid: 55
+- context per turn: 48
+- state on disk: 54
+- guard intact: 52
+- inversion: what makes Foreman obsolete: 40
+- 2030 worked back: 52
+- self-modification: 50
+- invented: the session that can read its own map: 41
+
+## Coverage (ideas per category)
+- guard 30
+- context 21
+- docs 18
+- lean 18
+- hooks 12
+- state 10
+- observability 7
+- state size 7
+- obsolescence 7
+- retention 6
+- necessity 6
+- measurement 6
+- injection 5
+- docs/context 4
+- devices 4
+- recovery 4
+- privacy 4
+- compaction 3
+- dedupe 3
+- reliability 3
+- introspection 3
+- per-turn context 3
+- integrity 3
+- context budget 3
+- lean safety 3
+- legibility 3
+- durability 3
+- continuity 3
+- budget 2
+- lanes 2
+- context/guard 2
+- simplicity 2
+- cost 2
+- speed 2
+- safety 2
+- agents 2
+- migration 2
+- red team 2
+- host-overlap 2
+- rollback 2
+- resume 2
+- delight 2
+- user value 2
+- injection defense 2
+- tiering 1
+- docs on disk 1
+- safety of deletion 1
+- archive 1
+- ephemeral state 1
+- regression gate 1
+- guard/rename 1
+- state/guard 1
+- state/integrity 1
+- performance/guard 1
+- rename/guard 1
+- drift 1
+- context/introspection 1
+- self-awareness 1
+- ui 1
+- injection selection 1
+- state layout 1
+- disk hygiene 1
+- ledger reads 1
+- ram-backed disk 1
+- resilience 1
+- limits 1
+- web ui 1
+- portability 1
+- write path 1
+- environment 1
+- performance 1
+- dogfood 1
+- churn 1
+- self-hosting 1
+- install 1
+- self-tuning 1
+- transparency 1
+- breaker 1
+- context diet 1
+- evolution 1
+- self-trim 1
+- lean evidence 1
+- ward visibility 1
+- context diff 1
+- state safety 1
+- injection safety 1
+- lane context 1
+- ship gate 1
+- ward portability 1
+- docs access 1
+- injection quality 1
+- lean experiments 1
+- harness fit 1
+- layout 1
+- provenance 1
+- size 1
+- write amplification 1
+- hygiene 1
+- testing 1
+- guard health 1
+- parity 1
+- ward speed 1
+- ward correctness 1
+- ward timing 1
+- independent check 1
+- tamper resistance 1
+- user trust 1
+- scaffolding 1
+- overlap 1
+- moonshot 1
+- roadmap 1
+- moons store 1
+- footprint/privacy 1
+- prune safety 1
+- local models 1
+- self-edit 1
+- verification 1
+- measurement integrity 1
+- state pruning 1
+- skills 1
+- audit 1
+- upgrade 1
+- blast radius 1
+- map telemetry 1
+- correctness 1
+- trust 1
+- ward 1
+- unattended 1
+- site privacy 1
+- cache 1
+- lazy injection 1
+- tool results 1
+- duplication 1
+- soak 1
+- hooks/state 1
+- gc 1
+- compatibility 1
+- runaway guard 1
+- footprint 1
+- supply chain 1
+- ledger 1
+- process 1
+- restore 1
+- multi-agent 1
+- self-edit safety 1
+- injection budget 1
+- self-edit gates 1
+- regression forensics 1
+- developer experience 1
+- self-edit hygiene 1
+- map accuracy 1
+- lean start 1
+- adaptive context 1
+- debugging 1
+- archaeology 1
+Thin (0-1 ideas): security, developer experience
+
+## Kill it fast (the quickest test that would show it isn't worth building)
+- Collapse the double SessionStart injection to one copy — Run `SessionStart` with a counter and a fresh session id; if it logs one fire per id, the double copy is a harness artifact, not your bug.
+- Split MASTER.md into a generated index plus sections that Read accepts — `wc -c MASTER.md` and attempt a Read; if it's under the Read limit, the split is solving nothing.
+- Answer "how do I X" from the anchors without reading the doc — Ask a cold child five real "how do I X" questions with anchors only; if it needs the doc for more than one, the anchors don't carry enough.
+- Add `sampo prune --plan` for the 2.4 GB state, with apply going to a TTL trash — `du -sh` by class first; if over 80% is rebuildable cache, `rm` it and skip building a prune verb.
+- Scan state for secret-shaped strings before any size-driven archive or publish — Run gitleaks/trufflehog over the state once; zero hits means a standing scanner is overbuilt.
+- Gate per-turn and per-start characters with one budget file at ship — Sum current injected characters; if they already sit under the budget you'd choose, a gate just fails on noise.
+- Run a Ward canary through the real hook path at session start, silent unless it fails — Break Ward on purpose once; if the existing per-turn line already shows the break, a canary is redundant.
+- Bench hooks under N parallel lanes, not just one session — Run the hook bench with 1 lane and then 8; if p95 is within noise, parallel benching adds nothing.
+- Give non-Claude harnesses a smaller injection card than Claude Code gets — Diff what the non-Claude harness already truncates or ignores; if it drops the extra text anyway, a second card is pointless.
+- Show "what Sampo costs you" as one web UI card — Ask the user whether they'd open that card twice; if they wouldn't, kill it, since a log line already covers it.
+- Wild: starve the session-start text nightly in a lane until a held-out exam regresses — One night of starved text with a held-out exam of fewer than 30 items can't detect a regression; if the exam is that small, the result is noise.
+- Wild: a luggage tag in the pane header, weighed in grams per injected character — Drop the grams metaphor and print characters in the header; if that already tells you what you need, the tag is decoration.
+- Wild: a cold child tries to use Sampo from the injection alone and reports what it couldn't do — Run one cold child by hand against the current injection; if its failure list is empty or obvious, automating it is wasted work.
+- Fire SessionStart once per session id — Check for `session_id` in the hook payload and log it; if repeats are `resume` or `compact` sources, once-per-id would suppress needed context.
+- Shard MASTER.md into a readable index plus per-verb pages — Same test as 2; also check whether the per-verb pages would simply be the existing sections.
+- Add a per-turn context budget table with an owner per line — Count lines across the current injection; if there are fewer than 10 owners, a table is longer than the thing it audits.
+- Replace repeated reminders with a content-hash stamp — Grep a transcript for repeated reminders; if the hash stamp is bigger than a reminder, it saves nothing.
+- Compress the session-start block to a stable prefix plus a delta — Diff two consecutive SessionStart outputs; if more than 90% differs, there is no stable prefix, and if under 5% differs the delta is trivial.
+- Set a retention policy for the 2.4 GB project state — Same as 4; the policy is a one-line TTL once you know the census.
+- Fail the ship gate when injected context grows without a waiver — Check git history for how often injected size changed; if it changed fewer than 3 times, a CI gate costs more than review.
+- Wild: Read the context as a diet — a daily "calories" card — Say "calories card" aloud to a user; if it needs explaining, it's a cute rename of the char-count line from 6.
+- Wild: Make the agent answer "what did you learn from the injected text" at turn 5 — Ask at turn 5 once; models will confabulate a plausible answer, so the response can't be graded.
+- Wild: Hold a "one-page Foreman" turn — first prompt gets a 300-character context — Run a 300-character context on the first prompt; if the first-turn task success matches full context, you've learned to cut it, not to build a mode.
+- Serve MASTER.md sections through a tiny `fm doc <verb>` verb — Test whether `grep -n` or sed on the anchors already does it; if so, the verb is a wrapper.
+- Wild: Give every injected line a "last used" date and let unused lines die — Track "last used" requires knowing a line was used, and you can't observe that from model output; check whether any signal exists before building.
+- Log hook output sizes per event in the bench — Add one `wc -c` per hook to the bench; ten minutes, so do it rather than debate it, but it doesn't need an idea slot.
+- Break the 2.4 GB into a measured census first (`fm state du`) — `du -d2 | sort -h` takes a minute; run that, and a verb is only worth it if you'll run it weekly.
+- Give each state class a retention policy and a hard byte budget — Duplicates 19 and 4; merge before building anything.
+- Split state into hot, warm and cold tiers so hooks only touch hot — Check whether hooks touch cold state at all with `strace -e openat` on one hook; if they don't, tiering fixes nothing.
+- Replace MASTER.md with a sectioned, indexed doc that Read can open — Duplicates 2 and 15; merge.
+- Dedupe the SessionStart injection by content hash against what the session already holds — Duplicates 1 and 14; check whether the session already holds the text, which hooks can't see.
+- Make a state manifest that says which files are rebuildable — Try listing rebuildable files by hand for the top 10 dirs; if you can't tell, the manifest will rot too.
+- Compact each ledger into a snapshot plus a short tail, losslessly — Compact one ledger into snapshot plus tail and replay-diff it; any difference kills "lossless."
+- Store transcripts and lane artifacts once, by content hash — Hash the transcripts and artifacts; if the duplicate rate is under 10%, content addressing saves little.
+- Wild: Make state "snow-load" aware, so the oldest cold segment is archived to a compressed pack and restored on demand — `ls -lt` on the cold segments; if they're deleted rarely anyway, "snow-load" is a metaphor for `tar` + `cron`.
+- Wild: Add a "state diet" receipt at every session close — Print `du` at session close for one day; a receipt nobody reads is a log line.
+- Wild: Mount a tmpfs-only mode where nothing survives except a manifest-listed keep set — Ask what the keep set contains; if it's the whole state, tmpfs mode is just a full wipe, and /run/user is already tmpfs, so check that first.
+- Check disk pressure before writing, and degrade instead of failing — Fill a small tmpfs and run one hook; if it already degrades gracefully, skip this.
+- Wild: Garden the lane worktrees by last-touched age and branch merge status — `git worktree list` with ages; if there are fewer than 10 stale trees, delete them by hand.
+- Chart state growth per commit to catch the next 2.4 GB early — Chart `du` from 5 past commits; there is no git repo here, so there's no per-commit history to chart.
+- Pin every shim to the one guard — `grep -r` for guard invocations in the shims; if every shim already calls the one guard, this is done.
+- Gate every context cut on a guard-clause index — List the guard clauses; if there are fewer than 5, the index is bigger than what it indexes.
+- Keep exactly one guard line through SessionStart dedupe — Run the dedupe against a fixture and grep for the guard line; a one-assert test, not a feature.
+- Show Ward liveness in the existing per-turn line — Check the current per-turn line for width; if it's already full, adding Ward breaks the char budget from 6.
+- Protect guard state from the state pruner — Check whether the pruner's glob can match guard paths at all; if not, there's no risk to protect against.
+- Rotate ledgers with hash-chain checkpoints — Rotate one ledger with a plain checkpoint line; if verification never runs, hash chains are theater.
+- Prove the hook prefilter has zero false negatives — Fuzz the prefilter against the full hook on 1000 recorded inputs; any miss kills it, zero misses proves only the sample.
+- Make every off-switch alias equally hard to flip — List all alias spellings of the off-switch; if there's only one real path, the "equally hard" idea is moot.
+- Ship a guard card that fits Read — Same size test as 2 on the guard text; it's probably already smaller than Read's limit.
+- Prove prose removal doesn't change guard behaviour — Run the guard behaviour suite before and after the removal; if it has no coverage, you can't prove anything.
+- Wild: Add a guard-only floor profile — Boot with only guards and run the suite; if the suite passes, you've found the floor, and this is just 6 with a name.
+- Wild: Make the minimiser blind to covered lines — Define "covered" by a test; if coverage is only line coverage, the minimiser will cut lines that matter but aren't asserted.
+- Wild: Run a 5 ms self-bait at SessionStart — Time a self-bait at SessionStart; a 5 ms bait that always passes proves the hook ran, not that it works, so it duplicates 7.
+- Measure Sampo's marginal value against the bare model on every capability — Run the same 20 tasks with Sampo off; if you lack the tasks, the measurement is the project, not an idea.
+- Attach a "native-in-host-by" probe to every discipline rule — Test three rules against the current host; if you can't detect "native" automatically, the probe is manual and will go stale.
+- Split the package into a 200-line portable core and optional shells — Count lines that are host-specific; if over 70% are, a 200-line core can't exist.
+- Cap session-start injection at a hard token budget with overflow behind a pull verb — Check how today's injection compares with a hard cap; if under, the cap is a no-op, and if over you know what to cut.
+- Make MASTER.md a generated index plus per-verb shards each under 8k tokens — Duplicates 2, 15 and 30; merge.
+- Report "days since Foreman changed an outcome" per capability — You need an "outcome changed" metric; if you can't define it from existing logs, the days counter is made up.
+- Auto-dormant mode: capabilities that stop earning their tokens go silent until a trigger fires — Dormant capabilities need a trigger detector; if the trigger needs the same tokens to detect, dormancy saves nothing.

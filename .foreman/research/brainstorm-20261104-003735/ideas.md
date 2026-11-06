@@ -1,0 +1,602 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 349 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Fence trigger-borne text as data with a lower grant tier
+- Add a trigger loop breaker with a provenance chain
+- Stamp every self-started session with its wake reason — near T-1800 (done): Foreman reasons ahead: names why usage burns, unasked (sess…
+- Catch up missed schedules once on drive start — near T-0750 (done): Catch rates and give-up mining miss real failures: stored r…
+- Type every drive stop and auto-resume the transient ones
+- Preflight triggered runs with a tool canary — near T-2270 (done): Capability-miss trigger (Mission 6, #5): a missing command …
+- Deduplicate CI failures by signature and pre-fetch the red — near T-1769 (done): A test runner's tally became the failure signature, so red-…
+- Make one "Overnight yes" card for queued installs and risky triggers
+- Show a trigger timeline with "would have fired" dry-run
+- Debounce and ignore-list file triggers — near T-2276 (done): Trigger routing learns from outcomes (Mission 8/#11): fm tr…
+- Wild: Compile a one-sentence trigger via a local model
+- Wild: Treat a sibling harness finishing as an event
+- Wild: Replay a recorded week of events into a scratch tree
+- Declare triggers in one file
+- Give each fired task a trigger stamp — near T-2276 (done): Trigger routing learns from outcomes (Mission 8/#11): fm tr…
+- Break trigger loops and storms — near T-0434 (done): Heartbeat and breaker for unattended runs
+- Fence issue and CI text as data — near T-1859 (done): Fm inbox ticket: fetch a Jira or Linear issue by key, not o…
+- Queue installs as one night card — near T-2374 (done): Install-grant queue (Mission 6, #5): fm ask --later queues …
+- Classify drive stops by cause and self-heal the safe ones
+- Retry failed tool calls by class, with a budget — near T-0301 (done): Friction digest: say why tool calls failed; a wait on backg…
+- Route background volume to the local model first
+- Watch the drive from outside it
+- Wild: Run a rehearsal lane on tomorrow's likely trigger
+- Wild: Plant a honeypot issue each week
+- Wild: Write the handoff letter in the order the user reads
+- Stop the night on spend and disk, not only on usage limits — near T-1476 (done): fm code stops a worker turn at a usage limit instead of wai…
+- Add a triggers file with a dry-run replay — near T-2360 (done): #11 exam kind watch: a zero-token trigger arm on replayed e…
+- Watch the working tree with inotify, debounced into one event per burst
+- Fire CI-red triggers into a read-only diagnosis lane first
+- Give every trigger a loop breaker and a self-cause filter
+- Pass trigger payloads through the Ward as untrusted text
+- Queue installs triggered by a watcher into one morning yes — near T-2542 (done): Installed Foreman timers known alive: systemd's last trigge…
+- Route trigger triage to the local model, with a fixed fallback — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Write a trigger ledger that answers "why did this start?"
+- Catch up on missed events after a resume or reboot
+- Add a night budget envelope per trigger — near T-2355 (done): One trigger table routes every event to inbox, queue, lane …
+- Wild: Fire a trigger from the user's own pushback phrases
+- Wild: Trigger a render-diff lane when site or scene pixels change
+- Wild: Wake the tower on a "host shipped something" event
+- Wild: Add a dead-man switch that stops all triggers when nobody reads the morning card
+- Add a local triage gate in front of every trigger
+- Run triggers as systemd user timers and path units, not a resident process
+- Add a free lane with no budget cap — near T-1709 (done): Lane friction: the drive counts the raised lane cap, an unu…
+- Repair malformed tool calls locally before they fail — near T-2831 (done): Publish the current state of the work's artifacts (reports,…
+- Run a drive sentry on the local model — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Draft CI-red fixes in a scratch worktree overnight, held for one yes
+- Batch every install a trigger needs into one yes card — near T-2371 (done): One find across every shelf (Mission 6, #5): fm which NEED …
+- Replay 30 days of history through a trigger before enabling it
+- Race several local attempts at each new issue and keep the best passing one
+- Wild: Compile plain-sentence triggers into rules with a local model
+- Wild: Run a dream shift that mines closed tasks for the follow-up the user would have asked
+- Wild: Yield the GPU the moment the user shows up
+- Mark every local-made result unwitnessed until verified
+- Compile triggers to the OS's own timers and path units
+- Tag each fired run "would have happened anyway"
+- Suspend triggers whose output nobody takes
+- Add a tool-failure budget to trigger-born sessions — near T-2270 (done): Capability-miss trigger (Mission 6, #5): a missing command …
+- Run a nightly trigger-set duel against plain `claude -p`
+- Label the cloud-routine alternative per rule
+- Break-even gate for local versus hosted background volume
+- Queue installs as one signed manifest diff
+- Wild: Write the shutdown notice for each trigger on day one
+- Wild: Mine shell history to propose triggers, then retire them when habits stop
+- Wild: Publish triggers as an open event→brief spec with a conformance test only
+- Wild: A sealed morning bet
+- Fence trigger-born work from untrusted event text
+- Dry-run a trigger against 30 days of history — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Log a fire-or-skip reason for every event — near T-0957 (done): Hooks: idle stops recorded, plan mode holds drive, the user…
+- Cap causal depth to stop trigger loops
+- Check headless readiness before arming a trigger
+- Wait on resource conditions, not only the clock
+- Batch queued installs into one signed manifest and one yes — near T-2374 (done): Install-grant queue (Mission 6, #5): fm ask --later queues …
+- Alert when an expected trigger stays silent
+- Compile one trigger spec to GitHub Actions, cron and host routines (wild)
+- Hold outward actions for ten minutes behind a phone veto (wild)
+- Plant canary events in a scratch repo nightly (wild)
+- Give each trigger a retirement predicate (wild)
+- Skip triggers while the user is working in the same tree — near T-1971 (done): A second full fm check started while another runs on the sa…
+- Compile spoken triggers into specs
+- Replay the event history through a trigger set — near T-2360 (done): #11 exam kind watch: a zero-token trigger arm on replayed e…
+- Fix recurring failed-tool-call signatures — near T-0301 (done): Friction digest: say why tool calls failed; a wait on backg…
+- Cap the depth of self-triggered work — near T-2364 (done): Mission 8 surfaces: triggers, waiting installs, lane recove…
+- Diagnose each drive stop into a class and a fix task — near T-2901 (done): The drive's wait counts a new running set only when its age…
+- Bundle queued installs under one hashed yes — near T-2374 (done): Install-grant queue (Mission 6, #5): fm ask --later queues …
+- Detect host and model version changes and run a contract canary
+- Mute triggers the user ignores — near T-2355 (done): One trigger table routes every event to inbox, queue, lane …
+- Watch the scheduler itself with a dead-man heartbeat
+- Draft self-edits overnight on the local model into a quarantine branch
+- Wild: Dream replay of failed calls against candidate patches — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+- Wild: Self-trigger on the user's silence — near T-2364 (done): Mission 8 surfaces: triggers, waiting installs, lane recove…
+- Wild: Trigger that writes its own retirement — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Run the drive under a user systemd timer that outlives the session — near T-2542 (done): Installed Foreman timers known alive: systemd's last trigge…
+- Write a typed stall record on every pause
+- Add a progress watchdog with an escalation ladder
+- Trip a circuit breaker on repeated failing tool calls
+- Keep a never-empty ladder of unblocked work
+- Fire triggers from files, CI and issues into the same queue — near T-2822 (done): CI failed on this branch: run 41676727022
+- Check the model endpoint before a swap and batch around it
+- Replay the drive's last 50 ticks against a candidate fix
+- Wild: have a second drive audit the first — near T-2318 (done): fm audit prep's git diff can't take an option from --base a…
+- Wild: write a "night plan" the drive grades itself against
+- Wild: run a stall drill every night first
+- Wild: let a stalled drive page you by a single glyph
+- Spend frontier tokens on stalls only after local models have failed
+
+## Round 2
+- Re-verify an event's commit before a CI-red run starts — near T-0682 (done): Milestone: Features — Verification and product checking
+- Scrub the environment of trigger-born sessions to the trigger's declared grants
+- Hold a sleep inhibitor for the duration of a triggered run
+- Show the next five fire times on save of any schedule
+- Claim each trigger event with an exclusive, TTL'd lock across harnesses
+- Require a web-UI trigger edit to be same-origin, token-bound and shown as a diff
+- Measure event-to-first-tool-call latency per trigger kind
+- Show next-fire and last-result as one status-line glyph
+- Give each trigger kind a warm-start capsule so triggered sessions don't re-read the map
+- Wild: Fire a task when a dated `TODO(2026-12-01)` comment expires
+- Wild: Treat the user's calendar file as the "don't touch the GPU now" signal
+- Wild: Run a nightly synthetic end-to-end trigger that touches a scratch file, files a task, and closes it
+- Wild: Let a file untouched for 90 days with no test fire a "characterise this" task on the local model
+- Cap trigger-born output to a quote-only summary for the user's phone push
+- Add a night-run ledger that answers "why did this start?"
+- Fence trigger payloads as untrusted data under a lower grant tier
+- Cap trigger depth and add a self-cause filter
+- Batch queued installs into one hashed "Overnight yes" card
+- Write a sealed night plan and a morning card graded against it
+- Wild: Auto-retire any trigger whose output nobody reads
+- Add a durable event spool with `sampo event emit`
+- Make triggers edge-triggered on predicates with hysteresis
+- Fire a prune plan when a state class crosses its byte budget
+- Turn `sampo:` code comments into briefs on save
+- Add a git-hook event source — near T-2798 (done): fm doctor's hook SLO judges only PreToolUse runs taken at n…
+- Receive forge and CI callbacks on a loopback webhook with HMAC
+- Coalesce events into open tasks by a subject key
+- Watch lockfiles and manifests and queue the audit plus its installs
+- Quarantine flaky gates automatically when a ship gate fails intermittently
+- Start and stop the night on logind lock and unlock
+- Wild: Add a drop-folder inbox that a phone can sync into
+- Wild: Plant tripwire files that fire when anything touches them
+- Wild: Fire a hardware lane when a USB device is plugged in
+- Wild: Schedule heavy local work into the user's calendar busy blocks
+- Groom the deferred backlog on local models
+- Score tool-call reliability per model and route by it
+- Classify red CI as flaky or real by rerunning it locally
+- Find the concurrency knee of the local endpoint
+- Keep the embedding index warm from file triggers
+- Run unattended local Smith under a strict Ward profile
+- Answer `fm ask` with a provisional local proxy — near T-1064 (done): User proxy for asks: under standard autonomy an ask identic…
+- Show a one-line local subtitle per lane in the pane — near T-1119 (done): Pane flag for a stopped builder: its lane node shows 'stopp…
+- Detect stalls by similarity of successive tool calls
+- Map every task kind to the cheapest model that passes — near T-2216 (done): Exam kinds for gen-0 #2 Exhaustive thinking, #9 Orchestrati…
+- Wild: score each hook event for surprise with a tiny model
+- Wild: ask a local reader for the questions the docs can't answer
+- Wild: replay the user's last month through the free arm and print the counterfactual
+- Pin a resident model pair so background work never swaps
+- Delete the drive's own agent-counting and read the host's task list only — near T-2872 (done): The drive keeps counting a subagent running past LONG_JOB_S…
+- Make `sampo run-brief` the only thing a trigger calls, so any scheduler can start it
+- Add a "gate stopped something" ledger for triggered sessions — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Park any trigger whose gate has stopped nothing in 30 days
+- Replace the polling watchers with the forge's webhook or check-run events, and keep polling only as a fallback
+- Run a "bare cron + plain prompt" arm against Sampo triggers on the user's real overnight queue
+- Attribute failed tool calls to Sampo's hooks or to the host by running triggered sessions with hooks off
+- Wild: Generate a host-native twin for every trigger and switch Sampo's copy off once the twin has fired
+- Wild: Run Mission 6's acceptance suite against a fake future host that has native cron, events and background tasks
+- Wild: Hold a "manual week" drill that turns all triggers off and logs what the user does by hand
+- Make the local-model background lane a pluggable provider and re-bench it monthly against the host's cheapest tier
+- Wild: Publish the trigger spec as an issue and PR template so the forge triages for itself
+- Mint a scoped credential per triggered run
+- Write `sampo unwind --since <time>` — near T-2868 (done): Moonscale part 1: the candidate store (research/genesis/moo…
+- Attach a signed provenance attestation to every unattended PR or commit
+- Store trigger event payloads as hash plus redacted excerpt with a TTL
+- Push events into a live session, not only spawn new ones
+- Make trigger fixtures: `sampo trigger test` with golden event→decision files
+- Climb an autonomy ladder per trigger: observe, draft, branch, push
+- List orphaned triggers by owner — near T-2276 (done): Trigger routing learns from outcomes (Mission 8/#11): fm tr…
+- Wild: Accept signed requests from other people's agents into a quarantined inbox
+- Wild: Read the morning card aloud on a car or watch surface
+- Wild: Run heavy local-model volume when power is cheap or solar surplus is high
+- Wild: Draw triggers as a constellation on the astrolabe
+- Expire each trigger's authority on a lease, renewed with one key
+- Fence trigger-born sessions from the trigger registry
+- Re-install the plugin after ship, with a canary and rollback
+- Re-exec the drive at an idle tick after code lands — near T-0957 (done): Hooks: idle stops recorded, plan mode holds drive, the user…
+- Generate failed-tool-call rewrite rules as data, replay-gated — near T-2831 (done): Publish the current state of the work's artifacts (reports,…
+- Distil a standing-grant proposal from the install-yes history
+- Keep all drive and trigger tunables in one genome file
+- Gate self-edits on a land-while-running drill
+- Wild: Evolve the genome overnight on replayed nights — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+- Wild: Mutate triggers to test the loop breaker
+- Wild: Make every stall write its own patch proposal
+- Wild: Hold a monthly "pull the plug on one trigger" drill
+- Split self-edit rights by trigger origin in the ledger
+- Add a stall taxonomy with per-class recovery — near T-2354 (done): Stopped and stalled lanes recover by cause without being to…
+- Release phantom holds by checking live OS processes
+- Fall back to local models while a usage limit is waited out
+- Wild: Let a stalled drive page the user with one glyph
+- Split drive stops from drive waits in the ledger — near T-2901 (done): The drive's wait counts a new running set only when its age…
+
+## Round 3
+- Bind each trigger to a repo identity — near T-1073 (done): Cross-repo memory: fm recall searches the user's other Fore…
+- Freeze acceptance at the trigger, never the event
+- Gate issue triggers on maintainer-applied labels and an author allowlist
+- Attribute red CI to its author before fixing it
+- Route triggers by data class — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Degrade gracefully when the user says no to an install — near T-2537 (done): fm cost/doctor's usage-burn advice says 'fm install-user se…
+- Honour a STOP sentinel everywhere — near T-0820 (done): Round-1 review fixes (medium): auto-evidence honours failur…
+- Generate TRIGGERS.md from the triggers file
+- Test schedules across DST, timezone and clock jumps
+- Swap reviews between repos' night drives
+- Give each trigger a "morning after" haiku receipt
+- Make a wake-reason glyph the status bar's grammar
+- Run a rival-day duel for each trigger — near T-0296 (done): Session-review follow-ups: docs drift, doctor checks routin…
+- Write a pre-sleep readiness card the drive checks before arming
+- Add a dead-man heartbeat that watches the drive from outside it
+- Wild: Plant a canary issue and a canary red CI each night
+- Wild: Pause all triggers when nobody reads the morning card for three days
+- Tail harness transcript files as the portable event source
+- Fire a resume task on process death via pidfd
+- Run the vocabulary lint on save, scoped to changed files
+- Fire a steer's automatic check when the steer store changes — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Rebase and re-verify open lanes when main moves
+- Add `.sampo/stop`, `.sampo/pause` and `.sampo/now` sentinel files — near T-2811 (done): FIX: links point at the renamed repo: chasesunstrom.github.…
+- Label private path globs and force triggers that touch them onto local runners
+- Generate a "what starts without me" doc page from the triggers file
+- Sync markdown checkboxes with tasks, both ways — near T-1322 (done): fm release --push and fm pr name both ways to grant publish…
+- Wild: use a named pipe and socket as the universal trigger inbox
+- Wild: a commit trailer `Sampo-next:` in the user's own commits files the follow-up
+- Wild: run a trigger-silence detector that learns each trigger's expected rhythm
+- Wild: make every trigger carry a one-line "if this fires wrongly, run X" undo hint
+- Run a free-lane background queue on the local model
+- Add a local tool-call repair pass before failure — near T-2831 (done): Publish the current state of the work's artifacts (reports,…
+- Triage every trigger event with a local gate
+- Verify each local result with the task's own Exam, mark unwitnessed
+- Race N local attempts per task and keep the first Exam-passing one
+- Guard local runs behind a strict Ward profile and a depth cap
+- Route by measured per-model tool reliability
+- Wild: Run a dream shift on idle hours
+- Wild: Fork a rival Sampo kept by the local model
+- Fire local volume when power is cheap
+- Scan the forge for automation that already does the job
+- Step aside when another agent owns the issue
+- Eject triggers to standalone scripts — near T-0452 (done): Triggers and standing orders (C055, value 4/5, effort M, ri…
+- Write briefs as plain prompts that any agent can run
+- Bid each background job to the cheapest executor
+- Report morning value in one number: unattended progress per dollar
+- Run placebo nights (wild)
+- Publish results as forge comments and branches, with no Sampo needed to read them
+- Probe for the host's native schedule at startup and defer to it (wild)
+- Hold a "manual week" drill (wild)
+- Keep a growing list of triggers that fired but changed no outcome (wild) — near T-2276 (done): Trigger routing learns from outcomes (Mission 8/#11): fm tr…
+- Run Mission 6's acceptance suite against a bare scheduler
+- Park a trigger whose gate never stopped anything
+- Classify every event's author before it can start work — near T-2505 (done): Find what nobody thought of: each generation writes a seale…
+- Split each night's budget fairly across repos
+- Print a measured "minutes returned" receipt in the morning card
+- Run a schedule conformance suite for DST, suspend and clock jumps
+- Generate "what runs while you sleep" from the live registry and fail on drift
+- Keep a weekly data-flow ledger of which model saw which bytes
+- Version the trigger file and test its migration against a frozen fixture
+- Load-test the trigger intake with a synthetic agent-authored flood
+- Seed starter triggers from the repo's existing automation
+- Wild: Publish a 7-day forecast calendar of expected unattended work, then grade it
+- Wild: Run a monthly "sabbatical night" in observe-only mode and compare with what the user did by hand
+- Wild: Add a "lighthouse" wake path through a small always-on box
+- Freeze a function after its third fix
+- Pin running processes to immutable code snapshots
+- Learn stall remedies by trial in a scratch clone
+- Quarantine memory written by triggered sessions
+- Apply a self-edit only when two nights derive the same patch
+- Turn failed tool calls into a replayable fixture bank
+- Watch host config for hook-table drift
+- Propose scanner allow-rules from their false-positive dispositions
+- Turn a pushback on triggered output into an expiring mute
+- Judge each self-edit with the user's last 30 pushbacks as jurors
+- Earn self-edit allowance from clean nights
+- Add a landing fence around triggers
+- Run the drive as an external supervisor, not a session — near T-2900 (done): A resumed session (SessionStart source resume, a new proces…
+- Type every stop with a cause and a self-heal
+
+## Round 4
+- Add `sampo wake` so a session can schedule its own continuation
+- Attach to a running unattended lane and take over
+- Dry-run every queued install in a throwaway prefix before asking for the yes
+- Gate local-model grant tiers on a measured injection-resistance score
+- Give every event an idempotency key that survives restarts and redelivery
+- Tier trigger-born transcripts to digest plus failures
+- Sample local-routed trigger decisions against a frontier second opinion
+- Stamp one state-snapshot id on every surface — near T-1085 (done): State rollback on upgrade: fm keeps a snapshot of state bef…
+- Give each trigger a home machine with a lease
+- Burn a night error budget that freezes trigger changes
+- Wild: Yes-preview, a simulated night with the install applied
+- Wild: Stigmergy notes, decaying marks on files for the next triggered run
+- Wild: Trigger-predict quiz
+- Stage the night as a sealed work order before bed
+- Make drive stops typed, resumable and auto-healed for the transient classes
+- Run the drive from outside any session as a supervisor with a heartbeat
+- Route background volume to a free local lane with Exam-verified output
+- Gate unattended landing behind a morning-diff and auto-revert tag
+- Wild: Hold a nightly stall drill before the real work starts
+- Run affected tests on save, zero tokens — near T-2415 (done): Mission 3 spike, replay git history: run fm find (zero toke…
+- Skip semantic no-op file events
+- Tell user edits from agent edits by joining inotify with the PostToolUse ledger
+- Declare event joins and sequences — near T-2874 (done): The drive's T-2873 union added every agent the event scan s…
+- Fire a lane when an exam or outcome measure regresses
+- Check watcher capacity (inotify watches, fds) in `fm doctor`, with a polling fallback
+- Turn PR review comments into a lane that addresses them
+- Watch the advisory feed against the lockfile
+- Use git reflog as an event source — near T-1751 (done): Guard: mv judged at its source too (moving a protected file…
+- Send repeated failing shell commands to a help draft (wild)
+- Turn journald and coredump entries from the user's own dev services into repro tasks (wild)
+- File a task from a screenshot dropped in a watched folder (wild)
+- Pre-warm for predicted events (wild)
+- Run a trigger-storm soak on a scratch repo (wild)
+- Tag every host workaround with a repro, and delete it when the repro goes green
+- Run a minimal drive first and escalate to the full drive only on a stall
+- Audit other agents' unattended PRs as a verifier-only role
+- Find duplicate schedulers when a trigger is registered — near T-2216 (done): Exam kinds for gen-0 #2 Exhaustive thinking, #9 Orchestrati…
+- Count review minutes against minutes saved for every trigger
+- Probe whether background runs bill from a separate quota pool and route by it
+- Uninstall every self-start object with zero residue
+- Rebuild the trigger registry from 30 days of behaviour and diff it
+- Run a dead-host day against a fake host with no hooks, events or background list
+- Hand one night to a rival agent CLI using the same brief files
+- Show the trigger registry as a "what only Sampo can do" shortlist — near T-2775 (done): sampo's names show in completion and help: fm complete offe…
+- Set a hard retirement date on the polling fallbacks
+- Key every output by its trigger event — near T-2360 (done): #11 exam kind watch: a zero-token trigger arm on replayed e…
+- Arm new triggers only inside a fleet error budget
+- Audit trigger referents weekly for rot
+- Decay autonomy with time since the user last looked — near T-2813 (done): Ship the held commits to main: the Sampo rename steps 4-5, …
+- Allocate the night's tokens by measured yield per cost
+- Lint trigger sets for conflicts
+- Export a causal trace in a standard shape
+- Seal the trigger ledger into monthly rollups
+- Wild: record run tapes so future models can rerun them
+- Wild: keep a graveyard of retired triggers — near T-1084 (done): Weekly decision digest and sunset clauses: decisions made w…
+- Wild: fire triggers on capability crossings, not clocks
+- Attribute every drive stop and failed tool call to the self-edits that preceded it
+- Revert first when Sampo's own main goes red
+- Run one self-edit variable per night so outcomes can be attributed
+- Learn least-privilege grants from trigger-born sessions
+- Lint steer contradictions at the moment a steer is stored
+- A/B trigger brief templates on alternating nights
+- Gate self-edit authority by the author model's tier
+- Freeze self-edits when the host or model version changes
+- Classify the shape of self-edits that the user later reverted by hand
+- Wild: shadow every frontier self-edit with a blind local patch
+- Wild: make a different harness reproduce the symptom before a patch counts
+- Wild: hold a weekly self-edit sabbath to price self-modification
+- Wild: let the legibility test be a small cold reader
+- Run the drive under a supervisor outside the session
+- Wild: Page the user by one glyph in the status line and phone push
+
+## Cross-bred
+- Run every trigger through one declared, fenced, loop-safe envelope
+- Supervise the night from outside with typed stops and catch-up
+- Collect everything risky into one "Overnight yes" card with a canary preflight
+- Wild: Compile a one-sentence trigger, and let a sibling harness finishing be an event
+- Wild: Plant a weekly honeypot issue and rehearse tomorrow's likely trigger
+
+## New ideas per lens
+- grid: 53
+- overnight unattended: 29
+- event and file triggers: 55
+- local models without limit: 37
+- inversion: what makes Foreman obsolete: 49
+- 2030 worked back: 49
+- self-modification: 50
+- invented: drive that never stalls: 22
+
+## Coverage (ideas per category)
+- triggers 35
+- reliability 25
+- local models 20
+- scheduling 11
+- observability 10
+- installs 9
+- drive 8
+- safety 7
+- unattended 7
+- tool reliability 6
+- portability 6
+- user value 6
+- file triggers 5
+- devices 5
+- drive reliability 5
+- trigger safety 4
+- ci watcher 4
+- provenance 4
+- routing 4
+- docs 4
+- measurement 4
+- privacy 4
+- injection 3
+- anticipation 3
+- trust 3
+- delight 3
+- security 3
+- self-repair 3
+- loop safety 3
+- evidence 3
+- approvals 2
+- other agents 2
+- testing 2
+- simplicity 2
+- obsolescence 2
+- queue 2
+- cost 2
+- developer experience 2
+- performance 2
+- ui 2
+- reporting 2
+- self-test 2
+- background volume 2
+- capacity 2
+- agents 2
+- self-tuning 2
+- chaos 2
+- legibility 2
+- best-of-n 2
+- pruning 2
+- durability 2
+- unattended safety 2
+- clarity 1
+- authoring 1
+- heartbeat 1
+- red-team 1
+- morning card 1
+- limits 1
+- file watcher 1
+- budget 1
+- intent 1
+- visual 1
+- host watch 1
+- autonomy limits 1
+- scheduler 1
+- issues 1
+- unspoken needs 1
+- self-maintenance 1
+- away mode 1
+- notifications 1
+- multi-agent 1
+- local-first 1
+- local volume 1
+- monitoring 1
+- hygiene 1
+- state hygiene 1
+- editor surface 1
+- ci watchers 1
+- dependencies 1
+- presence 1
+- ward 1
+- drive stops 1
+- sensors 1
+- moat evidence 1
+- self-retirement 1
+- watchers 1
+- obsolescence duel 1
+- tool failures 1
+- obsolescence drill 1
+- value proof 1
+- forge-native 1
+- unattended security 1
+- devices/agents 1
+- unattended trust 1
+- teams 1
+- consent 1
+- separation of powers 1
+- self-deploy 1
+- unattended grants 1
+- tunables 1
+- self-edit safety 1
+- drive self-repair 1
+- trigger hygiene 1
+- issue watcher 1
+- kill switch 1
+- overnight 1
+- standing rules 1
+- lanes 1
+- intake 1
+- local lane 1
+- resource 1
+- backlog 1
+- overlap 1
+- collision 1
+- surface 1
+- host drift 1
+- baseline 1
+- onboarding 1
+- surfaces 1
+- install safety 1
+- injection defense 1
+- self-heal 1
+- lint tuning 1
+- drive accuracy 1
+- self-triggering 1
+- trigger intake 1
+- state size 1
+- routing quality 1
+- consistency 1
+- multi-machine 1
+- agent memory 1
+- night plan 1
+- supervisor 1
+- landing 1
+- autonomy governor 1
+- trigger health 1
+- trigger rules 1
+- metric events 1
+- forge events 1
+- external events 1
+- shell events 1
+- system events 1
+- prediction 1
+- verification 1
+- drive continuity 1
+- resource courtesy 1
+- self-improvement 1
+- host-gap 1
+- succession 1
+- value-ledger 1
+- reversibility 1
+- focus 1
+- debt 1
+- correctness 1
+- state 1
+- time-travel 1
+- memory 1
+- attribution 1
+- experiment design 1
+- permissions 1
+- steer integrity 1
+- edit governance 1
+- baseline drift 1
+- edit learning 1
+- cross-harness 1
+- edit review 1
+Thin (0-1 ideas): none
+
+## Kill it fast (the quickest test that would show it isn't worth building)
+- Fence trigger-borne text as data with a lower grant tier — Grep last 30 days of trigger-born sessions for injected instructions in issue/CI text; if zero hits and none ever tried a tool, tiers add nothing.
+- Add a trigger loop breaker with a provenance chain — Count trigger→trigger chains in the last 30 days of logs; if none exceeds depth 1, a breaker is dead code.
+- Stamp every self-started session with its wake reason — Check whether the session's first prompt already names its trigger; if yes, a stamp duplicates it.
+- Catch up missed schedules once on drive start — List schedules missed in the last 60 days; if under 3 and none mattered, catch-up isn't needed.
+- Type every drive stop and auto-resume the transient ones — Tally drive stops by cause from logs; if over 90% are one cause, a type system is overkill, so just handle that one.
+- Preflight triggered runs with a tool canary — Count triggered runs that failed on a dead tool in the first call; if under 1 in 50, a canary costs more than it saves.
+- Deduplicate CI failures by signature and pre-fetch the red — Cluster last month's CI failures by error text; if duplicates are under 20%, dedup saves nothing.
+- Make one "Overnight yes" card for queued installs and risky triggers — Count installs and risky triggers queued per night; if under 2 on average, a card is just a prompt.
+- Show a trigger timeline with "would have fired" dry-run — Run `systemctl --user list-timers` plus the trigger log; if the user can already answer "what fires when" in 10 seconds, a timeline is redundant.
+- Debounce and ignore-list file triggers — Record file events during one normal work hour with inotifywait; if bursts are under 5 and none caused runs, debounce is moot.
+- Wild: Compile a one-sentence trigger via a local model — Hand 10 real trigger sentences to a local model; if it gets under 9 compiled correctly, kill it.
+- Wild: Treat a sibling harness finishing as an event — Check how often one harness finishing has led the user to start something in another within 10 minutes; if rarely, there's no event worth firing.
+- Wild: Replay a recorded week of events into a scratch tree — Check if a week of events was ever recorded; if not, there's nothing to replay, and a scratch tree can't reproduce side effects anyway.
+- Declare triggers in one file — Count current trigger definitions; if under 5 and in one place, a declaration file adds ceremony.
+- Give each fired task a trigger stamp — Check if run logs already carry the trigger name; if yes, a stamp duplicates it.
+- Break trigger loops and storms — Look for any storm in history (more than 10 fires in 5 minutes); if none, skip it.
+- Fence issue and CI text as data — Same test as 1: no injected text in 30 days of issues and CI logs means this is a solution without a problem.
+- Queue installs as one night card — Count installs requested overnight in the last 30 days; if under 3, one card per install is already fine.
+- Classify drive stops by cause and self-heal the safe ones — Same test as 5: if one cause dominates, handle that cause directly.
+- Retry failed tool calls by class, with a budget — Sample failed tool calls; if more than 80% are deterministic (bad path, permission), retries only burn budget.
+- Route background volume to the local model first — Measure the local model on 20 real background tasks against hosted; if it fails over 30% of them, routing wastes more than it saves.
+- Watch the drive from outside it — Check if the existing process supervisor already reports hangs; if it does, an outside watcher adds nothing.
+- Wild: Run a rehearsal lane on tomorrow's likely trigger — Compare last 10 days of triggers to find one that repeats predictably; if tomorrow's trigger can't be predicted over 70% of the time, there's nothing to rehearse.
+- Wild: Plant a honeypot issue each week — Ask if a honeypot issue could be indistinguishable from a real one without being filed publicly; if not, you can't run it safely, so kill it.
+- Wild: Write the handoff letter in the order the user reads — Ask the user which section of the last 3 handoffs they read first; if the order is already how it's written, it's done.
+- Stop the night on spend and disk, not only on usage limits — Check whether disk or spend ever stopped or nearly stopped a night; if never, usage limits alone suffice.
+- Add a triggers file with a dry-run replay — Same as 9 and 14: if the file isn't needed, the replay isn't either.
+- Watch the working tree with inotify, debounced into one event per burst — Count the files the user touches per hour; if inotify limits or noise from editors exceed signal in a test hour, skip.
+- Fire CI-red triggers into a read-only diagnosis lane first — Count CI-red events where a read-only diagnosis wasn't enough to fix it; if most need writes, the lane just delays.
+- Give every trigger a loop breaker and a self-cause filter — Same test as 2 and 16: no loops in history means no breaker.
+- Pass trigger payloads through the Ward as untrusted text — Same as 1 and 17: a Ward on text that never contained attacks is just latency.
+- Queue installs triggered by a watcher into one morning yes — Same as 8 and 18: if a watcher triggers under 2 installs a week, no queue is needed.
+- Route trigger triage to the local model, with a fixed fallback — Triage 20 real triggers with the local model; if it disagrees with the user's call on over 20%, kill it.
+- Write a trigger ledger that answers "why did this start?" — Check whether `journalctl` plus run logs already answer "why did this start?"; if they do in one command, skip it.
+- Catch up on missed events after a resume or reboot — Grep for resumes or reboots that lost an event in 60 days; if none did, skip.
+- Add a night budget envelope per trigger — Compare per-trigger spend across a week; if all are within a few cents, per-trigger envelopes are noise.
+- Wild: Fire a trigger from the user's own pushback phrases — Grep the last 100 user messages for pushback phrases; if they're inconsistent or ambiguous, false fires outweigh hits.
+- Wild: Trigger a render-diff lane when site or scene pixels change — Count site or scene pixel changes that mattered last month; if the diffs are mostly noise from anti-aliasing, no lane is needed.
+- Wild: Wake the tower on a "host shipped something" event — Check how often the host has shipped something worth waking for; if under once a month, a cron check suffices.
+- Wild: Add a dead-man switch that stops all triggers when nobody reads the morning card — Check how often the morning card goes unread; if it's read every day, the dead-man switch never fires.
+- Add a local triage gate in front of every trigger — Same as 33: no gate if the local model's triage is no better than a regex.
+- Run triggers as systemd user timers and path units, not a resident process — Write one `.timer` and one `.path` unit by hand; if either needs logic systemd can't express, it can't replace the daemon.
+- Add a free lane with no budget cap — Ask what a free lane would do that the local model doesn't already do; if nothing, skip.
+- Repair malformed tool calls locally before they fail — Count malformed tool calls in logs; if under 1%, local repair isn't worth building.
+- Run a drive sentry on the local model — Same as 22: if the supervisor already catches hangs, skip.
+- Draft CI-red fixes in a scratch worktree overnight, held for one yes — Check CI-red fix success rate in a scratch worktree on 5 past failures; if under 2 pass, the overnight drafts are noise.
+- Batch every install a trigger needs into one yes card — Same as 8 and 18 and 32: if installs are rare, there's nothing to batch.
+- Replay 30 days of history through a trigger before enabling it — Replay one trigger against 30 days of history; if the history is too sparse to differ from the real outcome, skip it.
+- Race several local attempts at each new issue and keep the best passing one — Run 3 local attempts on 5 past issues; if best-of-3 doesn't beat the first attempt, racing is just waste.
+- Wild: Compile plain-sentence triggers into rules with a local model — Same as 11: under 9 of 10 correct compilations means kill it.
+- Wild: Run a dream shift that mines closed tasks for the follow-up the user would have asked — Check how many follow-ups the user asked for after closed tasks last month; if fewer than 5, there's nothing to mine.
+- Wild: Yield the GPU the moment the user shows up — Check GPU contention during one typical day; if the user rarely uses the GPU while the drive runs, don't bother.
+- Mark every local-made result unwitnessed until verified — Ask if anything downstream reads the "unwitnessed" flag; if nothing does, it's a label with no consumer.
+- Compile triggers to the OS's own timers and path units — Same as 42: if timers and path units can't express the rules, the compiler has nothing to target.
+- Tag each fired run "would have happened anyway" — Sample 20 fired runs and ask whether the user would have done them anyway; if the answer is obvious from looking, no tag is needed.
+- Suspend triggers whose output nobody takes — Check which trigger outputs went unread last month; if none, nothing to suspend.
+- Add a tool-failure budget to trigger-born sessions — Same as 20: if failures are mostly deterministic, a budget adds nothing.
+- Run a nightly trigger-set duel against plain `claude -p` — Run 10 nightly tasks through plain `claude -p` once; if results are indistinguishable from the trigger set, the duel is just a cost.
+- Label the cloud-routine alternative per rule — Check if hosted routines can express even one of the rules; if none can, the label is blank.
+- Break-even gate for local versus hosted background volume — Compute last month's background token volume at hosted prices; if it's under the cost of the hardware's power draw, skip the gate.

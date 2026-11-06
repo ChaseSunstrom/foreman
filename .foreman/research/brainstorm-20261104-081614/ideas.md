@@ -1,0 +1,373 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 235 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Hold out whole projects to prove the decider generalises
+- Predict a brief's outcome before work starts — near T-2914 (done): Meaning is planned, not labelled after: a user's M or L pla…
+- Judge whether a close will hold (false-done detector)
+- Distil a Smith actor from verified runs only
+- Predict a Smith loop before the third repeat — near T-2966 (done): Smith's act loop breaks a small model's loops: when a step …
+- Suggest verify commands from the stack — near T-2909 (done): Small-model cards part 1: a store of cards written for smal…
+- Gate every Rune generation with an adoption card
+- Keep a per-project adapter over a shared base, local only
+- Answer routine asks as the user's twin (wild)
+- Seed cold-start priors for a new project from sibling projects (wild)
+- Plant bugs in any repo to mint unlimited verified scenarios (wild)
+- Train a Ward classifier, plus an attacker to probe it
+- Show which slots use a model, with a user veto
+- Predict accept or reject for funnel output
+- Ship a calibrated "will this close hold?" scorer
+- Make every model abstain, with a measured coverage-vs-accuracy curve
+- Hold out whole projects and strip names in the training build — near T-2767 (done): Louhi, Moons and Underworld pages from the tower's real rec…
+- Add a per-project consent flag that the trainer enforces
+- Learn the user's accept/reject history as an interruption filter — near T-2321 (done): Long goals from Foreman's own history carry the task brief'…
+- Gate adoption through a registry with one-command rollback
+- Share the GPU: schedule training around the moons funnel and exams
+- Distil only verified Smith runs, and keep every refusal as a negative
+- Seed a new project from its nearest siblings (wild)
+- Fine-tune a small adapter per project over the shared base (wild)
+- Train a "user twin" that drafts steers before they are said (wild)
+- Run overnight self-play on replayed commits (wild)
+- Detect training-text injection before it enters the corpus
+- Report drift per project so retraining isn't blind
+- Add a champion/challenger model registry with per-slot adoption
+- Bench with whole projects held out — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Build a provenance-tagged training lake with exclusion flags
+- Train a close verifier on "did the close hold"
+- Give every head a calibrated abstain
+- Rejection-sample and preference-train Smith, with loops as negatives
+- Fine-tune the embedder on brief-to-lesson and brief-to-later-fix pairs
+- Synthesize verified scenarios by mutation across languages
+- Stack per-project LoRA adapters on a generic base
+- Retrain and re-bench every Rune generation with a published scorecard
+- Train a cost/size estimator on the repo's change graph
+- Ward text-channel red team for any trained risk model (advisory only)
+- Dream overnight: idle-GPU self-play on old commits (wild)
+- Project fingerprint for zero-shot onboarding (wild)
+- Learn the user's accept/reject taste to pre-rank moons and pre-answer asks (wild)
+- Ship a kNN-over-closed-briefs baseline first — near T-0381 (done): Ship Foreman 1.2.3 to JARVIS (routing, lane merge, fail-clo…
+- Train frozen-embedding heads per decision type — near T-2887 (done): Model bench part 1: a systemone backend kind (Jev's API: Ol…
+- Prove genericity with leave-one-project-out and a redaction pass
+- Train a close-holds verifier from outcomes
+- Run champion/challenger shadow mode through existing decide() paths
+- Pick one multi-task LoRA or many small heads with a controlled comparison
+- Train a pairwise approach-chooser from brief options
+- Keep the Ward rule-based and let a model only tighten it
+- Wild: build an overnight Smith dojo with rejection sampling
+- Wild: train a ledger-event language model for surprise detection
+- Wild: merge adapters across projects without sharing data
+- Wild: mine "regret" labels from later fixes
+- Gate adoption on whole-project holdout
+- Make every model answer abstain-able — near T-2916 (done): The night shift runs on the local models: sampo night adds …
+- Keep a per-call-site adoption registry with auto-revert
+- Split by time and dedupe before any training
+- Keep a provenance manifest on every training row
+- Filter distillation by durable success, not green tests
+- Red-team the local models over the shared text channel
+- Pin and record the serving stack — near T-0682 (done): Milestone: Features — Verification and product checking
+- Make training resumable and VRAM-safe
+- Train a loop predictor for Smith — near T-2966 (done): Smith's act loop breaks a small model's loops: when a step …
+- Run a time-travel backtest of the whole decider (wild)
+- Train an error predictor that routes to escalation (wild)
+- Ship a falsifiable claim with each model, retested nightly (wild)
+- Generate canary projects with planted faults (wild)
+- Ship a nearest-neighbour decider before any training
+- Gate every model on a leave-one-project-out bench — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Export one flat training table, with project ids and names stripped
+- Train tiny heads on one shared embedding
+- Make the model abstain and fall back to today's path — near T-2916 (done): The night shift runs on the local models: sampo night adds …
+- Retrain with one idempotent command per Rune generation
+- Write a model card that `sampo doctor` checks — near T-2909 (done): Small-model cards part 1: a store of cards written for smal…
+- Predict "will this brief survive?" from outcomes only — near T-1060 (done): Survival grading: fm outcomes grades each closed task by wh…
+- Replace one moons judge with a head trained on the user's accepts and rejects
+- Train a stuck-loop detector on the 74 Smith journals first
+- Wild: make the model a rulebook you can read
+- Wild: commit the project's own weights in `.sampo/model.bin`
+- Wild: train a Ward that learns what this user never accepts
+- Wild: share weights, never text, across projects
+- Train one shared Sampo Head, scored leave-one-project-out
+- Build a false-done judge from later-fix labels
+- Distil Smith's actor from green-only runs, with rejection sampling
+- Predict a loop or dead run from the journal prefix
+- Add a cost-aware model router trained on outcomes — near T-2437 (done): Gen 2: a model layer (user steer 2026-10-31, start after ro…
+- Run a nightly Rune retrain with a registry and automatic rollback
+- Provide a sensitivity-aware data pipeline with name stripping
+- Fine-tune the embedder contrastively on briefs and lessons for cross-project recall
+- Train a preference model on the user's accept/reject history to prefilter the funnel
+- Train a Ward risk head on guard refusals and test it adversarially
+- Build the Kev-twin: a model that answers asks as the user would — near T-0671 (done): Milestone: Features — Autonomy and the user
+- Run a bug-planting adversary for infinite Louhi scenarios
+- Rehearse plans in a learned world model of tool results
+- Ship a leave-one-project-out bench before any model is trained — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Add a per-project training opt-out the collector enforces
+- Train only on text the user or a tool wrote, never on repo or web content
+- Label rows by outcome: done-and-held versus reverted or later-fixed
+- Give `decide()` a trained head that abstains, with the rules as fallback
+- Keep a per-slot champion registry with shadow mode and rollback
+- Ship a retrieval-only baseline first: "briefs like this one", via bge-m3
+- Distil Smith's actor from verified runs, with loop runs kept as negatives
+- Schedule training in idle-GPU windows that yield to Ollama and resume
+- Show each slot's model in the web UI with its bench and every abstain reason
+- Wild: Predict the user's steer before they give it — near T-2774 (done): Rune's anticipation gaps are consumed, not dropped: the nex…
+- Wild: Train an adversary against the Ward and let the Ward learn from it
+- Wild: Transfer lessons between projects as embeddings, with no raw text shared
+- Wild: Rank each Rune generation by how well it predicts the previous generations' decisions
+- Count every silent cut in the training pipeline
+- Prove every model setting reached the endpoint
+- Hold out whole projects and scan for leakage
+- Tag provenance on every row and refuse Claude text
+- Resolve real paths in the sensitive-project exclusion — near T-1681 (done): fmrecall and the fm-reviewer agent load playbooks by Read p…
+- Make training rows tolerate unrated and null fields
+- Generate model claims from the bench, not from prose — near T-2894 (done): Model bench part 2: every held-out closed task's raw reques…
+- Keep model artifacts off paths the live tower publishes — near T-2955 (done): fm ship can't ship a branch that touched a file fm genesis …
+- Schedule model work by model, in parallel up to the slot count
+- Wire every adopted model to a real session path — near T-2186 (done): Wire the four verbs gen-1's missions name that no session p…
+- Wild: replay the user's past accept and reject decisions against the model — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Wild: train a blind-spot predictor from the user's late asks — near T-2076 (done): Brainstorms learn from what they missed: asks no idea predi…
+- Wild: a per-project adapter that stays local on a shared generic base
+- Test whether ledger text can attack the trainer and the Ward
+
+## Round 2
+- Show "model saved you X" receipts per session
+- Pre-fill the brief's verify commands and criteria on `sampo task add` — near T-2866 (done): A criterion's verify check refuses the Sampo alias verbs th…
+- Warn at intake when a request resembles past reverted work
+- Explain every model-made decision in one plain line — near T-2937 (done): Small-model close scaffold: Smith asks a local model for th…
+- Turn each repeated user correction into a one-line standing-rule candidate — near T-1042 (done): Corrections that recur become proposed rules on their own: …
+- Give a "time to finish" range on each queued task
+- Offer a "no model" switch per project that really changes behaviour
+- Wild: Morning digest written by the model, from the overnight ledger
+- Wild: A "what would you ask me?" rehearsal before the user leaves
+- Wild: Hand a new project a "this is how you work" file the model wrote from your history
+- Show a per-project "model vs the user" agreement number
+- Rank the open queue by what the user has actually picked first
+- Measure the user's cost of being wrong, not accuracy
+- Predict "this change touches a published or live path" before the branch is cut
+- Learn "same fix, other surface" siblings from fix pairs
+- Pre-rename and mass-change blast predictor
+- Tell the user what the model changed in plain words — near T-0031 (done): Fm audit prep: --note '<text>' adds round/slice-specific fo…
+- Treat the user's silence as a label
+- Flag a stale-premise brief before work starts — near T-1077 (done): Stale plan sweep: queued briefs whose files or premises cha…
+- Cold-start a sibling-less project honestly — near T-2191 (done): The user's standing intent (steer 2026-10-30 #7, STANDING I…
+- Weight training by project so Sampo's own repo doesn't dominate
+- Wild: Dream the user's next bad week
+- Wild: A model that reads the user's frustration
+- Wild: Trade weights as a compact "taste file" between the user's machines
+- Force every decider slot through a grammar
+- Compile slot prompts against the bench before training weights — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Join every model call to its eventual outcome — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Predict the files a brief will touch — near T-1061 (done): Calibration ledger: a plan predicts its size (files touched…
+- Score whether a criterion's verify command is vacuous — near T-2606 (done): A criterion whose every recorded run matched no test can ha…
+- Audit label noise in the briefs — near T-0916 (done): Plan card: the audits row keeps its label and count whole i…
+- Weak-label the 149k ledger lines
+- Queue label requests for when the user returns — near T-2914 (done): Meaning is planned, not labelled after: a user's M or L pla…
+- Write a flip report between Rune generations
+- Choose quantisation and context per slot from the bench
+- Train an output compactor on what was later cited
+- Mint Louhi scenarios from lessons (wild)
+- Train a draft model for Smith's tool-call dialect (wild)
+- Write close receipts with a local model, checked against evidence (wild) — near T-2869 (done): Moonscale part 2: the funnel over candidates, cheapest firs…
+- Replace the model with a mined rule table first — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Use few-shot retrieval on the existing 27B instead of training
+- Train only the embedder, and let everything else be lookups
+- Do less: ship a data export and a bench, defer all training
+- Rent the label from the outcome, not the human: self-supervised "next ledger event"
+- Wild: make the 27B the teacher, and distil its retrieval-augmented answers into a 0.6B student
+- Wild: let projects vote — a committee of per-project tiny models, weighted by similarity
+- Wild: no model, a "decision cache" with Bayesian priors from similar briefs
+- Pick the training target by measured headroom
+- Use an existing small instruct model with a constrained-decoding grammar
+- Train on the audit lenses and lessons, not just outcomes — near T-0752 (done): Milestone: Learning, paid half — evals on block, bench hold…
+- Pin a deterministic fallback contract per slot
+- Validate model output against a typed schema with bounded repair
+- Canary-probe the serving stack at session start
+- Make adoption cards expire — near T-2919 (done): Retry gen-4's eight not-yet items and file each one's retri…
+- Add a statistical floor to every adopt decision
+- Checkpoint-and-fence training against GPU sharing
+- Detect concept drift per slot from live agreement
+- Record every model call in a replayable ledger line — near T-0220 (done): Replay diagnostics — each bench case keeps a summary of the…
+- Bound the blast radius of a wrong model decision
+- Wild: Run a chaos monkey for model slots
+- Wild: Keep a frozen "museum" model as a permanent tripwire
+- Wild: Vote across independent heads and trust only unanimous agreement for automation
+- Wild: Self-test the corpus with a poisoned-row tripwire
+- Ship one model, one table, one verb — near T-2964 (done): Fix the cold review of the shipped site (/tmp/claude-1000/-…
+- Delete every slot where the model doesn't beat majority
+- Make kNN over closed briefs the default decider
+- Use one adoption rule for all slots
+- Train on outcomes only, never on prose — near T-2632 (done): The steer expander returns a Rule (acted on) and Proposals …
+- Replace the per-lens model zoo with one embedding plus tiny heads
+- Let a rule beat a model on loops — near T-2912 (done): A local-model arm for the next-request prediction: the 27B …
+- Put the model's state on one status line — near T-2078 (done): fm genesis: the tower's home: init saves gen-0 verbatim and…
+- Retrain by a content hash, not a schedule — near T-2471 (done): Cold read made reliable: Haiku first and Sonnet decides on …
+- Wild: Use the user's own undo as the only label — near T-2914 (done): Meaning is planned, not labelled after: a user's M or L pla…
+- Wild: Ship the baseline as a zero-model mode
+- Run best-of-N Smith with the test suite as selector
+- Constrain every typed decision to a grammar
+- Measure each project's marginal value to each slot
+- Mine disagreements between the 4B, 12B and 27B
+- Plant canaries in the training lake and probe every artifact for them
+- Train a tool-output compressor from evidence runs
+- Classify Smith failures into a taxonomy that steers the card grower — near T-2908 (done): Uplift part 1: Louhi's exam runs Smith on a local model (sa…
+- Predict which tests a diff will break before running them
+- Publish Louhi-open, a leaderboard for small models on discipline
+- Wild: Shadow-predict Claude Code's next tool call, evaluate only
+- Wild: Keep an Elo ladder of models and scenarios together
+- Wild: Give each adopted model a one-line voice in `sampo status`
+- Wild: Retrain the models on the previous generation's mistakes only
+- Show the model's abstain reason in the CLI close line
+- Refuse a model whose serving settings never reached the endpoint
+- Make the training collector tolerate and report unlabelled rows
+- Cap a training job's GPU claim so it yields to the funnel
+- Quarantine training text that came from a tool result — near T-1394 (done): fm code fences untrusted text: repo listings and tool resul…
+- Give a model's slot a time budget with a rules fallback
+- Add a "what changed since the model last saw this" staleness flag — near T-1077 (done): Stale plan sweep: queued briefs whose files or premises cha…
+- Score a model per language in Louhi, not only overall — near T-2908 (done): Uplift part 1: Louhi's exam runs Smith on a local model (sa…
+- Let other agents consume a model verdict as a typed hint, not text
+- Wild: Play the model's mistakes back as a daily "wrong calls" digest
+- Wild: Let the model's own bench scenarios be planted by the Ward's attacker, in one arena
+- Wild: Print a one-line "model said, you did" regret ratio per slot on the tower
+- Kill a model slot that has no ledger incident behind it
+- Mine co-change companions for every diff — near T-2967 (done): After sampo migrate the guard's core protection misses the …
+- Turn each late ask into a standing class lint
+- Meter endpoint slot use — near T-2953 (done): Moons funnel's kill stage judges its batches at once, up to…
+- Canonicalise old names in the corpus — near T-2941 (done): sampo.regen gets its old-name shim (plugin/lib/fmregen.py) …
+- Relocate model state with the home — near T-2202 (done): fm prove's consent can't be forged: a tree's tests run only…
+- Run the ship gate without a GPU or endpoint
+- Probe each model's quirks at install — near T-2880 (done): Local model runtime in Sampo's install: install.sh offers (…
+- Show training rows that can't be reproduced — near T-2829 (done): test_site_landing counts the myth paragraph, not every Ilma…
+- Review shipped surfaces after a model-facing change
+- Wild: Fuzz the rename as a distribution shift
+- Wild: Pre-mortem head that predicts the next three asks
+- Wild: Dual-environment twin run
+
+## New ideas per lens
+- user value: 26
+- unspoken needs: 26
+- capability map: 29
+- approaches: 23
+- reliability: 27
+- simplicity: 25
+- bold bets: 26
+- grid: 27
+- blind spots: 26
+
+## Coverage (ideas per category)
+- smith 8
+- data 8
+- privacy 6
+- serving 6
+- observability 6
+- decider 5
+- foresight 5
+- evaluation 5
+- verification 4
+- reliability 4
+- training data 3
+- calibration 3
+- distillation 3
+- poisoning 3
+- measurement 3
+- data integrity 3
+- delight 3
+- scope 3
+- trust 2
+- transfer 2
+- guard 2
+- transparency 2
+- generality 2
+- lifecycle 2
+- monitoring 2
+- eval 2
+- verifier 2
+- retrieval 2
+- local-first 2
+- loop 2
+- ward 2
+- baseline 2
+- adoption 2
+- architecture 2
+- provenance 2
+- data quality 2
+- training 2
+- routing 2
+- genericity 2
+- safety 2
+- user value 2
+- intake 2
+- planning 2
+- legibility 2
+- labels 2
+- agents 2
+- risk routing 1
+- criteria 1
+- autonomy 1
+- ideas 1
+- user model 1
+- scheduling 1
+- cold start 1
+- personalization 1
+- self-improvement 1
+- model ops 1
+- actor 1
+- data synth 1
+- estimation 1
+- self-play 1
+- preference 1
+- classifier 1
+- ranking 1
+- data hygiene 1
+- injection 1
+- determinism 1
+- model card 1
+- models 1
+- funnel 1
+- recall 1
+- moons 1
+- zero-train 1
+- training ops 1
+- red team 1
+- lessons 1
+- forgetting 1
+- robustness 1
+- docs drift 1
+- shipping 1
+- throughput 1
+- reach 1
+- learning 1
+- control 1
+- unspoken needs 1
+- onboarding 1
+- ship safety 1
+- completeness 1
+- refactors 1
+- data balance 1
+- prompt optimisation 1
+- active learning 1
+- context 1
+- prompting 1
+- embeddings 1
+- pretraining 1
+- ensemble 1
+- statistics 1
+- prioritisation 1
+- fallback 1
+- output validity 1
+- serving health 1
+- staleness 1
+- training safety 1
+- reproducibility 1
+- chaos testing 1
+- regression 1
+- ensembles 1
+- subtraction 1
+- governance 1
+- rune 1
+- interpretability 1
+- performance 1
+- speed 1
+- docs 1
+- change impact 1
+- blind spots 1
+- migration 1
+- docs and ui 1
+Thin (0-1 ideas): performance, security, ui, devices, simplicity, developer experience

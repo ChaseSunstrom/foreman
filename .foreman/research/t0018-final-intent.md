@@ -1,0 +1,20 @@
+## Verdict: changes needed
+
+## Findings
+
+**HIGH — round 6 shipped with no recorded reviewer audit — `research/` (missing `t0018-r6-*` files) vs `tasks/T-0018-...md:81`.**
+Every other round (1, 2, 3, 4, 5, 8, 9) has at least one saved lens review in `state/projects/foreman-4a056f/research/t0018-r{N}-*.md`, and the task log records an explicit "round N audits: …" line for 1–3 and a "+ audit fixes <sha>" commit for rounds 4 and 5 (`T-0018-...md:75-80`). Round 6 ("r6 perf (65620bc)", `T-0018-...md:81`) has no such line and no `t0018-r6-*` file anywhere under `research/`. Round 6 is not cosmetic: CHANGELOG.md:13 describes replacing `@dataclass` with a hand-written `fmcore.record` on the hot hook path and dropping `fm sync`'s stat cache — exactly the kind of equality/repr/default-value refactor a maintainer or adversary lens is meant to catch, and it shipped with zero independent review. This is a direct gap against the acceptance criterion "Every round ends green … with reviewer audits saved as research," and it's the sort of thing a per-round lens (scoped to its own round) wouldn't have flagged. Fix: run at least one lens (maintainer/adversary) against round 6's diff specifically and save it as `t0018-r6-*` before closing T-0018, or record explicitly why it was skipped.
+
+**MEDIUM — recursive self-improvement required a manual human bailout mid-task — `tasks/T-0018-...md:80` ("self-lockout #2 … user restored fmcore.py") and `tasks/T-0037-...md:17`.**
+The user's request frames the loop as autonomous ("the next round uses the improved Foreman"). During round 6, a bug in the new `fmcore.record` decorator broke the hook's ability to read the active task, dropping its own `core` grant and blocking even the fix that would repair it — the user had to run `git checkout` outside Foreman to unstick it (T-0037 raw request, `tasks/T-0037-...md:17`). This is real evidence the recursive loop was not self-sustaining as implied, spanning rounds 2 (T-0033, a first self-lockout) and 6/7 (T-0037, a second). It was subsequently hardened (round 7 extends the committed-fallback chain to `fmcore`), but the user should know the "self-improving" premise broke twice and needed manual intervention once. No code fix needed here — flag for awareness/acceptance, not a defect to fix.
+
+**LOW — `T-0022`'s `FEATURE?:` (explore) tag vs implementation** — `tasks/T-0022-...md:17-18` shows T-0022 was raised as an explore item ("implement only once confirmed" per the user's own rules), but the visible record shows only the agent's own assumption ("medium-high confidence") that folding it into T-0018 was acceptable, not a distinct recorded user confirmation of the sync design. Could not verify whether that confirmation happened in an untranscribed prior session — flagged, not asserted as a violation.
+
+## Acceptance criteria
+- Round 1 ships T-0024..T-0030: **met** — execution prompt and steps (`T-0018-...md:35,37`) name all seven; evidence at step 1 is green.
+- Rounds 2/3 ship T-0023/T-0022: **met** — `T-0022-...md:32`, `T-0023` folded and dropped-into-T-0018; sync strips `allow`/`approved` both ways (CHANGELOG.md:69) satisfying "authorization never read from the repo."
+- Rounds 4-10 start from `fm ideas` brainstorm, ship grounded slate, capture friction as `source=self`: **met** — brainstorm files exist for each round-cluster (`brainstorm-20260926-122701`, `-140238`, `-r7-slate.md`); T-0033, T-0036, T-0037 are `source: self`, `done_in: T-0018`.
+- Every round ends green with reviewer audits saved as research: **not met** — round 6 has no saved audit (see HIGH above); all other rounds' green suite/doctor/roundtrip evidence is present in `T-0018-...md:50-67`.
+
+## Not checked
+Full diff line-by-line for defects outside the intent lens (left to adversary/edge/maintainer passes); whether T-0022's confirmation happened in an untranscribed session; eval-suite regression numbers (not runnable read-only); round 7-10 content beyond CHANGELOG/brainstorm cross-checks already done by prior lens reviews (r8, r9) which I spot-verified were fixed in the final diff.

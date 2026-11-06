@@ -1,0 +1,3 @@
+# Brainstorm — lens: unspoken needs
+
+FAILED: no ideas in the required format: Here are 10-15 ideas for the "Sampo decider" and related capabilities, focused on unspoken needs and hidden friction, using the provided context.**An…

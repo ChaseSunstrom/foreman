@@ -1,0 +1,71 @@
+# Ideas by round (deduplicated titles; details in the lens files)
+
+## Round 1
+- Ship a Foreman mod with a docked live-task Pane
+- Replace "Next:" hint text with in-process tool.call gates
+- Add one-click approve/execute buttons in the planning dialog
+- Fix `fm task show --json` to include criteria, steps and depends (T-0076)
+- Add a `fm task set` section-alias fix and evidence-link preservation (T-0075, T-0080)
+- Use `$.model.complete` Haiku for smart capture and intent classification
+- Render tool timeline and hook latency as Raster sparklines in CommandOutput
+- Fix scope and security audit to the task's own diff (T-0078, T-0079)
+- Enforce gates in-process via tool.call, with classic-hook fallback
+- Make hook failure fail-safe and visible
+- Fix T-0075/T-0076/T-0080 so state round-trips losslessly
+- Add a schema version and atomic writes with a crash-recovery test for the record
+- Define a mod/classic handoff so events aren't double-handled
+- Expose a `fm state --json` snapshot contract and test the mod against it
+- Make `fm check` timeouts and environment failures distinguishable
+- Ship one thin mod that replaces the statusline wrapper and `fm watch` with a single Pane + AbovePrompt band
+- Make the mod a pure renderer with no logic of its own
+- Fix `fm task show --json` and the `--section` bugs (T-0076, T-0075, T-0080)
+- Collapse planning into one `fm task plan` call that takes all sections at once
+- Drop the cached state.line, progress.line and badge.txt files in favour of rendering from one state snapshot
+- Use `tool.call` in the mod to enforce the guard and scope in-process, skipping the Python hook when the mod is active
+- Fix scoping bugs T-0074, T-0078 and T-0079 so gates look only at the task's own changes
+- Delete `fm watch` curses code once the Pane reaches parity
+- Replace Next: text with prompt.compose injection
+- Add a Haiku-driven "smart gate" classifier
+- Wake idle sessions with $.prompt.submit for drive mode
+- Show per-task cost and verification heat as Raster sparklines
+- Register Foreman as model-callable tools and slash commands
+- Fix the inbox bugs that the mod depends on
+
+## Round 2
+- Add a one-keystroke "capture inbox triage" dialog
+- Auto-dedupe and cluster inbox captures
+- Show a "why was I blocked" explainer on gate refusals
+- Add a per-task time-travel replay from the ledger
+- Learn per-user effort and cost estimates from history
+- Add a drive-mode kill switch and live budget guard
+- Make planning a conversational "plan card" the user can edit in place
+- Run a mod/classic parity test harness
+- Lock the record with a cross-process writer lock
+- Detect and heal stage/step drift on resume
+- Make "done" evidence tamper-evident and fresh
+- Add a hook-dispatch circuit breaker with a visible degraded mode
+- Run a mod-vs-classic contract test matrix in CI
+- Make the test suite fast and tiered
+- Add a record snapshot and `fm undo` for destructive transitions
+- Make drive mode stall-proof with a watchdog and attempt budget
+- Cap the stage machine at five visible stages
+- Make planning a single fillable template file
+- Delete the ~62 always-on rule lines that a gate already enforces
+- Retire per-event Python hooks for pure-observe events
+- Define one `fm ui` JSON view model that every surface renders
+- Add `fm mode` as one switch for autonomy and quiet levels
+- Gate subcommand sprawl behind `fm help` tiers
+- Close the Bash blind spot with tool.call diffing
+- Fork-based verifier that reviews evidence before "done"
+- Add a replayable session ledger with time-travel in a Pane
+- Make a self-tuning gate budget from outcomes
+- Add inline Pane diff review with accept/revert buttons
+- Drive-mode watchdog that re-wakes stalled sessions
+- Cross-project memory via `$.store` and `fm recall`
+- Add a mod-vs-classic parity contract test
+
+## New ideas per lens
+- user value: 16
+- reliability: 15
+- simplicity: 15
+- bold bets: 14

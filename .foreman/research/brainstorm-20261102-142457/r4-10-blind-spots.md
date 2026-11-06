@@ -1,0 +1,3 @@
+# Brainstorm — lens: blind spots
+
+FAILED: no ideas in the required format: Round 4, blind-spots lens. The missed asks (T-2650 to T-2659) fall into five classes, and I asked each class's question of the whole project. Several…

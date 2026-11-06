@@ -1,0 +1,3 @@
+# Brainstorm — lens: simplicity
+
+FAILED: no ideas in the required format: 1. **Derive each task's status from its proof on HEAD**: FEATURE — value 4 — effort M — risk med — category: state model   Why: Status is stored in s…

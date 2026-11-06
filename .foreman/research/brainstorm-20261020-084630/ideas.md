@@ -1,0 +1,550 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 368 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Collapse the 15 skills into one router skill — near T-1220 (done): Feature pages for the site: one page per Foreman capability…
+- Sweep the auto-compact window for the cheapest setting — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Meter the Foreman tax per session — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Suppress hook notes already visible in context — near T-0228 (done): foreman-ui catch-up: budget, bench and evolve, research ask…
+- Use `decider: "person"` for `fm ask` grants — near T-1226 (done): Chat approvals can't be self-granted: a non-interactive cla…
+- Fix the macOS CI job (T-1249)
+- Generate site prose figures from the results files (T-1246) — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Prove Stop and max-turns hold in headless runs — near T-0886 (done): The Stop hook checks the final message's specific claims (t…
+- Warn when prompt/agent hooks exceed the 12-per-event cap — near T-0115 (done): Drive trusts the Stop hook's background_tasks list over its…
+- Wild: Show a ghost bill of plain Claude Code beside the real one — near T-1222 (done): Benchmarks page: Foreman against plain Claude Code (and oth…
+- Wild: Run a weekly "Foreman diet" that proposes deleting the costliest low-value injection — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Wild: Add a break-even page where you enter your task mix
+- Report cost per verified pass, not raw cost — near T-0212 (done): Fm bench — Foreman's own SWE-bench: every finished task wit…
+- Ablate Foreman's components in the duel — near T-0224 (done): Fm evolve — a bench-gated self-improvement loop: a mutation…
+- Gate the per-turn context tax in CI — near T-1087 (done): Review threads and merge train: PR review comments become t…
+- Cache bench results by case, Foreman hash and model — near T-0690 (done): Milestone: Intelligence — Metacognition and calibration
+- Tune the compaction window from a measured sweep — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Quiz the model after a forced compaction — near T-1242 (done): Marathon showcase: a long unattended run that keeps finishi…
+- Audit the unattended loops against the new subagent rule — near T-0681 (done): Milestone: Features — UI and motion
+- Tick criteria from observed proofs — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Fuzz the site's layout across widths
+- Let a reader rerun a benchmark with `fm bench repro`
+- Wild: run the duel on each new Claude Code release — near T-1232 (done): Spec suite: a neutral toy repo of fully specified tasks wit…
+- Wild: publish a "beat Foreman" challenge
+- Wild: show Foreman's token share live in the pane — near T-1152 (done): Pane Agents graph shows a running builder's fresh worktree …
+- Paint the stored theme before first render — near T-0780 (done): Audit findings reach the host's review UI: fm audit prep as…
+- Match the pane to Claude Code's own background — near T-0116 (done): Size words with meaning: typical time per type and size, ti…
+- Show what survived each compaction — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Keep a live "what Foreman costs" meter — near T-1000 (done): Pane: no gaps, everything visual — sections sized to what t…
+- Tell what the blocked command would have done — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Set the terminal tab title to the work state — near T-0781 (done): Sessions are named after their task: SessionStart and UserP…
+- Flip a criterion from red to green on the pane — near T-1117 (done): Close enforces the gates: fm task finish runs fm check --af…
+- Wild: Race two lanes live as a duel HUD — near T-1069 (done): Racing builders: for an M task marked race, two builders wo…
+- Wild: Add an `fm break-me` safe guard playground
+- Wild: End a long run with a "this session in three frames" card — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Wild: Give the Benchmarks page a "run it yourself for $2" button — near T-1080 (done): Risk budget: one daily autonomy budget (destructive asks, r…
+- Use the new `decider: "person"` check for approvals that feel deliberate — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Meter Foreman's token share per session — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Auto-prove criteria from observed runs — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Compact at task boundaries with focus instructions — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Tune the auto-compact window per workload
+- Rehearse compaction without a model — near T-1242 (done): Marathon showcase: a long unattended run that keeps finishi…
+- Gate approvals through `decider: "person"` — near T-1087 (done): Review threads and merge train: PR review comments become t…
+- Pin a headless-drive test for the Stop change — near T-0957 (done): Hooks: idle stops recorded, plan mode holds drive, the user…
+- Wild: Run the safety corpus on every Claude Code release — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Wild: Print a "Foreman tax receipt" at session end — near T-0957 (done): Hooks: idle stops recorded, plan mode holds drive, the user…
+- Wild: Fork the lens fan-out from one cached prefix — near T-0787 (done): Later from T-0760: Ship plugin workflows (/foreman:<name>) …
+- Wild: A/B the compaction instruction text on replayed sessions — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Replace the 15 skill entries with one router skill — near T-0752 (done): Milestone: Learning, paid half — evals on block, bench hold…
+- Record proofs from the PostToolUse hook, not from model calls — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Use `decider: "person"` for guard asks — near T-1064 (done): User proxy for asks: under standard autonomy an ask identic…
+- Compact at task close, not at the limit — near T-0676 (done): Milestone: Features — Performance and cost
+- Fit the compaction window to a measured cost curve — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Run brainstorm lenses as forked subagents of one cached pack — near T-0711 (done): Frontier 11 — Cockpit UI
+- Show Foreman's own token tax live — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Prove the headless drive under the 2.1.304 Stop rule — near T-0775 (done): One-off headless claude -p sessions answer their prompt and…
+- Make the macOS CI job portable
+- Wild: Move bookkeeping into a Haiku sidecar
+- Wild: Hold a duel at an equal dollar cap
+- Wild: Deliver notes on demand instead of pushing them — near T-0019 (done): Drive lets the turn end while background agents or commands…
+- Wild: Add a no-Foreman control lane to every release check — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Fuzz the compaction point in the e2e roundtrip — near T-0839 (done): Round-2 review fixes: lane rm keeps secrets inside build di…
+- Bisect Claude Code versions when the roundtrip goes red — near T-0682 (done): Milestone: Features — Verification and product checking
+- Randomize test order and shard in CI, printing the seed — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Lint for GNU-only shell and tool flags
+- Refuse to publish a benchmark delta inside the noise
+- Stamp every benchmark result with model, CC version and prompt hash — near T-0690 (done): Milestone: Intelligence — Metacognition and calibration
+- Ratchet injected bytes per turn in CI — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Check hook fan-out against the 12-concurrent cap — near T-0216 (done): fm audit prep --split: up to three parallel fresh-context r…
+- Fix the site theme flash with an inline head script
+- Wild: Run a "compaction storm" soak — near T-1076 (done): Upstream watch: fm doctor matches recurring Claude Code err…
+- Wild: Add a reproducible "reliability weather" file to every release — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Give the guard a replayable "known-24" regression corpus — near T-1066 (done): Mutation-test the guard: fm bench guard --mutate drops or w…
+- Ablate each component on the duel and ship only what pays
+- Infer step and acceptance-criterion bookkeeping from the verify command — near T-1159 (done): Print what was not verified at every task close: criteria w…
+- Replace home-grown ask binding with the native `decider: "person"`
+- Report what each Claude Code release made redundant — near T-0682 (done): Milestone: Features — Verification and product checking
+- Ratchet always-on context bytes per release
+- Generate the Benchmarks page prose from the results file — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Make the core a five-hook install and everything else an `fm add` pack — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Merge all hooks for one event into a single dispatcher process — near T-0001 (done): Phase 3: hooks — one dispatcher per event, guard, stop gate…
+- Wild: Ship the whole discipline as a 40-line CLAUDE.md for people who won't install
+- Wild: Make "Foreman off" a measured baseline row on every page — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Wild: Self-deleting features — every flag and hook note expires unless its hit counter justifies it — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Infer bookkeeping from tool results — near T-0972 (done): Flag instruction-like text in fetched and tool output (WebF…
+- Compact at task seams, not mid-task — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Add a "ask a person" tier to the guard — near T-1220 (done): Feature pages for the site: one page per Foreman capability…
+- Make headless drive survive the new Stop rule — near T-0775 (done): One-off headless claude -p sessions answer their prompt and…
+- Scout through fork subagents for cache reuse — near T-0711 (done): Frontier 11 — Cockpit UI
+- Show a live "Foreman tax" meter — near T-1000 (done): Pane: no gaps, everything visual — sections sized to what t…
+- Add a fresh-eyes pass after every compaction — near T-0207 (done): Debugging ledger: hypotheses in the brief that fm next driv…
+- Generate benchmark prose and figures from result files — near T-0224 (done): Fm evolve — a bench-gated self-improvement loop: a mutation…
+- Wild: Let the spec suite grow itself by mutation-checked generation
+- Wild: Schedule the queue around the prompt-cache window
+- Wild: Run a perpetual marathon on the Pages site
+- Wild: Ship a "Foreman Lite" session that turns itself on only when a failure is predicted — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Infer bookkeeping from tool results so the model makes none — near T-0705 (done): Frontier 05 — Ambient verification and test intelligence
+- Gate pull requests on offline token counts replayed from recordings — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Time-box Foreman's context tax per source in the pane and at close — near T-0711 (done): Frontier 11 — Cockpit UI
+- Add an import-time budget per hook — near T-0805 (done): The hook benchmark judges by CPU time when the machine is b…
+- Skip the guard subprocess for provably harmless read-only calls — near T-0345 (done): Guard: commands python code spawns (subprocess, os.system/e…
+- Stop benchmark reruns early with a sequential test — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Decide compaction against fresh-session handoff by measurement — near T-0704 (done): Frontier 04 — Zero-call bookkeeping and session lifecycle
+- Wild: Reach hooks over a local HTTP hook to a warm daemon — near T-0676 (done): Milestone: Features — Performance and cost
+- Wild: Teach the model a two-character note dialect once, in the cached prefix
+- Wild: Run a budget-neutral "Foreman diet" automatically once cost exceeds plain Claude Code's recorded baseline — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Print a per-close "what discipline cost you" line — near T-1170 (done): An unknown fm command prints argparse's full list of 170 ch…
+
+## Round 2
+- Audit the whole setup's per-turn context cost — near T-0212 (done): Fm bench — Foreman's own SWE-bench: every finished task wit…
+- Explain why a turn was expensive — near T-1079 (done): Unexplained spend alarm: spend with no Foreman task or turn…
+- Overlap slow proofs with the next step — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Make bare "continue" a priced contract — near T-1158 (done): Add `fm contract --until HH:MM --usd N` so the drive, `fm r…
+- Derive default ceremony per task kind from duel results — near T-1222 (done): Benchmarks page: Foreman against plain Claude Code (and oth…
+- Re-inject only what a compaction dropped — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Read Claude Code's native memory as a steer source — near T-0707 (done): Frontier 07 — Knowledge graph
+- Show a pre-spend estimate for unattended runs — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Wild: Usage thermostat — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+- Wild: Stop-loss against the median close — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Wild: A "beat-the-baseline" receipt on every close — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Wild: Publish a "when not to use Foreman" page that the tool itself follows — near T-1220 (done): Feature pages for the site: one page per Foreman capability…
+- Calibrate the benchmark suite to where plain Claude fails — near T-0690 (done): Milestone: Intelligence — Metacognition and calibration
+- Interleave Foreman and plain runs in pairs and publish intervals — near T-1242 (done): Marathon showcase: a long unattended run that keeps finishi…
+- Decompose the long-session premium into its causes — near T-0097 (done): Find and cut where Foreman's time goes
+- Build the everyday-command corpus from real history — near T-1220 (done): Feature pages for the site: one page per Foreman capability…
+- Show the four "saved first" commands in a table with reasons — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Add a "Where Foreman loses" section generated from results — near T-0224 (done): Fm evolve — a bench-gated self-improvement loop: a mutation…
+- Park unrequested fixes on a side branch
+- Scan benchmark artifacts for identity and secrets before commit — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Keep unattended waits inside the prompt-cache window — near T-0959 (done): Brainstorm and cost: keep a child's partial answer, a run m…
+- Report cost as a share of the plan window — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Make `fm continue` pick the weakest scored axis
+- Quarantine the UI mod when it breaks and test it against the newest Claude Code — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: Publish a failure reel of plain Claude's post-compaction miss
+- Wild: Let a hostile reviewer try to falsify every sentence on the site
+- Wild: Spar nightly on small real public issues at a hard dollar cap
+- Show the tax receipt as a one-line sign-off — near T-1001 (done): Fleet lists ended and one-off sessions (dead UI-harness ses…
+- Close with a three-frame keepsake — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Name the release after its most annoying fix — near T-0672 (done): Milestone: Features — Guard and safety
+- Draw the Benchmarks page from the results files — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Wild: Cut a thirty-second director's cut replay at each release
+- Export the guard as native permission and sandbox rules — near T-0958 (done): Knowledge out: lessons as native rules, decisions as ADRs, …
+- Audit the whole session context, not just Foreman's share — near T-0777 (done): Never idle without tmux: a plugin monitor streams this sess…
+- Detect `foreman-ui` anchor drift against each new Claude Code release — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Fail loudly when another plugin's hooks fight Foreman's — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Pin the Foreman version per repo — near T-0672 (done): Milestone: Features — Guard and safety
+- Pull docs for the library version actually installed — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Add an integrity audit to every benchmark run — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Ship `--json` on every list verb, plus shell completions — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Bind the Foreman plan to native plan mode — near T-0944 (done): Adopt Claude Code 2.1.296–2.1.301: install it, fix subagent…
+- Wild: Plant honeytoken credentials that prove the guard and catch other tools — near T-0672 (done): Milestone: Features — Guard and safety
+- Wild: Ship a booby-trapped demo repo
+- Wild: Replay your own shell history against the guard before you trust it — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+- Add a language-fixture matrix for gates and proofs — near T-0705 (done): Frontier 05 — Ambient verification and test intelligence
+- Add rival plugins as duel contestants — near T-0963 (done): Postures and rivals: fm posture lite, compact shadow mode, …
+- Benchmark the false-done rate on impossible tasks — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Budget `fm` calls and stdout per closed task — near T-1140 (done): PreToolUse p95 is 210 ms over the last 200 runs, over the 1…
+- Mirror the hardest guard rules into native permission deny rules — near T-0672 (done): Milestone: Features — Guard and safety
+- Ship an observer mode with zero injected context — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Benchmark prompt injection planted in the repo — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Test a terse output style for output-token savings — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Let a prompt prefix drop ceremony for one request — near T-0676 (done): Milestone: Features — Performance and cost
+- Wild: Launch through `fm claude`, which picks hooks and compaction window per repo — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Wild: Publish a generated Losses page — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: Stamp commits with proof and cost trailers — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Pair idle compaction with queue waits — near T-0957 (done): Hooks: idle stops recorded, plan mode holds drive, the user…
+- Treat "ran zero tests" as red — near T-1117 (done): Close enforces the gates: fm task finish runs fm check --af…
+- Bind each proof to the tree it ran on — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Publish an exit-code and `--json` contract for every verb — near T-1222 (done): Benchmarks page: Foreman against plain Claude Code (and oth…
+- Prove the guard works with state unreadable — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Declare a Claude Code version range per feature — near T-1076 (done): Upstream watch: fm doctor matches recurring Claude Code err…
+- Run the roundtrip nightly against Claude Code's newest build — near T-1076 (done): Upstream watch: fm doctor matches recurring Claude Code err…
+- Separate outages from failures in benchmark results — near T-0783 (done): Big Bash outputs reach the model as head, tail and failure …
+- Run verbs under a hostile environment matrix
+- Expire pending `fm ask` entries tied to dead processes
+- Soak `fm` with parallel processes — near T-1044 (done): Process-group reaper and a startup orphan sweep for the cla…
+- Detect a lost foreman-ui patch after a Claude Code update — near T-0316 (done): Re-run one real fm-builder lane end to end after a Claude C…
+- Wild: Show a one-glyph `fm pulse` health light — near T-0681 (done): Milestone: Features — UI and motion
+- Wild: Write a crash capsule on any hook exception — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Wild: Forecast breakage from Claude Code's changelog with `fm doctor --tomorrow` — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Smoke-test the published artifact nightly on a clean HOME — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Deploy the site on every push to main — near T-1206 (done): A GitHub Pages site for Foreman: one modern page with the r…
+- Write each guard rule as one data row with its own examples — near T-0817 (done): Guard refusals read better: /dev/null on a data-only python…
+- Merge lessons, hints, fixes and cards into one "note" kind — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Delete brief fields that no decision reads — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Make the install a single command with no questions and no leftovers on removal — near T-1018 (done): Stack cards: CodeMirror 6 card; tauri-build and tauri-plugi…
+- Show three verbs after install and hide the rest until used — near T-0262 (done): Smarter nudges: already-covered requests, decision revisit …
+- Replace the settings pile with measured defaults and one override file — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Wild: `fm once "request"` — a stateless run that writes nothing to disk
+- Wild: Print the whole product as one screen of text on bare `fm` — near T-0777 (done): Never idle without tmux: a plugin monitor streams this sess…
+- Wild: Make Foreman's injected text a single file a user can read in two minutes — near T-1082 (done): Ledger index and pane wake pipe: an index so fm ui and reca…
+- Retire the blocked Codex, Gemini and opencode trio into an `adapters/` branch — near T-0442 (done): Guard parity across harnesses: same decision on codex, gemi…
+- Cut the skill count by merging skills that share a trigger — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Make one "reason" flag replace the escape-hatch flags — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Squeeze tool output before it enters the context — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Stub out superseded reads as the session goes — near T-1075 (done): Refuted hypotheses: fm task hypo keeps what was ruled out a…
+- Hold out a private task split from tuning — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Run an external benchmark subset under Foreman and plain — near T-0963 (done): Postures and rivals: fm posture lite, compact shadow mode, …
+- Run Foreman natively on Windows with a PowerShell-aware guard
+- Cap subagent reports to a short digest — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Publish a Known Losses section generated from results — near T-0682 (done): Milestone: Features — Verification and product checking
+- Hunt for losses nightly
+- Plant honeytoken credentials that trip an alarm
+- Resume from a transcript trimmed between sessions — near T-0707 (done): Frontier 07 — Knowledge graph
+- Approve dangerous asks with a passkey tap
+- Encrypt the ledger and transcripts copied into `.foreman` at rest
+- Stub re-reads of unchanged files — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Take user-only skills out of the model's listing — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Compact when the cache is already cold — near T-1071 (done): Night gardening: fm night composts merged or abandoned work…
+- Rank `fm` verbs by tokens returned to the model — near T-0870 (done): fm demo: see Foreman work in a minute without model calls (…
+- Cap subagent returns by contract — near T-0234 (done): Implementation subagents in lane worktrees — a foreman:fm-b…
+- Choose the cache TTL per run type — near T-0959 (done): Brainstorm and cost: keep a child's partial answer, a run m…
+- Precompile pycs for hooks at install — near T-0990 (done): fm and its hooks can't find claude when only the native ins…
+- Schedule gates longest-first from recorded durations — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Split the test suite into fast and full tiers with a time budget — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Add per-writer ledger shards, merged on read — near T-0676 (done): Milestone: Features — Performance and cost
+- Wild: Write the compaction summary ourselves from the ledger — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Add a live cost-parity governor — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Wild: Keep a nightly $1 Haiku replay of the cost benchmarks — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+
+## Round 3
+- Reconcile Foreman after /rewind, /clear and forks
+- Probe the installed Claude Code for facts instead of remembering them — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Detect CLAUDE.md rules that contradict Foreman — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Keep a measurement-spend ledger with a monthly cap — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Pick the ceremony profile from repo maturity
+- Order the queue by value per dollar when the week's usage is scarce
+- Add a one-key "that was needless ceremony" complaint
+- Let leftover plan usage fund the backlog — near T-0751 (done): Milestone: Runtime — usage-limit failover, revert with depe…
+- Audit the user's last ten hand-made commits on day one — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Show one cross-project "needs you" list — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Warn before a request bundles unrelated work — near T-0729 (done): Friction: lane rm unlocks a finished builder's worktree; no…
+- Ship a `--since-version` digest of what changed for this user — near T-0957 (done): Hooks: idle stops recorded, plan mode holds drive, the user…
+- Explain the first-hour cost honestly at install — near T-0933 (done): Stack library: 400+ on-demand implementation cards (fm lib)…
+- Prove the guard fires inside forked and background subagents
+- Silence Foreman's injections in read-only forked subagents — near T-0768 (done): Subagents: effort, maxTurns and omitClaudeMd in Foreman's a…
+- Alarm when Foreman's hook registration changes outside Foreman — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Make ceremony depend on the active model — near T-0786 (done): fm page: the queue (and optionally a brainstorm catalogue) …
+- Power-check a claim before spending on it — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Greet the first session on a new Claude Code version with a self-check — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Grey out site claims measured on an older Claude Code — near T-1242 (done): Marathon showcase: a long unattended run that keeps finishi…
+- Check the user's own CLAUDE.md and settings against Foreman's rules — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Lower reasoning effort on pure-bookkeeping turns — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Budget the repository's media weight — near T-1080 (done): Risk budget: one daily autonomy budget (destructive asks, r…
+- Wild: Paired-seed duel from a recorded shared prefix
+- Wild: Turn each marathon compaction into a diary entry — near T-0121 (done): A subagent that ended without its finish event stays 'runni…
+- Wild: A "break this claim" button on every benchmark row — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Measure Foreman's idle footprint when no session is open — near T-0777 (done): Never idle without tmux: a plugin monitor streams this sess…
+- Ask the terminal for its real colours — near T-0328 (done): FEATURE: Foreman Desktop v2 — clean up the UI so it looks l…
+- Pin a thought that survives compaction — near T-0693 (done): Milestone: Intelligence — Reasoning and thought process
+- Make every number on the site a link to its raw run — near T-1222 (done): Benchmarks page: Foreman against plain Claude Code (and oth…
+- Copy any suggested command with one key — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Peek any id with Space
+- Show how often Foreman stayed quiet — near T-1033 (done): Chat window: a live tree like the Agents graph, the session…
+- Write the session as chapters — near T-0975 (done): Fm run --sandbox: headless sessions under Claude Code's nat…
+- Suggest the first task from the repo's own evidence — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Give motion one grammar — near T-1080 (done): Risk budget: one daily autonomy budget (destructive asks, r…
+- Wild: Print a boarding pass when an unattended run starts — near T-0898 (done): Fm at REF|ID -- CMD runs a command as of a commit or a task…
+- Wild: Add voice packs for every pane and refusal string
+- Wild: Open a museum of fixed bugs on the Pages site — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Pin repo-supplied commands behind a trust prompt — near T-0672 (done): Milestone: Features — Guard and safety
+- Harden the web UI's local server — near T-1211 (done): fm code: fmmodels, one stdlib client for OpenAI-compatible …
+- Mutate the changed lines and require a test to notice — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Give each lane its own ports, database and temp dirs
+- Declare triggers in one file — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Open a cross-project home screen — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Refuse hand edits to generated files and name the generator — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Support GitLab, Gitea and Forgejo beside GitHub
+- Run to a deadline and cut scope to fit — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Package Foreman for AUR, Homebrew and a Nix flake
+- Wild: Peek at a repo before opening it — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: Speak the user's language in the pane and refusals — near T-1082 (done): Ledger index and pane wake pipe: an index so fm ui and reca…
+- Wild: Watch rivals' changelogs and file capability-gap briefs — near T-1077 (done): Stale plan sweep: queued briefs whose files or premises cha…
+- Make the native todo list the step ledger — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Pre-register each benchmark before it runs — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Audit a freshly cloned repo's own Claude config before trusting it — near T-0672 (done): Milestone: Features — Guard and safety
+- Seal the guard's own wiring — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Expose the guard and done-gate as Agent SDK hook callbacks — near T-0698 (done): Friction batch 2026-10-09: IFS false block from heredoc dat…
+- Derive the pane palette from the terminal's real background — near T-1137 (done): Record stage changes on the ledger (a stage_change event wh…
+- Backfill a task from a plain session already in flight — near T-1053 (done): Tainted web/MCP content: commands built from text a web or …
+- Generate pane, web UI and site styles from one token file — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Ship hook code as a zipapp run with `python -S -I` — near T-1236 (done): Hook's Claude Code process found by a fixed shape (one pyth…
+- Run every `fm <verb> --help` example in CI — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Wild: Run the real guard in the visitor's browser — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+- Wild: Score your own session in the browser — near T-0707 (done): Frontier 07 — Knowledge graph
+- Wild: Give approvals a physical key
+- Fail the release on a hook that exceeds the 12-per-event cap — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Prove the guard still blocks when Claude Code changes its hook payload — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Pin the version a feature needs and degrade, not break — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Make the macOS CI job red-to-green by removing GNU-only assumptions
+- Survive a compaction mid-write with a state-file crash matrix — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Quiz the model after a forced compaction and fail the build on lost requests — near T-0212 (done): Fm bench — Foreman's own SWE-bench: every finished task wit…
+- Replace the name-based Claude Code process lookup with a self-test at session start — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Treat a missing or failing `fm` as a visible state, not a silent one — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Wild: Run a nightly soak that replays the recorded 24 dangerous and 25 everyday commands on the newest Claude Code — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Wild: Add a fault dial that makes the fake `claude` flake on command — near T-0705 (done): Frontier 05 — Ambient verification and test intelligence
+- Ratchet the always-on context bytes in CI so a release can't quietly get heavier
+- Start every repo in Lite and promote features on evidence — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Raise the support floor and delete the shims below it — near T-0368 (done): fm and the hooks re-run under a supported Python when pytho…
+- Lint one vocabulary across help, notes, site and README — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Keep state outside the repo unless the user opts in — near T-0883 (done): Guard tests keep their temp folder outside /tmp when ~/.cac…
+- Ship the plugin as one zipapp — near T-0787 (done): Later from T-0760: Ship plugin workflows (/foreman:<name>) …
+- Make hooks append-only and let only `fm` verbs write state — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Cap `.foreman` with a retention policy — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Delete `plugin/lib` lines that no test or real session executes — near T-0276 (done): fm second: one primitive for independent second reads — riv…
+- Wild: Race Foreman against its own minimal twin — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: Trace each clause of the tagline to exactly one mechanism
+- Wild: Expire a feature per repo after 30 days with no hits — near T-1084 (done): Weekly decision digest and sunset clauses: decisions made w…
+- Golden-file all injected and help text — near T-0262 (done): Smarter nudges: already-covered requests, decision revisit …
+- Prove the guard fires on every spawn path — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Seed the post-compaction frontier from zero-token miners — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Stagger parallel lanes to share one prompt-cache write — near T-0676 (done): Milestone: Features — Performance and cost
+- Run every verify command offline in the existing sandbox — near T-0710 (done): Frontier 10 — Milestone work compiler and merge train
+- Lock down the web UI against rebinding and cross-origin calls — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Make the web UI an installable phone PWA with content-free push — near T-1206 (done): A GitHub Pages site for Foreman: one modern page with the r…
+- Show a cache countdown in the pane — near T-1060 (done): Survival grading: fm outcomes grades each closed task by wh…
+- Flag conflicts between CLAUDE.md or memory and Foreman's injected rules — near T-0707 (done): Frontier 07 — Knowledge graph
+- Wild: Make Foreman the hook conductor for the user's whole setup — near T-1068 (done): Lane symbol claims: parallel builders claim the files and s…
+- Wild: Replicate the benchmark across users' machines — near T-1242 (done): Marathon showcase: a long unattended run that keeps finishi…
+- Wild: Draw pane charts as real pixels with the kitty graphics protocol
+- Wild: Offer a read-only "ledger answers" side prompt — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Make SessionStart non-blocking — near T-1155 (done): Show a return-after-gap summary (`fm away`, also once at se…
+- Nudge parallel tool calls — near T-1089 (done): Ok, don't ask me any more questions or ANYTHING, I will be …
+- Chain bookkeeping in one `fm` call — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Memoize guard verdicts by command shape — near T-1187 (done): `fm guard mine` lists the last N days of guard refusals wit…
+- Set reasoning effort per phase — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Run duel cases concurrently under one budget governor — near T-0805 (done): The hook benchmark judges by CPU time when the machine is b…
+- Keep a warm fork-server for the test suite — near T-0676 (done): Milestone: Features — Performance and cost
+- Rotate and compress cold ledger segments
+- Refresh `fm map` incrementally by git tree hash — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Budget site weight and fix first paint together — near T-0751 (done): Milestone: Runtime — usage-limit failover, revert with depe…
+- Wild: Move the hook hot path to a native binary — near T-0044 (done): Fm map and fm impact — a per-project map (gates, layout, en…
+- Wild: Verify speculatively on a copy-on-write snapshot at every edit — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Bisect performance regressions nightly — near T-0676 (done): Milestone: Features — Performance and cost
+
+## Deepened: cost
+- Build a per-turn cost ledger that attributes every token to its source — near T-1079 (done): Unexplained spend alarm: spend with no Foreman task or turn…
+- Make the ledger the optimizer's objective: auto-ablate each injection and keep what pays for itself — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Set the compaction window from a measured cost curve, not a guess — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Replace the hook-note stream with deltas: say nothing the context already shows — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Add a ceremony profile per task kind and model, chosen from duel data — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Wild: A usage thermostat that throttles ceremony as the user's budget burns
+- Park idle waits inside the cache window and spend them on compaction — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Wild: Offload bookkeeping to a Haiku sidecar that writes `fm` state from the transcript
+- Squeeze tool output before it enters context, and stub superseded reads — near T-0276 (done): fm second: one primitive for independent second reads — riv…
+- Gate per-turn context tax and cost regressions in CI — near T-0676 (done): Milestone: Features — Performance and cost
+- Wild: Publish a live "Foreman vs plain" cost receipt at the end of every session — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Test a terse-output style and lower effort on bookkeeping turns — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+
+## Deepened: benchmarks
+- Make every site figure render from a results file — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Build a cost-per-verified-pass ledger with a per-hook breakdown — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Measure the skill-listing tax across compactions — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Run an equal-dollar-cap duel and report passes per dollar — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Bisect the long-session cost gap by removing one Foreman feature at a time — near T-0676 (done): Milestone: Features — Performance and cost
+- Gate every release on a bench regression check — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Wild: Replay the same session at every Claude Code version — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Test the guard against evasion variants of the 24 dangerous commands — near T-1222 (done): Benchmarks page: Foreman against plain Claude Code (and oth…
+- Wild: Give each benchmark run a signed receipt anyone can verify
+- Benchmark Foreman's quality on compaction-heavy tasks across window sizes — near T-1222 (done): Benchmarks page: Foreman against plain Claude Code (and oth…
+- Wild: Let the marathon keep score of its own findings — near T-0690 (done): Milestone: Intelligence — Metacognition and calibration
+- Wild: Publish a "Foreman loses here" page from the same runs — near T-1222 (done): Benchmarks page: Foreman against plain Claude Code (and oth…
+- Time-box a cheap Haiku calibration run before every costly measurement — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+
+## Deepened: trust
+- Publish a signed run bundle per benchmark row
+- Generate every site figure from the bundles at build time — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Add a claims ledger with expiry — near T-1075 (done): Refuted hypotheses: fm task hypo keeps what was ruled out a…
+- Lead the cost story with the 60% long-session premium — near T-1250 (done): Release 1.2.40 and push: benchmark reruns, long-session cos…
+- Run a safety-regression canary on every Claude Code release — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Wild: Publish a live false-positive wall — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Add a receipt for every guard refusal that says what it saw — near T-0440 (done): Every refusal names its fix; a third identical refusal esca…
+- Wild: Add an adversarial bounty for the guard — near T-1072 (done): Rule and hint hygiene: cards, known fixes, rules and lesson…
+- Show a per-session honest bill split — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Pre-register benchmarks with committed hidden-test hashes — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Wild: Run a public overnight marathon stream
+- Separate the "measured" and "believed" claims in the README
+- Wild: Make a counterfactual replay of the user's own past session — near T-1058 (done): Backtest any self-change on real history: fm backtest repla…
+
+## New ideas per lens
+- user value: 37
+- unspoken needs: 42
+- delight: 29
+- capability map: 37
+- approaches: 38
+- reliability: 38
+- simplicity: 36
+- bold bets: 36
+- performance: 37
+
+## Coverage (ideas per category)
+- cost 44
+- benchmarks 24
+- guard 17
+- trust 15
+- context cost 9
+- compatibility 8
+- honesty 8
+- observability 7
+- site 7
+- long sessions 7
+- compaction 7
+- docs 6
+- compat 6
+- hooks 6
+- approvals 5
+- reliability 5
+- hook latency 5
+- turns 4
+- onboarding 4
+- close-out 4
+- release 4
+- footprint 4
+- security 4
+- ui 4
+- doctor 3
+- usage 3
+- measurement 3
+- pane 3
+- state 3
+- pane polish 2
+- motion 2
+- ci 2
+- budget 2
+- proof 2
+- intake 2
+- unattended 2
+- privacy 2
+- showcase 2
+- pane motion 2
+- demo 2
+- developer experience 2
+- gates 2
+- concurrency 2
+- help 2
+- transparency 2
+- scope 2
+- devices 2
+- regression 2
+- honesty/cost 1
+- site polish 1
+- terminal 1
+- delight 1
+- ideas 1
+- context 1
+- upstream compat 1
+- test reliability 1
+- portability 1
+- soak 1
+- fewer turns 1
+- delete code 1
+- obsolescence 1
+- single source 1
+- cost regression 1
+- benchmark cost 1
+- cost control 1
+- speed 1
+- learning 1
+- direction 1
+- delight/cost 1
+- release notes 1
+- site trust 1
+- statusline 1
+- memory 1
+- teams 1
+- knowledge 1
+- native integration 1
+- tripwire 1
+- coverage 1
+- adoption 1
+- user control 1
+- launcher 1
+- provenance 1
+- contract 1
+- canary 1
+- environment 1
+- mod 1
+- diagnosis 1
+- concepts 1
+- briefs 1
+- config 1
+- ephemeral 1
+- cli 1
+- platform 1
+- skills 1
+- output size 1
+- subagents 1
+- tests 1
+- continuity 1
+- conflicts 1
+- queue 1
+- attention 1
+- updates 1
+- tamper 1
+- hygiene 1
+- empty state 1
+- personality 1
+- verification 1
+- lanes 1
+- automation 1
+- integrations 1
+- planning 1
+- distribution 1
+- roadmap 1
+- repo trust 1
+- guard integrity 1
+- surfaces 1
+- design system 1
+- fail-open 1
+- test harness 1
+- upgrade 1
+- defaults 1
+- language 1
+- install 1
+- dead code 1
+- benchmark 1
+- self-pruning 1
+- review 1
+- long runs 1
+- sandbox 1
+- web ui 1
+- simplicity 1
+- user value 1
+- startup 1
+- dev loop 1
+- indexing 1
+- proofs 1
+- cost-attribution 1
+- cost-optimization 1
+- context-tax 1
+- injection 1
+- adaptive-ceremony 1
+- budget-control 1
+- cache-reuse 1
+- cache-timing 1
+- bookkeeping 1
+- output-compaction 1
+- regression-guard 1
+- output-tokens 1
+- duel 1
+- ablation 1
+- safety 1
+- long-session 1
+- marathon 1
+- claims 1
+Thin (0-1 ideas): user value, performance, agents

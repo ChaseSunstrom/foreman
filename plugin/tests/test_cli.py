@@ -1751,7 +1751,7 @@ class AffectedPairs(ForemanTestCase):
         # T-1718: --affected said it skipped another lane's red-first test_red, then named it to run.py, which failed
         # "no test matches test_red"
         b = self.red_lane(["test_green.py", "test_red.py"])  # A's edit, and B's (its lane goes on) since A's focus
-        r = self.fm("check", "--affected", check=False)
+        r = self.fm("check", "--affected", check=False, timeout=120)  # T-3390: a nested test run; 30 s ran out under load
         self.assertIn(f"only task {b}'s red-first tests: test_red", r.stdout)
         self.assertNotIn("no test matches", r.stdout + r.stderr)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -1763,13 +1763,13 @@ class AffectedPairs(ForemanTestCase):
         os.makedirs(os.path.join(self.repo, "web"))
         with open(os.path.join(self.repo, "web", "test_red.js"), "w") as f:
             f.write("// A's own test\n")
-        r = self.fm("check", "--affected", check=False)
+        r = self.fm("check", "--affected", check=False, timeout=120)
         self.assertIn("echo web/test_red.js", r.stdout)
         self.assertNotIn("run.py test_green test_red", r.stdout)
 
     def test_an_affected_run_with_evidence_records_it(self):  # T-1747: the builder contract relies on it
         self.red_lane(["test_green.py"])
-        r = self.fm("check", "--affected", "--evidence", "T-0001", "--step", "1", check=False)
+        r = self.fm("check", "--affected", "--evidence", "T-0001", "--step", "1", check=False, timeout=120)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         ev = c.find_brief(c.find_project(self.repo), "T-0001").section("Verification evidence")
         self.assertIn("affected tests only", ev)

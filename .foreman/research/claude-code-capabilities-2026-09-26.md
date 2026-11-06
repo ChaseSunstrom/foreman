@@ -1,0 +1,7 @@
+# Claude Code 2.1.280 capabilities for T-0009/T-0012..T-0016 (claude-code-guide agent; spot-checked)
+- Subagents: `tools: []` = no tools (strict validate passes; runtime check pending /reload-plugins). `model`, `disallowedTools`, `maxTurns`, `effort` supported.
+- Remote Control: `claude remote-control [--name N] [-c|--continue] [--session-id ID] [--permission-mode acceptEdits|auto|bypassPermissions|default|dontAsk|plan] [--spawn same-dir|worktree|session] [--capacity N] [--[no-]create-session-in-dir]`; server stays up while the process lives; needs claude.ai login (Pro/Max/Team/Enterprise); hooks run for remote prompts. VERIFIED from --help. NOTE: `--help` prints then never exits (killed it) — never call it blocking.
+- Output styles: plugins can ship `output-styles/<name>.md` (manifest key outputStyles), `keep-coding-instructions: true` appends instead of replacing; user selects with /output-style or /config.
+- MessageDisplay: agent says observation-only; CONFLICTS with recon + live build (displayContent badge works). Trust recon.
+- Plugin CLI from Bash works (install/enable/disable/uninstall, marketplace add/list --json); takes effect after /reload-plugins or restart. CORRECTION: `claude plugin list --json` exists (used in the build).
+- Hooks: UserPromptSubmit additionalContext each turn; PreToolUse deny; PostToolUse block (additionalContext not documented); Stop block; no event before the first tool call of a turn. UserPromptSubmit/MessageDisplay default timeout 10 s.

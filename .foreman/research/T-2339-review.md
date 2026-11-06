@@ -1,0 +1,3 @@
+T-2339 review (fm-reviewer, one pass): changes needed; fixed in 38503986 before merge.
+Fixed: _cross runs builder tests guarded (guard_stored) with env cut to PATH/HOME tmp/LANG/PYTHONPATH; _TEST_RE fullmatch+ASCII; uncommitted side is an error row; write errors give no result; one option with 2 sides is an open race; first choice word wins, shared fmcore.CHOICE_WORDS; 300 s cross deadline, phase lines, pick reuses score rows while heads match; base refusal ignores 124/127 and linted checks; caught counts only assertion failures (import errors = coupled).
+Open: the 300 s deadline path is untested; tests still reach the network or absolute paths (not a sandbox); several fixes were written before their tests (not seen red).

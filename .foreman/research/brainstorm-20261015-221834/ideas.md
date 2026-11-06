@@ -1,0 +1,431 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+
+## Round 1
+- Resume any stopped agent from one verb — near T-0121 (done): A subagent that ended without its finish event stays 'runni…
+- Write a handoff note on every stop — near T-0877 (done): fm friction reads right: a pass whose recon is out isn't 'd…
+- Share fixes through git as reviewable hints — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Score each hint by outcome and retire the ones that don't help — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Report what Foreman learned this week — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Detect repeat obstacles before they cost a turn — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Ship a one-line start ritual — near T-0897 (done): Fm spec starts from the input/output examples the user alre…
+- Triage the deferred backlog into drop, do or ask
+- Run the brainstorm-build-review loop unattended until dry — near T-0843 (done): Make Foreman THE plugin: round 4 brainstorm from new eviden…
+- Explain each blocked item with its unblock command — near T-0682 (done): Milestone: Features — Verification and product checking
+- Wild: Let a teammate's clone inherit the whole learned brain by a single `git pull`
+- Wild: Replay last week's failures against today's Foreman and report which it now prevents — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Wild: Let Foreman write its own "letter to the next session" as the pane's idle screen — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Wild: Offer to turn a repeated manual request into a standing rule after the third time
+- Resume ledger for every long-running unit — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Record obstacle→fix pairs with a "did it actually work" check — near T-0952 (done): --affected also runs tests that historically change togethe…
+- Ship a portable `.foreman/known/` bundle with import/export
+- Scrub secrets and paths from shared hints before commit — near T-0786 (done): fm page: the queue (and optionally a brainstorm catalogue) …
+- Treat a hint pulled from git as untrusted input — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Auto-detect recurrence and propose a permanent fix — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Add a regression test for each learned fix, auto-drafted — near T-0752 (done): Milestone: Learning, paid half — evals on block, bench hold…
+- Heartbeat checkpoints so a killed session leaves a resumable state — near T-0436 (done): fm pause: one flag stops everything Foreman runs unattended
+- Wild: Make the pane a time scrubber over a past session — near T-0711 (done): Frontier 11 — Cockpit UI
+- Wild: Let sessions on one machine share learned fixes live across projects — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Wild: Hold a nightly "dojo" that replays recorded obstacles against the current Foreman — near T-0692 (done): Milestone: Intelligence — Planning and decomposition (2)
+- Name the user's recurring corrections as standing rules — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Checkpoint builders to a git ref so resume never loses work — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Offer resume at SessionStart — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Score every learned fix by hit rate and retire the losers — near T-0752 (done): Milestone: Learning, paid half — evals on block, bench hold…
+- Promote hints project → machine → shared pack with redaction
+- Predict file overlap before dispatching parallel builders — near T-0445 (done): Lane dispatch respects relate groups and co-change footprin…
+- Add a per-step file rewind — near T-0884 (done): Snapshot uncommitted work before a Bash command discards it…
+- Ship to a PR and keep fixing until CI is green
+- Turn GitHub issues into tasks with dedupe — near T-0926 (done): fm inbox alone lists the inbox (captured requests), as fm -…
+- Cap tokens and spend per task and show the bill — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Send push alerts when blocked and answer from a phone — near T-0778 (done): Phone push when the user is needed or the queue drains: the…
+- Scan outputs and commits for secrets before they leave — near T-0672 (done): Milestone: Features — Guard and safety
+- Quarantine flaky tests automatically — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Wild: Idle "dream" mode that replays past failures offline and drafts hints and rule patches
+- Wild: End-of-day shift report — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+- Wild: Cheap live shadow reviewer that watches the diff stream and interrupts
+- Generate an ADR/decision log from closed tasks — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Write a resume manifest at every worktree-agent step — near T-0729 (done): Friction: lane rm unlocks a finished builder's worktree; no…
+- Journal tool intents before they run — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Reconcile ledger against git on every SessionStart — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Heartbeat lanes and flag the silent ones — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Make every fix hint carry a self-test — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Quarantine a task that fails the same way three times — near T-1032 (done): Learn a fix once, apply it every time: when a session hits …
+- Test claude-binary lockout as a hard fixture — near T-0993 (done): Catch the claude lockout gap before it ships (T-0993)
+- Fence harness sessions from the Stop hook — near T-0995 (done): The UI harness's interactive session (shot.py) was driven b…
+- Wild: Replay a crashed session from its ledger into a fresh worktree — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Wild: Run a chaos mode that randomly kills hooks, children and writes — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Wild: Keep a hot-spare checkpoint ref per builder — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Detect and repair the Bash env prelude growing on each compact — near T-0988 (done): SessionStart appends Foreman's exports to the env file on e…
+- Write state files atomically with a version stamp — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Ship a portable "playbook pack" that travels in git and self-heals
+- Resume any stopped agent from a durable run manifest — near T-0121 (done): A subagent that ended without its finish event stays 'runni…
+- Auto-route repeat obstacles to the known fix before the model tries anything
+- Score Foreman's own improvement per week — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Add a recursion governor to the super-brainstorm loop — near T-0843 (done): Make Foreman THE plugin: round 4 brainstorm from new eviden…
+- Rank backlog by evidence, not by age — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Share learned fixes between machines with a trust handshake — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Wild: Add a "sleep mode" where Foreman works the queue overnight in worktrees and leaves a morning receipt
+- Wild: Replay old failures as a regression suite for Foreman itself
+- Wild: Hand off a running worktree agent between machines with a git ref — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Wild: Let the user vote on a fix with one keypress in the pane
+- Detect a stalled agent and resume it before you notice — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Retire a fix when it stops working — near T-0995 (done): The UI harness's interactive session (shot.py) was driven b…
+- Write a resume capsule at every checkpoint — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Index cards by import and dep, built once in `fm map`
+- Look up known fixes by error fingerprint — near T-0707 (done): Frontier 07 — Knowledge graph
+- Store git-carried hints as one content-addressed file each — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Tail the ledger by offset with rolling aggregates
+- Trim the brainstorm pack and keep it cache-friendly — near T-0959 (done): Brainstorm and cost: keep a child's partial answer, a run m…
+- Make the edit-time test sentinel cancellable and debounced — near T-0682 (done): Milestone: Features — Verification and product checking
+- Route mechanical children to Haiku with a Sonnet spot-check — near T-0206 (done): fm research ask: recall first, parallel web researchers per…
+- Create worktrees copy-on-write with a warm pool — near T-0981 (done): Guard: a cat >> heredoc append to plugin/tests/*.py (or a w…
+- Wild: Fork a resumed agent from its cached transcript prefix
+- Wild: Have hooks write the pane's state into a shared-memory ring — near T-0130 (done): Split the mod: transcript rows into rows.tsx, shared atoms/…
+- Wild: Run overnight bulk work as batch jobs with a cost ceiling
+- Skip re-verifying unchanged proofs on resume — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+
+## Round 2
+- Measure user interventions per closed task — near T-0783 (done): Big Bash outputs reach the model as head, tail and failure …
+- Add an asks ledger that maps each request to its outcome — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Check UI work against the user's stated layout rules before showing it — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Seed known fixes from git history on adoption — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Explain any line with `fm why` — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Undo a closed task and learn why — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Hold long goals as a mission with success criteria — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Run a pre-mortem on L tasks from similar closed failures — near T-0691 (done): Milestone: Intelligence — Planning and decomposition (1)
+- Close with something the user can look at — near T-0328 (done): FEATURE: Foreman Desktop v2 — clean up the UI so it looks l…
+- Complaint-triggered self-postmortem — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Review output against a taste profile built from the user's steers — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Calibrate with three yes/no questions a week
+- Make README claims into checks — near T-0954 (done): Doctor: invisible text in instruction files, and README ver…
+- Say "why didn't I know" before it happens: a pre-flight brief at task start — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Show the improvement, not just ship it: a "did Foreman get better" scorecard — near T-0187 (done): Self-improvement scoreboard: the friction digest rechecks e…
+- Turn the user's repeated corrections into rules without being asked — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Make the harness incapable of touching a real session — near T-0903 (done): Showcase: a recording of the real Claude Code UI with the f…
+- Hand a worktree agent a "where was I" screen on resume, not just its files — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Let a new teammate's first `git pull` run an onboarding check of the shared brain — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Explain why Foreman did or blocked something, on demand — near T-0674 (done): Milestone: Features — Observability, replay and trust
+- Close the loop on deferred work: a weekly "decide" digest — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Keep the pane honest on a narrow or tall terminal with a layout fuzz test
+- Wild: a "second opinion from last month" check that replays today's plan against past failures — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Wild: a project "black box recorder" that a stranger can replay the whole story from
+- Wild: let the pane say what it learned as the idle screen, one sentence at a time
+- Forecast each task's cost and time from similar closed tasks — near T-0676 (done): Milestone: Features — Performance and cost
+- Land finished worktrees through a merge train — near T-0710 (done): Frontier 10 — Milestone work compiler and merge train
+- Check a diff against the user's own past steers before showing it — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Suggest guard rules from commands you approved or denied by hand — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Mark tool results from the web or MCP as tainted and gate commands built from them — near T-0682 (done): Milestone: Features — Verification and product checking
+- Keep an outbound ledger of everything that leaves the machine — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Warn when a card's library has moved a major version — near T-0943 (done): lint_verify warns when a criterion's verify command touches…
+- Let a repo add its own gate, lens or card by dropping a file — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Fall back to a one-line statusline when the mod UI isn't installed — near T-0874 (done): Marketplace install works and is documented: /plugin market…
+- Honour reduced-motion and a colourblind-safe palette in the pane
+- Wild: Bisect a red gate back to the task that broke it — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Wild: Get a second opinion on risky diffs from another model family — near T-0276 (done): fm second: one primitive for independent second reads — riv…
+- Wild: Serve the learned brain over MCP to other tools — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Wild: Open each session with a one-page "what changed since you left" brief — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Run the whole suite in a hermetic sandbox that trips on any escape
+- Fuzz every state reader with corrupt input — near T-0705 (done): Frontier 05 — Ambient verification and test intelligence
+- Add a single-owner lease to tasks and worktrees — near T-0921 (done): fm night holds a single-instance lease for its whole run
+- Run every hook twice and require identical state — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Reap orphaned `claude -p` children and their process groups
+- Preflight disk, inodes and worktree budget before dispatching builders — near T-0004 (done): Phase 6: fm tidy and fm doctor
+- Bundle a flight-recorder report with one verb — near T-0780 (done): Audit findings reach the host's review UI: fm audit prep as…
+- Resolve every external binary through one provenance-recording resolver — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Roll out rule and hint changes on a canary basis with auto-rollback
+- Wild: Make each feature trip its own breaker after repeated crashes — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Wild: Diff old and new hooks in shadow on real recorded stdin — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: Run an external watchdog timer that resumes stalled work overnight
+- Detect clock jumps and make ledger ordering monotonic — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Make Foreman a git-native "brain" that merges like code — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Replay any past failure as a runnable scenario — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Ask the model to prove a hint before it's trusted — near T-0672 (done): Milestone: Features — Guard and safety
+- Show "what Foreman would have done" on the first run in a new repo — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Give every worktree agent a signed-off exit report — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Auto-write the regression test for each blocker you solved — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Rank Foreman's own roadmap by user corrections — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Provide a "team mode" so several people's Claude sessions share one queue — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Make the pane a flight recorder you can scrub — near T-0711 (done): Frontier 11 — Cockpit UI
+- Let Foreman write its own pull request against itself from field failures — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Run a "second opinion" model on every guard allow in bypass mode — near T-0974 (done): Opt-in auto-approve of read-only Bash the guard classifies …
+- Wild: Let projects publish their Foreman brain as a package others can install — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Wild: Have a pocket "bug-bounty" run where Foreman attacks its own guard — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Wild: Turn the idle pane into a morning briefing — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Resume without re-reading: snapshot the transcript's tail as a digest
+- Time-budget every hook with a self-measured kill switch — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Coalesce pane redraws to the changed region
+- Index the ledger once into a sidecar of offsets by task and day — near T-0276 (done): fm second: one primitive for independent second reads — riv…
+- Memoize the card selector by (file imports hash, deps hash)
+- Rank injected cards by marginal value and drop the ones already known this session — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Replace polling in the pane with a ledger-append wake pipe
+- Batch worktree creation and prime the dependency dir by hardlink — near T-0672 (done): Milestone: Features — Guard and safety
+- Wild: Content-addressed proof cache shared across worktrees and clones
+- Wild: Speculative second builder that races the first on a hard task and loses gracefully
+- Wild: Self-profiling Foreman that files its own slow-path tasks — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Cap resident memory of the pane and long-lived children, and restart them on a leak
+- Skip compaction-time re-exports by hashing the env file block — near T-0672 (done): Milestone: Features — Guard and safety
+
+## Round 3
+- Walk-away check — near T-0884 (done): Snapshot uncommitted work before a Bash command discards it…
+- Pace unattended work to the rate-limit window — near T-0973 (done): Fm cost --forecast: when the 5-hour and weekly windows fill…
+- Make every guard block suggest the safe alternative — near T-0974 (done): Opt-in auto-approve of read-only Bash the guard classifies …
+- Snapshot before risky-but-allowed commands — near T-0672 (done): Milestone: Features — Guard and safety
+- Keep secret file contents out of the transcript — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Make Agents graph nodes actionable — near T-1026 (done): And is the graph a node graph? like with lines connecting a…
+- Rank obstacles by minutes lost — near T-0959 (done): Brainstorm and cost: keep a child's partial answer, a run m…
+- Park questions as assumptions and continue — near T-0843 (done): Make Foreman THE plugin: round 4 brainstorm from new eviden…
+- Try a hook against recorded stdin — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Wild: Hand off a session to a teammate through git notes — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Wild: Speak status hands-free
+- Wild: Learn gates from the user's own terminal — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Probe whether a fix should travel before building it — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Run a sibling sweep when a fix closes — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Run the gates under an environment matrix — near T-0805 (done): The hook benchmark judges by CPU time when the machine is b…
+- Preview the pane without a reload — near T-1031 (done): Chat UI matches the panel look: section-style headers (bold…
+- Measure density instead of waiting for "still cluttered" — near T-0704 (done): Frontier 04 — Zero-call bookkeeping and session lifecycle
+- Refuse near-duplicate ideas before they cost a review — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Give every adopted idea a sunset clause — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Show a brain diff in every PR — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Say what you took from the request — near T-0854 (done): A newcomer's first fm commands make sense: short --help, ta…
+- Wild: Develop Foreman under a pinned stable twin
+- Wild: Open the next session with a ten-second "what I'd fix first" pitch — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Wild: Let the user reject an idea once and have Foreman learn the whole category — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Run builders in an OS sandbox
+- Retire rules the model has outgrown — near T-0752 (done): Milestone: Learning, paid half — evals on block, bench hold…
+- Check new dependencies before they are installed — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Install Foreman's git hooks for hand-made commits — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Search all past work in one verb — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Detect prompt-cache breaks that Foreman causes — near T-0959 (done): Brainstorm and cost: keep a child's partial answer, a run m…
+- Resolve PR review threads automatically — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Report which features are never used — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Verify the installed plugin against its release — near T-0672 (done): Milestone: Features — Guard and safety
+- Scaffold a hook with a recorded fixture — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Use terminal-native alerts
+- Wild: Attach a phone to the pane by QR code — near T-0786 (done): fm page: the queue (and optionally a brainstorm catalogue) …
+- Wild: Sonify the session
+- Wild: Keep Foreman's own regression suite from user steers — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Make the Stop hook idempotent under re-entry — near T-0368 (done): fm and the hooks re-run under a supported Python when pytho…
+- Pin every task to one owner session with an expiring lease — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Write ledger appends with a torn-write check and self-heal on read — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Run a startup crash-loop detector per hook — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Make every test lock out the paid `claude` binary through one shared fixture — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Reconcile a stopped builder against git before offering resume — near T-0695 (done): Milestone: Intelligence — Steps and execution craft
+- Detect Bash env-prelude growth and dedupe it at write time
+- Give every child process a deadline and a process-group reaper
+- Wild: Run a nightly chaos soak that kills Foreman mid-task and demands a clean resume
+- Wild: Keep a "last known good" snapshot of state and roll back on a failed upgrade
+- Wild: Add a dead-man's switch that parks the queue when the user's Stop-hook stream goes quiet or loops
+- Verify each hook's stdin schema against the installed Claude Code version at doctor time — near T-0785 (done): fm doctor names the Foreman features the installed Claude C…
+- Make `.foreman/` a git-merge-aware brain with a custom merge driver — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Resume a builder by replaying its intent journal into a fresh worktree
+- Gate "learned" hints behind a replayable scenario that must go red→green — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Add `fm improve`: a weekly self-experiment with A/B holdout — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Let the user's corrections become rules the moment they say them — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Run a persistent supervisor that adopts orphan agents across sessions — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Pre-register a task's success test before building, then score the builder against it — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Publish a project's brain as a signed pack with trust levels — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Wild: Dream-time dojo that mutates past failures to find unprevented variants — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+- Wild: Foreman interviews the repo's git history on adoption and drafts the first brain — near T-0706 (done): Frontier 06 — Debugging intuition engine
+- Wild: Let two machines' Foremen negotiate a task split through a shared branch
+- Wild: Show a "ghost" of the previous attempt in the pane on resume
+- Prune Foreman's own rule set by deletion tasks driven by the A/B data — near T-0679 (done): Milestone: Features — Resilience, state and simplicity
+- Cache the resume scan as a per-worktree stat-keyed index
+- Make `fm ui` worktree listing incremental — near T-0884 (done): Snapshot uncommitted work before a Bash command discards it…
+- Budget the card selector by imports on the edit path — near T-0691 (done): Milestone: Intelligence — Planning and decomposition (1)
+- Lazy-load card bodies, keep only a trigger table in memory
+- Skip hint lookup when the error has no fingerprint — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Chunk the Agents graph layout so it recomputes only on topology change
+- Cap the brainstorm pack by tokens with a reused prefix — near T-0710 (done): Frontier 10 — Milestone work compiler and merge train
+- Collapse idea-history into clusters before feeding it back — near T-0684 (done): Milestone: Intelligence — Brainstorming and ideation
+- Wild: Pre-warm a worktree for the next queued task during the current close — near T-0705 (done): Frontier 05 — Ambient verification and test intelligence
+- Wild: Hot-reload the pane from a ledger tail instead of re-gathering — near T-0939 (done): Pane shows skill use: skills invoked, stack cards read, and…
+- Wild: Self-timed Foreman that demotes its own slowest hook rule — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Bound resume cost by a transcript-tail digest cap — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+
+## Deepened: self-improvement
+- Close the loop on learned fixes with a Fix Ledger (`fm fixes`) — near T-0703 (done): Frontier 03 — Model routing, effort and cache economics
+- Fingerprint obstacles so repeats are recognised by shape, not text — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Pre-empt known obstacles in a PreToolUse step, before the model tries anything
+- Ship fixes as a git-tracked `.foreman/fixes/` pack with provenance and a merge-friendly format — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Promote fixes up a ladder: hint, then rule or hook, then regression test — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Mine the transcript for corrections and repeated requests (`fm learn`) — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Rank Foreman's own roadmap by evidence (`fm next --why`) — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Measure improvement with an A/B holdout (`fm improve`) — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Show a visible improvement scoreboard in the pane — near T-0939 (done): Pane shows skill use: skills invoked, stack cards read, and…
+- Wild: Run a nightly dojo that replays recorded obstacles in throwaway worktrees — near T-0682 (done): Milestone: Features — Verification and product checking
+- Wild: Ship a public, signed fix exchange between Foreman installs
+- Wild: Let a fix fork per project dialect (the same error resolves differently in different repos)
+- Add a "why did this fix fire" receipt — near T-0674 (done): Milestone: Features — Observability, replay and trust
+
+## Deepened: resume
+- Resume the whole fleet with one verb (`fm resume --all`) — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Checkpoint builders to a hidden git ref on every step — near T-0722 (done): Close-out friction: audit prep reads a builder's branch; a …
+- Write a resume capsule: brief, plan, next step, failing proof — near T-0710 (done): Frontier 10 — Milestone work compiler and merge train
+- Offer resume at SessionStart and in the pane — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Make resume idempotent with a lease and heartbeat
+- Carry resume capsules and checkpoints across machines through git — near T-0686 (done): Milestone: Intelligence — Debugging and diagnosis
+- Learn why builders stop and pre-empt it — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Show resume cost before committing: tokens to catch up — near T-0693 (done): Milestone: Intelligence — Reasoning and thought process
+- Wild: Rewind a builder to any past step (time-travel resume)
+- Wild: Resume from another harness (cross-agent handoff) — near T-0675 (done): Milestone: Features — Orchestration, lanes and fleets
+- Wild: Self-healing fleet supervisor that auto-resumes overnight
+- Salvage and hand back partial results when resume is not worth it
+
+## Deepened: portability
+- Ship a git-native brain with a custom merge driver — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Split learned state into repo-scope and machine-scope with explicit promotion — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Add a hint provenance and trust ledger — near T-0672 (done): Milestone: Features — Guard and safety
+- Make resume state a committed handoff file per worktree — near T-0710 (done): Frontier 10 — Milestone work compiler and merge train
+- Export a hint pack as a shareable, versioned bundle — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Wild: Let a clone inherit the learned brain with one `git pull`, with a "what I learned since you were gone" digest
+- Run gates under an environment matrix, including "no claude on PATH" and the native install path — near T-0990 (done): fm and its hooks can't find claude when only the native ins…
+- Detect hint staleness against code drift — near T-1032 (done): Learn a fix once, apply it every time: when a session hits …
+- Wild: Make the hint corpus a cross-project commons with opt-in anonymised upstream sharing
+- Auto-translate hints to other harnesses (AGENTS.md, Codex, Gemini, Cursor rules) — near T-0263 (done): Handoff: diff tour, proof sections in fm pr, AGENTS.md expo…
+- Provide an eject and portability check that proves the repo works without Foreman — near T-0808 (done): fm check --affected works in Foreman's own project; lane br…
+- Wild: Replay a task from its recorded trail on a clone as a regression "flight recording" — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Add a hint-merge conflict preview in `fm doctor`
+
+## New ideas per lens
+- user value: 39
+- unspoken needs: 36
+- capability map: 44
+- reliability: 38
+- bold bets: 40
+- performance: 38
+
+## Coverage (ideas per category)
+- resume 24
+- self-improvement 22
+- portability 11
+- trust 6
+- delight 5
+- fleet 5
+- onboarding 4
+- user value 4
+- sharing 4
+- tokens 4
+- developer experience 4
+- simplicity 4
+- continuity 3
+- autonomy 3
+- privacy 3
+- observability 3
+- intake 3
+- cost 3
+- devices 3
+- guard 3
+- docs 3
+- state integrity 3
+- learning 3
+- pane 3
+- agents 3
+- security 3
+- pane cost 3
+- backlog 2
+- resilience 2
+- reliability 2
+- verification 2
+- learned fixes 2
+- test isolation 2
+- idempotence 2
+- evals 2
+- gate speed 2
+- planning 2
+- stability 2
+- ui 2
+- interop 2
+- concurrency 2
+- diagnostics 2
+- regression 2
+- scope 2
+- hook safety 2
+- resume speed 2
+- token cost 2
+- community 2
+- visibility 1
+- clarity 1
+- proof of progress 1
+- legibility 1
+- transfer 1
+- safety 1
+- ci loop 1
+- crash recovery 1
+- fleet liveness 1
+- loop safety 1
+- isolation 1
+- time travel 1
+- fault injection 1
+- self-measurement 1
+- orchestration 1
+- feedback 1
+- card lookup 1
+- worktrees 1
+- proof gate 1
+- metrics 1
+- traceability 1
+- ui verification 1
+- provenance 1
+- recovery 1
+- receipts 1
+- personalisation 1
+- preferences 1
+- injection 1
+- cards 1
+- extensibility 1
+- surfaces 1
+- accessibility 1
+- debugging 1
+- review 1
+- test safety 1
+- robustness 1
+- process hygiene 1
+- resources 1
+- environment 1
+- change safety 1
+- self-healing 1
+- unattended 1
+- time 1
+- collaboration 1
+- ecosystem 1
+- red-team 1
+- resume cost 1
+- hook latency 1
+- pane render 1
+- state io 1
+- context injection 1
+- pane latency 1
+- fan-out 1
+- scheduling 1
+- safety net 1
+- ui loop 1
+- ui quality 1
+- brainstorm 1
+- simplification 1
+- shared learning 1
+- dogfooding 1
+- initiative 1
+- taste 1
+- supply chain 1
+- memory 1
+- pr loop 1
+- integrity 1
+- idempotency 1
+- process control 1
+- chaos testing 1
+- upgrades 1
+- runaway control 1
+- compatibility 1
+- team 1
+- edit-time latency 1
+- memory/io 1
+- known fixes 1
+- latency hiding 1
+- self-tuning 1
+- obstacle matching 1
+- hooks 1
+- prioritisation 1
+- evaluation 1
+- handoff 1
+- hygiene 1
+- replay 1
+Thin (0-1 ideas): performance

@@ -1,0 +1,1109 @@
+# Ideas by round (deduplicated titles; details in the lens files; "near T-…" names a finished task that shares most of an idea's words)
+Ideas: 626 distinct (the bullets under Round, Deepened and Cross-bred; the tallies below are counts, not ideas)
+
+## Round 1
+- Preview the decisions a run will make alone
+- Re-scope a running task when the request is amended
+- Keep a personal glossary of the user's own words — near T-1549 (done): Round 3 (T-1520): Session and release care: the user's own …
+- Flag a new request that conflicts with an open task — near T-1662 (done): Capture refuses a near-duplicate naming the open task and f…
+- Show why each queued task is next — near T-1762 (done): fm code app action cards: a failure or a stall shows a card…
+- Pin a task so auto-decisions can't change its scope — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Give one quiet-hours setting that silences every surface
+- Write a plain-English status note for people outside the repo
+- Turn a deadline phrase into queue order
+- Wild: a thermal receipt printer on the desk
+- Wild: a bet slip for the user's hunches
+- Wild: an ask jar that Foreman draws from when idle
+- Confirm a red CI alarm against the newest run before it pages
+- Re-plan the remaining steps from each step's measured result — near T-0717 (done): Cheap reader (T-0702 measurement): 30 days = ~10.9M Bash-re…
+- Show before and after cost for every change that touches spend
+- Wake a deferred item when its trigger fires
+- Close the loop on every brainstormed idea's fate — near T-1150 (done): Forever loop round 2: brainstorm past everything shipped th…
+- Mirror the user's own vocabulary in receipts
+- Pace spend to the hours the user actually types
+- Keep a worry list of the three riskiest queued items
+- Show what the user's recent messages already decided in each new pack
+- Warn when the installed fm lags the repo the user last approved — near T-0191 (done): fm doctor warns when the installed foreman-ui lags this repo
+- Name the elegant part of each diff — near T-0723 (done): Audit diff economy (T-0717: reviewers read 3.2M tokens of .…
+- Type the user's request as the working line — near T-0889 (done): Fm why FILE:LINE quotes the user's original request from th…
+- Explain each pane glyph on focus — near T-0681 (done): Milestone: Features — UI and motion
+- Mark each hundredth green gate with a flourish
+- Ship one glyph set for pane and web
+- Sail a ship across the pane as the queue drains
+- Read a run as a chess game
+- Greet an old file with its first commit message — near T-0767 (done): Recreating a dropped task keeps its diff: fm task new --red…
+- Pin a postcard of each release's best fix in the docs
+- Offer one unanswered TODO as a daily riddle
+- Let the close sign off in the user's own tone
+- Show a faint pulse on the pane border when a proof lands
+- Check every command through the installed plugin, not just the CLI — near T-1388 (done): A coding CLI that fm code runs only reads Foreman's state: …
+- Show which changed lines each proof actually executes
+- Scan staged diffs for secrets before any commit or push
+- Check new dependencies for licence and advisories before close
+- Preview every file an install or update will write — near T-1412 (done): fm lib source add or update killed at any step leaves the p…
+- Ship a pre-commit framework hook
+- Compute DORA numbers from closed tasks
+- Version each doc page with the release that shipped its command
+- Let a teammate see every lane on one read-only page
+- Answer questions about a diff with no run open — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Narrate a repo's history as a nature documentary, one module per species
+- Seal a time capsule of the repo's state, opened at the next release
+- Probe the host's spend cap before using Foreman's own counter
+- Batch overnight brainstorm lenses through the Message Batches API
+- Cascade each brainstorm round: a cheap draft, a strong judge on the top five
+- Replace the custom hook timer with hyperfine
+- Make the plugin the only surface, enforced by a parity test — near T-1520 (done): CC plugin parity: every user-facing fm verb is reachable fr…
+- Turn blocked items into predicates that unblock themselves
+- Keep state in SQLite WAL instead of per-file JSON with hand-made locks
+- Hand host-level refusals to Claude Code permissions and keep only the guard's exceptions
+- Pin the plugin to a tested Claude Code range and refuse to run outside it — near T-0936 (done): Guard: a pinned plugin yes refuses 'claude plugin update' w…
+- Pair each brainstorm lens with a rival that attacks its top idea before filing
+- Run the queue inside the interactive session through a slash command, with zero child processes
+- Store the queue on an orphan git ref that syncs with push
+- Fence the gate lock with a token — near T-1753 (done): Gate lock: a full fm check waits at most 15 minutes for ano…
+- Identify lock holders by PID and process start time
+- Run each gate against a frozen snapshot of the tree
+- Judge stalls by transcript growth, not elapsed time
+- Give every run a global retry budget
+- Probe every hook at install and fail loudly without a journal line — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Inject write failures at the file seam in the test suite
+- Tag each test with the environment it needs and refuse to run it elsewhere
+- Use a monotonic clock for every deadline in the state machine
+- Wild: write a last-words note from every dying run
+- Wild: keep a crash corpus that every release must survive
+- Wild: skew the wall clock mid-run in a chaos test
+- Delete the usage-limit retry watchdog and let `fm run --wait` handle limits
+- Use one argument grammar for every verb, with flags declared once
+- Make `fm done` the one closing verb, with prove and finish as its steps — near T-0913 (done): foreman-ui closing moment: when a task closes the hero show…
+- Drop the experimental macOS job from the path that can cancel main's tests
+- Replace the 10-minute detached sweep with checks on the commit that needs them
+- Keep one rendering model for the stage rail and band across web, pane and desk
+- Offer a two-rule mode: no edit without a failing test, no close without a passing one
+- Drop the terminal pane and let scrollback carry the state
+- Make a git commit subject a queue entry
+- Run the plugin parity matrix in CI — near T-1520 (done): CC plugin parity: every user-facing fm verb is reachable fr…
+- Drop per-command hooks for a transcript-tailing observer
+- Synthetic user persona files complaints nightly
+- Infer the gates from CI workflow files on `fm init`
+- Machine-wide spend ledger across every project
+- Ship a stable and canary plugin channel
+- Let teams share a gate cache keyed by tree hash
+- Expose Foreman as an embeddable verb API for other plugins
+- Learn quiet hours from when the user types
+- Blame each proof to the request that earned it
+- Make `fm doctor` a single pass/fail with the budget as one failing check — near T-1569 (done): Playbooks index over its 10,000-char budget: doctor's footp…
+- Acknowledge every keypress within 100 ms
+- Set one type scale and baseline grid for every surface
+- Use a fixed-metric code font with no ligatures in diffs
+- Dim every lane except the one that just moved
+- Stack the queue as a newspaper front page with the run that needs you as the lead story
+- Make the phone layout thumb-first
+- Make the History and Today charts zoom from day to hour to run — near T-1012 (done): Pane: History takes only the rows it fills; spare rows go t…
+- Draw each closed task as a bookshelf spine whose thickness is its diff size
+- Give the pane's stalled-run card a haptic-style pulse on phones, distinct from done
+- Show a glyph cursor that walks to the file being edited
+- Dim the pane after a minute with no input and no events
+- Import only the hook module each verdict needs
+- Start hook interpreters with `-S -I` and a frozen bytecode bundle
+- Memoize guard verdicts by command hash and rules hash
+- Shard the test suite by measured duration, longest first
+- Read the journal tail by seeking from the end
+- Cache backlog parses by inode, size and mtime_ns
+- Invalidate doctor probes with inotify, not by re-running them
+- Paint the terminal UI from the last snapshot before the journal loads
+- Push web UI state over server-sent events instead of polling
+- Wild: let systemd socket-activate the hook daemon
+- Wild: load the hook bytecode from a tmpfs image at login
+- Wild: skip the rules scan when a command matches a learned safe shape
+- Wild: run a hook's second check only when the first one passes — near T-1378 (done): Queueing a multi-request prompt fits every request in the h…
+- Quarantine model-written playbooks until a second run confirms them
+- Hold any command whose text first appeared in untrusted input
+- Keep a repo's rules file untrusted until its bytes are approved
+- Stop the local text door and queue socket trusting any local process
+- Redact secret values at read time, keeping their shape
+- Scan every outbound payload for secrets before it leaves
+- Sign a queue's command manifest and halt when an unattended run leaves it
+- Stop every run, lock and lease with one panic command — near T-1453 (done): Stop hook still judges the turn when the project lock is bu…
+- Refuse to run when PATH has a writable directory ahead of system bins
+- Refuse symlinked or hardlinked state files — near T-1685 (done): fm lane rm discards a lane's own guard script cache (state/…
+- Pin dependency versions to a seven-day cooldown before a lane installs them
+- Wild: a standing adversary writes a new injection attempt every night
+- Wild: a nightly tree seal that lists every change made outside a run
+- Wild: the guard judges the command, not the reason the model gives for it
+- Exclude generated, lock and vendored files from reads by default
+- Time turns to the prompt-cache window — near T-0959 (done): Brainstorm and cost: keep a child's partial answer, a run m…
+- Evict file reads that a later edit has made stale — near T-0876 (done): Evidence runs never read a .pyc older than its source (a sa…
+- Show the retry tax per task
+- Slice the rules file to each task's kind — near T-0894 (done): Guard rule ids name the file kind of a path-only refusal (b…
+- Batch small sequential reads into one call — near T-1104 (done): Edit-time notes from a subagent's tool calls (the batch and…
+- Keep a file summary card keyed by content hash
+- Sort context so identical prefixes line up across tasks
+- Paint the repo map by read cost — near T-1653 (done): The repo as a 3D city: one-file page from fm map data with …
+- Let the model write a do-not-read list that later packs honour
+- Sync pack hashes across machines so a second laptop sends only the diff
+- Forecast the blocked pile's expiry dates
+- Warn on version skew before the first write — near T-0694 (done): Milestone: Intelligence — Research and knowledge
+- Gate the plugin install path, not only the checkout — near T-0990 (done): fm and its hooks can't find claude when only the native ins…
+- Route CI jobs by the paths a push touched
+- Classify CI cancellations by cause and rerun the timeouts
+- Show the fixed overhead per run and what it costs at fan-out
+- Flag file-set overlap between queued tasks before they run
+- Publish a dated list of what will break next — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Put an expiry on every feature unless the duel earns it
+- Replay the hook timing budget across the weekly reset
+- Wild: play the next four weeks forward before choosing the queue
+- Wild: a tripwire that compares this run's first steps to failed runs' first steps — near T-0821 (done): Round-1 review fixes (low): outward-tool gate fails closed,…
+- Wild: a pre-mortem written by the run, read before it edits
+- Fail the gate when a CLI verb has no plugin twin
+- Run the plugin's bundled `fm`, not a PATH install — near T-1264 (done): Foreman in one CLAUDE.md for people who won't install the p…
+- Refuse to run a plugin paired with a CLI from another release — near T-1388 (done): A coding CLI that fm code runs only reads Foreman's state: …
+- Run a parity smoke check after `/plugin update`
+- Ship the statusLine from the plugin so the glance line works without the mod
+- Wild: `/foreman` answers in chat with the stage rail as a card
+- Wild: attach to a terminal-started run from a plugin slash command
+- Give headless `claude -p` the plugin's commands as plain prompts
+- Fall back cleanly when a Claude Code version lacks a hook event
+- Keep backlog and journal outside the plugin cache — near T-0883 (done): Guard tests keep their temp folder outside /tmp when ~/.cac…
+- Read the user's timezone for plugin-side deferrals
+- Wild: a read-only plugin mirror of the journal that survives a broken install
+
+## Round 2
+- Autocomplete the next request from the user's accepted asks
+- Close the tasks your own commits already finished — near T-0129 (done): fm task finish --commit: commit the task's own files only a…
+- Answer a blocked question from chat, not only from `fm answer` — near T-1770 (done): Fm code app: a question typed during a run is answered read…
+- Say what this request will not touch
+- Time-box a request by wall clock, not only by cost
+- Turn a bug screenshot into a failing test — near T-1315 (done): fm code tui widget firewall: a user extension's panel, comm…
+- Pre-answer the question a reader will ask next
+- Mulligan: redo a finished request with one word changed
+- Rate each close with one key, and let ratings set the next receipt
+- Pilot-style callouts: one line per decision as it happens
+- Teach at close: one concept sized to what the user has asked about
+- Show the cheapest route to the user's last-accepted outcome
+- Track every promise Foreman makes
+- Start a redo from the reason it was dropped — near T-0767 (done): Recreating a dropped task keeps its diff: fm task new --red…
+- Give every receipt an egress line
+- Put the blast radius on every receipt in plain words
+- Show a since-you-looked digest per surface — near T-0187 (done): Self-improvement scoreboard: the friction digest rechecks e…
+- Print the one command that undoes each change — near T-0248 (done): Diff tour — fm tour ID prints the task's changed files in d…
+- Show disagreement between reviewers instead of averaging it
+- Route the next change to a file the user objected to through a stricter gate
+- Give each change a sixty-second manual check
+- Keep a regression test for every behaviour the user praised — near T-0712 (done): Frontier 12 — Self-improvement flywheel
+- Wild: write a correction's sentence into the test's name
+- Wild: a habit mirror that reports one of the user's habits per week
+- Wild: have a cheap model read the receipt as the user and flag the line they'd skim past
+- Colour each task id from its slug
+- Peek a task in place with space
+- Let removed lines fall and added lines rise when a fix lands
+- Fold the close receipt into a paper crane on a pass
+- Typewriter-reveal the close receipt at reading pace
+- Pin your favourite verbs to the top of help
+- Give each touched file a three-line tour from its last diff
+- Hide two easter-egg verbs that print one line each
+- Draw the repo as a city of modules — near T-1653 (done): The repo as a 3D city: one-file page from fm map data with …
+- Sketch the diff in ink that firms up as tests pass
+- Back up and restore all Foreman state in one archive — near T-0928 (done): Round-7 review LOWs: fm complete skips sync; tidy backs up …
+- Roll a plugin upgrade back to the last working copy
+- Encrypt journals and receipts at rest with a machine-local key
+- Expire journals and receipts after a set age, per project
+- Pin the toolchain in a devcontainer that CI also runs in — near T-1407 (done): Toolchain activation: before workers and checks, fm code ac…
+- Give each gate a timeout learned from its own history — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Answer "how do I" from the shipped docs, offline
+- Print a one-page field manual per release, built from the verb table
+- Show gate failures as diagnostics at the failing line in the editor
+- Wild: ghost-type the next likely fm command in the prompt
+- Wild: pair mode that watches a terminal and suggests, never acts
+- Wild: a field manual test by a cold reader
+- Wild: a weekly plain-language health note for people outside the repo
+- Stop CI cancelling main's own runs — near T-0820 (done): Round-1 review fixes (medium): auto-evidence honours failur…
+- Make one `make ci` target the only gate entry, local and CI — near T-0991 (done): Gate failures: two tests fake 'no claude' with PATH alone (…
+- Run the browser tests on Playwright's pinned headless shell, not the system chromium
+- Gate the gate lock with flat combining — near T-1753 (done): Gate lock: a full fm check waits at most 15 minutes for ano…
+- Write the crash-hygiene fake git as a Python script run with `-I` — near T-1807 (done): Crash-hygiene tests fake git with a script: Ubuntu 26's cop…
+- Budget hooks by instructions retired, not wall-clock p95
+- Mirror blocked items to GitHub Issues with a needs-you label
+- Delete `fm quiet` and use a plain shell redirect
+- Drive the usage governor with a PID controller
+- Generate the CLI from the skill files, with the skills as the source — near T-0945 (done): fm lib source: index third-party skill repos read-only (rea…
+- Fire each deferral exactly once with a fired-token ledger
+- Escalate SIGTERM to SIGKILL on a timed ladder and journal the rung that worked
+- Auto-disable a hook that blows its budget twice, and say so in the glance line
+- Shed optional checks under memory or CPU pressure using PSI
+- Buffer proofs in memory when the journal disk is full, then flush on recovery
+- Publish a per-command reliability SLO from the journal and alert on budget burn
+- Roll back to the last working Foreman install when the new one fails its first gates
+- Fire a weekly fire drill that kills one lane and times the recovery
+- Enumerate crash points automatically and kill at each one in CI
+- Keep the last known-good state snapshot and restore it when a run leaves a bad one
+- Wild: run every gate on two simulated machines with different CPU counts and fail when verdicts disagree
+- Wild: a standby Foreman that takes over a run only when the primary's heartbeat stops and the journal shows no progress
+- Wild: a dead-man's pager that sends a local notification when a run goes silent for 20 minutes
+- Use the host's task list for single-session work — near T-1097 (done): fm ui crashes when the newest sessions/*.json is a subagent…
+- Print every fm error as one sentence and one runnable command
+- Show where each effective setting came from, one line each — near T-1359 (done): fm code config: every effective fm code setting with its so…
+- Make the verb-and-flag count a budget every change must pay for
+- Keep only the hook events Claude Code documents as stable
+- Write the journal as plain lines that cat and grep can read
+- Count the human decisions per closed task and file a bug above three
+- Stop a rules-file line when it reads longer than one sentence
+- Keep the first-run path to one question and one plan — near T-1408 (done): fm code's write and edit keep a file's line endings and ref…
+- Wild: print the whole product on one index card and fail the build if it overflows
+- Wild: show the status as one number with one unit
+- Wild: a reading-level gate for the rules file — near T-1623 (done): Five-rule UI contract gate for UI playbooks, a playbook cov…
+- Earn write access one directory at a time
+- Teach the user to predict the failing test — near T-1639 (done): fm flow FILE: a user journey (goto, click, type, expect) ru…
+- Obituary for every deleted feature
+- Let the repo post its own job ad
+- Run the whole queue in a browser tab — near T-0108 (done): foreman-ui 0.4.0: mascot, whole-queue progress, size words,…
+- Make the pack a manifest that the model pulls from — near T-0959 (done): Brainstorm and cost: keep a child's partial answer, a run m…
+- Encrypt the journal at rest with an OS-keychain key
+- Let a fresh clone inherit Foreman's memory
+- Write a living "how this repo runs" page — near T-0821 (done): Round-1 review fixes (low): outward-tool gate fails closed,…
+- Pool the usage budget across a team's machines
+- Replace confirm dialogs with a five-second undo bar
+- Collapse unchanged diff context into expandable chips
+- Freeze the user's text selection while the pane repaints
+- Show progress as a bar with its own error range
+- Keep the last good view on screen when the web UI loses its feed
+- Fix the light/dark flash on first paint — near T-1244 (done): The landing page applies the stored theme in its head, as t…
+- Add a text-only mode for slow links — near T-1489 (done): UI playbook: type and colour
+- Peek a task's last proof on hover or long-press
+- Mirror the stage rail and diff for right-to-left text
+- Deal each task a playing card by its kind
+- Let picked tasks swim to the front of a fish-tank queue
+- Fill a tide line in the web header as tasks close
+- Split the read verbs from the run verbs
+- Make `fm map` incremental by directory mtime
+- Stream each brainstorm child into the ledger as it finishes — near T-0227 (done): fm budget: one spend ledger and caps for every child run an…
+- Pin the hook bench to one isolated core
+- Build the git test fixture once per session and copy it with reflinks
+- Run doctor's probes in parallel under one shared deadline
+- Pre-render the Today and History charts as static SVG at build time
+- Print a per-phase breakdown on every slow run's receipt
+- Send model calls over a warm HTTP/2 connection
+- Wild: time every hook call from outside with an eBPF probe
+- Wild: mmap the rules file as a fixed table the guard reads without parsing
+- Wild: compress cold journals with a zstd dictionary trained on Foreman's own events
+- Scrub invisible and bidi control characters from packs and task text
+- Give model subprocesses an environment allowlist, not an inherited one
+- Escalate any diff that touches CI, hooks, installers or lockfiles to a review card
+- Refuse commands assembled at runtime
+- Ask once before a new runner receives the repo
+- Cap deletions per run and require a fresh approval beyond the cap
+- Ratchet the refusal corpus so it can only grow — near T-1517 (done): Brainstorm T-1479 round 2 (cluster 22): safety ratchet: an …
+- Keep flagged injection text in a read-only quarantine folder
+- Replay refused commands into a sealed honeypot — near T-1401 (done): Unattended fm code and fm release --push refuse on a stale …
+- Publish a public ledger of reported guard bypasses — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Route each brainstorm lens to the cheapest model that held its quality — near T-0487 (done): Route work to the cheapest model (C090, value 3/5, effort M…
+- Set reasoning effort per lens from its measured yield — near T-0689 (done): Milestone: Intelligence — Learning from outcomes
+- Rerun only the lenses whose input sections changed
+- Filter the user's words per lens by tag
+- Give children a 1 KB map digest instead of the full repo map
+- Build the brainstorm slate with a script, not a model — near T-1722 (done): Check: fmsettings.in_claude_code() can be fooled by a model…
+- Two-tier children: one-line ideas first, bodies for the top five
+- Record cost per accepted idea on each round's scorecard
+- Compact only between lens batches, never mid-fan-out
+- Wild: write all six lenses in one call so the pack is billed once
+- Wild: let a child cite a ledger ID instead of rewriting a repeat
+- Wild: stop each lens when its next idea costs more than its last accepted one
+- Group blocked items by the one action that frees them
+- Pre-flight a request's checks against the current tree before filing
+- Serialize queued tasks by symbol, not by file
+- Refuse a queue that cannot finish before the next usage reset
+- Name what the proof did not cover, on the same receipt line
+- Reserve recovery budget in each lane before the next task starts
+- Write a degraded plan per task for a mid-run model downgrade
+- Start the longest CI job first when runners are scarce
+- Let a queued item argue its own case a week later
+- Hold a cold-start drill each morning
+- Leave the next risk in every commit body
+- Diff both surfaces' journals on one fixture
+- Print the entry point on every receipt — near T-0044 (done): Fm map and fm impact — a per-project map (gates, layout, en…
+- Give each intentional parity gap an owner, a reason and an expiry
+- Negotiate features at handshake instead of comparing versions
+- Share one settings resolver between plugin and CLI
+- Complete `/foreman` arguments from live backlog and verb data — near T-0924 (done): Shell completion: fm complete prints verbs and live task id…
+- Report install health for both halves from chat
+- Wild: run one request through plugin, CLI and headless nightly and publish the three answers side by side
+- Run in a prompt-only mode when no shell can run the CLI — near T-0284 (done): Adversary lens follows untrusted text to its sinks (termina…
+- Wild: read last month's journals with today's plugin and list every field it can no longer read
+- Wild: a split-screen recording of the same request in plugin and terminal, for the docs
+
+## Round 3
+- Strike a line from a request before it runs — near T-1741 (done): fm code TUI: navigation (/ search, context key hints, Tab f…
+- Re-ask an answer whose code has since changed — near T-1077 (done): Stale plan sweep: queued briefs whose files or premises cha…
+- Let a steer note reach the next step — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Show the approach the run rejected, one key to take it
+- Cap interruptions per hour and park the rest
+- Import TODO and FIXME comments as tasks in one pass
+- Un-defer an item from the morning list with one key
+- Post a dollar bounty on a stubborn bug
+- Pick between two passing fixes by taste — near T-0280 (done): Bench family: judged cases, plugin duels, version replays, …
+- Let a teammate steer one run through a link
+- Expand "etc." into the siblings it implies, and list them before the first write
+- Escalate a request the user has sent twice to the top of the queue
+- Mark a finding settled so later sweeps stop re-filing it
+- Answer "did I already decide this?" from the user's own past words — near T-0688 (done): Milestone: Intelligence — Judgment, taste and decisions
+- Ship a cheap first slice of every large request, with the rest queued behind it
+- Give each queue a departure card before the user walks away
+- Wild: a one-key nod that banks the last result as a standing pattern
+- Wild: a question coin wallet with three coins a week
+- Wild: a Monday rehearsal that replays the user's last ten requests in a sandbox
+- Show the shorter command after a slow repeat — near T-0262 (done): Smarter nudges: already-covered requests, decision revisit …
+- Pin a receipt as a bookmark ribbon
+- Dim the unchanged numbers on each receipt
+- Give undo a calm rewind glyph, never a red alarm
+- Settle gauges with one spring overshoot on a pass
+- Give each task kind a fleuron on its receipt
+- Leave a sticky note with one tidy thing when idle
+- Draw the run's elapsed time as a sundial
+- Turn the work bar into cassette reels
+- Break a tie between equal backlog items with a dice roll
+- Write a day's closing acrostic from the closed task slugs — near T-0685 (done): Milestone: Intelligence — Cognitive architecture and wild b…
+- Rebase a finished lane onto moved main and re-prove it
+- Ship risky changes behind a flag and file the flag's removal as a task
+- Emit a CycloneDX SBOM with every release
+- Gate container builds and fail on critical image CVEs
+- Open a task from a production alert, with a failing reproducer first — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Ratchet test coverage on changed lines only — near T-1452 (done): Brief refusal of a CHANGELOG edit says where the line goes
+- Give each web-facing lane a preview URL in its receipt
+- Review infrastructure plans before apply — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Fix a known advisory on a locked dependency as its own lane
+- Gate mobile screens on approved emulator screenshots
+- Run axe on every changed page before close — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Wild: a rival lane that pins the worst transitive version and checks whether the suite notices
+- Wild: a shadow release a stranger can try from a link and report back on
+- Wild: a dependency pet that files its own patch lane when its package goes unmaintained
+- Run lenses and reviewers as native subagents — near T-1181 (done): At SubagentStop for an fm-reviewer, parse its `## lens: ...…
+- Hand budget ceilings to the host's own limits
+- Plan under the host's read-only mode, then switch to edit
+- Loop a failing gate back to the model in a capped Stop hook
+- Read one feature-flag file that both surfaces honour — near T-1510 (done): Brainstorm T-1479 round 2 (cluster 15): fm code config get/…
+- Rehearse queued branches on a throwaway merge before running them
+- Schedule the queue by make-style staleness
+- Draft plans cheap, let a strong critic review only the risky steps — near T-0676 (done): Milestone: Features — Performance and cost
+- Guard pushes with a server-side pre-receive check
+- Wild: evolve the hook scripts with a genetic search scored on the bench
+- Wild: barbell the week into cheap bulk tasks and one costly bet
+- Wild: compile tasks like source, with gates as type checks
+- Reap orphaned children from a process registry — near T-1094 (done): Fmbench.py:259-267` already kills the process group on time…
+- Fail a gate that runs zero tests — near T-1678 (done): A slow gate's one failure in a load spike opens an urgent b…
+- Shuffle test order per run and log the seed — near T-0683 (done): Milestone: Intelligence — Agent types and roles
+- Refuse a gate that disagrees with itself — near T-0821 (done): Round-1 review fixes (low): outward-tool gate fails closed,…
+- Run each gate with a private HOME, TMPDIR and an allowlisted environment
+- Check for leaked descriptors, children and lease files at run end
+- Frame each journal line with a length and CRC
+- Apply backpressure from the journal writer to its lanes
+- Make SIGHUP and SIGINT checkpoint before exit
+- Pin one exit-code table for every verb and test it
+- Wild: hold a shutdown inhibitor until the checkpoint lands
+- Wild: hardlink-snapshot the state directory before each risky verb
+- Wild: power-cycle a VM at random points during a queue
+- Retune the rules file when the model changes — near T-1810 (done): Session start sweeps for problems nobody raised: CI on main…
+- A/B two rules-file variants across real queued tasks — near T-0713 (done): Frontier 13 — Intent, planning and change skills
+- Run each lane in a microVM with a network allowlist
+- Ship Foreman through its own queue — near T-1150 (done): Forever loop round 2: brainstorm past everything shipped th…
+- Wild: a CI referee for disputed gates
+- Wild: a bounty board for TODOs
+- Turn a plain sentence into a guard rule, previewed on real history
+- Wild: an energy receipt in watt-hours
+- Wild: a repro bug filed against any gate that lied
+- Delay loading feedback 300 ms so fast reads never flicker
+- Damp the finish estimate so the number never jumps backwards
+- Move queue reorders with FLIP so a moved task slides to its new row
+- Glide one focus indicator between controls instead of snapping per element
+- Honour forced-colors mode so status shapes survive high contrast
+- Let one element animate at a time on each screen
+- Tune hover intent so tooltips don't fire while the pointer crosses
+- Snap the pane's width to its nearest stop on release
+- Animate chart data changes but never the axes
+- Wild: let closed tasks gather dust that wipes away when you open them
+- Wild: paint each day's History background as deterministic marbled ink
+- Wild: draw the status glyphs from the user's own pen strokes
+- Serve git status from fsmonitor and the untracked cache
+- Read git objects through one long-lived `cat-file --batch` process
+- Cache the statusLine output for one second — near T-0941 (done): Stack cards for building Claude Code extensions (plugins, h…
+- Wake gate-lock waiters from a kernel event, not a sleep loop
+- Start the longest brainstorm lens first
+- Print the first line of `fm status` before the probes finish — near T-0682 (done): Milestone: Features — Verification and product checking
+- Coalesce background wakeups onto one timer wheel
+- Precompress and hash-name the site's assets
+- Yield checks to keystrokes with ionice and a cgroup weight
+- Wild: prefetch the next queued task's files into the page cache
+- Wild: autotune the hook's interpreter flags at install
+- Wild: warm the prompt cache when the user focuses the prompt box
+- Tripwire writes to persistence paths — near T-0288 (done): SECURITY: fm export agents --out (T-0263) writes any path, …
+- Deny reads of credential stores, not just writes
+- Plant canary credentials in every run's environment — near T-1224 (done): Guard: stop credential reads, environment exfiltration and …
+- Mint push credentials per run, scoped to `fm/*` branches
+- Flag fixes that hardcode a test's literal — near T-0747 (done): Debug-scaffolding scan flags string literals that name debu…
+- Check new package names against typosquat lists before a lane installs
+- Turn a leaked secret into a rotation task
+- Require a human-typed nonce for destructive verbs
+- Make the journal one-way: surfaces read it, only the CLI writes
+- Sign a scope contract at queue time — near T-0677 (done): Milestone: Features — Planning, briefs and queue
+- Redirect a suspicious run into a decoy copy
+- Wild: a tripwire for model confidence without a proof
+- Price output tokens at their real rate when planning fan-out
+- Pack the context to a token budget by value per token
+- Skip the model call when the tree and failure are unchanged
+- Step down through a brownout ladder before the spend cap
+- Cap each child's output from its lens's measured p90 length
+- Send session start only the backlog rows that changed — near T-1810 (done): Session start sweeps for problems nobody raised: CI on main…
+- Compact an idle session on a timer so the next turn starts small — near T-0145 (done): UI changes reach the running session during a drive: the St…
+- Wild: keep the prompt cache warm with a tiny timed ping
+- Wild: trailer every commit with tokens spent per changed line
+- Wild: run one week on a half-size pack as a context diet
+- Warm the first post-reset run from a pre-compacted context
+- Price each rules-file line in dollars per week
+- Rehearse the gate on the runner image before it rolls — near T-0133 (done): Agents feel slow: parallel test runner for the gate, measur…
+- Stop the suite before it hits the CI cap
+- Warn when a pinned action's runtime is due for removal
+- Show a blocked item once per change in its unblock predicate
+- Wild: price every announced model before it ships
+- Wild: a seven-day tide table of spend, printed at session start
+- Wild: a red-streak forecast before each push
+- Wild: a reliability diagram of Foreman's own forecasts
+- Read hook timeouts from the plugin manifest in the CLI too — near T-1429 (done): Supply check tests: a hook command swapped in place (same e…
+- Replay captured Claude Code hook payloads into the CLI guard — near T-0340 (done): Guard: protect the hook config Foreman wires into Codex, Ge…
+- Ship a shared guard verdict corpus both surfaces must pass
+- Show the permission mode each surface assumes, and flag a mismatch
+- Stamp each run with the surface that started it
+- Let a plugin-only install complete a first task with no CLI on PATH
+- Publish a feature-availability table from live probes
+- Show a parity line in the status line when the surfaces disagree on the current task
+- Wild: a parity duet where the two surfaces argue a request before it runs
+- Wild: drive both surfaces from one recorded keystroke script and diff the frames
+- Wild: a parity badge in the README, computed nightly from the matrix
+
+## Round 4
+- Propagate one correction to every open item it touches
+- Retire blocked items that a newer request has overtaken
+- Flag contradictions in the user's own standing instructions — near T-0438 (done): Capture flags a re-ask of dropped work and a veto contradic…
+- Stop re-proposing a default the user has overridden twice
+- Mute a path's chatter until the user unmutes it
+- Wild: the receipt you can argue with
+- Wild: a whiteboard photo becomes a task graph
+- Wild: answer a question by pointing at a line — near T-1398 (done): fm code slot integrity: elided code in an edit or write is …
+- Wild: a second pane that shows what the user would say next
+- Turn each dropped result into a failing test the redo must turn green
+- Scope each outward grant to its commit and expire it
+- Pin the evidence the user pasted with a dropped request — near T-0726 (done): Fm capture prints 'Dropped before: T-0260 (Evidence quality…
+- Read "go" back in one line, then start after three seconds unless the user types a word
+- Hold the dropped area untouched until its redo lands
+- Make a redo's receipt answer the user's last question first
+- Show a redo's diff against the dropped attempt, not against main
+- Write a redo's commit message in the user's own words from the drop — near T-0696 (done): Milestone: Intelligence — Understanding the request and the…
+- Learn the user's own stop word and map it to a control, once confirmed
+- At each usage reset, rerun every dropped task's failing test and list the still-red ones in one line
+- Open a new repo with one card that names a fact only its code shows — near T-1521 (done): Fm lib show accepts a card name with its group prefix (web/…
+- Keep the half-typed request when fm restarts — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Say durations the way a person would ("a little under four minutes")
+- Wrap receipts with a hanging indent at the pane's width
+- Open a failed gate by saying what passed — near T-1678 (done): A slow gate's one failure in a load spike opens an urgent b…
+- Credit the test that caught the bug, by name, on its receipt
+- Postmark each receipt with the commit's local time and zone
+- Flick a backlog row to throw it into the next run
+- Nudge a run stalled for ten minutes with one question it has not asked itself
+- Fill the empty queue with a single line about the last thing you finished
+- Wild: let the pane's cursor blink in the rhythm of the model's typing speed
+- Wild: have the close line change with the shape of the day — near T-0697 (done): Milestone: Intelligence — Verification reasoning
+- Land a lane as a clean commit series — near T-1731 (done): Lane and close friction: finish --commit and shared files, …
+- Resolve merge conflicts as a proven task — near T-0446 (done): Merge train and conflict resolution (C015, value 4/5, effor…
+- Prune merged and abandoned lane branches and worktrees — near T-1071 (done): Night gardening: fm night composts merged or abandoned work…
+- Hunk-level approval before an edit lands
+- Triage incoming GitHub issues with duplicate detection
+- Record gate network traffic as tapes for offline reruns
+- Profile a slow gate and name the hottest function
+- Generate PII-free fixtures from the production schema
+- Smoke-test installers on each OS in a VM
+- Socratic review card: one "why" per hunk
+- Settle merge conflicts by asking the user three intent questions
+- Give each directory a passport of proof stamps
+- Serialize merges through GitHub's merge queue instead of cancelling runs
+- Trace each gate's real inputs and cache on them
+- Hermetic gates under a content-addressed action cache
+- Count pack tokens with the count-tokens endpoint, not a character guess
+- Run the failing CI job locally with `act` before pushing
+- Let Renovate file dependency lanes with the proof attached
+- Vendor Foreman into each repo as a pinned git subtree
+- Give `/compact` a Foreman-written focus string
+- Wild: bisect the pack to find the section that causes repeat ideas
+- Wild: file each lens as a branch and merge the slate with git
+- Wild: an exquisite-corpse round where each lens sees only the last idea before it
+- Cluster red gates into one incident by failure fingerprint
+- Reconcile backlog against journal at session start and list the drift
+- Refuse to file a close receipt when the journal has a sequence gap
+- Freeze writes with one key and keep reads live — near T-1573 (done): fm code app: live preview and revert-in-10-seconds for sett…
+- Run a weekly restore drill of the newest backup into a scratch directory
+- Judge hung children by CPU and open descriptors, not only transcript growth
+- Stamp each state file with a generation number that readers compare
+- Truncated model replies resume from their last complete step
+- Wild: a failure museum that reruns old failures nightly and marks which still happen
+- Wild: a forecast that warns before the queue fails, from the trend of retries and timeouts
+- Wild: a shadow state twin that replays every write and halts the queue on divergence
+- Delete every tunable no run has ever changed
+- Ratchet files over 300 lines so they can only shrink
+- Cap the journal at ten event types, enforced by a test
+- Give every verb in `fm help` one example that a test runs — near T-1686 (done): Test_help: two verbs may share a help-tier position (motion…
+- Invert the guard from a denylist to a twenty-entry allowlist
+- Make every verb read its arguments and nothing else — near T-0401 (done): Drive: while background work runs, name a concrete queued t…
+- Cap the state directory at five top-level files
+- Cut the pane to three panels: work, stage, history
+- Wild: drop the journal and let `git log` be the audit trail
+- Wild: write settings as one plain sentence in the README
+- Wild: a repo opts out of every hook with one empty file
+- Quarantine memory writes that carry instructions
+- Plant a decoy memory and flag any run that acts on it
+- Hand a half-finished run to a second provider with a state capsule
+- Turn a rejected race candidate into the next task's failing test — near T-0680 (done): Milestone: Features — Self-improvement and learning
+- Judge the duel on a public corpus of real repos, nightly
+- Rewrite a request with no checkable outcome before it queues
+- Blind the context to the diff and the failing output — near T-0701 (done): Frontier 01 — Zero-token instrument layer
+- Start the close receipt before the last gate ends
+- Cite the proof for every claim in the close receipt by line
+- Bias the pack toward the file under the editor cursor
+- Write each run's plan as a haiku the user must approve before the first edit — near T-0671 (done): Milestone: Features — Autonomy and the user
+- Stop a run whose plan changes after its first proof — near T-1388 (done): A coding CLI that fm code runs only reads Foreman's state: …
+- Throttle run-state announcements to one live-region message per 5 s
+- Enforce a reduced-motion branch for every animation in the build
+- Tint each diff gutter by edit age so fresh lines glow and settle over the session
+- Show a reason tooltip on every disabled control
+- Add a hairline progress edge to the web header
+- Make History day headers sticky and compress them on scroll
+- Tween token and dollar counters upward only, with tabular figures
+- Show run state as a favicon dot that swaps between three shapes
+- Set receipts in a fixed measure with hanging punctuation
+- Wild: drive a slow ambient field whose turbulence follows the queue's spend rate
+- Wild: page-turn between the web UI and the pane when one run is open in both
+- Wild: draw each run as a plotter path that finishes when its gate does
+- Read the git index directly to find changed files — near T-1391 (done): Upstream watch: when a pinned source's sha moves, one findi…
+- Single-flight identical checks across surfaces — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Rebuild tests that touch only what a diff changed, from a coverage map
+- Roll the journal up into per-day summaries for the charts
+- Fail CI when a verb's startup import time exceeds its budget
+- Store context-pack sections in a content-addressed chunk store
+- Schedule gates by their critical path through the dependency graph — near T-0709 (done): Frontier 09 — Orchestrators of orchestrators
+- Pre-write the next run's journal segment during idle time
+- Snapshot the warm Foreman process at idle and restore it on the next prompt
+- Speculatively run the model's likely next read-only tool call
+- Batch every hook's file reads into one io_uring submission — near T-1787 (done): Batch: Fm bench duel: hook-feature ablation, o…; Fm bench d…
+- Refuse `fm answer` and `fm defer` from inside a model run — near T-0708 (done): Frontier 08 — Orchestrator control plane
+- Resolve symlinks before every write check — near T-0175 (done): Guard: writes through a variable are checked — known NAME=l…
+- Neutralise repo-controlled git config that runs code before any lane touches git
+- Bind each approval to its targets' inode and hash, and refuse if they change before the run
+- Render approval cards with the full decoded command and strip terminal control sequences
+- Escalate after two rephrased attempts at one refused intent
+- Skip package lifecycle scripts in lanes unless the manifest allowlists them
+- Publish only projects marked public, with identifiers stripped — near T-0673 (done): Milestone: Features — Multi-machine, multi-project and ecos…
+- Make the journal and receipts append-only at the OS level
+- Wild: shadow-deny mode that runs with network off and lists what each run would have reached
+- Wild: a monthly phishing drill on the approval card
+- Run autofixers on a gate failure before any model call — near T-0224 (done): Fm evolve — a bench-gated self-improvement loop: a mutation…
+- Undo a failed edit by replaying its stored inverse patch
+- Switch models only at a compaction boundary — near T-1211 (done): fm code: fmmodels, one stdlib client for OpenAI-compatible …
+- Send a failing gate's log as its first assertion plus a line count — near T-1339 (done): fm code run friction: a blocked, stalled or killed run, or …
+- Route reads along the import graph's shortest path to the edit site
+- Set each reply's length budget from the weekly headroom left
+- Count calls per useful edit and flag read-only turns — near T-1294 (done): fm code --worker: a worker's own edits count as the run's f…
+- Flag any single reply that costs more than twice its task's median
+- Wild: a yield curve for context, pricing each added token against its gain
+- Wild: a metronome that spaces model calls to the rate limit's beat
+- Forecast a push's CI minutes before it lands
+- Project the suite's runtime growth to the commit that breaks the cap
+- Pin each run to a model snapshot id, not an alias — near T-0076 (done): fm ui --json: one view-model snapshot for every surface (in…
+- Pause new lanes on a provider incident feed
+- Project journal and receipt growth and compact before the disk fills
+- Price the expected loss of each gate a run skips
+- Expire each plan assumption on a timer and re-check it when it lapses
+- Name each plan's falsifiers and check them at every step — near T-0401 (done): Drive: while background work runs, name a concrete queued t…
+- Buy a probe only when its expected information beats its cost
+- Wild: a brake test before every long run
+- Wild: order the queue by a two-reset look-ahead
+- Wild: a fuse that burns down with each task's forecast cost
+- Detect duplicate hook registrations across plugin and user settings
+- Reconcile orphaned hook entries after plugin removal
+- Ask once before a competing statusLine is replaced — near T-0672 (done): Milestone: Features — Guard and safety
+- Name a slash-command clash before install
+- Hand a chat-started run to the terminal with one token
+- Differential-fuzz both surfaces on random verb sequences
+- Golden-file every receipt across both surfaces
+- Keep only the plugin cache versions a live session still names
+- Share one cost estimator between chat and CLI
+- Wild: let chat plan and the terminal execute, with the journal as the baton
+- Wild: mirror every chat-driven action into a shadow terminal pane
+- Wild: a parity passport that every run carries offline
+
+## New ideas per lens
+- user value: 43
+- unspoken needs: 42
+- delight: 45
+- capability map: 51
+- approaches: 45
+- reliability: 49
+- simplicity: 32
+- bold bets: 42
+- beautiful UI and motion: 47
+- performance: 48
+- security and safety: 47
+- usage efficiency: 43
+- reasoning ahead: 46
+- plugin parity: 46
+
+## Coverage (ideas per category)
+- delight 13
+- supply chain 8
+- trust 8
+- docs 6
+- cost 6
+- blocked pile 6
+- user value 6
+- motion 5
+- observability 5
+- context 5
+- version skew 5
+- intake 5
+- secrets 4
+- cost at scale 4
+- polish 4
+- scheduling 3
+- install health 3
+- wild 3
+- plugin parity 3
+- review 3
+- ci 3
+- onboarding 3
+- privacy 3
+- rules 3
+- navigation 3
+- testing 3
+- accessibility 3
+- model drift 3
+- receipts 2
+- close receipt 2
+- ui 2
+- community 2
+- developer experience 2
+- reliability 2
+- devices 2
+- stall detection 2
+- regression memory 2
+- hook latency 2
+- attention 2
+- hook startup 2
+- memory poisoning 2
+- unattended safety 2
+- tamper evidence 2
+- cache 2
+- ci cost 2
+- early warning 2
+- install path 2
+- resilience 2
+- request intake 2
+- scope control 2
+- learning 2
+- close receipts 2
+- regression guard 2
+- tests 2
+- hooks 2
+- deferrals 2
+- release safety 2
+- config 2
+- surfaces 2
+- progress 2
+- guard 2
+- wild motion 2
+- dependencies 2
+- gate trust 2
+- ci headroom 2
+- agents 2
+- install 2
+- consent preview 1
+- request handling 1
+- vocabulary 1
+- request conflicts 1
+- queue transparency 1
+- control 1
+- interruptions 1
+- sharing 1
+- alerts 1
+- planning 1
+- cost measurement 1
+- ideas ledger 1
+- risk triage 1
+- intent memory 1
+- milestone 1
+- design system 1
+- voice 1
+- proof 1
+- team 1
+- security 1
+- simplicity 1
+- lock safety 1
+- lock liveness 1
+- verdict integrity 1
+- retry storms 1
+- fault testing 1
+- test hermeticity 1
+- time safety 1
+- crash forensics 1
+- chaos testing 1
+- dead code 1
+- parsing 1
+- task lifecycle 1
+- background work 1
+- duplication 1
+- release channels 1
+- team speed 1
+- extensibility 1
+- traceability 1
+- diagnostics 1
+- pane feedback 1
+- design tokens 1
+- code typography 1
+- focus 1
+- layout hierarchy 1
+- mobile layout 1
+- data viz 1
+- history view 1
+- notifications 1
+- live feedback 1
+- screen comfort 1
+- guard cache 1
+- test wall time 1
+- journal reads 1
+- backlog reads 1
+- doctor speed 1
+- tui latency 1
+- web ui polling 1
+- hook lifecycle 1
+- cold start 1
+- guard fast path 1
+- hook pipeline 1
+- prompt injection 1
+- local access 1
+- exfiltration 1
+- incident response 1
+- hardening 1
+- file safety 1
+- red team 1
+- guard design 1
+- tool calls 1
+- ci signal 1
+- conflict forecast 1
+- horizon scan 1
+- feature retirement 1
+- hook budget 1
+- lookahead planning 1
+- pre-mortem 1
+- parity gate 1
+- upgrade check 1
+- status line 1
+- chat surface 1
+- cross-surface control 1
+- headless parity 1
+- hook compatibility 1
+- state location 1
+- time parsing 1
+- backlog hygiene 1
+- unblocking 1
+- effort limits 1
+- bug intake 1
+- cost to outcome 1
+- redo flow 1
+- return to work 1
+- reversibility 1
+- multi-agent review 1
+- learned caution 1
+- verification 1
+- correction memory 1
+- self-knowledge 1
+- pre-close review 1
+- recognition 1
+- discoverability 1
+- data safety 1
+- upgrades 1
+- privacy at rest 1
+- retention 1
+- reproducible ci 1
+- gate timing 1
+- docs search 1
+- docs output 1
+- editor surfaces 1
+- prompt ux 1
+- pair programming 1
+- docs testing 1
+- status reporting 1
+- cli 1
+- process kill 1
+- hook safety 1
+- load shedding 1
+- durability 1
+- resilience testing 1
+- crash testing 1
+- state recovery 1
+- scope 1
+- output 1
+- surface 1
+- state 1
+- flow 1
+- glance 1
+- interaction 1
+- diff reading 1
+- terminal 1
+- web polish 1
+- low bandwidth 1
+- internationalisation 1
+- cli startup 1
+- repo map 1
+- brainstorm latency 1
+- benchmark noise 1
+- test speed 1
+- doctor latency 1
+- site load 1
+- model latency 1
+- zero-overhead timing 1
+- guard latency 1
+- journal size 1
+- input hygiene 1
+- secret exposure 1
+- consent 1
+- destructive change 1
+- injection triage 1
+- threat study 1
+- disclosure 1
+- model routing 1
+- thinking budget 1
+- incremental rounds 1
+- pack slicing 1
+- pack size 1
+- merge cost 1
+- output length 1
+- efficiency metric 1
+- compaction timing 1
+- call batching 1
+- output dedupe 1
+- marginal stopping 1
+- queue overlap 1
+- usage budget 1
+- recovery budget 1
+- model resilience 1
+- ci latency 1
+- parity testing 1
+- legibility 1
+- parity docs 1
+- config parity 1
+- plugin ux 1
+- live parity 1
+- degraded mode 1
+- read compatibility 1
+- blocked questions 1
+- live steering 1
+- decisions 1
+- wild incentives 1
+- wild review 1
+- wild collaboration 1
+- request scope 1
+- request priority 1
+- sweep hygiene 1
+- decision memory 1
+- cost pacing 1
+- approval signal 1
+- question budget 1
+- self-audit 1
+- surprise 1
+- idle screen 1
+- wild surprise 1
+- wild delight 1
+- git flow 1
+- containers 1
+- incidents 1
+- infra 1
+- mobile 1
+- plugin runtime 1
+- cost caps 1
+- plan gate 1
+- proof loop 1
+- safe rollout 1
+- conflict prediction 1
+- queue ordering 1
+- plan cost 1
+- push guard 1
+- hook tuning 1
+- budget strategy 1
+- task model 1
+- process hygiene 1
+- flake repro 1
+- hermetic gates 1
+- resource leaks 1
+- journal integrity 1
+- backpressure 1
+- clean shutdown 1
+- exit codes 1
+- power safety 1
+- rollback 1
+- crash torture 1
+- duel 1
+- isolation 1
+- release 1
+- queue 1
+- loading states 1
+- progress honesty 1
+- list motion 1
+- focus states 1
+- motion arbitration 1
+- hover behaviour 1
+- layout motion 1
+- chart motion 1
+- personal identity 1
+- process spawns 1
+- process storm 1
+- lock wait 1
+- fan-out wall time 1
+- perceived latency 1
+- idle wakeups 1
+- site delivery 1
+- interactive responsiveness 1
+- cold reads 1
+- startup cost 1
+- cache economics 1
+- persistence 1
+- credentials 1
+- integrity 1
+- architecture 1
+- cost model 1
+- context packing 1
+- retry cost 1
+- budget governance 1
+- output size 1
+- session start 1
+- context size 1
+- cache keepalive 1
+- attribution 1
+- context experiment 1
+- usage timing 1
+- ci drift 1
+- gate contention 1
+- budget foresight 1
+- ci foresight 1
+- self-calibration 1
+- hook timing 1
+- hook contract 1
+- guard parity 1
+- permission modes 1
+- surface detection 1
+- status surface 1
+- cross-check 1
+- ui parity 1
+- transparency 1
+- correction reach 1
+- instruction conflicts 1
+- override memory 1
+- notification control 1
+- receipt as contract 1
+- answer input 1
+- anticipation 1
+- performance 1
+- first run 1
+- prompt continuity 1
+- receipt wording 1
+- layout polish 1
+- failure tone 1
+- receipt charm 1
+- queue motion 1
+- stall recovery 1
+- empty state 1
+- motion tempo 1
+- close voice 1
+- git history 1
+- merge 1
+- housekeeping 1
+- reproducibility 1
+- profiling 1
+- test data 1
+- distribution 1
+- ci ordering 1
+- gate caching 1
+- build hermeticity 1
+- cost accuracy 1
+- ci feedback 1
+- dependency upkeep 1
+- context hygiene 1
+- brainstorm hygiene 1
+- brainstorm storage 1
+- brainstorm diversity 1
+- failure triage 1
+- state integrity 1
+- receipt honesty 1
+- incident control 1
+- recovery 1
+- torn reads 1
+- run recovery 1
+- state safety 1
+- repo size 1
+- journal schema 1
+- help text 1
+- command guard 1
+- cli surface 1
+- state files 1
+- terminal ui 1
+- audit trail 1
+- configuration 1
+- opt-out 1
+- canary 1
+- model failover 1
+- evaluation 1
+- context diet 1
+- close latency 1
+- approval 1
+- motion safety 1
+- diff clarity 1
+- clarity 1
+- status glance 1
+- numeric motion 1
+- ambient status 1
+- typography 1
+- ambient delight 1
+- surface continuity 1
+- progress motion 1
+- affected checks 1
+- gate concurrency 1
+- test selection 1
+- history and today 1
+- startup 1
+- context packs 1
+- gate scheduling 1
+- journal writes 1
+- approval integrity 1
+- path confinement 1
+- time-of-check safety 1
+- approval honesty 1
+- refusal handling 1
+- publication safety 1
+- egress review 1
+- approval fatigue 1
+- gate cost 1
+- undo cost 1
+- cache reuse 1
+- tool output 1
+- read cost 1
+- reply length 1
+- usage metrics 1
+- cost outliers 1
+- context pricing 1
+- rate-limit smoothing 1
+- incident safety 1
+- disk headroom 1
+- gate risk 1
+- plan trust 1
+- early stop 1
+- probe economics 1
+- safety drill 1
+- queue order 1
+- spend visibility 1
+- uninstall 1
+- plugins 1
+- handoff 1
+- plugin cache 1
+Thin (0-1 ideas): performance, security

@@ -1,0 +1,23 @@
+## intent: ok
+
+Each piece does what it claims end-to-end (verified by reading each call site): the mtime union in `fm task done` (fmcli.py:219-226), `--fail-fast` (fmcli.py:965-968), `CACHE_DAYS` expiry (fmcore.py:1069, fmcli.py:78), the no-gates hint (fmcli.py:920-928), `fm why` (fmmap.py:645-676), `STATUS_WORDS` short-circuit (fmhooks.py:309-313), `_MANIFEST` sensitivity (fmcore.py:248-257), `fm ideas --seen` (fmideas.py:108-118), `fm cost` canary/median (fmcost.py:88-93, 275-279), `add_audit` defang (fmcore.py:187-188), repeated-failure hinting (fmrecall.py:685-706), `digest_offered` stamped unconditionally (fmhooks.py:149-372), shared-lessons cap (fmrecall.py:722-727), `verify_of`/`verify_cmds` (fmcore.py:1642-1645, 836-838), `_NO_TESTS` (fmcore.py:230-232), `_git` non-interactive flags (fmcore.py:207-213), `SessionStart` marker glob-remove (fmhooks.py:359-364), `_syntax_note` (fmhooks.py:412-427), `fmmap._ci`/`_co_change`/`_tampering`/`_dangling`/`pre_audit` companion edits, and `fm pr` (fmcost.py:310-334). One nit: `cmd_pr` (fmcost.py:221) reinvents a fourth `— verify with` regex right after this round consolidated three others into `verify_of` — see maintainer.
+
+## adversary: changes needed
+
+- MEDIUM — fmcore.py:230-232 `_NO_TESTS` is a raw substring match over the whole command output. A multi-suite verify command (e.g. `pytest pkgA && pytest pkgB`) where one sub-package legitimately has zero tests will contain "collected 0 items" even though other tests really ran and passed; a genuinely green run becomes exit 5, blocking `fm task finish`/`--evidence`/gates. Fix: only trigger when the "0 tests" line is the run's sole/last summary, or check runner-specific total counts instead of a bare substring anywhere in combined output.
+- LOW — fmhooks.py:419-422 `json.loads` on `.json` files fires on every edit to JSONC-style configs (`tsconfig.json`, `.vscode/settings.json`) that legitimately contain comments/trailing commas, producing a spurious "not valid JSON/UTF-8" note on correct edits. Fix: skip known JSONC filenames or soften the message.
+- Verified safe, no finding: `compile()` never executes (fmhooks.py:420); uncaught exceptions from it (e.g. `RecursionError` on pathological nesting) are still caught by `run()`'s blanket `except Exception` (fmhooks.py:54-55), so it fails open. `decision=block` for "status" (fmhooks.py:312) mirrors the existing pattern at fmhooks.py:1065. `_dangling`'s `git grep -e name` (fmmap.py:616) only ever receives `[A-Za-z]\w{2,}` names — no regex/shell injection possible. `fm why` (fmmap.py:645-676) passes path/line via subprocess argv only and degrades gracefully on paths outside the repo.
+
+## edge: changes needed
+
+- MEDIUM — fmcli.py:960 recomputes `worktree_id` (a `git add -A` + `write-tree` under a throwaway index, fmcore.py:189-210) after **every** check in the loop, not just once at the end. On a large repo with several gates this multiplies a previously single expensive full-tree git operation by the number of checks. Fix: only take the post-run snapshot once, after the loop, or use a cheap `git status --porcelain` probe first.
+- LOW — fmmap.py:90 `_co_change`'s `git log --since=365.days --name-only` runs under `_git`'s default 2s timeout (fmcore.py `_git(..., timeout=2)`); on a large/active repo a year of history can exceed 2s, so `pairs` silently stays empty on exactly the repos it's meant to help. Fix: pass an explicit larger timeout.
+- LOW — fmhooks.py:361-364 wraps the whole marker-deletion `for` loop in one `try/except OSError`; a race (two SessionStart triggers for one session) makes one `os.remove` throw and abort the loop, leaving later markers undeleted. Fix: catch `OSError` per file.
+- LOW — fmcli.py:219-226 + fmcore.py:1629 `scope_reason_covers` now compares a logged reason's timestamp against filesystem mtimes for shell-made edits; an incidental mtime bump after the reason was logged (checkout, formatter, `touch`) makes a valid reason look stale, forcing a spurious re-justification at `fm task done`.
+
+## maintainer: approve with nits
+
+- LOW — fmcost.py:221 reintroduces a fourth ad hoc `— verify with` regex right after this round replaced three others with `verify_of`/`verify_cmds` (fmcore.py:1642-1645). Fix: add `strip_verify(text)` next to `verify_of` and use it here too.
+
+## Not checked
+`plugin/tests/test_round_f.py` / `test_round_g.py` (brief lists but didn't ask them reviewed), `fmserve.py`, `fmdocs.py`, `b.grade()`/`b.evidence()`/`b.audits()` internals (assumed pre-existing/unchanged), real-world timing of `worktree_id`/`_co_change` on an actual large repo, and non-Python/CI language paths (none touched by this diff).

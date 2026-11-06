@@ -1,0 +1,1 @@
+T-0015 final adversary check of f602cb0: HIGH `fm ask … -h` printed argparse help to the hook's stdout ahead of the JSON decision (PreToolUse output unparsable) → stdout redirected too (test_help_flags_never_corrupt_the_hook_output). Confirmed: malformed asks.json entries handled, T-\d{4,} matches real ids, dialog and grant categories come from one parse.
