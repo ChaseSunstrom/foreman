@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T17:54:00Z",
- "rev": "81de6117e",
+ "updated": "2026-11-06T18:22:53Z",
+ "rev": "4f33ca9db",
  "capabilities": [
   {
    "n": 1,
@@ -37465,12 +37465,12 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 33035,
+   "generated": 33439,
    "write": {
-    "title": 219,
-    "line": 2016,
+    "title": 221,
+    "line": 2019,
     "payoff": 23,
-    "kill test": 98,
+    "kill test": 99,
     "code": 11
    },
    "dups": {
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 16676,
-    "tier": 11475,
-    "novelty": 115
+    "kill": 16844,
+    "tier": 11624,
+    "novelty": 116
    },
-   "merged": 644,
-   "kept": 1334,
-   "pending": 352
+   "merged": 655,
+   "kept": 1357,
+   "pending": 398
   },
   "families": [
    {
@@ -37523,7 +37523,7 @@
    },
    {
     "id": "F-021968",
-    "size": 159,
+    "size": 169,
     "lead": "Harmonize parallel agents via standing wave resonance",
     "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
     "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
@@ -37565,7 +37565,7 @@
    },
    {
     "id": "F-014278",
-    "size": 21,
+    "size": 22,
     "lead": "Simulate ecosystem ripple effects before releasing a single crate",
     "today": "Today you can't predict how a breaking change in your library will break thousands of downstream users' builds until they file bugs.",
     "with_this": "With this, you can see a live map of which downstream projects will fail, crash, or degrade in performance when you publish your next version.",
@@ -37619,6 +37619,24 @@
      "data",
      "features",
      "releases"
+    ]
+   },
+   {
+    "id": "F-016782",
+    "size": 3,
+    "lead": "Simulate the social dynamics of the dev team in Sampo",
+    "today": "Today you can't see how individual coding styles and assumptions clash within the team's collective output.",
+    "with_this": "With this, Sampo can model each developer's coding habits as distinct agents with unique biases and constraints, allowing it to predict where their combined contributions will create friction or conflict, and propose harmonizing refactors that respect each individual's 'personality' while ensuring …",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "exhaustive thinking",
+     "security",
+     "staying lean and safe"
     ]
    },
    {
@@ -37685,23 +37703,6 @@
     "evidence": "",
     "kinds": [
      "releases"
-    ]
-   },
-   {
-    "id": "F-016782",
-    "size": 2,
-    "lead": "Simulate the social dynamics of the dev team in Sampo",
-    "today": "Today you can't see how individual coding styles and assumptions clash within the team's collective output.",
-    "with_this": "With this, Sampo can model each developer's coding habits as distinct agents with unique biases and constraints, allowing it to predict where their combined contributions will create friction or conflict, and propose harmonizing refactors that respect each individual's 'personality' while ensuring …",
-    "tier": "extreme",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "exhaustive thinking",
-     "security"
     ]
    },
    {
@@ -40746,10 +40747,10 @@
     ]
    }
   ],
-  "families_total": 1054,
+  "families_total": 1066,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1334
+   "total": 1357
   }
  },
  "steer": {
