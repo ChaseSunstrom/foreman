@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T16:25:26Z",
- "rev": "1078ed22d",
+ "updated": "2026-11-06T16:30:32Z",
+ "rev": "b2637ff28",
  "capabilities": [
   {
    "n": 1,
@@ -36247,10 +36247,10 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 886,
+ "unproven": 887,
  "unproven_kinds": {
   "meaning-notes": 391,
-  "meaning-user": 254,
+  "meaning-user": 255,
   "research-uncited": 34,
   "perf-typed": 63,
   "typed": 43,
@@ -37465,7 +37465,7 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 31865,
+   "generated": 31905,
    "write": {
     "title": 213,
     "line": 1967,
@@ -37485,7 +37485,7 @@
    },
    "merged": 602,
    "kept": 1312,
-   "pending": 47
+   "pending": 87
   },
   "families": [
    {
