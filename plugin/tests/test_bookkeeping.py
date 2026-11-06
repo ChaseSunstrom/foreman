@@ -27,7 +27,8 @@ class StepEvidence(HookCase):
         self.assertFalse(self.ran("python3 tests/run.py -k one 2>&1 | tail -3", out=said("ok")).has_evidence(step=1),
                          "no summary: tail's exit says nothing")
         self.assertFalse(self.ran("python3 tests/run.py -k one | tail -3", out=red).has_evidence(step=1))
-        b = self.ran("python3 tests/run.py -k one 2>&1 | tail -n 40", out=green)
+        self.assertFalse(self.ran("python3 tests/run.py -k one 2>&1 | tail -n 40", out=green).has_evidence(step=1))
+        b = self.ran("python3 tests/run.py -p all 2>&1 | tail -n 40", out=green)
         self.assertTrue(b.has_evidence(step=1), b.evidence())
         b = self.ran("python3 tests/run.py -p all 2>&1 | grep -E 'OK|FAIL'", out=said("OK"))
         self.assertTrue(any("(ac 2)" in l and "[ran]" in l and "✗" not in l for l in b.evidence()), b.evidence())
@@ -54,7 +55,9 @@ class StepEvidence(HookCase):
         self.fm("task", "ac", self.tid, "add", "all pass", "--verify", "python3 tests/run.py -p all")
         self.assertFalse(self.ran("ls").has_evidence(step=1), "not a test run")
         self.assertFalse(self.ran("python3 tests/run.py -k one | tail -3").has_evidence(step=1), "a pipe hides its exit")
-        b = self.ran("cd /x && python3 tests/run.py -k one")
+        self.assertFalse(self.ran("cd /x && python3 tests/run.py -k one").has_evidence(step=1),
+                         "T-2911: same runner, other tests: not this step's check")
+        b = self.ran("cd /x && python3 tests/run.py   -p all")  # the criterion's own check, normalised
         self.assertTrue(b.has_evidence(step=1))
         self.assertTrue(any("(step 1)" in l and "[ran]" in l for l in b.evidence()), b.evidence())
         self.assertFalse(b.has_evidence(step=2), "one run verifies one step")
