@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T12:53:17Z",
- "rev": "a0f6762fe",
+ "updated": "2026-11-06T12:58:31Z",
+ "rev": "bde7afc07",
  "capabilities": [
   {
    "n": 1,
@@ -36247,9 +36247,9 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 880,
+ "unproven": 881,
  "unproven_kinds": {
-  "meaning-notes": 387,
+  "meaning-notes": 388,
   "meaning-user": 252,
   "research-uncited": 34,
   "perf-typed": 63,
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 14509,
-    "tier": 10116,
+    "kill": 14720,
+    "tier": 10248,
     "novelty": 88
    },
-   "merged": 477,
-   "kept": 1196,
-   "pending": 364
+   "merged": 485,
+   "kept": 1209,
+   "pending": 0
   },
   "families": [
    {
@@ -40747,7 +40747,7 @@
   "families_total": 976,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1196
+   "total": 1209
   }
  },
  "steer": {
