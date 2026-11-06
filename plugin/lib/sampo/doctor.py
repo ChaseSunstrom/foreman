@@ -1137,7 +1137,36 @@ CC_FEATURES = [
     ("PostToolUse updatedToolOutput", (2, 1, 121), ["lib/sampo/hooks.py"], r"updatedToolOutput"),
     ("UserPromptSubmit sessionTitle", (2, 1, 94), ["lib/sampo/hooks.py"], r"sessionTitle"),
     ("worktree.baseRef setting", (2, 1, 133), ["lib/sampo/setup.py"], r"baseRef"),  # wired into ~/.claude (T-0803)
+    # T-3384: builder lanes rely on the subagent's worktree surviving its return (2.1.311)
+    ("subagent worktree lifetime (builder lanes)", (2, 1, 311), ["agents/fm-builder.md"], r'isolation "worktree"'),
 ]
+
+
+LANE_CLASSES = {"builder": "fm-builder.md", "reviewer": "fm-reviewer.md", "scout": "fm-scout.md"}
+
+
+def check_subagent_effort(settings, plugin=PLUGIN, environ=None, version=None):
+    """T-3384: each lane class's effort comes from the `effort:` line in its agent's frontmatter (none: it inherits the
+    session's). CLAUDE_CODE_SUBAGENT_EFFORT (2.1.316, one value for every subagent) is a deliberate choice, so PASS
+    that names it; only Claude Code >= 2.1.316 reads it."""
+    efforts = {}
+    for cls, fn in LANE_CLASSES.items():
+        try:
+            with open(os.path.join(plugin, "agents", fn), encoding="utf-8") as f:
+                fm = re.match(r"---\r?\n(.*?)\r?\n---", f.read(), re.S)
+        except OSError:
+            fm = None
+        m = fm and re.search(r"(?m)^effort:[ \t]*[\"']?([^\s\"']+)", fm.group(1))
+        efforts[cls] = m.group(1) if m else "inherit"
+    shown = ", ".join(f"{k}={v}" for k, v in efforts.items())
+    key = "CLAUDE_CODE_SUBAGENT_EFFORT"
+    over = ((settings or {}).get("env") or {}).get(key) or (os.environ if environ is None else environ).get(key)
+    if version is None:
+        from sampo import hooks as shooks
+        version = shooks._cc_version()
+    if over and version and version >= (2, 1, 316):
+        return Result("subagent effort", "PASS", f"overridden to {over} by {key}; per-class efforts ignored ({shown})")
+    return Result("subagent effort", "PASS", f"lane effort per class: {shown}")
 
 
 def check_cc_features(version=None, plugin=PLUGIN):
@@ -2742,7 +2771,7 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_pinned_clock(), check_lock_probe(c.state_dir()), check_disk(), check_env(settings, manifest),
                check_serve(serve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
-               check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
+               check_supply(claude, accept_supply), check_worktree_base(settings), check_subagent_effort(settings), check_fm_link(),
                check_invisible_text(instruction_files()), check_rule_conflicts(rule_files(c.git_root(os.getcwd())))]
     t_bench = time.perf_counter()  # T-2279: the bench runs outside any check_*; its whole cost is charged to "hook latency"
     meas = {}

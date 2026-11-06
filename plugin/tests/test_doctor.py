@@ -331,6 +331,41 @@ class Checks(unittest.TestCase):
         self.assertEqual(d.check_unloaded_skills(named[:5 * 4], plugin=pl, n=5).status, "PASS")  # 5 sessions: not more
         self.assertTrue(os.path.isfile(os.path.join(pl, "skills", "a", "SKILL.md")))
 
+    def test_subagent_effort(self):
+        # T-3384: each lane class's effort is shown; CLAUDE_CODE_SUBAGENT_EFFORT (2.1.316) would flatten them
+        for n, e in (("builder", "high"), ("reviewer", "high"), ("scout", "low")):
+            self.write(f"pl/agents/fm-{n}.md", f"---\nname: fm-{n}\neffort: {e}\n---\n")
+        pl = os.path.join(self.t, "pl")
+        v = (2, 1, 316)
+        r = d.check_subagent_effort({}, plugin=pl, environ={}, version=v)
+        self.assertEqual(r.status, "PASS")
+        self.assertIn("builder=high", r.detail)
+        self.assertIn("scout=low", r.detail)
+        # a deliberate override is a PASS that says so, only where Claude Code reads it
+        r = d.check_subagent_effort({"env": {"CLAUDE_CODE_SUBAGENT_EFFORT": "max"}}, plugin=pl, environ={}, version=v)
+        self.assertEqual(r.status, "PASS")
+        self.assertIn("overridden to max by CLAUDE_CODE_SUBAGENT_EFFORT; per-class efforts ignored", r.detail)
+        self.assertNotIn("unset it", r.detail)
+        r = d.check_subagent_effort({}, plugin=pl, environ={"CLAUDE_CODE_SUBAGENT_EFFORT": "low"}, version=v)
+        self.assertIn("overridden to low", r.detail)
+        old = d.check_subagent_effort({"env": {"CLAUDE_CODE_SUBAGENT_EFFORT": "max"}}, plugin=pl, environ={}, version=(2, 1, 315))
+        self.assertNotIn("overridden", old.detail)
+        # no effort line (inherits the session's), a quoted value, and an effort: line in the body only
+        self.write("pl/agents/fm-builder.md", "---\nname: fm-builder\n---\neffort: high\n")
+        self.write("pl/agents/fm-reviewer.md", '---\nname: fm-reviewer\neffort: "medium"\n---\n')
+        r = d.check_subagent_effort({}, plugin=pl, environ={}, version=v)
+        self.assertIn("builder=inherit", r.detail)
+        self.assertIn("reviewer=medium", r.detail)
+
+    def test_worktree_lifetime_gate(self):
+        # T-3384: lanes rely on a subagent's worktree surviving its return (2.1.311)
+        self.write("pl/agents/fm-builder.md", '---\ndescription: launched with isolation "worktree"\n---\n')
+        pl = os.path.join(self.t, "pl")
+        r = d.check_cc_features((2, 1, 310), pl)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("worktree lifetime", r.detail)
+        self.assertEqual(d.check_cc_features((2, 1, 311), pl).status, "PASS")
+
     def test_worktree_base(self):
         # T-0803: builder lanes need worktree.baseRef head; the default makes them start from the remote's branch
         self.assertEqual(d.check_worktree_base({"worktree": {"baseRef": "head"}}).status, "PASS")
