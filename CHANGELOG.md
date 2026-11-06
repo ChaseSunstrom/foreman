@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- T-3120 is back: sampo task finish reuses a full-gates pass on the same tree when the only change since is CHANGELOG.md lines. The post-merge suite had reverted it on CheckSkip, Claims and CloseGates reds that the slot-pool bug (T-3442) caused (T-3450).
 - T-2911 (an automatic criterion run checks off only its own step) and T-3372 (sampo task ac list and rm verbs; a lone verb-like word is refused) are back: the post-merge suite had reverted both on CheckSkip and Claims reds that the slot-pool bug (T-3442) caused, red at their parents too (T-3445).
 - A run.py nested in a test class no longer queues on the machine-wide CPU slot pool: importing sampo renames SAMPO_SLOT to FOREMAN_SLOT, which run.py never read, so fixtures' nested fm check and evidence runs waited behind the ship and the post-merge suite (CheckSkip 323-344 s with timeouts, 4 s now). The false reds this made auto-reverted merges and kept refusing ships (T-3442).
 - run.py --load N tops the host up to at most twice its CPU count, counting the busy loops other runs already hold, and says when it cuts the number: three --load 32 runs on 16 CPUs held 96 loops and load 100 for 12 minutes (T-3441).
