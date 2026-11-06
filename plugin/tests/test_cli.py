@@ -240,14 +240,14 @@ class CaptureAndIntake(ForemanTestCase):
         # T-1903: `fm task step T-1 CHANGELOG` was "invalid choice"; a word near an action stays a typo
         self.fm("task", "new", "x", "--type", "FIX", "--tier", "S")
         self.fm("task", "step", "T-0001", "CHANGELOG")
-        self.fm("task", "ac", "T-0001", "add", "works")  # T-3372: a bare `ac ID works` is refused (verb-like)
+        self.fm("task", "ac", "T-0001", "works")
         b = c.find_brief(c.find_project(self.repo), "T-0001")
         self.assertEqual([s.text for s in b.steps()], ["CHANGELOG"])
         self.assertIn("works", b.section("Acceptance criteria"))
         p = self.fm("task", "step", "T-0001", "dnoe", check=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("invalid choice", p.stderr)
-        self.fm("task", "ac", "T-0001", "add", "fast", "--verify", "true")  # review: an option after the word
+        self.fm("task", "ac", "T-0001", "fast", "--verify", "true")  # review: an option after the word
         self.assertIn("verify with `true`", c.find_brief(c.find_project(self.repo), "T-0001").section("Acceptance criteria"))
         for typo in ("DONE", "3", "--json"):  # review: an action in capitals, a number, an option alone stay errors
             self.assertNotEqual(self.fm("task", "step", "T-0001", typo, check=False).returncode, 0, typo)
