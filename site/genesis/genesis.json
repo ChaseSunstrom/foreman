@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T06:43:05Z",
- "rev": "63f19d902",
+ "updated": "2026-11-06T06:54:02Z",
+ "rev": "b3314e2b1",
  "capabilities": [
   {
    "n": 1,
@@ -37465,10 +37465,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 23078,
+   "generated": 23158,
    "write": {
     "title": 166,
-    "line": 1615,
+    "line": 1623,
     "payoff": 19,
     "kill test": 65,
     "code": 8
@@ -37479,13 +37479,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 11451,
+    "kill": 11472,
     "tier": 8081,
     "novelty": 75
    },
    "merged": 298,
    "kept": 972,
-   "pending": 289
+   "pending": 340
   },
   "families": [
    {
