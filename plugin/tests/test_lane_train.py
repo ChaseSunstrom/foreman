@@ -18,7 +18,7 @@ class Lanes(ForemanTestCase):
         super().setUp()
         self.fm("init")
         self.runs = os.path.join(self.tmp, "gate-runs")
-        self.fm("check", "add", f"echo x >> {self.runs}; test ! -e BREAK")
+        self.fm("check", "add", f"echo x >> {self.runs}; test ! -e BREAK -o -e FIX.txt")
 
     def git(self, *args, cwd=None):
         return subprocess.run(["git", "-C", cwd or self.repo, *args], capture_output=True, text=True).stdout.strip()
@@ -111,7 +111,7 @@ class Train(Lanes):
         good = self.lane(1, "test_good.py", test.format("Good", "True"))
         bad = self.lane(2, "test_bad.py", test.format("Bad", "False"))
         r = self.train(good, bad)
-        self.assertIn(f"left out {bad}: its affected tests fail on the base: test_bad.Bad", r.stdout)
+        self.assertIn(f"left out {bad}: its affected tests fail with the lane merged onto the base: test_bad.Bad", r.stdout)
         self.assertEqual(self.gate_runs(), 1, r.stdout)
         self.assertTrue(os.path.exists(os.path.join(self.repo, "test_good.py")))
         self.assertFalse(os.path.exists(os.path.join(self.repo, "test_bad.py")))
@@ -282,6 +282,23 @@ class Train(Lanes):
 
 
 OK = "import unittest\nclass {0}(unittest.TestCase):\n    def test_it(self):\n        pass\n"
+# T-3602's fixtures: a scan red when a lane bans a word another lane's .txt file holds (its message names that file);
+# a rule test red when two lanes each add an x-file (its message names none); a test only lane a's a.txt keeps green
+# once b.txt exists (map-linked to a.txt, so a's diff reaches it)
+SCAN = ("import os, unittest\n\n\ndef hits(word):\n"
+        "    return sorted(f for f in os.listdir('.') if f.endswith('.txt') and word in open(f).read().split())\n\n\n"
+        "class Foo(unittest.TestCase):\n    def test_it(self):\n        ban = os.path.exists('ban-foo')\n"
+        "        self.assertEqual(hits('foo') if ban else [], [])\n\n\n"
+        "class Bar(unittest.TestCase):\n    def test_it(self):\n        ban = os.path.exists('ban-bar')\n"
+        "        self.assertEqual(hits('bar') if ban else [], [])\n")
+PAIR = ("import os, unittest\n\n\nclass Aliases(unittest.TestCase):\n    def test_it(self):\n"
+        "        self.assertLess(len([f for f in os.listdir('.') if f.startswith('x')]), 2)\n")
+SEEN = "import os, unittest\n\n\nclass Doctor(unittest.TestCase):\n    def test_it(self):\n        os.environ['SEEN'] = '1'\n"
+ORDER = ("import os, unittest\n\n\nclass Aliases(unittest.TestCase):\n    def test_it(self):\n"
+         "        n = len([f for f in os.listdir('.') if f.startswith('x')])\n"
+         "        self.assertLess(n if os.environ.get('SEEN') else 0, 2)\n")
+DEP = ("# map-links: a.txt\nimport os, unittest\n\n\nclass Dep(unittest.TestCase):\n    def test_it(self):\n"
+       "        self.assertTrue(os.path.exists('a.txt') or not os.path.exists('b.txt'))\n")
 
 
 class AffectedGate(Lanes):
@@ -329,13 +346,119 @@ class AffectedGate(Lanes):
         a, b = self.lane(1, "test_pair.py", pair), self.lane(2, "b.txt")
         r = self.train(a, b)
         self.assertIn(f"left out {b}: its merge turns the gates red: sh suite.sh on 3 affected test module(s), "
-                      "failing test_pair.Pair", r.stdout)
+                      "failing test_pair.Pair; blamed: the failure output names b.txt", r.stdout)
         self.assertIn("FAILED (failures=1)", r.stdout, "the gate's last lines")
         log = self.fm("task", "show", b).stdout
         self.assertIn("test_pair.Pair", log)
         self.assertIn("FAILED (failures=1)", log)
         self.assertTrue(os.path.exists(os.path.join(self.repo, "test_pair.py")))
         self.assertFalse(os.path.exists(os.path.join(self.repo, "b.txt")))
+        from sampo import core as c
+        row = [e for e in c.ledger_events(self.p, ("check_run",)) if e["data"].get("train")][-1]["data"]["results"][1]
+        self.assertEqual(row["affected"], ["test_doctor", "test_pair", "test_pair.Pair", "test_rename_aliases"],
+                         "T-3602: the batch's modules (passed with every lane in) and what the confirm reran")
+
+    def base(self, rel, text):
+        with open(os.path.join(self.repo, rel), "w") as f:
+            f.write(text)
+        self.git("add", rel)
+        self.git("commit", "-qm", f"base: {rel}")
+
+    def test_a_culprit_the_failure_output_names_is_left_out_with_no_bisection(self):
+        """T-3602: the red run's own failure text names b.txt, which only lane b changed: b is left out with no gate
+        rerun on any prefix; one probe of the red class alone on the red tree (it fails alone, so a narrowed run can
+        see it), then a confirm of that class's module plus what b's diff reaches (the rule tests) and the other gate."""
+        self.base("plugin/tests/test_rename_scan.py", SCAN)
+        z, a, b, d = (self.lane(1, "ban-foo"), self.lane(2, "a.txt", "fine\n"), self.lane(3, "b.txt", "foo\n"),
+                      self.lane(4, "d.txt", "fine\n"))
+        r = self.train(z, a, b, d)
+        out = next(ln for ln in r.stdout.splitlines() if ln.startswith(f"  left out {b}:"))
+        self.assertIn("failing test_rename_scan.Foo; blamed: the failure output names b.txt", out)
+        self.assertEqual(self.gate_args()[1:], ["test_rename_scan.Foo", "test_doctor test_rename_aliases test_rename_scan"],
+                         r.stdout)
+        self.assertEqual(self.gate_runs(), 2, "the other gate: the full run and the confirm")
+        self.assertIn("in 2 gate run(s) and 1 probe(s)", r.stdout)
+        self.assertIn("the failure output names b.txt", self.fm("task", "show", b).stdout)
+        for name, landed in (("ban-foo", True), ("a.txt", True), ("d.txt", True), ("b.txt", False)):
+            self.assertEqual(os.path.exists(os.path.join(self.repo, name)), landed, name)
+
+    def test_an_ambiguous_red_bisects_with_probes_of_only_the_failing_class(self):
+        """T-3602: the failure names no lane's file and every lane reaches the rule test: a prefix bisection whose
+        probes run only the failing class, then a confirm of that class's module and the left-out lane's reach."""
+        self.base("plugin/tests/test_rename_aliases.py", PAIR)
+        l1, l2, l3, l4 = self.lane(1, "x1"), self.lane(2, "c.txt"), self.lane(3, "x2"), self.lane(4, "d.txt")
+        r = self.train(l1, l2, l3, l4)
+        self.assertEqual(self.gate_args()[1:], ["test_rename_aliases.Aliases"] * 3 + ["test_doctor test_rename_aliases"],
+                         r.stdout)
+        self.assertIn(f"left out {l3}: its merge turns the gates red", r.stdout)
+        self.assertIn("blamed: bisection, 2 probe(s) of only test_rename_aliases.Aliases", r.stdout)
+        self.assertIn("3 probe(s)", r.stdout.splitlines()[0])
+        self.assertEqual(self.gate_runs(), 2)
+        for name, landed in (("x1", True), ("c.txt", True), ("d.txt", True), ("x2", False)):
+            self.assertEqual(os.path.exists(os.path.join(self.repo, name)), landed, name)
+
+    def test_two_independent_culprits_go_from_one_red_run(self):
+        """T-3602: two failing classes, each naming its own lane's file: both left out at once, no probe."""
+        self.base("plugin/tests/test_rename_scan.py", SCAN)
+        ids = [self.lane(1, "ban-foo"), self.lane(2, "ban-bar"), self.lane(3, "b.txt", "foo\n"),
+               self.lane(4, "d.txt", "bar\n"), self.lane(5, "e.txt", "fine\n")]
+        r = self.train(*ids)
+        self.assertIn(f"left out {ids[2]}: its merge turns the gates red", r.stdout)
+        self.assertIn("the failure output names b.txt", r.stdout)
+        self.assertIn(f"left out {ids[3]}: its merge turns the gates red", r.stdout)
+        self.assertIn("the failure output names d.txt", r.stdout)
+        self.assertEqual(self.gate_args()[1:], ["test_rename_scan.Bar test_rename_scan.Foo",
+                                                "test_doctor test_rename_aliases test_rename_scan"], r.stdout)
+        for name, landed in (("ban-foo", True), ("ban-bar", True), ("e.txt", True), ("b.txt", False), ("d.txt", False)):
+            self.assertEqual(os.path.exists(os.path.join(self.repo, name)), landed, name)
+
+    def test_a_lane_needing_a_left_out_lane_is_caught_by_the_confirm(self):
+        """T-3602: lane a is named and left out; lane b only works with a (test_dep, which a's diff reaches): the confirm
+        runs a's reach, goes red on test_dep, and b is left out by its own name in that failure; no full gate reruns."""
+        self.base("plugin/tests/test_rename_scan.py", SCAN)
+        self.base("plugin/tests/test_dep.py", DEP)
+        z, a, b, e = (self.lane(1, "ban-foo"), self.lane(2, "a.txt", "foo\n"), self.lane(3, "b.txt", "fine\n"),
+                      self.lane(4, "e.txt", "fine\n"))
+        r = self.train(z, a, b, e)
+        self.assertIn(f"left out {a}: its merge turns the gates red", r.stdout)
+        self.assertIn("failing test_rename_scan.Foo; blamed: the failure output names a.txt", r.stdout)
+        out = next(ln for ln in r.stdout.splitlines() if ln.startswith(f"  left out {b}:"))
+        self.assertIn("failing test_dep.Dep; blamed: the failure output names b.txt", out)
+        reach = "test_dep test_doctor test_rename_aliases test_rename_scan"  # a's: test_dep links a.txt
+        self.assertEqual(self.gate_args()[1:], ["test_rename_scan.Foo", reach, "test_dep.Dep", reach], r.stdout)
+        self.assertEqual(self.gate_runs(), 3, "the full run and two confirms")
+        for name, landed in (("ban-foo", True), ("e.txt", True), ("a.txt", False), ("b.txt", False)):
+            self.assertEqual(os.path.exists(os.path.join(self.repo, name)), landed, name)
+
+    def test_a_class_green_alone_bisects_with_the_whole_suite_gate(self):
+        """T-3602 review: Aliases fails only after Doctor ran in the same process (order): run alone it passes on the
+        red tree, so no narrowed probe or confirm could see it; the bisection and the confirm run the suite gate as
+        the train does, and the lane that turns it red is left out, never landed."""
+        self.base("plugin/tests/test_doctor.py", SEEN)
+        self.base("plugin/tests/test_rename_aliases.py", ORDER)
+        l1, l2, l3, l4 = self.lane(1, "x1"), self.lane(2, "c.txt"), self.lane(3, "x2"), self.lane(4, "d.txt")
+        r = self.train(l1, l2, l3, l4)
+        self.assertEqual(self.gate_args()[1:], ["test_rename_aliases.Aliases"] + ["test_doctor test_rename_aliases"] * 3,
+                         r.stdout)
+        self.assertIn(f"left out {l3}: its merge turns the gates red", r.stdout)
+        self.assertIn("blamed: bisection, 2 probe(s) of the whole red gate", r.stdout)
+        for name, landed in (("x1", True), ("c.txt", True), ("d.txt", True), ("x2", False)):
+            self.assertEqual(os.path.exists(os.path.join(self.repo, name)), landed, name)
+
+    def test_a_gate_that_passed_before_the_red_one_reruns_in_the_confirm(self):
+        """T-3602 review: the first gate passes with every lane in (BREAK, but FIX.txt too); the suite names FIX.txt,
+        so lane a goes; the confirm reruns the first gate, which is red without FIX.txt, and lane b (BREAK) goes too:
+        the passing row from the full run is never recorded for a tree it didn't run on."""
+        self.base("plugin/tests/test_rename_scan.py", SCAN)
+        z, a, b, e = (self.lane(1, "ban-foo"), self.lane(2, "FIX.txt", "foo\n"), self.lane(3, "BREAK"),
+                      self.lane(4, "e.txt", "fine\n"))
+        r = self.train(z, a, b, e)
+        self.assertIn("blamed: the failure output names FIX.txt", r.stdout)
+        out = next(ln for ln in r.stdout.splitlines() if ln.startswith(f"  left out {b}:"))
+        self.assertIn("test ! -e BREAK", out)
+        self.assertIn("blamed: bisection", out)
+        for name, landed in (("ban-foo", True), ("e.txt", True), ("FIX.txt", False), ("BREAK", False)):
+            self.assertEqual(os.path.exists(os.path.join(self.repo, name)), landed, name)
 
     def test_full_gate_runs_the_bare_full_suite(self):
         from sampo import lanes
@@ -354,6 +477,29 @@ class AffectedGate(Lanes):
         self.assertIn("covered by the gates' pass", r.stdout)
         with open(self.suite) as f:
             self.assertEqual(f.read(), before, "the linked tests ran again")
+
+
+class RedNames(unittest.TestCase):
+    """T-3602 review: the names a red run fails, complete or none (then the gate reruns whole, never narrowed)."""
+    def red(self, out):
+        from sampo import train
+        return train._red(out)
+
+    def test_each_unittest_red_line_gives_its_class_module_or_fixture(self):
+        out = ("FAIL: test_a (test_x.X.test_a)\nERROR: setUpModule (test_m)\nERROR: setUpClass (test_c.C)\n"
+               "ERROR: test_gone (unittest.loader._FailedTest.test_gone)\n")
+        self.assertEqual(self.red(out), ["test_c.C", "test_gone", "test_m", "test_x.X"])
+
+    def test_run_py_lines_add_classes_that_never_started_and_a_wrong_count_gives_none(self):
+        listed = "\n  failed class: test_x.X\n  failed class: test_late.L\n"
+        self.assertEqual(self.red("FAIL: test_a (test_x.X.test_a)" + listed + "\nFAILED (2 classes: …)\n"),
+                         ["test_late.L", "test_x.X"])
+        self.assertEqual(self.red("FAIL: test_a (test_x.X.test_a)" + listed + "\nFAILED (3 classes: …)\n"), [])
+
+    def test_a_red_line_naming_no_class_gives_none_and_a_split_job_folds_into_its_class(self):
+        self.assertEqual(self.red("FAIL: test_a (test_x.X.test_a)\nERROR: oddity (nowhere)\n"), [])
+        self.assertEqual(self.red("FAIL: test_a (test_x.X.test_a)\n  failed class: test_x.X.test_a\n"
+                                  "\nFAILED (1 classes: test_x.X.test_a)\n"), ["test_x.X"])
 
 
 class SlotPriority(Lanes):

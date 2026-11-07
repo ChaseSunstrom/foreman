@@ -1,6 +1,8 @@
 """T-3380: sampo lane train, a merge queue. Reviewed lanes merge one after another in a scratch integration worktree
-(never the main checkout); the project's gates run once on the result; a red set is bisected to its culprit lanes by
-prefix (each probe a gate run), which are dropped; the main checkout's branch then fast-forwards to the gated tip.
+(never the main checkout); the project's gates run once on the result; a red run names its culprit lanes from its own
+output (T-3602: _blame), bisecting by prefix only what it can't pin on one lane, each probe the red gate alone on the
+red classes alone; the culprits are dropped and a narrowed confirm run checks the rest; the main checkout's branch then
+fast-forwards to the gated tip.
 The train's check_run carries the code tree (core.code_tree: no CHANGELOG.md, no sync mirror), so `sampo check` after
 each close reuses the pass while the code is unchanged. T-3544: the full-suite gate runs only the tests the batch's
 changes reach (_affected_gate); the full suite then runs on the landed merges in the background (lanes.pm_run)."""
@@ -16,8 +18,18 @@ from sampo import core as c
 from sampo.lanes import CriterionRed, _git, _ref_ok, _verify, pm_record, pm_rerun_cmd, pm_wait
 
 PROBE_JOBS = 3  # T-3531: pre-filter probes at once
-_CLASS = re.compile(r"^(?:FAIL|ERROR): \S+ \(([\w.]+?)\.\w+\)", re.M)  # the red classes unittest names (release.py too)
+_FAILED = re.compile(r"^(?:FAIL|ERROR): (\S+) \(([\w.]+)\)", re.M)  # unittest's red line: test (where)
+_LISTED = re.compile(r"^  failed class: (\S+)", re.M)  # run.py's every red class, one per line, never-started ones too
+_COUNT = re.compile(r"^FAILED \((\d+) classes", re.M)  # run.py's summary count
+_FIXTURES = ("setUpModule", "tearDownModule", "setUpClass", "tearDownClass")  # unittest names the module or class
+_FRAME = re.compile(r'^\s*File ".*", line \d+.*$', re.M)  # a traceback frame: the test and the code on its stack
 _stem = lambda t: os.path.basename(t).rsplit(".", 1)[0]  # noqa: E731  a test file's module name
+
+
+def _mod(k):
+    """A red name's module: the part before its class (mod.Class.test, pkg.mod.Class), else its last part (mod)."""
+    parts = k.split(".")
+    return parts[max(next((n for n, x in enumerate(parts) if x[:1].isupper()), len(parts)) - 1, 0)]
 
 
 def _affected_gate(p, wt, base, checks):
@@ -39,12 +51,71 @@ def _affected_gate(p, wt, base, checks):
     return (full, tpl, tests) if tests else None
 
 
-def _why_red(r):
-    """T-3544: a red gate run as a reason: the gate (on how many affected modules), the classes it names failing and
-    its last 15 lines, so nobody reruns a full suite to learn them."""
+def _why_red(r, blame="", tail=None):
+    """T-3544: a red gate run as a reason: the gate (on how many affected modules), the classes it names failing, what
+    blamed the lane (T-3602) and the last 15 lines (`tail`: the blamed class's), so nobody reruns a suite to learn them."""
     s = r["cmd"] + (f" on {len(r['affected'])} affected test module(s)" if r.get("affected") else "")
     s += f", failing {c.joinmore(r['failing'], 8)}" if r.get("failing") else ""
-    return s + "".join("\n    " + ln for ln in r.get("tail") or ())
+    s += f"; blamed: {blame}" if blame else ""
+    return s + "".join("\n    " + ln for ln in (r.get("tail") if tail is None else tail) or ())
+
+
+def _red(out):
+    """Every test name a red run fails, or [] when it can't be sure it has them all (then nothing narrows to them and
+    the gate reruns whole). unittest's FAIL/ERROR lines give the class (mod.Class.test), the module or class a fixture
+    failed in (setUpModule (mod)) and a module that won't import (unittest.loader._FailedTest.mod: by its name);
+    run.py's `failed class:` lines add the ones that never started. [] when a line names nothing runnable, or
+    run.py's count disagrees with its lines. A name inside another (mod.Class.test in mod.Class) is dropped."""
+    got, lines = set(), _FAILED.findall(out)
+    for test, where in lines:
+        got.add(test if where.startswith("unittest.loader._FailedTest") else where if test in _FIXTURES
+                else where.rsplit(".", 1)[0] if "." in where else "")
+    listed = set(_LISTED.findall(out))
+    count = _COUNT.findall(out)
+    whole = len(lines) == len(re.findall(r"^(?:FAIL|ERROR): ", out, re.M)) and "" not in got  # every line read
+    if (count and int(count[-1]) != len(listed)) or not (listed and count or whole):
+        return []
+    names = {n for n in got | listed if n and not n.startswith("unittest.")}
+    if any(n.startswith("unittest.") for n in listed) and not any(w.startswith("unittest.") for _, w in lines):
+        return []  # run.py says a module failed to import but no line says which
+    return sorted(n for n in names if not any(n.startswith(m + ".") for m in names))
+
+
+def _texts(out, names):
+    """T-3602: {red name: its failure text}. unittest's and run.py's ==== rules split the output; a block belongs to
+    the names in its first two lines (`==== mod.Class`, `FAIL: test (mod.Class.test)`); a name heading none gets it all."""
+    blocks = re.split(r"(?m)^(?====)", out)
+    heads = lambda k, b: re.search(rf"(?<![\w.]){re.escape(k)}(?!\w)", "\n".join(b.splitlines()[:2]))  # noqa: E731  # not a list: a block's two head lines
+    return {k: "".join(b for b in blocks if heads(k, b)) or out for k in names}
+
+
+def _blame(out, names, ids, diff, reach):
+    """T-3602: who broke the gate, from its red run alone: {lane id: (why, red name)} for each red name (the whole
+    output when it names none) one lane alone explains. Rules, strongest first, each narrowing the lanes the one
+    before matched: (a) the failure text names a file the lane's diff changed (traceback frames aside: they name the
+    test and the code on the stack, not the fault); (c) the lane changed the failing test; (b) its diff reaches the
+    failing test (cli.affected's map, as the probes pick tests). A name matching no lane or several blames nobody."""
+    blamed = {}
+    for k, text in (_texts(out, names) if names else {"": out}).items():
+        text, cand = _FRAME.sub("", text), list(ids)
+        for n in range(3 if k else 1):
+            hits = [(i, w) for i in cand if (w := _rule(n, k, text, diff(i), reach(i) if n == 2 else ()))]
+            if len(hits) == 1:
+                blamed.setdefault(hits[0][0], (hits[0][1], k))
+                break
+            cand = [i for i, _ in hits] or cand
+    return blamed
+
+
+def _rule(n, k, text, files, tests):
+    """_blame's rule n for one lane (the files its diff changed, the tests that diff reaches) and red name k: why the
+    lane is to blame, or ''."""
+    if n == 0:
+        return next((f"the failure output names {f}" for f in sorted(files)
+                     if re.search(rf"(?<![\w.-]){re.escape(f)}(?![\w-])", text)), "")
+    if n == 1:
+        return next((f"it changed {f}, the failing test" for f in sorted(files) if _stem(f) == _mod(k)), "")
+    return f"its diff touches what {_mod(k)} tests" if any(_stem(t) == _mod(k) for t in tests) else ""
 
 
 def _merge_in(wt, b, tip, log):
@@ -94,7 +165,7 @@ def _probe(p, main, base, b, tip, notes):
             if shutil.which("nice"):  # the probe yields to whatever else the machine runs
                 cmd = "nice -n 10 bash -c " + shlex.quote(cmd)
             code, out = c.run_command(cwd, cmd, c.load_scaled(900), priority=True)  # T-3614: ahead of lane runs
-            return code, set(_CLASS.findall(out))
+            return code, set(_red(out))
 
         def again(classes):  # the red classes alone where the runner names them (pm_rerun_cmd), else cmd again
             return run(pm_rerun_cmd(wt, sorted(classes)) or cmd)
@@ -103,7 +174,7 @@ def _probe(p, main, base, b, tip, notes):
         if code in (0, 5, 124):
             return ""
         if not bad:
-            return f"its affected tests fail on the base: exit {code}"
+            return f"its affected tests fail with the lane merged onto the base: exit {code}"
         code, red = again(bad)
         still = ((bad & red) or bad) if code else set()  # a flake is green on the rerun; a red naming none stays red
         if bad - still:
@@ -114,7 +185,7 @@ def _probe(p, main, base, b, tip, notes):
             notes.append((b.id, f"its affected tests are red on the base itself: {c.joinmore(sorted(based), 6)}; "
                                 "left to the gates"))
         blame = still - based
-        return "its affected tests fail on the base: " + c.joinmore(sorted(blame), 6) if blame else ""
+        return "its affected tests fail with the lane merged onto the base: " + c.joinmore(sorted(blame), 6) if blame else ""
     finally:
         _git(main, "worktree", "remove", "--force", wt)
         shutil.rmtree(wt, ignore_errors=True)
@@ -167,8 +238,8 @@ def _held(p, b, main, tip):
 
 def train(p, main, ids=None):
     """Land the named `ids` (a bare train would land lanes nobody picked) through one gate run, one train at a time.
-    Returns a dict: merged, left_out [(id, why)], gate_runs, tip, branch. Raises PolicyError when nothing can land, the
-    base is red or the branch moved."""
+    Returns a dict: merged, left_out [(id, why)], gate_runs, probes, tip, branch. Raises PolicyError when nothing can
+    land, the base is red or the branch moved."""
     from sampo import cli
     ids = list(dict.fromkeys(ids or []))
     if not ids:
@@ -227,7 +298,64 @@ def _run(p, main, ids):
     r = _git(main, "worktree", "add", "-q", "--detach", wt, base)
     if r.returncode:
         raise c.PolicyError(f"git worktree add failed: {r.stderr.strip()[:300]}")
-    runs, results, sub = [0], [], None
+    runs, probes, results, sub = [0], [0], [], None
+    tips = {b.id: t for b, t in cands}
+    meta = c.read_meta(p)
+    tpl, other = meta.get("affected") or "", tuple(meta.get("affected_by") or ())
+    bare = lambda s: " ".join(s.split())  # noqa: E731
+    # T-3602: the gate a run narrows to named tests: the affected template's runner with no names
+    suite = next((g for g in checks if "{names}" in tpl and bare(g) == bare(tpl.replace("{names}", ""))), None)
+    passed, diffs, reaches = {}, {}, {}  # (tree, command line): its passing row; lane id: its files; lane id: its tests
+
+    def diff(i):
+        """The files lane i's branch changed since it left the base."""
+        if i not in diffs:
+            diffs[i] = {f for f in _git(main, "diff", "--name-only", "--no-renames", "-z", f"{base}...{tips[i]}")
+                        .stdout.split("\0") if f}
+        return diffs[i]
+
+    def reach(i):
+        """The tests lane i's diff reaches, as the probes pick them (cli.affected on the scratch tree); none without
+        an affected command or a map."""
+        if i not in reaches:
+            try:
+                ts = cli.affected(c.Project(p.slug, wt, p.dir, p.lane), since=base, only=sorted(diff(i)))[1]
+            except Exception:
+                ts = []
+            reaches[i] = {t for t in ts if not t.endswith(other)}  # another runner's tests: its own gate
+        return reaches[i]
+
+    def form(cmd, names=None):
+        """(the command line gate `cmd` runs in the scratch tree, the test modules it names or None). T-3602: with
+        `names` the suite runs only those whose module is in the tree (None, []: none is), a class left out when its
+        module runs whole; the suite otherwise runs the batch's affected tests found there (T-3544: a prefix or the
+        base lacks a later lane's new test file); any other gate runs as configured."""
+        if names and cmd == suite:
+            have = {_stem(f) for f in _git(wt, "ls-files", "-z").stdout.split("\0") if f}
+            ns = sorted(n for n in set(names) if _mod(n) in have and ("." not in n or _mod(n) not in names))
+            return (tpl.replace("{names}", shlex.join(ns)), ns) if ns else (None, [])
+        ts = [t for t in sub[2] if os.path.exists(os.path.join(wt, t))] if sub and cmd == sub[0] else []
+        if ts:
+            return sub[1].replace("{tests}", shlex.join(ts)).replace("{names}", shlex.join(map(_stem, ts))), \
+                [_stem(t) for t in ts]
+        return cmd, None
+
+    def run1(cmd, names=None):
+        """(row, ran): gate `cmd` on the scratch tree as it stands, worded by form(); a passing run of the same line on
+        this very tree is reused (ran False); row None when nothing named is left. `affected` lists the modules a
+        narrowed run named (cli._cached_pass reads it); a red row keeps the names it fails, its output and last lines."""
+        line, mods = form(cmd, names)
+        key = (_git(wt, "rev-parse", "HEAD").stdout.strip(), line)
+        if line is None or key in passed:
+            return passed.get(key), False
+        t0 = time.monotonic()
+        code, out = c.run_command(wt, line, c.load_scaled(1800), priority=True)  # T-3614: ahead of lane runs
+        row = {"cmd": cmd, "exit": code, "s": round(time.monotonic() - t0, 1), **({"affected": mods} if mods else {})}
+        if code:
+            row.update(failing=_red(out), tail=out.rstrip().splitlines()[-15:], out=out)
+        else:
+            passed[key] = row
+        return row, True
 
     def build(start, lanes):
         """Reset the scratch tree to `start`, merge `lanes`; [(brief, sha after)] of those that merged."""
@@ -244,60 +372,105 @@ def _run(p, main, ids):
             _git(main, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip() != branch
 
     def gate():
-        """True when every gate passes in the scratch tree as it stands. The full suite runs only the batch's affected
-        tests found there (T-3544: a prefix or the base lacks a later lane's new test file); a red row keeps the
-        classes it names failing and its last 15 lines."""
+        """True when every gate passes in the scratch tree as it stands, each as form() words it."""
         c.wait_for_load("sampo lane train")
         runs[0] += 1
         results.clear()
         for cmd in checks:
-            ts = [t for t in sub[2] if os.path.exists(os.path.join(wt, t))] if sub and cmd == sub[0] else []
-            run = sub[1].replace("{tests}", shlex.join(ts)).replace("{names}", shlex.join(map(_stem, ts))) if ts else cmd
-            t0 = time.monotonic()
-            code, out = c.run_command(wt, run, c.load_scaled(1800), priority=True)  # T-3614: ahead of lane runs
-            results.append({"cmd": cmd, "exit": code, "s": round(time.monotonic() - t0, 1)})
-            if ts:  # the flag the pass's reusers read (cli._cached_pass): only these modules ran
-                results[-1]["affected"] = [_stem(t) for t in ts]
-            if code:
-                results[-1].update(failing=sorted(set(_CLASS.findall(out))), tail=out.rstrip().splitlines()[-15:])
+            results.append(run1(cmd)[0])
+            if results[-1]["exit"]:
                 return False
         return True
+
+    def probe(sha, cmd, names):
+        """T-3602: the red gate alone on the tree at `sha`, the suite on only its red names: its row (None: nothing
+        named is in that tree, so nothing there can fail)."""
+        _git(wt, "reset", "-q", "--hard", sha)
+        row, ran = run1(cmd, names)
+        probes[0] += ran
+        return row
+
+    def bisect(cmd, names):
+        """T-3602: the lane (index + 1) that turns gate `cmd` red, by prefix: lo passes (0 = the base), hi fails. Each
+        probe runs only that gate, the suite only on `names` (proven to fail alone on the whole set) or, with none, as
+        the train runs it: seconds or the suite's part, where a whole gate run took minutes."""
+        lo, hi = 0, len(merged)
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            row = probe(merged[mid - 1][1], cmd, names)
+            lo, hi = (lo, mid) if row and row["exit"] else (mid, hi)
+        if hi == 1:  # the first lane is blamed on the strength of a base nobody probed: probe it before blaming
+            row = probe(base, cmd, names)
+            if row and row["exit"]:
+                raise c.PolicyError(f"the base {base[:9]} of {branch} is red; fix it before a train can blame a "
+                                    f"lane: {_why_red(row)}")
+        return hi
+
+    def confirm(need):
+        """T-3602: True when the gates in `need` pass on the tree as it stands: the suite on only its names (the red
+        ones, and what the left-out lanes' diffs reach: a lane may have needed them), every other gate whole (a lane
+        left out can turn any of them red). A probe's pass on this very tree counts."""
+        c.wait_for_load("sampo lane train")
+        results.clear()
+        ran = False
+        for cmd in (g for g in checks if g in need):
+            row, fresh = run1(cmd, need[cmd])
+            if row is None:  # nothing it named is left in the tree: the gate as the train runs it
+                row, fresh = run1(cmd)
+            ran |= fresh
+            results.append(row)
+            if row["exit"]:
+                break
+        runs[0] += ran
+        return not results[-1]["exit"]
 
     try:
         merged = build(base, cands)
         sub = _affected_gate(p, wt, base, checks)
-        tips = {b.id: t for b, t in cands}
-        green, red = [], {}  # the rows of the newest green run; the failing row of the newest red one
         if moved():  # a lane merged meanwhile: don't spend a gate run on a base that is gone
             raise c.PolicyError(f"{branch} moved since the train started (was {base[:9]}): nothing landed; run it again")
-        while merged and not gate():
-            red = results[-1]
-            # prefix bisection: prefix lo is green (0 = base), prefix hi is red; the lane at hi is the culprit
-            lo, hi = 0, len(merged)
-            while hi - lo > 1:
-                mid = (lo + hi) // 2
-                _git(wt, "reset", "-q", "--hard", merged[mid - 1][1])
-                if gate():
-                    lo, green = mid, list(results)
-                else:
-                    hi, red = mid, results[-1]
-            if hi == 1:  # the first lane is blamed on the strength of a base nobody gated: gate it before blaming
-                _git(wt, "reset", "-q", "--hard", base)
-                if not gate():
-                    raise c.PolicyError(f"the base {base[:9]} of {branch} is red; fix it before a train can blame a "
-                                        f"lane: {_why_red(results[-1])}")
-            why = "its merge turns the gates red: " + _why_red(red)
-            left.append((merged[hi - 1][0].id, why))
-            cli.mutate(p, merged[hi - 1][0].id, lambda x, w=why: x.append_log("left out of a merge train: " + w),
-                       "lane_train_red", {"cmd": red["cmd"], "failing": red.get("failing") or []})
-            keep = merged[:hi - 1]
-            start = keep[-1][1] if keep else base
-            rest = [(b, tips[b.id]) for b, _ in merged[hi:]]
-            merged = keep + build(start, rest)  # no rest: the head is prefix lo, which passed above (or is the base)
-            if not rest:
+        ok = not merged or gate()
+        first = list(results)
+        last = {r["cmd"]: r for r in results if not r["exit"]}  # each gate's newest passing row
+        # T-3602: what each confirm reruns: every gate but the suite whole; the suite whole only if the red cut it off
+        need = {g: None for g in checks if g != suite or g in checks[len(results):]}
+        while not ok:  # T-3602: blame from the red run itself; bisect only what it can't pin on one lane
+            red, g = results[-1], results[-1]["cmd"]
+            names = red["failing"] if g == suite else []
+            if names:  # a narrowed run sees them only if they fail alone (not by order or a flake): on this tree first
+                row = probe(_git(wt, "rev-parse", "HEAD").stdout.strip(), g, names)
+                names = names if row and row["exit"] and all(any(f == n or f.startswith(n + ".") or n.startswith(
+                    f + ".") for f in row["failing"]) for n in names) else []
+            need[g] = (need.get(g) or set()) | set(names) if names else None  # the suite's other tests passed here
+            ids = [b.id for b, _ in merged]
+            blamed = _blame(red["out"], red["failing"], ids, diff, reach)
+            if not blamed:
+                n, at = probes[0], bisect(g, names)
+                only = "only " + c.joinmore(names, 4) if names else "the whole red gate"
+                blamed = {ids[at - 1]: (f"bisection, {probes[0] - n} probe(s) of {only}", "")}
+            texts = _texts(red["out"], red.get("failing") or [])
+            for i in (i for i in ids if i in blamed):
+                rule, k = blamed[i]
+                why = "its merge turns the gates red: " + _why_red(red, rule, texts[k].rstrip().splitlines()[-15:]
+                                                                   if k else None)
+                left.append((i, why))
+                cli.mutate(p, i, lambda x, w=why: x.append_log("left out of a merge train: " + w), "lane_train_red",
+                           {"cmd": red["cmd"], "failing": red.get("failing") or [], "blamed": rule})
+                gone = {_stem(t) for t in reach(i)} if suite else set()  # before the rebuild: its links need its files
+                if gone and need.get(suite, ()) is not None:  # a lane may have needed it: what its diff reaches reruns
+                    need[suite] = (need.get(suite) or set()) | gone
+            at = next(n for n, i in enumerate(ids) if i in blamed)
+            rest = [(b, tips[b.id]) for b, _ in merged[at:] if b.id not in blamed]
+            merged = merged[:at] + build(merged[at - 1][1] if at else base, rest)
+            if not merged:
                 break
-        else:
-            green = list(results)  # ponytail: a cut prefix with a rest behind it is gated again whole, one more run
+            ok = confirm(need)
+            last.update((r["cmd"], r) for r in results if not r["exit"])
+        top = next((r for r in first if r["cmd"] == suite and r.get("affected")), None)
+        if merged and top and suite in need:  # what the train landed on: the batch's tests with every lane in, then the
+            # red ones and the left-out lanes' reach here; a close reuses it for those (cli._cached_pass)
+            last[suite] = dict(last[suite], affected=sorted(set(top["affected"]) | set(last[suite].get("affected") or ())))
+        green = [last[g] for g in checks] if merged else []
         if not merged:
             raise c.PolicyError("nothing landed: " + "; ".join(f"{i}: {w}" for i, w in left))
         tip = _git(wt, "rev-parse", "HEAD").stdout.strip()
@@ -326,8 +499,8 @@ def _run(p, main, ids):
         ct = c.code_tree(main, tree)
         c.log_event(p, "check_run", data={"tree": tree[:12], "code_tree": ct, "env": c.env_id(), "train": ids_in,
                                           "results": green})
-        return {"merged": ids_in, "left_out": left, "notes": notes, "gate_runs": runs[0], "tip": tip, "branch": branch,
-                "affected": part}
+        return {"merged": ids_in, "left_out": left, "notes": notes, "gate_runs": runs[0], "probes": probes[0], "tip": tip,
+                "branch": branch, "affected": part}
     finally:
         _git(main, "worktree", "remove", "--force", wt)
         shutil.rmtree(wt, ignore_errors=True)
@@ -339,7 +512,8 @@ def cmd(p, args, main):
     ids = [x for x in (args.id or "").replace(",", " ").split() if x]  # one positional: T-1,T-2
     got = train(p, main, ids)
     lines = [f"Train: {len(got['merged'])} lane(s) landed on {got['branch']} ({got['tip'][:9]}) in "
-             f"{got['gate_runs']} gate run(s): {', '.join(got['merged'])}"]
+             f"{got['gate_runs']} gate run(s)" + (f" and {got['probes']} probe(s) of only the failing tests"
+                                                  if got["probes"] else "") + f": {', '.join(got['merged'])}"]
     lines += [f"  left out {i}: {w}" for i, w in got["left_out"]] + [f"  note {i}: {w}" for i, w in got["notes"]]
     if got["affected"]:
         lines.append(f"The test gate ran {len(got['affected'])} affected test module(s), not the full suite "
