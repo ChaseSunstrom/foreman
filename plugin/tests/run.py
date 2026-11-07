@@ -318,7 +318,8 @@ def _write_json(path, d):
 
 
 NO_CACHE = "SAMPO_NO_TEST_CACHE"  # T-3502: =1 (or FOREMAN_NO_TEST_CACHE) runs every class, cached or not
-SAMPLE = 0.1  # the share of cached classes rerun anyway: a file the coverage missed shows, and the cache is dropped
+CACHE_FULL = "SAMPO_CACHE_FULL"  # T-3638: =1 lets a full run (no names) skip cached classes; only the post-merge verify sets it
+SAMPLE = 0.1 # the share of cached classes rerun anyway: a file the coverage missed shows, and the cache is dropped
 STATE = ".sampo/"  # Sampo's synced task state: every sampo call writes it, no test reads it (each has its own home)
 PRUNE_S = 14 * 86400  # a repo's cache unused this long (a removed lane's) is deleted
 KEEP = 3  # T-3593: records kept per class, newest first: main's code beside the lanes' that changed what it reads
@@ -863,6 +864,11 @@ def main():
     # T-3502: a run naming modules skips the classes green at the same code, but 1 in 10 drawn; every run records
     # them. Not with -k (part of a class), switched off, or nested in a class's slot (a test's own run.py).
     # T-3593: "the same code" is what the class read when it passed (its coverage), so a change elsewhere skips it
+    # T-3638: the post-merge verify alone sets SAMPO_CACHE_FULL=1 to let a run naming no modules skip too; taken out
+    # of the environment here so no class or child run inherits it (ship and a plain full run never skip)
+    incr = (_env(CACHE_FULL) or "0") != "0"
+    for k in (CACHE_FULL, "FOREMAN_" + CACHE_FULL[len("SAMPO_"):]):
+        os.environ.pop(k, None)
     skip, drawn, got = {}, set(), None
     if not (a.k or (_env(NO_CACHE) or "0") != "0" or _env(SLOT_ENV)):
         got = tree()
@@ -870,7 +876,7 @@ def main():
         cache, value = cache_path(got[2]), values(got[1])
         COVERED.clear()
         gen, recs = load_cache(cache)
-        hits = {c: r[1] for c in todo for r in recs.get(c, ())[::-1] if r[0] == digest(r[2], value)} if a.names else {}
+        hits = {c: r[1] for c in todo for r in recs.get(c, ())[::-1] if r[0] == digest(r[2], value)} if a.names or incr else {}
         drawn = {c for c in hits if random.random() < SAMPLE}
         skip = {c: n for c, n in hits.items() if c not in drawn}
         todo = [c for c in todo if c not in skip]

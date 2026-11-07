@@ -7,6 +7,7 @@ import re
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 import unittest
 import unittest.mock
@@ -2733,6 +2734,27 @@ class PostMergeVerify(ForemanTestCase):
         slanes.pm_reset(self.p, sha[:9])
         self.assertEqual(self.state(sha), "reverted")
         slanes.pm_wait(self.p, self.repo)
+
+    def test_the_default_verify_opts_into_the_run_cache(self):  # T-3638
+        os.environ.pop("FM_POSTMERGE_CMD")
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, "plugin", "tests"))
+        open(os.path.join(d, "plugin", "tests", "run.py"), "w").close()
+        self.assertEqual(slanes.pm_cmd(d), "SAMPO_CACHE_FULL=1 python3 plugin/tests/run.py")
+
+    def test_an_uncached_verify_is_due_first_then_every_sixth_or_four_hours(self):  # T-3638 review
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, "plugin", "tests"))
+        open(os.path.join(d, "plugin", "tests", "run.py"), "w").close()
+        os.environ.pop("FM_POSTMERGE_CMD")
+        self.assertEqual(slanes.pm_cmd(d, uncached=True), "python3 plugin/tests/run.py")
+        due = lambda: slanes._pm_uncached_due(self.p)  # noqa: E731
+        self.assertEqual([due() for _ in range(13)], [True] + [False] * 5 + [True] + [False] * 5 + [True])
+        with mock.patch("time.time", return_value=time.time() + 4 * 3600 + 1):
+            self.assertTrue(due())
+        self.assertFalse(due())
 
     def test_no_suite_is_logged_once(self):
         os.environ.pop("FM_POSTMERGE_CMD")

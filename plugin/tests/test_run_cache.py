@@ -17,7 +17,8 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(__file__))
 import run  # noqa: E402
 
-NESTED = ("SAMPO_SLOT", "FOREMAN_SLOT", "SAMPO_SLOTS", "FOREMAN_SLOTS", "SAMPO_NO_TEST_CACHE", "FOREMAN_NO_TEST_CACHE")
+NESTED = ("SAMPO_SLOT", "FOREMAN_SLOT", "SAMPO_SLOTS", "FOREMAN_SLOTS", "SAMPO_NO_TEST_CACHE", "FOREMAN_NO_TEST_CACHE",
+          "SAMPO_CACHE_FULL", "FOREMAN_CACHE_FULL")  # T-3638: a verify's opt-in in the caller's env must not skip a plain run
 
 
 def outer(**extra):
@@ -417,6 +418,19 @@ class Main(unittest.TestCase):
                 code, ran, err = self.main(*argv)
                 self.assertEqual((code, sorted(ran)), (0, ["test_m.A", "test_m.B"]), err)
                 self.assertNotIn("skipped", err)
+
+    def test_the_post_merge_opt_in_lets_a_full_run_skip_and_reaches_no_child(self):  # T-3638
+        self.main()  # a plain full run records
+        code, ran, err = self.main()
+        self.assertEqual((code, sorted(ran)), (0, ["test_m.A", "test_m.B"]), "a plain full run never skips")
+        with mock.patch.dict(os.environ, {"SAMPO_CACHE_FULL": "1"}):
+            code, ran, err = self.main()
+            self.assertEqual((code, ran), (0, []), err)
+            self.assertNotIn("SAMPO_CACHE_FULL", os.environ, "children must not inherit the opt-in")
+            self.assertNotIn("FOREMAN_CACHE_FULL", os.environ)
+        with mock.patch.dict(os.environ, {"SAMPO_CACHE_FULL": "0"}):  # review: "0" is off, as for NO_CACHE
+            code, ran, err = self.main()
+            self.assertEqual((code, sorted(ran)), (0, ["test_m.A", "test_m.B"]), err)
 
     def test_the_full_gate_records_for_the_next_named_run(self):
         self.main()

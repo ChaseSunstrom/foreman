@@ -2186,10 +2186,34 @@ def pm_set(p, sha, **kv):
         return r
 
 
-def pm_cmd(main):
+def pm_cmd(main, uncached=False):
     """The full suite's command: FM_POSTMERGE_CMD, else this repo's own runner, else none (no verify is recorded)."""
+    # T-3638: SAMPO_CACHE_FULL=1 lets run.py skip classes green at the same code (1 in 10 rerun); ship's run stays
+    # full, and so does an uncached verify (see _pm_uncached_due)
     return os.environ.get("FM_POSTMERGE_CMD") or (
-        "python3 plugin/tests/run.py" if os.path.exists(os.path.join(main, "plugin", "tests", "run.py")) else "")
+        ("" if uncached else "SAMPO_CACHE_FULL=1 ") + "python3 plugin/tests/run.py"
+        if os.path.exists(os.path.join(main, "plugin", "tests", "run.py")) else "")
+
+
+UNCACHED_EVERY, UNCACHED_S = 6, 4 * 3600
+
+
+def _pm_uncached_due(p):
+    """T-3638 review: the cache can't see some breaks (a class's blind reads), and a later resample would file them as
+    inherited, blamed on nobody. So the first verify, then one in UNCACHED_EVERY or after UNCACHED_S, runs uncached.
+    Counted per verify run (a probe too), under the postmerge lock."""
+    path = os.path.join(_pm_dir(p), ".uncached")
+    os.makedirs(_pm_dir(p), exist_ok=True)
+    with c.lock(_pm_dir(p)):
+        try:
+            with open(path) as f:
+                st = json.load(f)
+            t, k = float(st["t"]), int(st["k"]) + 1
+        except (OSError, ValueError, KeyError, TypeError):
+            t, k = 0.0, UNCACHED_EVERY  # no record: due
+        due = k >= UNCACHED_EVERY or time.time() - t >= UNCACHED_S
+        c.write_atomic(path, json.dumps({"t": time.time() if due else t, "k": 0 if due else k}))
+        return due
 
 
 def pm_rerun_cmd(main, classes):
@@ -2345,8 +2369,11 @@ def pm_verify(p, main, sha):
             pm_set(p, sha, state="conflict", note="could not rebuild the tree to re-verify on")
             c.log_event(p, "lane_revert_conflict", task=r["task"], data={"sha": sha, "reverts": gone})
             return True
-        code, out = c.run_command(wt, pm_cmd(main), c.load_scaled(3600))
-        flaky = inherited = unrelated = []
+        full = _pm_uncached_due(p)
+        if full:
+            pm_set(p, sha, uncached=True)
+        code, out = c.run_command(wt, pm_cmd(main, uncached=full), c.load_scaled(3600))
+        flaky =inherited = unrelated = []
         reds = pm_classes(out, code) if code and code != 124 else []
         files, reach = _pm_files(main, sha), reds
         if reds and isinstance(reds, list):  # T-3425: a docs-only merge is not blamed for a test that reads none of its files
@@ -2478,7 +2505,7 @@ def pm_run(p, main):
             head = _git(main, "rev-parse", "HEAD").stdout.strip()
             if head and _pm_claim(p, todo[0]):  # holds the queue (other runners stop at the oldest) while HEAD runs
                 try:
-                    green = _pm_green_at(main, head)
+                    green = _pm_green_at(p, main, head)
                 finally:
                     pm_set(p, todo[0], state="pending")
                 if green:
@@ -2488,13 +2515,13 @@ def pm_run(p, main):
             return
 
 
-def _pm_green_at(main, sha):
+def _pm_green_at(p, main, sha):
     """T-3446: the full suite on sha in a throwaway worktree; True only on a clean pass (a probe: records nothing)."""
     tmp = tempfile.mkdtemp(prefix="fm-verify-")
     wt = os.path.join(tmp, "wt")
     try:
         return not _git(main, "worktree", "add", "--detach", wt, sha).returncode and \
-            c.run_command(wt, pm_cmd(main), c.load_scaled(3600))[0] == 0
+            c.run_command(wt, pm_cmd(main, uncached=_pm_uncached_due(p)), c.load_scaled(3600))[0] == 0
     finally:
         _git(main, "worktree", "remove", "--force", wt)
         shutil.rmtree(tmp, ignore_errors=True)
