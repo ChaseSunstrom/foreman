@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- `fm ui --json` keeps its JSON in the project's cache/ while HEAD, meta.json, the ledger, the tasks/ folder, trust and the pause flag stand still (at most 10 s, and the pane asks again after a cached reply when its paths moved), so the pane's poll after every tool call costs ~0.2 s CPU instead of ~0.8 s, and its kept band lines no longer wake the pane (T-3542).
 - risk.json, genesis-step.json and doctor-cache.json no longer get rewritten by lanes and main for each other: risk keeps one HEAD-reflog entry per checkout under the worktree's real git dir, and rune.health and doctor key on content hashes (c.content_key), not on mtimes or the plugin path (T-3565).
 - sampo focus now refuses an unplanned, lane-only or held task before its git snapshot, recall and predict, and the views still update when saving the list of the user's uncommitted files fails (T-3583)
 - The test runner no longer crashes on a file whose name isn't valid UTF-8: the coverage cache reads git's output, hashes and saves such paths with surrogate escapes (a crash failed the 05:20 ship's full suite) (T-3651)
