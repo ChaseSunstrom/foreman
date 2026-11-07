@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-07T09:46:45Z",
- "rev": "2f73cccf3",
+ "updated": "2026-11-07T10:20:20Z",
+ "rev": "11af5613d",
  "capabilities": [
   {
    "n": 1,
@@ -49641,7 +49641,7 @@
   "typed": 50,
   "red": 86,
   "tui-unshot": 13,
-  "docs": 118,
+  "docs": 117,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 44,
@@ -50850,27 +50850,27 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 43585,
+   "generated": 44113,
    "write": {
-    "title": 305,
-    "line": 2385,
+    "title": 311,
+    "line": 2421,
     "payoff": 28,
     "kill test": 137,
     "code": 12
    },
    "dups": {
     "exact": 15,
-    "embed": 78,
+    "embed": 79,
     "shingle": 0
    },
    "rejected": {
-    "kill": 22261,
-    "tier": 15327,
-    "novelty": 138
+    "kill": 22502,
+    "tier": 15440,
+    "novelty": 139
    },
-   "merged": 1114,
-   "kept": 1718,
-   "pending": 67
+   "merged": 1131,
+   "kept": 1726,
+   "pending": 172
   },
   "families": [
    {
@@ -50908,7 +50908,7 @@
    },
    {
     "id": "F-018446",
-    "size": 286,
+    "size": 291,
     "lead": "Simulate multi-user memory interference as magnetic domains",
     "today": "Today you can't know if two concurrent sessions will corrupt each other's context when merged",
     "with_this": "With this, Sampo can predict and prevent context bleeding between users by modeling memory states as non-interfering magnetic domains",
@@ -50998,7 +50998,7 @@
    },
    {
     "id": "F-013109",
-    "size": 5,
+    "size": 6,
     "lead": "Rewind the crash to isolate the exact microsecond of failure",
     "today": "Today you can't reverse-play a production crash to find the precise input sequence that broke the app.",
     "with_this": "With this, you can replay a recorded crash in reverse to identify the exact user interaction that triggered the security flaw, fixing it without guessing.",
@@ -51961,6 +51961,38 @@
     "evidence": "",
     "kinds": [
      "bugs"
+    ]
+   },
+   {
+    "id": "F-043211",
+    "size": 1,
+    "lead": "Run six years of future exploits in seconds",
+    "today": "Today you can't test if your code will break when a zero-day vulnerability is discovered in a dependency in 2030.",
+    "with_this": "With this, you can see which current commits will become critical security liabilities before they are even merged, preventing future emergency patches.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
+    "id": "F-043299",
+    "size": 1,
+    "lead": "Project your entire coding session onto a physical astrolabe table",
+    "today": "Today you can't see the global flow of your codebase's logic as a rotating, physical map where dependencies are celestial alignments.",
+    "with_this": "With this, Sampo can visualize the 'gravitational' pull of legacy code and the 'orbital' stability of new modules, allowing it to detect structural drift before it breaks.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "ux"
     ]
    },
    {
@@ -54107,44 +54139,12 @@
     "kinds": [
      "design"
     ]
-   },
-   {
-    "id": "F-011613",
-    "size": 1,
-    "lead": "Sync user intent instantly to every running agent process",
-    "today": "Today you can't pause a thousand background processes to ask for a clarification.",
-    "with_this": "With this, you can interrupt a massive parallel build to ask a question, get an answer, and have all processes resume with the new context.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "design"
-    ]
-   },
-   {
-    "id": "F-011872",
-    "size": 1,
-    "lead": "Create a black hole for infinite regress bugs",
-    "today": "Today you can't stop a bug that keeps spawning new bugs in a loop.",
-    "with_this": "With this, you can collapse a circular dependency bug into a single event that requires one decision to resolve.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "bugs"
-    ]
    }
   ],
-  "families_total": 1268,
+  "families_total": 1277,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1718
+   "total": 1726
   }
  },
  "steer": {
@@ -54178,7 +54178,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54201,7 +54201,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54224,7 +54224,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54247,7 +54247,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54270,7 +54270,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54293,7 +54293,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54316,7 +54316,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54339,7 +54339,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54362,7 +54362,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54385,7 +54385,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54408,7 +54408,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54431,7 +54431,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54454,7 +54454,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54477,7 +54477,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54500,7 +54500,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54523,7 +54523,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54546,7 +54546,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54569,7 +54569,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54592,7 +54592,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54615,7 +54615,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54638,7 +54638,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54661,7 +54661,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54684,7 +54684,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54707,7 +54707,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54730,7 +54730,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54753,7 +54753,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 31.5,
+    "idle_h": 32.0,
     "spend": 0,
     "missions": 0,
     "restarted": null,
