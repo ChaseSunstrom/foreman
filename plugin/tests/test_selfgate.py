@@ -1,6 +1,8 @@
 """T-2605: the self-change gate's hook check (fmselfgate._slower) on a loaded bench: a hook that waits shows in the
 median wall time even when load inflates the p95, and a small median wobble is noise.
 T-2992: base and branch are benched interleaved over 3 pairs; only a rise seen in 2 of 3 pairs holds."""
+# map-links: plugin/lib/sampo/louhi.py
+# (T-3577: LoadedWallCheck execs louhi's planted hook wait; a louhi-only change must run it)
 import unittest
 from unittest import mock
 
@@ -23,7 +25,8 @@ class LoadedWallCheck(unittest.TestCase):
         import io
         import os
         from sampo import core as c, louhi
-        code = "\n".join(next(e for m in louhi.GATE_MUTATIONS if m[0] == "hook-delay" for e in m[3])[2].splitlines()[2:])
+        _, old, new = next(e for m in louhi.GATE_MUTATIONS if m[0] == "hook-delay" for e in m[3])
+        code = new[len(old):]  # T-3577: what the mutation adds past its anchor, however many lines the anchor is
         tck = os.sysconf("SC_CLK_TCK")
         files = {"/proc/uptime": "1000.00 5000.00\n",
                  "/proc/self/stat": "1 (a b) S " + " ".join(["0"] * 18) + f" {round((1000 - (age or 0)) * tck)} 0\n"}

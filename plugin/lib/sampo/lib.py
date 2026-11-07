@@ -8,15 +8,14 @@ import datetime
 import errno
 import fnmatch
 import functools
-import glob
 import json
 import os
 import re
-import shutil
-import subprocess
-import tomllib
 
 from sampo import core as c
+from sampo.core import shutil, subprocess  # T-3577: off the edit hook's path
+
+glob, tomllib = c._Later("glob"), c._Later("tomllib")
 
 CARDS = os.path.join(c.PLUGIN_ROOT, "skills", "library", "cards")
 SECTIONS = ("Verify", "Test first", "Do", "Avoid", "Review")

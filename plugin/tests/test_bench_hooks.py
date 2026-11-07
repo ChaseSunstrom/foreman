@@ -1,10 +1,12 @@
 """T-0805: the hook benchmark's verdict: load alone never fails it, a code regression always does."""
 import os
 import sys
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import bench_hooks  # noqa: E402
+from helpers import SampoTestCase  # noqa: E402
 
 
 class Verdict(unittest.TestCase):
@@ -50,6 +52,93 @@ class Modules(unittest.TestCase):  # T-3139
         subprocess.run([bench_hooks.HOOK, "Stop"], input="{}", text=True, capture_output=True,
                        env=dict(os.environ, SAMPO_HOOK_MODULES=bad))
         self.assertFalse(os.path.exists(bad))
+
+
+class HotPathImports(unittest.TestCase):  # T-3577
+    """PreToolUse and PostToolUse run on every tool call of every agent: a Bash allow and an edit's PostToolUse load
+    none of these (each costs a hook 0.5-3 ms of CPU; tempfile brings shutil and its compression modules)."""
+    HEAVY = ("tempfile", "shutil", "hashlib", "threading", "subprocess", "statistics", "socket", "bz2", "lzma",
+             "random", "signal", "heapq", "string", "contextlib")
+
+    def test_the_hot_events_load_no_heavy_module(self):
+        import json
+        import subprocess
+        import tempfile
+        with open(os.path.join(bench_hooks.HERE, "fixtures", "hook_payloads.json")) as f:
+            fixtures = json.load(f)
+        with tempfile.TemporaryDirectory() as t:
+            repo, env = bench_hooks._scratch_project(t)
+            site, out = os.path.join(t, "site"), os.path.join(t, "loaded")
+            os.makedirs(site)
+            with open(os.path.join(site, "sitecustomize.py"), "w") as f:  # what the hook's process had at exit
+                f.write(f"import atexit, sys\natexit.register(lambda: open({out!r}, 'a').write("
+                        f"' '.join(m for m in {self.HEAVY!r} if m in sys.modules) + '\\n'))\n")
+            env.update(PYTHONPATH=site, FOREMAN_NO_BACKGROUND="1")
+            for name in ("PreToolUse:Bash", "PostToolUse"):
+                event = name.split(":")[0]
+                body = json.dumps(dict({"session_id": "lazy", "cwd": repo, "hook_event_name": event},
+                                       **json.loads(json.dumps(fixtures[name]).replace("{cwd}", repo))))
+                for _ in range(2):  # a later run reads what the first one wrote
+                    if os.path.exists(out):
+                        os.remove(out)
+                    r = subprocess.run([bench_hooks.HOOK, event], input=body, capture_output=True, text=True,
+                                       env=env, cwd=repo, timeout=120)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    self.assertNotIn('"deny"', r.stdout)
+                    with open(out) as f:
+                        self.assertEqual(f.read().split(), [], f"{name} loaded these")
+
+    def test_core_finds_tempfiles_folder_and_makes_its_files_without_loading_it(self):
+        import subprocess
+        import tempfile
+        code = ("import os, sys; sys.path.insert(0, sys.argv[1]); from sampo import core\n"
+                "d = core.gettempdir(); fd, path = core.mkstemp(d, '.x.', '.tmp'); mode = os.fstat(fd).st_mode & 0o777\n"
+                "os.close(fd); os.unlink(path)\n"
+                "loaded = 'tempfile' in sys.modules; import tempfile\n"
+                "print(loaded, d == tempfile.gettempdir(), os.path.dirname(path) == os.path.abspath(d), oct(mode))")
+        with tempfile.TemporaryDirectory() as t:
+            shut = os.path.join(t, "shut")
+            os.makedirs(shut, mode=0o500)
+            for tmpdir in (t, os.path.join(t, "missing"), shut):  # usable, absent, unwritable: the same answer
+                env = {k: v for k, v in os.environ.items() if k not in ("TEMP", "TMP")}
+                r = subprocess.run([sys.executable, "-c", code, os.path.join(bench_hooks.PLUGIN, "lib")],
+                                   env=dict(env, TMPDIR=tmpdir), capture_output=True, text=True, cwd=t, timeout=60)
+                self.assertEqual(r.stdout.split(), ["False", "True", "True", "0o600"], r.stderr)
+
+
+class ActiveMemo(SampoTestCase):  # T-3577
+    """A PostToolUse asked for the active task 4 times, each a scan of every brief (~30 ms at 88 active ones): within
+    a hook run the scan is reused while the tasks folder is unchanged, and a write since shows at once."""
+
+    def test_a_hook_run_scans_once_and_sees_a_write_made_since(self):
+        from unittest import mock
+        from sampo import core as c
+        self.fm("init")
+        p = c.find_project(self.repo)
+        for i in range(3):
+            self.fm("task", "new", f"t{i}", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        self.fm("focus", "T-0002")
+        b = c.find_brief(p, "T-0003")
+        b.meta.update(status="active", lane="/elsewhere")  # another lane's active task
+        c.save_brief(p, b)
+        tdir, old = os.path.join(p.dir, "tasks"), time.time() - 10
+        os.utime(tdir, (old, old))  # settled: not written in the last 2 s
+        self.addCleanup(setattr, c, "_ACTIVE_MEMO", None)
+        c._ACTIVE_MEMO = {}  # what hooks.run sets
+        with mock.patch.object(c, "_active_hits", wraps=c._active_hits) as scan:
+            first = c.active_brief_fast(p)
+            first.meta["mark"] = "a caller's change"
+            again, there = c.active_brief_fast(p), c.active_brief_fast(p, "/elsewhere")
+            self.assertEqual((first.id, again.id, there.id, scan.call_count), ("T-0002", "T-0002", "T-0003", 1))
+            self.assertNotIn("mark", again.meta, "each caller gets its own copy")
+            b = c.find_brief(p, "T-0002")
+            b.meta["status"] = "done"
+            c.save_brief(p, b)  # the folder's times move
+            self.assertIsNone(c.active_brief_fast(p))
+            self.assertIsNone(c.active_brief_fast(p))
+            self.assertEqual(scan.call_count, 3, "a folder written in the last 2 s is scanned each time")
+        c._ACTIVE_MEMO = None
+        self.assertIsNone(c.active_brief_fast(p), "outside a hook run: no memo")
 
 
 if __name__ == "__main__":
