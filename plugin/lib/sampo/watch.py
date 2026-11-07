@@ -70,7 +70,8 @@ def gather(p):
             if e.get("event") == "touched" and e.get("task") == act.id and f and f not in touched:
                 touched.append(f)
     checks = next((e for e in reversed(ledger) if e.get("event") == "check_run"), None)
-    return {"sd": sd, "active": act, "project": p, "latency": latency, "series": series[-40:], "touched": touched[-10:],
+    return {"sd": sd, "active": act, "project": p, "briefs": briefs, "latency": latency, "series": series[-40:],
+            "touched": touched[-10:],
             "checks": checks,
             "tools": [e for e in mine if e.get("kind") in ("tool", "tool_fail")][-12:],
             "subagents": list(running.values())[-5:], "guard": [e for e in mine if e.get("kind") == "guard_block"][-5:],
@@ -343,17 +344,18 @@ def brainstorm(p):
 
 
 LEARNED_TTL_S = 120
+SLOW_TTL_S = 900  # T-3580: a week's lessons, the Brier line, muted finders: ~2.5 s CPU to count, the same news 15 min
 
 
-def _kept(p, name, build):
-    """build(), kept in the project's state for LEARNED_TTL_S: every pane poll is a new process (no in-process memo
+def _kept(p, name, build, ttl=LEARNED_TTL_S):
+    """build(), kept in the project's state for ttl seconds: every pane poll is a new process (no in-process memo
     helps), and a count two minutes old is the same news. T-3542: under cache/, so a rewrite never moves the state
     folder the mod watches (each one woke its next poll)."""
     path = os.path.join(p.dir, "cache", name)
     try:
         with open(path, encoding="utf-8") as f:
             hit = json.load(f)
-        if time.time() - hit["at"] < LEARNED_TTL_S:
+        if time.time() - hit["at"] < ttl:
             return hit["value"]
     except (OSError, ValueError, KeyError, TypeError):
         pass
@@ -365,10 +367,10 @@ def _kept(p, name, build):
 def _learned_line(p):
     """T-1045: what Sampo learned this week, the pane's idle line (a week's ledger and briefs cost ~0.45 s to count)."""
     from sampo import cost
-    return _kept(p, "learned-line.json", lambda: cost.learned(p, 7, len(cost._week(p, 7)[0]))["line"])
+    return _kept(p, "learned-line.json", lambda: cost.learned(p, 7, len(cost._week(p, 7)[0]))["line"], SLOW_TTL_S)
 
 
-_PATHS = ("watch", "trust_file", "root")  # paths a surface stats or writes: kept as they are
+_PATHS = ("watch", "watch_now", "trust_file", "root")  # paths a surface stats or writes: kept as they are
 _ESCAPES = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b.")  # CSI, OSC, ESC x
 
 
@@ -392,9 +394,9 @@ def _guarded(fn):
         return None
 
 
-def _unproven(p):
-    """T-2395: {n, top}: how many done tasks no run proved, and the kind most of them need (the cached rollup)."""
-    got = c.unproven_summary(p, c.PROOF_DAYS)
+def _unproven(got):
+    """T-2395: {n, top}: how many done tasks no run proved, and the kind most of them need, from
+    c.unproven_summary(p, c.PROOF_DAYS) (the cached rollup; T-3580: read once per view, the band's signal shares it)."""
     counts = got.get("counts") or {}
     return {"n": got["n"], "top": max(counts, key=lambda k: (counts[k], k)) if counts else None}
 
@@ -465,22 +467,59 @@ def _research_asks(events):
             for e in reversed(events) if e.get("event") == "research" and "claims" in (d := e.get("data") or {})][:3]
 
 
-def _grep_jsonl(paths, needle):
-    """The JSON objects on the lines of `paths` that contain `needle`: a whole-file scan cheap enough for a week (a tail
-    of events.jsonl holds an hour or two on a busy day). Missing files and malformed lines are skipped."""
+_FRESH = {"at": 0, "ino": None, "head": "", "tail": "", "rows": []}
+
+
+def _grep_kept(p, name, paths, needle, row, since):
+    """row(e) for each JSON object on a line of `paths` holding `needle` (bytes), oldest first, where row keeps it (not
+    None) and its first item (a ts or a day) is at or after `since`. T-3580: kept in cache/<name> with how far each file
+    was read, so a run parses only what was appended since (each pane poll re-read ~90 MB of ledgers and events whole);
+    rows older than `since` are dropped as they age out. A file with another inode, or other first or last-read bytes
+    (fm tidy rolled or rotated it, even one that grew back past the offset), is read whole again; a half-written last
+    line waits for the next run. Missing files and malformed lines are skipped."""
+    cpath = os.path.join(p.dir, "cache", name)
+    try:
+        with open(cpath, encoding="utf-8") as f:
+            kept = json.load(f)
+    except (OSError, ValueError):
+        kept = {}
+    kept, out, now = kept if isinstance(kept, dict) else {}, [], {}
     for path in dict.fromkeys(paths):
+        k = kept.get(path)
+        k = k if isinstance(k, dict) and isinstance(k.get("at"), int) and isinstance(k.get("head"), str) \
+            and isinstance(k.get("tail"), str) and isinstance(k.get("rows"), list) else _FRESH
+        head, tail = k["head"].encode("latin-1"), k["tail"].encode("latin-1")
         try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                for ln in f:
-                    if needle in ln:
-                        try:
-                            e = json.loads(ln)
-                        except ValueError:
-                            continue
-                        if isinstance(e, dict):
-                            yield e
+            with open(path, "rb") as f:
+                ino = os.fstat(f.fileno()).st_ino
+                same = k["at"] >= len(tail) and k["ino"] == ino and f.read(len(head)) == head
+                if same:
+                    f.seek(k["at"] - len(tail))
+                    same = f.read(len(tail)) == tail
+                if not same:
+                    k, head, tail = _FRESH, b"", b""
+                    f.seek(0)
+                data = f.read()
         except OSError:
             continue
+        end = data.rfind(b"\n") + 1
+        rows = [r for r in k["rows"] if isinstance(r, list) and r and str(r[0] or "") >= since]
+        for ln in data[:end].split(b"\n"):
+            if needle in ln:
+                try:
+                    e = json.loads(ln.decode("utf-8", "replace"))
+                except (ValueError, RecursionError):
+                    continue
+                r = row(e) if isinstance(e, dict) else None
+                if r is not None and str(r[0] or "") >= since:
+                    rows.append(r)
+        now[path] = {"at": k["at"] + end, "ino": ino, "head": (head or data[:end][:64]).decode("latin-1"),
+                     "tail": (tail + data[:end])[-64:].decode("latin-1"), "rows": rows}
+        out += rows
+    if now != kept:
+        with contextlib.suppress(OSError):
+            c.write_atomic(cpath, json.dumps(now))
+    return out
 
 
 def _skills(p):
@@ -489,15 +528,18 @@ def _skills(p):
     by fm tidy (state/logs/) isn't read, so a week straddling a rotation is partial."""
     now = time.time()
     since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 7 * 86400))
-    calls = [e for e in _grep_jsonl([os.path.join(c.state_dir(), "events.jsonl")], '"Skill"')
-             if e.get("kind") == "tool" and e.get("tool") == "Skill" and e.get("project") == p.slug]
+    def call(e):
+        mine = e.get("kind") == "tool" and e.get("tool") == "Skill" and e.get("project") == p.slug
+        return [e.get("ts"), e.get("target")] if mine else None
+    calls = _grep_kept(p, "skill-calls.json", [os.path.join(c.state_dir(), "events.jsonl")], b'"Skill"', call, since)
     ledgers = [os.path.join(p.dir, "archive", f"ledger-{m}.jsonl")
                for m in sorted({since[:7], time.strftime("%Y-%m", time.gmtime(now))})]
-    reads = [e for e in _grep_jsonl(ledgers + [os.path.join(p.dir, "ledger.jsonl")], '"lib"') if e.get("event") == "lib"]
-    uses = [(e.get("ts"), i, e.get("target"), "skill") for i, e in enumerate(calls)]
-    for i, e in enumerate(reads):
-        cards = (e.get("data") or {}).get("cards")
-        uses += [(e.get("ts"), i, n, "card") for n in (cards if isinstance(cards, list) else [])]
+    reads = _grep_kept(p, "lib-reads.json", ledgers + [os.path.join(p.dir, "ledger.jsonl")], b'"lib"',
+                       lambda e: [e.get("ts"), (e.get("data") or {}).get("cards")] if e.get("event") == "lib" else None,
+                       since)
+    uses = [(at, i, target, "skill") for i, (at, target) in enumerate(calls)]
+    for i, (at, cards) in enumerate(reads):
+        uses += [(at, i, n, "card") for n in (cards if isinstance(cards, list) else [])]
     # newest first by ts, then by file order within a second; stable, so one read's cards keep their order
     uses = sorted(((str(at), i, str(n), k) for at, i, n, k in uses if at and n and str(at) >= since),
                   key=lambda u: u[:2], reverse=True)
@@ -571,7 +613,7 @@ def view(p):
     meta = c.read_meta(p)
     autonomy = sd["autonomy"]
     pending = c.pending_tasks(meta)
-    briefs = c.load_briefs(p)
+    briefs = d["briefs"]
     by_id = {b.id: b for b in briefs}
     active = None
     if act:
@@ -615,6 +657,8 @@ def view(p):
     bs = brainstorm(p)
     resume = meta.get("resume_after_reload") or None
     resume_age = c.age_days(resume.get("at")) if isinstance(resume, dict) else None
+    # T-3580: read once each, for the view and the band's signals
+    d.update(proof=_guarded(lambda: c.unproven_summary(p, c.PROOF_DAYS)), hook_errors=len(doctor.recent_hook_errors()))
     return _shown({
         "v": 1, "project": p.slug, "root": p.root,
         "mode": {"autonomy": autonomy, "drive": bool(sd["drive"]), "sensitive": bool(sd["sensitive"]),
@@ -645,7 +689,7 @@ def view(p):
         "loop": _guarded(lambda: __import__("sampo.loop").loop.view(p)),  # T-1057: the forever loop's round
         "worktrees": _guarded(lambda: _worktrees(p, briefs)) or [],  # T-1023
         "budget": _guarded(lambda: _budget(p)),  # T-0228
-        "unproven": _guarded(lambda: _unproven(p)) or {"n": 0, "top": None},  # T-2395: the band's proof line
+        "unproven": _guarded(lambda: _unproven(d["proof"])) or {"n": 0, "top": None},  # T-2395: the band's proof line
         "bench": _guarded(lambda: _bench(p, events)),
         "research": _guarded(lambda: _research_asks(events)) or [],
         "vetoes": _guarded(lambda: [c.plain(str(v.get("said", "")))[:200] for v in c.vetoes(p)][::-1][:3]) or [],  # T-0251
@@ -656,9 +700,10 @@ def view(p):
         "skills": _guarded(lambda: _skills(p))
         or {"recent": [], "counts": {}, "suggested": [], "unread": []},  # T-0939
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
-                   "hook_errors": len(doctor.recent_hook_errors()), "paused_hooks": doctor.paused_hooks()},
+                   "hook_errors": d["hook_errors"], "paused_hooks": doctor.paused_hooks()},
         "watch": _watch(p)
         + ([os.path.join(p.dir, "research", bs["name"])] if bs and bs["running"] else []),  # each lens answer moves it
+        "watch_now": _watch_now(p, act),  # T-3580
         "latency": [round(ms) for ms in d["series"]],
         "palette_custom": _guarded(c.pane_palette) or {},  # T-1717: fm design tokens --to pane --save
         "weekly_lean": _guarded(lambda: _weekly_lean(p)) is not False,  # T-3049: false: the pane's economy mode ignores weekly usage here
@@ -671,24 +716,12 @@ def view(p):
 def _closes_since(p, first):
     """T-0909: {(day, task)} for every task_done from `first` (YYYY-MM-DD) on: the whole ledger, not a tail (a busy
     project's 5000 events spanned six days), and the month `first` falls in from the archive fm tidy rolls past months
-    into. Only task_done lines are parsed."""
-    out = set()
-    for path in dict.fromkeys([os.path.join(p.dir, "archive", f"ledger-{first[:7]}.jsonl"), os.path.join(p.dir, "ledger.jsonl")]):
-        try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                for ln in f:
-                    if '"task_done"' not in ln:
-                        continue
-                    try:
-                        e = json.loads(ln)
-                    except ValueError:
-                        continue
-                    dt = str(e.get("ts") or "")[:10]
-                    if e.get("event") == "task_done" and dt >= first:
-                        out.add((dt, e.get("task")))
-        except OSError:
-            pass
-    return out
+    into. Only task_done lines are parsed, and T-3580 only those appended since the last run."""
+    rows = _grep_kept(p, "closes.json", [os.path.join(p.dir, "archive", f"ledger-{first[:7]}.jsonl"),
+                                         os.path.join(p.dir, "ledger.jsonl")], b'"task_done"',
+                      lambda e: [str(e.get("ts") or "")[:10], e.get("task")] if e.get("event") == "task_done" else None,
+                      first)
+    return {(dt, t) for dt, t in rows}
 
 
 def _fleet():
@@ -700,7 +733,6 @@ def _signals(sd, d, p=None):
     """T-0472: what the band shows as one quiet glyph, only when something is amber or red: a gate failing now, usage
     ahead of its pace, blocked tasks, hook errors, a finder your drops muted (T-2127). Calm: []."""
     from sampo import budget
-    from sampo import doctor
     from sampo import find
     out = []
     for r in ((d.get("checks") or {}).get("data") or {}).get("results") or []:
@@ -723,7 +755,7 @@ def _signals(sd, d, p=None):
     grants = _kept(p, "grants-line.json", lambda: sgrants.line(p)) if p else ""
     if grants:
         out.append({"level": "amber", "text": c.plain(grants)[:200]})
-    proof = _guarded(lambda: c.unproven_summary(p, c.PROOF_DAYS)) if p else None  # T-2395: keyed cache, no TTL
+    proof = d.get("proof")  # T-2395: keyed cache, no TTL; T-3580: view read it
     if proof and proof.get("n"):
         out.append({"level": "amber", "text": c.plain(c.unproven_line(proof["n"], proof.get("counts")))[:200]})
     from sampo import triggers  # T-2364: what ran or waits by itself (lanes and books read), kept like the others
@@ -731,15 +763,15 @@ def _signals(sd, d, p=None):
     if sr:
         out.append({"level": "amber", "text": c.plain(sr)[:200]})
     from sampo import outcomes  # T-2344: parked doors and a Brier worse than the base rate; outcomes() is slow, so kept
-    judged = _kept(p, "judgment-line.json", lambda: outcomes.band_line(p)) if p else ""
+    judged = _kept(p, "judgment-line.json", lambda: outcomes.band_line(p), SLOW_TTL_S) if p else ""
     if judged:
         out.append({"level": "amber", "text": c.plain(judged)[:200]})
-    errors = len(doctor.recent_hook_errors())
+    errors = d.get("hook_errors")
     if errors:
         out.append({"level": "amber", "text": f"{errors} hook error(s)"})
     # precision() reads the archive and, once a lead is done, git log for reverts: ~180 ms, kept like the learned line
-    muted = _kept(p, "find-muted.json", lambda: sorted(k for k, v in find.precision(p).items() if v < find.FLOOR)) \
-        if p else []
+    muted = _kept(p, "find-muted.json", lambda: sorted(k for k, v in find.precision(p).items() if v < find.FLOOR),
+                  SLOW_TTL_S) if p else []
     if muted:
         out.append({"level": "amber", "text": f"fm find muted ({', '.join(muted)}): you dropped most of its leads"})
     return out
@@ -757,9 +789,13 @@ def cmd_ui(args):
     except cli.UsageError:
         p = None
     if getattr(args, "follow", False) and p:
-        return _follow(lambda: view(p), lambda v: v["watch"] + [os.path.join(p.dir, "meta.json")], args.interval)
+        return _follow(lambda: view(p), lambda v: v["watch_now"] + v["watch"], args.interval)
     if getattr(args, "json", False):
-        return print(_cached_view(p) if p else json.dumps({"v": 1, "project": None}))
+        if not p:
+            return print(json.dumps({"v": 1, "project": None}))
+        with _git_kept(p):
+            text = _cached_view(p)
+        return print(text)
     v = view(p) if p else {"v": 1, "project": None}
     a = v.get("active")
     print(f"{v['project'] or 'not a Sampo project'}" + (f" · {a['id']} {a['stage']}" if a else "")
@@ -770,19 +806,26 @@ UI_CACHE_S = 10  # T-3542: how long a kept view may stand (FOREMAN_UI_CACHE_S; 0
 
 
 def _watch(p):
-    """The paths a surface stats to know the view moved (a running brainstorm's folder joins them in view)."""
-    return [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")]
+    """The busy paths a surface stats to know the view moved (a running brainstorm's folder joins them in view): they
+    move with every tool call, so the mod reruns fm ui for them at most every 10 s (T-3580). Not the state folder: every
+    derived file a reader rewrites there moved it (risk.json, genesis-step.json: several a second while lanes run)."""
+    return [os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")]
+
+
+def _watch_now(p, act=None):
+    """T-3580: what the user acts on, which the mod reruns fm ui for at once: meta.json (drive, autonomy, a pending
+    approval, the pause flag), asks.json, the trust record, the PANIC flag and the active task's brief (its focus moving
+    off, a step done)."""
+    return [os.path.join(p.dir, "meta.json"), os.path.join(p.dir, "asks.json"), c.trust_path(),
+            os.path.join(c.state_dir(), "PANIC")] + ([act.path] if act and act.path else [])
 
 
 def _ui_key(p, watch):
-    """T-3542: what a kept view stands on: the checkout, its lane and HEAD, and (inode, mtime, size) of meta.json and
-    each watched path but the state folder itself (the ledger, the tasks folder, a running brainstorm's). The folder's
-    mtime moves with every derived file a reader rewrites (risk.json, genesis-step.json: several a second while lanes
-    run); those follow the keyed inputs, and the rest of the folder is bounded by the age. The trust record and the
-    pause flag are keyed too: the user acts on them, and a pause reads autonomy as standard everywhere."""
+    """T-3542: what a kept view stands on: the checkout, its lane and HEAD, and (inode, mtime, size) of each watched path
+    (T-3580: what the user acts on, then the ledger, the tasks folder, a running brainstorm's). Derived files in the
+    state folder follow the keyed inputs, and the rest is bounded by the age."""
     out = [p.root, p.lane, c._git(p.root, "rev-parse", "HEAD").strip()]
-    for path in [os.path.join(p.dir, "meta.json"), c.trust_path(), os.path.join(c.state_dir(), "PANIC")] \
-            + [w for w in watch if w != p.dir]:
+    for path in watch:
         try:
             st = os.stat(path)
             out.append([path, st.st_ino, st.st_mtime_ns, st.st_size])
@@ -812,18 +855,74 @@ def _cached_view(p):
             pass
     kept = kept if isinstance(kept, dict) else {}
     watch = kept.get("watch")
-    watch = watch if isinstance(watch, list) and all(isinstance(w, str) for w in watch) else _watch(p)
+    watch = watch if isinstance(watch, list) and all(isinstance(w, str) for w in watch) else _watch_now(p) + _watch(p)
     at, key = time.time(), _ui_key(p, watch)
     if isinstance(kept.get("at"), (int, float)) and 0 <= at - kept["at"] < ttl and kept.get("key") == key \
             and isinstance(kept.get("text"), str) and kept["text"].startswith('{"'):
         return '{"cached": true, ' + kept["text"][1:]  # the mod polls again after a move that a kept view answered
     v = view(p)
     text = json.dumps(v)
-    if ttl > 0:  # a new watch list (a brainstorm started or ended) is keyed from the next build on
+    if ttl > 0:  # a new watch list (a brainstorm started or ended, a focus) is keyed from the next build on
+        now = v["watch_now"] + v["watch"]
         with contextlib.suppress(OSError):
-            c.write_atomic(path, json.dumps({"at": at, "key": key if v["watch"] == watch else None,
-                                             "watch": v["watch"], "text": text}))
+            c.write_atomic(path, json.dumps({"at": at, "key": key if now == watch else None, "watch": now,
+                                             "text": text}))
     return text
+
+
+def _git_stamp(root):
+    """T-3580: (path, inode, mtime, size) of what git's ref answers stand on: HEAD, packed-refs, each folder under refs/
+    (an update renames a file into one), the worktrees folder and each worktree's HEAD. None outside a git checkout."""
+    top = c.git_root(root)
+    if not top:
+        return None
+    common = os.path.join(top, ".git")
+    if os.path.isfile(common):  # a worktree: its .git file names its git dir, whose commondir names the shared one
+        try:
+            with open(common, encoding="utf-8") as f:
+                common = os.path.join(top, f.read().partition("gitdir:")[2].strip())
+            with open(os.path.join(common, "commondir"), encoding="utf-8") as f:
+                common = os.path.normpath(os.path.join(common, f.read().strip()))
+        except FileNotFoundError:  # a submodule's git dir is its own common dir
+            pass
+        except OSError:
+            return None
+    paths = [os.path.join(common, n) for n in ("HEAD", "packed-refs", "worktrees")]
+    paths += sorted(d for d, _, _ in os.walk(os.path.join(common, "refs")))
+    with contextlib.suppress(OSError):
+        paths += [os.path.join(common, "worktrees", n, "HEAD") for n in sorted(os.listdir(paths[2]))]
+    out = []
+    for path in paths:
+        try:
+            st = os.stat(path)
+            out.append([path, st.st_ino, st.st_mtime_ns, st.st_size])
+        except OSError:
+            out.append([path])
+    return out
+
+
+@contextlib.contextmanager
+def _git_kept(p):
+    """T-3580: core._git's ref-only answers for this run, kept in cache/git.json while the stamp of what they stand on
+    holds: the pane's run started ~20 git processes, nearly all asking what the last run asked."""
+    stamp, path, kept = _git_stamp(p.root), os.path.join(p.dir, "cache", "git.json"), {}
+    if stamp:
+        try:
+            with open(path, encoding="utf-8") as f:
+                got = json.load(f)
+            if isinstance(got, dict) and got.get("stamp") == stamp and isinstance(got.get("answers"), dict):
+                kept = got["answers"]
+        except (OSError, ValueError):
+            pass
+    asked = dict(kept)
+    c.GIT_KEPT = kept if stamp else None
+    try:
+        yield
+    finally:
+        c.GIT_KEPT = None
+    if stamp and kept != asked:  # stamped before the run: a ref that moved during it is asked again next time
+        with contextlib.suppress(OSError):
+            c.write_atomic(path, json.dumps({"stamp": stamp, "answers": kept}))
 
 
 def _follow(build, paths, interval, refresh=30.0):

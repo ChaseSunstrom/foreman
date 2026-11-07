@@ -76,7 +76,8 @@ export type FmView = {
   recent?: string[]
   skills?: FmSkills // T-0939: Skill calls and stack-card reads this week, and the map's unread suggestions
   health?: { hook_p95_ms: number | null; guard_blocks: number; hook_errors: number; paused_hooks?: string[] }
-  watch?: string[] // paths whose mtime moves when the record changes
+  watch?: string[] // paths whose mtime moves when the record changes (busy: at most one fm ui per 10 s)
+  watch_now?: string[] // T-3580: what the user acts on (meta, asks, trust, pause, the active brief): a move reruns fm ui at once
   cached?: boolean // T-3542: fm printed its kept view (up to 10 s old); absent on a fresh build
   latency?: number[] // the latest hook run times (ms), oldest first
   palette_custom?: Record<string, string> // T-1717: fm design tokens --to pane --save, checked: C's keys, #rrggbb

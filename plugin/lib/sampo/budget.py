@@ -57,8 +57,25 @@ def _today():
 
 
 def ledger(days=1):
-    since = (datetime.date.today() - datetime.timedelta(days=days - 1)).isoformat()
-    return [e for e in c.tail_jsonl(_path("spend.jsonl"), 20000) if str(e.get("day", "")) >= since]
+    """The spend rows of the last `days` local days (of the newest 20,000). T-3580: read from a day before since by the
+    rows' UTC stamps (a local day starts up to 14 h either side), not parsed whole: fm ui asked on every pane poll."""
+    first = datetime.date.today() - datetime.timedelta(days=days - 1)
+    since = first.isoformat()
+    try:
+        with open(_path("spend.jsonl"), "rb") as f:
+            c._seek_since(f, (first - datetime.timedelta(days=1)).isoformat().encode())
+            lines = f.read().splitlines()[-20000:]
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(e, dict) and str(e.get("day", "")) >= since:
+            out.append(e)
+    return out
 
 
 _LOCK, _FLIGHT = threading.RLock(), {}  # T-2292: sessions running at once under one process, by feature

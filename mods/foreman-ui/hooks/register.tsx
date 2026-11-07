@@ -175,7 +175,12 @@ const waiting = (v: FmView | null) =>
 
 // Module variables start over on a reload; what a drawing reads lives in $.state.
 let fmPath: string | null = null
-let marks = ''
+let marks: string | null = null // the busy watched files' stamps (null: not seen yet)
+let hotMarks: string | null = null // T-3580: the stamps of what the user acts on (fm ui's watch_now)
+let stale = false // T-3580: a busy file moved since the last run; fm ui reruns once GAP_MS allows
+let owed = false // T-3580: a watch_now move or a swallowed turn-end or pane refresh: the next poll past URGENT_MS runs it
+const GAP_MS = 10000 // T-3580: busy files and tool calls rerun fm ui (~0.5 s CPU) at most this often
+const URGENT_MS = 2000 // T-3580: and what the user acts on at most this often
 let agentsShown = '' // T-1437: the running subagents' times as last drawn, when no mascot blink repaints them
 let isDirty = true
 let saidSeq = 0 // T-1090: one id per model step, for its narration entry
@@ -218,9 +223,11 @@ async function chime($: EngineInterface, name: 'done' | 'needs') {
   if (await read($, sound)) await $.audio.play({ asset: `sounds/${name}.wav` }).catch(() => undefined)
 }
 
-async function refresh($: EngineInterface): Promise<boolean> {
+// fromPoll: the 2 s poll's own run; any other (a turn's end, a pane action, a command) is one the user waits on
+async function refresh($: EngineInterface, fromPoll = false): Promise<boolean> {
   if (isBusy) {
-    isDirty = true
+    if (fromPoll) isDirty = true
+    else owed = true // T-3580: a run already in flight swallowed it; the next poll runs it, not the 10 s gap
     return false
   }
   isBusy = true
@@ -371,16 +378,27 @@ async function tick($: EngineInterface) {
     if (running.some(a => !live.has(a.id))) await update($, agents, list => list.map(a => (live.has(a.id) ? a : { ...a, done: true })))
   }
   const v = await read($, view)
-  const stamps = await Promise.all(
-    (v?.watch ?? []).map(p => $.fs.stat(p).then(s => `${s.mtimeMs}:${s.size}`, () => '-')),
-  )
+  const stamps = async (paths?: string[]) =>
+    (await Promise.all((paths ?? []).map(p => $.fs.stat(p).then(s => `${s.mtimeMs}:${s.size}`, () => '-')))).join('|')
+  const [slow, hot] = await Promise.all([stamps(v?.watch), stamps(v?.watch_now)])
   const now = await $.clock.now()
-  const moved = stamps.join('|') !== marks
-  marks = stamps.join('|')
-  if (isDirty || moved || now - lastFull > 30000) await refresh($)
-  // T-3542: fm kept its view (its key leaves some state files to a 10 s age), so the move this poll saw may not be in
-  // it yet: the next poll asks again, cheaply, until a fresh one comes back
-  if (moved && (await read($, view))?.cached) marks = ''
+  // T-3580: the ledger and the tasks folder move with every tool call (fm ui ran ~1,665 times an hour): those and the
+  // tool calls rerun it at most every GAP_MS; a pause, trust, an ask, drive or the active task's brief on the next poll
+  // URGENT_MS after the last run (a burst of them is one run)
+  if (hotMarks !== null && hot !== hotMarks) owed = true
+  hotMarks = hot
+  if (marks !== null && slow !== marks) stale = true
+  marks = slow
+  const since = now - lastFull
+  if (owed ? since >= URGENT_MS : ((isDirty || stale) && since >= GAP_MS) || since > 30000) {
+    const moved = stale
+    const urgent = owed
+    stale = false
+    owed = false
+    await refresh($, !urgent) // an owed run a run in flight swallows stays owed
+    // T-3542: fm kept its view (up to 10 s old), so the move this poll saw may not be in it yet: ask again after the gap
+    if (moved && (await read($, view))?.cached) stale = true
+  }
 }
 
 // The context meter; at CHECKPOINT_AT% Sampo checkpoints the active task once, so a compaction loses nothing.

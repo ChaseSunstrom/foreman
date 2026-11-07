@@ -678,7 +678,7 @@ def rows(sessions=None):
     for s in live() if sessions is None else sessions:
         sid = s["session_id"]
         p = c.find_project(s["cwd"]) if s.get("cwd") and os.path.isdir(s["cwd"]) else None
-        act = c.active_brief(c.load_briefs(p), p.lane) if p else None
+        act = c.active_brief_fast(p, p.lane) if p else None  # T-3580: not every brief parsed per session per pane poll
         out.append({"session": sid, "project": s.get("project"), "task": act.id if act else None,
                     "title": c.fit(act.title, 80) if act else None, "context_pct": s.get("context_pct"),
                     "seen": s.get("ts"), "tmux": bool(s.get("tmux_pane")), "mail": len(unread(sid, mark=False)),

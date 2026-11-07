@@ -78,8 +78,10 @@ function world(on: On, views: FmView[]) {
   const opened: string[] = []
   const clock = mock.clock(on)
   mock.env(on, { FOREMAN_FM: 'fm', HOME: '/home/u' })
+  const gate: { hold: Promise<void> | null } = { hold: null } // T-3580: a test holds fm ui runs in flight
   on('process.run', async ($, e) => {
     calls.push([...e.argv])
+    if (e.argv[1] === 'ui' && gate.hold) await gate.hold
     const v = views.length > 1 ? views.shift()! : views[0]
     const stdout = e.argv[1] === 'ui' ? JSON.stringify(v) : e.argv[1] === 'capture' ? 'Captured as T-0042 [FEATURE, M] (source: user).' : 'ok'
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -161,7 +163,7 @@ function world(on: On, views: FmView[]) {
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
     return <Text>engine</Text>
   })
-  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools, submitted, session, panes, blits }
+  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools, submitted, session, panes, blits, gate }
 }
 
 test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
@@ -649,7 +651,7 @@ test('a poll that saw the state folder move but got fm\'s kept view asks again u
   let mtime = 1
   on('fs.stat', async () => ({ value: { mtimeMs: mtime, size: 10, isFile: false, isDirectory: true } }) as never)
   const fresh: FmView = { ...CALM, watch: ['/s/state'] }
-  const { calls, clock } = world(on, [fresh, fresh, { ...fresh, cached: true }, { ...fresh, cached: true }, fresh])
+  const { calls, clock } = world(on, [fresh, { ...fresh, cached: true }, { ...fresh, cached: true }, fresh])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await clock.advance(2000) // the first poll records the folder's stamp
   const polls = () => calls.filter(c => c[1] === 'ui').length
@@ -657,13 +659,83 @@ test('a poll that saw the state folder move but got fm\'s kept view asks again u
   await clock.advance(2000)
   expect(polls()).toBe(settled) // still: no fm run
   mtime = 2
-  await clock.advance(2000) // moved: fm answers with its kept view
-  await clock.advance(2000) // no new move, but the kept view may predate it: ask again (kept once more)
-  await clock.advance(2000) // and again: fresh this time
+  await clock.advance(6000) // moved: at 10 s from the last run, fm answers with its kept view
+  expect(polls()).toBe(settled + 1)
+  await clock.advance(10000) // no new move, but the kept view may predate it: ask again (kept once more)
+  await clock.advance(10000) // and again: fresh this time
   expect(polls()).toBe(settled + 3)
-  await clock.advance(2000)
-  await clock.advance(2000)
+  await clock.advance(10000)
   expect(polls()).toBe(settled + 3) // a fresh view ends it
+})
+
+test('busy files rerun fm ui at most every 10 s; a state the user acts on reruns it at once (T-3580)', async ($, on) => {
+  // ~1,665 runs an hour at ~0.5 s CPU each: the ledger and the tasks folder move with every tool call
+  const at: Record<string, number> = {}
+  on('fs.stat', async ($, e) => ({ value: { mtimeMs: at[e.path] ?? 1, size: 10, isFile: true, isDirectory: false } }) as never)
+  const fresh: FmView = { ...CALM, watch: ['/s/ledger.jsonl'], watch_now: ['/s/meta.json'] }
+  const { calls, clock } = world(on, [fresh])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true }) // a run at 0 s
+  const polls = () => calls.filter(c => c[1] === 'ui').length
+  await clock.advance(2000) // the first poll records the stamps
+  const settled = polls()
+  for (const n of [2, 3, 4]) {
+    at['/s/ledger.jsonl'] = n // a tool call's ledger line, every poll
+    await clock.advance(2000)
+  }
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.py' }) // a tool call dirties the view too
+  expect(polls()).toBe(settled) // 8 s: none yet
+  await clock.advance(2000)
+  expect(polls()).toBe(settled + 1) // 10 s after the last run: one run covers them all
+  at['/s/ledger.jsonl'] = 5
+  await clock.advance(2000)
+  expect(polls()).toBe(settled + 1)
+  at['/s/meta.json'] = 2 // a pause, a drive change, an ask: at once
+  await clock.advance(2000)
+  expect(polls()).toBe(settled + 2) // and that run covers the ledger's move too
+  await clock.advance(20000)
+  expect(polls()).toBe(settled + 2) // nothing moved since
+})
+
+test('a burst of moves the user acts on is one fm ui run, 2 s after the last (T-3580)', async ($, on) => {
+  const at: Record<string, number> = {}
+  on('fs.stat', async ($, e) => ({ value: { mtimeMs: at[e.path] ?? 1, size: 10, isFile: true, isDirectory: false } }) as never)
+  const { calls, clock } = world(on, [{ ...CALM, watch: ['/s/ledger.jsonl'], watch_now: ['/s/meta.json'] }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const polls = () => calls.filter(c => c[1] === 'ui').length
+  await clock.advance(2000) // the first poll records the stamps
+  await clock.advance(500)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.turn.complete({ answer: '', durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' }) // a run
+  const settled = polls()
+  at['/s/meta.json'] = 2
+  await clock.advance(1500) // the poll 1.5 s after that run holds it
+  expect(polls()).toBe(settled)
+  at['/s/meta.json'] = 3
+  await clock.advance(2000) // one run for both moves
+  expect(polls()).toBe(settled + 1)
+  await clock.advance(2000)
+  expect(polls()).toBe(settled + 1)
+})
+
+test('a turn end that a run in flight swallowed reruns fm ui on the next poll, not after the 10 s gap (T-3580)', async ($, on) => {
+  const { calls, clock, gate } = world(on, [CALM])
+  const polls = () => calls.filter(c => c[1] === 'ui').length
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(2000)
+  let release = () => {}
+  gate.hold = new Promise<void>(r => (release = r))
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.turn.start({ text: 'go', turnId: 't2' })
+  const first = $.turn.complete({ answer: '', durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.advance(0)
+  const settled = polls() // t1's run is in flight
+  await $.turn.complete({ answer: '', durationMs: 10, isAborted: false, turnId: 't2', reason: 'answer' }) // swallowed
+  gate.hold = null
+  release()
+  await first
+  expect(polls()).toBe(settled)
+  await clock.advance(2000)
+  expect(polls()).toBe(settled + 1) // the swallowed one, owed: not 10 s on
 })
 
 test('the band shows context; at 85% Sampo checkpoints once', async ($, on) => {

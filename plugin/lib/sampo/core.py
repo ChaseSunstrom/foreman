@@ -5091,15 +5091,28 @@ def trailer_grep(tid):
 
 # ---------------------------------------------------------------- checkpoint / resume
 
+GIT_KEPT = None  # T-3580: {root and args: [code, out, err]} of _git's ref-only answers, kept while the refs stand still
+_REF_ONLY = (("rev-parse",), ("rev-list",), ("merge-base",), ("cherry",))  # and worktree list: commits and refs alone
+_CLOCKED = ("--since", "--until", "--after", "--before", "--max-age", "--min-age")  # an answer that ages with the clock
+# exit 128 that answers about refs (a lock, a corrupt object or no repository is a failure, asked again next time)
+_NO_SUCH_REV = lazy(r"unknown revision|bad revision|Needed a single revision|not a valid object name|unknown commit")
+
+
 def _git(root, *args, timeout=2, fail="", proc=False):
     """git's stdout, or `fail` on any failure; with `proc`, the CompletedProcess (returncode 124 on a timeout and 127
     when git can't run, the error as stderr, so neither reads as git's own 1, "no match"). Paths come raw (no
     quoting of spaces or non-ASCII), undecodable bytes are
     replaced, and GIT_* variables can't point it at another repository. Sampo's one git runner (T-0961); fmguard
-    keeps its own, it is hook-hot."""
+    keeps its own, it is hook-hot. T-3580: while a caller (fm ui) sets GIT_KEPT, a ref-only answer comes from it."""
     import subprocess
+    cmd, key = ["git", "-c", "core.quotePath=false", "-C", root, *args], None
+    if GIT_KEPT is not None and (args[:1] in _REF_ONLY or args[:2] == ("worktree", "list")) \
+            and not any(str(a).startswith(_CLOCKED) for a in args):
+        key = "\0".join(map(str, (root, *args)))
+        if key in GIT_KEPT and os.path.isdir(root):
+            r = subprocess.CompletedProcess(cmd, *GIT_KEPT[key])
+            return r if proc else r.stdout if r.returncode == 0 else fail
     env = dict({k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, GIT_TERMINAL_PROMPT="0")
-    cmd = ["git", "-c", "core.quotePath=false", "-C", root, *args]
     try:  # never interactive: no terminal prompt, no stdin to wait on
         r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout, env=env,
                            stdin=subprocess.DEVNULL)
@@ -5107,6 +5120,9 @@ def _git(root, *args, timeout=2, fail="", proc=False):
         r = subprocess.CompletedProcess(cmd, 124, "", f"timed out after {e.timeout:g} s")
     except (OSError, subprocess.SubprocessError) as e:
         r = subprocess.CompletedProcess(cmd, 127, "", str(e))
+    if key is not None and (r.returncode == 0 or r.returncode == 1 and not r.stderr.strip()
+                            or r.returncode == 128 and _NO_SUCH_REV.search(r.stderr)):
+        GIT_KEPT[key] = [r.returncode, r.stdout, r.stderr]  # an answer, "no" and "no such ref" too; never a git failure
     return r if proc else r.stdout if r.returncode == 0 else fail
 
 

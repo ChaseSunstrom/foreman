@@ -377,8 +377,9 @@ def due(p):
     if brief and str(brief) > str(meta.get("rsi_at") or "") and (c.age_days(brief) or 0) * 24 < MIN_GAP_H:
         return False
     start = meta.get("rsi_at") or meta.get("created") or ""
-    done = sum(1 for e in c.tail_jsonl(os.path.join(p.dir, "ledger.jsonl"), 6000)
-               if e.get("event") == "task_done" and (e.get("ts") or "") >= start)  # second-resolution stamps
+    # T-3580: only the task_done lines are parsed (6,000 lines on each fm ui and next_for); second-resolution stamps
+    done = sum(1 for e in c._tail_rows(os.path.join(p.dir, "ledger.jsonl"), 6000, keep=('"task_done"',))
+               if isinstance(e, dict) and e.get("event") == "task_done" and str(e.get("ts") or "") >= start)
     return done >= every
 
 
