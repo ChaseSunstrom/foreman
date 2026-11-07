@@ -4932,26 +4932,34 @@ def _mark_builder(pl, returned):
     aid = str(pl.get("agent_id") or "")
     if pl.get("agent_type") != "foreman:fm-builder" or not re.fullmatch(r"[\w-]{4,64}", aid):
         return
+    def mine(b):  # open, and its lane is this builder's worktree
+        return b and b.status not in c.CLOSED and str(b.meta.get("lane") or "").rstrip("/").endswith(f"agent-{aid}")
+
+    def mark(b):  # under the lock, on the brief re-read there: one that moved meanwhile is left alone
+        if mine(b):
+            if returned:
+                b.meta["builder_returned"] = c.now()
+            else:
+                b.meta.pop("builder_returned", None)
     try:
         p = c.find_project(_cwd(pl))
         if not p:
             return
-        def mine(b):  # open, and its lane is this builder's worktree
-            return b and b.status not in c.CLOSED and str(b.meta.get("lane") or "").rstrip("/").endswith(f"agent-{aid}")
         # T-3535: scanned unlocked (each builder start and stop held the lock across every brief, mostly to match
-        # none); only a match locks, for one read and save; async, so the long wait costs nothing
-        hits = [b.id for b in c.load_briefs(p) if mine(b)]
-        if not hits:
-            return
-        with c.lock(p.dir, timeout=LOCK_SLOW):
-            for tid in hits:
-                b = c.find_brief(p, tid)
-                if mine(b):  # read again under the lock
-                    if returned:
-                        b.meta["builder_returned"] = c.now()
-                    else:
-                        b.meta.pop("builder_returned", None)
-                    c.save_brief(p, b)
+        # none); only a match locks, for one read and save. T-3609: a mark already in place takes no lock at all
+        todo = [b.id for b in c.load_briefs(p) if mine(b) and bool(b.meta.get("builder_returned")) != returned]
+        from sampo import cli
+        for tid in todo:
+            busy = 0
+            while busy < 3:  # mutate waits up to 5 s for the lock: 15 s at most, in an async hook
+                try:
+                    cli.mutate(p, tid, mark, "builder_mark", {"returned": returned, "agent": aid})
+                    break
+                except c.LockTimeout:
+                    busy += 1
+            if busy:  # expected contention: one counted line, not a traceback
+                log_error("builder mark", f"{tid}: project lock busy {busy}x, "
+                                          + ("mark lost" if busy == 3 else "marked on a retry"))
     except Exception:  # bookkeeping: never the subagent's own event
         log_error("builder mark", _tb())
 
