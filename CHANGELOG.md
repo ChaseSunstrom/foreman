@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- The test runner no longer crashes on a file whose name isn't valid UTF-8: the coverage cache reads git's output, hashes and saves such paths with surrogate escapes (a crash failed the 05:20 ship's full suite) (T-3651)
 - A close after a green merge train reuses the train's pass: its linked tests are counted the way the train picks them (another runner's tests only when a gate runs that runner; sync-mirror .md files no longer link tests), and a newer run on other code no longer hides the pass on this code (T-3566).
 - Hooks no longer rebuild the whole task state for the taint check, scan the tasks folder once per hook run, and keep tempfile, shutil, hashlib, subprocess and other unused modules off the hot path, cutting PreToolUse Bash CPU from about 195 to 76 ms and PostToolUse Bash from 137 to 67 ms on real state (T-3577).
 - The exam's planted hook wait now scales with machine load, so the self-change gate's loaded doubling rule still catches it and test_exam.LeanKindGateHookDelay stops failing merges at high load (T-3605)
