@@ -291,16 +291,192 @@ def save_times(new):
     for k, v in new.items():
         d.pop(k, None)
         d[k] = round(v, 2)
-    d = dict(list(d.items())[-20000:])
-    p = f"{times_path()}.{os.getpid()}"
+    _write_json(times_path(), dict(list(d.items())[-20000:]))
+
+
+def _write_json(path, d):
+    p = f"{path}.{os.getpid()}"
     try:
         with contextlib.suppress(OSError):
             os.unlink(p)  # a stale or planted one: O_EXCL below then never follows a symlink
         with os.fdopen(os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600), "w") as f:
             json.dump(d, f)
-        os.replace(p, times_path())  # atomic: a run beside this one reads the old file or the new, never half
+        os.replace(p, path)  # atomic: a run beside this one reads the old file or the new, never half
     except OSError:
-        pass  # times only order the jobs
+        pass  # times only order the jobs, and the cache only saves reruns
+
+
+NO_CACHE = "SAMPO_NO_TEST_CACHE"  # T-3502: =1 (or FOREMAN_NO_TEST_CACHE) runs every class, cached or not
+SAMPLE = 0.1  # the share of cached classes rerun anyway: a key missing a dependency shows, and the cache is dropped
+STATE = ".sampo/"  # Sampo's synced task state: every sampo call writes it, no test reads it (each has its own home)
+WALKS = re.compile(r"\b(listdir|scandir|walk|glob|iglob|rglob|iterdir)\(|ls-files")  # reads folders: the whole tree
+PRUNE_S = 14 * 86400  # a repo's cache unused this long (a removed lane's) is deleted
+
+
+def cache_path(repo):
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(base, "sampo", "run-cache", hashlib.sha1(repo.encode()).hexdigest()[:16] + ".json")
+
+
+def load_cache(path):
+    """T-3502: (generation, {class id: [key, tests]}) of the classes that passed whole at a key; (0, {}) when missing
+    or corrupt. The generation goes up each time a run finds the cache wrong and drops it."""
+    try:
+        with open(path) as f:
+            d = json.load(f)
+        recs = {c: v for c, v in d["classes"].items() if isinstance(v, list) and len(v) == 2 and isinstance(v[1], int)}
+        return int(d["gen"]), recs
+    except Exception:  # a corrupt cache only costs reruns
+        return 0, {}
+
+
+@contextlib.contextmanager
+def _cache_lock(path):
+    """The cache's lock file held, so a read-merge-write is one step among the runs beside this one; no lock without
+    flock (Windows) or a folder it can't write."""
+    fd = None
+    with contextlib.suppress(OSError):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        if fcntl:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        yield
+    finally:
+        if fd is not None:
+            os.close(fd)  # closing it frees the lock
+
+
+def save_cache(path, new, gen):
+    """New records merged into the file's under its lock, newest 20000 kept; nothing when the cache was dropped since
+    this run read it at gen (its records came from a cache found wrong). The other repos' caches unused for PRUNE_S go."""
+    with _cache_lock(path):
+        cur_gen, recs = load_cache(path)
+        if cur_gen != gen:
+            return
+        for c, v in new.items():
+            recs.pop(c, None)
+            recs[c] = v  # newest last: the cap keeps them
+        _write_json(path, {"gen": gen, "classes": dict(list(recs.items())[-20000:])})
+    folder = os.path.dirname(path)
+    with contextlib.suppress(OSError):
+        for name in os.listdir(folder):
+            q = os.path.join(folder, name)
+            with contextlib.suppress(OSError):
+                if q not in (path, path + ".lock") and time.time() - os.lstat(q).st_mtime > PRUNE_S:
+                    os.unlink(q)
+
+
+def drop_cache(path):
+    """T-3502: the cache found wrong: emptied at the next generation, so a run that read it before can't save it back."""
+    with _cache_lock(path):
+        _write_json(path, {"gen": load_cache(path)[0] + 1, "classes": {}})
+
+
+def _git(cwd, *args, data=None):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # a hook's GIT_DIR would hash another tree
+    return subprocess.run(["git", "-C", cwd, *args], input=data, capture_output=True, text=True, env=env, timeout=60,
+                          check=True).stdout
+
+
+def tree():
+    """T-3502: (repo root, {path: blob hash}) of the files as they are on disk: the index's hashes, a modified or
+    untracked file hashed again. None outside git."""
+    try:
+        repo = _git(HERE, "rev-parse", "--show-toplevel").strip()
+        blobs = {}
+        for ln in _git(repo, "ls-files", "-s", "-z").split("\0"):
+            if ln:
+                meta, path = ln.split("\t", 1)
+                blobs[path] = meta.split()[1]
+        dirty = _git(repo, "ls-files", "-z", "-m", "-o", "--exclude-standard").split("\0")
+        dirty = list(dict.fromkeys(f for f in dirty if f))
+        for f in dirty:
+            blobs.pop(f, None)  # deleted ones stay out
+        live = [f for f in dirty if os.path.isfile(os.path.join(repo, f))]
+        if any("\n" in f for f in live):
+            return None  # hash-object reads a path a line
+        if live:
+            blobs.update(zip(live, _git(repo, "hash-object", "--stdin-paths", data="\n".join(live) + "\n").split()))
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+    return repo, blobs
+
+
+def _test_links(repo, files, only):
+    """The map's test → sources links (sampo.map.test_links); ImportError in a copy of run.py without Sampo."""
+    lib = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    from sampo import map as smap
+    return smap.test_links(repo, files, only)
+
+
+def _refs(text):
+    """The module names a test file imports or names as NAME.py (a script beside it that it runs)."""
+    out = set(re.findall(r"\b(\w+)\.py\b", text))
+    for a, b in re.findall(r"^\s*(?:from\s+(\w+)|import\s+([\w., ]+))", text, re.M):
+        out.update([a] if a else (x.split()[0].split(".")[0] for x in b.split(",") if x.split()))
+    return out
+
+
+def cache_keys(repo, blobs, cids):
+    """T-3502: {class id: key}, a hash of the blobs its module depends on: the module, the files beside run.py it
+    imports or names (helpers, forkcli, another test's base class), run.py, every root file and every file of the tests'
+    own top folder (plugin/: nearly every test drives Sampo, which may read any of it), and what the map links to those
+    modules (site/ for a test naming "site"). A module that, or whose helpers, read folders, or any when the map can't
+    be loaded: the whole
+    tree. Never Sampo's task state. Python's version, --sandbox and the local-models switch go in too."""
+    rel = os.path.relpath(HERE, repo).replace(os.sep, "/")
+    files = {f: b for f, b in blobs.items() if not f.startswith(STATE)}
+    texts = {}
+
+    def text(path):
+        if path not in texts:
+            try:
+                with open(os.path.join(repo, path), encoding="utf-8", errors="replace") as f:
+                    texts[path] = f.read()
+            except OSError:
+                texts[path] = ""
+        return texts[path]
+
+    def closure(path):
+        seen, todo = set(), [path]
+        while todo:
+            p = todo.pop()
+            if p not in seen and p in files:
+                seen.add(p)
+                todo += [f"{rel}/{n}.py" for n in _refs(text(p))]
+        return seen
+
+    def digest(paths, seed=""):
+        env = f"{sys.version}\0{bool(SANDBOX)}\0{os.environ.get('FOREMAN_NO_LOCAL_MODELS', '1')}\0{seed}"
+        h = hashlib.sha1(env.encode())
+        for f in sorted(paths):
+            h.update(f"{f}\0{files[f]}\0".encode())
+        return h.hexdigest()
+    beside = lambda f: f.startswith(rel + "/") and f.endswith(".py") and "/" not in f[len(rel) + 1:]  # noqa: E731
+    base = {f for f in files if not beside(f) and ("/" not in f or f.startswith(rel.split("/")[0] + "/"))}
+    base |= {f"{rel}/run.py"} & files.keys()
+    paths = {m: f"{rel}/{m.replace('.', '/')}.py" for m in {c.rsplit(".", 1)[0] for c in cids}}
+    deps = {m: closure(p) for m, p in paths.items() if p in files}
+    try:
+        links = _test_links(repo, list(files), set().union(*deps.values()))
+    except Exception:  # no Sampo beside this run.py, or a map that can't read this tree: every key is the whole tree
+        links = None
+    under, keys, every, root = {}, {}, None, digest(base)
+    for m, own in deps.items():
+        if links is None or any(WALKS.search(text(p)) for p in own):  # its helpers' walks too
+            every = keys[m] = every or digest(files)
+            continue
+        extra = set(own)
+        for s in {s for t in own for s in links.get(t, ())}:
+            if s.endswith("/"):
+                extra |= under.setdefault(s, {f for f in files if f.startswith(s)})
+            elif s in files:
+                extra.add(s)
+        keys[m] = digest(extra - base, root)
+    return {c: keys[c.rsplit(".", 1)[0]] for c in cids if c.rsplit(".", 1)[0] in keys}
 
 
 def work_time(secs):
@@ -593,6 +769,22 @@ def main():
         return 1
     if a.shard:
         todo = todo[a.shard[0] - 1::a.shard[1]]
+    # T-3502: a run naming modules skips the classes green at the same code, but 1 in 10 drawn; every run records
+    # them. Not with -k (part of a class), switched off, or nested in a class's slot (a test's own run.py).
+    skip, drawn, got = {}, set(), None
+    if not (a.k or (_env(NO_CACHE) or "0") != "0" or _env(SLOT_ENV)):
+        got = tree()
+    if got:
+        cache, keys = cache_path(got[0]), cache_keys(*got, todo)
+        gen, recs = load_cache(cache)
+        hits = [c for c in todo if c in keys and recs.get(c, [None])[0] == keys[c]] if a.names else []
+        drawn = {c for c in hits if random.random() < SAMPLE}
+        skip = {c: recs[c][1] for c in hits if c not in drawn}
+        todo = [c for c in todo if c not in skip]
+        if skip:
+            sys.stderr.write(f"run.py: skipped {len(skip)} classes green at the same code; "
+                             "FOREMAN_NO_TEST_CACHE=1 runs them\n")
+    owner = lambda j: j if j in parts else j.rsplit(".", 1)[0]  # noqa: E731  (a split class's job is one test)
     times = {} if a.shard else load_times()  # a shard's slice must not depend on this machine's last run
     todo = plan(todo, parts, whole, times)  # T-3166: jobs, a big class's tests apart
     if a.load and (room := load_room(a.load)) < a.load:
@@ -619,7 +811,30 @@ def main():
     # T-3541: the whole suite (the gate: no names, -k or -p) waits for any other on the machine, at most half its deadline
     slot = suite_slot(t0 + dl / 2) if not (a.names or a.k or a.p) else contextlib.nullcontext()
     with slot, burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
-        results = list(ex.map(lambda c: run_one(c, a.k or a.names, cap, end), todo))  # T-1994: the class is in a named module, so -k alone
+        go = lambda c: run_one(c, a.k or a.names, cap, end)  # noqa: E731  # T-1994: the class is in a named module, so -k alone
+        results = list(ex.map(go, todo))
+        bad = [r[0] for r in results if r[1] != 0 and owner(r[0]) in drawn  # a deadline's stop says nothing of it
+               and r[2] != NOT_STARTED and "the run's deadline" not in r[2]]
+        if bad:  # T-3502: green in the cache at this code, red now: the cache is wrong, so nothing it said holds
+            drop_cache(cache)
+            sys.stderr.write(f"run.py: {bad[0]} failed though the cache had it green at the same code: the cache is "
+                             f"wrong, dropped" + (f"; running the {len(skip)} classes it skipped\n" if skip else "\n"))
+            more = plan(list(skip), parts, whole, times)
+            results += list(ex.map(go, more))
+            todo, skip, got = todo + more, {}, None
+    if got:  # T-3502: each class that ran whole and green, none skipped, recorded at its key
+        size, ran = {}, {}
+        for t in set(ids):
+            size[t.rsplit(".", 1)[0]] = size.get(t.rsplit(".", 1)[0], 0) + 1
+        for job, code, err, n, _ in results:  # a skip (skipUnless a browser) passes here, maybe not elsewhere
+            ok, m = ran.get(owner(job), (True, 0))
+            ran[owner(job)] = ok and code == 0 and not re.search(r"\bskipped=\d", err), m + n
+        new = {c: n for c, (ok, n) in ran.items() if ok and c in keys and n == size.get(c) == len(parts.get(c, ()))}
+        again = tree() if new else None  # a file edited while the run ran: its class ran the old code or the new
+        now = cache_keys(*again, list(new)) if again and again[0] == got[0] else {}
+        new = {c: [keys[c], n] for c, n in new.items() if now.get(c) == keys[c]}
+        if new:
+            save_cache(cache, new, gen)
     if not a.shard:
         seen = set(ids)
         # T-3338: a killed class (negative rc) counts as slow, so the next run splits it instead of killing it again
@@ -647,6 +862,7 @@ def main():
     if ci:
         print("\n".join(summary_notes(results, time.time() - t0, a.deadline)), flush=True)
     total = sum(r[3] for r in results)
+    cached = f"; {sum(skip.values())} more green in the cache" if skip else ""  # T-3502: core._SOME_TESTS reads it
     slow = slowest(results, 3)
     if skipped():
         sys.stderr.write(f"\nleft out (FOREMAN_SKIP_TESTS): {', '.join(sorted(skipped()))}")
@@ -654,14 +870,15 @@ def main():
     said = ", ".join(names[:5]) + (f", +{len(names) - 5} more" if len(names) > 5 else "")
     sys.stderr.write("".join(f"\n  failed class: {n}" for n in names) + ("\n" if names else ""))  # T-3397: all of them, one per line
     sys.stderr.write(f"\nRan {total} tests in {time.time() - t0:.1f}s ({len(todo)} jobs, {a.j} at a time; "
-                     f"slowest: {slow})\n\n{f'FAILED ({len(failed)} classes: {said})' if failed else 'OK' if total else 'NO TESTS RAN'}\n")
+                     f"slowest: {slow}){cached}\n\n"
+                     f"{f'FAILED ({len(failed)} classes: {said})' if failed else 'OK' if total or skip else 'NO TESTS RAN'}\n")
     # T-2944: stopped at its own deadline with nothing really failed: exit 124 and say so last, so a caller (the
     # sentinel's re-verify) reads a busy machine, not a regression
     stopped = [r for r in failed if r[2] == NOT_STARTED or "the run's deadline" in r[2]]
     if stopped and len(stopped) == len(failed):
         sys.stderr.write("run.py: stopped at its deadline\n")
         return 124
-    return 1 if failed or not total else 0
+    return 1 if failed or not (total or skip) else 0
 
 
 if __name__ == "__main__":

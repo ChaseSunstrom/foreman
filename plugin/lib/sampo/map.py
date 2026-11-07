@@ -76,6 +76,20 @@ def build(p):
     if big:  # one folder holds most of the repo: show what's inside it instead
         del layout[big]
         layout.update("/".join(f.split("/")[:2]) + "/" if f.count("/") >= 2 else big for f in files if f.startswith(big))  # not a list: a path or word fragment, not a list
+    links = test_links(root, files)
+    lib = _lib(root, files)
+    return {"version": VERSION, "head": _git(root, "rev-parse", "HEAD").strip(), "gates": _gates(root, files, c.read_meta(p).get("checks") or []),
+            "layout": layout.most_common(12), "entry": [f for f in files if _ENTRY.search(f)][:8],
+            "hot": [f for f, _ in churn.most_common(HOT)], "tests": links, "files": len(files),
+            "ci": _ci(root, files), "pairs": _co_change(root, set(files)), "fixy": _fixy(root, set(files)),
+            "broke": _broke(p, set(files)), "lib": [x["name"] for x in lib],
+            "lib_cards": lib, "lib_stamp": _cards_stamp()}
+
+
+def test_links(root, files, only=None):
+    """{test file: the sources it is linked to}, of the test files in `only` (default all): by name, the folders it
+    names (T-2086) and its map-links lines (T-2838). The map's links, and run.py's test cache keys (T-3502)."""
+    tracked = set(files)
     sources = [f for f in files if _CODE.search(f) and not _TEST.search(f)]
     tops = {f.split("/", 1)[0] for f in files if "/" in f}
     mix = collections.defaultdict(collections.Counter)  # T-2267: code vs not, per second-level folder (plugin/skills)
@@ -84,7 +98,7 @@ def build(p):
             mix["/".join(f.split("/")[:2])][bool(_CODE.search(f))] += 1  # not a list: a path or word fragment, not a list
     prose = {d for d, n in mix.items() if n[False] > n[True]}
     links = {}
-    for t in (f for f in files if _TEST.search(f) and _CODE.search(f)):
+    for t in (f for f in files if _TEST.search(f) and _CODE.search(f) and (only is None or f in only)):
         stem, ext = _name_stem(t), os.path.splitext(t)[1]
         # same language; the source's name is the test's, or ends with it (test_guard.py → fmguard.py)
         # T-0709: a short name links when only a short prefix comes before it (test_bus.py → fmbus.py)
@@ -94,13 +108,7 @@ def build(p):
         srcs += [s for s in _marked(root, t) if s in tracked and s not in srcs]
         if srcs:
             links[t] = srcs
-    lib = _lib(root, files)
-    return {"version": VERSION, "head": _git(root, "rev-parse", "HEAD").strip(), "gates": _gates(root, files, c.read_meta(p).get("checks") or []),
-            "layout": layout.most_common(12), "entry": [f for f in files if _ENTRY.search(f)][:8],
-            "hot": [f for f, _ in churn.most_common(HOT)], "tests": links, "files": len(files),
-            "ci": _ci(root, files), "pairs": _co_change(root, set(files)), "fixy": _fixy(root, set(files)),
-            "broke": _broke(p, set(files)), "lib": [x["name"] for x in lib],
-            "lib_cards": lib, "lib_stamp": _cards_stamp()}
+    return links
 
 
 def _cards_stamp():

@@ -16,7 +16,8 @@ def in_process(**env):
 
 
 def nested(args, seed=None, env=None):
-    """T-3166: run.py as a child with its own times file (never the real one); returns (result, the file's times after)."""
+    """T-3166: run.py as a child with its own times file (never the real one) and no test cache (T-3502: its runs
+    differ by environment, not code); returns (result, the file's times after)."""
     import json
     import subprocess
     import tempfile
@@ -26,7 +27,7 @@ def nested(args, seed=None, env=None):
             with open(p, "w") as f:
                 json.dump(seed, f)
         r = subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "run.py"), *args],
-                           capture_output=True, text=True, timeout=300, env=dict(os.environ, FM_TEST_TIMES=p, **(env or {})))
+                           capture_output=True, text=True, timeout=300, env=dict(os.environ, FM_TEST_TIMES=p, FOREMAN_NO_TEST_CACHE="1", **(env or {})))
         return r, (json.load(open(p)) if os.path.exists(p) else None)
 
 
