@@ -382,11 +382,15 @@ class SampoTestCase(unittest.TestCase):
         e.pop("SAMPO_HOOK_SLACK", None)  # core.mirror_env would let it win over the value above
         e.update(env or {})
         payload = dict({"session_id": "sess-1", "cwd": self.repo, "hook_event_name": event}, **payload)
-        cmd = [sys.executable, HOOK, event]
-        if flags is not None:  # T-1226: the hook asks which Claude Code runs it and how it was started; by default
-            cmd = [self.claude_stand_in(), "-c", RELAY, *cmd, *flags]  # this test's process, else a new stand-in
-        return subprocess.run(cmd, input=json.dumps(payload), env=e, capture_output=True, text=True,
-                              timeout=timeout * busy_factor(), cwd=payload["cwd"])  # T-1730: a hang guard, not a bench
+        # T-1226: the hook asks which Claude Code runs it and how it was started; by default this test's process (a
+        # fork of the warm server, as fm() calls are, whose parent reads as this test: T-3572), else a new stand-in
+        if flags is None:
+            import forkcli
+            return forkcli.run(HOOK, [event], cwd=payload["cwd"], env=e, input=json.dumps(payload),
+                               timeout=timeout * busy_factor())  # T-1730: a hang guard, not a bench
+        return subprocess.run([self.claude_stand_in(), "-c", RELAY, sys.executable, HOOK, event, *flags],
+                              input=json.dumps(payload), env=e, capture_output=True, text=True,
+                              timeout=timeout * busy_factor(), cwd=payload["cwd"])
 
     def slow_start(self, delay=0.4):
         """T-1280: env for CI's slow interpreter start: every new Python process waits `delay` s (a sitecustomize)."""

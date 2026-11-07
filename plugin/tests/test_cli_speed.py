@@ -1,12 +1,14 @@
 """T-3252: the tests' fm calls go through a fork server: one process imports Sampo once and each call is a fork of it,
 which must behave exactly like a fresh `python3 fm ...` (argv, cwd, env, stdin, exit code, output) and cost far less."""
 import ast
+import json
 import os
 import statistics
 import subprocess
 import sys
 import time
 import unittest
+from unittest import mock
 
 from helpers import FM, ForemanTestCase
 
@@ -38,6 +40,8 @@ if sys.argv[1:2] == ["neg"]:
     sys.exit(-1)
 if sys.argv[1:2] == ["tmp"]:
     import tempfile; print("tmp", tempfile.gettempdir())
+if sys.argv[1:2] == ["ppid"]:
+    print("parent", os.getppid())
 if sys.argv[1:2] == ["path"]:
     print("tests on path", any(p.rstrip("/").endswith("plugin/tests") for p in sys.path))
 sys.exit(int(sys.argv[1]) if sys.argv[1:2] and sys.argv[1].isdigit() else 0)
@@ -51,6 +55,10 @@ class ForkServer(ForemanTestCase):
         with open(self.script, "w") as f:
             f.write(ECHO)
         self.addCleanup(forkcli.stop)
+        env = mock.patch.dict(os.environ)  # these test a class's own server, not the one run.py shares (T-3572)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop(forkcli.SHARED, None)
 
     def both(self, args, env, cwd, input=None):
         env = base(**env)
@@ -78,12 +86,13 @@ class ForkServer(ForemanTestCase):
                 self.assertIn("RuntimeError: boom", forked.stderr)
 
     def test_exit_codes_temp_dir_and_path_match_a_fresh_process(self):
-        # review (T-3297): sys.exit(-1) is 255 fresh; a call's own TMPDIR wins; the tests folder isn't on fm's path
+        # review (T-3297): sys.exit(-1) is 255 fresh; a call's own TMPDIR wins; the tests folder isn't on fm's path;
+        # T-3572: its parent is the caller, as the hook's Claude Code lookup (T-1226) needs
         other = os.path.join(self.tmp, "othertmp")
         os.makedirs(other)
         for args, env in ((["neg"], {"PATH": os.environ["PATH"]}),
                           (["tmp"], {"PATH": os.environ["PATH"], "TMPDIR": other}),
-                          (["path"], {"PATH": os.environ["PATH"]})):
+                          (["path"], {"PATH": os.environ["PATH"]}), (["ppid"], {"PATH": os.environ["PATH"]})):
             fresh, forked = self.both(args, env, self.tmp)
             self.assertEqual((forked.returncode, forked.stdout), (fresh.returncode, fresh.stdout), args)
 
@@ -125,6 +134,81 @@ class ForkServer(ForemanTestCase):
         fast = median(lambda: forkcli.run(FM, ["task", "show", "T-0001"], cwd=self.repo, env=env, timeout=60))
         # measured 2.4x both quiet (23 vs 55 ms) and at load 60 (85 vs 205 ms): the bar is a 40% cut
         self.assertLess(fast, slow * 0.6, f"forked {fast * 1000:.0f} ms, fresh {slow * 1000:.0f} ms")
+
+
+# T-3572: a class process run by run.py: one call through forkcli, then which process served it and its own servers
+CLASS = ("import json, sys, forkcli; p = forkcli.run(sys.argv[1], [], timeout=60); "
+         "print(json.dumps([p.returncode, p.stdout.strip(), [v[0] for v in forkcli._SERVER.values()]]))")
+# the real parent's argv[3] (os.getppid() reads as the caller in a fork): a forked call's manager is a fork of
+# `python3 forkcli.py serve SOCKET PID`; a fresh call's parent is `python3 -c CLASS SCRIPT`
+PARENT = ("ppid = open('/proc/self/stat').read().rsplit(')', 1)[1].split()[1]\n"
+          "print(open(f'/proc/{ppid}/cmdline').read().split(chr(0))[3])\n")
+
+
+class SharedServer(ForemanTestCase):
+    """T-3572: run.py starts one server and names it in its classes' environment; their calls fork it instead of each
+    class starting its own (an interpreter start and ~50 ms of imports per class)."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(forkcli.stop)
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        self.script = os.path.join(self.tmp, "parent.py")
+        with open(self.script, "w") as f:
+            f.write(PARENT)
+
+    def klass(self):
+        got = subprocess.run([sys.executable, "-c", CLASS, self.script], cwd=HERE, env=dict(os.environ),
+                             capture_output=True, text=True, timeout=120)
+        self.assertEqual(got.returncode, 0, got.stderr)
+        return json.loads(got.stdout)
+
+    def test_a_class_calls_through_the_runs_server_and_starts_none(self):
+        path = forkcli.share()
+        self.assertEqual(json.loads(os.environ[forkcli.SHARED]), [forkcli.LIB, path])
+        self.assertEqual(self.klass(), [0, path, []])
+
+    def test_another_trees_server_or_a_gone_one_is_not_used(self):
+        path = forkcli.share()  # another tree's server has another Sampo preloaded: the class's own code must run
+        for lib, sock in (("/elsewhere/plugin/lib", path), (forkcli.LIB, path + ".gone")):
+            os.environ[forkcli.SHARED] = json.dumps([lib, sock])
+            code, served, own = self.klass()
+            self.assertEqual(code, 0)
+            self.assertEqual(own, [served], f"{lib}: the class starts its own server and calls through it")
+            self.assertNotEqual(served, path)
+
+    def test_a_killed_class_takes_its_running_call_with_it(self):
+        # the run's server outlives a class run.py kills at its timeout; its hung call must not run on until the run ends
+        forkcli.share()
+        hang, pidfile = os.path.join(self.tmp, "hang.py"), os.path.join(self.tmp, "pid")
+        with open(hang, "w") as f:
+            f.write("import os, sys, time\nopen(sys.argv[1], 'w').write(str(os.getpid()))\ntime.sleep(120)\n")
+        klass = subprocess.Popen([sys.executable, "-c", "import sys, forkcli; forkcli.run(sys.argv[1], sys.argv[2:])",
+                                  hang, pidfile], cwd=HERE, env=dict(os.environ))
+        self.addCleanup(klass.wait)
+        self.addCleanup(klass.kill)
+        until = time.monotonic() + 60
+        while not (os.path.exists(pidfile) and open(pidfile).read()) and time.monotonic() < until:
+            time.sleep(0.1)
+        call = int(open(pidfile).read())
+        klass.kill()
+        while time.monotonic() < until:
+            try:
+                os.kill(call, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.1)
+        os.kill(call, 9)
+        self.fail("the call outlived its class")
+
+    def test_off_names_no_server_and_runs_fresh(self):
+        os.environ[forkcli.SHARED] = json.dumps([forkcli.LIB, "/inherited/s"])  # an outer run's: never passed on
+        os.environ["FOREMAN_FORK_CLI"] = "0"
+        self.assertIsNone(forkcli.share())
+        self.assertNotIn(forkcli.SHARED, os.environ)
+        self.assertEqual(self.klass(), [0, self.script, []])
 
 
 class ImportAudit(unittest.TestCase):

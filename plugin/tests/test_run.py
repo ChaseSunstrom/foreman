@@ -3,9 +3,16 @@ import contextlib
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(__file__))
 import run  # noqa: E402
+
+
+def in_process(**env):
+    """T-3572: env for run.main() called in this process: no fork server of its own (it would outlive the call until
+    the class exits) and no FOREMAN_FORK_SERVER left behind for the class's later tests."""
+    return mock.patch.dict(os.environ, {"FOREMAN_FORK_CLI": "0", **env})
 
 
 def nested(args, seed=None, env=None):
@@ -73,7 +80,7 @@ class Args(unittest.TestCase):
             ran = []
             with mock.patch.object(run, "classes", return_value=list(ids)), \
                     mock.patch.object(run, "run_one", lambda c, *a: ran.append(c) or (c, 0, "", 1, 0.0)), \
-                    mock.patch.object(sys, "argv", ["run.py", "--shard", f"{k}/2"]), \
+                    mock.patch.object(sys, "argv", ["run.py", "--shard", f"{k}/2"]), in_process(), \
                     contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(run.main(), 0)
             got.append(ran)
@@ -117,7 +124,7 @@ class Load(unittest.TestCase):
                 self.assertAlmostEqual(got, want, msg=text)
         case = helpers.ForemanTestCase()
         case.home, case.repo = "/nonexistent-home", "/"
-        import forkcli  # T-3297: fm() runs through the fork server, hooks through subprocess.run
+        import forkcli  # T-3297: fm() runs through the fork server; T-3572: hooks too
         with mock.patch.object(helpers, "busy_factor", return_value=3.0), \
                 mock.patch.object(helpers.subprocess, "run") as run_, mock.patch.object(forkcli, "run") as fork_:
             case.hook("Stop", {})
@@ -256,10 +263,11 @@ class Tmp(unittest.TestCase):
             dead = os.path.join(base, f"{run.TMP_PREFIX}{p.pid}-abc")
             live = os.path.join(base, f"{run.TMP_PREFIX}{os.getpid()}-def")
             other = os.path.join(base, "tmpkeepme1")
-            for x in (dead, live, other):
+            fork_dead, fork_live = (os.path.join(base, f"fmfork-{n}-x") for n in (p.pid, os.getpid()))  # T-3572
+            for x in (dead, live, other, fork_dead, fork_live):
                 os.makedirs(os.path.join(x, "sub"))
             run.sweep(base)
-            self.assertEqual(sorted(os.listdir(base)), sorted(os.path.basename(x) for x in (live, other)))
+            self.assertEqual(sorted(os.listdir(base)), sorted(os.path.basename(x) for x in (live, other, fork_live)))
 
 
 class Hang(unittest.TestCase):
@@ -361,7 +369,7 @@ class Hang(unittest.TestCase):
             with mock.patch.object(run, "HERE", d), mock.patch.object(run, "skipped", return_value=set()), \
                     mock.patch.object(run.time, "time", side_effect=lambda: next(clock, 200.0)), \
                     mock.patch.object(sys, "argv", ["run.py", "--deadline", "60", "-p", "test_late.py"]), \
-                    mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), \
+                    in_process(GITHUB_ACTIONS="true"), \
                     contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 code = run.main()
         self.assertEqual(code, 124)  # T-2944: stopped at its deadline, nothing really failed: a timeout

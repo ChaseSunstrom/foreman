@@ -4,7 +4,8 @@ costs a fork and the verb's own work instead of a fresh interpreter's start and 
 A forked call gets exactly the argv, cwd, environment and stdin the test gave it, and returns a CompletedProcess like
 subprocess.run. Only modules that read nothing from the environment at import are loaded ahead (PRELOAD; an audit test
 holds them to it), so no fork inherits the server's settings. Any trouble reaching the server falls back to a fresh
-subprocess, and FOREMAN_FORK_CLI=0 turns the server off.
+subprocess, and FOREMAN_FORK_CLI=0 turns the server off. T-3572: run.py starts one server for all its classes
+(share()), so a class starts its own only outside run.py, under --sandbox, or when the run's is gone.
 
 Each request: the server forks a manager (which owns the connection), the manager forks the worker that runs the
 script, waits for it and sends back its exit status. The worker's pid goes to the client first, so a timeout kills it.
@@ -13,6 +14,7 @@ import atexit
 import json
 import locale
 import os
+import select
 import shutil
 import signal
 import socket
@@ -25,15 +27,19 @@ import traceback
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIB = os.path.join(os.path.dirname(HERE), "lib")
 # sampo.cli, then what its first parser build imports (15 of a cold call's ~18 ms): preloaded, a fork skips them
+# T-3572: and ctypes, which every manager imported again for its prctl, and statistics, the hook's (~3 ms a call
+# each); not sampo.hooks itself, which reads FOREMAN_HOOK_SLACK at import
 PRELOAD = ("sampo.core", "sampo.cli", "sampo.design", "sampo.instr", "sampo.scene", "sampo.smoke", "inspect",
-           "dataclasses", "tokenize", "glob", "base64", "colorsys", "copy")
+           "dataclasses", "tokenize", "glob", "base64", "colorsys", "copy", "ctypes", "statistics")
 # what sampo.core does to the environment at import (SAMPO_X becomes FOREMAN_X; Claude's bin folder joins PATH): each
 # call does it again on its own environment, as a fresh process would
 REAPPLY = ("mirror_env", "claude_path")
 # what a fresh interpreter can't be given after it starts: a call that changes one of these runs as a fresh process
+# (PYTHON covers PYTHONPATH, PYTHONHASHSEED and every other interpreter setting)
 START_ENV = ("PYTHON", "LC_", "LANG", "TZ")
 _LOCK = threading.Lock()
 _SERVER = {}  # pid -> (socket path, process), or (None, None) when it couldn't start: one try per test process
+SHARED = "FOREMAN_FORK_SERVER"  # T-3572: run.py's server, which its classes call through: JSON [its LIB, its socket]
 _BASE_PATH = []  # the server's sys.path after its script folder: what a fresh `python3 SCRIPT` has after its own
 
 
@@ -88,6 +94,9 @@ def _worker(req):
             os.dup2(f, fd)
             os.close(f)
         sys.argv = [req["script"], *req["args"]]
+        # T-3572: a fresh child's parent is its caller, not this manager: what walks from os.getppid() (the hook's own
+        # Claude Code, T-1226; SessionStart's recorded pids) sees the test; the manager ends the call if the caller goes
+        os.getppid = lambda: req["ppid"]
         sys.path[:] = [os.path.dirname(os.path.abspath(req["script"])), *_BASE_PATH]  # as `python3 SCRIPT` sets it
         try:
             runpy.run_path(req["script"], run_name="__main__")
@@ -124,7 +133,6 @@ def serve(path, parent):
     import runpy  # noqa: F401
     for mod in PRELOAD:
         __import__(mod)
-    signal.signal(signal.SIGCHLD, signal.SIG_IGN)  # managers reap themselves
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # stop(): the finally below still runs
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
@@ -135,20 +143,34 @@ def serve(path, parent):
         while os.getppid() == parent:
             try:
                 conn, _ = srv.accept()
-            except socket.timeout:
-                continue
-            if os.fork() == 0:
-                srv.close()
-                _manage(conn)
-            conn.close()
+            except OSError:  # the 1 s timeout, or an accept that failed (EMFILE): keep serving
+                conn = None
+            if conn:
+                try:
+                    if os.fork() == 0:
+                        srv.close()
+                        _manage(conn)
+                except OSError:  # no fork (EAGAIN): the client reads a closed connection and fails that call
+                    pass
+                conn.close()
+            _reap()
     finally:
         if os.getpid() == me:  # never a forked child's exit
             shutil.rmtree(os.path.dirname(path), ignore_errors=True)
 
 
+def _reap():
+    """T-3572: wait for the managers that ended (not SIGCHLD ignored, which drops their CPU time), so a run's
+    rusage counts its forked calls the way it counts fresh ones."""
+    try:
+        while os.waitpid(-1, os.WNOHANG)[0]:
+            pass
+    except ChildProcessError:
+        pass
+
+
 def _manage(conn):
     """In the forked manager: run one request's worker, send its pid, wait, send its exit status, exit."""
-    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     _die_with_parent()
     try:
@@ -159,6 +181,16 @@ def _manage(conn):
             conn.close()
             _worker(req)
         _send(conn, {"pid": pid})
+        try:  # T-3572: a client gone (run.py killed its class) takes its call with it
+            done = os.pidfd_open(pid)
+        except (AttributeError, OSError):  # no pidfd (not Linux, an old kernel): only wait, as before
+            done = None
+        if done is not None:
+            if done not in select.select([conn, done], [], [])[0]:
+                try:
+                    os.killpg(pid, signal.SIGKILL)
+                except ProcessLookupError:  # not its own group yet
+                    os.kill(pid, signal.SIGKILL)
         _, status = os.waitpid(pid, 0)
         _send(conn, {"code": os.waitstatus_to_exitcode(status)})
     except Exception:  # noqa: BLE001 - the client reads a closed connection
@@ -170,12 +202,15 @@ def _server():
     """This process's server's socket path, started on first use; None when off or it couldn't start (tried once)."""
     if os.environ.get("FOREMAN_FORK_CLI") == "0":
         return None
+    lib, path = json.loads(os.environ.get(SHARED) or "[null, null]")
+    if lib == LIB and os.path.exists(path):  # another tree's server would run its own preloaded Sampo, not this one
+        return path
     with _LOCK:
         got = _SERVER.get(os.getpid())
         if got and (got[1] is None or got[1].poll() is None):
             return got[0]
         base = tempfile.gettempdir()  # the class TMPDIR run.py removes after the class, so a killed server leaks nothing
-        folder = tempfile.mkdtemp(prefix="fmfork-", dir=base if len(base) < 60 else ("/tmp" if os.path.isdir("/tmp") else None))
+        folder = tempfile.mkdtemp(prefix=f"fmfork-{os.getpid()}-", dir=base if len(base) < 60 else ("/tmp" if os.path.isdir("/tmp") else None))
         path, p = os.path.join(folder, "s"), None
         env = {k: v for k, v in os.environ.items() if not k.startswith("FOREMAN_")}
         try:
@@ -193,7 +228,18 @@ def _server():
             _SERVER[os.getpid()] = (None, None)
             return None
         _SERVER[os.getpid()] = (path, p)
+        atexit.register(stop)  # T-3572: waited for at exit, so its calls' CPU counts in the class's rusage
         return path
+
+
+def share():
+    """T-3572: run.py's one server for all its classes, named in the environment they inherit (never an outer run's);
+    None, naming none, when off or it couldn't start."""
+    os.environ.pop(SHARED, None)
+    path = _server()
+    if path:
+        os.environ[SHARED] = json.dumps([LIB, path])
+    return path
 
 
 def stop():
@@ -238,7 +284,7 @@ def run(script, args, cwd=None, env=None, input=None, timeout=None):
         try:
             conn.settimeout(timeout)
             _send(conn, {"script": script, "args": list(args), "cwd": cwd, "env": env,
-                         **files, "stdin": files["stdin"] if input is not None else os.devnull})
+                         **files, "stdin": files["stdin"] if input is not None else os.devnull, "ppid": os.getpid()})
             pid = _recv(conn)["pid"]
             code = _recv(conn)["code"]
         except socket.timeout:

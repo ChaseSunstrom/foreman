@@ -177,8 +177,10 @@ class DiffGates(ForemanTestCase):
     def test_run_py_repeats_p(self):
         # T-0389: `run.py -p a.py -p b.py` kept only the last -p and ran b.py alone, silently
         run = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.py")
+        # T-3572: no CPU slot pool: outside run.py (no slot to nest in) it waited 70-88 s for one on a busy host
         p = subprocess.run([sys.executable, run, "-p", "test_mission.py", "-p", "test_help.py", "-k", "test_a_cli",
-                            "-k", "test_every_command_once"], capture_output=True, text=True, timeout=120)
+                            "-k", "test_every_command_once"], capture_output=True, text=True, timeout=120,
+                           env=dict(os.environ, SAMPO_SLOTS="0"))
         self.assertEqual(p.returncode, 0, p.stderr[-800:])
         self.assertIn("Ran 2 tests", p.stderr)  # one from each module
 

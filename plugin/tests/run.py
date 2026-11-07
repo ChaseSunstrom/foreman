@@ -455,7 +455,7 @@ def sweep(base=None):
     """T-2019: a run killed before its cleanup leaves its classes' temp dirs; the next run removes dead runs' ones."""
     base = base or tempfile.gettempdir()
     for name in os.listdir(base):
-        m = re.match(rf"{TMP_PREFIX}(\d+)-", name)
+        m = re.match(rf"(?:{TMP_PREFIX}|fmfork-)(\d+)-", name)  # T-3572: and a run's fork server's folder
         if not m:
             continue
         try:
@@ -598,6 +598,14 @@ def main():
     if a.load and (room := load_room(a.load)) < a.load:
         sys.stderr.write(f"run.py: --load {a.load} cut to {room}: the host already runs near twice its CPU count\n")
         a.load = room
+    try:  # T-3572: one fork server answers every class's fm calls
+        import forkcli
+    except ImportError:  # a copy of run.py alone (test_check_paths) has no forkcli
+        forkcli = None
+    if forkcli and SANDBOX:  # a sandboxed class can't reach a server outside its sandbox
+        os.environ.pop(forkcli.SHARED, None)
+    elif forkcli:
+        forkcli.share()  # stopped and waited for at exit, so the run's rusage counts its forked calls
     try:
         import helpers  # T-3338: lazily, after classes() put the tests folder on sys.path
         busy = helpers.busy_factor()
