@@ -74,6 +74,58 @@ def suite(modules, runners):
     return round(wall, 1), max(peak), codes
 
 
+def group_cpu(pgid):
+    """CPU seconds (user + system) every live process of one process group has used so far."""
+    tick, total = os.sysconf("SC_CLK_TCK"), 0
+    for d in os.listdir("/proc"):
+        if d.isdigit():
+            try:
+                with open(f"/proc/{d}/stat") as f:
+                    rest = f.read().rsplit(")", 1)[1].split()  # after "pid (comm)": state is rest[0]
+            except OSError:
+                continue
+            if int(rest[2]) == pgid:
+                total += int(rest[11]) + int(rest[12])
+    return total / tick
+
+
+def browser_arm(shared, pages, tmp):
+    """CPU seconds `pages` page loads cost: A (shared False) launches a browser per page, B shares one."""
+    sys.path.insert(0, os.path.join(REPO, "plugin", "lib"))
+    from sampo import shot
+    path = shot.chrome()
+    page = "file://" + os.path.join(tmp, "p.html")
+    with open(os.path.join(tmp, "p.html"), "w") as f:
+        f.write("<h1>bench</h1>")
+    cpu, b = 0.0, None
+    try:
+        for _ in range(pages):
+            b = shot.shared(path, shot.SIZE) if shared else shot.Browser(path, shot.SIZE)
+            shot.load(b, page)
+            if not shared:
+                cpu += group_cpu(b.pid)
+            b.close()
+        if shared:
+            cpu = group_cpu(shot._SHARED[path].pid)
+    finally:
+        shot.close_shared()
+    return round(cpu, 3)
+
+
+def abab(pages, reps, bar=10):
+    """Browser per page (A) against one shared browser (B), run A B A B ... `reps` times each: both lists and a
+    verdict by the medians: won when B costs `bar` % less CPU, lost when `bar` % more, noise between."""
+    tmp, a, b = tempfile.mkdtemp(prefix="perf-abab-"), [], []
+    for _ in range(reps):
+        a.append(browser_arm(False, pages, tmp))
+        b.append(browser_arm(True, pages, tmp))
+    ma, mb = statistics.median(a), statistics.median(b)
+    verdict = "won" if mb <= ma * (1 - bar / 100) else "lost" if mb >= ma * (1 + bar / 100) else "noise"
+    return {"kind": "abab browser", "order": "ABAB", "pages": pages, "bar_pct": bar, "a": "a browser per page",
+            "b": "one shared browser, a fresh context per page", "a_cpu_s": a, "b_cpu_s": b,
+            "saved_pct": round(100 * (ma - mb) / ma, 1) if ma else 0.0, "verdict": verdict}
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--runners", type=int, default=4)
@@ -81,7 +133,18 @@ def main(argv=None):
     p.add_argument("--calls", type=int, default=9)
     p.add_argument("--note", default="")
     p.add_argument("--out", default=os.path.join(REPO, "research", "perf", "bench.jsonl"))
+    p.add_argument("--abab", choices=["browser"], help="run that A/B change ABAB instead of the suite bench")
+    p.add_argument("--pages", type=int, default=20)
+    p.add_argument("--reps", type=int, default=3)
     a = p.parse_args(argv)
+    if a.abab:
+        row = {"at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "note": a.note,
+               "cpus": os.cpu_count(), "load_start": load1(), **abab(a.pages, a.reps)}
+        os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
+        with open(a.out, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+        print(json.dumps(row, indent=1))
+        return 0
     row = {"at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "note": a.note,
            "cpus": os.cpu_count(), "load_start": load1(), "cli_ms": cli_ms(a.calls), "modules": a.modules}
     row["alone_s"], row["alone_load_peak"], codes1 = suite(a.modules, 1)

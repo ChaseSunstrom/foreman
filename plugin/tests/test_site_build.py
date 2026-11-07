@@ -583,7 +583,7 @@ class CardsPage(unittest.TestCase):
         srv = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=self.out))
         srv.daemon_threads = True
         threading.Thread(target=srv.serve_forever, daemon=True).start()
-        b, errs, got = shot.Browser(browser, size), [], []
+        b, errs, got = shot.shared(browser, size), [], []
         try:
             b.on["Runtime.exceptionThrown"] = lambda p: errs.append(json.dumps(p.get("exceptionDetails"))[:300])
             b.call("Runtime.enable", b.sid)

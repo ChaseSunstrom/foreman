@@ -28,6 +28,24 @@ class Bench(ForemanTestCase):
         self.assertIn("task show", row["cli_ms"])
         self.assertGreater(row["cli_ms"]["task show"], 0)
 
+    def test_the_browser_abab_records_both_arms_per_run_and_a_verdict(self):
+        # T-3296: a browser per page against one shared browser, ABAB, N runs per arm, a 10% bar
+        from helpers import headless_chrome
+        if not headless_chrome():
+            self.skipTest("no headless Chromium")
+        out = os.path.join(self.tmp, "bench.jsonl")
+        got = subprocess.run([sys.executable, os.path.join(HERE, "perf_bench.py"), "--abab", "browser", "--pages", "2",
+                              "--reps", "2", "--note", "quick", "--out", out],
+                             capture_output=True, text=True, timeout=600)
+        self.assertEqual(got.returncode, 0, got.stdout[-2000:] + got.stderr[-2000:])
+        with open(out, encoding="utf-8") as f:
+            row = json.loads(f.readline())
+        self.assertEqual([len(row["a_cpu_s"]), len(row["b_cpu_s"])], [2, 2])
+        self.assertEqual(row["order"], "ABAB")
+        self.assertEqual(row["bar_pct"], 10)
+        self.assertIn(row["verdict"], ("won", "lost", "noise"))
+        self.assertTrue(all(x > 0 for x in row["a_cpu_s"] + row["b_cpu_s"]))
+
 
 if __name__ == "__main__":
     unittest.main()

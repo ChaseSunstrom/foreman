@@ -42,7 +42,7 @@ class Header(unittest.TestCase):
         cls.server.server_close()
 
     def rects(self, width, page="index.html"):
-        b = shot.Browser(self.browser, (width, 640))
+        b = shot.shared(self.browser, (width, 640))
         try:
             shot.load(b, f"http://127.0.0.1:{self.server.server_address[1]}/{page}")
             got = b.call("Runtime.evaluate", b.sid, expression=RECTS, returnByValue=True)

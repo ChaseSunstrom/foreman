@@ -27,6 +27,24 @@ _LEASE = None  # T-0921: the open lock file of a running night
 NAMES = ("scout", "dream", "cold files", "guard cases", "steer checks", "compost", "consolidate", "sentinel", "moons grow", "moons funnel", "model bench", "next request", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue", "draft", "kalevala rounds")
 
 
+GENERATORS = ("moons grow", "moons funnel")  # T-3296: the bulk CPU users; they take the project lock only briefly per row
+
+
+def priority(name):
+    """T-3296: a preexec_fn for one job's child. Generators run at nice 19. Not SCHED_IDLE: they do take the project lock
+    (moonscale.add per row), and an idle-class holder gets ~0.3% of a saturated CPU, stretching a millisecond hold into
+    seconds for every waiter. Every other job gets nice 10 at most (never lowering a parent already niced further)."""
+    def apply():
+        try:
+            if name in GENERATORS:
+                os.nice(19)
+            else:
+                os.nice(max(0, 10 - os.nice(0)))
+        except (AttributeError, OSError):
+            pass
+    return apply
+
+
 def current_model(p):
     """The model of the newest finished task here (task_done events carry it), or None."""
     return next(((e.get("data") or {}).get("model") for e in reversed(c.ledger_tail(p, 5000))
@@ -618,7 +636,7 @@ def cmd_night(args):
             left = ["--max-usd", f"{max(0.0, limit - (budget.spent()[0] - start)):.4f}"] if j["name"] == "queue" else []
             r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *j["argv"], *left], cwd=p.root,
                                env=dict(os.environ, FOREMAN_NO_BACKGROUND="1"), capture_output=True, text=True,
-                               timeout=JOB_TIMEOUT)
+                               timeout=JOB_TIMEOUT, preexec_fn=priority(j["name"]))
             code, tail = r.returncode, (r.stdout + r.stderr).strip().splitlines()[-1:]
         except (OSError, subprocess.TimeoutExpired) as e:
             code, tail = 124, [str(e)]

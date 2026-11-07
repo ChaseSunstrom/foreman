@@ -200,5 +200,32 @@ class Slots(ForemanTestCase):
         self.assertEqual(seen, ["0"])
 
 
+class Idle(unittest.TestCase):
+    def on_thread(self, fn):  # sched_setscheduler(0) changes the calling thread only: the test process stays normal
+        out = []
+        t = threading.Thread(target=lambda: out.append(fn()))
+        t.start()
+        t.join()
+        return out[0]
+
+    def child(self, name):
+        from sampo import night
+        code = "import os;print(os.sched_getscheduler(0), os.nice(0))"
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, preexec_fn=night.priority(name))
+        return [int(x) for x in r.stdout.split()]
+
+    def test_generator_jobs_run_at_nice_19_and_never_sched_idle(self):
+        # T-3296: the moons jobs take the project lock per row; SCHED_IDLE would stretch each hold under load
+        for name in ("moons grow", "moons funnel"):
+            policy, nice = self.child(name)
+            self.assertEqual((policy, nice), (os.SCHED_OTHER, 19), name)
+
+    def test_other_jobs_stay_at_the_normal_policy_and_nice_10_at_most(self):
+        for name in ("queue", "compost", "sentinel", "model bench"):
+            policy, nice = self.child(name)
+            self.assertEqual(policy, os.SCHED_OTHER, name)
+            self.assertLessEqual(nice, max(10, os.nice(0)), name)  # a niced parent keeps its own nice
+
+
 if __name__ == "__main__":
     unittest.main()

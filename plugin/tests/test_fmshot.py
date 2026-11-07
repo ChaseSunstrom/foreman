@@ -483,6 +483,80 @@ def _png(n):
 
 @unittest.skipUnless(headless_chrome(), "no headless Chromium here")
 class InABrowser(ForemanTestCase):
+    def test_a_shared_browser_gives_each_test_a_fresh_context_and_relaunches_after_a_crash(self):
+        # T-3296: page tests launched a Chromium per check; one per process, a clean context per test
+        path = headless_chrome()
+        if not path:
+            self.skipTest("no headless Chromium")
+        self.addCleanup(sshot.close_shared)
+        a = sshot.shared(path, sshot.SIZE)
+        pid, ctx = a.pid, a.ctx
+        a.on["Log.entryAdded"] = print
+        a.close()
+        b = sshot.shared(path, sshot.SIZE)
+        self.assertEqual((b.pid, b.on), (pid, {}), "the same browser, none of the last test's handlers")
+        self.assertNotEqual(b.ctx, ctx, "a new context: no cookies or storage carry over")
+        self.assertEqual(b.call("Runtime.evaluate", b.sid, expression="1+1")["result"]["value"], 2)
+        os.killpg(pid, 9)  # a crash between tests
+        b.close()
+        c = sshot.shared(path, sshot.SIZE)
+        self.assertNotEqual(c.pid, pid)
+        self.assertEqual(c.call("Runtime.evaluate", c.sid, expression="2+2")["result"]["value"], 4)
+        c.close()
+
+    def test_one_live_lease_per_browser_and_a_failed_last_try_keeps_no_browser(self):
+        path = headless_chrome()
+        self.addCleanup(sshot.close_shared)
+        a = sshot.shared(path, sshot.SIZE)
+        with self.assertRaises(AssertionError):
+            sshot.shared(path, sshot.SIZE)
+        a.close()
+        sshot.shared(path, sshot.SIZE).close()  # free again
+        sshot.close_shared()
+        with mock.patch.object(sshot, "Lease", side_effect=OSError("no lease")), self.assertRaises(OSError):
+            sshot.shared(path, sshot.SIZE)
+        self.assertEqual(sshot._SHARED, {}, "the third try's browser is closed and forgotten")
+
+    def test_a_lease_that_fails_partway_disposes_its_context(self):
+        path = headless_chrome()
+        self.addCleanup(sshot.close_shared)
+        b = sshot.Browser(path, sshot.SIZE)
+        self.addCleanup(b.close)
+        calls = []
+        real = b.call
+        b.call = lambda m, *a, **k: calls.append(m) or real(m, *a, **k)
+        with mock.patch.object(sshot.Browser, "emulate", side_effect=KeyError("boom")), self.assertRaises(KeyError):
+            sshot.Lease(b, sshot.SIZE, 1, False)
+        self.assertEqual(calls[-1], "Target.disposeBrowserContext")
+        self.assertFalse(getattr(b, "leased", False))
+
+    def test_a_killed_test_process_leaves_no_browser_behind(self):
+        # T-3296: the shared browser outlives each test, so a kill -9 (no atexit) must not orphan it
+        import signal
+        import subprocess
+        path = headless_chrome()
+        lib = os.path.dirname(os.path.dirname(sshot.__file__))
+        owner = subprocess.Popen([sys.executable, "-c", "import sys,time;from sampo import shot;b=shot.shared(sys.argv[1],"
+                                  "shot.SIZE);print(b.pid,flush=True);time.sleep(60)", path],
+                                 stdout=subprocess.PIPE, text=True, env=dict(os.environ, PYTHONPATH=lib))
+        self.addCleanup(owner.wait)
+        self.addCleanup(owner.kill)
+        pid = int(owner.stdout.readline())
+        os.kill(pid, 0)  # up while its owner lives
+        owner.send_signal(signal.SIGKILL)
+        owner.wait()
+        def gone():  # no such process, or a zombie; the file can vanish between any two reads
+            try:
+                with open(f"/proc/{pid}/stat") as f:
+                    return "Z" in f.read().rsplit(")", 1)[1][:3]
+            except FileNotFoundError:
+                return True
+        end = time.monotonic() + 5
+        while time.monotonic() < end and not gone():
+            time.sleep(0.1)
+        self.addCleanup(lambda: gone() or os.killpg(pid, 9))
+        self.assertTrue(gone(),"the browser is still running 5 s after its owner was killed")
+
     def test_an_animated_page_gets_a_poster_and_frozen_holds_it_still(self):
         self.fm("init")
         page = os.path.join(self.repo, "spin.html")

@@ -291,7 +291,7 @@ class Page(unittest.TestCase):
         A green run returns in about 8 s; the long ceiling is for a loaded machine (the gates run 16 at a time)."""
         from sampo import shot
         srv, errs = serve(), []
-        b = shot.Browser(self.browser, size, reduced=reduced)
+        b = shot.shared(self.browser, size, reduced=reduced)
         try:
             b.on["Runtime.exceptionThrown"] = lambda p: errs.append("exception: " + json.dumps(p.get("exceptionDetails"))[:400])
             b.on["Runtime.consoleAPICalled"] = lambda p: p.get("type") in ("error", "assert", "warning") and errs.append(
@@ -673,7 +673,7 @@ class Page(unittest.TestCase):
         from sampo import shot
         for size, name in (((1440, 900), "t3034-desk.png"), ((390, 844), "t3034-phone.png")):
             srv = serve()
-            b = shot.Browser(self.browser, size, reduced=False)
+            b = shot.shared(self.browser, size, reduced=False)
             try:
                 shot.load(b, f"http://127.0.0.1:{srv.server_address[1]}/#view=net")
                 b.wait("live-test.never", 6)
@@ -859,7 +859,7 @@ class Page(unittest.TestCase):
             for scheme in ("dark", "light"):
                 for w, h in ((1440, 900), (390, 844)):
                     srv = serve()
-                    b = shot.Browser(self.browser, (w, h), reduced=False)
+                    b = shot.shared(self.browser, (w, h), reduced=False)
                     try:
                         b.call("Emulation.setEmulatedMedia", b.sid, features=[{"name": "prefers-color-scheme", "value": scheme}])
                         b.call("Page.addScriptToEvaluateOnNewDocument", b.sid,

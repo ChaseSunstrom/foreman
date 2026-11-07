@@ -9,6 +9,7 @@ browser it exits 0 and says why.
 
 The browser is driven over --remote-debugging-pipe (fd 3 in, fd 4 out, NUL-separated JSON): stdlib only, the way
 test_site_hero's devtools() does (T-1610)."""
+import atexit
 import base64
 import collections
 import contextlib
@@ -282,6 +283,69 @@ class Browser:
                     os.close(fd)
         self.feed = self.out = None
         self.profile.cleanup()
+
+
+_SHARED = {}  # browser path -> the Browser this process shares; after a kill -9 (no atexit) Chromium exits itself when
+# its DevTools pipe closes (test_a_killed_test_process_leaves_no_browser_behind)
+
+
+class Lease:
+    """One test's page in a shared Browser (T-3296): its own context (no cookies, storage or handlers from the last
+    user); close() drops the context and leaves the browser. Everything else is the Browser's."""
+
+    def __init__(self, b, size, scale, reduced):
+        if getattr(b, "leased", False):  # one session id, one handler table: two live leases would trample each other
+            raise AssertionError("shot.shared: the browser already has a live lease; close it first")
+        self.b = b
+        b.on.clear()
+        b.events.clear()
+        self.ctx = b.call("Target.createBrowserContext")["browserContextId"]
+        try:
+            tid = b.call("Target.createTarget", url="about:blank", browserContextId=self.ctx)["targetId"]
+            b.sid = b.call("Target.attachToTarget", targetId=tid, flatten=True)["sessionId"]
+            b.call("Page.enable", b.sid)
+            b.emulate(size, scale, reduced=reduced)
+        except BaseException:  # no half-built lease keeps a context alive in the shared browser
+            with contextlib.suppress(OSError, RuntimeError, EOFError, ValueError):
+                b.call("Target.disposeBrowserContext", browserContextId=self.ctx)
+            raise
+        b.leased = True
+
+    def __getattr__(self, name):
+        return getattr(self.b, name)
+
+    def close(self):
+        self.b.leased = False
+        self.b.on.clear()
+        with contextlib.suppress(OSError, RuntimeError, EOFError, ValueError):  # a dead browser has no context to drop
+            self.b.call("Target.disposeBrowserContext", browserContextId=self.ctx)
+
+
+def shared(path, size, scale=1, reduced=False):
+    """A Lease on this process's one browser for `path`, launched on first use and again if it died."""
+    for _ in range(2):
+        b = _SHARED.get(path)
+        if b is None:
+            b = _SHARED[path] = Browser(path, size, scale, reduced)
+        try:
+            return Lease(b, size, scale, reduced)
+        except (OSError, RuntimeError, EOFError, ValueError):  # crashed or hung between uses: start over once
+            _SHARED.pop(path, None).close()
+    b = _SHARED[path] = Browser(path, size, scale, reduced)
+    try:
+        return Lease(b, size, scale, reduced)
+    except BaseException:  # a browser that can't even lease is not kept for the next test
+        _SHARED.pop(path, None)
+        b.close()
+        raise
+
+
+def close_shared():
+    while _SHARED:
+        _SHARED.popitem()[1].close()
+
+
+atexit.register(close_shared)
 
 
 def _url(target):

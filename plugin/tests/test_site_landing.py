@@ -150,7 +150,7 @@ class Landing(unittest.TestCase):
         rgb = lambda c: tuple(int(x) / 255 for x in re.findall(r"[\d.]+", c)[:3])
         for scheme in ("light", "dark"):
             for reduced in (True, False):
-                b = shot.Browser(browser, (320, 640), reduced=reduced)
+                b = shot.shared(browser, (320, 640), reduced=reduced)
                 try:
                     b.call("Emulation.setEmulatedMedia", b.sid, features=[
                         {"name": "prefers-color-scheme", "value": scheme},
