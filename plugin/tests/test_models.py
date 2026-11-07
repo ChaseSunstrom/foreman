@@ -888,3 +888,95 @@ class Extras(Base):  # T-2893: a profile's body extras, its reasoning switch, an
                 m._profile("x", {"model": "a", k: v}, "t")
         p = m._profile("x", {"model": "a", "body": {"a": 1}, "think": False, "slots": 2, "max_out": 9000}, "t")
         self.assertEqual((p["body"], p["think"], p["slots"], p["max_out"]), ({"a": 1}, False, 2, 9000))
+
+
+def ollama_reply(text="ok", tool_calls=None, done="stop"):
+    msg = dict({"role": "assistant", "content": text}, **({"tool_calls": tool_calls} if tool_calls else {}))
+    return {"message": msg, "done_reason": done, "prompt_eval_count": 7, "eval_count": 3}
+
+
+class OllamaThreads(Base):  # T-3588: llama.cpp's CPU threads busy-poll while the GPU works; /v1 drops num_thread
+    VRAM = {"name": "m1", "model": "m1", "size": 100, "size_vram": 100}
+
+    def setUp(self):
+        super().setUp()
+        m._VRAM.clear()  # /api/ps verdicts are kept per (base_url, model), process-wide; a fake's port may come back
+        self.addCleanup(m._VRAM.clear)
+
+    def ollama(self, *rows, reply=None):
+        f = self.fake((200, {"models": list(rows)}, None), (200, reply or ollama_reply(), None))
+        m.LOCAL = [("ollama", f.url)]  # the port Sampo knows Ollama by
+        return f
+
+    def test_a_model_wholly_in_vram_is_asked_natively_with_one_thread(self):
+        call = {"id": "call_9", "function": {"index": 0, "name": "read", "arguments": {"path": "a.txt"}}}
+        f = self.ollama(self.VRAM, reply=ollama_reply("", [call]))
+        msgs = [{"role": "user", "content": "read b"},
+                {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "name": "read",
+                                                                     "args": {"path": "b"}}]},
+                {"role": "tool", "tool_call_id": "c1", "content": "B"}]
+        prof = {**self.profile(f, key=False), "think": False, "body": {"temperature": 0.2}}
+        r = m.complete(prof, msgs, tools=[TOOL], max_tokens=99, schema={"type": "object"})
+        self.assertEqual([s[:2] for s in f.seen], [("GET", "/api/ps"), ("POST", "/api/chat")])
+        body = f.seen[1][3]
+        self.assertEqual(body["options"], {"num_predict": 99, "num_thread": m.GPU_THREADS, "temperature": 0.2})
+        self.assertEqual((body["model"], body["stream"], body["think"], body["format"]),
+                         ("m1", False, False, {"type": "object"}))
+        self.assertEqual(body["tools"], [TOOL])
+        self.assertEqual(body["messages"][1]["tool_calls"],
+                         [{"id": "c1", "function": {"name": "read", "arguments": {"path": "b"}}}],
+                         "native arguments are an object, not a JSON string")
+        self.assertEqual(body["messages"][2], dict(msgs[2], tool_name="read"), "a tool result named by its call")
+        self.assertNotIn("tool_name", msgs[2], "the caller's messages are never changed")
+        self.assertEqual(r, {"text": "", "tool_calls": [{"id": "call_9", "name": "read", "args": {"path": "a.txt"}}],
+                             "usage": {"in": 7, "out": 3}, "stop": "tool_calls"})
+        f = self.ollama(self.VRAM)
+        prof = {**self.profile(f, key=False), "body": {"options": {"num_thread": 3}}}
+        m.complete(prof, msgs[:1], think=True)
+        self.assertEqual(f.seen[1][3]["options"]["num_thread"], 3, "a profile's body options win: the calibration knob")
+        self.assertNotIn("think", f.seen[1][3], "thinking on is the model's default: think true 400s without thinking")
+        m.complete(prof, msgs[:1])
+        self.assertEqual([s[:2] for s in f.seen[2:]], [("POST", "/api/chat")], "the ps verdict is reused for PS_TTL")
+
+    def test_a_model_seen_wholly_in_vram_stays_native_after_an_eviction(self):
+        from unittest import mock
+        f = self.fake((200, {"models": [self.VRAM]}, None), (200, ollama_reply(), None),
+                      (200, {"models": []}, None), (200, ollama_reply(), None))
+        m.LOCAL = [("ollama", f.url)]
+        with mock.patch.object(m, "PS_TTL", 0):
+            for _ in range(2):
+                m.complete(self.profile(f, key=False), [{"role": "user", "content": "hi"}])
+        self.assertEqual([s[1] for s in f.seen], ["/api/ps", "/api/chat", "/api/ps", "/api/chat"],
+                         "Ollama evicts others before it splits a model that fit: no second reload at default threads")
+
+    def test_a_reply_cut_at_max_tokens_or_without_a_message_reads_as_the_openai_one(self):
+        f = self.ollama(self.VRAM, reply=ollama_reply("par", done="length"))
+        self.assertEqual(m.complete(self.profile(f, key=False), [{"role": "user", "content": "hi"}])["stop"], "length")
+        f = self.ollama(self.VRAM, reply={"error": "boom"})
+        with self.assertRaisesRegex(m.ModelError, "no usable choices"):
+            m.complete(self.profile(f, key=False), [{"role": "user", "content": "hi"}])
+
+    def test_anything_else_keeps_the_openai_path_without_num_thread(self):
+        ask = [{"role": "user", "content": "hi"}]
+        for why, rows in (("partly in system RAM", [dict(self.VRAM, size_vram=60)]), ("nothing loaded", []),
+                          ("not loaded, though another sits wholly in VRAM: a big one would load partly in RAM",
+                           [dict(self.VRAM, name="x", model="x")])):
+            with self.subTest(why):
+                f = self.fake((200, {"models": rows}, None), (200, oa_reply("ok"), None))
+                m.LOCAL = [("ollama", f.url)]
+                self.assertEqual(m.complete(self.profile(f, key=False), ask)["text"], "ok")
+                self.assertEqual(f.seen[1][:2], ("POST", "/v1/chat/completions"))
+                self.assertNotIn("options", f.seen[1][3])
+        f = self.fake((404, {}, None), (200, oa_reply("ok"), None))
+        m.LOCAL = [("ollama", f.url)]
+        self.assertEqual(m.complete(self.profile(f, key=False), ask)["text"], "ok", "no /api/ps: not Ollama")
+        self.assertEqual(f.seen[1][1], "/v1/chat/completions")
+        f = self.fake((200, oa_reply("ok"), None))
+        m.LOCAL = [("ollama", "http://127.0.0.1:11434/v1")]
+        m.complete(self.profile(f, key=False), ask)
+        self.assertEqual([s[:2] for s in f.seen], [("POST", "/v1/chat/completions")], "another port is never probed")
+        self.assertIsNone(m._gpu_ollama({**self.profile(f), "base_url": "https://gpu.example.test:11434/v1"}), "remote")
+        f = self.fake((200, oa_reply("ok"), None))
+        m.LOCAL = [("ollama", f.url)]
+        m.complete(self.profile(f, key=False), [{"role": "user", "content": [{"type": "text", "text": "hi"}]}])
+        self.assertEqual([s[:2] for s in f.seen], [("POST", "/v1/chat/completions")], "list content: /v1, unprobed")

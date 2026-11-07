@@ -24,7 +24,9 @@ message's tool_calls may be OpenAI wire shape ({id, type, function: {name, argum
 ({type: function, function: {name, description, parameters}}) or the bare inner object. For kind 'anthropic' the
 system messages become the top-level system field, tool results become tool_result blocks in a user turn, tool
 calls become tool_use blocks, and same-role neighbours merge; the caller's messages are never changed. A tool call
-whose arguments aren't JSON comes back as args {"_raw": "<the text>"}.
+whose arguments aren't JSON comes back as args {"_raw": "<the text>"}. A call to the local Ollama (LOCAL's port,
+loopback) whose model sits wholly in VRAM goes to its native /api/chat with options.num_thread GPU_THREADS, since
+llama.cpp's CPU threads only busy-poll there and /v1 drops options (T-3588); a profile body's "options" win.
 
 $FOREMAN_HOME/models.json (user-edited, optional; a bad field is a ModelError naming the file):
   {"default": "mine", "profiles": {"mine": {"kind": "openai", "base_url": "http://host/v1", "model": "x",
@@ -425,6 +427,67 @@ def _ollama_ps(profile):
     except (ModelError, *_TRANSPORT, ValueError, AttributeError, TypeError, RecursionError):
         return None
     return (root, rows) if isinstance(rows, list) else None
+
+
+# T-3588: measured on a 4B model wholly in VRAM, 256-token replies: 1 thread 1.65 CPU-s a request at 162 tok/s; Ollama's
+# default 8 threads 6.4 CPU-s at 159 tok/s (2 threads 2.4, 4 threads 3.9)
+GPU_THREADS = 1
+SAMPLING = ("temperature", "top_p", "seed", "stop", "presence_penalty", "frequency_penalty")  # Ollama options too
+PS_TTL = 5.0  # seconds an /api/ps verdict is reused: one GET per model per few calls, not per call
+_VRAM = {}  # (base_url, model) -> (checked at, root URL or None, wholly in VRAM when last seen loaded)
+
+
+def _gpu_ollama(profile):
+    """T-3588: the local Ollama's root URL (LOCAL's port, loopback) when profile's model sits wholly in VRAM, where
+    llama.cpp's CPU threads only busy-poll for each token, so complete() asks natively with num_thread GPU_THREADS;
+    else None (the OpenAI path, Ollama's own thread count). Only /api/ps's own row for the model counts: a model not
+    loaded keeps the verdict from when this process last saw it loaded (Ollama evicts others before it splits a model
+    that fit, so an evicted-and-back model fits again), else None, so a big model never loads with one thread."""
+    try:
+        port = urllib.parse.urlsplit(dict(LOCAL).get("ollama") or "").port
+        if not port or urllib.parse.urlsplit(str(profile.get("base_url") or "")).port != port:
+            return None
+    except ValueError:
+        return None
+    key = (str(profile.get("base_url")), profile.get("model"))
+    at, root, fits = _VRAM.get(key, (None, None, False))
+    if at is None or time.monotonic() - at >= PS_TTL:
+        got = _ollama_ps(profile)
+        rows = [x for x in got[1] if isinstance(x, dict) and profile.get("model") in (x.get("name"), x.get("model"))
+                ] if got else []
+        if rows:
+            fits = all(type(x.get("size")) is int and type(x.get("size_vram")) is int
+                       and x["size_vram"] >= x["size"] > 0 for x in rows)
+        root, fits = (got[0].rstrip("/"), fits) if got else (None, False)
+        _VRAM[key] = (time.monotonic(), root, fits)
+    return root if fits else None
+
+
+def _native(body):
+    """T-3588: complete()'s OpenAI-shaped chat body as Ollama's /api/chat takes it: max_tokens and the sampling extras
+    as options with num_thread (a profile body's own options win), tool call arguments as objects, thinking off as
+    think false (on is the model's default: think true is a 400 on a model without thinking, which /v1 ignored), a
+    json_schema reply format as format, a tool result named by its call (templates such as gpt-oss's read tool_name)."""
+    names, msgs = {}, []
+    for x in body["messages"]:
+        if x.get("tool_calls"):
+            calls = list(map(_call_parts, x["tool_calls"]))
+            names.update((i, n) for i, n, _ in calls)
+            x = dict(x, tool_calls=[{"id": i, "function": {"name": n, "arguments": a}} for i, n, a in calls])
+        elif x.get("role") == "tool" and x.get("tool_call_id") in names:
+            x = dict(x, tool_name=names[x["tool_call_id"]])
+        msgs.append(x)
+    out = {"model": body["model"], "messages": msgs, "stream": False,
+           "options": {"num_predict": body["max_tokens"], "num_thread": GPU_THREADS,
+                       **{k: body[k] for k in SAMPLING if k in body}, **_of(body.get("options"), dict)}}
+    if _of(body.get("chat_template_kwargs"), dict).get("enable_thinking") is False:
+        out["think"] = False
+    schema = _of(_of(body.get("response_format"), dict).get("json_schema"), dict).get("schema")
+    if schema:
+        out["format"] = schema
+    if body.get("tools"):
+        out["tools"] = body["tools"]
+    return out
 
 
 def served_context(profile):
@@ -1043,7 +1106,16 @@ def complete(profile, messages, tools=None, max_tokens=2048, timeout=120, think=
     if tools:
         body["tools"] = [t if "function" in t else {"type": "function", "function": t} for t in tools]
     headers = {"Authorization": f"Bearer {key}"} if key else {}
-    r = _post(base + "/chat/completions", body, headers, timeout, key)
+    # T-3588: only Ollama's native API takes num_thread; its reply is read as the OpenAI one. List content (parts) has
+    # no native shape here: /v1.
+    root = None if any(isinstance(x.get("content"), list) for x in body["messages"]) else _gpu_ollama(profile)
+    if root:
+        r = _post(root + "/api/chat", _native(body), headers, timeout, key)
+        if isinstance(r.get("message"), dict):
+            r = {"choices": [{"message": r["message"], "finish_reason": r.get("done_reason")}],
+                 "usage": {"prompt_tokens": r.get("prompt_eval_count", 0), "completion_tokens": r.get("eval_count", 0)}}
+    else:
+        r = _post(base + "/chat/completions", body, headers, timeout, key)
     try:
         choice = r["choices"][0]
         msg = choice.get("message") or {}
