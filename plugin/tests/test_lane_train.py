@@ -478,6 +478,60 @@ class AffectedGate(Lanes):
         with open(self.suite) as f:
             self.assertEqual(f.read(), before, "the linked tests ran again")
 
+    def red_base(self):
+        with open(os.path.join(self.repo, "plugin", "tests", "test_doctor.py"), "w") as f:
+            f.write("import unittest\nclass Doctor(unittest.TestCase):\n    def test_it(self):\n        self.assertTrue(False)\n")
+        self.git("commit", "-qam", "red base")
+
+    def test_a_red_base_is_reported_from_its_affected_classes_before_the_full_gate(self):  # T-3625
+        self.red_base()
+        r = self.train(self.lane(1, "test_a.py", OK.format("A")), check=False, env={"FM_POSTMERGE_CMD": "sh suite.sh"})
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("is red", r.stderr + r.stdout)
+        self.assertIn("Doctor", r.stderr + r.stdout)
+        self.assertEqual(self.gate_runs(), 0, "no gate run: the base's affected classes found it")
+        self.assertEqual(self.gate_args(), [], "the scratch tree never ran the suite")
+
+    def test_the_base_check_runs_only_when_the_env_differs_from_the_last_green_gate(self):  # T-3625
+        from sampo import train
+        base = self.git("rev-parse", "HEAD")
+        sub = ("sh suite.sh", "sh suite.sh {names}", ["plugin/tests/test_doctor.py"])
+        n = lambda: len(open(self.suite).read().splitlines()) if os.path.exists(self.suite) else 0  # noqa: E731
+        self.assertEqual(train._base_red(self.p, self.repo, base, sub), "")
+        self.assertEqual(n(), 1, "no green gate recorded yet: it runs")
+        train._mark_green(self.p)
+        self.git("commit", "--allow-empty", "-qm", "the base moved")
+        self.assertEqual(train._base_red(self.p, self.repo, self.git("rev-parse", "HEAD"), sub), "")
+        self.assertEqual(n(), 1, "same env, another base: not run again")
+        os.environ["FOREMAN_LOAD_GATE"] = "0"
+        try:
+            self.assertEqual(train._base_red(self.p, self.repo, base, sub), "")
+        finally:
+            del os.environ["FOREMAN_LOAD_GATE"]
+        self.assertEqual(n(), 2, "a different env runs again")
+
+    def test_a_callers_identity_never_changes_the_env_digest(self):  # T-3625
+        import run
+        from sampo import train
+        self.assertLessEqual(train._DIGEST_ENV, run.OPERATOR_SWITCHES)
+        before = train._env_digest()
+        os.environ["FOREMAN_DRIVE_TASK"] = "T-9"
+        try:
+            self.assertEqual(train._env_digest(), before)
+        finally:
+            del os.environ["FOREMAN_DRIVE_TASK"]
+
+    def test_a_flaky_base_class_is_rerun_once_and_the_train_goes_on(self):  # T-3625
+        from sampo import train
+        flaky = os.path.join(self.tmp, "flaked")
+        with open(os.path.join(self.repo, "plugin", "tests", "test_doctor.py"), "w") as f:
+            f.write("import os, unittest\nclass Doctor(unittest.TestCase):\n    def test_it(self):\n"
+                    f"        first = not os.path.exists({flaky!r})\n        open({flaky!r}, 'w').close()\n"
+                    "        self.assertFalse(first)\n")
+        self.git("commit", "-qam", "flaky")
+        sub = ("sh suite.sh", "sh suite.sh {names}", ["plugin/tests/test_doctor.py"])
+        self.assertEqual(train._base_red(self.p, self.repo, self.git("rev-parse", "HEAD"), sub), "")
+
 
 class RedNames(unittest.TestCase):
     """T-3602 review: the names a red run fails, complete or none (then the gate reruns whole, never narrowed)."""

@@ -51,6 +51,75 @@ def _affected_gate(p, wt, base, checks):
     return (full, tpl, tests) if tests else None
 
 
+# the operator switches (tests' run.OPERATOR_SWITCHES) that change what a test or gate does; per-caller identity
+# (DRIVE_TASK, QUIET, INHIBITED, GATE_HELD) and slot variables are not among them
+_DIGEST_ENV = {"LOAD_GATE", "FULL_GATE", "SENTINEL", "SENTINEL_RUN", "SENTINEL_TREE", "NO_BACKGROUND", "NO_SUITE_SLOT",
+               "SLOW_GATE", "NO_NET", "NO_LINK", "CONFINE", "SMOKE_RUNNER"}
+
+
+def _env_digest():
+    """A digest of the gate-changing switches in the FOREMAN_/SAMPO_ environment."""
+    import hashlib
+    import json
+    env = sorted((k.split("_", 1)[1], v) for k, v in os.environ.items()
+                 if k.startswith(("FOREMAN_", "SAMPO_")) and k.split("_", 1)[1] in _DIGEST_ENV)
+    return hashlib.sha1(json.dumps(env).encode()).hexdigest()
+
+
+def _green_path(p):
+    return os.path.join(p.dir, "train_green_env.json")
+
+
+def _mark_green(p):
+    """Record the env of a train whose gate went green: the next train with the same env needs no base check."""
+    import contextlib
+    import json
+    path = _green_path(p)
+    with contextlib.suppress(OSError):  # a failed record only costs the next train one base check
+        with open(path + ".tmp", "w") as f:
+            json.dump(_env_digest(), f)
+        os.replace(path + ".tmp", path)
+
+
+def _base_red(p, main, base, sub):
+    """T-3625: why the base's own affected tests (the batch's picks that exist on it) fail, or ''. A red base then
+    stops the train in minutes, not after its full gate and bisection. It runs only when the FOREMAN_/SAMPO_
+    environment differs from that of the last train whose gate went green (_mark_green), whatever its base: in
+    steady state it costs nothing, and an env change that turns the base red is caught. A genuinely red base is
+    still the per-lane probe's and the bisection's to name."""
+    import json
+    try:
+        with open(_green_path(p)) as f:
+            if json.load(f) == _env_digest():
+                return ""
+    except (OSError, ValueError):
+        pass
+    wt = tempfile.mkdtemp(prefix="sampo-base-")
+    try:
+        if _git(main, "worktree", "add", "-q", "--detach", wt, base).returncode:
+            return ""
+        ts = [t for t in sub[2] if os.path.exists(os.path.join(wt, t))]
+        if not ts:
+            return ""
+        run = sub[1].replace("{tests}", shlex.join(ts)).replace("{names}", shlex.join(map(_stem, ts)))
+        def go(cmd):  # yields to the machine's load and to other work, as _probe's runs do
+            c.wait_for_load("sampo lane train")
+            if shutil.which("nice"):
+                cmd = "nice -n 10 bash -c " + shlex.quote(cmd)
+            return c.run_command(wt, cmd, c.load_scaled(1800))
+
+        code, out = go(run)
+        if code not in (0, 5, 124):  # one flake rerun of the same affected tests
+            code, out = go(run)
+        if code in (0, 5, 124):  # a run of no tests or a timeout proves nothing: the full gates decide
+            return ""
+        return _why_red({"cmd": sub[1], "affected": ts, "failing": _red(out),
+                         "tail": out.rstrip().splitlines()[-15:]})
+    finally:
+        _git(main, "worktree", "remove", "--force", wt)
+        shutil.rmtree(wt, ignore_errors=True)
+
+
 def _why_red(r, blame="", tail=None):
     """T-3544: a red gate run as a reason: the gate (on how many affected modules), the classes it names failing, what
     blamed the lane (T-3602) and the last 15 lines (`tail`: the blamed class's), so nobody reruns a suite to learn them."""
@@ -429,6 +498,9 @@ def _run(p, main, ids):
         sub = _affected_gate(p, wt, base, checks)
         if moved():  # a lane merged meanwhile: don't spend a gate run on a base that is gone
             raise c.PolicyError(f"{branch} moved since the train started (was {base[:9]}): nothing landed; run it again")
+        why = _base_red(p, main, base, sub) if sub and merged else ""
+        if why:  # T-3625: the base's affected tests first: a red base is known in minutes
+            raise c.PolicyError(f"the base {base[:9]} of {branch} is red; fix it before a train can blame a lane: {why}")
         ok = not merged or gate()
         first = list(results)
         last = {r["cmd"]: r for r in results if not r["exit"]}  # each gate's newest passing row
@@ -473,6 +545,7 @@ def _run(p, main, ids):
         green = [last[g] for g in checks] if merged else []
         if not merged:
             raise c.PolicyError("nothing landed: " + "; ".join(f"{i}: {w}" for i, w in left))
+        _mark_green(p)  # T-3625: this env's gate went green
         tip = _git(wt, "rev-parse", "HEAD").stdout.strip()
         if moved():
             raise c.PolicyError(f"{branch} moved while the train ran (was {base[:9]}): nothing landed; run it again")

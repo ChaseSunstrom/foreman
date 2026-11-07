@@ -645,3 +645,51 @@ class SuiteSlot(unittest.TestCase):
         self.assertEqual(r.returncode, 0, err)
         self.assertIn("run.py: waiting for the full suite running in /elsewhere (pid 4242, 3 min)", err)
         self.assertIn("going ahead beside it", err)
+
+
+# T-3625: FOREMAN_/SAMPO_ names (prefix cut) that reach a test class on purpose: paths, identity and the harness's
+# own isolation or test knobs. Any other name Sampo reads must be an operator switch (run.OPERATOR_SWITCHES).
+HARNESS_ENV = set("""ABLATE AMBIENT_SYNC BENCH BENCH_SESSIONS CALLCARDS CALLS CARDS CGROUP CHROME CLAIMS_REMOTE CODE_ATTENDED
+DOCTOR_BENCH FAULT_LANE GUARD_CASES HARNESS HOME HOOK_MODULES HOOK_SLACK HOST IDEAS_WARM JEFF_HOME LANE_CHILD MARATHON
+MCP_TIMEOUT NO_CARDS NO_LOCAL_MODELS NO_RIVAL NO_SESSION_LANES NOW ONEOFF PG_DIRS PLAYBOOKS PLAYWRIGHT PROJECT PY_CHILD
+RECORD_OUT RECORD_ROOT RELEASE_FM SCOUT_CHANGELOG SCOUT_INSTALLED SCOUT_LATEST SCOUT_QUICK_ONLY SECRETS SESSION_ID SKILLS
+CRATES_URL NATIVE_BIN NPM_URL PYPI_URL SKIP_TESTS SLOW_CLOSE_S SPEND_AS SPEND_TOWER STACK_AFTER STATE STATE_FALLBACK THREE TODAY TOWER_READONLY_EXAM WORKER_OF""".split())
+
+
+class EnvClassified(unittest.TestCase):
+    def test_every_env_name_sampo_reads_is_an_operator_switch_or_a_named_harness_name(self):  # T-3625
+        import re
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        pat = re.compile(r"""["'](?:FOREMAN|SAMPO)_([A-Z0-9_]+)["']""")  # any literal: environ, env.get, _env(...)
+        found = set()
+        for sub in ("lib", "hooks", "bin"):
+            for d, _, files in os.walk(os.path.join(root, sub)):
+                for f in files:
+                    try:
+                        with open(os.path.join(d, f), encoding="utf-8") as fh:
+                            found |= set(pat.findall(fh.read()))
+                    except (OSError, UnicodeDecodeError):
+                        pass
+        new = sorted(found - run.OPERATOR_SWITCHES - HARNESS_ENV)
+        self.assertEqual(new, [], "".join(
+            f"\n  {n}: add {n!r} to run.OPERATOR_SWITCHES in plugin/tests/run.py (if it changes behaviour under test) "
+            "or to HARNESS_ENV in plugin/tests/test_run.py (a path, setting or identity tests may inherit)" for n in new))
+        self.assertTrue(found, "the scan found nothing: its pattern is stale")
+
+
+class ChildEnv(unittest.TestCase):
+    def test_operator_switches_never_reach_a_test_class(self):  # T-3625: a runner's FOREMAN_LOAD_GATE=0 failed LoadGates
+        keep = {"FOREMAN_LOAD_GATE": "0", "FOREMAN_FULL_GATE": "1", "SAMPO_SLOT_PRIORITY": "9", "SAMPO_LOAD_GATE": "0",
+                "FOREMAN_SENTINEL": "1", "FOREMAN_NO_BACKGROUND": "1", "SAMPO_SLOT": "3", "FOREMAN_HOME": "/x/alice"}
+        keep["PIP_QUIET"] = "1"  # another tool's variable of the same tail is not Sampo's switch
+        saved = {k: os.environ.get(k) for k in keep}
+        os.environ.update(keep)
+        try:
+            env = run.child_env("/tmp/x")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        self.assertEqual({k for k in keep if k in env}, {"FOREMAN_HOME", "PIP_QUIET"})

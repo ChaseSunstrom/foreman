@@ -36,7 +36,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def child_env(tmp):
     """A class's environment: its own TMPDIR, and local models hidden as on CI unless the caller set the switch
     (T-3229: the moons tests leaned on this box's Ollama embedders, passed here and failed on every CI run)."""
-    return dict(os.environ, TMPDIR=tmp, FOREMAN_NO_LOCAL_MODELS=os.environ.get("FOREMAN_NO_LOCAL_MODELS", "1"))
+    env = {k: v for k, v in os.environ.items() if not (k.startswith(("FOREMAN_", "SAMPO_")) and k.split("_", 1)[1] in OPERATOR_SWITCHES)}  # T-3625
+    return dict(env, TMPDIR=tmp, FOREMAN_NO_LOCAL_MODELS=os.environ.get("FOREMAN_NO_LOCAL_MODELS", "1"))
+
+
+# T-3625: switches an operator sets for one run (either prefix); a test that needs one sets it itself
+OPERATOR_SWITCHES = {"LOAD_GATE", "LOAD_WAIT", "FULL_GATE", "SENTINEL", "SENTINEL_RUN", "SENTINEL_TREE", "NO_BACKGROUND",
+                     "SLOT", "SLOTS", "SLOT_PRIORITY", "NO_SUITE_SLOT", "GATE_HELD", "GATE_WAIT", "SLOW_GATE", "INHIBITED",
+                     "DRIVE_TASK", "QUIET", "NO_NET", "NO_LINK", "CONFINE", "SMOKE_RUNNER", "UI_CACHE_S", "NO_TEST_CACHE"}
 
 
 SLOT_ENV = "SAMPO_SLOT"  # T-3252: set in a class's children, so a run.py inside a slot never waits on its parent's pool
