@@ -72,6 +72,10 @@ USER_ONLY_FM = {
     "triggers": ("set", "sampo triggers set is the user's to run: a queue or lane route starts work no one asked for, and "
                         "a mute or budget silences a signal", "sampo triggers set NAME --route inbox"),  # T-2355
 }
+FM_GATED = {"plugins", "night", "agents"}  # T-3600: other verbs whose check in check_bash keys on a later word; a new
+# such check adds its verb here, so a word the shell fills in there is refused too (_fm_unread)
+
+
 def _user_only_hit(word, arg):
     """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value.
     A tuple of words matches any one of them."""
@@ -365,6 +369,13 @@ def _expand(tok, ctx):
 
 def _unresolvable(tok):
     return "$" in tok or "`" in tok or bool(re.match(r"~[+-]", tok))  # ~+ and ~- are $PWD and $OLDPWD
+
+
+def _unliteral(tok):
+    """T-3600: a word the shell may turn into other words at run time: an expansion, or, outside quotes (a word holding
+    a space was quoted), a brace list. ponytail: a glob (ser?e) is read as written: it becomes a verb only through a
+    file of that name in the folder, and grep patterns quoted inside $( ) read as globs here (fm [a-z])."""
+    return _unresolvable(tok) or not re.search(r"\s", tok) and bool(re.search(r"\{[^{}]*(?:,|\.\.)[^{}]*\}", tok))
 
 
 def _resolve(tok, base):
@@ -1562,6 +1573,9 @@ def _split(tokens):
 
 
 _KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "{", "!", "coproc"}  # words before a command
+_WRAPPER_VALUED = {"nice": ("-n", "--adjustment"), "ionice": ("-c", "-n", "-p", "--class", "--classdata", "--pid"),
+                   "stdbuf": ("-i", "-o", "-e", "--input", "--output", "--error"), "exec": ("-a",),
+                   "time": ("-f", "-o", "--format", "--output")}  # GNU time; bash's own takes -p only
 _CDS = ("cd", "pushd", "popd")  # T-1923: the builtins that move the shell
 
 
@@ -1580,8 +1594,8 @@ def _strip_wrappers(argv):
         elif base in ("nohup", "time", "command", "builtin", "exec", "noglob", "stdbuf", "nice", "ionice", "chronic",
                       "setsid", "busybox"):  # setsid, busybox: T-0160 (the differential test)
             i += 1
-            while i < len(argv) and argv[i].startswith("-"):
-                i += 2 if argv[i] in ("-n", "-c", "-p") else 1
+            while i < len(argv) and argv[i].startswith("-"):  # T-3600: each one's own options that take a value (exec
+                i += 2 if argv[i] in _WRAPPER_VALUED.get(base, ()) else 1  # -c, command -p, setsid -c are flags)
         elif base == "unbuffer":  # expect's unbuffer [-p] CMD… (T-1722): its flags take no value
             i += 1
             while i < len(argv) and argv[i].startswith("-"):
@@ -1599,6 +1613,15 @@ def _strip_wrappers(argv):
         elif base == "env":
             i += 1
             while i < len(argv) and (argv[i].startswith("-") or "=" in argv[i]):
+                split = _env_split(argv[i:i + 2])
+                if split:  # T-3600: env -S 'sampo serve' runs the string's words, read as typed in its place
+                    took, text = split
+                    try:
+                        words = shlex.split(text)
+                    except ValueError:
+                        words = text.split()
+                    argv = argv[:i] + words + argv[i + took:]
+                    continue
                 i += 2 if argv[i] in ("-u", "-C", "--unset", "--chdir") else 1
         elif base == "xargs":
             i += 1 + _xargs_opts(argv[i + 1:])[0]
@@ -1614,6 +1637,23 @@ def _strip_wrappers(argv):
         else:
             break
     return argv[i:], any(os.path.basename(a) == "xargs" for a in argv[:i])
+
+
+def _env_split(words):
+    """T-3600: (words taken, string) for env's -S/--split-string (-S STR, -iS STR, -SSTR, --split-string[=]STR, a
+    getopt abbreviation of it), else None. In a cluster -u and -C take the rest, so an S after them is their value."""
+    w, nxt = words[0], words[1] if len(words) > 1 else ""
+    if not w.startswith("-"):  # NAME=value
+        return None
+    if w.startswith("--"):
+        flag, eq, v = w.partition("=")
+        return ((1, v) if eq else (2, nxt)) if len(flag) > 2 and "--split-string".startswith(flag) else None
+    for k, ch in enumerate(w[1:], 1):
+        if ch in "uC":
+            return None
+        if ch == "S":
+            return (1, w[k + 1:]) if w[k + 1:] else (2, nxt)
+    return None
 
 
 def _xargs_opts(words):
@@ -2784,10 +2824,15 @@ def lone_fm_ask(cmd):
 _BRANCHY = lazy(r"[|&(){}]|\b(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|select|function|coproc)\b")
 # T-0161: only a builtin can change a variable of this shell (an alias or a function needs one first), so resolving stops
 # at any builtin outside the inert ones (cd and pushd set only names that are never resolved; [[ -eq assigns)
-_BUILTINS = set(". : [ [[ alias bg bind break builtin caller cd command compgen complete compopt continue declare dirs "
-                "disown echo enable eval exec exit export false fc fg getopts hash help history jobs kill let local logout "
-                "mapfile popd printf pushd pwd read readarray readonly return set shift shopt source suspend test times "
-                "trap true type typeset ulimit umask unalias unset wait".split())
+# T-3600 review 4: bash's own builtins and keywords (bash 5.3: compgen -b, compgen -k), frozen; test_guard_verb.BashWords
+# fails when a bash has one these lack
+BASH_BUILTINS = frozenset(". : [ alias bg bind break builtin caller cd command compgen complete compopt continue declare "
+                          "dirs disown echo enable eval exec exit export false fc fg getopts hash help history jobs kill "
+                          "let local logout mapfile popd printf pushd pwd read readarray readonly return set shift shopt "
+                          "source suspend test times trap true type typeset ulimit umask unalias unset wait".split())
+BASH_KEYWORDS = frozenset("! [[ ]] { } case coproc do done elif else esac fi for function if in select then time until "
+                          "while".split())
+_BUILTINS = BASH_BUILTINS | {"[["}
 _INERT = set(": [ cd dirs echo exit false hash help jobs kill popd pushd pwd shift test times true type ulimit umask".split())
 _ASSIGN = lazy(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
 
@@ -3541,6 +3586,7 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     # git command read here is saved where it runs, not in the hook's cwd
     if not depth:
         _DCWD.clear()  # T-1921 review: fmmcp calls this directly, in a process that lives on
+        _DCWD["line"] = cmd  # T-3600: the whole command, where a loop a nested reading sits in starts (_loop_values)
         if _subst_depth(cmd) > 8:  # T-2668: every level re-reads its tails, so work grows ~n^4 until the cap above
             return [("rm-outside", "command nesting too deep to analyse: split the command")]  # fires: 500 deep hung
     starts = _DCWD.get(depth - 1, [ctx.cwd]) if depth else [ctx.cwd]
@@ -3569,10 +3615,17 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     # command also runs an interpreter (cat > t.py <<EOF … EOF; python3 t.py)
     dry = _drop_data_heredocs(cmd)
     shell = _strip_heredocs(cmd)
+    lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
     # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own
     # a tail (the text after a substitution opens) is read once as it stands: its own tails are suffixes of it already
     live = [x for t in _live_heredocs(cmd) for x in ([t, _unescape_ticks(t)] if "\\`" in t else [t])]  # T-0669: in
     cmds, top = _split(_tokens(_lines(shell))), _top(shell)
+    # T-3600 review 4: whether this text's literals hold for sampo words (nested, through the whole line's literals:
+    # id=$($R sampo task new …))
+    holds = _literals_hold(cmds, shell, {**_DCWD.get("lits", {}), **lits})
+    if not depth:  # the whole line's, for a sampo call read nested; none where they may not hold
+        _DCWD["holds"] = holds
+        _DCWD["lits"] = lits if holds and not _NAME_COMPUTED.search(_mask_quotes(shell)) else {}
     # T-1921: an && chain headed by a plain `cd /abs &&` runs nothing where it starts (a failed cd stops it all)
     head = top[1] and re.match(r"\s*cd[ \t]+(/[^\s;&|<>()'\"`$*?\[\]{}\\!#~]*)[ \t]*&&", shell)
     rest, prev = shell[head.end():] if head else "", None
@@ -3593,7 +3646,6 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
         re.search(r"[^\w./+:@%,-]", word(x.argv)) for x in cmds)
     for body in _subst_bodies(shell, tails, clean) + [b for t in live for b in _subst_bodies(t, tails, clean)]:  # `…`
         found += check_bash(body, ctx, depth + 1, tails=False)
-    lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
     for script in _stdin_scripts(cmd, cmds):  # T-0589: bash <<'EOF' … EOF and sh <<< '…' run that text
         found += check_bash(script, ctx, depth + 1)
     cwd, chain = ctx.cwd, []
@@ -3615,6 +3667,7 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
     scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
     wrote, fed = [], []  # T-0275: files earlier commands here write (all; and those a heredoc fills)
     gone = False  # T-1924 review: an earlier command here may remove, rename or relink a folder a later cd names
+    fm_elsewhere = fm_lits = None  # T-3600 review: read once a line, when a command word is computed or runs fm
     for idx, c in enumerate(cmds):
         nxt_op = cmds[idx + 1].op if idx + 1 < len(cmds) else ""
         piped = c.op in ("|", "|&") or nxt_op in ("|", "|&")  # T-0355: in a pipeline, a cd moves its subshell only
@@ -3761,6 +3814,9 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
             nxt = cmds[idx + 1] if idx + 1 < len(cmds) else None
             if c.procsub and nxt and _name(nxt.argv) in _FETCHERS:
                 found.append(("pipe-shell", f"{name} <(download)"))
+            elif c.procsub and nxt and not _positionals(args):  # T-3600 review: source <(echo sampo serve)
+                found.append(("system", f"{name} <(…) runs what the substitution prints, which the guard can't read: "
+                                        "run that command itself"))
         git_env = [a.split("=", 1)[1] for a in c.argv if name == "git" and a.startswith(("GIT_DIR=", "GIT_WORK_TREE="))]
         if name == "git" and any(re.match(r"(?i)GIT_CONFIG_(KEY_\d+|PARAMETERS)=.*core\.hookspath", a) for a in c.argv):
             found.append(("system", "git with core.hooksPath set through the environment"))
@@ -3846,8 +3902,41 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                                   lambda p, x: classify_system_mode(p, x, recursive),
                                   f" ({name} {'recursive' if recursive else 'opening write to others'} on a system "
                                   "folder)", guess=False)
-        if name in FM_PROGRAMS or (re.match(r"^python[0-9.]*$", name) and any(a.endswith(FM_SCRIPT_ENDS) for a in args[:1])):
-            fm_args = args[1:] if name not in FM_PROGRAMS else args
+        # T-3600: a computed command word that is sampo by a substitution naming it ("$(command -v sampo)" serve, `which
+        # sampo` serve, S=$(command -v sampo); $S serve; a bare $ is an unquoted $( ) the split left behind), its verb
+        # maybe in the word itself; one the line sets to a literal is read as its value below (T-0587). The words are
+        # read through the values known here and those the line sets once to a literal (T-0587's lits: C="a b")
+        fm_call = _fm_argv(argv)
+        # review: a nameref (declare -n r=V) makes $r V's value, while the line literal r=V reads as the name V
+        if (computed or fm_call) and fm_lits is None:
+            fm_lits = {**_DCWD.get("lits", {}), **({} if _NAME_COMPUTED.search(_mask_quotes(shell)) else lits)} \
+                if _DCWD.get("holds") and holds else {}
+        fm_vals = _fm_values({**fm_lits, **known}) if computed or fm_call else {}
+        if computed and fm_elsewhere is None:  # review: sampo named other than as a command run here (read C <<<
+            fm_elsewhere = _fm_named_elsewhere(shell, cmds)  # 'sampo serve', f sampo serve): once a line
+        fm_computed = computed and not debris and not (name == "$" and depth) and _unresolvable(
+            _with_vars(argv[0], fm_vals)) and (fm_elsewhere or _fm_by_subst(
+                shell if name == "$" else " ".join(argv), argv[0], shell))
+        if (name == "alias" and any("=" in a for a in args) or any(w.startswith("BASH_ALIASES") for w in c.argv)) and (
+                _FM_WORD.search(shell) or any(_unliteral(a.partition("=")[2]) for a in args)):
+            found.append(("system", "an alias on a line that names sampo (or one the shell fills in): the guard can't "
+                                    "read which sampo verb its name runs, so type the sampo command itself"))
+        if fm_computed or fm_call:
+            fm_args = _fm_known(argv if fm_computed else args[1:] if name not in FM_PROGRAMS else args, fm_vals,
+                                xodd if via_xargs else None)
+            unread, kind = _fm_unread(fm_args)
+            var, vals = _loop_values(unread, _DCWD.get("holds") and holds) if unread else (None, None)
+            for v in vals or ():  # T-3600: a loop over literal words (for c in "status" next): read once per word
+                found += check_bash(" ".join(([] if fm_computed else ["sampo"]) + [
+                    shlex.quote(a) for a in _fm_known(fm_args, {var: v})]), ctx, depth + 1)
+            if unread and not vals and kind == "verb":
+                found.append(("system", f"{unread} in a sampo command is filled in by the shell at run time, so the "
+                                        "guard can't read which sampo verb or gated word it is: type the verb literally"))
+            elif unread and not vals:  # review 2: a text sampo runs or keeps as a command, holding an expansion
+                x = (_DOLLAR.search(unread) or re.search(r"`[^`]*`?|\S+", unread))[0]
+                found.append(("system", f"this text becomes a command sampo runs and holds {x}, which the guard can't "
+                                        "read: write the value into the command, or pass the id as its own word (task "
+                                        'ac "$T" add "x" --verify "cmd")'))
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
                 found.append(("self-authorize", "an agent may not grant core or remote"))
             sub, rest = _fm_subcommand(fm_args)
@@ -3856,13 +3945,8 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                 flag, eq, val = a.partition("=")
                 if flag.startswith("--r") and "--run".startswith(flag):
                     found += check_bash(val if eq else b, ctx, depth + 1)
-            for stored in _fm_stored(sub, rest, fm_args):  # T-0901: a command fm keeps and runs later
+            for stored in _fm_runs(sub, rest, fm_args):  # T-0901, T-0898: a command fm keeps or runs
                 found += check_bash(stored, ctx, depth + 1)
-            if sub in ("quiet", "at"):  # T-0898: their trailing command runs (fm quiet -- rm -rf ~ used to pass)
-                words = _fm_trailing(rest, 1 if sub == "at" else 0)
-                if words:
-                    found += check_bash(words[0] if len(words) == 1 else " ".join(map(shlex.quote, words)), ctx,
-                                        depth + 1)
             if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable", "add-marketplace"):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
@@ -5450,8 +5534,8 @@ def _fm_stored(sub, rest, fm_args):
             section = v
         elif flag == "--text" and words[:1] == ["set"] and section.lower().startswith("acceptance"):
             out += re.findall(r"verify with `([^`]+)`", v)
-    if sub == "task" and words[:1] == ["ac"]:
-        out += [w.rpartition(" :: ")[2] for w in words if " :: " in w]
+    if sub == "task" and words[:1] == ["ac"]:  # task ac ID ACTION [N] TEXT: the id and action store nothing
+        out += [w.rpartition(" :: ")[2] for w in words[3:] if " :: " in w]
     if sub == "intake":
         out += [ln.rpartition(" :: ")[2] for w in words for ln in w.splitlines()
                 if " :: " in ln and re.match(r"\s*(DONE-WHEN|ACCEPT)\s*:", ln, re.I)]
@@ -5464,6 +5548,14 @@ def _fm_stored(sub, rest, fm_args):
     if sub in ("record", "whyred") and words:
         out.append(words[0])
     return [x for x in dict.fromkeys(out) if x.strip()]
+
+
+def _fm_runs(sub, rest, fm_args):
+    """The commands an fm call runs or keeps to run from its own words: _fm_stored's (T-0901), and the trailing command
+    of quiet and at (T-0898: fm quiet -- rm -rf ~ used to pass)."""
+    words = _fm_trailing(rest, 1 if sub == "at" else 0) if sub in ("quiet", "at") else []
+    return _fm_stored(sub, rest, fm_args) + (
+        [words[0] if len(words) == 1 else " ".join(map(shlex.quote, words))] if words else [])
 
 
 def _fm_trailing(rest, positionals):
@@ -5496,6 +5588,145 @@ def _fm_subcommand(args, takes_value=("-p", "--project"), twins=True):
         old = VERB_TWINS[args[i]].split()
         return old[0], old[1:] + args[i + 1:]
     return args[i], args[i + 1:]
+
+
+_FM_WORD = lazy(r"(?<![\w.-])" + FM_NAME_RE + r"(?![\w.-])")
+_FM_SUBST = r"(?:\$\(|`)[^)`]*?(?<![\w.-])" + FM_NAME_RE + r"(?![\w.-])"  # $(command -v sampo), `which fm`
+
+
+def _fm_by_subst(text, word, shell):
+    """T-3600: a computed command word is sampo's: `text` (its words) holds a substitution naming sampo, or the word is a
+    variable the line sets from one (S=$(command -v sampo); $S)."""
+    m = re.match(r"\$\{?(\w+)", word)
+    return bool(re.search(_FM_SUBST, text) or m and re.search(rf"(?<![\w$]){m[1]}=[\"']?" + _FM_SUBST, shell))
+
+
+def _fm_known(args, known, xargs=None):
+    """T-3600: an fm call's words through the line's known values, a resolved one split as bash splits it unquoted (a
+    word holding a space was quoted: kept whole, so a --run text stays one command); xargs adds a word the guard can't
+    read at the end, and in front too when an option may replace any word (-I)."""
+    out = []
+    for a in args:
+        v = _with_vars(a, known)
+        out += v.split() if v != a and not _unresolvable(v) and not re.search(r"\s", a) else [v]
+    return out if xargs is None else (["$(xargs)"] if xargs else []) + out + ["$(xargs)"]
+
+
+def _loop_values(word, holds):
+    """T-3600: (V, words) when `word` is $V and the whole command gives V only by one `for V in …` loop over literal
+    words, naming $V nowhere before it, on a line whose literals hold (_literals_hold); (None, None) otherwise."""
+    m = re.fullmatch(r"\$(?:\{(\w+)\}|(\w+))", word)
+    text = _DCWD.get("line", "")
+    v = m and (m[1] or m[2])
+    loops = list(re.finditer(rf"(?<![\w$-])for\s+{v}\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b", text)) if v and holds else []
+    if len(loops) != 1 or re.search(rf"\$\{{?{v}(?!\w)", text[:loops[0].start()]):
+        return None, None
+    try:
+        words = shlex.split(_with_vars(loops[0][1], _fm_values(_DCWD.get("lits", {}))))
+    except ValueError:
+        return None, None
+    return (v, words) if words and all(re.fullmatch(r"[\w./@:+,=% -]+", w) for w in words) else (None, None)
+
+
+_INERT_BUILTINS = frozenset("echo test [ true false : pwd cd".split())  # bind no name, run no code
+_HEADERS = frozenset("for case select in [[ ]] coproc function".split())  # a keyword whose words are no command
+
+
+def _literals_hold(cmds, shell, vals):
+    """T-3600 review 4: whether a name this line sets to a literal still holds where a sampo word reads it. Only code
+    running in this shell rebinds a name (a builtin, a function, a sourced file, a trap, a computed command word); an
+    external program runs in a child and can't. So each command word here must be an external program, an inert
+    builtin (_INERT_BUILTINS), a keyword other than function, coproc or select, or NAME=value; a for variable is
+    read as its literal words when nothing else sets it. Anything else: the line's literals are not used."""
+    loops = {}
+    for m in re.finditer(r"(?<![\w$-])for\s+(\w+)\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b", shell):
+        loops.setdefault(m[1], []).extend(_with_vars(m[2], vals).split())
+    masked = _mask_quotes(shell)
+    if any(re.search(rf"(?<![\w$]){v}(?:\[[^]]*\])?\+?=", masked) for v in loops) or re.search(
+            r"(?:^|[\s;&|({])(?:function\s+[^\s(]+|[^\s;&|()<>=$`]+\s*\(\s*\))", masked):
+        return False  # a for variable set again, or a function defined here
+    for c in cmds:
+        words = list(c.argv)
+        while words and (_ASSIGNISH.match(words[0]) or words[0] in BASH_KEYWORDS and words[0] not in _HEADERS):
+            words = words[1:]
+        if not words or words[0] in _HEADERS:
+            if words and words[0] in ("function", "coproc", "select"):
+                return False
+            continue
+        word, var = _with_vars(words[0], vals), re.fullmatch(r"\$\{?(\w+)\}?", words[0])
+        names = loops[var[1]] if var and var[1] in loops else [] if _unresolvable(word) else word.split()[:1]
+        if not names or any(n in BASH_BUILTINS and n not in _INERT_BUILTINS or _unresolvable(n) for n in names):
+            return False
+    return True
+
+
+def _fm_values(vals):
+    """T-3600 review 2: the values a sampo word may be read through, without one that is itself a name the command
+    names again (declare -n r=V; V=serve: $r is V's value, however the setter is spelled: \\declare, "declare", $d,
+    command declare). A value that is a name nowhere else on the line is a value (V=next)."""
+    line = _DCWD.get("line", "")
+    return {k: v for k, v in vals.items() if not (re.fullmatch(r"[A-Za-z_]\w*", v) and len(re.findall(
+        rf"(?<!\w){v}(?!\w)", line)) > 1)}
+
+
+def _fm_unread(args):
+    """T-3600: (the first word of an fm call the shell fills in at run time (_unliteral) where the guard keys a refusal
+    on it, "verb" or "run"): at or before the verb (an option word may take the next as its value, a split one may
+    become any verb), among a gated verb's later words, or an --allow value ("verb"); a command the call runs or keeps
+    whose text holds one ("run"); (None, None) when there is none. A quoted word holding a space before any expansion
+    is one word starting with literal text, so it can't become a gated word."""
+    _, rest = _fm_subcommand(args, twins=False)
+    sub = _fm_subcommand(args)[0]
+    gated = [w for w in rest if not re.match(r"[^$`\s]*\s", w)] if sub in USER_ONLY_FM or sub in FM_GATED else []
+    allows = [a.partition("=")[2] or b for a, b in zip(args, args[1:] + [""]) if _is_allow(a)]
+    verb = next((w for w in args[:len(args) - len(rest)] + gated + allows if _unliteral(w)), None)
+    run = None if verb else next((r for r in _fm_runs(*_fm_subcommand(args), args) if _RUN_COMPUTED.match(r)), None) or \
+        next((w for i, w in enumerate(args) if _fm_runs_word(args, i, sub)), None)
+    return (verb, "verb") if verb else (run, "run") if run else (None, None)
+
+
+_FM_PROBE = "DONE-WHEN: x :: \0 verify with `\0`"  # a word every reader in _fm_stored takes as a command
+_BINDS = lazy(r"\bfor\s+(\w+)\s+in\b|\bread\s+(?:-\S+\s+)*(\w+)|(?<![\w$])(\w+)\+?=")  # names a text sets itself
+_DOLLAR = lazy(r"(?<!\\)\$(?:\{[^}]*\}?|\([^)]*\)?|\w+|.?)")  # a $ expansion: $X, ${…}, $( ), $1, $@
+# a command fm runs or keeps whose command word the shell fills in (after NAME=value words): "$C", `cmd` args
+_RUN_COMPUTED = lazy(r"\s*(?:[A-Za-z_]\w*=\S*\s+)*[\"']?[$`]")
+_FM_RUN_WORD = lazy(r"(?<![\w.-])" + FM_NAME_RE + r"(?![\w./-])")  # sampo, not a sampo/ folder in a path
+
+
+def _fm_runs_word(args, i, sub):
+    """T-3600 review: whether what the shell fills into args[i] may land in a command the call runs or keeps
+    (_fm_runs: task ac T-1 add "$X" with X='x :: CMD'): each expansion in it is read as a probe those readers take as
+    a command, so a verb or flag added there is covered. notify's own $1 is its message, read as NOTIFY_PROBE there and
+    here. ponytail: a `…` is read as written (it is also verify with's own syntax, and markdown's); its body is read as
+    a command, its output landing in a stored command isn't."""
+    w = re.sub(r"\$\{?1\}?", NOTIFY_PROBE, args[i]) if sub == "notify" else args[i]
+    # a stored command's own code is read as code: a name it binds itself (for n in, read n, n=) and a $( ) inside
+    # longer text; a word that is all one expansion is unknown whatever it is. ponytail: so "pytest $(cat f)" passes
+    whole = bool(_DOLLAR.fullmatch(w))
+    own = set() if whole else {n for t in _BINDS.findall(w) for n in t if n}
+
+    def keep(m):
+        name = re.match(r"\$\{?(\w+)", m[0])
+        return not whole and (m[0][:2] == "$(" or bool(name) and name[1] in own)
+    probe = _DOLLAR.sub(lambda m: m[0] if keep(m) else _FM_PROBE, w)
+    if probe == w:
+        return False
+    probe = args[:i] + [probe] + args[i + 1:]
+    return any("\0" in _mask_quotes(r) for r in _fm_runs(*_fm_subcommand(probe), probe))  # as code, not a quoted
+    # argument (quiet's several words are argv: sampo quiet -- git diff "$REF")
+
+
+def _fm_argv(argv):
+    """argv (wrappers already off) runs Sampo's fm: `fm`/`sampo` by any path, or python running plugin/bin/<name>."""
+    name = os.path.basename(argv[0]) if argv else ""
+    return name in FM_PROGRAMS or bool(re.match(r"^python[0-9.]*$", name)) and any(
+        a.endswith(FM_SCRIPT_ENDS) for a in argv[1:2])
+
+
+def _fm_named_elsewhere(shell, cmds):
+    """T-3600 review: the line names sampo more often than it runs it (read C <<< 'sampo serve', f sampo serve, a
+    string): a command word the shell fills in there may be sampo, with a verb the guard can't read."""
+    return len(_FM_RUN_WORD.findall(shell)) > sum(1 for x in cmds if _fm_argv(_strip_wrappers(x.argv)[0]))
 
 
 _CLAUDE_CHANGES = {"plugin": {"install", "i", "enable", "disable", "uninstall", "remove", "update"},
