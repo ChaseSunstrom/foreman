@@ -285,15 +285,26 @@ def stub_corpus_replay(repo, drifted=0, days=0, cases=3):
     return p
 
 
-def git_repo(parent, name="app"):
-    root = os.path.join(parent, name)
-    os.makedirs(root)
+@functools.cache
+def _repo_template():
+    """T-3581: the scratch repo up to its commit (init, identity, README added), made once a process."""
+    base = tempfile.mkdtemp(prefix="fm-test-repo-")
+    atexit.register(shutil.rmtree, base, True)
+    root = os.path.join(base, "app")
     subprocess.run(["git", "init", "-q", "-b", "main", root], check=True)
-    subprocess.run(["git", "-C", root, "config", "user.email", "t@example.com"], check=True)
-    subprocess.run(["git", "-C", root, "config", "user.name", "t"], check=True)
+    with open(os.path.join(root, ".git", "config"), "a") as f:  # what `git config user.*` writes, minus 2 processes
+        f.write("[user]\n\temail = t@example.com\n\tname = t\n")
     with open(os.path.join(root, "README.md"), "w") as f:
         f.write("# app\n")
     subprocess.run(["git", "-C", root, "add", "."], check=True)
+    return root
+
+
+def git_repo(parent, name="app"):
+    """A copy of the template, then its own init commit made now: 1 git process instead of 5 (T-3581). The commit
+    also refreshes the copied index, whose stat data would otherwise read dirty to diff-files/diff-index."""
+    root = os.path.join(parent, name)
+    shutil.copytree(_repo_template(), root, copy_function=shutil.copy, ignore=shutil.ignore_patterns("*.sample"))
     subprocess.run(["git", "-C", root, "commit", "-qm", "init"], check=True)
     return root
 
