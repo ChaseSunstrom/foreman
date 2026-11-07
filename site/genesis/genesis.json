@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-07T03:39:52Z",
+ "updated": "2026-11-07T03:44:59Z",
  "rev": "746ca71b5",
  "capabilities": [
   {
@@ -49699,10 +49699,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 39086,
+   "generated": 39213,
    "write": {
     "title": 272,
-    "line": 2206,
+    "line": 2223,
     "payoff": 28,
     "kill test": 137,
     "code": 11
@@ -49714,12 +49714,12 @@
    },
    "rejected": {
     "kill": 19931,
-    "tier": 13688,
+    "tier": 13811,
     "novelty": 127
    },
-   "merged": 915,
-   "kept": 1537,
-   "pending": 154
+   "merged": 917,
+   "kept": 1566,
+   "pending": 110
   },
   "families": [
    {
@@ -49757,7 +49757,7 @@
    },
    {
     "id": "F-021968",
-    "size": 215,
+    "size": 223,
     "lead": "Harmonize parallel agents via standing wave resonance",
     "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
     "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
@@ -49875,6 +49875,22 @@
     ]
    },
    {
+    "id": "F-039053",
+    "size": 3,
+    "lead": "Heal onboarding burnout by adjusting task complexity",
+    "today": "Today you can't detect when a new hire is overwhelmed and needs a break.",
+    "with_this": "With this, you can automatically simplify the next coding task or suggest a break when the new hire's code editing speed drops significantly, preventing early-stage burnout.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
+    ]
+   },
+   {
     "id": "F-000412",
     "size": 2,
     "lead": "Breed a generation of refactor variants and keep the best lineage",
@@ -49941,19 +49957,19 @@
     ]
    },
    {
-    "id": "F-027933",
+    "id": "F-038697",
     "size": 2,
-    "lead": "Detect onboarding burnout from typing patterns",
-    "today": "Today you can't see if a new hire is struggling or stuck until they ask for help.",
-    "with_this": "With this, you can proactively offer help or simplify tasks when a new hire's typing rhythm shows signs of frustration.",
+    "lead": "Prove memory stability by monitoring quantum decoherence of state vectors",
+    "today": "Today you can't detect subtle memory corruption that doesn't trigger a crash but alters logical outcomes over time, because current tools only check for explicit errors.",
+    "with_this": "With this, Sampo can detect logical drift by treating memory states as quantum superpositions that decohere when inconsistent writes occur, revealing hidden corruption.",
     "tier": "extreme",
     "cold": null,
-    "wild": 3,
+    "wild": 5,
     "block": null,
     "stage": "candidate",
     "evidence": "",
     "kinds": [
-     "onboarding"
+     "verifying anything"
     ]
    },
    {
@@ -50722,6 +50738,38 @@
     "evidence": "",
     "kinds": [
      "security"
+    ]
+   },
+   {
+    "id": "F-038698",
+    "size": 1,
+    "lead": "Verify data flow by tracking physical heat signatures of computations",
+    "today": "Today you can't verify if data is being processed correctly because you cannot see the physical byproducts of the computation, such as heat or power spikes.",
+    "with_this": "With this, Sampo can validate data integrity by correlating the expected thermal footprint of each operation with the actual simulated energy dissipation.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "verifying anything"
+    ]
+   },
+   {
+    "id": "F-038700",
+    "size": 1,
+    "lead": "Verify execution order by measuring the speed of light in data paths",
+    "today": "Today you can't verify the exact sequence of events in a distributed system because clock synchronization errors make temporal ordering ambiguous.",
+    "with_this": "With this, Sampo can establish absolute causal order by simulating the finite speed of light in the data bus, ensuring no event can precede its physical cause.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 5,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "verifying anything"
     ]
    },
    {
@@ -52933,60 +52981,12 @@
     "kinds": [
      "features"
     ]
-   },
-   {
-    "id": "F-011893",
-    "size": 1,
-    "lead": "Short against unproven language scenarios in your PR",
-    "today": "Today you can't financially penalize the lack of coverage for specific child-authored scenarios",
-    "with_this": "With this, you can short positions that lose value if your PR lacks tests for those specific scenarios",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
-   },
-   {
-    "id": "F-011895",
-    "size": 1,
-    "lead": "Hedge your PR against language variance in exam recall",
-    "today": "Today you can't isolate the risk of one language underperforming in recall metrics",
-    "with_this": "With this, you can buy a hedge that offsets the cost of low recall in a specific language",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
-   },
-   {
-    "id": "F-011896",
-    "size": 1,
-    "lead": "Liquidate the value of untested child scenarios",
-    "today": "Today you can't recover value from scenarios that were written but never executed",
-    "with_this": "With this, you can sell the latent value of untested scenarios to other teams who can run them",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
    }
   ],
-  "families_total": 1175,
+  "families_total": 1192,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1537
+   "total": 1566
   }
  },
  "steer": {
