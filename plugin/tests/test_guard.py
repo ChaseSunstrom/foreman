@@ -3133,3 +3133,224 @@ class InterpreterCodeIsNotBash(GuardCase):  # T-1786
             ("bash -c 'at now'", "system"),
             ("sh -c \"(at now)\"", "system"),
         ], self.bash)
+
+
+class NativeBuild(GuardCase):
+    """T-3607: hooks/fast runs plugin/native/sampo-fast when its sha256 beside it matches, so every write that could
+    swap or poison that binary is a protected-core write: cargo and rustc output flags aimed into plugin/, build
+    settings on a cargo call that builds the main checkout's plugin/native, cargo config and toolchain files at or above
+    it, and plain writes to the binary, its sum and its sources. A lane's own build and plain reads still pass."""
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.native = os.path.join(cls.fhome, "plugin", "native")
+        cls.lane = os.path.join(cls.home, ".claude", "foreman.lanes", "T-0001", "plugin", "native")
+        for d in (cls.native, cls.lane):
+            os.makedirs(os.path.join(d, "crates", "sampo-fast", "src"))
+
+    def sub(self, s):
+        return super().sub(s.replace("{native}", self.native).replace("{lane}", self.lane))
+
+    def test_output_flags_into_plugin(self):
+        self.run_table([
+            ("cargo build --target-dir {native}", "core"),
+            ("cargo build --release --target-dir={fhome}/plugin", "core"),  # <plugin>/<profile native>/sampo-fast
+            ("cargo build --target-dir {fhome}", "core"),  # <home>/<target plugin>/<profile native>/sampo-fast
+            ("cargo build -Z unstable-options --artifact-dir {native}", "core"),
+            ("cargo build -Zunstable-options --out-dir={native}", "core"),
+            ("cargo install --path . --root {native}", "core"),
+            ("rustc -o {native}/sampo-fast main.rs", "core"),
+            ("rustc main.rs -o{native}/sampo-fast", "core"),
+            ("rustc --out-dir {native} main.rs", "core"),
+            ("rustc --emit=link={native}/sampo-fast main.rs", "core"),
+            ("rustc --emit dep-info,link={native}/sampo-fast main.rs", "core"),
+            ("cargo rustc --release -- -o {native}/sampo-fast", "core"),
+            ("RUSTFLAGS='-o {native}/sampo-fast' cargo build", "core"),  # a lane's build told to write main's binary
+            ("CARGO_TARGET_DIR={fhome}/plugin cargo build --profile lane", "core"),
+            ("export CARGO_TARGET_DIR={native}; cargo build", "core"),
+            ("env CARGO_BUILD_TARGET_DIR={native} cargo test", "core"),
+        ], lambda cmd: self.bash(cmd, cwd=self.lane))
+
+    def test_settings_on_a_main_native_build(self):
+        self.run_table([
+            ("cd {native} && RUSTC_WRAPPER=/tmp/w cargo build --release", "core"),
+            ("RUSTFLAGS='-C linker=/tmp/l' cargo build --manifest-path {native}/Cargo.toml", "core"),
+            ("env RUSTC=/tmp/rustc cargo build --manifest-path={native}/Cargo.toml", "core"),
+            ("export RUSTC_WRAPPER=/tmp/w; cargo build --manifest-path {native}/Cargo.toml", "core"),
+            ("nice -n 10 cargo --config 'build.rustc-wrapper=\"/tmp/w\"' build --manifest-path {native}/Cargo.toml",
+             "core"),
+            ("cargo -Z unstable-options -C {native} build --config /tmp/c.toml", "core"),
+        ], self.bash)
+        self.run_table([
+            ("CARGO_BUILD_RUSTC_WRAPPER=/tmp/w cargo build", "core"),
+            ("CARGO_HOME=/tmp/ch cargo build", "core"),
+            ("CARGO_ENCODED_RUSTFLAGS=-Clinker=/tmp/l cargo test", "core"),
+            ("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/tmp/l cargo build", "core"),
+            ("PATH=/tmp/evil:$PATH cargo build", "core"),
+        ], lambda cmd: self.bash(cmd, cwd=os.path.join(self.native, "crates", "sampo-fast")))
+
+    def test_cargo_config_and_toolchain_files(self):
+        self.run_table([
+            ("{native}/.cargo/config.toml", "core"),
+            ("{fhome}/plugin/.cargo/config", "core"),
+            ("{fhome}/.cargo/config.toml", "core"),
+            ("{home}/.claude/.cargo/config.toml", "core"),
+            ("{home}/.cargo/config.toml", "core"),  # cargo home's own, and above plugin/native
+            ("{fhome}/rust-toolchain.toml", "core"),  # rustup takes a toolchain (path = …) from here
+            ("{home}/rust-toolchain", "core"),
+            ("{home}/.cargo/registry/cache/x.crate", None),
+            ("{home}/.claude/foreman.lanes/.cargo/config.toml", None),  # above a lane, not above main's plugin/native
+            ("{lane}/.cargo/config.toml", None),
+        ], self.write)
+        self.run_table([
+            ("cp -r /tmp/c {fhome}/.cargo", "core"),
+            ("ln -s /tmp/c {fhome}/plugin/.cargo", "core"),
+            ("echo '[build]' >> {home}/.claude/.cargo/config.toml", "core"),
+            ("tee {fhome}/rust-toolchain.toml </tmp/t", "core"),
+        ], self.bash)
+
+    def test_plain_writes_to_the_binary_and_sources(self):
+        self.run_table([
+            ("cp /tmp/x {native}/sampo-fast", "core"),
+            ("mv /tmp/x {native}/sampo-fast", "core"),
+            ("install -m 755 /tmp/x {native}/sampo-fast", "core"),
+            ("ln -sf /tmp/x {native}/sampo-fast", "core"),
+            ("sha256sum /tmp/x | tee {native}/sampo-fast.sha256", "core"),
+            ("echo 00 > {native}/sampo-fast.sha256", "core"),
+            ("dd if=/tmp/x of={native}/sampo-fast", "core"),
+            ("cp /tmp/b.rs {native}/crates/sampo-fast/build.rs", "core"),
+        ], self.bash)
+        self.run_table([
+            ("{native}/Cargo.toml", "core"),
+            ("{native}/crates/sampo-fast/build.rs", "core"),
+            ("{native}/crates/sampo-fast/Cargo.toml", "core"),
+            ("{native}/sampo-fast.sha256", "core"),
+        ], self.write)
+        self.assertBlocked(self.write("{native}/Cargo.toml", tool="Edit"), "core")
+
+    def test_a_standing_yes_never_covers_what_the_installer_makes(self):
+        """The binary, its sum and target/ are gitignored: a swap leaves no diff to review, so a standing core yes (given
+        for source edits) doesn't cover them, nor a build's settings or output folder; the sources stay covered."""
+        def run(cmd):
+            ctx = g.Ctx(cwd=self.lane, project_root=None, home=self.home, foreman_home=self.fhome, scratch=["/tmp"],
+                        task_id="T-0007", standing={"core"})
+            return g.check("Bash", {"command": self.sub(cmd)}, ctx)
+        for cmd in ("cp /tmp/x {native}/sampo-fast", "echo 00 > {native}/sampo-fast.sha256",
+                    "cp /tmp/x {native}/target/release/sampo-fast", "cargo build --target-dir {native}",
+                    "RUSTC_WRAPPER=/tmp/w cargo build --manifest-path {native}/Cargo.toml"):
+            self.assertBlocked(run(cmd), "core", cmd)
+        self.assertIsNone(run("sed -i s/a/b/ {native}/crates/sampo-fast/src/main.rs"))
+        # T-3607 review: cargo config and toolchain files change how it builds, even inside plugin/native
+        for path in ("{native}/.cargo/config.toml", "{native}/rust-toolchain.toml",
+                     "{native}/crates/sampo-fast/.cargo/config.toml"):
+            self.assertBlocked(run(f"echo x > {path}"), "core", path)
+
+    def test_config_values_and_files(self):
+        """T-3607 review: --config KEY=VALUE can move the target dir or add rustc flags from any folder (a lane's build
+        writing main's binary); a --config FILE is config the guard can't read."""
+        self.run_table([
+            ("cargo build --config 'build.target-dir=\"{native}/target\"'", "core"),
+            ("cargo build --config 'build.rustflags=[\"-o\", \"{native}/sampo-fast\"]'", "core"),
+            ("cargo install --path . --config 'install.root=\"{fhome}/plugin\"'", "core"),
+            ("cargo build --config /tmp/c.toml", "system"),
+            ("cargo build --config=ci.toml", "system"),
+            ("cargo build --config 'profile.dev.debug=false' --config 'build.jobs=4'", None),
+            ("CARGO_INSTALL_ROOT={fhome}/plugin cargo install --path x", "core"),
+            ("CARGO_BUILD_ARTIFACT_DIR={native} cargo build -Z unstable-options", "core"),  # re-check
+            ("CARGO_BUILD_BUILD_DIR={fhome}/plugin cargo build", "core"),
+            ("cargo build --config 'build.rustflags=[\"@/tmp/a\"]'", "system"),  # re-check: rustc reads /tmp/a
+        ], lambda cmd: self.bash(cmd, cwd=self.lane))
+
+    def test_cargo_config_content_naming_main(self):
+        """T-3607 review: a lane's .cargo/config (or one in the lanes folder above it) that points target-dir or
+        rustc-wrapper at main's plugin/ or checkout reaches main's binary from every lane build. ponytail: only what the
+        guard reads (a tool's content, the command's text); a file copied in, or a lane's build.rs, isn't read."""
+        lanes = os.path.join(self.home, ".claude", "foreman.lanes")
+
+        def edit(path, tool="Write", **text):
+            return g.check(tool, {"file_path": self.sub(path), **{k: self.sub(v) for k, v in text.items()}},
+                           self.ctx(cwd=self.lane))
+        self.assertBlocked(edit("{lane}/.cargo/config.toml", content='[build]\ntarget-dir = "{native}/target"\n'), "core")
+        self.assertBlocked(edit(lanes + "/.cargo/config", content='[build]\nrustc-wrapper = "../../foreman/plugin/w"\n'),
+                           "core")
+        self.assertBlocked(edit("{lane}/.cargo/config.toml", tool="Edit", old_string="x",
+                                new_string='target-dir = "~/.claude/foreman/plugin"'), "core")
+        self.assertIsNone(edit("{lane}/.cargo/config.toml", content='[build]\ntarget-dir = "/tmp/t"\n'))
+        # re-check: a path is read as cargo reads it (from the config's folder or the one above .cargo), not as text
+        root = os.path.dirname(os.path.dirname(self.lane))  # the lane's checkout
+        for path, text in (("{lane}/.cargo/config.toml", 'target-dir = "{fhome}//plugin/native/target"'),
+                           ("{lane}/.cargo/config.toml", 'target-dir = "{home}/./.claude/foreman/plugin/native/target"'),
+                           (root + "/.cargo/config.toml", 'target-dir = "../../../.claude/foreman/plugin/native/target"'),
+                           (root + "/.cargo/config", "[build]\nrustc-wrapper = '$HOME/.claude/foreman/plugin/w'")):
+            self.assertBlocked(edit(path, content=text), "core", text)
+        self.assertIsNone(edit(root + "/.cargo/config.toml", content='target-dir = "../target"'))  # the lane's own
+        self.assertBlocked(edit("{lane}/.cargo/config.toml", content='[build]\nrustflags = ["@/tmp/a"]\n'), "system")
+        self.run_table([
+            ("cat > {lane}/.cargo/config.toml <<'EOF'\n[build]\ntarget-dir = \"{native}/target\"\nEOF", "core"),
+            ("echo 'build.rustc-wrapper = \"{fhome}/plugin/w\"' >> " + lanes + "/.cargo/config.toml", "core"),
+            ("printf '[build]\\njobs = 4\\n' > {lane}/.cargo/config.toml", None),
+            ("echo 'target-dir = \"" + root + "/../.././foreman/plugin/native\"' > {lane}/.cargo/config.toml", "core"),
+            ("echo 'build.rustflags = [\"@/tmp/a\"]' >> {lane}/.cargo/config.toml", "system"),
+        ], lambda cmd: self.bash(cmd, cwd=self.lane))
+
+    def test_rustup(self):
+        """T-3607 review: rustup run is a wrapper; the toolchain cargo and rustup run (cargo's bin/, rustup's toolchains/
+        and settings.toml, a toolchain given as a path) is core; rustc @FILE reads arguments the guard can't read."""
+        self.run_table([
+            ("rustup run stable cargo build --target-dir {native}", "core"),
+            ("rustup run --install nightly rustc -o {native}/sampo-fast main.rs", "core"),
+            ("rustup toolchain link evil /tmp/tc", "core"),
+            ("rustup default /tmp/tc", "core"),
+            ("ln -s /tmp/tc {home}/.rustup/toolchains/evil", "core"),
+            ("cp /tmp/rustc {home}/.cargo/bin/rustc", "core"),
+            ("rustc @/tmp/args main.rs", "system"),
+            ("cargo rustc -- @/tmp/args", "system"),
+            ("RUSTFLAGS=@/tmp/args cargo build", "system"),
+            ("rustup default stable", None),
+            ("rustup run stable cargo test", None),
+        ], lambda cmd: self.bash(cmd, cwd=self.lane))
+        self.run_table([
+            ("{home}/.rustup/settings.toml", "core"),
+            ("{home}/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc", "core"),
+            ("{home}/.cargo/bin/cargo", "core"),
+        ], self.write)
+        self.run_table([
+            ("RUSTUP_TOOLCHAIN=/tmp/tc cargo build", "core"),
+            ("cargo +/tmp/tc build", "core"),
+            ("rustup run /tmp/tc cargo build", "core"),
+            ("cargo +nightly test", None),
+            ("rustup run stable cargo test", None),
+        ], lambda cmd: self.bash(cmd, cwd=self.native))
+
+    def test_harmless_settings_on_a_main_native_build(self):
+        """T-3607 review: settings that change only how cargo talks, caches or optimizes pass; a profile's own rustflags
+        or panic strategy (abort reads as a hook error, which lets the call through) don't."""
+        self.run_table([
+            ("CARGO_INCREMENTAL=0 cargo build", None),
+            ("CARGO_NET_OFFLINE=true cargo test", None),
+            ("CARGO_PROFILE_RELEASE_LTO=false cargo build --release", None),
+            ("CARGO_TERM_COLOR=always cargo test", None),
+            ("CARGO_PROFILE_RELEASE_PANIC=abort cargo build --release", "core"),
+            ("CARGO_PROFILE_RELEASE_RUSTFLAGS=-Clinker=/tmp/l cargo build --release", "core"),
+        ], lambda cmd: self.bash(cmd, cwd=self.native))
+
+    def test_lane_builds_and_reads_pass(self):
+        self.run_table([
+            ("cargo build --profile lane", None),
+            ("cargo test", None),
+            ("CARGO_TARGET_DIR={home}/.cache/sampo/cargo-target nice -n 10 cargo build --locked --profile lane", None),
+            ("RUSTFLAGS=-Dwarnings RUSTC_WRAPPER=sccache cargo test", None),  # a lane's own build, its own settings
+            ("cargo build --manifest-path {lane}/Cargo.toml --target-dir /tmp/t", None),
+            ("rustc -o /tmp/t/x main.rs", None),
+            ("cp /tmp/x {lane}/sampo-fast", None),
+            ("cat {native}/sampo-fast.sha256", None),
+            ("sha256sum {native}/sampo-fast", None),
+            ("cat {home}/.cargo/config.toml", None),
+            ("ls -la {native}", None),
+        ], lambda cmd: self.bash(cmd, cwd=self.lane))
+        self.run_table([  # the main checkout's own plain build and test
+            ("cargo test", None),
+            ("RUST_BACKTRACE=1 cargo test", None),
+            ("CARGO_TARGET_DIR={home}/.cache/sampo/cargo-target cargo build --profile lane", None),
+            ("cargo build --target-dir /tmp/t", None),
+        ], lambda cmd: self.bash(cmd, cwd=self.native))

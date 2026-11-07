@@ -84,7 +84,8 @@ def _user_only_hit(word, arg):
 USER_ONLY = {"core", "remote", "plugin", "confirm"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 # (confirm, T-0289: a request a child found in an old transcript is worked only after the user says it's theirs)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
-_CORE_DIRS = ("lib", "bin", "hooks", "evals", "integrations")  # plugin/…: Foreman's code (integrations: T-0340)
+_CORE_DIRS = ("lib", "bin", "hooks", "evals", "integrations", "native")  # plugin/…: Foreman's code (integrations:
+# T-0340; native: T-3571, sampo-fast's source and the binary hooks/fast runs)
 # T-1328: Foreman's own config that becomes a command (code.toml), runs Python (tui.toml, tui/) or picks where code is
 # sent (models.json): an agent that writes one runs what it likes on the next fm code
 _CORE_CONFIG = ("code.toml", "tui.toml", "models.json")
@@ -153,7 +154,12 @@ def findings(tool_name, tool_input, ctx):
     if tool_name in FILE_TOOLS:
         raw = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         path = _resolve(_expand(raw, ctx), ctx.cwd)
-        return [(cat, path) for cat in classify_write(path, ctx)]
+        found = [(cat, path) for cat in classify_write(path, ctx)]
+        if _CARGO_CONFIG.search(path):  # T-3607 review
+            text = [tool_input.get(k) for k in ("content", "new_string", "new_source")] + [
+                e.get("new_string") for e in tool_input.get("edits") or [] if isinstance(e, dict)]
+            found += _cargo_config_hit(path, "\n".join(str(t) for t in text if t), [ctx.cwd], ctx)
+        return found
     if tool_name == "Bash":
         _DISCARDS[:], _DISCARDS_OF[0] = [], tool_input["command"]  # T-1482: filled by this check only
         _COMMITS.clear()
@@ -231,6 +237,8 @@ def _hint(detail, cat=""):
         return " Run a shorter script (split it, or run the part you need directly): a shorter one is read in full."
     if detail.startswith("sed -f/--file"):  # T-1932
         return " Pass the sed commands with -e (the guard reads them), or make the change with the Edit tool."
+    if "cargo --config FILE" in detail or "rustc @FILE" in detail:  # T-3607 review
+        return " Pass the settings or arguments inline (--config KEY=VALUE, rustc's flags themselves): the guard reads those."
     if detail.startswith("vim ") and "can't read" in detail:
         return " Pass the commands with -c (the guard reads them), or make the change with the Edit tool."
     if detail.startswith("IFS") and "can't read" in detail:
@@ -570,7 +578,38 @@ def _is_core(path, ctx):
     codex = os.environ.get("CODEX_HOME")
     return path in files or any(_under(path, d) for d in dirs) or path == os.path.join(ctx.home, ".claude.json") or \
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path) or _AGENT_WIRING.search(path)) or \
-        bool(codex) and path in (os.path.join(codex, "hooks.json"), os.path.join(codex, "config.toml"))
+        bool(codex) and path in (os.path.join(codex, "hooks.json"), os.path.join(codex, "config.toml")) or \
+        path in _cargo_files(tuple(_homes(ctx)), ctx.home, os.environ.get("CARGO_HOME")) or \
+        any(_under(path, d) for d in _rust_dirs(ctx.home))
+
+
+# T-3607: what the installer makes in plugin/native (gitignored, so a swap leaves no diff to review)
+_NATIVE_BUILT = ("sampo-fast", "sampo-fast.sha256", "target")
+# T-3607: what cargo and rustup read in every folder at or above the one they build in: a setting there (rustc-wrapper,
+# linker, rustflags, target-dir, a toolchain path) reaches the binary hooks/fast runs
+_CARGO_FILES = (".cargo", ".cargo/config", ".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml")
+
+
+@functools.lru_cache(maxsize=8)
+def _cargo_files(homes, home, cargo_home):
+    """T-3607: _CARGO_FILES at or above each home's plugin/native, and cargo's home config (~/.cargo and CARGO_HOME)."""
+    out = {os.path.join(c, f) for c in (os.path.join(home, ".cargo"), cargo_home) if c for f in ("config", "config.toml")}
+    for fh in homes:
+        d, up = os.path.join(fh, "plugin", "native"), None
+        while d != up:
+            out.update(os.path.join(d, f) for f in _CARGO_FILES)
+            d, up = os.path.dirname(d), d
+    return frozenset(out)
+
+
+def _rust_dirs(home):
+    """T-3607 review: the toolchain cargo and rustup run: cargo's bin/ (the cargo and rustc proxies), rustup's
+    toolchains/ and settings.toml (the default toolchain, each folder's override), at home and where the environment
+    moves them."""
+    cargo = {os.path.join(home, ".cargo"), os.environ.get("CARGO_HOME")} - {None, ""}
+    rustup = {os.path.join(home, ".rustup"), os.environ.get("RUSTUP_HOME")} - {None, ""}
+    return [os.path.join(c, "bin") for c in cargo] + [os.path.join(r, x) for r in rustup
+                                                       for x in ("toolchains", "settings.toml")]
 
 
 def _plain_path(detail):
@@ -592,6 +631,12 @@ def _standing_covers(path, ctx):
     if any(_under(os.path.join(fh, "plugin", "lib", *g.split("/")), p) for fh in homes for g in GUARD_FILES
            for p in (path, real)):
         return False  # the guard itself, or a whole-tree write that includes it
+    if any(_under(b, p) or _under(p, b) for fh in homes for b in (os.path.join(fh, "plugin", "native", x)
+                                                                    for x in _NATIVE_BUILT) for p in (path, real)):
+        return False  # T-3607: the binary hooks/fast runs, its sum or its build, or a tree write over one
+    if any(".cargo" in p.split("/") or os.path.basename(p).startswith("rust-toolchain") for p in (path, real)) or \
+            path in _cargo_files(tuple(homes), ctx.home, os.environ.get("CARGO_HOME")):
+        return False  # T-3607 review: cargo config and toolchain files change how plugin/native builds
     return real in {os.path.join(fh, f) for fh in homes for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")} or any(
         _strictly_under(real, os.path.join(fh, "plugin", d)) for fh in homes for d in _CORE_DIRS)
 
@@ -639,6 +684,8 @@ def _protected_roots(ctx):
     roots += [(os.path.join(ctx.home, ".claude", f), "core") for f in ("settings.json", "settings.local.json")]
     # Foreman state inside a tree write: the user may approve it (core); a direct write never is (state-direct)
     roots += [(d, "core") for d in ctx.state_dirs]
+    roots += [(p, "core") for p in _cargo_files(tuple(_homes(ctx)), ctx.home, os.environ.get("CARGO_HOME"))]  # T-3607
+    roots += [(p, "core") for p in _rust_dirs(ctx.home)]
     roots += [(os.path.join(ctx.home, d), "credentials") for d in _CRED_DIRS + _CRED_FILES]
     return roots
 
@@ -1559,6 +1606,11 @@ def _strip_wrappers(argv):
             i += 1
             while i < len(argv) and argv[i].startswith("-"):
                 i += 1
+        elif base == "rustup" and argv[i + 1:i + 2] == ["run"]:  # T-3607 review: rustup run [--install] TOOLCHAIN CMD…
+            i += 2
+            while i < len(argv) and argv[i].startswith("-"):
+                i += 1
+            i += 1
         else:
             break
     return argv[i:], any(os.path.basename(a) == "xargs" for a in argv[:i])
@@ -3762,10 +3814,19 @@ def check_bash(cmd, ctx, depth=0, tails=True, at=False):
                 target in touched else classify_write
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how,
                                   f" ({hint[2:]})" if init and target not in c.redirs else "")
+            found += _cargo_config_hit(target, cmd, cwds or [ctx.cwd], ctx)  # T-3607 review
         for target in [] if bare_init else _tree_targets(name, targs) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,  # T-0394: a merge's
                                   " (a tree write over it" + ("; git merge" if name == "git" and "merge" in args
                                                              else "") + ")" + hint)  # refusal names fm lane merge
+        for target in _build_outs(name, args, c.argv):  # T-3607: where cargo or rustc writes
+            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, _build_cats,
+                                  " (written by a cargo, rustc or rustup call)")
+        wrap = c.argv[:len(c.argv) - len(argv)]
+        if name == "cargo" and (sets := _cargo_settings(args, cmds, wrap)) and _builds_native(
+                args, wrap, cwds, lost, known, ctx):  # T-3607
+            found.append(("core", f"a cargo build of plugin/native with {', '.join(sets)} set (what it compiles, or "
+                                  "with what: its target/ is what the installer ships)"))
         # T-1224: the files it reads (operands, a < redirect), what it sends out, a recursive or world-writable mode;
         # an unknown name is guessed from the words the command names, as a write's is (security review: for f in
         # ~/.ssh/*; do cat $f; done read every key)
@@ -4165,6 +4226,15 @@ def _exec_options(name, args):
         out += _vim_code(args)
     elif name in ("sed", "gsed"):
         out += _sed_code(args)
+    elif name in ("cargo", "rustc"):  # T-3607 review: config, or rustc arguments, from a file the guard can't read
+        n = args.index("--") if "--" in args else len(args)
+        configs = _opt_values(args[:n], "--config") if name == "cargo" else []
+        out += [("cargo --config FILE loads config the guard can't read here", None)
+                for v in configs if not _CARGO_INLINE.match(v)][:1]
+        out += [("cargo --config with rustc @FILE arguments the guard can't read here", None)
+                for v in configs if any(s.lstrip().startswith("@") for s in _strings(v))][:1]
+        out += [("rustc @FILE reads arguments the guard can't read here", None) for a in (
+            args if name == "rustc" else args[n + 1:] if "rustc" in args[:n] else []) if a.startswith("@")][:1]
     return out
 
 
@@ -4704,6 +4774,8 @@ def _env_channels(argv, name):
             out.append((f"{var} points git at config, templates or programs from elsewhere", None))
         elif var in ("HOME", "XDG_CONFIG_HOME") and name == "git":
             out.append((f"git with {var} moved (its config is read from there)", None))
+        elif _RUSTFLAGS.match(var) and any(w.startswith("@") for w in re.split(r"[\s\x1f]+", val)):  # T-3607 review
+            out.append((f"{var} gives rustc @FILE arguments the guard can't read here", None))
         elif re.fullmatch(r"(?i)GIT_CONFIG_(KEY_\d+|VALUE_\d+|PARAMETERS|COUNT)", var) and any(
                 _GIT_EXEC_KEYS.match(k) or k.lower().startswith(("alias.", "include")) or k.lower() == "protocol.ext.allow"
                 for k in (x.strip("'\" ").partition("=")[0] for x in re.split(r"'\s+'|\s+", val))):  # review: key=value
@@ -4715,6 +4787,123 @@ def _env_files(argv):
     """Files git writes because of a variable (GIT_TRACE=/path, GIT_INDEX_FILE=/path); 1, 2, true… mean stderr."""
     return [val for var, val in _assignments(argv) if _GIT_FILE_ENV.match(var)
             and not re.fullmatch(r"\d*|true|false|yes|no|on|off", val.lower())]
+
+
+_RUSTFLAGS = lazy(r"^(?:CARGO_\w*)?RUSTFLAGS$")  # RUSTFLAGS, CARGO_BUILD_, CARGO_ENCODED_ (split on \x1f), a profile's
+# T-3607: settings that change what a cargo build compiles, or with what: a wrapper, flags, another rustc, linker,
+# toolchain or PATH, cargo's home or a cargo config key. Not the folders it writes (judged as writes), nor what only
+# changes how cargo prints, fetches, caches or optimizes (TERM_, NET_, INCREMENTAL, PROFILE_), but a profile's rustflags
+# or panic strategy (abort turns a panic into a hook error, which lets the call through)
+_CARGO_SETTINGS = lazy(r"^(?:RUSTC\w*|RUSTFLAGS|RUSTDOC\w*|RUSTUP_\w+|PATH|CARGO_(?!(?:BUILD_)?TARGET_DIR$|INSTALL_ROOT$|"
+                       r"TERM_|NET_|INCREMENTAL$|PROFILE_(?!\w*_(?:RUSTFLAGS|PANIC)$))\w+)$")
+# cargo --config KEY=VALUE (a dotted TOML key); anything else, or a value ending .toml, is a file it loads
+_CARGO_INLINE = lazy(r"""^\s*(?:[\w-]+|"[^"]*"|'[^']*')(?:\s*\.\s*(?:[\w-]+|"[^"]*"|'[^']*'))*\s*=(?!.*\.toml\s*$)""",
+                     re.S)
+_CARGO_CONFIG = lazy(r"(?:^|/)\.cargo/config(?:\.toml)?$")
+
+
+def _strings(text):
+    """T-3607: the quoted strings in a text, each kind read on its own (a shell's '…' around TOML's "…" still yields
+    the inner one)."""
+    return re.findall(r'"([^"]*)"', text) + re.findall(r"'([^']*)'", text)
+
+
+def _names_main(text, bases, ctx):
+    """T-3607 review: whether a string in a cargo config's text, read as a path (~ and $HOME expanded, from each base
+    folder, normalized, and where it really is), lands in the main checkout; a lane beside it (foreman.lanes) doesn't."""
+    homes = _homes(ctx)
+    return any(_under(q, fh) for s in _strings(text) for p in {_resolve(_expand(s.strip(), ctx), b) for b in bases}
+               for q in (p, os.path.realpath(p)) for fh in homes)
+
+
+def _cargo_config_hit(target, text, cwds, ctx):
+    """T-3607 review: a .cargo/config anywhere (a lane's, the lanes folder above them) with a path into the main
+    checkout points every build under it there (target-dir, rustc-wrapper); rustc @FILE flags in it can't be read.
+    Paths are read from the config's folder and the one above .cargo (where cargo resolves most). ponytail: only text
+    the guard reads (a tool's content, the command line); a file copied in, or what a lane's build.rs writes, isn't,
+    so this can't close it."""
+    if not _CARGO_CONFIG.search(target):
+        return []
+    found = [("system", f"{target}: a cargo config with rustc @FILE arguments the guard can't read here")] if any(
+        s.lstrip().startswith("@") for s in _strings(text)) else []
+    dirs = list(cwds) if _unresolvable(target) else [os.path.dirname(_resolve(_expand(target, ctx), c)) for c in cwds]
+    if _names_main(text, dirs + [os.path.dirname(d) for d in dirs], ctx):
+        found.append(("core", f"{target} (a cargo config naming Sampo's main checkout: builds under it write or run there)"))
+    return found
+
+
+def _rustup_writes(args):
+    """T-3607 review: what rustup writes into the toolchain it runs: a linked toolchain (from any folder), and a default
+    or override given as a path."""
+    words, rh = [a for a in args if not a.startswith("-")], os.environ.get("RUSTUP_HOME") or "~/.rustup"
+    if words[:2] == ["toolchain", "link"] and len(words) > 2:
+        return [os.path.join(rh, "toolchains", words[2])]
+    head = 1 if words[:1] == ["default"] else 2 if words[:2] == ["override", "set"] else 0
+    return [os.path.join(rh, "settings.toml")] if head and any("/" in w for w in words[head:]) else []
+
+
+def _rustc_outs(args):
+    """T-3607: what rustc writes: -o FILE, --out-dir DIR, each --emit KIND=PATH, -C incremental=DIR."""
+    return _opt_values(args, "-o", "--out-dir") + [
+        v.partition("=")[2] for e in _opt_values(args, "--emit") for v in e.split(",") if "=" in v] + [
+        v[12:] for v in _opt_values(args, "-C", "--codegen") if v.startswith("incremental=")]
+
+
+def _build_outs(name, args, argv):
+    """T-3607: where a cargo or rustc call writes: its output folders (trees: a profile or target name picks the files
+    in them), rustc's own outputs (after cargo's --), and the folder or rustc flags a variable sets, on any command
+    (CARGO_TARGET_DIR=…, export RUSTFLAGS='-o …')."""
+    out = []
+    for k, v in _assignments(argv):
+        if k in ("CARGO_TARGET_DIR", "CARGO_BUILD_TARGET_DIR", "CARGO_BUILD_ARTIFACT_DIR", "CARGO_BUILD_BUILD_DIR",
+                 "CARGO_INSTALL_ROOT"):
+            out.append(v)
+        elif _RUSTFLAGS.match(k):
+            out += _rustc_outs(re.split(r"[\s\x1f]+", v))
+    if name == "cargo":
+        n = args.index("--") if "--" in args else len(args)
+        out += _opt_values(args[:n], "--target-dir", "--artifact-dir", "--out-dir", "--root") + _rustc_outs(args[n + 1:])
+        # T-3607 review: every string in an inline --config (build.target-dir, install.root, rustflags' -o FILE)
+        out += [s for v in _opt_values(args[:n], "--config") if _CARGO_INLINE.match(v) for s in _strings(v)
+                if not s.startswith(("-", "@"))]
+    elif name == "rustc":
+        out += _rustc_outs(args)
+    elif name == "rustup":
+        out += _rustup_writes(args)
+    return out
+
+
+def _build_cats(path, ctx):
+    """T-3607: a build output folder's categories: what it is under and what lies under it; never confine or brief, as
+    a build's own target/ is written unasked (a lane builds into the shared cargo target folder)."""
+    return [k for k in dict.fromkeys(classify_write(path, ctx) + classify_tree(path, ctx)) if k not in ("confine", "brief")]
+
+
+def _cargo_settings(args, cmds, pre):
+    """T-3607: the build settings a cargo call may run under: a variable any command on the line sets or exports
+    (export RUSTC_WRAPPER=…; cargo …), --config, and a toolchain given as a path (cargo +/x, rustup run /x cargo)."""
+    n = args.index("--") if "--" in args else len(args)
+    tc = [a[1:] for a in args[:1] if a.startswith("+")]
+    for i, w in enumerate(pre):
+        if os.path.basename(w) == "rustup" and pre[i + 1:i + 2] == ["run"]:
+            tc += [x for x in pre[i + 2:] if not x.startswith("-")][:1]
+    return sorted({k for x in cmds for k, _ in _assignments(x.argv) if _CARGO_SETTINGS.match(k)}) + [
+        "--config"] * any(a == "--config" or a.startswith("--config=") for a in args[:n]) + [
+        f"toolchain {t}" for t in tc if "/" in t]
+
+
+def _builds_native(args, pre, cwds, lost, known, ctx):
+    """T-3607: whether a cargo call may build the main checkout's plugin/native: the folders it may run in (the cwd,
+    env -C, cargo -C; one the guard lost may be anywhere) and the --manifest-path or install --path it names."""
+    n = args.index("--") if "--" in args else len(args)
+    words = [_with_vars(w, known) for w in _opt_values(pre, "-C", "--chdir") + _opt_values(
+        args[:n], "-C", "--manifest-path", "--path")]
+    if lost or any(_unresolvable(w) for w in words):
+        return True
+    bases = list(cwds) + [_resolve(_expand(w, ctx), b) for w in words for b in cwds]
+    natives = [os.path.join(fh, "plugin", "native") for fh in _homes(ctx)]
+    return any(_under(q, r) for p in bases + [_resolve(_expand(w, ctx), b) for w in words for b in bases]
+               for q in (p, os.path.realpath(p)) for r in natives)
 
 
 def _git_config_code(var, value):
