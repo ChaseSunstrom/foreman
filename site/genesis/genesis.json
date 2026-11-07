@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-07T02:22:23Z",
- "rev": "90c9e675f",
+ "updated": "2026-11-07T02:27:38Z",
+ "rev": "746ca71b5",
  "capabilities": [
   {
    "n": 1,
@@ -48169,10 +48169,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 38403,
+   "generated": 38491,
    "write": {
-    "title": 264,
-    "line": 2162,
+    "title": 267,
+    "line": 2180,
     "payoff": 26,
     "kill test": 136,
     "code": 11
@@ -48189,7 +48189,7 @@
    },
    "merged": 879,
    "kept": 1526,
-   "pending": 124
+   "pending": 191
   },
   "families": [
    {
@@ -48227,7 +48227,7 @@
    },
    {
     "id": "F-021968",
-    "size": 203,
+    "size": 211,
     "lead": "Harmonize parallel agents via standing wave resonance",
     "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
     "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
@@ -48923,22 +48923,6 @@
     ]
    },
    {
-    "id": "F-016586",
-    "size": 1,
-    "lead": "Let Sampo dream up unimplemented features to test robustness",
-    "today": "Today you can't test how your code handles hypothetical future requirements or edge cases you haven't thought of.",
-    "with_this": "With this, Sampo can generate 'ghost' features—fully functional but non-existent code paths that represent plausible future needs—and run them against the current codebase to expose fragilities, allowing it to harden the system against change by testing against imaginary but realistic scenarios.",
-    "tier": "extreme",
-    "cold": null,
-    "wild": 4,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "exhaustive thinking"
-    ]
-   },
-   {
     "id": "F-017587",
     "size": 1,
     "lead": "Simulate the superposition of all possible architectural states",
@@ -49212,7 +49196,7 @@
    },
    {
     "id": "F-005844",
-    "size": 13,
+    "size": 14,
     "lead": "Auto-merge conflicting features by semantic intent inference",
     "today": "Today you can't let CI decide which of two conflicting feature branches is the correct business logic.",
     "with_this": "With this, you can push conflicting feature branches and CI resolves them into a single coherent implementation without human review.",
@@ -49281,6 +49265,23 @@
      "initiative",
      "performance",
      "security"
+    ]
+   },
+   {
+    "id": "F-003402",
+    "size": 3,
+    "lead": "Synchronize multi-agent state using a shared tempo map",
+    "today": "Today you can't ensure that all subagents are working on the same version of the data because they operate independently.",
+    "with_this": "With this, you can guarantee data consistency across subagents by forcing them to 'play in time' with a shared tempo map that locks their state transitions.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 2,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "goal to finish",
+     "migrations"
     ]
    },
    {
@@ -49993,22 +49994,6 @@
     "evidence": "",
     "kinds": [
      "ops"
-    ]
-   },
-   {
-    "id": "F-003402",
-    "size": 1,
-    "lead": "Synchronize multi-agent state using a shared tempo map",
-    "today": "Today you can't ensure that all subagents are working on the same version of the data because they operate independently.",
-    "with_this": "With this, you can guarantee data consistency across subagents by forcing them to 'play in time' with a shared tempo map that locks their state transitions.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 2,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "migrations"
     ]
    },
    {
@@ -51450,9 +51435,25 @@
     "kinds": [
      "features"
     ]
+   },
+   {
+    "id": "F-011896",
+    "size": 1,
+    "lead": "Liquidate the value of untested child scenarios",
+    "today": "Today you can't recover value from scenarios that were written but never executed",
+    "with_this": "With this, you can sell the latent value of untested scenarios to other teams who can run them",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features"
+    ]
    }
   ],
-  "families_total": 1161,
+  "families_total": 1169,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 1526
