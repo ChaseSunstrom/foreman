@@ -505,8 +505,8 @@ ASK_DAYS = 7  # T-0622: an unanswered ask fm second session found is deferred (n
 
 def unanswered_asks(p):
     """T-0622: tasks fm second session captured from the last session's missed requests that are still captured."""
-    found = {e.get("task") for e in c.ledger_tail(p, 5000) if e.get("event") == "capture"
-             and (e.get("data") or {}).get("via") == "second session"}
+    found = {e.get("task") for e in c.ledger_tail(p, 5000, kinds=("capture",))  # T-3573: only those lines decoded
+             if (e.get("data") or {}).get("via") == "second session"}
     return [b.id for b in c.load_briefs(p) if b.id in found and b.status == "captured"] if found else []
 
 
@@ -6486,11 +6486,11 @@ def cmd_next(args):
     usual = None
     if b and b.status != "active":  # T-0451: what this kind of task usually takes here (fm next only: not the hooks)
         from sampo import watch
-        usual = watch.typical(c.ledger_tail(p, 5000)).get(f"{b.type}/{b.tier}")
+        usual = watch.typical(c.ledger_tail(p, 5000, kinds=watch.TYPICAL)).get(f"{b.type}/{b.tier}")
     over = ""
     if b and b.status == "active":  # T-0644: past twice the usual, re-frame before pushing on
         from sampo import watch
-        events = c.ledger_tail(p, 5000)
+        events = c.ledger_tail(p, 5000, kinds=watch.TYPICAL)  # T-3573: the focus events are among them
         median = watch.typical(events).get(f"{b.type}/{b.tier}")
         began = min((c.parse_ts(e.get("ts")) for e in events if e.get("event") == "focus" and e.get("task") == b.id
                      and c.parse_ts(e.get("ts"))), default=None)

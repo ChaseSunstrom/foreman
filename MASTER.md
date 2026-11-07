@@ -300,6 +300,7 @@ Made on a machine, not shipped in the repo.
 - `state/projects/<slug>/decisions.md` decisions: date, tags (`[cites: …]`… [→ files-1](docs/map/files-1.md)
 - `state/projects/<slug>/research/` saved recon/research summaries (runtime) [→ files-1](docs/map/files-1.md)
 - `state/projects/<slug>/ledger.jsonl` append-only event log (runtime; rolled… [→ files-1](docs/map/files-1.md)
+- `state/projects/<slug>/briefs-*.json`, `cache/index-*.json` read caches: briefs, ledger kinds… [→ files-1](docs/map/files-1.md)
 - `state/projects/<slug>/archive/` archived briefs, ledgers, memory copies… [→ files-1](docs/map/files-1.md)
 - `state/archive/projects/<slug>/` a project's whole state once its root folder… [→ files-1](docs/map/files-1.md)
 - `state/projects/<slug>/gate.json` Stop-gate/drive bookkeeping; with… [→ files-1](docs/map/files-1.md)

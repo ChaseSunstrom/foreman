@@ -126,7 +126,7 @@ def queued(p, briefs=None):
     """[(brief, row)] still queued on open tasks, oldest first: a closed task's grant would grant nothing."""
     out = []
     for b in briefs if briefs is not None else c.load_briefs(p):
-        if b.status not in c.CLOSED and SECTION in [s[0].strip() for s in b.sections]:
+        if b.status not in c.CLOSED and b.section(SECTION):  # T-3573: an indexed stub answers it without its file
             out += [(b, d) for s, d in rows(b) if s == "queued"]
     return sorted(out, key=lambda x: x[1].get("at") or "")
 

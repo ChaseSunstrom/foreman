@@ -224,6 +224,9 @@ def cmd_watch(args):
         pass
 
 
+TYPICAL = ("task_new", "focus", "task_done")  # T-3573: all typical() reads: callers fetch only these
+
+
 def typical(events):
     """Median minutes from first focus to done per "TYPE/TIER" with 3+ closed tasks, from the ledger: what a size word
     usually means in this project (T-0116)."""

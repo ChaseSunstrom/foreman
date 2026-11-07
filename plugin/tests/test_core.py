@@ -1451,7 +1451,7 @@ class BriefIndex(ForemanTestCase):
         second, seen = self.opened(lambda: c.load_briefs(self.p))
         done = c.find_brief(self.p, "T-0001").path
         self.assertNotIn(done, seen)
-        self.assertIn(c.find_brief(self.p, "T-0002").path, seen, "open briefs are read as before")
+        self.assertNotIn(c.find_brief(self.p, "T-0002").path, seen, "T-3573: open briefs load from their index too")
         for a, b in zip(first, second):
             self.assertEqual((a.id, a.meta, a.title, a.preamble), (b.id, b.meta, b.title, b.preamble))
             self.assertEqual(a.render(), b.render())
@@ -1542,6 +1542,137 @@ class BriefIndex(ForemanTestCase):
         stub2 = [x for x in c.load_briefs(self.p) if x.id == "T-0001"][0]
         stub2.sections = [["Only", "x\n"]]
         self.assertTrue(stub2.render().endswith("## Only\nx\n"))
+
+    # T-3573: open briefs load from briefs-open.json as stubs that answer a summary without reading their files
+
+    def full(self):
+        out = []
+        for path in c.brief_paths(self.p):
+            with open(path, encoding="utf-8") as f:
+                out.append(c.Brief.parse(f.read(), path))
+        return out
+
+    def assert_like_full_parse(self, got, msg=""):
+        want = self.full()
+        self.assertEqual([b.path for b in got], [b.path for b in want], msg)
+        for a, b in zip(got, want):
+            self.assertEqual((a.id, a.meta, a.title, a.preamble, a.steps(), a.acceptance()),
+                             (b.id, b.meta, b.title, b.preamble, b.steps(), b.acceptance()), msg)
+            self.assertEqual(c.brief_summary(a), c.brief_summary(b), msg)
+            self.assertEqual(a.render(), b.render(), msg)
+            self.assertEqual([list(x) for x in a.sections], [list(x) for x in b.sections], msg)
+
+    def test_brief_index_open_briefs_list_without_reading_their_files(self):
+        self.fm("task", "step", "T-0002", "add", "second step")
+        self.age()
+        c.load_briefs(self.p)
+        self.assertTrue(os.path.exists(os.path.join(self.p.dir, "briefs-open.json")))
+        got, seen = self.opened(lambda: [c.brief_summary(b) for b in c.load_briefs(self.p)])
+        self.assertFalse([s for s in seen if s.endswith(".md")], "no brief file read for a listing")
+        self.assertEqual(got[1]["steps_total"], 2)
+        self.assert_like_full_parse(c.load_briefs(self.p))
+
+    def test_brief_index_a_missing_or_corrupt_open_index_is_rebuilt(self):
+        self.age()
+        c.load_briefs(self.p)
+        idx = os.path.join(self.p.dir, "briefs-open.json")
+        name = os.path.basename(c.find_brief(self.p, "T-0002").path)
+        for bad in (None, "{", "[]", '{"v":1,"e":[]}', json.dumps({"v": 1, "e": {name: [1, 2, 3, {}, "", "x"]}}),
+                    json.dumps({"v": 1, "e": {name: [1, 2, 3, {}, "", {"Steps": 1}]}})):
+            if bad is None:
+                os.remove(idx)
+            else:
+                with open(idx, "w", encoding="utf-8") as f:
+                    f.write(bad)
+            c._BRIEF_MEMO.clear()
+            self.assert_like_full_parse(c.load_briefs(self.p), bad)
+            with open(idx, encoding="utf-8") as f:
+                self.assertIn(name, json.load(f)["e"], f"rebuilt after {bad}")
+
+    def test_brief_index_an_open_brief_in_the_closed_index_is_read_and_moved(self):
+        self.age()
+        c.load_briefs(self.p)
+        path = c.find_brief(self.p, "T-0002").path
+        name = os.path.basename(path)
+        with open(os.path.join(self.p.dir, "briefs-open.json"), encoding="utf-8") as f:
+            entry = json.load(f)["e"][name][:5]  # an older index's 5-item entry for an open brief: no snips
+        os.remove(os.path.join(self.p.dir, "briefs-open.json"))
+        with open(os.path.join(self.p.dir, "briefs-index.json"), "w", encoding="utf-8") as f:
+            json.dump({"v": 1, "e": {name: entry}}, f)
+        c._BRIEF_MEMO.clear()
+        got, seen = self.opened(lambda: c.load_briefs(self.p))
+        self.assertIn(path, seen, "never a stub without its snips")
+        self.assert_like_full_parse(got)
+        with open(os.path.join(self.p.dir, "briefs-open.json"), encoding="utf-8") as f:
+            self.assertEqual(len(json.load(f)["e"][name]), 6)
+
+    def test_brief_index_a_stale_open_entry_is_read_again(self):
+        self.age()
+        c.load_briefs(self.p)
+        path = c.find_brief(self.p, "T-0002").path
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        with open(path, "w", encoding="utf-8") as f:  # in place: the same inode, a new size and time
+            f.write(text.replace("status: planned", "status: blocked").replace("1. [ ] s", "1. [x] s"))
+        c._BRIEF_MEMO.clear()
+        b = [x for x in c.load_briefs(self.p) if x.id == "T-0002"][0]
+        self.assertEqual((b.status, b.steps()[0].done), ("blocked", True))
+        self.assert_like_full_parse(c.load_briefs(self.p))
+
+    def test_brief_index_a_save_between_stat_and_read_is_never_served_stale(self):
+        self.age()
+        c._BRIEF_MEMO.clear()
+        target = c.find_brief(self.p, "T-0002").path
+        c._BRIEF_MEMO.clear()
+        real, done = open, []
+
+        def racing(f, *a, **k):  # a writer lands after load_briefs stat'ed the file, before it reads it
+            if str(f) == target and not done:
+                done.append(1)
+                b = c.Brief.parse(real(target, encoding="utf-8").read(), target)
+                b.meta["status"] = "planned"
+                b.set_section("Steps", "1. [ ] raced <- CURRENT\n")
+                c.save_brief(self.p, b)
+            return real(f, *a, **k)
+        with mock.patch("builtins.open", racing):
+            c.load_briefs(self.p)
+        self.assertTrue(done)
+        self.age()
+        c._BRIEF_MEMO.clear()
+        self.assert_like_full_parse(c.load_briefs(self.p))
+        self.assertEqual([x for x in c.load_briefs(self.p) if x.id == "T-0002"][0].steps()[0].text, "raced")
+
+    def test_brief_index_concurrent_saves_and_loads_end_like_a_full_parse(self):
+        self.age()
+        paths = [b.path for b in c.load_briefs(self.p)]
+        procs = [multiprocessing.Process(target=_save_often, args=(self.p, path, 25)) for path in paths]
+        procs += [multiprocessing.Process(target=_load_often, args=(self.p, 25)) for _ in range(2)]
+        for proc in procs:
+            proc.start()
+        for proc in procs:
+            proc.join(60)
+            self.assertEqual(proc.exitcode, 0)
+        c._BRIEF_MEMO.clear()
+        self.assert_like_full_parse(c.load_briefs(self.p))
+        for path in paths:
+            os.utime(path, (time.time() - 60, time.time() - 60))  # past the 2 s guard, every entry is checked
+        c._BRIEF_MEMO.clear()
+        self.assert_like_full_parse(c.load_briefs(self.p))
+
+
+def _save_often(p, path, n):
+    for i in range(n):
+        b = c._read_brief(path)
+        b.meta["round"] = str(i)
+        b.set_section("Steps", f"1. [ ] round {i} <- CURRENT\n")
+        c.save_brief(p, b, touch=False)
+
+
+def _load_often(p, n):
+    for _ in range(n):
+        c._BRIEF_MEMO.clear()
+        for b in c.load_briefs(p):
+            c.brief_summary(b)
 
 
 class LaterImports(ForemanTestCase):

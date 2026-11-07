@@ -1507,9 +1507,9 @@ def ledger_files(p):
     return [os.path.join(folder, n) for n in rolled] + [os.path.join(p.dir, "ledger.jsonl")]
 
 
-def _last_line(f):
-    """A binary file's last line without its newline; b"" when the file is empty."""
-    end, chunk = f.seek(0, os.SEEK_END), 4096
+def _last_line(f, end=None):
+    """A binary file's last line (of its first end bytes) without its newline; b"" when the file is empty."""
+    end, chunk = f.seek(0, os.SEEK_END) if end is None else end, 4096
     while True:
         start = max(0, end - chunk)
         f.seek(start)
@@ -1548,37 +1548,139 @@ def _seek_since(f, since, chunk=1 << 16):
         f.readline()  # the partial line the chunk began in
 
 
+LEDGER_INDEX_MIN = 256 * 1024  # T-3573: unindexed ledger bytes past this are indexed (and the index saved)
+
+
+def _ledger_index(p, f, name):
+    """T-3573: (n, {kind: [line start offsets]}) for the first n bytes of the open ledger file f (n ends a line): the
+    saved index while f still has the inode, first line and line before n it had, extended over appended lines once
+    they pass LEDGER_INDEX_MIN and saved again. Missing, corrupt or stale (fm tidy's roll rewrites in place): rebuilt,
+    never trusted. (0, {}) while too small to be worth one; readers scan what lies past n as before."""
+    import itertools
+    st = os.fstat(f.fileno())
+    path = os.path.join(p.dir, "cache", f"index-{name}.json")
+    f.seek(0)
+    head = ledger_hash(f.readline())
+    n, kinds = 0, {}
+    try:
+        with open(path, "rb") as g:
+            d = json.load(g)
+        if d["v"] == 1 and d["ino"] == st.st_ino and 0 < d["n"] <= st.st_size and d["head"] == head \
+                and d["last"] == ledger_hash(_last_line(f, d["n"])):
+            n, kinds = d["n"], {k: list(itertools.accumulate(v)) for k, v in d["k"].items()}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass
+    cache = os.path.dirname(path)
+    if st.st_size - n < LEDGER_INDEX_MIN or not os.access(cache if os.path.isdir(cache) else p.dir, os.W_OK):
+        return n, kinds  # a read-only state folder couldn't keep it: the byte scan, not a whole parse, every call
+    f.seek(n)
+    data = f.read(st.st_size - n)
+    for raw in data[:data.rfind(b"\n") + 1].split(b"\n")[:-1]:  # whole lines: one still being written waits
+        try:
+            e = json.loads(raw)
+        except (ValueError, RecursionError):
+            e = None
+        ev = e.get("event") if isinstance(e, dict) else None
+        if isinstance(ev, str):
+            kinds.setdefault(ev, []).append(n)
+        n += len(raw) + 1
+    with contextlib.suppress(OSError):  # a read-only state folder just goes without
+        write_atomic(path, json.dumps({"v": 1, "ino": st.st_ino, "n": n, "head": head, "last": ledger_hash(
+            _last_line(f, n)), "k": {k: [b - a for a, b in zip([0] + v, v)] for k, v in kinds.items()}},
+            separators=(",", ":")))
+    return n, kinds
+
+
 def ledger_events(p, kinds=None, since=""):
     """Every ledger event (of these kinds, at or after since), from the months fm tidy rolled into archive/ and the
     live file, oldest first: for reports over a window, which a fixed-size tail can't promise to cover. Archives
-    wholly before since are skipped by name."""
+    wholly before since are skipped by name. T-3573: with kinds, an indexed file yields only those kinds' lines."""
     marks = re.compile(b"|".join(re.escape(f'"{k}"'.encode()) for k in kinds)) if kinds else None  # T-2025: 1.6x any()
     out = []
+
+    def keep(raw):
+        if marks and not marks.search(raw):
+            return
+        try:
+            e = json.loads(raw)
+        except (ValueError, RecursionError):
+            return
+        if isinstance(e, dict) and (not kinds or e.get("event") in kinds) and str(e.get("ts") or "") >= since:
+            out.append(e)
+
     for path in ledger_files(p):
         name = os.path.basename(path)
         if since and LEDGER_ARCHIVE.fullmatch(name) and name[7:14] < str(since)[:7]:
             continue
         try:
             with open(path, "rb") as f:
-                if since:
+                got = len(out)
+                try:
+                    n, idx = _ledger_index(p, f, name) if marks else (0, {})
+                    if n:
+                        _indexed_lines(f, n, sorted(o for k in set(kinds) for o in idx.get(k, ())), since, keep)
+                except (OSError, ValueError):  # cut short under it (fm tidy's roll rewrites in place): the plain scan
+                    del out[got:]
+                    n = 0
+                if n:
+                    f.seek(n)  # what was appended since: scanned as before
+                elif since:
                     _seek_since(f, str(since).encode())
+                else:
+                    f.seek(0)
                 for raw in f:
-                    if marks and not marks.search(raw):
-                        continue
-                    try:
-                        e = json.loads(raw)
-                    except (ValueError, RecursionError):
-                        continue
-                    if isinstance(e, dict) and (not kinds or e.get("event") in kinds) and str(e.get("ts") or "") >= since:
-                        out.append(e)
+                    keep(raw)
         except OSError:
             continue
     return out
 
 
-def ledger_tail(p, n=200):
-    """The last n ledger events."""
-    return tail_jsonl(os.path.join(p.dir, "ledger.jsonl"), n)
+def _line_ts(raw):
+    try:
+        e = json.loads(raw)
+    except (ValueError, RecursionError):
+        return ""
+    return str(e.get("ts") or "") if isinstance(e, dict) else ""
+
+
+def _pread_line(fd, o, n):
+    """The line of fd starting at offset o, its newline included, by pread: a file cut short under it reads short
+    (a mapping would SIGBUS the process); ValueError when the line doesn't end by n."""
+    want = 1024
+    while True:
+        data = os.pread(fd, min(want, n - o), o)
+        i = data.find(b"\n")
+        if i >= 0:
+            return data[:i + 1]
+        if o + len(data) >= n or len(data) < min(want, n - o):
+            raise ValueError("a ledger line was cut short under its index")
+        want *= 4
+
+
+def _indexed_lines(f, n, offs, since, keep):
+    """T-3573: keep() each line of f starting at offs (all within its first n bytes); with since, from the first whose
+    ts reaches it (a bisection: the ledger is appended in time order, as _seek_since assumes). ValueError when f is
+    shorter than n before or after (cut under it): the caller drops what was kept and scans instead."""
+    import bisect
+    fd = f.fileno()
+    if os.fstat(fd).st_size < n:
+        raise ValueError("the ledger shrank under its index")
+    if since:
+        offs = offs[bisect.bisect_left(offs, str(since), key=lambda o: _line_ts(_pread_line(fd, o, n))):]
+    for o in offs:
+        keep(_pread_line(fd, o, n))
+    if os.fstat(fd).st_size < n:
+        raise ValueError("the ledger shrank under its index")
+
+
+def ledger_tail(p, n=200, kinds=None):
+    """The last n ledger events. T-3573: with kinds, only those kinds' events among them, found in the bytes (as
+    last_change's T-2017 read), so only their lines are decoded: fm next's two looks at 5,000 lines want ~500."""
+    path = os.path.join(p.dir, "ledger.jsonl")
+    if not kinds:
+        return tail_jsonl(path, n)
+    rx = re.compile(b"|".join(re.escape(f'"{k}"'.encode()) for k in kinds))
+    return [e for e in _tail_rows(path, n, rx=rx) if isinstance(e, dict) and e.get("event") in kinds]
 
 
 def global_event_files():
@@ -1631,9 +1733,10 @@ def tail_jsonl(path, n=200):
     return [e for e in rows if e is not None]  # not kept: nobody else holds these
 
 
-def _tail_rows(path, n, keep=()):
+def _tail_rows(path, n, keep=(), rx=None):
     """[record or None for an unreadable line] for the last n lines; with keep, only the records of lines holding every
-    one of those strings (T-2017: last_change wants a few lines of 5,000, and json.loads was most of its 20 ms)."""
+    one of those strings (T-2017: last_change wants a few lines of 5,000, and json.loads was most of its 20 ms); with
+    the pattern rx (T-3573), of lines it matches."""
     try:
         with open(path, "rb") as f:
             f.seek(0, os.SEEK_END)
@@ -1647,8 +1750,8 @@ def _tail_rows(path, n, keep=()):
                     break
                 # T-2017: aim at n from the line length seen so far, and count bytes, decoding once at the end
                 chunk = max(chunk * 2, int(chunk * (n + 1) / max(got, 1) * 1.25))
-            if keep:
-                return _kept(data, data.count(b"\n") - n, [k.encode() for k in keep])
+            if keep or rx:
+                return _kept(data, data.count(b"\n") - n, [k.encode() for k in keep], rx)
             lines = data.decode("utf-8", "replace").splitlines()
             if start > 0:
                 lines = lines[1:]
@@ -1664,14 +1767,19 @@ def _tail_rows(path, n, keep=()):
     return out
 
 
-def _kept(data, skip, keys):
-    """T-2025: the records of data's lines, after the first skip, that hold every key; found in the bytes, so only those
-    lines are decoded (decoding and splitting a 4.7 MB tail was 12 of its 15 ms, to find 23 lines)."""
+def _kept(data, skip, keys, rx=None):
+    """T-2025: the records of data's lines, after the first skip, that hold every key (and match rx); found in the bytes,
+    so only those lines are decoded (decoding and splitting a 4.7 MB tail was 12 of its 15 ms, to find 23 lines)."""
     pos = 0
     for _ in range(skip):  # a cut first line goes with the skipped ones
         pos = data.find(b"\n", pos) + 1
-    out, first, rest = [], keys[0], keys[1:]
-    i = data.find(first, pos)
+    if rx is None:
+        out, first, rest = [], keys[0], keys[1:]
+        find = lambda at: data.find(first, at)  # noqa: E731
+    else:
+        out, rest = [], keys
+        find = lambda at: m.start() if (m := rx.search(data, at)) else -1  # noqa: E731
+    i = find(pos)
     while i >= 0:
         end = data.find(b"\n", i)
         end = len(data) if end < 0 else end
@@ -1681,7 +1789,7 @@ def _kept(data, skip, keys):
                 out.append(json.loads(line))
             except ValueError:
                 pass
-        i = data.find(first, end)
+        i = find(end)
     return out
 
 
@@ -1832,19 +1940,19 @@ AFFECTED_LABEL = "sampo check --affected (affected tests only): "  # T-1747's ev
 class Brief:
     """A task brief: YAML-ish frontmatter + markdown sections. Round-trips unchanged content byte-for-byte."""
 
-    def __init__(self, meta, fm_lines, preamble, sections, path=None):
+    def __init__(self, meta, fm_lines, preamble, sections, path=None, snips=None):
         self.meta = meta
         self._fml = fm_lines                         # [(key, raw_line)], or None: a stub from the brief index
         self.preamble = preamble                     # text between frontmatter and first "## " (title)
         self._sections = sections                    # [[heading, body_text]], the text from the first "## " on, or None
         self.path = path
+        self._snip = snips                           # T-3573: a stub's {heading: body} of BRIEF_SNIPS, or None
 
     @property
     def _fm_lines(self):
         """T-2022: a stub from the brief index (meta and preamble only) reads its file when more is needed."""
         if self._fml is None:
-            with open(self.path, encoding="utf-8") as f:
-                b = Brief.parse(f.read(), self.path)
+            b = _read_brief(self.path)  # T-3573: through the memo, so a later load's stub needn't parse it again
             self._fml = b._fml
             if self._sections is None:  # sections set on the stub win
                 self._sections = b._sections
@@ -1870,7 +1978,7 @@ class Brief:
         return Brief({k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)  # str, bool,
                       for k, v in self.meta.items()},  # or a list of str: all _parse_value makes
                      f if f is None else list(f), self.preamble,
-                     s if s is None or isinstance(s, str) else [list(x) for x in s], self.path)
+                     s if s is None or isinstance(s, str) else [list(x) for x in s], self.path, self._snip)
 
     # --- parse / render
     @classmethod
@@ -1939,6 +2047,8 @@ class Brief:
 
     # --- sections
     def section(self, name):
+        if self._sections is None and self._snip and name in self._snip:  # T-3573: a stub answers without its file
+            return self._snip[name]
         for h, b in self.sections:
             if h.strip() == name:
                 return b
@@ -2497,11 +2607,14 @@ BRIEF_MEMO_MAX = 5000  # a long-lived process (fm serve, the MCP server) starts 
 
 
 BRIEF_INDEX = "briefs-index.json"  # T-2022: {"v": 1, "e": {file name: [inode, mtime_ns, size, meta, preamble]}}
-BRIEF_CLOSED = "briefs-closed.json"  # T-2031: {"v": 1, "e": {file name: [inode, mtime_ns, size]}}: its keys alone
+BRIEF_CLOSED = "briefs-closed.json"  # T-2031: {"v": 1, "e": {file name: [inode, mtime_ns, size]}}: its keys alone;
+# T-3573: of every brief that isn't active or verifying (closed, or open in another state): what active_brief_fast skips
+BRIEF_OPEN = "briefs-open.json"  # T-3573: the open briefs', each entry with a 6th item, {heading: body} of BRIEF_SNIPS
+BRIEF_SNIPS = ("Steps", "Grant requests")  # what listings read of every open brief (brief_summary, grants.queued)
 
 
 def _brief_index(p, name=BRIEF_INDEX):
-    """The closed briefs' index entries, or {} when it is missing or unreadable: it is only ever a cache."""
+    """An index's entries, or {} when it is missing or unreadable: it is only ever a cache."""
     try:
         with open(os.path.join(p.dir, name), encoding="utf-8") as f:
             d = json.load(f)
@@ -2512,37 +2625,47 @@ def _brief_index(p, name=BRIEF_INDEX):
 
 
 def _indexed(e, key):
-    """An index entry, when well formed and its file's (inode, mtime_ns, size) still match."""
-    if isinstance(e, list) and len(e) == 5 and e[:3] == key and isinstance(e[3], dict) and isinstance(e[4], str):
+    """An index entry, when well formed and its file's (inode, mtime_ns, size) still match. T-3573: an open brief's
+    without snips, or lacking a heading BRIEF_SNIPS names (an older index's), is built again."""
+    if isinstance(e, list) and len(e) in (5, 6) and e[:3] == key and isinstance(e[3], dict) and isinstance(e[4], str) \
+            and (e[3].get("status") in CLOSED if len(e) == 5 else  # an open brief's needs its snips
+                 isinstance(e[5], dict) and all(isinstance(e[5].get(h), str) for h in BRIEF_SNIPS)):
         return e
     return None
 
 
+def _entry(key, b):
+    """T-3573: b's index entry; an open brief's carries the sections a listing reads, so it lists without its file."""
+    return key + [b.meta, b.preamble] + ([] if b.status in CLOSED else [{h: b.section(h) for h in BRIEF_SNIPS}])
+
+
 def _read_brief(path, idx=None, fresh=None):
     """A brief from its file, parsed once per process while the file is unchanged; every caller gets its own copy.
-    T-2022: an unchanged closed brief in the index idx comes back as a stub that reads its file only if its body is
-    needed; fresh, when given, collects the index entries of closed briefs."""
+    T-2022: an unchanged brief in the index idx comes back as a stub that reads its file only if its body is needed
+    (T-3573: open briefs too, whose stubs answer BRIEF_SNIPS); fresh, when given, collects the index entries."""
     st = os.stat(path)
     key = [st.st_ino, st.st_mtime_ns, st.st_size]
     name = os.path.basename(path)
     e = _indexed(idx.get(name), key) if idx else None
     hit = _BRIEF_MEMO.get(path)
     if e:  # a stub costs less than the memo's copy, and its index is read afresh each load
-        b = Brief(e[3], None, e[4], None, path)
+        b = Brief(e[3], None, e[4], None, path, e[5] if len(e) == 6 else None)
     elif hit and hit[0] == key:
         b = hit[1].copy()
     else:
         with open(path, encoding="utf-8") as f:
+            st = os.fstat(f.fileno())  # T-3573: the key of what is read: a save landing after the stat above is
+            key = [st.st_ino, st.st_mtime_ns, st.st_size]  # never filed under the older file's key
             b = Brief.parse(f.read(), path)
         if time.time() - st.st_mtime <= 2:  # just written: a same-size rewrite in the same tick could pass for it
-            if fresh is not None and b.status in CLOSED:  # T-2324: still indexed (its inode changes on a rewrite),
-                fresh[name] = key + [b.meta, b.preamble]  # or a load a second later would rewrite the caches
+            if fresh is not None:  # T-2324: still indexed (its inode changes on a rewrite),
+                fresh[name] = _entry(key, b)  # or a load a second later would rewrite the caches
             return b
         if len(_BRIEF_MEMO) > BRIEF_MEMO_MAX:
             _BRIEF_MEMO.clear()
         _BRIEF_MEMO[path] = (key, b.copy())
-    if fresh is not None and b.status in CLOSED:
-        fresh[name] = e or key + [b.meta, b.preamble]
+    if fresh is not None:
+        fresh[name] = e or _entry(key, b)
     return b
 
 
@@ -2553,18 +2676,27 @@ def load_briefs(p, include_archive=False, errors=None):
         listed = set(paths)
         for gone in [k for k in _BRIEF_MEMO if k.startswith(tdir) and k not in listed]:
             _BRIEF_MEMO.pop(gone, None)
-    idx, fresh = _brief_index(p), {}
+    idx, opn, fresh = _brief_index(p), _brief_index(p, BRIEF_OPEN), {}
+    both = {**idx, **opn}
     for path in paths:
         try:
-            out.append(_read_brief(path, idx, fresh) if path.startswith(tdir) else _read_brief(path))
+            out.append(_read_brief(path, both, fresh) if path.startswith(tdir) else _read_brief(path))
         except (OSError, ValueError) as e:
             if errors is not None:
                 errors.append((path, str(e)))
+    shut = {k: v for k, v in fresh.items() if len(v) == 5}
+    live = {k: v for k, v in fresh.items() if len(v) == 6}
     keys = os.path.join(p.dir, BRIEF_CLOSED)
-    if len(fresh) != len(idx) or any(v is not idx.get(k) for k, v in fresh.items()) or not os.path.exists(keys):
-        with contextlib.suppress(OSError):  # a read-only state folder just goes without
-            write_atomic(os.path.join(p.dir, BRIEF_INDEX), json.dumps({"v": 1, "e": fresh}, separators=(",", ":")))
-            write_atomic(keys, json.dumps({"v": 1, "e": {k: v[:3] for k, v in fresh.items()}}, separators=(",", ":")))
+    with contextlib.suppress(OSError):  # a read-only state folder just goes without
+        new_shut = len(shut) != len(idx) or any(v is not idx.get(k) for k, v in shut.items())
+        new_live = len(live) != len(opn) or any(v is not opn.get(k) for k, v in live.items())
+        if new_shut:
+            write_atomic(os.path.join(p.dir, BRIEF_INDEX), json.dumps({"v": 1, "e": shut}, separators=(",", ":")))
+        if new_live:
+            write_atomic(os.path.join(p.dir, BRIEF_OPEN), json.dumps({"v": 1, "e": live}, separators=(",", ":")))
+        if new_shut or new_live or not os.path.exists(keys):
+            write_atomic(keys, json.dumps({"v": 1, "e": {k: v[:3] for k, v in fresh.items() if v[3].get("status")
+                                                         not in ("active", "verifying")}}, separators=(",", ":")))
     return out
 
 
@@ -3230,8 +3362,9 @@ def undo_ok(text):
 def _door_open(b):
     """[(label, text)] for each marked one-way step with no real Undo line, and each marked verify command with no snapshot."""
     marked, acs, undone = door_marked(b), door_marked(b, "door_acs"), [str(x) for x in b.meta.get("door_undone") or []]
-    out = [(f"step {s.n}", s.text) for s in b.steps() if s.n in marked and not s.done and not undo_ok(s.text)]
-    for a in b.acceptance():
+    out = [(f"step {s.n}", s.text) for s in (b.steps() if marked else ()) if s.n in marked and not s.done
+           and not undo_ok(s.text)]
+    for a in b.acceptance() if acs else ():  # T-3573: unmarked (nearly every task): no section read
         cmd = verify_of(a.text)
         if a.n in acs and cmd and not a.checked and door_hash(cmd) not in undone:
             out.append((f"verify {a.n}", cmd))
@@ -4866,12 +4999,11 @@ def _last_log(b):
 _WAITS = lazy(r"\b(?:waits? (?:for|on)|depends on)\s+(T-\d+)")
 
 
-def _blocked_entry(b, everything, open_ids):
+def _blocked_entry(b, known, open_ids):
     """T-2683: a blocked task with the open tasks it waits on (depends_on, or named in its block reason as 'waits
     for T-…'), and freed when every task it named has closed: its blocker is gone and fm task unblock frees it."""
     reason = _last_log(b)
     named = [d for d in dict.fromkeys(list(b.meta.get("depends_on") or []) + _WAITS.findall(reason)) if d != b.id]
-    known = {x.id for x in everything}
     waits = [d for d in named if d in open_ids]
     return dict(brief_summary(b), reason=reason, waits_on=waits,
                 freed=bool(named) and not waits and all(d in known for d in named))
@@ -4891,6 +5023,7 @@ def state_dict(p, briefs=None):
     panic = panicked()
     autonomy = "standard" if panic else effective_autonomy(p, meta)
     open_ids = {b.id for b in everything if b.status not in ("done", "dropped")}
+    known = {b.id for b in everything}  # T-3573: once, not once per blocked task
     active = None
     if act:
         changed = last_change(p, act.id, str(act.meta.get("created") or ""))
@@ -4903,7 +5036,7 @@ def state_dict(p, briefs=None):
         "lanes": [dict(brief_summary(b), lane=b.meta.get("lane") or "main") for b in everything
                   if held_elsewhere(b, p.lane) and b.status not in ("done", "dropped")],
         "inbox": [brief_summary(b) for b in rank_inbox(briefs)],
-        "blocked": [_blocked_entry(b, everything, open_ids) for b in briefs if b.status == "blocked"],
+        "blocked": [_blocked_entry(b, known, open_ids) for b in briefs if b.status == "blocked"],
         "deferred": [b.id for b in briefs if b.status == "deferred"],
         "cycles": cycles, "dangling": [list(d) for d in dangling],
         "sensitive": bool(meta.get("sensitive")), "drive": meta.get("drive", True), "paused": bool(meta.get("paused")),
