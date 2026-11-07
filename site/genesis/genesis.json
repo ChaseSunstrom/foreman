@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-07T00:50:13Z",
+ "updated": "2026-11-07T00:50:28Z",
  "rev": "92f7c0456",
  "capabilities": [
   {
@@ -43271,10 +43271,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 37570,
+   "generated": 37595,
    "write": {
     "title": 252,
-    "line": 2124,
+    "line": 2137,
     "payoff": 26,
     "kill test": 131,
     "code": 11
@@ -43291,7 +43291,7 @@
    },
    "merged": 851,
    "kept": 1498,
-   "pending": 94
+   "pending": 106
   },
   "families": [
    {
@@ -44455,6 +44455,22 @@
     ]
    },
    {
+    "id": "F-006623",
+    "size": 2,
+    "lead": "Auction migration slots among competing product teams",
+    "today": "Today you can't fairly allocate limited maintenance windows when ten product teams all need to migrate their services this week.",
+    "with_this": "With this, you can let teams bid on specific maintenance windows using their own allocated engineering capacity, ensuring the most critical migrations get the best slots without manager mediation.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
     "id": "F-007594",
     "size": 2,
     "lead": "Spot bidding for CI resources based on urgency",
@@ -45303,22 +45319,6 @@
     "evidence": "",
     "kinds": [
      "releases"
-    ]
-   },
-   {
-    "id": "F-006623",
-    "size": 1,
-    "lead": "Auction migration slots among competing product teams",
-    "today": "Today you can't fairly allocate limited maintenance windows when ten product teams all need to migrate their services this week.",
-    "with_this": "With this, you can let teams bid on specific maintenance windows using their own allocated engineering capacity, ensuring the most critical migrations get the best slots without manager mediation.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "migrations"
     ]
    },
    {
@@ -46554,7 +46554,7 @@
     ]
    }
   ],
-  "families_total": 1145,
+  "families_total": 1155,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 1498
