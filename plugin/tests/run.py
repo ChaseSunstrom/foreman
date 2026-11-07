@@ -281,7 +281,7 @@ def keeps_whole(t):
 
 def times_path():
     return os.environ.get("FM_TEST_TIMES") or os.path.join(
-        tempfile.gettempdir(), f"fmtest-times-{getattr(os, 'getuid', lambda: 0)()}-{hashlib.sha1(HERE.encode()).hexdigest()[:10]}.json")
+        tempfile.gettempdir(), f"fmtest-times-{getattr(os, 'getuid', lambda: 0)()}-{hashlib.sha1(os.fsencode(HERE)).hexdigest()[:10]}.json")
 
 
 def load_times():
@@ -332,7 +332,7 @@ def _cache_base():
 
 
 def cache_path(repo):
-    return os.path.join(_cache_base(), "sampo", "run-cache", hashlib.sha1(repo.encode()).hexdigest()[:16] + ".json")
+    return os.path.join(_cache_base(), "sampo", "run-cache", hashlib.sha1(os.fsencode(repo)).hexdigest()[:16] + ".json")
 
 
 def load_cache(path):
@@ -400,7 +400,7 @@ def drop_cache(path):
 
 def _git(cwd, *args, data=None):
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # a hook's GIT_DIR would hash another tree
-    return subprocess.run(["git", "-C", cwd, *args], input=data, capture_output=True, text=True, env=env, timeout=60,
+    return subprocess.run(["git", "-C", cwd, *args], input=data, capture_output=True, text=True, errors="surrogateescape", env=env, timeout=60,
                           check=True).stdout
 
 
@@ -539,7 +539,7 @@ def values(blobs):
         if p not in memo:
             if p == "*":
                 memo[p] = hashlib.sha1("".join(f"{f}\0{b}\0" for f, b in sorted(blobs.items())
-                                               if not f.startswith(STATE) and f != GIT_STATE).encode()).hexdigest()
+                                               if not f.startswith(STATE) and f != GIT_STATE).encode("utf-8", "surrogateescape")).hexdigest()
             elif p.endswith("/") or p.startswith("?"):
                 if not kids:
                     for f in blobs:
@@ -559,7 +559,7 @@ def digest(paths, value):
     """T-3593: one hash of the paths' values (sorted paths), Python's version, --sandbox and the local-models switch."""
     h = hashlib.sha1(f"{sys.version}\0{bool(SANDBOX)}\0{os.environ.get('FOREMAN_NO_LOCAL_MODELS', '1')}".encode())
     for p in paths:
-        h.update(f"{p}\0{value(p)}\0".encode())
+        h.update(f"{p}\0{value(p)}\0".encode("utf-8", "surrogateescape"))  # T-3651: a name with a stray byte
     return h.hexdigest()
 
 

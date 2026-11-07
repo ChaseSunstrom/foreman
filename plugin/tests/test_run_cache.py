@@ -78,6 +78,20 @@ class Coverage(unittest.TestCase):
         with open(os.path.join(self.d, path), "a") as f:
             f.write(text)
 
+    def test_a_file_whose_name_is_not_utf8_is_hashed_and_saved(self):  # T-3651: the 05:20 ship crashed in digest()
+        bad = os.fsdecode(b"bad\xff.txt")  # Python holds the stray byte as the surrogate '\udcff'
+        with open(os.path.join(self.d, bad), "w") as f:
+            f.write("x\n")
+        blobs = self.tree()[1]
+        self.assertIn(bad, blobs)
+        paths = sorted([bad, "./", "*", "?" + bad])
+        d = run.digest(paths, run.values(blobs))
+        self.assertEqual(d, run.digest(paths, run.values(blobs)))
+        with tempfile.TemporaryDirectory() as t:
+            p = os.path.join(t, "c.json")
+            run.save_cache(p, {"m.C": [d, 1, paths]}, 0)
+            self.assertEqual(run.load_cache(p), (0, {"m.C": [[d, 1, paths]]}))
+
     def changes(self, paths, edit):
         """Whether edit() changes the digest of what a class that read paths depends on."""
         before = run.digest(sorted(paths), run.values(self.tree()[1]))
