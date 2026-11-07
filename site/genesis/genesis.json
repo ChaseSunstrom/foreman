@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-07T08:34:47Z",
- "rev": "2f4e59e17",
+ "updated": "2026-11-07T09:00:25Z",
+ "rev": "ea92b87d0",
  "capabilities": [
   {
    "n": 1,
@@ -49632,7 +49632,7 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 913,
+ "unproven": 911,
  "unproven_kinds": {
   "meaning-notes": 397,
   "meaning-user": 266,
@@ -49641,7 +49641,7 @@
   "typed": 50,
   "red": 86,
   "tui-unshot": 12,
-  "docs": 126,
+  "docs": 120,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 43,
@@ -50850,27 +50850,27 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 42717,
+   "generated": 43118,
    "write": {
     "title": 300,
-    "line": 2364,
+    "line": 2374,
     "payoff": 28,
     "kill test": 137,
     "code": 12
    },
    "dups": {
     "exact": 15,
-    "embed": 76,
+    "embed": 77,
     "shingle": 0
    },
    "rejected": {
-    "kill": 21828,
-    "tier": 15026,
-    "novelty": 129
+    "kill": 22080,
+    "tier": 15167,
+    "novelty": 130
    },
-   "merged": 1073,
-   "kept": 1680,
-   "pending": 49
+   "merged": 1088,
+   "kept": 1710,
+   "pending": 0
   },
   "families": [
    {
@@ -50908,7 +50908,7 @@
    },
    {
     "id": "F-018446",
-    "size": 261,
+    "size": 263,
     "lead": "Simulate multi-user memory interference as magnetic domains",
     "today": "Today you can't know if two concurrent sessions will corrupt each other's context when merged",
     "with_this": "With this, Sampo can predict and prevent context bleeding between users by modeling memory states as non-interfering magnetic domains",
@@ -50922,10 +50922,12 @@
      "anticipation",
      "beyond code",
      "calibrated judgment",
+     "design",
      "docs",
      "ecosystem",
      "efficiency",
      "exhaustive thinking",
+     "features",
      "genesis as a feature",
      "getting the tools it lacks",
      "goal to finish",
@@ -52053,6 +52055,22 @@
     ]
    },
    {
+    "id": "F-021508",
+    "size": 3,
+    "lead": "Simulate the future security posture of your entire org",
+    "today": "Today you can't see how a single code change will ripple through every future release to create a vulnerability six months from now.",
+    "with_this": "With this, you can see the projected attack surface of your next three releases before you write a single line of code, preventing future breaches that current static analysis misses.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "security"
+    ]
+   },
+   {
     "id": "F-037501",
     "size": 3,
     "lead": "Buy back confidence in the migration via insurance pools",
@@ -52201,6 +52219,23 @@
     ]
    },
    {
+    "id": "F-012730",
+    "size": 2,
+    "lead": "Steer one feature to rewrite all related codebases instantly",
+    "today": "Today you can't update a single architectural decision across hundreds of projects without manual audit.",
+    "with_this": "With this, you can propagate a new pattern to every compatible project, saving weeks of refactoring and preventing technical debt.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "features",
+     "ops"
+    ]
+   },
+   {
     "id": "F-016083",
     "size": 2,
     "lead": "Let Sampo negotiate resource allocation with other AI agents",
@@ -52215,22 +52250,6 @@
     "kinds": [
      "exhaustive thinking",
      "model layer"
-    ]
-   },
-   {
-    "id": "F-021508",
-    "size": 2,
-    "lead": "Simulate the future security posture of your entire org",
-    "today": "Today you can't see how a single code change will ripple through every future release to create a vulnerability six months from now.",
-    "with_this": "With this, you can see the projected attack surface of your next three releases before you write a single line of code, preventing future breaches that current static analysis misses.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "security"
     ]
    },
    {
@@ -54120,28 +54139,12 @@
     "kinds": [
      "bugs"
     ]
-   },
-   {
-    "id": "F-011892",
-    "size": 1,
-    "lead": "Trade exam recall defects like liquid market options",
-    "today": "Today you can't price the risk of missing a specific language bug across a PR",
-    "with_this": "With this, you can buy insurance that pays out if your code misses a known defect class",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "features"
-    ]
    }
   ],
-  "families_total": 1252,
+  "families_total": 1261,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1680
+   "total": 1710
   }
  },
  "steer": {
@@ -54175,7 +54178,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54198,7 +54201,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54221,7 +54224,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54244,7 +54247,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54267,7 +54270,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54290,7 +54293,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54313,7 +54316,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54336,7 +54339,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54359,7 +54362,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54382,7 +54385,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54405,7 +54408,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54428,7 +54431,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54451,7 +54454,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54474,7 +54477,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54497,7 +54500,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54520,7 +54523,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54543,7 +54546,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54566,7 +54569,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54589,7 +54592,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54612,7 +54615,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54635,7 +54638,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54658,7 +54661,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54681,7 +54684,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54704,7 +54707,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54727,7 +54730,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54750,7 +54753,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 30.3,
+    "idle_h": 30.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
