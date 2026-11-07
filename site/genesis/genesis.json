@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-07T04:21:53Z",
+ "updated": "2026-11-07T04:27:02Z",
  "rev": "020346f6d",
  "capabilities": [
   {
@@ -49699,10 +49699,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 39559,
+   "generated": 39766,
    "write": {
-    "title": 272,
-    "line": 2223,
+    "title": 274,
+    "line": 2248,
     "payoff": 28,
     "kill test": 137,
     "code": 11
@@ -49719,7 +49719,7 @@
    },
    "merged": 928,
    "kept": 1570,
-   "pending": 73
+   "pending": 253
   },
   "families": [
    {
@@ -49757,7 +49757,7 @@
    },
    {
     "id": "F-021968",
-    "size": 223,
+    "size": 224,
     "lead": "Harmonize parallel agents via standing wave resonance",
     "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
     "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
@@ -52983,7 +52983,7 @@
     ]
    }
   ],
-  "families_total": 1192,
+  "families_total": 1195,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 1570
