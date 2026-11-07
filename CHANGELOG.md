@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- A full test-suite run holds one machine-wide slot (~/.cache/sampo/suite.lock), so a second full run waits its turn, saying every minute whose run it waits for, instead of three suites splitting the CPUs; targeted runs, nested runs and FOREMAN_NO_SUITE_SLOT=1 skip it (T-3541).
 - The public .sampo mirror now names briefs and research notes without the home folder or a private term (cut short, or a host's own label): export writes a redacted name and removes the old-named copy, and import maps it back to this machine's own file (T-3574).
 - A second live session in the same checkout is sent to its own lane and its main-checkout edits are refused with the lane path; liveness comes from the holder's process, SessionEnd frees it, and FOREMAN_NO_SESSION_LANES turns it off (T-3331).
 - sampo ship no longer reruns the whole suite when main moved only data or docs past the train's gated tree (the tower's daily stats.json): it runs just the tests those files affect and reuses the gates' pass when they are green, while a plugin .py or .github difference still runs the suite (T-3533).
