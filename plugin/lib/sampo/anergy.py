@@ -6,10 +6,11 @@ tool) are ever named, so a destructive or outward class never is, and Sampo neve
 import json
 import os
 import re
-import statistics
 import time
 
 from sampo import core as c
+
+statistics = c._Later("statistics")  # T-3577: ~3 ms (decimal, fractions) off every PostToolUse
 
 STORE, CAP = "anergy.jsonl", 4000  # rows; the oldest half is dropped past CAP
 REFLEX_S, MIN_N = 2.0, 5

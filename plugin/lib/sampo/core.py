@@ -2,20 +2,15 @@
 
 Stdlib only. Everything that writes state goes through this module (via fm).
 """
-import contextlib
+import _thread
 import datetime
 import fcntl
-import hashlib
-import heapq
+import functools
 import json
 import os
 import re
 import shlex
-import shutil  # tempfile imports it anyway, and state_fallbacks needs tempfile on every guard call
-import string
 import sys
-import tempfile
-import threading
 import time
 from collections import Counter, defaultdict
 
@@ -34,6 +29,68 @@ class _Later:
 
 
 subprocess = _Later("subprocess")
+# T-3577: off every hook's path too (tempfile brings shutil, random and the compression modules: ~5 ms a hook)
+contextlib, hashlib, heapq, shutil, string, tempfile = map(_Later, (
+    "contextlib", "hashlib", "heapq", "shutil", "string", "tempfile"))
+
+
+def _contextmanager(fn):
+    """contextlib.contextmanager, contextlib imported at the first call rather than at this module's import."""
+    @functools.wraps(fn)
+    def cm(*args, **kwargs):
+        return contextlib.contextmanager(fn)(*args, **kwargs)
+    return cm
+
+
+def _builtin_hash(module, name):
+    """hashlib's constructor `name`: the interpreter's own when built in (T-3577: hashlib loads OpenSSL, ~2 ms of a
+    hook's CPU; the digests are the same)."""
+    try:
+        return getattr(__import__(module), name)
+    except (ImportError, AttributeError):
+        return getattr(hashlib, name)
+
+
+def sha1(data=b"", **kw):
+    return _builtin_hash("_sha1", "sha1")(data, **kw)
+
+
+def sha256(data=b"", **kw):
+    return _builtin_hash("_sha2", "sha256")(data, **kw)
+
+
+_TEMPDIR = None
+
+
+def gettempdir():
+    """tempfile.gettempdir(), without importing tempfile on a hook's path (T-3577): the same candidates in order, each
+    tried as tempfile tries it (a fresh file created, written and removed); tempfile answers once it is loaded."""
+    global _TEMPDIR
+    if "tempfile" in sys.modules:
+        return tempfile.gettempdir()
+    if _TEMPDIR is None:
+        dirs = [d for d in (os.getenv(k) for k in ("TMPDIR", "TEMP", "TMP")) if d] + ["/tmp", "/var/tmp", "/usr/tmp"]
+        try:
+            dirs.append(os.getcwd())
+        except OSError:
+            dirs.append(os.curdir)
+        for d in dirs:
+            d = d if d == os.curdir else os.path.abspath(d)
+            try:
+                fd, name = mkstemp(d, "tmp", "")
+                try:
+                    try:
+                        os.write(fd, b"blat")
+                    finally:
+                        os.close(fd)
+                finally:
+                    os.unlink(name)
+                _TEMPDIR = d
+                return d
+            except OSError:
+                continue
+        return tempfile.gettempdir()  # none usable: its own FileNotFoundError
+    return _TEMPDIR
 
 
 class lazy:  # lowercase: reads like re.compile at each site
@@ -189,7 +246,7 @@ APPROVAL_TTL = 24 * 3600  # seconds a pending request, or an open permission dia
 
 def state_fallbacks():
     xdg = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
-    return [os.path.join(xdg, "foreman"), os.path.join(tempfile.gettempdir(), f"foreman-state-{os.getuid()}")]
+    return [os.path.join(xdg, "foreman"), os.path.join(gettempdir(), f"foreman-state-{os.getuid()}")]
 
 
 def _private(path):
@@ -305,7 +362,7 @@ def projects_dir():
 
 def slug_for(root):
     name = re.sub(r"[^a-z0-9]+", "-", os.path.basename(root.rstrip("/")).lower()).strip("-") or "root"
-    return f"{name}-{hashlib.sha1(root.encode()).hexdigest()[:6]}"
+    return f"{name}-{sha1(root.encode()).hexdigest()[:6]}"
 
 
 def worktree_id(root):
@@ -1247,6 +1304,19 @@ def progress_end(outer=False):
         pass
 
 
+def mkstemp(d, prefix, suffix):
+    """tempfile.mkstemp(suffix, prefix, d) without importing tempfile on a hook's path (T-3577): a new file made
+    exclusively (O_EXCL, never through a link) at an unguessable name, mode 0600; (fd, its absolute path)."""
+    d = os.path.abspath(d)
+    for _ in range(100):  # tempfile.TMP_MAX
+        name = os.path.join(d, prefix + os.urandom(6).hex() + suffix)
+        try:
+            return os.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600), name
+        except FileExistsError:
+            continue
+    raise FileExistsError(17, "No usable temporary file name found")  # errno.EEXIST
+
+
 def write_atomic(path, text):
     d = os.path.dirname(path) or "."  # T-1784 review: a bare name has no dirname, and makedirs("") raises
     os.makedirs(d, exist_ok=True)
@@ -1258,7 +1328,7 @@ def write_atomic(path, text):
     # symlink that sends the write elsewhere
     # T-3336: the name is cut (40 characters, at most 160 bytes) so a name near the 255-byte limit still has room
     # for the random part and '.tmp'
-    fd, tmp = tempfile.mkstemp(dir=d, prefix=f".{os.path.basename(path)[:40]}.", suffix=".tmp")
+    fd, tmp = mkstemp(d, f".{os.path.basename(path)[:40]}.", ".tmp")
     try:
         os.fchmod(fd, mode)
         with os.fdopen(fd, "wb") as f:
@@ -1272,7 +1342,7 @@ def write_atomic(path, text):
         raise
 
 
-@contextlib.contextmanager
+@_contextmanager
 def lock(directory, timeout=5.0):
     os.makedirs(directory, exist_ok=True)
     fd = os.open(os.path.join(directory, ".lock"), os.O_CREAT | os.O_RDWR, 0o600)
@@ -1496,7 +1566,7 @@ LEDGER_ARCHIVE = lazy(r"ledger-\d{4}-\d\d\.jsonl")
 def ledger_hash(raw):
     """T-1065: a ledger line's link, the first 16 hex of the sha256 of its bytes (newline left out); b"" (no line
     before) is the chain's genesis."""
-    return hashlib.sha256(raw).hexdigest()[:16]
+    return sha256(raw).hexdigest()[:16]
 
 
 def ledger_files(p):
@@ -1704,7 +1774,7 @@ def global_events(since):
                 yield e
 
 
-_TAIL_LOCK = threading.Lock()  # T-1231 review: fm bench --jobs reads ledgers from several threads
+_TAIL_LOCK = _thread.allocate_lock()  # T-1231 review: fm bench --jobs reads ledgers from several threads
 _TAIL_MEMO = {}  # T-1082: path -> ((inode, size, mtime_ns), [record or None per line]): one read per unchanged file
 TAIL_MEMO_MAX, TAIL_MEMO_FILES = 20000, 8
 
@@ -4051,10 +4121,10 @@ def rule_hits(p, on, text):
     """The rules on `on` whose pattern is found in the first RULE_SCAN characters of text: [(n, rule, timed_out)].
     Matching is time-boxed (RULE_BUDGET for all of them, SIGALRM: CPython's regex engine checks signals); a rule it
     couldn't finish is returned with timed_out=True and every rule after it is not tried."""
-    import signal
     todo = [(n, r) for n, r in enumerate(rules(p), 1) if r["on"] == on]
     if not todo or not text:
         return []
+    import signal  # T-3577: only when there is a rule to time
     hits = []
 
     def expire(*_):
@@ -4943,9 +5013,34 @@ def active_brief(briefs, lane=None):
 _ACTIVE_LINE = lazy(rb"^status:[ \t]*(?:active|verifying)[ \t]*\r?$", re.M)
 
 
+_ACTIVE_MEMO = None  # T-3577: {tasks folder: (its stat, active hits)} while a hook runs (hooks.run sets it)
+
+
 def active_brief_fast(p, lane=None):
     """T-1140: active_brief(load_briefs(p), lane) without parsing every brief (half of each PreToolUse call at 1,069
-    briefs): only a brief whose frontmatter says active or verifying is parsed."""
+    briefs): only a brief whose frontmatter says active or verifying is parsed. T-3577: within a hook run (up to 4
+    calls, ~30 ms each at 88 active briefs) an unchanged tasks folder's scan is reused, each caller getting its own
+    copy: a brief written since replaced its entry and moved the folder's times; a folder changed in the last 2 s
+    (a write in the same clock tick could leave its times as they were) is scanned afresh."""
+    memo, tdir, key = _ACTIVE_MEMO, os.path.join(p.dir, "tasks"), None
+    if memo is not None:
+        try:
+            st = os.stat(tdir)
+            key = (st.st_ino, st.st_mtime_ns, st.st_ctime_ns) if time.time() - st.st_mtime > 2 else None
+        except OSError:
+            pass
+        if key and memo.get(tdir, (None,))[0] == key:
+            b = active_brief(memo[tdir][1], lane)
+            return b.copy() if b else None
+    hits = _active_hits(p)
+    if key:
+        memo[tdir] = (key, hits)
+        b = active_brief(hits, lane)
+        return b.copy() if b else None
+    return active_brief(hits, lane)
+
+
+def _active_hits(p):
     hits, closed = [], _brief_index(p, BRIEF_CLOSED)  # T-2031: the index's keys alone, not its 700 KB of meta (4 ms)
     if not closed:
         closed = {n: e[:3] for n, e in _brief_index(p).items()
@@ -4966,7 +5061,7 @@ def active_brief_fast(p, lane=None):
                 hits.append(_read_brief(path))
         except (OSError, ValueError):
             continue
-    return active_brief(hits, lane)
+    return hits
 
 
 def stranded(briefs, lane=None):
@@ -6388,7 +6483,7 @@ def resume_info(p):
             "execution_prompt": b.section("Execution prompt").strip(), "path": b.path, "stale": stale_refs(p, b)}
 
 
-@contextlib.contextmanager
+@_contextmanager
 def gate_lock(label, say=None, timeout=None):
     """T-1668: one machine-wide gate lock (flock, state/gate.lock): release checks, the canary and full fm check runs
     queue behind each other instead of overloading the machine. A waiter says (say(text)) who holds it. A child of the

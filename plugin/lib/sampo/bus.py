@@ -6,12 +6,13 @@ holder. The conductor: live sessions, their mail and leases, and one steer for a
 import json
 import os
 import re
-import socket
 import sys
 import time
 
 from sampo import core as c
 from sampo.core import subprocess  # T-2023: imported on first use
+
+socket = c._Later("socket")  # T-3577: off the hooks' path too
 
 LIVE_S = 15 * 60       # a session whose statusline wrote within this is live
 LEASE_S = 20 * 60      # an edit holds its function this long, renewed by each edit
