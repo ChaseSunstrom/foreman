@@ -1122,8 +1122,8 @@ def health(p, briefs=None):
             except OSError:
                 continue
             marks.append((os.path.relpath(os.path.join(root, f), d), st.st_mtime_ns, st.st_size, st.st_ino))
-    try:  # T-2172: a Foreman update changes what step says, so it refreshes too
-        code = os.stat(__file__).st_mtime_ns
+    try:  # T-2172: a Foreman update changes what step says, so it refreshes too (T-3565: by content, not mtime)
+        code = c.content_key(__file__)
     except OSError:  # mid-update: a surface loses its line, never its caller
         code = 0
     key = hashlib.sha1(json.dumps([sorted(marks), sorted((b.id, b.status) for b in briefs), code]).encode()).hexdigest()

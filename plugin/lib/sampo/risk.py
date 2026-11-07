@@ -87,22 +87,39 @@ def _counts(p, day):
     except OSError:
         pass
     root, gkey = c.git_root(p.root), None
-    try:  # a worktree's .git is a file: no key, so git log each time
-        s = os.stat(os.path.join(root, ".git", "logs", "HEAD")) if root else None
+    try:
+        s = os.stat(_head_log(root)) if root else None
         gkey = [s.st_size, s.st_mtime_ns] if s else None
     except OSError:
         pass
-    if gkey and old.get("git") == gkey and isinstance(old.get("rev"), int):
-        rev = old["rev"]
+    # T-3565: lanes share this file with main but each has its own HEAD: one [size, mtime_ns, reverts] per checkout,
+    # so neither overwrites the other's on every call
+    gits = dict(old["git"]) if isinstance(old.get("git"), dict) else {}
+    had = gits.pop(root, None)
+    if gkey and isinstance(had, list) and len(had) == 3 and had[:2] == gkey and isinstance(had[2], int):
+        rev = had[2]
     else:
         rev = _reverts(p.root, day) if root else 0
-    if not ok or n != saved or gkey != old.get("git") or rev != old.get("rev") or off - old.get("off", 0) > 65536:
+    if gkey:
+        gits[root] = gkey + [rev]
+    if not ok or n != saved or gits != old.get("git") or off - old.get("off", 0) > 65536:
         try:  # most calls write nothing: the next process rereads the few lines since
             c.write_atomic(cpath, json.dumps({"day": day, "off": off, "line": line, "mark": mark, "n": n,
-                                              "git": gkey, "rev": rev}))
+                                              "git": gits}))
         except OSError:
             pass
     return {**n, "revert": rev}
+
+
+def _head_log(root):
+    """HEAD's reflog. T-3565: a linked worktree's .git is a file naming its real git dir (<common>/worktrees/<name>)."""
+    g = os.path.join(root, ".git")
+    if os.path.isfile(g):
+        with open(g, encoding="utf-8", errors="replace") as f:
+            line = f.readline(4096)
+        if line.startswith("gitdir:"):
+            g = os.path.join(root, line[7:].strip())
+    return os.path.join(g, "logs", "HEAD")
 
 
 _UNDOES = c.lazy(r"This reverts commit ([0-9a-f]{7,40})")

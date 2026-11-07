@@ -4088,6 +4088,19 @@ def file_digest(path):
     return hashlib.sha256(head + (b"" if size <= len(head) else str(size).encode())).hexdigest()[:12]
 
 
+_DIGESTS = {}  # (path, mtime_ns, size, inode) -> file_digest: once per process per version of the file
+
+
+def content_key(path):
+    """T-3565: file_digest for a cache key in shared state, where an mtime won't do: a lane's checkout and main's hold
+    the same code with different mtimes. OSError as file_digest."""
+    st = os.stat(path)
+    k = (path, st.st_mtime_ns, st.st_size, st.st_ino)
+    if k not in _DIGESTS:
+        _DIGESTS[k] = file_digest(path)
+    return _DIGESTS[k]
+
+
 def revisit_tag(root, trigger):
     """T-0247: the decisions.md tag for --revisit "after YYYY-MM-DD" | "when PATH changes" (a path inside the project,
     its content hash kept so a later change can be told); ValueError when it is neither."""

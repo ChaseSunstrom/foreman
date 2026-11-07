@@ -433,25 +433,30 @@ def check_frontmatter(plugin=PLUGIN):
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
 
 
-def _stats(paths, exact=False):
+def _stats(paths):
     """[path, mtime floored to the hour] per path, [path] for one that can't be stat'd. The inputs are aggregates over
-    days that grow every turn, so up to an hour stale is fine; `exact` adds size and the ns mtime (SKILL.md files)."""
+    days that grow every turn, so up to an hour stale is fine."""
     out = []
     for p in sorted(paths):
         try:
             st = os.stat(p)
-            out.append([p, st.st_size, st.st_mtime_ns] if exact else [p, int(st.st_mtime // 3600)])
+            out.append([p, int(st.st_mtime // 3600)])
         except OSError:
             out.append([p])
     return out
 
 
 def _code_stamp():
-    """T-2314: this file's mtime_ns, so an edited check does not return yesterday's cached result."""
+    """T-2314: this file's content hash, so an edited check does not return yesterday's cached result (T-3565: not its
+    mtime, which differs between a lane's checkout and main's, so each rewrote the cache for the other)."""
+    return _digest(__file__) or ""
+
+
+def _digest(path):
     try:
-        return os.stat(__file__).st_mtime_ns
+        return c.content_key(path)
     except OSError:
-        return 0
+        return None
 
 
 def _cached(name, key, compute):
@@ -491,9 +496,10 @@ def check_unloaded_skills(events=None, plugin=PLUGIN, n=UNLOADED_SESSIONS):
     skills = os.path.join(plugin, "skills")
     names = sorted(s for s in os.listdir(skills) if os.path.isfile(os.path.join(skills, s, "SKILL.md"))) \
         if os.path.isdir(skills) else []
-    if events is None:  # T-2298: the files c.global_events reads (rotated logs, events.jsonl) and each SKILL.md
-        return _cached("unloaded skills", [plugin, n, _stats(c.global_event_files()),
-                                           _stats([os.path.join(skills, s, "SKILL.md") for s in names], exact=True)],
+    if events is None:  # T-2298: the files c.global_events reads (rotated logs, events.jsonl) and each SKILL.md, by
+        # name and content (T-3565: not the plugin's path and mtimes, which differ between a lane's checkout and main's)
+        return _cached("unloaded skills", [n, _stats(c.global_event_files()),
+                                           [[s, _digest(os.path.join(skills, s, "SKILL.md"))] for s in names]],
                        lambda: check_unloaded_skills(list(c.global_events(cost._since(30))), plugin, n))
     named, loaded = collections.defaultdict(set), collections.defaultdict(set)
     for e in events:

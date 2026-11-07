@@ -3480,6 +3480,22 @@ class GenesisHealth(ForemanTestCase):
         rune.put(self.p, "gen-1/mission-exam.md", f"# Mission\n\nTask: {t}\n")
         return t
 
+    def test_health_cache_holds_across_checkouts_of_the_same_code(self):
+        # T-3565: the key held rune.py's mtime, which differs between a lane's checkout and main's: each side reran
+        # step and rewrote genesis-step.json on every call, waking the pane's watcher
+        from unittest import mock
+        from sampo import core as c
+        from sampo import rune
+        self.tower()
+        rune.health(self.p)
+        lane = os.path.join(self.tmp, "lane-rune.py")
+        shutil.copyfile(rune.__file__, lane)  # the same code, another checkout's mtime
+        os.utime(lane, ns=(1, 1))
+        with mock.patch.object(rune, "__file__", lane), \
+                mock.patch.object(rune, "step", lambda p: self.fail("step ran for the same code")), \
+                mock.patch.object(c, "write_atomic", side_effect=AssertionError("rewrote genesis-step.json")):
+            self.assertIsNotNone(rune.health(self.p))
+
     def test_cached_until_a_tower_file_or_a_task_status_changes(self):
         from sampo import rune
         self.assertIsNone(rune.health(self.p))  # no tower: nothing to show

@@ -1130,10 +1130,28 @@ class ScanCache(ForemanTestCase):
     def test_an_edited_check_recomputes_the_same_day(self):  # T-2314
         d.check_usage_burn()
         saved = d._code_stamp
-        d._code_stamp = lambda: saved() + 1
+        d._code_stamp = lambda: saved() + "-edited"
         self.addCleanup(setattr, d, "_code_stamp", saved)
         d.check_usage_burn()
         self.assertEqual(self.calls["burn"], 2)
+
+    def test_another_checkout_of_the_same_code_reuses_the_cache(self):
+        # T-3565: the key held doctor.py's mtime and the plugin's path, both different in a lane's checkout: a lane's
+        # doctor and main's recomputed and rewrote doctor-cache.json for each other
+        path = os.path.join(c.state_dir(), "doctor-cache.json")
+        d.check_usage_burn()
+        d.check_unloaded_skills()
+        lane = os.path.join(self.tmp, "lane")  # the same files, a checkout's fresh mtimes
+        shutil.copytree(os.path.join(d.PLUGIN, "skills"), os.path.join(lane, "skills"), copy_function=shutil.copyfile)
+        code = os.path.join(lane, "doctor.py")
+        shutil.copyfile(d.__file__, code)
+        os.utime(code, ns=(1, 1))
+        st = os.stat(path)
+        with unittest.mock.patch.object(d, "__file__", code):
+            d.check_usage_burn()
+            d.check_unloaded_skills(plugin=lane)
+        self.assertEqual(self.calls, {"burn": 1, "events": 1})
+        self.assertEqual((os.stat(path).st_ino, os.stat(path).st_mtime_ns), (st.st_ino, st.st_mtime_ns))
 
     def test_an_odd_cache_file_recomputes(self):
         path = os.path.join(c.state_dir(), "doctor-cache.json")

@@ -169,6 +169,30 @@ class Risk(HookCase):
         with mock.patch.object(c, "_seek_since", side_effect=AssertionError("rescanned the day")):
             self.assertEqual(self.fresh(p), 7, "HEAD moved: git log again")
 
+    def test_a_lane_and_main_stop_rewriting_each_others_cache(self):
+        # T-3565: a linked worktree's .git is a file, so a lane's reflog key was None, and main's and a lane's reflogs
+        # differ anyway: each side rewrote risk.json (after a git log) on every call, waking the pane's watcher
+        import copy
+        from unittest import mock
+        self.fm("init")
+        g = lambda d, *a: subprocess.run(["git", "-C", d, "-c", "user.email=t@example.com", "-c", "user.name=t",  # noqa: E731
+                                          *a], check=True, capture_output=True)
+        g(self.repo, "commit", "--allow-empty", "-m", "start")
+        lane = os.path.join(self.tmp, "lane")
+        g(self.repo, "worktree", "add", "-q", "-b", "lane", lane)
+        g(lane, "commit", "--allow-empty", "-m", "lane work")
+        p = self.spend(blocks=1)
+        lp = copy.copy(p)
+        lp.root = lane
+        self.assertEqual([self.fresh(q) for q in (p, lp)], [1, 1])  # each side caches its own HEAD's revert count
+        with mock.patch.object(c, "write_atomic", side_effect=AssertionError("rewrote risk.json")), \
+                mock.patch.object(c, "_git", side_effect=AssertionError("ran git log")):
+            self.assertEqual([self.fresh(q) for q in (p, lp, p, lp)], [1, 1, 1, 1])
+        g(lane, "commit", "--allow-empty", "-m", 'Revert "x"')
+        self.assertEqual(self.fresh(lp), 4, "the lane's HEAD moved: git log there again")
+        with mock.patch.object(c, "_git", side_effect=AssertionError("ran git log")):
+            self.assertEqual(self.fresh(p), 1, "main's entry still holds")
+
     def test_a_rolled_ledger_is_read_afresh(self):
         self.fm("init")
         p = self.spend(blocks=2)
