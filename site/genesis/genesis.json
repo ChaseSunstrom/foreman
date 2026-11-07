@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-07T00:27:05Z",
+ "updated": "2026-11-07T00:34:19Z",
  "rev": "6847d1892",
  "capabilities": [
   {
@@ -38695,6 +38695,382 @@
     "vuln"
    ],
    "author": "self"
+  },
+  {
+   "run": "s28-031",
+   "agent": "smith",
+   "keyed": 48,
+   "found": 0,
+   "false_alarms": 11,
+   "exam_defects": 0,
+   "fixable": 48,
+   "fixed": 1,
+   "tf_keyed": 24,
+   "tf_first": 0,
+   "readings_keyed": 8,
+   "readings_hit": 0,
+   "missing_keyed": 4,
+   "missing_hit": 0,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 44,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 44,
+   "conf_missing": 44,
+   "brier_sum": 11.0,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "rust": [
+      0,
+      8
+     ],
+     "js": [
+      0,
+      11
+     ],
+     "c": [
+      0,
+      8
+     ],
+     "ruby": [
+      0,
+      8
+     ],
+     "ts": [
+      0,
+      5
+     ],
+     "python": [
+      0,
+      8
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      8
+     ],
+     "vuln": [
+      0,
+      8
+     ],
+     "untested": [
+      0,
+      8
+     ],
+     "slow": [
+      0,
+      8
+     ],
+     "docs": [
+      0,
+      8
+     ],
+     "flaky": [
+      0,
+      4
+     ],
+     "dep": [
+      0,
+      4
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 12,
+    "found": 0,
+    "false_alarms": 3,
+    "exam_defects": 0,
+    "fixable": 12,
+    "fixed": 0,
+    "tf_keyed": 6,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 11,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 11,
+    "conf_missing": 11,
+    "brier_sum": 2.75,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       2
+      ],
+      "js": [
+       0,
+       1
+      ],
+      "ts": [
+       0,
+       2
+      ],
+      "rust": [
+       0,
+       5
+      ],
+      "python": [
+       0,
+       1
+      ],
+      "ruby": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       2
+      ],
+      "vuln": [
+       0,
+       2
+      ],
+      "untested": [
+       0,
+       2
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       2
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "false_by_kind": {
+     "bug": 1,
+     "dep": 2
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "train": {
+    "keyed": 36,
+    "found": 0,
+    "false_alarms": 8,
+    "exam_defects": 0,
+    "fixable": 36,
+    "fixed": 1,
+    "tf_keyed": 18,
+    "tf_first": 0,
+    "readings_keyed": 6,
+    "readings_hit": 0,
+    "missing_keyed": 3,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 33,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 33,
+    "conf_missing": 33,
+    "brier_sum": 8.25,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "rust": [
+       0,
+       3
+      ],
+      "js": [
+       0,
+       10
+      ],
+      "ruby": [
+       0,
+       7
+      ],
+      "c": [
+       0,
+       6
+      ],
+      "ts": [
+       0,
+       3
+      ],
+      "python": [
+       0,
+       7
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       6
+      ],
+      "vuln": [
+       0,
+       6
+      ],
+      "untested": [
+       0,
+       6
+      ],
+      "slow": [
+       0,
+       6
+      ],
+      "docs": [
+       0,
+       6
+      ],
+      "flaky": [
+       0,
+       3
+      ],
+      "dep": [
+       0,
+       3
+      ]
+     }
+    },
+    "false_by_kind": {
+     "vuln": 3,
+     "slow": 1,
+     "flaky": 1,
+     "none": 3
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "cost": 0,
+   "closed": {
+    "train": [],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [
+     "ambiguous-ts-71b55e",
+     "bug-c-a8134c",
+     "dep-ts-90922c",
+     "docs-rust-4d3dc1",
+     "flaky-python-c1eeea",
+     "missing-tool-ruby-d092cb",
+     "none-rust-3cabed",
+     "slow-ts-5b5140",
+     "untested-c-af89f1",
+     "vague-ruby-35b420",
+     "vuln-js-f07143"
+    ],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "bug": 1,
+    "vuln": 3,
+    "slow": 1,
+    "flaky": 1,
+    "dep": 2,
+    "none": 3
+   },
+   "brier": 0.25,
+   "closed_share": 0.0,
+   "tokens": 3071973,
+   "fix_rate": 0.0,
+   "tokens_per_fix": null,
+   "model": "gpu-mimo9",
+   "at": "2026-11-07T00:34:12Z",
+   "gen": 4,
+   "split": "all",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "none",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
   }
  ],
  "coverage": {
@@ -41311,16 +41687,16 @@
  },
  "not_yet": 8,
  "not_yet_open": 0,
- "unproven": 903,
+ "unproven": 904,
  "unproven_kinds": {
   "meaning-notes": 396,
-  "meaning-user": 258,
+  "meaning-user": 259,
   "research-uncited": 34,
   "perf-typed": 70,
-  "typed": 46,
+  "typed": 47,
   "red": 86,
   "tui-unshot": 12,
-  "docs": 129,
+  "docs": 130,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 42,
@@ -42543,13 +42919,13 @@
     "shingle": 0
    },
    "rejected": {
-    "kill": 19076,
-    "tier": 13048,
+    "kill": 19170,
+    "tier": 13215,
     "novelty": 122
    },
-   "merged": 841,
-   "kept": 1484,
-   "pending": 285
+   "merged": 851,
+   "kept": 1498,
+   "pending": 0
   },
   "families": [
    {
@@ -45815,7 +46191,7 @@
   "families_total": 1145,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1484
+   "total": 1498
   }
  },
  "steer": {
@@ -45849,7 +46225,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45872,7 +46248,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45895,7 +46271,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45918,7 +46294,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45941,7 +46317,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45964,7 +46340,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45987,7 +46363,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46010,7 +46386,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46033,7 +46409,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46056,7 +46432,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46079,7 +46455,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46102,7 +46478,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46125,7 +46501,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46148,7 +46524,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46171,7 +46547,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46194,7 +46570,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46217,7 +46593,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46240,7 +46616,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46263,7 +46639,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46286,7 +46662,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46309,7 +46685,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46332,7 +46708,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46355,7 +46731,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46378,7 +46754,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46401,7 +46777,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -46424,7 +46800,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 22.1,
+    "idle_h": 22.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
