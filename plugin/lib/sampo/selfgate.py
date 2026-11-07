@@ -72,6 +72,17 @@ def _tree(main, sha, dest):
     return os.path.join(root, "plugin")
 
 
+def _landed(main, head, sha):
+    """T-3647: what a train lands: sha when it already holds head, else the tree of head merged with sha. A conflict (or an
+    old git) falls back to sha itself, the tip; conflicts are reported elsewhere. A tree id works wherever _tree/_cases
+    take a sha."""
+    if _git(main, "merge-base", "--is-ancestor", head, sha).returncode == 0:
+        return sha
+    r = _git(main, "merge-tree", "--write-tree", head, sha, text=True)
+    first = r.stdout.split("\n", 1)[0].strip()
+    return first if r.returncode == 0 and len(first) in (40, 64) else sha
+
+
 def _cases(main, sha):
     """{(cmd, cwd): id} of sha's labelled guard cases and allow-corpus."""
     out = {}
@@ -437,7 +448,8 @@ def gate(p, b, main, ref, files):
         if not sha:
             raise RuntimeError(f"no commit {ref}")
         head = _git(main, "rev-parse", "HEAD", text=True).stdout.strip()
-        base, new = _tree(main, head, os.path.join(tmp, "base")), _tree(main, sha, os.path.join(tmp, "branch"))
+        judged = _landed(main, head, sha)  # T-3647: judge what the train lands (the lane merged onto the base)
+        base, new = _tree(main, head, os.path.join(tmp, "base")), _tree(main, judged, os.path.join(tmp, "branch"))
         for rel in HARNESS:  # the judge is the base's: a branch can't rewrite how it is measured
             src, dst = os.path.join(base, rel), os.path.join(new, rel)
             if os.path.isfile(src):
@@ -445,7 +457,7 @@ def gate(p, b, main, ref, files):
                 shutil.copyfile(src, dst)
         key = _key(base)
         cache = _load(p, key)  # T-3176: the base half, rerun only when the base, settings, machine or a day changed
-        was, now = _cases(main, head), _cases(main, sha)
+        was, now = _cases(main, head), _cases(main, judged)
         out += [f"guard case {i or '?'} removed or changed by the branch: {c.fit(c.redact(cmd), 100)}"
                 for (cmd, cwd), i in was.items() if (cmd, cwd) not in now]
         if any(_judged(f) for f in files) or was != now:

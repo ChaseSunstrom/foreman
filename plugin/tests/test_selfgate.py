@@ -253,6 +253,64 @@ class GateEndToEnd(unittest.TestCase):  # T-3139: git-built trees, the timing be
         self.assertNotIn("self_gate_timing_skipped", events)
 
 
+class MergedJudgment(unittest.TestCase):  # T-3647: a train lands the lane merged onto the base, so judge that, not the tip
+    CASE = '{"cmd": "fm capture x", "cwd": "", "id": "c1"}\n'
+
+    def run_gate(self, lane_edit):
+        """Base HEAD tightens the guard after the lane forked; lane_edit(put) builds the lane's commit."""
+        import os
+        import subprocess
+        import tempfile
+        from types import SimpleNamespace
+        from sampo import selfgate as g
+        main = tempfile.mkdtemp()
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+
+        def git(*a):
+            return subprocess.run(["git", "-C", main, *a], check=True, capture_output=True, text=True, env=env).stdout.strip()
+
+        def put(rel, text):
+            os.makedirs(os.path.dirname(os.path.join(main, rel)), exist_ok=True)
+            open(os.path.join(main, rel), "w").write(text)
+        git("init", "-q", "-b", "main")
+        for rel in ("plugin/lib/fmguard.py", "plugin/lib/other.py", "plugin/lib/rule.txt"):
+            put(rel, "allow\n" + "pad\n" * 5 + "allow\n" if rel.endswith("rule.txt") else "x = 1\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "fork")
+        git("checkout", "-q", "-b", "lane")
+        lane_edit(put)
+        git("add", "-A")
+        git("commit", "-q", "-m", "lane")
+        tip = git("rev-parse", "HEAD")
+        git("checkout", "-q", "main")
+        put("plugin/lib/rule.txt", "block\n" + "pad\n" * 5 + "allow\n")  # the stricter guard that landed after the lane forked
+        put("plugin/tests/fixtures/guard_cases.jsonl", self.CASE)
+        git("add", "-A")
+        git("commit", "-q", "-m", "tighten")
+
+        def verdicts(tree, cmds):
+            text = open(os.path.join(tree, "lib", "rule.txt")).read()
+            return ["block" if "block" in text and "loosen" not in text else "allow"] * len(cmds)
+        p, b = SimpleNamespace(dir=tempfile.mkdtemp()), SimpleNamespace(id="T-9")
+        with mock.patch.object(g, "approved", return_value=False), mock.patch.object(g, "_corpus", return_value=[]), \
+                mock.patch.object(g, "_verdicts", side_effect=verdicts), mock.patch.object(g, "_footprint", return_value={}), \
+                mock.patch("sampo.doctor.grown", return_value=[]), mock.patch.object(g, "_hook_modules", return_value={}), \
+                mock.patch.object(g, "_paired", return_value=({}, {}, {})), mock.patch.object(g.c, "log_event"):
+            return g.gate(p, b, main, tip, ["plugin/lib/other.py"])
+
+    def test_a_lane_built_before_a_tighter_guard_is_not_held_for_lacking_it(self):
+        self.assertEqual(self.run_gate(lambda put: put("plugin/lib/other.py", "x = 2\n")), [])
+
+    def test_a_lane_that_loosens_the_guard_on_top_of_the_base_is_still_held(self):
+        # a clean merge: the lane edits the rule's last line, the base its first; the merged rule allows
+        out = self.run_gate(lambda put: put("plugin/lib/rule.txt", "allow\n" + "pad\n" * 5 + "loosen\n"))
+        self.assertTrue(any(r.startswith("guard:") and "branch allow" in r for r in out), out)
+
+    def test_a_conflicting_lane_is_judged_by_its_tip(self):
+        out = self.run_gate(lambda put: put("plugin/lib/rule.txt", "allow, loosened\n" + "pad\n" * 5 + "allow\n"))
+        self.assertTrue(any(r.startswith("guard:") and "branch allow" in r for r in out), out)
+
+
 class BaseCache(unittest.TestCase):  # T-3176: the base tree's bench and guard replay are kept per base tree hash
     def setUp(self):
         import os
