@@ -3658,15 +3658,26 @@ def rewound(b, now):
     return out
 
 
-def reconcile_rewind(p, lane=None, timeout=2, briefs=None):
+def _rewindable(b):
+    """T-2029: only a passing proof can be rewound; without one, no git."""
+    return bool(b and b.steps() and b.meta.get("base_tree") and any(
+        _EV_RE.match(e) and _TREE_MARK.search(e) and "` → ✗ " not in e for e in b.evidence()))
+
+
+def rewind_tree(p, lane=None, timeout=2):
+    """T-3582: the working files' tree reconcile_rewind compares, taken before the project lock (it guards the briefs,
+    not the files: git under it held every prompt); "" when git failed, None when there is no proof to rewind."""
+    return (worktree_tree(p.root, timeout) or "") if _rewindable(active_brief_fast(p, lane)) else None
+
+
+def reconcile_rewind(p, lane=None, timeout=2, briefs=None, tree=None):
     """T-1267: rewound() on the active task against the working files now, reopening what it finds; the caller holds
-    the project lock. (task id, steps) when it reopened any, else None. briefs: the caller's load_briefs, if it has one."""
+    the project lock. (task id, steps) when it reopened any, else None. briefs: the caller's load_briefs, if it has one;
+    tree: rewind_tree's, taken before the lock (T-3582)."""
     b = active_brief_fast(p, lane) if briefs is None else active_brief(briefs, lane)
-    if not b or not b.steps() or not b.meta.get("base_tree"):
+    if not _rewindable(b):
         return None
-    if not any(_EV_RE.match(e) and _TREE_MARK.search(e) and "` → ✗ " not in e for e in b.evidence()):
-        return None  # T-2029: only a passing proof can be rewound; without one, no git
-    now = (worktree_tree(p.root, timeout) or "")[:12]
+    now = ((worktree_tree(p.root, timeout) if tree is None else tree) or "")[:12]  # a failed peek isn't retried here
     steps = rewound(b, now)
     if not steps:
         return None

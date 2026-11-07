@@ -498,6 +498,7 @@ def session_start(pl):
         if lines not in have:  # T-0988: once, not again on every compaction (other hooks share the file)
             with open(env_file, "a") as f:
                 f.write(lines)
+    tree = _rewind_tree(p, "SessionStart")
     with contextlib.ExitStack() as held:
         _lock_retry(held, p.dir)
         meta = c.read_meta(p)
@@ -509,16 +510,9 @@ def session_start(pl):
                            "--focus, sampo lane new T-x, EnterWorktree its path, sampo focus T-x); edits here are "
                            "refused while it lives (FOREMAN_NO_SESSION_LANES=1 turns this off).")
         offered = c.age_days(meta.get("digest_offered"))
-        if offered is None or offered >= 7:  # once a week: what got done (R1 weekly digest)
+        weekly = offered is None or offered >= 7  # once a week: what got done (R1 weekly digest), read after the lock
+        if weekly:
             meta["digest_offered"] = c.now()  # checked once a week even when there was nothing to show
-            try:
-                from sampo import cost
-                week = cost.weekly_line(p)
-            except Exception:
-                log_error("SessionStart", _tb())
-                week = None
-            if week:
-                other_note = " ".join(x for x in (other_note, week) if x)
         from sampo import eco  # T-0463, T-0574: the Foreman this project runs, on which machine (fm projects, fm doctor)
         if pl.get("source") in ("startup", "clear"):  # T-1158: a new session after an ended contract runs free
             try:
@@ -542,8 +536,18 @@ def session_start(pl):
         meta.update(last_active=c.now(), sensitive=c.detect_sensitive(p.root), foreman=eco.stamp())
         c.write_meta(p, meta)
         synced = _sync_import(p)
-        rewind = _reconcile(p, "SessionStart")
-        sd = c.regen_views(p)
+        rewind = _reconcile(p, "SessionStart", tree)
+        c.export_mirror(p)
+    sd = c.regen_views(p, mirror=False)  # T-3582: every brief re-read, after the project lock
+    if weekly:  # T-3582: the archive walk too
+        try:
+            from sampo import cost
+            week = cost.weekly_line(p)
+        except Exception:
+            log_error("SessionStart", _tb())
+            week = None
+        if week:
+            other_note = " ".join(x for x in (other_note, week) if x)
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
     if rewind:
@@ -733,10 +737,19 @@ def _sync_import(p):
         res["conflicts"] else None
 
 
-def _reconcile(p, event, briefs=None):
+def _rewind_tree(p, event):
+    """T-3582: the files' tree for _reconcile, taken before the project lock."""
+    try:
+        return c.rewind_tree(p, getattr(p, "lane", None), timeout=1)
+    except Exception:
+        log_error(event, _tb())
+        return None
+
+
+def _reconcile(p, event, tree=None):
     """T-1267: a /rewind or a revert took back a done step's files: reopen it (the caller holds the project lock)."""
     try:
-        return c.reconcile_rewind(p, getattr(p, "lane", None), timeout=1, briefs=briefs)
+        return c.reconcile_rewind(p, getattr(p, "lane", None), timeout=1, tree=tree)
     except Exception:
         log_error(event, _tb())
         return None
@@ -1609,6 +1622,7 @@ def user_prompt_submit(pl):
     asks = _asks(text)
     try:
         hashes = _pin_hashes(a.get("pin") for a in c.read_meta(p).get("pending_approvals") or [] if isinstance(a, dict))
+        tree = _rewind_tree(p, "UserPromptSubmit")
         with c.lock(p.dir, timeout=LOCK_WORDS):
             meta = c.read_meta(p)
             approvals = [] if program else _resolve_approvals(p, meta, sid, text, hashes, claude)
@@ -1637,14 +1651,16 @@ def user_prompt_submit(pl):
             # a plan-only prompt holds drive this turn; turn_at: when this turn began (T-0145)
             g["drive"].setdefault(sid, {}).update(count=0, hold=hold, turn_at=time.time())
             _write_gate(p, g)
-            briefs = c.load_briefs(p)  # T-2024: one load for the state and the Next line (T-2029: and the rewind check)
-            rewind = _reconcile(p, "UserPromptSubmit", briefs)
-            briefs = c.load_briefs(p) if rewind else briefs  # it reopened steps: read them back
-            sd = c.regen_views(p, briefs) if r.overrides or approvals or rewind else c.state_dict(p, briefs)
+            rewind = _reconcile(p, "UserPromptSubmit", tree)  # T-3582: the active brief alone; every brief loads after
+            regen = r.overrides or approvals or rewind
+            if regen:
+                c.export_mirror(p)
     except c.LockTimeout:  # never drop a yes / PAUSE silently
         return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
                 "Sampo: state was busy (another session or sampo held the lock), so this message was not recorded: "
                 "no approval, override word or heartbeat was applied. Pending approvals are unchanged."}}
+    briefs = c.load_briefs(p)  # T-2024: one load for the state and the Next line; T-3582: never under the project lock
+    sd = c.regen_views(p, mirror=False) if regen else c.state_dict(p, briefs)  # T-3556: regen reads under its own lock
     parts = list(approvals) + ([c.rewind_note(rewind)] if rewind else [])
     secret = _secret_note(pl.get("prompt") or "")  # pasted blocks included: the likeliest place for one
     if secret:

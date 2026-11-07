@@ -315,7 +315,8 @@ def cmd_capture(args):
                     priority="urgent" if args.urgent else "normal", explore=explore)
         c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
         _shadow_intake(p, text, b)
-        c.regen_views(p)
+        c.export_mirror(p)
+    c.regen_views(p, mirror=False)  # T-3582: every brief re-read, after the project lock
     b = _adopt_draft(p, b, args.source)
     _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
@@ -3526,7 +3527,8 @@ def task_new(p, args):
                             session=session())
         c.log_event(p, "task_new", task=b.id, data={"type": type_, "tier": args.tier, "from": args.from_id},
                     session=session())
-        c.regen_views(p)
+        c.export_mirror(p)
+    c.regen_views(p, mirror=False)  # T-3582
     if getattr(args, "goal", None):
         from sampo import mandate
         mandate.link(p, args.goal, b.id)
