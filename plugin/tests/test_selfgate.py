@@ -17,6 +17,16 @@ class LoadedWallCheck(unittest.TestCase):
         self.assertEqual(g._slower(base, {"Stop": {"p95": 450.0, "p50": 70.0, "cpu_p95": 31.0, "load": 3.0,
                                                    "budget": 150}}), {}, "a 20 ms median wobble is load noise")
 
+    def test_the_exams_planted_wait_still_doubles_a_hook_slowed_by_load_3_per_cpu(self):  # T-3605: the train's flake
+        import os
+        from sampo import core as c, louhi, selfgate as g
+        line = next(e for m in louhi.GATE_MUTATIONS if m[0] == "hook-delay" for e in m[3])[2].splitlines()[-1]
+        waits = []
+        with mock.patch.dict(os.environ, FOREMAN_HOST="load=48,cpus=16"):
+            exec(line.strip(), {"time": mock.Mock(sleep=waits.append), "c": c})
+        base = {"Stop": {"p50": 300.0, "cpu_p50": 40.0, "cpu_p95": 45.0, "load": 3.0}}  # its fastest hook, past 250 ms
+        self.assertIn("Stop", g._slower(base, {"Stop": dict(base["Stop"], p50=300.0 + waits[0] * 1000)}))
+
 
 class Interleaved(unittest.TestCase):  # T-2992: fake benches with fixed timings, never real load
     def run_pairs(self, base_p95, branch_p95):

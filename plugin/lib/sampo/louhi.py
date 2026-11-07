@@ -3784,7 +3784,12 @@ GATE_MUTATIONS = (
         '                h["additionalContext"] = str(h.get("additionalContext") or "") + " A planted line." * 30\n'))]),
     ("hook-delay", "hook ", "hook", [("plugin/lib/sampo/hooks.py",  # T-2605: every _slower row starts "hook <name>" (p95, or p50 wall when loaded)
                                     "def run(event, raw):\n    t0 = time.monotonic()\n",
-                                    "def run(event, raw):\n    t0 = time.monotonic()\n    time.sleep(0.25)\n")]),
+                                    # T-3605: loaded, the gate wants a wall doubling; a fixed 250 ms isn't one once load
+                                    # slows every hook's base past it (the train's red, 2.8 per CPU), so the wait grows
+                                    # with load as gate timeouts do. ponytail: the load average, not this process's CPU
+                                    # share; a bench pinned to few CPUs could outrun it (then: wait as long as the hook)
+                                    "def run(event, raw):\n    t0 = time.monotonic()\n"
+                                    "    time.sleep(c.load_scaled(0.25))\n")]),
     ("guard-allow", "guard: fm posture lite", "guard", [("plugin/lib/fmguard.py", _POSTURE, "")]),
     ("verb", "verbs", "verbs", [("plugin/lib/sampo/cli.py", '    s = add("night", ',
                                  '    add("zzlean", lazy("sampo.night", "cmd_night"), tier=("Running elsewhere", 1191), '
