@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-07T04:42:35Z",
- "rev": "6847d1892",
+ "updated": "2026-11-07T04:47:47Z",
+ "rev": "020346f6d",
  "capabilities": [
   {
    "n": 1,
@@ -50850,10 +50850,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 39886,
+   "generated": 40057,
    "write": {
     "title": 274,
-    "line": 2248,
+    "line": 2257,
     "payoff": 28,
     "kill test": 137,
     "code": 11
@@ -50865,12 +50865,12 @@
    },
    "rejected": {
     "kill": 20394,
-    "tier": 13979,
+    "tier": 14050,
     "novelty": 128
    },
-   "merged": 934,
-   "kept": 1570,
-   "pending": 100
+   "merged": 943,
+   "kept": 1590,
+   "pending": 162
   },
   "families": [
    {
@@ -50908,7 +50908,7 @@
    },
    {
     "id": "F-021968",
-    "size": 224,
+    "size": 229,
     "lead": "Harmonize parallel agents via standing wave resonance",
     "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
     "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
@@ -52014,6 +52014,24 @@
     ]
    },
    {
+    "id": "F-007594",
+    "size": 3,
+    "lead": "Spot bidding for CI resources based on urgency",
+    "today": "Today you can't get your critical tests to run first when the queue is full of low-priority jobs.",
+    "with_this": "With this, you can prioritize your most important work by bidding for immediate execution slots, ensuring that critical paths are never blocked by trivial changes.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding",
+     "ops",
+     "refactors"
+    ]
+   },
+   {
     "id": "F-010061",
     "size": 3,
     "lead": "Negotiate interface changes across dependent repos before merging",
@@ -52128,23 +52146,6 @@
     "evidence": "",
     "kinds": [
      "migrations"
-    ]
-   },
-   {
-    "id": "F-007594",
-    "size": 2,
-    "lead": "Spot bidding for CI resources based on urgency",
-    "today": "Today you can't get your critical tests to run first when the queue is full of low-priority jobs.",
-    "with_this": "With this, you can prioritize your most important work by bidding for immediate execution slots, ensuring that critical paths are never blocked by trivial changes.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "ops",
-     "refactors"
     ]
    },
    {
@@ -54134,10 +54135,10 @@
     ]
    }
   ],
-  "families_total": 1195,
+  "families_total": 1209,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1570
+   "total": 1590
   }
  },
  "steer": {
@@ -54171,7 +54172,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54194,7 +54195,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54217,7 +54218,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54240,7 +54241,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54263,7 +54264,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54286,7 +54287,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54309,7 +54310,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54332,7 +54333,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54355,7 +54356,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54378,7 +54379,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54401,7 +54402,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54424,7 +54425,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54447,7 +54448,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54470,7 +54471,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54493,7 +54494,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54516,7 +54517,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54539,7 +54540,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54562,7 +54563,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54585,7 +54586,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54608,7 +54609,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54631,7 +54632,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54654,7 +54655,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54677,7 +54678,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54700,7 +54701,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54723,7 +54724,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54746,7 +54747,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 26.4,
+    "idle_h": 26.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
