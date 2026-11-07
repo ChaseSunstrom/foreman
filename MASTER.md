@@ -152,6 +152,7 @@ One line per module, so two changes to different modules never touch the same li
 - `fmcontract` (T-1158: `sampo contract`, how long and how much an unattended run… [→ files-lib-1](docs/map/files-lib-1.md)
 - `fmcore` (state, briefs, queue, intake, ledger, locks, audits; T-2015… [→ files-lib-1](docs/map/files-lib-1.md)
 - `fmcost` (`sampo burden`: Sampo's own cost per session and version from the… [→ files-lib-1](docs/map/files-lib-1.md)
+- `fmcpu` (T-3592: `sampo cpu`, this session's CPU from its cgroup by kind; the 10% goal self-check… [→ files-lib-1](docs/map/files-lib-1.md)
 - `fmcritique` (T-1642: `sampo critique URL|FILE`, a computed-style census of the… [→ files-lib-1](docs/map/files-lib-1.md)
 - `fmdataproof`… [→ files-lib-1](docs/map/files-lib-1.md)
 - `fmdebug` (`sampo whyred --suspects`, `sampo whyred`, `sampo record`: a red… [→ files-lib-1](docs/map/files-lib-1.md)

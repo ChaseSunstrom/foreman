@@ -8184,6 +8184,15 @@ def _build_parser(only=None):
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
+    s = add("cpu", lazy("sampo.cpu", "cmd_cpu"), tier=("Project and settings", 774),
+            help="this session's CPU from its cgroup (exact, short-lived processes included) as cores and %% of the "
+                 "machine, split by kind (tests, hooks, fm ui, merge queue, git, builders' commands, Claude itself), "
+                 "and its cpu.max; goal PCT: the self-check's goal (default 10); cap PCT|off: an optional CPUQuota on "
+                 "the session's scope (T-3592)")
+    s.add_argument("action", nargs="?", default="show", choices=["show", "goal", "cap"])
+    s.add_argument("value", nargs="?", help="goal: a percent of the machine; cap: a percent of the machine, or off")
+    s.add_argument("--window", type=float, default=5.0, help="show: seconds to measure (default 5)")
+
     s = add("settings", lambda a: (lazy("sampo.settingsserve", "cmd_serve") if a.action == "serve" else  # T-1659
                                    lazy("sampo.settings", "cmd_settings"))(a), tier=("Project and settings", 775),
             help="the sampo code app's and the foreman-ui pane's settings in one list: value, default, where (T-1496); "

@@ -127,6 +127,15 @@ def untracked(p, briefs, now):
 CHECKS += (untracked,)
 
 
+def cpu_goal(p, briefs, now):
+    """T-3592: the session's 10-minute CPU average over the goal (10% of the machine), with the top consumer."""
+    from sampo import cpu
+    return cpu.goal_line(p, now)
+
+
+CHECKS += (cpu_goal,)
+
+
 def lines(p, briefs=None, now=None):
     """The checks' hits, cached CACHE_S (a hook calls this on every Stop). A check that can't read its source is
     skipped, never a crash."""
