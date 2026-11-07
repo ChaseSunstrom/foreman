@@ -104,6 +104,28 @@ class Typos(ForemanTestCase):
             self.assertEqual(p.returncode, 2, old)
             self.assertIn(f"did you mean {home}?", p.stderr, old)
 
+    def test_version_prints_the_plugin_version(self):
+        # T-3612: --version and version were the top unknown_word guesses (21 in events.jsonl)
+        import json
+        from sampo import core as c
+        with open(os.path.join(c.PLUGIN_ROOT, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
+            want = json.load(f)["version"]
+        for argv in (["--version"], ["version"]):
+            p = self.fm(*argv, check=False)
+            self.assertEqual(p.returncode, 0, (argv, p.stderr))
+            self.assertIn(want, p.stdout, argv)
+
+    def test_guessed_verbs_name_the_real_one_and_run_nothing(self):
+        # T-3612: the other top unknown_word guesses in events.jsonl; each named the wrong verb by spelling
+        self.fm("init")
+        for argv, home in ((["models"], "code models"), (["models", "list"], "code models"),
+                           (["where"], "wiring"), (["task", "scope", "T-1"], "task set ID scope+=a,b"),
+                           (["scope"], "task set ID scope+=a,b"), (["lane", "awaiting"], "next"),
+                           (["affected"], "check --affected"), (["task", "approve", "T-1"], "task set ID approved=true")):
+            p = self.fm(*argv, check=False)
+            self.assertEqual(p.returncode, 2, argv)
+            self.assertIn(f"did you mean {home}", p.stderr, argv)
+
     def test_common_guesses_run_the_real_command(self):
         # T-1180: builders and small models guess `fm task list`; the guess runs what it meant, with one quiet note
         self.fm("init")

@@ -6785,6 +6785,15 @@ def _prog():
     return "sampo" if os.path.basename(sys.argv[0] if sys.argv else "") == "sampo" else "fm"
 
 
+class _Version(argparse.Action):
+    """T-3612: sampo --version, the top guess in events.jsonl; plugin.json is read only when asked."""
+
+    def __call__(self, parser, *_):
+        with open(os.path.join(c.PLUGIN_ROOT, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
+            print(f"{_prog()} {json.load(f).get('version', '?')}")
+        parser.exit()
+
+
 def _build_parser(only=None):
     prog = _prog()
     ap = _Parser(prog=prog, usage=f"{prog} [-p PROJECT] <command> [options]",
@@ -6792,6 +6801,7 @@ def _build_parser(only=None):
     # only the root: subparsers keep argparse's own help
     ap.format_help = lambda: START_HERE.replace("usage: fm", f"usage: {prog}", 1)
     ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
+    ap.add_argument("--version", action=_Version, nargs=0, help="print Sampo's version")
     # T-2814: prog given, or argparse before 3.14 prefixes every subcommand's usage with the root's custom usage line
     sp = ap.add_subparsers(dest="cmd", required=True, metavar="<command>", prog=prog)
 
@@ -9027,13 +9037,18 @@ def _options_first(parser, argv):
 # alias would carry a user-only word past fmguard's per-verb table, e.g. prove's --yes-run)
 _LISTS = ("list", "runs", "status", "show")  # T-2735: what an unknown 'list' or 'ls' most likely meant, in order
 FOLDED = {"proof": "prove --rollup", "calibration": "outcomes --judgment", "incident": "capture --incident",
-          "sweep": "projects --sweep", "instruments": "which --instruments", "suspects": "whyred --suspects"}
+          "sweep": "projects --sweep", "instruments": "which --instruments", "suspects": "whyred --suspects",
+          # T-3612: guesses events.jsonl counts (unknown_word), each a hint: `code models list` would run a request
+          "models": "code models", "where": "wiring (its first line: the version and the plugin folder)",
+          "scope": "task set ID scope+=a,b", "awaiting": "next (it names the lanes awaiting a merge)",
+          "affected": "check --affected", "approve": "task set ID approved=true"}
 # T-1180: what builders and small models guess, run as what they meant (one quiet note says which); first match wins
 ALIASES = [(("task", "list"), ["queue"]), (("task", "ls"), ["queue"]), (("task", "all"), ["queue"]),
            (("tasks",), ["queue"]), (("list",), ["queue"]), (("ls",), ["queue"]),
            (("task", "get"), ["task", "show"]), (("task", "view"), ["task", "show"]),
            (("task", "info"), ["task", "show"]), (("task", "cat"), ["task", "show"]),
-           (("lane", "ls"), ["lane", "list"]), (("inbox", "list"), ["inbox"]), (("inbox", "ls"), ["inbox"])]
+           (("lane", "ls"), ["lane", "list"]), (("inbox", "list"), ["inbox"]), (("inbox", "ls"), ["inbox"]),
+           (("version",), ["--version"])]  # T-3612
 
 
 RENAMES = {"smith": ["code"], "rune": ["genesis"], "louhi": ["exam"], "ward": ["guard"], "moons": ["genesis", "moonshot"],
