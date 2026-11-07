@@ -3850,6 +3850,25 @@ def task_ac(p, args):
     out(args, c.brief_summary(b), f"{b.id}: criterion {n} checked.")
 
 
+def _focus_refusal(p, target):
+    """Raise why focus refuses the task: closed, lane-only work on main, not planned enough, or held by another checkout.
+    T-3583: checked on the peek first, so a refused focus reads no git, recall or predict, and again under the lock."""
+    if target.status in c.CLOSED:
+        raise UsageError(f"{target.id} is {target.status}")
+    if target.meta.get("lane_only") and not p.lane and not target.meta.get("lane"):
+        # T-2355: a queue- or lane-routed trigger's work lands on a branch; once briefed, main focuses it to close
+        raise c.PolicyError(f"{target.id} came from a trigger routed to the queue or a lane: it starts in a lane, "
+                            f"never on main: sampo lane brief {target.id}")
+    gaps = [] if target.status in ("active", "verifying") else c.plan_gaps(target, c.effective_autonomy(p))
+    if gaps:
+        raise c.PolicyError(f"{target.id} isn't planned enough to start: missing {', '.join(gaps)} "
+                            f"(sampo task set/ac/step, or /foreman:intake; sampo next says what's next)")
+    if c.held_elsewhere(target, p.lane):  # T-0134: one checkout works a task at a time
+        where = target.meta.get("lane") or "the main checkout"
+        raise c.PolicyError(f"{target.id} is held by {'lane ' if target.meta.get('lane') else ''}{where}: work on it "
+                            f"there (sampo lane list), or sampo lane rm it first")
+
+
 def _focus_edit(p, target, once, blast=""):
     """Focus's edits to the brief, in memory: lane binding, start point, snapshots, recall, preflight, predict.
     T-3558: every slow read (git, recall, the map, outcomes) goes through once(key, fn), so a first pass on the peek
@@ -3941,37 +3960,29 @@ def cmd_focus(args):
         return slow[key]
     try:
         peek = need_brief(p, args.id)
-        if peek.tier in ("M", "L") and not _BLAST_LINE.search(peek.section("Risks and rollback")):
-            from sampo import graph
-            blast = graph.blast_line(p, peek.meta.get("scope"), text="\n".join(
-                peek.section(s) for s in ("Interpretation", "Approach (options → choice → why)", "Steps")))  # T-2336
     except Exception:  # a hint; the locked read below reports a missing task
         pass
     if peek and peek.status not in c.CLOSED:  # T-2342: doors read, snapshots taken and parks recorded under their own locks
         from sampo import doors as sdoors
         sdoors.check(p, peek.id)
+        # T-3583: refused on the peek, a focus pays for no blast map, git, recall or predict; read again, as the door
+        # gate just re-marked the doors plan_gaps reads (a task it unparked starts)
+        _focus_refusal(p, peek := need_brief(p, args.id))
+        try:
+            if peek.tier in ("M", "L") and not _BLAST_LINE.search(peek.section("Risks and rollback")):
+                from sampo import graph
+                blast = graph.blast_line(p, peek.meta.get("scope"), text="\n".join(
+                    peek.section(s) for s in ("Interpretation", "Approach (options → choice → why)", "Steps")))  # T-2336
+        except Exception:  # a hint
+            pass
         try:  # T-3558: git, recall and predict before the lock every verb and hook queues on; the peek's edits are dropped
             _focus_edit(p, peek, once, blast)
         except Exception:  # the locked pass reads what is missing and reports what fails
             pass
     with c.lock(p.dir):
         target = need_brief(p, args.id)  # read again under the lock: an edit made meanwhile is kept
-        if target.status in c.CLOSED:
-            raise UsageError(f"{target.id} is {target.status}")
-        if target.meta.get("lane_only") and not p.lane and not target.meta.get("lane"):
-            # T-2355: a queue- or lane-routed trigger's work lands on a branch; once briefed, main focuses it to close
-            raise c.PolicyError(f"{target.id} came from a trigger routed to the queue or a lane: it starts in a lane, "
-                                f"never on main: sampo lane brief {target.id}")
+        _focus_refusal(p, target)
         stage_before = c.stage(target)  # T-1137: focus saves outside mutate, so it logs its own stage move
-        gaps = [] if target.status in ("active", "verifying") else \
-            c.plan_gaps(target, c.effective_autonomy(p))
-        if gaps:
-            raise c.PolicyError(f"{target.id} isn't planned enough to start: missing {', '.join(gaps)} "
-                                f"(sampo task set/ac/step, or /foreman:intake; sampo next says what's next)")
-        if c.held_elsewhere(target, p.lane):  # T-0134: one checkout works a task at a time
-            where = target.meta.get("lane") or "the main checkout"
-            raise c.PolicyError(f"{target.id} is held by {'lane ' if target.meta.get('lane') else ''}{where}: work on it "
-                                f"there (sampo lane list), or sampo lane rm it first")
         resumed, first_focus, hits, related, snapped = _focus_edit(p, target, once, blast)
         for b in c.load_briefs(p):
             if b.status in ("active", "verifying") and b.id != target.id and b.meta.get("lane") == p.lane:
@@ -3994,9 +4005,11 @@ def cmd_focus(args):
         if c.stage(target) != stage_before:
             c.log_event(p, "stage", task=target.id, data={"from": stage_before, "to": c.stage(target)}, session=session())
         c.export_mirror(p)
-    if snapped:
-        _save_dirty(p, target, snapped)  # T-1169: keyed by task, read at its close
-    c.regen_views(p, mirror=False)  # T-3556
+    try:
+        if snapped:
+            _save_dirty(p, target, snapped)  # T-1169: keyed by task, read at its close
+    finally:  # T-3583: the brief is saved active: the views show it even when the dirty list fails
+        c.regen_views(p, mirror=False)  # T-3556
     if warn:
         print(warn, file=sys.stderr)
     stale = c.stale_refs(p, target) if resumed and target.meta.get("base") else []  # T-0113: picked up again

@@ -250,6 +250,16 @@ class DoorPark(DoorBase):
         self.assertIn("[costly]", review)
         self.assertNotEqual(self.fm("focus", tid, check=False, env={"FM_DOOR_CAP": "100"}).returncode, 0, "still parked")
 
+    def test_a_parked_task_the_gate_can_now_snapshot_focuses(self):
+        # T-3583: focus refuses on the peek; the door gate re-marks the doors plan_gaps reads, so it runs first
+        self.data(text="x" * 400)
+        tid = self.brief("delete data/old.csv")
+        self.assertNotEqual(self.fm("focus", tid, check=False, env={"FM_DOOR_CAP": "100"}).returncode, 0)
+        self.assertEqual(self.waits(tid), "one-way and ambiguous: step 1: delete data/old.csv")
+        self.fm("focus", tid)  # the default cap holds the file: snapshotted, an Undo line, no longer parked
+        self.assertEqual(c.find_brief(self.p, tid).status, "active")
+        self.assertIn("Undo: cp -a", c.find_brief(self.p, tid).steps()[0].text)
+
     def test_an_ambiguous_brief_parks_even_when_the_request_names_the_path(self):
         self.data(text="x" * 400)
         tid = self.brief("delete data/old.csv", raw="Delete data/old.csv", tier="M")
