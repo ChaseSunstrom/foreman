@@ -49,6 +49,10 @@ try:  # T-0368: below Python 3.12.7, run this hook under a supported Python. A c
             os._exit(_r.returncode)
 except Exception:
     pass
+try:  # T-3584: regex programs kept across hook calls (each is a new process); every doubt compiles as re would
+    py.keep_regexes(EVENT)
+except Exception:
+    pass
 
 
 def committed_library():

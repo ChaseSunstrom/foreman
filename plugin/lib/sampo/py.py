@@ -143,3 +143,103 @@ def reexec():
     if exe:
         os.environ["FOREMAN_PY_CHILD"] = "1"
         os.execv(exe, [exe] + sys.argv)
+
+
+# T-3584: each hook call is a new process, so re's own cache starts empty: a PreToolUse Bash compiled ~120 patterns
+# (none twice) for ~8.7 ms CPU. keep_regexes keeps the compiled programs per hook event in this module's __pycache__.
+RX = {"have": {}, "new": {}, "mtime": 0.0}
+RX_MIN_NEW = 4  # a process saves once it compiled this many new patterns (one built from a command's text stays out)
+RX_STALE = 3600  # or when the file is an hour old, so a rare path's few patterns get in too
+RX_LIMIT = 1000  # entries (an event uses ~50-200, ~0.5 us each to load); past it the file restarts from this process's
+
+
+def keep_regexes(event, folder=None):
+    """Route re's compiles through the programs kept for this hook event. A hit rebuilds the Pattern from its program,
+    without parsing; a miss returns re's own Pattern and keeps the program only when it rebuilds to an equal one (flags
+    and code compared), so a kept program is the one re makes. Every doubt compiles as re would. The file sits in the
+    protected plugin/lib, read like the .pyc beside it (marshal; a valid program swapped for another can't be told
+    apart, so no tool may write there: the guard's core). Never raises."""
+    try:
+        import atexit
+        import _sre
+        from re import _compiler, _parser
+        if "orig" in RX or not sys.implementation.cache_tag or _sre.CODESIZE != 4:
+            return
+        RX["path"] = os.path.join(folder or os.path.join(os.path.dirname(os.path.abspath(__file__)), "__pycache__"),
+                                  "regex-%s.%s.marshal" % ("".join(c for c in event if c.isalnum())[:40],
+                                                           sys.implementation.cache_tag))
+        RX["stamp"] = (sys.version, _sre.MAGIC, sys.byteorder)
+        have, new, orig = RX["have"], RX["new"], _compiler.compile
+
+        def build(p, e):  # the code is kept as bytes: one object to load, a list only for the patterns used
+            return _sre.compile(p, e[0], memoryview(e[1]).cast("I").tolist(), *e[2:])
+
+        def compile_(p, flags=0):
+            if type(p) not in (str, bytes) or not isinstance(flags, int) or flags & _compiler.SRE_FLAG_DEBUG:
+                return orig(p, flags)
+            key = (type(p) is bytes, p, int(flags))
+            e = have.get(key)
+            if e is not None:
+                try:
+                    return build(p, e)
+                except Exception:  # a bad entry: compiled below and replaced
+                    pass
+            pat = orig(p, flags)
+            try:
+                import array
+                s = _parser.parse(p, flags)
+                names = [None] * s.state.groups
+                for k, i in s.state.groupdict.items():
+                    names[i] = k
+                e = (int(flags | s.state.flags), array.array("I", _compiler._code(s, flags)).tobytes(),
+                     s.state.groups - 1, dict(s.state.groupdict), tuple(names))
+                x = build(p, e)
+                if x == pat and x.groups == pat.groups and x.groupindex == pat.groupindex:
+                    have[key] = new[key] = e
+            except Exception:
+                pass
+            return pat
+        have.update(_rx_load())
+        RX["orig"] = orig
+        _compiler.compile = compile_
+        atexit.register(_rx_save)
+    except Exception:
+        return
+
+
+def _rx_load():
+    """The kept programs; {} for a missing, unreadable or other Python's file, or one another user owns or can write."""
+    try:
+        import marshal
+        with open(RX["path"], "rb") as f:
+            st = os.fstat(f.fileno())
+            if st.st_uid != os.getuid() or st.st_mode & 0o022:
+                return {}
+            stamp, have = marshal.loads(f.read())  # load(f) reads object by object: 10x slower
+        if stamp != RX["stamp"] or type(have) is not dict:
+            return {}
+        RX["mtime"] = st.st_mtime
+        return have
+    except Exception:
+        return {}
+
+
+def _rx_save():
+    """At exit: this process's new programs merged into the file (atomically; a lost race only loses a few for now)."""
+    import time
+    new = RX["new"]
+    if not new or sys.dont_write_bytecode or len(new) < RX_MIN_NEW and time.time() - RX["mtime"] < RX_STALE:
+        return
+    tmp = "%s.%d.tmp" % (RX["path"], os.getpid())
+    try:
+        import marshal
+        have = _rx_load()
+        have.update(new)
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as f:
+            marshal.dump((RX["stamp"], have if len(have) <= RX_LIMIT else new), f)
+        os.replace(tmp, RX["path"])
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
