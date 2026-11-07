@@ -17,7 +17,8 @@ import time
 from sampo import core as c
 from sampo.lanes import CriterionRed, _git, _ref_ok, _verify, pm_record, pm_rerun_cmd, pm_wait
 
-PROBE_JOBS = 3  # T-3531: pre-filter probes at once
+SKIPPED = "probe skipped"  # the note a held green run leaves; the report counts by it (T-3596)
+PROBE_JOBS = 3 # T-3531: pre-filter probes at once
 _FAILED = re.compile(r"^(?:FAIL|ERROR): (\S+) \(([\w.]+)\)", re.M)  # unittest's red line: test (where)
 _LISTED = re.compile(r"^  failed class: (\S+)", re.M)  # run.py's every red class, one per line, never-started ones too
 _COUNT = re.compile(r"^FAILED \((\d+) classes", re.M)  # run.py's summary count
@@ -226,7 +227,7 @@ def _probe(p, main, base, b, tip, notes):
             return ""
         held = _ran_green(pw, b, tests, changed)
         if held:
-            notes.append((b.id, f"probe skipped: its own green run of these {len(tests)} test(s) on tree {held[:9]} "
+            notes.append((b.id, f"{SKIPPED}: its own green run of these {len(tests)} test(s) on tree {held[:9]} "
                                 "still holds (nothing they cover differs from base+lane)"))
             return ""
         def run(cmd):  # (exit, the classes it names red)
@@ -357,10 +358,12 @@ def _run(p, main, ids):
 
     # T-3531: PROBE_JOBS lanes at once, each in its own scratch tree (one on a host over 2x its CPUs); map keeps the
     # candidate order, so the left-out list and notes read as a serial run's
+    t0 = time.monotonic()  # T-3596: the phases' minutes, in the result and the report line
     with concurrent.futures.ThreadPoolExecutor(1 if c.host_strain(2.0) else PROBE_JOBS) as ex:
         for (b, tip, _), (why, seen) in zip(rows, list(ex.map(check, rows))):
             notes += seen
             left.append((b.id, why)) if why else cands.append((b, tip))
+    t1 = time.monotonic()
     if not cands:
         raise c.PolicyError("nothing to merge: " + "; ".join(f"{i}: {w}" for i, w in left))
     wt = tempfile.mkdtemp(prefix="sampo-train-")  # outside the main checkout; git worktree add takes the empty dir
@@ -546,7 +549,8 @@ def _run(p, main, ids):
         if not merged:
             raise c.PolicyError("nothing landed: " + "; ".join(f"{i}: {w}" for i, w in left))
         _mark_green(p)  # T-3625: this env's gate went green
-        tip = _git(wt, "rev-parse", "HEAD").stdout.strip()
+        t2 = time.monotonic()
+        tip =_git(wt, "rev-parse", "HEAD").stdout.strip()
         if moved():
             raise c.PolicyError(f"{branch} moved while the train ran (was {base[:9]}): nothing landed; run it again")
         ids_in = [b.id for b, _ in merged]
@@ -572,8 +576,11 @@ def _run(p, main, ids):
         ct = c.code_tree(main, tree)
         c.log_event(p, "check_run", data={"tree": tree[:12], "code_tree": ct, "env": c.env_id(), "train": ids_in,
                                           "results": green})
+        t3 = time.monotonic()
+        mins = {"probe": round((t1 - t0) / 60, 1), "gate": round((t2 - t1) / 60, 1), "land": round((t3 - t2) / 60, 1)}
         return {"merged": ids_in, "left_out": left, "notes": notes, "gate_runs": runs[0], "probes": probes[0], "tip": tip,
-                "branch": branch, "affected": part}
+                "branch": branch, "affected": part, "minutes": mins, "probes_skipped": sum(
+                    w.startswith(SKIPPED) for _, w in notes), "lanes_probed": len(rows)}
     finally:
         _git(main, "worktree", "remove", "--force", wt)
         shutil.rmtree(wt, ignore_errors=True)
@@ -588,6 +595,9 @@ def cmd(p, args, main):
              f"{got['gate_runs']} gate run(s)" + (f" and {got['probes']} probe(s) of only the failing tests"
                                                   if got["probes"] else "") + f": {', '.join(got['merged'])}"]
     lines += [f"  left out {i}: {w}" for i, w in got["left_out"]] + [f"  note {i}: {w}" for i, w in got["notes"]]
+    m = got["minutes"]  # T-3596: where the time went; the serial closes after the train are not in it
+    lines.append(f"Minutes: probe {m['probe']}, gate {m['gate']}, land {m['land']}; "
+                 f"{got['probes_skipped']} of {got['lanes_probed']} probe(s) skipped (a held green run)")
     if got["affected"]:
         lines.append(f"The test gate ran {len(got['affected'])} affected test module(s), not the full suite "
                      "(FOREMAN_FULL_GATE=1 runs it); the full suite verifies the landed merges in the background.")

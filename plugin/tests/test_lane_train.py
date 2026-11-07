@@ -237,6 +237,11 @@ class Train(Lanes):
         self.assertEqual(os.path.getsize(count), ran, "the probe ran no test")
         self.assertTrue(self.meta(a)["lane_stop"].startswith("merged"))
 
+    def test_the_report_line_names_the_minutes_of_each_phase(self):
+        """T-3596: the probe, gate and land minutes of a train are in its result and its report, so the slow phase shows."""
+        a, ran, r, count = self._green_lane("other.txt")
+        self.assertRegex(r.stdout, r"Minutes: probe \d+\.\d, gate \d+\.\d, land \d+\.\d; 1 of 1 probe\(s\) skipped")
+
     def test_a_lane_whose_tested_source_moved_on_the_base_is_probed(self):
         """T-3531: the base changed a source the affected test covers (map-links): its green run no longer holds."""
         with open(os.path.join(self.repo, "lib.py"), "w") as f:
