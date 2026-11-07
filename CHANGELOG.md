@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- `sampo focus` and every task edit (set, ac, step, evidence) now hold the project lock only while they read and write the brief: git snapshots, recall, predict and the view regeneration run outside it, and an edit made meanwhile is kept (T-3558, T-3556).
 - The close sentinel no longer starts a full check while a merge train's post-merge verify is pending or running, or once one has verified this code tree, so a batch gets one full suite run (T-3576).
 - A full test-suite run holds one machine-wide slot (~/.cache/sampo/suite.lock), so a second full run waits its turn, saying every minute whose run it waits for, instead of three suites splitting the CPUs; targeted runs, nested runs and FOREMAN_NO_SUITE_SLOT=1 skip it (T-3541).
 - The public .sampo mirror now names briefs and research notes without the home folder or a private term (cut short, or a host's own label): export writes a redacted name and removes the old-named copy, and import maps it back to this machine's own file (T-3574).
