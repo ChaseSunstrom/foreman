@@ -168,11 +168,12 @@ def run(event, raw):
                     print(json.dumps({"hookSpecificOutput": {"hookEventName": event,
                                                              "additionalContext": f"Sampo can't run here: {why}"}}))
                 return code
-            fails = state.get("fails", 0) + 1  # after a pause one more failure pauses it again
-            until = time.time() + BREAKER_PAUSE_S if fails >= BREAKER_FAILS and event not in UNBREAKABLE else 0
-            if _breaker_set(event, {"fails": fails, "until": until}) and until:
-                log_error(event, f"paused for {BREAKER_PAUSE_S // 60} min after {fails} failures in a row "
-                                 f"(it runs again at {time.strftime('%H:%M', time.localtime(until))})")
+            if not isinstance(e, c.LockTimeout):  # T-3535: a busy lock (rolled up) is no strike; still timed below
+                fails = state.get("fails", 0) + 1  # after a pause one more failure pauses it again
+                until = time.time() + BREAKER_PAUSE_S if fails >= BREAKER_FAILS and event not in UNBREAKABLE else 0
+                if _breaker_set(event, {"fails": fails, "until": until}) and until:
+                    log_error(event, f"paused for {BREAKER_PAUSE_S // 60} min after {fails} failures in a row "
+                                     f"(it runs again at {time.strftime('%H:%M', time.localtime(until))})")
     if event not in UNTIMED:
         ms = round((time.monotonic() - t0) * 1000, 1)
         extra = {}
@@ -211,10 +212,43 @@ def _rev():
 
 
 def log_error(event, text):
+    busy = sys.exc_info()[1]
+    if isinstance(busy, c.LockTimeout):  # T-3535: a busy lock is contention, not a failure: one rolled-up count
+        return _lock_busy(event, busy)
     try:
         path = os.path.join(c.state_dir(), "logs", "hooks.log")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         c.append_line(path, f"{c.now()} {event} {c.redact(text).rstrip()}\n")
+    except OSError:
+        pass
+
+
+def _lock_busy_path():
+    return os.path.join(c.state_dir(), "logs", "lock-busy.json")
+
+
+def lock_busy():
+    """T-3535: {"since", "last", "by": {event: hook writes skipped}, "holder", "held"} for the last 24 h, or None."""
+    try:
+        with open(_lock_busy_path(), encoding="utf-8") as f:
+            r = json.load(f)
+    except (OSError, ValueError):
+        return None
+    age = c.age_days(r.get("since")) if isinstance(r, dict) else None
+    return r if age is not None and age < 1 and isinstance(r.get("by"), dict) else None
+
+
+def _lock_busy(event, e):
+    """T-3535: a hook gave up on a busy lock (LockTimeout e): counted per event in one record (fm friction shows it as
+    one line, fm doctor warns when it runs hot), with the last known holder and how long it had held the lock.
+    ponytail: unlocked read-modify-write, two at once can lose a count."""
+    r = lock_busy() or {"since": c.now(), "by": {}}
+    n = r["by"].get(event)
+    r["by"][event] = (n if isinstance(n, int) else 0) + 1
+    r.update(last=c.now(), holder=c.fit(c.redact_local(c.redact(str(e))), 300), held=getattr(e, "held", None))
+    try:
+        os.makedirs(os.path.dirname(_lock_busy_path()), exist_ok=True)
+        c.write_atomic(_lock_busy_path(), json.dumps(r))
     except OSError:
         pass
 
@@ -464,7 +498,8 @@ def session_start(pl):
         if lines not in have:  # T-0988: once, not again on every compaction (other hooks share the file)
             with open(env_file, "a") as f:
                 f.write(lines)
-    with c.lock(p.dir, timeout=LOCK_QUICK):
+    with contextlib.ExitStack() as held:
+        _lock_retry(held, p.dir)
         meta = c.read_meta(p)
         other_note = _other_session(meta.get("session") or {}, sid, _claude_pid())
         busy = other_note is not None
@@ -798,9 +833,18 @@ def session_context(p, sd, other_note=None, sid=None, budget=None):
 
 # Lock waits (seconds). Hooks run on every event, so most wait briefly; the ones carrying the user's words or an fm ask
 # wait longer, because dropping those costs more than a slow turn.
-LOCK_QUICK = 1  # SessionStart heartbeat, Stop drive counters: losing one is harmless
+LOCK_QUICK = 1  # SessionStart heartbeat, Stop drive counters (one retry each: _lock_retry)
 LOCK_WORDS = 3  # UserPromptSubmit: on timeout it says the message wasn't recorded
-LOCK_SLOW = 5  # recording an fm ask (dropping it makes fm ask refuse), PreCompact checkpoint
+LOCK_SLOW = 5  # recording an fm ask (dropping it makes fm ask refuse), PreCompact checkpoint, async hooks' writes
+
+
+def _lock_retry(held, d):
+    """T-3535: the project lock into ExitStack held, waited for LOCK_QUICK and then once more: a holder's write runs
+    ~1 s under builder load, so a second wait usually gets it. LockTimeout after both."""
+    try:
+        held.enter_context(c.lock(d, timeout=LOCK_QUICK))
+    except c.LockTimeout:
+        held.enter_context(c.lock(d, timeout=LOCK_QUICK))
 
 _PASTED = c.lazy(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
 
@@ -3565,7 +3609,7 @@ def _auto_evidence(pl, p, ok):
         m = re.match(r"Exit code (\d+)", err)
         code, output = (int(m.group(1)) if m else 1), err.split("\n", 1)[-1]
     result, tree = c.run_result(code, c.redact(output), cmd), c.worktree_id(p.root)
-    with c.lock(p.dir, timeout=LOCK_QUICK):
+    with c.lock(p.dir, timeout=LOCK_SLOW):  # T-3535: an async hook: waiting costs nothing, a lost write costs evidence
         b = c.find_brief(p, act.id)
         for n in hits:
             b.add_evidence(cmd, result, ac=n, tree=tree, ran=True)
@@ -3635,7 +3679,7 @@ def _runner_evidence(pl, p, act, cmd):
     if _unpiped(cmd)[1] and not c.passed_summary(output):  # T-1256: piped, so only the runner's summary says it passed
         return
     result, tree = c.run_result(0, c.redact(output)), c.worktree_id(p.root)
-    with c.lock(p.dir, timeout=LOCK_QUICK):
+    with c.lock(p.dir, timeout=LOCK_SLOW):  # T-3535: async, as above
         b = c.find_brief(p, act.id)
         b.add_evidence(cmd, result, step=cur.n, tree=tree, ran=True)
         c.save_brief(p, b)
@@ -3890,10 +3934,11 @@ def _stop(pl):
     seq = _title_seq(sd) + _progress_seq(sd)
     with contextlib.ExitStack() as held:
         try:
-            held.enter_context(c.lock(p.dir, timeout=LOCK_QUICK))
+            _lock_retry(held, p.dir)
             save = True
-        except c.LockTimeout:  # T-1453: busy, the turn is still judged; only its counters go unsaved
+        except c.LockTimeout as e:  # T-1453: busy, the turn is still judged; only its counters go unsaved
             save = False
+            _lock_busy("Stop", e)  # T-3535: counted in the roll-up
         g = _read_gate(p)
         _scan_notices(pl, g)
         d0 = g["drive"].get(sid) or {}
@@ -4861,9 +4906,17 @@ def _mark_builder(pl, returned):
         p = c.find_project(_cwd(pl))
         if not p:
             return
-        with c.lock(p.dir, timeout=LOCK_QUICK):
-            for b in c.load_briefs(p):
-                if b.status not in c.CLOSED and str(b.meta.get("lane") or "").rstrip("/").endswith(f"agent-{aid}"):
+        def mine(b):  # open, and its lane is this builder's worktree
+            return b and b.status not in c.CLOSED and str(b.meta.get("lane") or "").rstrip("/").endswith(f"agent-{aid}")
+        # T-3535: scanned unlocked (each builder start and stop held the lock across every brief, mostly to match
+        # none); only a match locks, for one read and save; async, so the long wait costs nothing
+        hits = [b.id for b in c.load_briefs(p) if mine(b)]
+        if not hits:
+            return
+        with c.lock(p.dir, timeout=LOCK_SLOW):
+            for tid in hits:
+                b = c.find_brief(p, tid)
+                if mine(b):  # read again under the lock
                     if returned:
                         b.meta["builder_returned"] = c.now()
                     else:

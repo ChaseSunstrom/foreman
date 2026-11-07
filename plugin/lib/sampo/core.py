@@ -104,6 +104,7 @@ class PolicyError(Exception):
 
 class LockTimeout(Exception):
     """Another process holds the project lock. Exit code 3."""
+    held = None  # T-3535: seconds since the last known holder took it, when the lock file says
 
 
 class CorruptState(ValueError):
@@ -1267,19 +1268,40 @@ def write_atomic(path, text):
 def lock(directory, timeout=5.0):
     os.makedirs(directory, exist_ok=True)
     fd = os.open(os.path.join(directory, ".lock"), os.O_CREAT | os.O_RDWR, 0o600)
-    deadline = time.monotonic() + timeout
+    start = time.monotonic()
     try:
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
-                if time.monotonic() >= deadline:
-                    raise LockTimeout(f"lock busy: {directory}")
-                time.sleep(0.02)
+                waited = time.monotonic() - start
+                if waited >= timeout:
+                    who, held = _lock_holder(fd)
+                    e = LockTimeout(f"lock busy: {directory}{who}")
+                    e.held = held
+                    raise e
+                time.sleep(0.02 if waited < 0.2 else 0.1)  # T-3535: backs off, so many waiters on a wedged lock idle
+        with contextlib.suppress(OSError):  # T-3535: who holds it, so a timeout elsewhere names them (a hint: no fsync)
+            argv = getattr(sys, "argv", None) or ["?"]
+            os.ftruncate(fd, 0)
+            os.pwrite(fd, f"{os.getpid()} {time.time():.1f} {os.path.basename(argv[0])} {' '.join(argv[1:])}"
+                      .encode("utf-8", "replace")[:300], 0)
         yield
     finally:
         os.close(fd)  # closing the descriptor releases the flock
+
+
+def _lock_holder(fd):
+    """T-3535: (' (last known holder: pid N, took it X s ago: command)', X) from what the last holder wrote into the
+    lock file (it stays after a release, so it may name one that has let go), or ('', None)."""
+    try:
+        pid, at, cmd = os.pread(fd, 300, 0).decode("utf-8", "replace").split(" ", 2)
+        held = max(0.0, time.time() - float(at))
+        return (f" (last known holder: pid {int(pid)}, took it {held:.1f} s ago: "
+                f"{fit(plain(redact_local(redact(cmd))), 120)})", held)
+    except (OSError, ValueError):
+        return "", None
 
 
 # ---------------------------------------------------------------- redaction

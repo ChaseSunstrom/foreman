@@ -94,6 +94,7 @@ ms to load for a top 1 right 9 times in 24; T-1834: a close records the books it
 | `state/events.jsonl` | hook/tool timeline for `sampo watch` (runtime; rotated by tidy) | hooks | by sampo watch | rotate > 5 MB |
 | `state/sessions/<id>.json` | statusline snapshots (runtime; cleaned after 7 days) | statusline | by sampo watch | — |
 | `state/logs/hooks.log` | hook errors (runtime; rotated by tidy) | hooks | by sampo doctor | rotate > 1 MB |
+| `state/logs/lock-busy.json` | hook writes a busy project lock skipped, per event, last 24 h (runtime; T-3535) | hooks | by sampo friction | resets after 24 h |
 | `state/projects/<slug>/meta.json` | project metadata: path, sensitive, drive, paused, autonomy, pending approvals, session, last tidy (runtime) | fm, UserPromptSubmit | by hooks | — |
 | `state/projects/<slug>/STATE.md` | focus + queue + inbox, generated from briefs (runtime) | fm | summary injected at SessionStart | ≤ 60 lines |
 | `state/projects/<slug>/INBOX.md` | captured items, generated (runtime) | fm | count + titles injected | — |

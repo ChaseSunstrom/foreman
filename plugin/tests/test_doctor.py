@@ -761,6 +761,20 @@ class HookErrors(ForemanTestCase):
             f.write(f"{c.now()} Stop\x1b]0;x\x07 ValueError: bad \x1b[2Jtitle\n")
         self.assertNotIn("\x1b", d.check_hook_errors().detail)
 
+    def test_a_hot_or_wedged_busy_lock_warns_naming_its_holder(self):  # T-3535
+        path = os.path.join(self.home, "state", "logs", "lock-busy.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        holder = "lock busy: ~/p (last known holder: pid 4242, took it 75.0 s ago: sampo focus T-1)"
+        for by, held, warn in (({"Stop": 2}, 1.5, False), ({"Stop": 2}, 75.0, True),
+                               ({"builder mark": 51}, None, True)):
+            with open(path, "w") as f:
+                json.dump({"since": c.now(), "last": c.now(), "by": by, "holder": holder, "held": held}, f)
+            r = d.check_hook_errors()
+            self.assertEqual(r.status, "WARN" if warn else "PASS", (by, held, r.detail))
+            if warn:
+                self.assertIn("pid 4242", r.detail)
+                self.assertIn(f"{sum(by.values())} hook write(s) skipped", r.detail)
+
     def test_doctor_feeds_its_fails_and_hook_tracebacks_to_the_signal_to_fix_loop(self):  # T-2349
         self.fm("init")
         p = c.find_project(self.repo)

@@ -244,6 +244,17 @@ def digest(p, recheck=True):
         where = f"{c.plain(os.path.basename(at[-1][0]))}:{at[-1][1]}, " if at else ""
         out["errors the hooks swallowed"] = [f"{len(errs)} in the last 24 h, most in {top[0]} ({top[1]}); latest: "
                                              f"{c.fit(c.plain(errs[-1][-1].strip()), 160)} ({where}state/logs/hooks.log)"]
+    try:  # T-3535: what a busy project lock made the hooks skip, one rolled-up line instead of a traceback each
+        from sampo import hooks as shooks
+        busy = shooks.lock_busy()
+        by = sorted(((str(k), int(n)) for k, n in (busy or {}).get("by", {}).items()), key=lambda x: -x[1])
+        if by:
+            out["hook writes a busy lock skipped"] = [
+                f"busy project lock: {sum(n for _, n in by)} hook write(s) skipped since {c.plain(busy['since'])}: "
+                + ", ".join(f"{c.plain(k)} {n}" for k, n in by)
+                + f"; latest {c.fit(c.plain(busy.get('holder') or ''), 200)}"]
+    except Exception:  # a report line; never the digest
+        pass
 
     steer = lambda e: e.get("event") == "note" and str((e.get("data") or {}).get("text") or "").startswith("steer:")
     said = [label(lp) + c.fit(c.plain(str((e.get("data") or {}).get("text") or "")), 200) for lp, e in ledger

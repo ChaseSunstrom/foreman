@@ -1427,22 +1427,45 @@ def _stale(err):
     return bool(shown) and (n > len(now) or now[n - 1].strip() != shown)
 
 
+LOCK_HELD_WARN_S = 60  # T-3535: a recorded hold this long looks wedged
+LOCK_BUSY_WARN = 50  # T-3535: hook writes a busy lock skipped in 24 h before it is worth a look
+
+
+def _lock_busy_note():
+    """T-3535: one line when the busy-lock roll-up (state/logs/lock-busy.json) runs hot: its latest recorded hold over
+    LOCK_HELD_WARN_S or over LOCK_BUSY_WARN skips in 24 h, naming the last known holder; else ''."""
+    from sampo import hooks as shooks
+    r = shooks.lock_busy() or {}
+    try:
+        n, held = sum(int(v) for v in r.get("by", {}).values()), float(r.get("held") or 0)
+    except (TypeError, ValueError, AttributeError):
+        return ""
+    if held <= LOCK_HELD_WARN_S and n <= LOCK_BUSY_WARN:
+        return ""
+    return (f"busy project lock: {n} hook write(s) skipped in 24h, "
+            f"latest {c.fit(c.plain(r.get('holder') or '?'), 200)} "
+            f"(state/logs/lock-busy.json)")
+
+
 def check_hook_errors():
     errors, paused = recent_hook_errors(), paused_hooks()
     recent = [e for e in errors if not _stale(e)]
     stale = len(errors) - len(recent)
+    busy = _lock_busy_note()
     if paused:
         return Result("hook errors", "FAIL", f"paused: {', '.join(paused)} ({len(recent)} hook error(s) in the last "
                                              f"24h; a paused hook runs again 10 min after its last failure; "
-                                             f"state/logs/hooks.log)")
+                                             f"state/logs/hooks.log)" + (f"; {busy}" if busy else ""))
     if not recent:
+        if busy:
+            return Result("hook errors", "WARN", busy)
         return Result("hook errors", "PASS", "no hook errors in the last 24h" + (
             f" ({stale} from code changed since)" if stale else ""))
     last = recent[-1]
     event = c.plain((last[0].split(" ") + ["", ""])[1])  # log text can carry anything an error message quoted
     cause = c.plain(next((l.strip() for l in reversed(last) if l.strip()), ""))
     return Result("hook errors", "WARN", f"{len(recent)} hook error(s) in the last 24h; latest: {event} "
-                                         f"{c.fit(cause, 120)} (state/logs/hooks.log)")
+                                         f"{c.fit(cause, 120)} (state/logs/hooks.log)" + (f"; {busy}" if busy else ""))
 
 
 # ---------------------------------------------------------------- orchestration

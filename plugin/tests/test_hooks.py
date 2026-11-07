@@ -3926,3 +3926,118 @@ class ClosingMarker(HookCase):  # T-3030
         note, path = self.edit("b.md")
         self.assertNotIn("a close of", note)
         self.assertEqual([e.get("task") for e in self.touched(path)], [tid])
+
+
+class LockBusy(HookCase):  # T-3535: a busy project lock is contention, not a failing hook: one rolled-up count
+    def busy(self, event):
+        from sampo import hooks
+        try:
+            raise c.LockTimeout("lock busy: x")
+        except c.LockTimeout:
+            hooks.log_error(event, hooks._tb())
+
+    def test_a_busy_lock_is_one_rolled_up_friction_line_not_a_traceback_each(self):
+        from sampo import friction
+        self.fm("init")
+        for ev in ("builder mark", "Stop", "builder mark"):
+            self.busy(ev)
+        self.assertEqual(self.hooks_log(), "")
+        sections = friction.digest(self.project())["sections"]
+        lines = [x for xs in sections.values() for x in xs if "busy project lock" in x]
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("3 hook write(s) skipped", lines[0])
+        self.assertIn("builder mark 2, Stop 1", lines[0])
+
+    def test_a_hook_that_hit_a_busy_lock_takes_no_breaker_strike(self):
+        from unittest import mock
+        from sampo import hooks
+        self.fm("init")
+        raw = json.dumps({"session_id": "s3535", "cwd": self.repo, "hook_event_name": "PreCompact"})
+        with mock.patch.object(c, "lock", side_effect=c.LockTimeout("lock busy: x")):
+            for _ in range(hooks.BREAKER_FAILS):
+                self.assertEqual(hooks.run("PreCompact", raw), 0)
+        self.assertEqual(hooks.breaker(), {})
+        self.assertEqual(self.hooks_log(), "")
+        self.assertEqual(hooks.lock_busy()["by"], {"PreCompact": hooks.BREAKER_FAILS})
+
+    def test_a_lock_timeout_names_its_last_known_holder_and_how_long_ago_it_took_it(self):
+        d = os.path.join(self.tmp, "locked")
+        with c.lock(d):  # a second descriptor's flock conflicts even in the same process
+            with self.assertRaises(c.LockTimeout) as e:
+                with c.lock(d, timeout=0.05):
+                    pass
+            self.assertRegex(str(e.exception), rf"^lock busy: {re.escape(d)} \(last known holder: pid {os.getpid()}, "
+                                               r"took it \d+\.\d s ago: \S")
+            home = os.path.expanduser("~")
+            with open(os.path.join(d, ".lock"), "w") as f:  # what a holder 75 s in, naming a home path, wrote
+                f.write(f"4242 {time.time() - 75:.1f} sampo task log {home}/notes.md")
+            with self.assertRaises(c.LockTimeout) as e:
+                with c.lock(d, timeout=0.05):
+                    pass
+        self.assertIn("last known holder: pid 4242, took it 75.", str(e.exception))
+        self.assertIn("sampo task log ~/notes.md", str(e.exception))
+        self.assertNotIn(home + "/", str(e.exception).split("(", 1)[1], "the holder text keeps no home path")
+        self.assertGreaterEqual(e.exception.held, 75)
+
+    def test_the_builder_mark_keeps_a_change_made_between_its_scan_and_its_save(self):
+        from unittest import mock
+        from sampo import hooks
+        self.fm("init")
+        tid, p = self.task(), self.project()
+        b = c.find_brief(p, tid)
+        b.meta["lane"] = os.path.join(self.tmp, ".claude", "worktrees", "agent-a1b2c3d4")
+        c.save_brief(p, b)
+        real = c.lock
+
+        def lock(directory, timeout=5.0):  # another writer lands after the unlocked scan, just before the lock
+            x = c.find_brief(p, tid)
+            x.append_log("written meanwhile")
+            c.save_brief(p, x)
+            return real(directory, timeout=timeout)
+        with mock.patch.object(c, "lock", lock):
+            hooks._mark_builder({"agent_type": "foreman:fm-builder", "agent_id": "a1b2c3d4", "cwd": self.repo}, True)
+        b = c.find_brief(p, tid)
+        self.assertTrue(b.meta.get("builder_returned"))
+        self.assertIn("written meanwhile", b.render())
+
+    def test_the_builder_mark_takes_no_lock_when_no_lane_matches(self):
+        from unittest import mock
+        from sampo import hooks
+        self.fm("init")
+        self.task()
+        with mock.patch.object(c, "lock", side_effect=AssertionError("took the project lock")):
+            hooks._mark_builder({"agent_type": "foreman:fm-builder", "agent_id": "a1b2c3d4", "cwd": self.repo}, True)
+        self.assertEqual(self.hooks_log(), "")
+
+
+class LockRetry(HookCase):  # T-3535: the Stop counters and the SessionStart heartbeat retry a busy lock once
+    def once_busy(self):
+        from unittest import mock
+        from sampo import hooks
+        real, d, calls = c.lock, self.project().dir, []
+
+        def lock(directory, timeout=5.0):
+            if directory == d and timeout == hooks.LOCK_QUICK:
+                calls.append(timeout)
+                if len(calls) == 1:
+                    raise c.LockTimeout(f"lock busy: {directory}")
+            return real(directory, timeout=timeout)
+        return mock.patch.object(c, "lock", lock), calls
+
+    def test_stop_saves_its_counters_after_one_busy_wait(self):
+        from sampo import hooks
+        self.fm("init")
+        patch, calls = self.once_busy()
+        with patch:
+            hooks.stop({"session_id": "s3535", "cwd": self.repo, "last_assistant_message": "Looked around."})
+        self.assertEqual(len(calls), 2, "one retry")
+        self.assertIn("s3535", read_json(os.path.join(self.project().dir, "gate.json"))["drive"])
+
+    def test_session_start_records_its_heartbeat_after_one_busy_wait(self):
+        from sampo import hooks
+        self.fm("init")
+        patch, calls = self.once_busy()
+        with patch:
+            hooks.session_start({"session_id": "s3535", "cwd": self.repo, "source": "startup"})
+        self.assertEqual(len(calls), 2, "one retry")
+        self.assertEqual((c.read_meta(self.project()).get("session") or {}).get("id"), "s3535")
