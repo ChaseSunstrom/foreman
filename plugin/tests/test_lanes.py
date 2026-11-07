@@ -736,6 +736,7 @@ class Lanes(ForemanTestCase):
         with open(os.path.join(path, "more.py"), "w") as f:
             f.write("y = 2\n")
         self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [tid], "within the ttl: no git calls")
+        self.git("add", "more.py", cwd=path)  # T-3585: a clean tree is kept on the lane's tip and index, not main's
         self.git("commit", "-q", "--allow-empty", "-m", "main moved")
         self.assertEqual(c.finished_lanes(p, c.load_briefs(p)), [], "a new main commit invalidates it")
 

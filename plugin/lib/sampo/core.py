@@ -4413,17 +4413,35 @@ def andons(briefs):
     return out
 
 
+def _index_stat(path):
+    """T-3585: [mtime_ns, size] of a worktree's index, or None: git add, commit, reset and checkout rewrite it."""
+    g = os.path.join(path, ".git")
+    try:
+        if os.path.isfile(g):  # a linked worktree's .git file names its admin folder
+            with open(g, encoding="utf-8") as f:
+                g = os.path.join(path, f.read().strip().partition("gitdir:")[2].strip())
+        st = os.stat(os.path.join(g, "index"))
+    except OSError:
+        return None
+    return [st.st_mtime_ns, st.st_size]
+
+
 def finished_lanes(p, briefs, quiet_min=30):
     """T-2038: ids of open tasks whose lane has commits the main checkout's branch lacks, a clean tree and no commit for
     `quiet_min` minutes and no live builder: the work waits on fm lane merge (T-1670 and T-1784 sat for days).
-    Cached FM_STALL_CACHE_S seconds (60) per lane set and main commit: the pane asks every 2 s, a merge clears it."""
+    Cached FM_STALL_CACHE_S seconds (60) per lane set and main commit: the pane asks every 2 s, a merge clears it.
+    T-3585: a refresh asked git three questions per lane (257 processes, ~2.5 s of git CPU at 83 lanes). One worktree
+    list now reads every tip and one log walk of the tips past main says which are ahead and when each was committed,
+    kept per lane on (tip, main); a clean tree is kept on (tip, index), so an unchanged lane costs no git process. The
+    cache holds facts, not ids, so quiet_min 0 and 30 callers share it."""
     from sampo import bus
     lanes = [b for b in briefs if b.meta.get("lane") and b.status not in CLOSED and os.path.isdir(b.meta["lane"])
              and not b.meta.get("lane_spike")  # T-2340: a spike's code is never merged
              and bus.proc_state(b.meta.get("builder_proc")) != "alive"]
     if not lanes or p.lane:  # only the main checkout merges; no lane costs no git call
         return []
-    base = _git(main_worktree(p.root) or p.root, "rev-parse", "HEAD").strip()  # a sha: a detached main works too
+    main = main_worktree(p.root) or p.root
+    base = _git(main, "rev-parse", "HEAD").strip()  # a sha: a detached main works too
     if not base:
         return []
     key = [base] + sorted(f"{b.id}={b.meta['lane']}" for b in lanes)
@@ -4432,27 +4450,60 @@ def finished_lanes(p, briefs, quiet_min=30):
         ttl = float(os.environ.get("FM_STALL_CACHE_S") or 60)
     except ValueError:
         ttl = 60
+
+    def done(facts):
+        return [b.id for b in lanes if (facts.get(b.id) or {}).get("ct") is not None and facts[b.id].get("clean")
+                and time.time() - facts[b.id]["ct"] >= quiet_min * 60]
+    facts = {}
     try:
-        if ttl > 0 and time.time() - os.stat(cache).st_mtime < ttl:
-            with open(cache) as f:
-                got = json.load(f)
-            if got.get("key") == key:
-                return got["out"]
-    except (OSError, ValueError, AttributeError, KeyError):
+        with open(cache) as f:
+            got = json.load(f)
+        facts = {k: v for k, v in got["lanes"].items() if isinstance(v, dict)}
+        if got.get("key") == key and ttl > 0 and time.time() - os.stat(cache).st_mtime < ttl:
+            return done(facts)
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
         pass
-    out = []
+    heads = {}
+    for block in _git(main, "worktree", "list", "--porcelain").split("\n\n"):
+        row = dict(ln.partition(" ")[::2] for ln in block.splitlines())
+        if row.get("worktree") and row.get("HEAD"):
+            heads[os.path.realpath(row["worktree"])] = row["HEAD"]
+    new, walk = {}, set()
     for b in lanes:
-        path = b.meta["lane"]
-        last = _git(path, "log", "-1", "--format=%ct").strip()
-        if last.isdigit() and time.time() - int(last) >= quiet_min * 60 \
-                and _git(path, "rev-list", "--count", "HEAD", "--not", base).strip() not in ("", "0") \
-                and not _git(path, "status", "--porcelain", fail="?").strip():
-            out.append(b.id)
+        path, f = b.meta["lane"], facts.get(b.id) or {}
+        sha = heads.get(os.path.realpath(path))
+        if not sha:  # not a worktree of main's repository: asked directly, as before T-3585
+            last = _git(path, "log", "-1", "--format=%ct").strip()
+            f = {"ct": int(last) if last.isdigit() and _git(path, "rev-list", "--count", "HEAD", "--not", base)
+                 .strip() not in ("", "0") else None}
+        else:
+            f = dict(f) if f.get("sha") == sha else {"sha": sha}  # a new tip drops every answer
+            if f.get("base") != base or "ct" not in f:  # main moved: ahead or not is asked again
+                f["base"] = base
+                f.pop("ct", None)
+                walk.add(sha)
+        new[b.id] = f
+    if walk:  # every commit on a moved tip that main lacks: a tip in the walk is ahead, with its commit time
+        log = _git(main, "log", "--format=%H %ct", *sorted(walk), "--not", base, timeout=10, fail=None)
+        times = dict(ln.split(" ", 1) for ln in (log or "").splitlines() if " " in ln)
+        for f in new.values():
+            if log is not None and f.get("sha") in walk:  # a failed walk leaves "ct" out: asked again next refresh
+                f["ct"] = int(times[f["sha"]]) if f["sha"] in times else None
+    for b in lanes:
+        f, path = new[b.id], b.meta["lane"]
+        if f.get("ct") is None:
+            continue
+        # ponytail: an edit or new file that leaves tip and index alone (no git add) isn't seen while the lane's answer
+        # is clean; merge takes the tip and removing the lane refuses uncommitted work. A dirty answer is read again.
+        idx = _index_stat(path)
+        if not (ttl > 0 and f.get("clean") and idx and f.get("index") == idx):
+            f["clean"] = not _git(path, "status", "--porcelain", fail="?").strip()
+            f["index"] = _index_stat(path)  # after: status may rewrite the index it refreshed
     try:
-        write_atomic(cache, json.dumps({"key": key, "out": out}))
+        write_atomic(cache, json.dumps({"key": key, "lanes": new}))
     except OSError:
         pass
-    return out
+    return done(new)
 
 
 PUSH_GRANT = lazy(r"\bpush(?:ing)?\b.*\bmain\b|\bmain\b.*\bpush(?:ing)?\b", re.I)
