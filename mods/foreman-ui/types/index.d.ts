@@ -77,6 +77,7 @@ export type FmView = {
   skills?: FmSkills // T-0939: Skill calls and stack-card reads this week, and the map's unread suggestions
   health?: { hook_p95_ms: number | null; guard_blocks: number; hook_errors: number; paused_hooks?: string[] }
   watch?: string[] // paths whose mtime moves when the record changes
+  cached?: boolean // T-3542: fm printed its kept view (up to 10 s old); absent on a fresh build
   latency?: number[] // the latest hook run times (ms), oldest first
   palette_custom?: Record<string, string> // T-1717: fm design tokens --to pane --save, checked: C's keys, #rrggbb
   weekly_lean?: boolean // T-3049: false: weekly usage never puts this project in economy mode

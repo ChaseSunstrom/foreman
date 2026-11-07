@@ -378,6 +378,9 @@ async function tick($: EngineInterface) {
   const moved = stamps.join('|') !== marks
   marks = stamps.join('|')
   if (isDirty || moved || now - lastFull > 30000) await refresh($)
+  // T-3542: fm kept its view (its key leaves some state files to a 10 s age), so the move this poll saw may not be in
+  // it yet: the next poll asks again, cheaply, until a fresh one comes back
+  if (moved && (await read($, view))?.cached) marks = ''
 }
 
 // The context meter; at CHECKPOINT_AT% Sampo checkpoints the active task once, so a compaction loses nothing.

@@ -48,7 +48,7 @@ class Signals(Base):
             c.save_brief(self.p, b, touch=False)
         sig = self.ui()["signals"]
         self.assertIn({"level": "amber", "text": "fm find muted (docs): you dropped most of its leads"}, sig)
-        with open(c.os.path.join(self.p.dir, "find-muted.json"), encoding="utf-8") as f:
+        with open(c.os.path.join(self.p.dir, "cache", "find-muted.json"), encoding="utf-8") as f:
             self.assertEqual(json.load(f)["value"], ["docs"])  # kept: the next poll skips the archive and git log
 
 
@@ -92,7 +92,7 @@ class GrantSignal(Base):  # T-2378: the band shows queued install grants while a
         self.assertEqual([x for x in self.ui()["signals"] if "grant request" in x["text"]], [])
         r = self.fm_json("task", "new", "Tables", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         import os
-        os.unlink(os.path.join(self.p.dir, "grants-line.json"))  # the empty answer was kept a while: start fresh
+        os.unlink(os.path.join(self.p.dir, "cache", "grants-line.json"))  # the empty answer was kept a while: start fresh
         grants.queue(self.p, r["id"], ["plugin"], "needs a table printer", what="tabulate")
         sig = [x for x in self.ui()["signals"] if "grant request" in x["text"]]
         self.assertEqual(len(sig), 1, sig)

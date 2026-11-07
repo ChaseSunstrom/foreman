@@ -1,4 +1,5 @@
 """fm watch: live Sampo dashboard (curses) and its plain-text twin (--once). Stdlib only, read-only."""
+import contextlib
 import json
 import os
 import re
@@ -346,8 +347,9 @@ LEARNED_TTL_S = 120
 
 def _kept(p, name, build):
     """build(), kept in the project's state for LEARNED_TTL_S: every pane poll is a new process (no in-process memo
-    helps), and a count two minutes old is the same news."""
-    path = os.path.join(p.dir, name)
+    helps), and a count two minutes old is the same news. T-3542: under cache/, so a rewrite never moves the state
+    folder the mod watches (each one woke its next poll)."""
+    path = os.path.join(p.dir, "cache", name)
     try:
         with open(path, encoding="utf-8") as f:
             hit = json.load(f)
@@ -655,7 +657,7 @@ def view(p):
         or {"recent": [], "counts": {}, "suggested": [], "unread": []},  # T-0939
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
                    "hook_errors": len(doctor.recent_hook_errors()), "paused_hooks": doctor.paused_hooks()},
-        "watch": [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")]
+        "watch": _watch(p)
         + ([os.path.join(p.dir, "research", bs["name"])] if bs and bs["running"] else []),  # each lens answer moves it
         "latency": [round(ms) for ms in d["series"]],
         "palette_custom": _guarded(c.pane_palette) or {},  # T-1717: fm design tokens --to pane --save
@@ -756,13 +758,72 @@ def cmd_ui(args):
         p = None
     if getattr(args, "follow", False) and p:
         return _follow(lambda: view(p), lambda v: v["watch"] + [os.path.join(p.dir, "meta.json")], args.interval)
-    v = view(p) if p else {"v": 1, "project": None}
     if getattr(args, "json", False):
-        print(json.dumps(v))
-    else:
-        a = v.get("active")
-        print(f"{v['project'] or 'not a Sampo project'}" + (f" · {a['id']} {a['stage']}" if a else "")
-              + (f"\nNext: {v['next']}" if v.get("next") else ""))
+        return print(_cached_view(p) if p else json.dumps({"v": 1, "project": None}))
+    v = view(p) if p else {"v": 1, "project": None}
+    a = v.get("active")
+    print(f"{v['project'] or 'not a Sampo project'}" + (f" · {a['id']} {a['stage']}" if a else "")
+          + (f"\nNext: {v['next']}" if v.get("next") else ""))
+
+
+UI_CACHE_S = 10  # T-3542: how long a kept view may stand (FOREMAN_UI_CACHE_S; 0: never kept)
+
+
+def _watch(p):
+    """The paths a surface stats to know the view moved (a running brainstorm's folder joins them in view)."""
+    return [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")]
+
+
+def _ui_key(p, watch):
+    """T-3542: what a kept view stands on: the checkout, its lane and HEAD, and (inode, mtime, size) of meta.json and
+    each watched path but the state folder itself (the ledger, the tasks folder, a running brainstorm's). The folder's
+    mtime moves with every derived file a reader rewrites (risk.json, genesis-step.json: several a second while lanes
+    run); those follow the keyed inputs, and the rest of the folder is bounded by the age. The trust record and the
+    pause flag are keyed too: the user acts on them, and a pause reads autonomy as standard everywhere."""
+    out = [p.root, p.lane, c._git(p.root, "rev-parse", "HEAD").strip()]
+    for path in [os.path.join(p.dir, "meta.json"), c.trust_path(), os.path.join(c.state_dir(), "PANIC")] \
+            + [w for w in watch if w != p.dir]:
+        try:
+            st = os.stat(path)
+            out.append([path, st.st_ino, st.st_mtime_ns, st.st_size])
+        except OSError:
+            out.append([path])
+    return out
+
+
+def _cached_view(p):
+    """T-3542: json.dumps(view(p)), kept in cache/ui.json while its key holds and for at most FOREMAN_UI_CACHE_S
+    seconds: the mod's poll runs fm ui after every tool call, and a rebuild costs ~0.7 s CPU against ~0.1 s for a kept
+    one. The age bounds what the key leaves out: clocks, events.jsonl (hook timings, skills), the bus, lane commits.
+    The key is taken before the build, so a change while it builds rebuilds next time; cache/ is a subfolder because a
+    write at the top would move the folder the mod watches and wake its next poll."""
+    try:
+        ttl = float(os.environ.get("FOREMAN_UI_CACHE_S", UI_CACHE_S))
+    except ValueError:
+        ttl = UI_CACHE_S
+    # ponytail: one file per project (root and lane are in the key): a pane in a lane's own session and the main one
+    # would take turns rebuilding; a file per lane if that use shows up
+    path, kept = os.path.join(p.dir, "cache", "ui.json"), {}
+    if ttl > 0:
+        try:
+            with open(path, encoding="utf-8") as f:
+                kept = json.load(f)
+        except (OSError, ValueError):
+            pass
+    kept = kept if isinstance(kept, dict) else {}
+    watch = kept.get("watch")
+    watch = watch if isinstance(watch, list) and all(isinstance(w, str) for w in watch) else _watch(p)
+    at, key = time.time(), _ui_key(p, watch)
+    if isinstance(kept.get("at"), (int, float)) and 0 <= at - kept["at"] < ttl and kept.get("key") == key \
+            and isinstance(kept.get("text"), str) and kept["text"].startswith('{"'):
+        return '{"cached": true, ' + kept["text"][1:]  # the mod polls again after a move that a kept view answered
+    v = view(p)
+    text = json.dumps(v)
+    if ttl > 0:  # a new watch list (a brainstorm started or ended) is keyed from the next build on
+        with contextlib.suppress(OSError):
+            c.write_atomic(path, json.dumps({"at": at, "key": key if v["watch"] == watch else None,
+                                             "watch": v["watch"], "text": text}))
+    return text
 
 
 def _follow(build, paths, interval, refresh=30.0):

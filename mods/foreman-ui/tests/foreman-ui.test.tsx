@@ -645,6 +645,27 @@ test('edits show on the edit lane: how many, and the latest file (T-1002)', asyn
   await ui.unmount()
 })
 
+test('a poll that saw the state folder move but got fm\'s kept view asks again until a fresh one (T-3542)', async ($, on) => {
+  let mtime = 1
+  on('fs.stat', async () => ({ value: { mtimeMs: mtime, size: 10, isFile: false, isDirectory: true } }) as never)
+  const fresh: FmView = { ...CALM, watch: ['/s/state'] }
+  const { calls, clock } = world(on, [fresh, fresh, { ...fresh, cached: true }, { ...fresh, cached: true }, fresh])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(2000) // the first poll records the folder's stamp
+  const polls = () => calls.filter(c => c[1] === 'ui').length
+  const settled = polls()
+  await clock.advance(2000)
+  expect(polls()).toBe(settled) // still: no fm run
+  mtime = 2
+  await clock.advance(2000) // moved: fm answers with its kept view
+  await clock.advance(2000) // no new move, but the kept view may predate it: ask again (kept once more)
+  await clock.advance(2000) // and again: fresh this time
+  expect(polls()).toBe(settled + 3)
+  await clock.advance(2000)
+  await clock.advance(2000)
+  expect(polls()).toBe(settled + 3) // a fresh view ends it
+})
+
 test('the band shows context; at 85% Sampo checkpoints once', async ($, on) => {
   const { calls, toasted, clock, usage } = world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
