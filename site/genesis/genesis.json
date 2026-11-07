@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-07T10:52:02Z",
- "rev": "29c650fc7",
+ "updated": "2026-11-07T10:57:15Z",
+ "rev": "057895867",
  "capabilities": [
   {
    "n": 1,
@@ -50850,10 +50850,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 44321,
+   "generated": 44540,
    "write": {
-    "title": 312,
-    "line": 2421,
+    "title": 313,
+    "line": 2450,
     "payoff": 28,
     "kill test": 140,
     "code": 12
@@ -50866,11 +50866,11 @@
    "rejected": {
     "kill": 22686,
     "tier": 15584,
-    "novelty": 140
+    "novelty": 142
    },
    "merged": 1148,
-   "kept": 1726,
-   "pending": 26
+   "kept": 1750,
+   "pending": 189
   },
   "families": [
    {
@@ -50908,7 +50908,7 @@
    },
    {
     "id": "F-018446",
-    "size": 291,
+    "size": 297,
     "lead": "Simulate multi-user memory interference as magnetic domains",
     "today": "Today you can't know if two concurrent sessions will corrupt each other's context when merged",
     "with_this": "With this, Sampo can predict and prevent context bleeding between users by modeling memory states as non-interfering magnetic domains",
@@ -50956,7 +50956,7 @@
    },
    {
     "id": "F-014278",
-    "size": 26,
+    "size": 28,
     "lead": "Simulate ecosystem ripple effects before releasing a single crate",
     "today": "Today you can't predict how a breaking change in your library will break thousands of downstream users' builds until they file bugs.",
     "with_this": "With this, you can see a live map of which downstream projects will fail, crash, or degrade in performance when you publish your next version.",
@@ -54141,10 +54141,10 @@
     ]
    }
   ],
-  "families_total": 1277,
+  "families_total": 1291,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1726
+   "total": 1750
   }
  },
  "steer": {
