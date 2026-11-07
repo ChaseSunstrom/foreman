@@ -3,6 +3,7 @@
 was tracked beside .sampo/, and why pages they had asked for weren't done, then "I shouldn't even need to send any of
 the messages". Each check reads state and at most one git call; lines() caches the set CACHE_S per project, and
 next_for (sampo next and the drive's line) shows it in every state, not only when idle."""
+import collections
 import json
 import os
 import time
@@ -92,6 +93,38 @@ def landing_rate(p, briefs, now):
 
 
 CHECKS = (unshipped, old_mirror, asks_waiting, landing_rate)
+
+
+UNTRACKED_H, UNTRACKED_STATS = 1, 500  # untracked this long is left behind, not work in progress; files stat'ed
+
+
+def _older(path, now):
+    try:
+        return now - os.path.getmtime(path) >= UNTRACKED_H * 3600
+    except OSError:
+        return False
+
+
+def untracked(p, briefs, now):
+    """T-3548: untracked, non-ignored files in the main checkout are part of its code tree (core.worktree_tree), so no
+    close there matches the train's pass on the merged commit and each reruns its linked tests: an untracked scripts/
+    did that all day (78-309 s a close). The mirror's .md files are left out, as worktree_tree leaves them. From a lane
+    (p.root is its worktree, the cache is the project's) it reads the main checkout all the same. Only files untouched
+    UNTRACKED_H hours count: one made a minute ago is work in progress."""
+    main = c.main_worktree(p.root) or p.root
+    out = c._git(main, "ls-files", "-z", "--others", "--exclude-standard", "--", ".",
+                 *(f":(exclude,glob){m}/**/*.md" for m in c.MIRRORS), timeout=10)
+    # ponytail: only the first UNTRACKED_STATS listed are stat'ed; a bigger pile is named by its first part
+    files = [f for f in out.split("\0")[:UNTRACKED_STATS] if f and _older(os.path.join(main, f), now)]
+    if not files:
+        return None
+    tops = collections.Counter(f.split("/")[0] + ("/" if "/" in f else "") for f in files)  # ls-files order on ties
+    shown = [t + (f" ({n})" if t.endswith("/") else "") for t, n in tops.most_common()]
+    return (f"{len(files)} untracked file(s) in the main checkout ({c.joinmore(shown, 4)}) keep every close off the "
+            "train's pass, so each reruns its tests → commit, .gitignore or remove them")
+
+
+CHECKS += (untracked,)
 
 
 def lines(p, briefs=None, now=None):

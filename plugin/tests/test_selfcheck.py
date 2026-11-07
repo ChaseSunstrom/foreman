@@ -76,6 +76,32 @@ class SelfCheck(ForemanTestCase):
         self.git("commit", "-qm", "gone")
         self.assertIsNone(selfcheck.old_mirror(self.p, [], time.time()))
 
+    def test_untracked_files_in_the_main_checkout_are_named(self):
+        # T-3548: an untracked scripts/ sat in the main checkout all day; every close missed the train's pass
+        self.assertIsNone(selfcheck.untracked(self.p, [], time.time()), "a clean checkout says nothing")
+        for rel in ("scripts/a.py", "scripts/b.py", "notes.txt", "build.log", f"{c.MIRROR}/tasks/T-0099.md"):
+            os.makedirs(os.path.dirname(os.path.join(self.repo, rel)), exist_ok=True)
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write("x\n")
+        with open(os.path.join(self.repo, ".git", "info", "exclude"), "a") as f:
+            f.write("*.log\n")  # ignored: never part of the code tree
+        self.assertIsNone(selfcheck.untracked(self.p, [], time.time()), "files made just now are work in progress")
+        old = time.time() - 2 * 3600
+        for rel in ("scripts/a.py", "scripts/b.py", "notes.txt", "build.log", f"{c.MIRROR}/tasks/T-0099.md"):
+            os.utime(os.path.join(self.repo, rel), (old, old))
+        with open(os.path.join(self.repo, "fresh.py"), "w") as f:
+            f.write("x\n")  # still being written: not counted
+        hit = selfcheck.untracked(self.p, [], time.time())
+        self.assertTrue(hit.startswith("3 untracked file(s) in the main checkout (scripts/ (2), notes.txt)"), hit)
+        self.assertIn("commit, .gitignore or remove them", hit)
+        lane = os.path.join(self.tmp, "lane")
+        self.git("commit", "-q", "--allow-empty", "-m", "base")
+        self.git("worktree", "add", "-q", lane)
+        self.assertEqual(selfcheck.untracked(c.find_project(lane), [], time.time()), hit, "a lane reads the main checkout")
+        for rel in ("scripts/a.py", "scripts/b.py", "notes.txt"):
+            os.remove(os.path.join(self.repo, rel))
+        self.assertIsNone(selfcheck.untracked(self.p, [], time.time()))
+
     def ask(self, words, hours, **kw):
         tid = first(self.fm("capture", words, "--json", *kw.get("args", ())).stdout)["id"]
         b = c.find_brief(self.p, tid)

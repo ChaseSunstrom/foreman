@@ -28,9 +28,8 @@ def _affected_gate(p, wt, base, checks):
     from sampo import cli
     meta = c.read_meta(p)
     tpl = meta.get("affected") or ""
-    bare = lambda s: " ".join(s.split())  # noqa: E731
-    full = next((g for g in checks if bare(g) == bare(tpl.replace("{names}", "").replace("{tests}", ""))), None)
-    if os.environ.get("FOREMAN_FULL_GATE") or not tpl or not full:
+    full = cli.suite_gate(p.root, tpl, checks)  # T-3566: a close checks its linked tests against this part the same way
+    if os.environ.get("FOREMAN_FULL_GATE") or not full:
         return None
     try:
         _, tests, _ = cli.affected(c.Project(p.slug, wt, p.dir, p.lane), since=base)

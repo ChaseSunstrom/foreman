@@ -7,6 +7,7 @@ import unittest
 
 from helpers import ForemanTestCase
 
+from sampo import cli
 from sampo import core as c
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -71,6 +72,95 @@ class CloseAffectedReuse(ForemanTestCase):
         self.assertEqual(self.runs(), 1)
         self.assertNotIn("reused", ev)
         self.assertNotIn("covered by the gates", out)
+
+    def test_a_missed_reuse_names_the_files_that_differ(self):
+        # T-3548: an untracked scripts/ kept every close off the train's pass, and each reran its tests silently
+        tid = self.close()
+        self.fm("check", env={"FOREMAN_SENTINEL": "off"})
+        os.makedirs(os.path.join(self.repo, "scripts"))
+        self.write("scripts/stray.py", "x = 1\n")
+        self.fm("task", "log", tid, "scope: a stray untracked file, not this task's")
+        out, ev = self.finish(tid)
+        self.assertEqual(self.runs(), 2, "the code tree moved: the linked tests run")
+        self.assertIn("linked tests: no reusable gate pass: the newest full gate run (", out)
+        self.assertIn("was on another code tree: 1 file(s) differ: scripts/stray.py", out)
+        self.assertIn("scripts/stray.py", ev["miss"])
+
+    def test_no_pass_at_all_says_so(self):
+        out, _ = self.finish(self.close())
+        self.assertIn("linked tests: no reusable gate pass: no full gate run is recorded", out)
+
+    def again(self, rows=lambda r: r, **data):
+        """The last check_run logged again as a newer run, each result row through `rows`, fields replaced by `data`."""
+        d = c.ledger_events(self.p, ("check_run",))[-1]["data"]
+        c.log_event(self.p, "check_run", data=dict(d, results=[rows(r) for r in d["results"]], **data))
+
+    def ui_close(self, gated):
+        """A task that changed calc.py and its .tsx test (another runner's) after another close committed a mirror .md
+        file, then a train's pass on that code that ran test_calc only. `gated`: a gate runs the .tsx runner."""
+        os.makedirs(os.path.join(self.repo, "ui"))
+        os.makedirs(os.path.join(self.repo, c.MIRROR), exist_ok=True)
+        self.write("ui/calc.test.tsx", "test('adds', () => {})\n")
+        self.write(f"{c.MIRROR}/T-0099.md", "# another task\n")
+        self.write("tests/test_mirror.py", "import unittest\n\n\nclass Mirror(unittest.TestCase):\n"
+                   f"    def test_dir(self):\n        self.assertTrue({c.MIRROR!r})\n")  # links the mirror folder
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "ui and mirror"], check=True)
+        if gated:  # spelled as this repo's are: the gate `claude plugin test mods/foreman-ui`, the runner `cd … && … .`
+            self.fm("check", "add", f"echo ui >> {self.count}")
+        self.fm("check", "affected", "--for", ".tsx", f"cd ui && echo . >> {self.count}")
+        tid = self.close()
+        self.write("ui/calc.test.tsx", "test('adds two', () => {})\n")
+        self.fm("task", "log", tid, "scope: ui/calc.test.tsx, the test of what it changed")
+        self.write(f"{c.MIRROR}/T-0099.md", "# another task, closed\n")  # another close's commit
+        subprocess.run(["git", "-C", self.repo, "commit", "-qam", "T-0099 closed"], check=True)
+        self.fm("check", env={"FOREMAN_SENTINEL": "off"})
+        self.again(lambda r: dict(r, affected=["test_calc"]) if "run.py" in r["cmd"] else r, train=[tid])  # its part
+        return tid
+
+    def test_a_train_pass_covers_another_runners_tests_and_the_mirrors_noise(self):
+        # T-3566: a train's pass reused 0 of 6 closes: each close command carried the .tsx runner's part, and the
+        # mirror .md files other closes had committed linked tests the train never selected
+        tid = self.ui_close(gated=True)
+        before = self.runs()
+        out, ev = self.finish(tid)
+        self.assertEqual(self.runs(), before, "a test the train's selection covers ran again")
+        self.assertIn("the suite on 1 affected module(s)", ev.get("reused", ""), out)
+
+    def test_another_runners_tests_no_gate_runs_are_run(self):
+        # T-3566 review: with no gate for the .tsx runner no pass ran those tests, so the close runs them
+        tid = self.ui_close(gated=False)
+        before = self.runs()
+        out, ev = self.finish(tid)
+        self.assertEqual(self.runs(), before + 2, out)  # test_calc and the .tsx runner
+        self.assertIn("linked tests: no reusable gate pass: no gate runs the .tsx tests", out)
+        self.assertNotIn("reused", ev)
+
+    def test_a_runner_is_the_gate_it_spells_differently(self):
+        os.makedirs(os.path.join(self.repo, "mods", "ui"))
+        self.write("tool", "#!/bin/sh\n")
+        os.chmod(os.path.join(self.repo, "tool"), 0o755)
+        gates = ["./tool mods/ui", "./tool"]
+        self.assertEqual(cli.suite_gate(self.repo, "cd mods/ui && ../../tool .", gates), "./tool mods/ui")
+        self.assertEqual(cli.suite_gate(self.repo, os.path.join(self.repo, "tool") + " {names}", gates), "./tool")
+        self.assertIsNone(cli.suite_gate(self.repo, "cd mods/ui && ../../tool", gates), "another directory's suite")
+        self.assertIsNone(cli.suite_gate(self.repo, "./tool mods/ui && ./tool", gates), "two commands")
+
+    def test_a_newer_run_on_other_code_leaves_the_pass_on_this_code_standing(self):
+        # T-3566: a lane's sentinel run logged after the train's hid its pass from five closes
+        tid = self.close()
+        self.fm("check", env={"FOREMAN_SENTINEL": "off"})
+        self.again(tree="0" * 12, code_tree="0" * 40)
+        before = self.runs()
+        out, ev = self.finish(tid)
+        self.assertEqual(self.runs(), before, out)
+        self.assertIn("covered by the gates' pass", out)
+
+    def test_a_newer_red_run_on_this_code_still_misses(self):
+        self.fm("check", env={"FOREMAN_SENTINEL": "off"})
+        self.again(lambda r: dict(r, exit=1))
+        self.again(tree="0" * 12, code_tree="0" * 40)  # and a newer one on other code: skipped, the red one decides
+        self.assertNotIn("cached", self.fm("check", env={"FOREMAN_SENTINEL": "off"}).stdout)
 
     def test_another_runner_runs_them_once_despite_the_pass(self):
         self.fm("check", "affected", "python3 -B tests/run.py {names}")
