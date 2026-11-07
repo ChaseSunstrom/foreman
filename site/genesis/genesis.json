@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-07T11:17:57Z",
+ "updated": "2026-11-07T11:38:44Z",
  "rev": "509223c5a",
  "capabilities": [
   {
@@ -49641,7 +49641,7 @@
   "typed": 50,
   "red": 86,
   "tui-unshot": 13,
-  "docs": 116,
+  "docs": 112,
   "perf-noise": 1,
   "infra": 9,
   "ui-unshot": 44,
@@ -50850,10 +50850,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 44723,
+   "generated": 45128,
    "write": {
     "title": 316,
-    "line": 2451,
+    "line": 2460,
     "payoff": 28,
     "kill test": 140,
     "code": 12
@@ -50866,11 +50866,11 @@
    "rejected": {
     "kill": 22897,
     "tier": 15684,
-    "novelty": 143
+    "novelty": 144
    },
    "merged": 1177,
-   "kept": 1750,
-   "pending": 25
+   "kept": 1774,
+   "pending": 396
   },
   "families": [
    {
@@ -50908,7 +50908,7 @@
    },
    {
     "id": "F-018446",
-    "size": 297,
+    "size": 300,
     "lead": "Simulate multi-user memory interference as magnetic domains",
     "today": "Today you can't know if two concurrent sessions will corrupt each other's context when merged",
     "with_this": "With this, Sampo can predict and prevent context bleeding between users by modeling memory states as non-interfering magnetic domains",
@@ -50956,7 +50956,7 @@
    },
    {
     "id": "F-014278",
-    "size": 28,
+    "size": 30,
     "lead": "Simulate ecosystem ripple effects before releasing a single crate",
     "today": "Today you can't predict how a breaking change in your library will break thousands of downstream users' builds until they file bugs.",
     "with_this": "With this, you can see a live map of which downstream projects will fail, crash, or degrade in performance when you publish your next version.",
@@ -50979,7 +50979,7 @@
    },
    {
     "id": "F-013971",
-    "size": 8,
+    "size": 9,
     "lead": "Simulate the social impact of a release before it ships",
     "today": "Today you can't know how many support tickets will spike after a change until it is live",
     "with_this": "With this, you can predict the volume and sentiment of user complaints for a specific code change in advance",
@@ -51047,6 +51047,22 @@
     "evidence": "",
     "kinds": [
      "onboarding"
+    ]
+   },
+   {
+    "id": "F-044605",
+    "size": 3,
+    "lead": "Rehearse org migrations in a disposable future",
+    "today": "Today you can't safely change a shared service for hundreds of projects without manually coordinating change requests and waiting for each team to prove compatibility.",
+    "with_this": "With this, you can propose one migration and receive a future state where every dependent project has already adopted it, with the breaking changes already fixed and the affected customer endpoints listed.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 4,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
     ]
    },
    {
@@ -51993,6 +52009,22 @@
     "evidence": "",
     "kinds": [
      "ux"
+    ]
+   },
+   {
+    "id": "F-044349",
+    "size": 1,
+    "lead": "Auto-generate dual-schema write paths for zero-downtime upgrades",
+    "today": "Today you can't safely deploy a breaking database schema change to a production service without a manual, error-prone dual-write period that requires custom code in every service touching that table.",
+    "with_this": "With this, you can declare a schema change in your codebase, and the system automatically instruments all relevant data access layers to write to both the old and new schemas simultaneously, validating data integrity in real-time before you switch reads.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
     ]
    },
    {
@@ -54107,44 +54139,12 @@
     "kinds": [
      "ops"
     ]
-   },
-   {
-    "id": "F-011517",
-    "size": 1,
-    "lead": "Negotiate design priorities with the entire org simultaneously",
-    "today": "Today you can't gather consensus on design priorities from hundreds of stakeholders without endless meetings",
-    "with_this": "With this, you can propose a design change and receive a unified decision from the entire org in minutes",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "design"
-    ]
-   },
-   {
-    "id": "F-011611",
-    "size": 1,
-    "lead": "Turn every chat nudge into a permanent ecosystem law",
-    "today": "Today you can't make a casual preference instantly enforceable across thousands of concurrent agent tasks.",
-    "with_this": "With this, you can stop correcting code style by simply saying it once, seeing every open project self-heal immediately.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "design"
-    ]
    }
   ],
-  "families_total": 1291,
+  "families_total": 1306,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1750
+   "total": 1774
   }
  },
  "steer": {
@@ -54178,7 +54178,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54201,7 +54201,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54224,7 +54224,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54247,7 +54247,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54270,7 +54270,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54293,7 +54293,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54316,7 +54316,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54339,7 +54339,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54362,7 +54362,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54385,7 +54385,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54408,7 +54408,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54431,7 +54431,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54454,7 +54454,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54477,7 +54477,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54500,7 +54500,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54523,7 +54523,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54546,7 +54546,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54569,7 +54569,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54592,7 +54592,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54615,7 +54615,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54638,7 +54638,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54661,7 +54661,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54684,7 +54684,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54707,7 +54707,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54730,7 +54730,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -54753,7 +54753,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 33.0,
+    "idle_h": 33.3,
     "spend": 0,
     "missions": 0,
     "restarted": null,
