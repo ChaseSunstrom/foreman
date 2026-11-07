@@ -72,10 +72,55 @@ STATE_NOTE = ("\nWith every action also send \"state\": a compact note of your t
               "explanation\", \"next_check\": \"the command or file that would confirm it\", \"confidence\": 0 to 1}. "
               "Replace it each time; keep it short. Read or run the next_check before you edit.")
 STATE_PROP = {"type": "object", "description": "your compact state: goal, facts, hypothesis, next_check, confidence"}
+NEEDS = {"read": ("path",), "search": ("pattern",), "edit": ("file", "old", "new"), "write": ("file", "content"),
+         "run": ("cmd",), "done": ("summary",)}
 ACTION_SCHEMA = {"oneOf": [  # one object per action, with the fields it needs
     {"type": "object", "required": ["action", *need], "properties": {"action": {"const": act}}}
-    for act, need in (("read", ["path"]), ("search", ["pattern"]), ("edit", ["file", "old", "new"]),
-                      ("write", ["file", "content"]), ("run", ["cmd"]), ("done", ["summary"]))]}
+    for act, need in NEEDS.items()]}
+# T-2878: other names small models give an action's arguments; a missing one takes its alias only when exactly one is sent
+ALIASES = {"file": ("path", "file_path", "filepath", "filename"), "path": ("file", "file_path", "filepath", "filename"),
+           "content": ("contents", "text", "body"), "old": ("old_string", "old_text"), "new": ("new_string", "new_text"),
+           "cmd": ("command",), "pattern": ("query", "regex")}
+NESTED = ("args", "arguments", "parameters", "input")
+# T-2878 small-model mode: the plan types that change files, and request words that ask for a change (qwen3.8-27b planned
+# 'Something is off in the paging; find and fix it.' as RESEARCH, closed it on a check already green, and edited nothing)
+CHANGE_TYPES = ("FIX", "FEATURE", "PERFORMANCE", "SECURITY")
+_CHANGE = re.compile(r"(?<![\w.])(?:fix|repair|make(?! sure)|add|implement|handle|change|rename|remove|update|speed up)"
+                     r"(?![\w.(])", re.I)  # a word, not an identifier: calc.add, add() and make_page don't count
+SMALL_CHANGE = ("The request asks for a change ({word!r}), so a {what} won't do: reply with only a plan as a JSON object, "
+                "typed FIX, FEATURE, PERFORMANCE or SECURITY, with a verify that fails now and passes once the change "
+                "is made.")
+
+
+_QUESTION = re.compile(r"\s*(?:what|why|how|does|do|did|is|are|was|can|could|should|would|will|where|when|which|who|"
+                       r"explain)\b", re.I)
+
+
+def asks_change(request):
+    """T-2878: the first word in the request that asks for a change, or None: a review asks for none, and nor does a
+    question (it starts with a question word or ends with '?'; 'Can you add a test?' is let through as a question)."""
+    r = (request or "").strip()
+    if r.endswith("?") or _QUESTION.match(r):
+        return None
+    hit = _CHANGE.search(r)
+    return hit and hit[0].lower()
+
+
+def canon_args(name, a):
+    """T-2878: an action's arguments as Smith names them: one nested object (args, arguments, parameters, input) is
+    unwrapped when none of the action's own keys is at the top, then a missing key takes its alias sent (several only
+    when they agree)."""
+    need = NEEDS.get(name, ())
+    if not isinstance(a, dict) or not need:
+        return a
+    inner = [k for k in NESTED if isinstance(a.get(k), dict)]
+    if len(inner) == 1 and not any(k in a for k in need):
+        a = {**a[inner[0]], **{k: v for k, v in a.items() if k != inner[0]}}
+    for k in need:
+        got = [x for x in ALIASES.get(k, ()) if a.get(x) is not None]
+        if a.get(k) is None and got and all(a[x] == a[got[0]] for x in got):
+            a = dict(a, **{k: a[got[0]]})
+    return a
 
 
 def _names_check(want, a):
@@ -619,6 +664,7 @@ class Run:
         self.usd, self.max_usd, self.slug = None, getattr(args, "max_usd", None), None  # T-1357
         self.context = ""  # T-1374: what was piped on stdin
         self.reason = getattr(args, "reason", None)  # T-3006: one of REASONS, or None: as before
+        self.small = bool(getattr(args, "small", False))  # T-2878: small-model mode (a profile's "small" turns it on too)
         self.state, self.checked, self.bad_run, self.broke = None, False, False, False  # a resume starts the state again
         self.early, self.edited, self.tree0 = 0, False, None  # T-3180: refused early dones; an edit landed; the tree at start
         self.nonce = secrets.token_hex(6)  # T-1394: the data envelope's tag, which no file can know ahead
@@ -849,7 +895,11 @@ class Run:
         def arg(k, typ=str, default=None):
             v = default if a.get(k) is None else a[k]
             if not isinstance(v, typ) or isinstance(v, bool):
-                raise ValueError(f"{name} needs {k} as {typ.__name__}")
+                sent = ", ".join(sorted(x for x in a if x != "state")) or "no arguments"  # T-2878: one line to correct it
+                want = ", ".join(f'"{x}": "..."' for x in NEEDS.get(name, (k,)))
+                raise ValueError(f"{name} needs {k} as {typ.__name__} (you sent: {sent}); send "
+                                 f'{{"action": "{name}", {want}}}' if a.get(k) is None else
+                                 f"{name} needs {k} as {typ.__name__}")
             return v
         try:
             if name == "done":
@@ -1196,7 +1246,7 @@ class Run:
             seen[self.last_act] = seen.get(self.last_act, 0) + 1
             if seen[self.last_act] == 3 and not finished:  # T-2966: once a key, as louhi counts it
                 finished = self.loop_break(name, profile, self.last_act, tools)
-            if finished and self.last_act[0] == "done" and (back := self.early_done()):
+            if finished and self.last_act[0] == "done" and (back := self.early_done(name)):
                 self.add(name, {"role": "user", "content": back})
                 continue
             if finished:
@@ -1216,20 +1266,28 @@ class Run:
                 out.append((rel, None))
         return out
 
-    def early_done(self):
-        """T-3180: a done with no edit or write made this run (a change by `run` isn't seen) while a criterion's verify
-        fails: the failure back as the next turn, twice at most; the third raises (stopped early). None: done stands."""
+    def early_done(self, name=None):
+        """T-3180: a done with no edit or write made this run and the tree as it started (a `run` that changed a file
+        counts as a change) while a criterion's verify fails: the failure back as the next turn, twice at most; the
+        third raises (stopped early). None: done stands.
+        T-2878: in small-model mode the last step of a change plan is refused so too with every verify green."""
         if not self.plan or self.read_only or self.edited or self.tree() != self.tree0:  # the flag is the fast path
             return None
         failed = self.verify("early")
-        if not failed:
+        last = self.small and self.plan.get("type") in CHANGE_TYPES and name == f"step:{len(self.plan['steps'])}"
+        if not failed and not last:
             return None
+        why = "a verify fails" if failed else "no file has changed on a change plan's last step"
         self.early += 1
-        self.log(kind="early_done", n=self.early)
-        self.emit("early_done", f"  done refused: no edit made and a verify fails ({self.early})", quiet=True, n=self.early)
+        self.log(kind="early_done", n=self.early, why=why)
+        self.emit("early_done", f"  done refused: no edit made and {why} ({self.early})", quiet=True, n=self.early)
         if self.early > EARLY_DONE_REFUSALS:
-            raise CodeError(f"stopped early: the model called done {self.early} times with no edit while a verify fails: "
-                            f"{_one_line(_failures(failed), 300)}", f"fm code --resume {self.tid}" if self.tid else None)
+            raise CodeError(f"stopped early: the model called done {self.early} times with no edit while {why}"
+                            + (f": {_one_line(_failures(failed), 300)}" if failed else ""),
+                            f"fm code --resume {self.tid}" if self.tid else None)
+        if not failed:
+            return ("Not done: this plan asks for a change and no file has changed yet. Make the change the plan "
+                    "names (edit or write), then call done.")
         return (f"Not done: you made no edit, and these verify commands still fail:\n\n{self.fence(_failures(failed))}\n\n"
                 "Edit the files so they pass, then call done.")
 
@@ -1565,6 +1623,7 @@ class Run:
         return result, fin
 
     def do(self, name, a):
+        a = canon_args(name, a)  # T-2878: a small model's other names for the arguments
         result, fin = self.act(name, a)
         result = self.redact(result)
         target = next((str(a.get(k)) for k in ("file", "path", "cmd", "pattern", "summary") if isinstance(a, dict)
@@ -3046,6 +3105,7 @@ def cmd_code(args):
                                f"{served}: using {served}")
                 profile = dict(profile, context=served, served=served)
             run.cap = CAP if profile.get("context", 0) >= SMALL_CONTEXT else CAP // 2
+            run.small = run.small or profile.get("small") is True
         run.max_steps = run.max_steps or 40
         if run.reason and run.reason not in REASONS:
             raise cli.UsageError(f"--reason is one of {', '.join(REASONS)}")
@@ -3144,6 +3204,9 @@ def _plan(run, profile, dry=False):
             {"role": "user", "content": run.request + _context_note(run)}]
     profile = run.planner or profile  # T-2945: --planner asks the plan (and its re-plan); steps stay on --model
     run.plan = slot(run, profile, msgs, check_plan, "plan", PLAN_FIELDS)
+    if is_answer(run.plan) and getattr(run, "small", False) and (word := asks_change(run.request)):  # T-2878: once
+        msgs.append({"role": "user", "content": SMALL_CHANGE.format(word=word, what="read-only answer")})
+        run.plan = slot(run, profile, msgs, check_plan, "plan", PLAN_FIELDS)
     if is_answer(run.plan):  # a question: no checks to judge
         return
     if getattr(run, "ask", False):  # T-1770: it holds no lock, so it never goes on to change anything
@@ -3240,7 +3303,10 @@ def _plan_problem(run):
         if why:
             return (f"Criterion {n}'s verify `{cr['verify']}` can't run here: {why}. Use a check this project can run "
                     "(its own test runner, python3 -m unittest, node --test, a python3 -c assert).")
-    if run.plan["type"] not in ("FIX", "FEATURE"):
+    small = getattr(run, "small", False)  # T-2878: small-model mode checks every change type, and the type itself
+    if small and not run.own_plan and run.plan["type"] == "RESEARCH" and (word := asks_change(run.request)):
+        return SMALL_CHANGE.format(word=word, what="RESEARCH plan")
+    if run.plan["type"] not in (CHANGE_TYPES if small else ("FIX", "FEATURE")):
         return None
     for n, cr in enumerate(run.plan["criteria"], 1):
         code, _ = run_bounded(cr["verify"], run.root, VERIFY_TIMEOUT, run.env(), 200, confine=run.confine())

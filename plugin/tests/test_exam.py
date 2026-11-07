@@ -2233,6 +2233,24 @@ class SmithArm(ForemanTestCase):
         self.assertNotEqual(self.fm("exam", "run", g["run"], "--agent", "smith", check=False).returncode, 0,
                             "a local model needs --model")
 
+    def test_the_smith_arm_held_out_grade_is_its_own_scorecard_beside_the_claude_arms(self):  # T-2878 criterion 1
+        from test_code import PLAN, call, plan
+        self.fm("genesis", "init", "--file", "-", input="go\n\n## 2. The capability spec\n\n"
+                "1. **Correctness.** Fixes what's broken. Exam: bug.\n\n## 3. The tower\n")
+        g = self.fm_json("exam", "gen", "--seed", "4", "--per-kind", "9", "--lang", "python", "--kind", "bug")
+        held = [s for s in g["scenarios"] if s["split"] == "holdout"]
+        self.assertEqual(len(held), 3, "per-kind 9 holds out three")
+        ok = plan(dict(PLAN, criteria=[{"text": "it holds", "verify": "test -f fixed.txt"}]))
+        self.serve(*[x for _ in held for x in (ok, call("write", file="fixed.txt", content="x"),
+                                               call("done", summary="wrote it"), {"text": '{"findings": []}'})])
+        r = self.fm_json("exam", "run", g["run"], "--agent", "smith", "--model", "fake", "--split", "holdout", timeout=360)
+        self.assertEqual((r["scenarios"], r["errors"]), (len(held), 0), r)
+        card = lambda *a: json.loads(self.fm("exam", "scorecard", *a, "--json", check=False).stdout)
+        smith, claude = card("--agent", "smith"), card()  # the Claude arm is the default, foreman
+        self.assertEqual(smith["agent"], "smith")
+        self.assertEqual(sum(x["selfmade"] for x in smith["rows"]), len(held), "every held-out scenario the arm answered")
+        self.assertEqual(sum(x["selfmade"] + x["graded"] for x in claude["rows"]), 0, "the local arm never fills Claude's")
+
     def test_the_taxonomy_counts_each_class_from_events(self):
         from sampo import louhi
         act = lambda r, d="", a="read", t="x": {"event": "action", "action": a, "target": t, "result": r, "detail": d}

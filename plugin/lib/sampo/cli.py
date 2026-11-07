@@ -8472,6 +8472,7 @@ def _build_parser(only=None):
     s.add_argument("--planner", help="run --agent smith: this profile asks the plan and close notes, --model acts (T-2945)")
     s.add_argument("--reason", help="run --agent smith: state|off|native|budget|bias|schema, how the model reasons; the "
                    "score line gives its fix rate and tokens per fix (T-3006)")
+    s.add_argument("--small", action="store_true", help="run --agent smith: fm code --small, small-model mode (T-2878)")
     s.add_argument("--timeout", type=float, help="long run: minutes a session turn may take (default 60)")
     s.add_argument("--faults", help="long run --agent foreman|plain: comma list of kill, pause, compaction, misleading (T-2262), missing (T-2377), door (T-2343)")
     s = add("demo", lazy("sampo.demo", "cmd_demo"), tier=("Finding your way", 210), help="see Sampo work on a seeded bug in a throwaway repo, with no "
@@ -8719,6 +8720,9 @@ def _build_parser(only=None):
     s.add_argument("--reason", metavar="ARM", help="T-3006: how the model reasons: state (its compact state rides each "
                    "call; thinking only on low confidence, a failed check or a loop break; a named check before an "
                    "edit), off, native, budget, bias or schema")
+    s.add_argument("--small", action="store_true", help="T-2878: small-model mode (also a models.json profile's "
+                   "\"small\": true): a change plan's checks must fail before the work, a change request isn't planned "
+                   "as research or answered, and its last step can't end with nothing changed")
     s.add_argument("--max-steps", type=int, help="model turns for the whole run (default 40; a resume keeps the "
                                                  "run's own unless given)")
     s.add_argument("--max-usd", type=float, metavar="USD", help="stop the run once it has spent this many dollars "

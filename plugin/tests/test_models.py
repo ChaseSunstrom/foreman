@@ -623,6 +623,25 @@ class ExtractJson(unittest.TestCase):
         self.assertIsNone(m.extract_json('{"a":' * 50000))
         self.assertIsNone(m.extract_json("[" * 50000))
 
+    def test_an_invalid_escape_keeps_the_object(self):  # T-3530: qwen3.8-27b wrote \' in a done summary 5 turns running
+        text = r'{"action": "done", "summary": "find_user_sql: name.replace(\'x\', \'y\') allocates twice"}'
+        self.assertEqual(m.extract_json(text), {"action": "done",
+                                                "summary": r"find_user_sql: name.replace(\'x\', \'y\') allocates twice"})
+        self.assertEqual(m.extract_json(r'run {"action": "run", "cmd": "grep -c \d app.py"}'),
+                         {"action": "run", "cmd": r"grep -c \d app.py"})
+        self.assertEqual(m.extract_json(r'{"a": "x\\y \"q\""}'), {"a": 'x\\y "q"'})  # valid escapes unchanged
+        self.assertEqual(m.extract_json(r'{"path": "C:\users\u00e9"}'), {"path": "C:\\users\u00e9"})
+
+    def test_an_inner_object_never_stands_in_for_the_action(self):  # T-2878 review: state rides every text action
+        after = r'{"action": "edit", "file": "a.py", "old": "x", "new": "it\'s", "state": {"goal": "g", "facts": []}}'
+        before = r'{"action": "edit", "state": {"goal": "g"}, "file": "a.py", "old": "x", "new": "it\'s"}'
+        braces = r'{"action": "edit", "file": "a.rs", "old": "x", "new": "fn f() {}  // it\'s"}'
+        for text in (after, before, braces):
+            with self.subTest(text=text):
+                v = m.extract_json(text)
+                self.assertEqual((v or {}).get("action"), "edit")
+                self.assertEqual(v["new"][-5:], r"it\'s")
+
 
 class LocalContext(Base):  # T-1360
     def test_each_local_server_says_the_context_it_serves(self):

@@ -1364,9 +1364,21 @@ def complete(profile, messages, tools=None, max_tokens=2048, timeout=120, think=
 
 # ---------------------------------------------------------------- JSON from free text
 
+_BAD_ESCAPE = re.compile(r"\\(u[0-9a-fA-F]{4}|.)", re.S)
+
+
 def extract_json(text, tries=64):
     """The first balanced JSON object in text, or None. Tries the first `tries` '{' positions; each try is one linear
-    scan, so hostile input costs at most tries x len(text)."""
+    scan, so hostile input costs at most tries x len(text). T-3530: each invalid escape (\\' from code in a summary) is
+    read as a literal backslash first, valid ones left as they are, so one character never drops the action or lets an
+    inner object (a state, a `{}` in code) stand in for it."""
+    if text and "\\" in text:
+        ok = '"\\/bfnrt'  # a valid escape's letter; \uXXXX matches as 5 characters
+        text = _BAD_ESCAPE.sub(lambda m: m[0] if len(m[1]) == 5 or m[1] in ok else "\\\\" + m[1], text)
+    return _first_object(text, tries)
+
+
+def _first_object(text, tries):
     if not text:
         return None
     dec, i = json.JSONDecoder(), text.find("{")
