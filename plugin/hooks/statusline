@@ -7,9 +7,12 @@ or, when the foreman-ui mod draws the band above the prompt, a Sampo chip on the
 claude-hud (run in parallel on the same JSON), then the Sampo line from state.line and progress.line. Either way the
 JSON is snapshotted to state/sessions/<session_id>.json for `fm watch`. Never fails: any error still prints a line.
 """
+import glob
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 
@@ -22,8 +25,6 @@ except Exception:
 
 
 def find_hud():
-    import glob  # T-3577: these three only for the stack layout
-    import shutil
     base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
     found = []
     for path in glob.glob(os.path.join(base, "plugins", "cache", "*", "claude-hud", "*", "dist", "index.js")):
@@ -44,7 +45,6 @@ def start_children(raw, manifest):
         hud = find_hud()
         if hud:
             cmds.append(["node", hud])
-    import subprocess
     procs = []
     for cmd in cmds:
         try:
@@ -62,7 +62,6 @@ def start_children(raw, manifest):
 
 
 def collect(procs):
-    import subprocess
     lines = []
     for p in procs:
         try:

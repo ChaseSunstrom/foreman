@@ -12,6 +12,7 @@ git) and this machine's (shared/fixes.md, for every project here). Counts of how
 (shared/fixes-stats.json). A fix is only ever said, in the failing call's context or before a command that failed
 before runs again; nothing here runs one. One that keeps missing stops being offered, and a failure met three times
 with no fix captures one task to remove its cause."""
+import hashlib
 import json
 import os
 import re
@@ -21,19 +22,19 @@ from sampo import core as c
 from sampo.core import subprocess  # T-2023: imported on first use
 
 HEAD = "# Known fixes\n\nWhat got past an obstacle here, one per line; kept by Sampo (`fm fix list`, `fm fix add`).\n\n"
-_REC = c.lazy(r"<!-- fix (\{.*\}) -->\s*$")
+_REC = re.compile(r"<!-- fix (\{.*\}) -->\s*$")
 # a look around, not a fix: it neither teaches nor uses up the window
-_LOOK = c.lazy(r"^(ls|cat|head|tail|less|more|grep|egrep|rg|ag|find|fd|echo|printf|pwd|which|type|command|env|"
-               r"printenv|file|stat|wc|tree|du|df|ps|id|whoami|uname|date|true|sleep|fm|man|jq)\b|"
-               r"^git (status|log|diff|show|branch|remote|rev-parse)\b")
+_LOOK = re.compile(r"^(ls|cat|head|tail|less|more|grep|egrep|rg|ag|find|fd|echo|printf|pwd|which|type|command|env|"
+                   r"printenv|file|stat|wc|tree|du|df|ps|id|whoami|uname|date|true|sleep|fm|man|jq)\b|"
+                   r"^git (status|log|diff|show|branch|remote|rev-parse)\b")
 _RUNNERS = {"python", "python3", "node", "bash", "sh", "zsh", "npx", "bunx", "uv", "uvx", "poetry", "pipenv", "env",
             "sudo", "time", "nice", "exec", "deno", "bun", "ruby", "perl", "php"}
 WINDOW = 4  # commands after a failure that may be its fix
 # T-1771: a command that writes files changed the code, as an Edit does: the pass after it is a code fix, never a
 # command to offer (a debugging sed on a test file was kept and offered as "the fix" for a failing run)
-_WRITES = c.lazy(r"\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i|\b(?:fm|sampo)\s+(?:edit|sub)\b|\bpatch\b|"
-                 r"\bgit\s+(?:apply|checkout|restore|reset|stash)\b|\btee\s+(?!/dev/null\b)\S|"
-                 r"(?<![\d&<>])>>?\s*(?!&|/dev/null\b)[\w./~\"'$]")
+_WRITES = re.compile(r"\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i|\b(?:fm|sampo)\s+(?:edit|sub)\b|\bpatch\b|"
+                     r"\bgit\s+(?:apply|checkout|restore|reset|stash)\b|\btee\s+(?!/dev/null\b)\S|"
+                     r"(?<![\d&<>])>>?\s*(?!&|/dev/null\b)[\w./~\"'$]")
 ESCALATE = 3  # a failure met this often with no fix captures a task
 
 
@@ -77,7 +78,7 @@ def _relates(failed, cmd):
 
 
 def _fid(rec):
-    return c.sha1(f"{rec.get('sig')}\0{rec.get('cmd') or rec.get('do')}".encode()).hexdigest()[:10]
+    return hashlib.sha1(f"{rec.get('sig')}\0{rec.get('cmd') or rec.get('do')}".encode()).hexdigest()[:10]
 
 
 def read(path):
@@ -109,11 +110,10 @@ def known(p, st=None):
     st = _load(_stats_path()) if st is None else st
     adopted = set(st.get("trusted") or [])
     paths = stores(p)
-    recs = [read(path) for path in paths]  # T-3577: each store read once (the machine's was read twice)
-    mine = {r["id"] for r in recs[-1]}
+    mine = {r["id"] for r in read(paths[-1])}
     seen, out = set(), []
     for i, path in enumerate(paths):
-        for rec in recs[i]:
+        for rec in read(path):
             if rec["id"] not in seen:
                 seen.add(rec["id"])
                 rec["store"] = "project" if p and i == 0 else "machine"

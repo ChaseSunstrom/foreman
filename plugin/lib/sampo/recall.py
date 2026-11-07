@@ -7,16 +7,16 @@ import json
 import math
 import os
 import re
+import subprocess
 import time
 
 from sampo import core as c
-from sampo.core import subprocess  # T-3577: off the edit hook's path
 
-_WORD = c.lazy(r"[a-z][a-z0-9_]{2,}")
+_WORD = re.compile(r"[a-z][a-z0-9_]{2,}")
 _STOP = set("""the and for with that this from into when then than are was were not but all any can its has have had
 will would should could also only just more most each other such via per new use using used make made add adds added
 fix fixes fixed task tasks brief step steps done test tests run runs work does doing foreman none""".split())
-_ROW = c.lazy(r"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(.+?)\s*\|\s*(.*?)\s*\|")
+_ROW = re.compile(r"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(.+?)\s*\|\s*(.*?)\s*\|")
 MAX_READ = 20_000  # chars of a research note that count
 INDEX_MAX, HITS_MAX = 20_000_000, 50  # fm recall --ask: characters indexed per question, answers shown (T-0728)
 LINE, TOTAL, HITS = 170, 800, 4
@@ -136,7 +136,7 @@ def _documents(p, skip=None):
                 f"{rel[:-3].replace('-', ' ').replace('/', ' ')} {text}", None, {"age": 0.0}
 
 
-_PATH = c.lazy(r"(?<![\w/.-])((?:[\w.-]+/)+[\w.-]+\.\w{1,6})(?::\d+)?")
+_PATH = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)+[\w.-]+\.\w{1,6})(?::\d+)?")
 
 
 def _cites(root, text):
@@ -335,8 +335,8 @@ def gist(text, question, width):
     return c.fit(("… " if i else "") + parts[i].rstrip(";,") + (" …" if i < len(parts) - 1 else ""), width)
 
 
-_PLAIN = c.lazy(r'"([^"`·→]+)" → ([^·\n]+)')  # the rules' "plain words" → what they run, up to the next ·
-_VERB = c.lazy(r'`(?:fm|sampo) ([\w-]+)(?: ([\w-]+))?')  # each `fm verb …` in it ("serve this repo": fm ask, then fm serve)
+_PLAIN = re.compile(r'"([^"`·→]+)" → ([^·\n]+)')  # the rules' "plain words" → what they run, up to the next ·
+_VERB = re.compile(r'`(?:fm|sampo) ([\w-]+)(?: ([\w-]+))?')  # each `fm verb …` in it ("serve this repo": fm ask, then fm serve)
 
 
 def verb_docs():
@@ -432,13 +432,13 @@ def render(hits, tier=None):
 
 # ---------------------------------------------------------------- failure memory (T-0046)
 
-_ERROR_LINE = c.lazy(r"(?i)error|exception|fail|traceback|not found|denied|refused|cannot|can't|no such|missing|"
-                     r"unrecognized|unknown|invalid|unexpected|illegal|not allowed|not permitted")
-_USAGE_TAIL = c.lazy(r"(?i)^(try|run|see|use) .{0,40}(--help|-h\b|help\b).{0,40}$")  # T-1032: a pointer, not the error
+_ERROR_LINE = re.compile(r"(?i)error|exception|fail|traceback|not found|denied|refused|cannot|can't|no such|missing|"
+                         r"unrecognized|unknown|invalid|unexpected|illegal|not allowed|not permitted")
+_USAGE_TAIL = re.compile(r"(?i)^(try|run|see|use) .{0,40}(--help|-h\b|help\b).{0,40}$")  # T-1032: a pointer, not the error
 REPEATS = 3  # the same failure this often in one task: a thrash note
 # T-0211: errors that say an API isn't what Claude assumed: a missing module or export, a library attribute, keyword or
 # method that doesn't exist. Another guess rarely fixes these; the real docs do.
-API_MISUSE = c.lazy(
+API_MISUSE = re.compile(
     r"ModuleNotFoundError|No module named|ImportError: cannot import name|module '[\w.]+' has no attribute|"
     r"unexpected keyword argument|does not provide an export named|has no exported member|Cannot find module '[^.]|"
     r"no method named|unresolved import|cannot find (function|type|crate|macro|value)|undefined: \w+\.\w+|"
@@ -449,8 +449,8 @@ FAILURES_KEEP = 1000  # records; the file is trimmed to this when it passes 1 MB
 # T-1769: a test runner's tally says that something failed, never what (unittest's FAILED (failures=2), run.py's
 # FAILED (1 classes), pytest's ==== 2 failed … ====, Ran N tests, fm quiet's ✗ exit 1 (…)): as the signature, every red
 # run was one "recurring obstacle", red-first runs included
-_TALLY_LINE = c.lazy(r"(?i)^(?:FAILED \([^)]*\)|=+ .*\b\d+ (?:failed|errors?)\b.*=+|Ran \d+ tests? in .*|"
-                     r"✗ exit \d+ \(.*\)|fm doctor: (?:OK|FAILED) \(\d+ pass, \d+ warn, \d+ fail\))$")  # T-2567
+_TALLY_LINE = re.compile(r"(?i)^(?:FAILED \([^)]*\)|=+ .*\b\d+ (?:failed|errors?)\b.*=+|Ran \d+ tests? in .*|"
+                         r"✗ exit \d+ \(.*\)|fm doctor: (?:OK|FAILED) \(\d+ pass, \d+ warn, \d+ fail\))$")  # T-2567
 
 
 def failure_signature(text):
@@ -524,7 +524,7 @@ def note_failure(p, task, text):
 RECUR = 3  # T-2272: distinct tasks one obstacle has to hit before it's the project's to fix, not each task's
 # no single cause to fix: Foreman's own messages (its refusals are rules at work), a summary of results, and a builtin
 # exception's bare message (an empty-input JSON error or an index error in three tasks are three bugs)
-_NO_CAUSE = c.lazy(r"^fm[: ]|failed \(|^[\w.]*(?:error|exception)(?::[^/]*)?$")
+_NO_CAUSE = re.compile(r"^fm[: ]|failed \(|^[\w.]*(?:error|exception)(?::[^/]*)?$")
 
 
 def _captured(recs, sig):
@@ -663,7 +663,7 @@ def _live_lesson(p, b):
     return next((t for i, t in enumerate(texts, 1) if not t.lower().startswith("none") and f"{b.id}.{i}" not in gone), "")
 
 
-_CLAUSE_SPLIT = c.lazy(r"\n+|(?<=[.?!;])\s+|\s+(?:and also|as well as|plus)\s+", re.I)
+_CLAUSE_SPLIT = re.compile(r"\n+|(?<=[.?!;])\s+|\s+(?:and also|as well as|plus)\s+", re.I)
 
 
 def clauses(text):
@@ -685,7 +685,7 @@ def account(p, parts):
     return out
 
 
-_VACUOUS_AC = c.lazy(r"^- \S+ vacuous checks: (.*)")
+_VACUOUS_AC = re.compile(r"^- \S+ vacuous checks: (.*)")
 
 
 def bind(b):
@@ -794,7 +794,7 @@ def lessons(p):
     return rows
 
 
-_NEG = c.lazy(r"\b(?:not|no|never|without|cannot|\w+n't|dont)\b")
+_NEG = re.compile(r"\b(?:not|no|never|without|cannot|\w+n't|dont)\b")
 
 
 def consolidate(p, floor=0.6):
@@ -841,7 +841,7 @@ def _render_lessons(rows):
     return "\n".join(lines)
 
 
-_IDENT = c.lazy(r"[A-Za-z_][A-Za-z0-9_]{3,}")
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{3,}")
 
 
 def _idents(text):
@@ -1332,7 +1332,7 @@ def render_story(s):
 # ---------------------------------------------------------------- fm recall --ask (T-0484)
 
 _ASKING = set("why how what who whom when where which did does was were is are there their about".split())
-_TID = c.lazy(r"\bT-\d{4,}\b")
+_TID = re.compile(r"\bT-\d{4,}\b")
 # ledger events whose text is noise, or already in a brief, decisions.md or a research note
 _ECHOED = {"touched", "scope_note", "session_start", "focus", "evidence", "audit", "note", "step_add", "step_current",
            "step_reword", "step_remove",

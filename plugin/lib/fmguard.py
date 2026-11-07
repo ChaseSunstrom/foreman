@@ -3079,12 +3079,10 @@ def _expansions(path):
             alts = inner.split(",")
         todo += [p[:m.start()] + x + p[m.end():] for x in alts]
     out += todo
-    wild = [p for p in out if re.search(r"[*?\[]", p)]
-    if not wild:  # T-3577: glob (and its contextlib) only for a pattern
-        return list(dict.fromkeys(out))
     import glob
     import itertools
-    return list(dict.fromkeys(out + [g for p in wild for g in itertools.islice(glob.iglob(p), EXPANSIONS_MAX)]))
+    return list(dict.fromkeys(out + [g for p in out if re.search(r"[*?\[]", p)
+                                     for g in itertools.islice(glob.iglob(p), EXPANSIONS_MAX)]))
 
 
 def _makeable(d):

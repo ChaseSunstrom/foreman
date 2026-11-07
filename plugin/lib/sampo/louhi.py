@@ -3783,13 +3783,11 @@ GATE_MUTATIONS = (
         '                h = out.get("hookSpecificOutput") or {}\n'
         '                h["additionalContext"] = str(h.get("additionalContext") or "") + " A planted line." * 30\n'))]),
     ("hook-delay", "hook ", "hook", [("plugin/lib/sampo/hooks.py",  # T-2605: every _slower row starts "hook <name>" (p95, or p50 wall when loaded)
-                                    # T-3577: the entry line alone, so a refactor of run's body keeps the anchor; every
-                                    # hook call takes it, and the bench times the process from outside
-                                    "def run(event, raw):\n",
+                                    "def run(event, raw):\n    t0 = time.monotonic()\n",
                                     # T-3605/T-3629: loaded, the gate wants a wall doubling between benches run at different
                                     # moments, so the wait is 3x this hook process's own age (its real wall so far, at the
                                     # load it runs under), never under the load-scaled 250 ms. Linux /proc; elsewhere the latter
-                                    "def run(event, raw):\n"
+                                    "def run(event, raw):\n    t0 = time.monotonic()\n"
                                     "    try:\n"
                                     "        st = int(open('/proc/self/stat').read().rsplit(')', 1)[1].split()[19])\n"
                                     "        age = float(open('/proc/uptime').read().split()[0]) - st / os.sysconf('SC_CLK_TCK')\n"

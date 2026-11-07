@@ -6,13 +6,13 @@ ambient on); skipped on a strained host; nothing leaves the machine."""
 import json
 import os
 import re
+import subprocess
 
 from sampo import core as c
-from sampo.core import subprocess  # T-3577: imported on first use
 
 RERUNS = 3  # edits that land during a run trigger at most this many reruns, then the next edit starts a new one
-FAILED = c.lazy(r"^(?:FAIL|ERROR): (\S+)|^FAILED (\S+)", re.M)  # unittest 'FAIL: name (mod.Class.name)', pytest 'FAILED path::name'
-RED_STEP = c.lazy(r"(?i)\b(fail|red\b|reproduc|repro\b)")  # a step that wants a red run, which a pass won't verify
+FAILED = re.compile(r"^(?:FAIL|ERROR): (\S+)|^FAILED (\S+)", re.M)  # unittest 'FAIL: name (mod.Class.name)', pytest 'FAILED path::name'
+RED_STEP = re.compile(r"(?i)\b(fail|red\b|reproduc|repro\b)")  # a step that wants a red run, which a pass won't verify
 
 
 def _dir(p):
