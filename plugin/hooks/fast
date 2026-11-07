@@ -1,0 +1,24 @@
+#!/bin/sh
+# Sampo's PreToolUse entry (T-3571, protected core). plugin/native/sampo-fast answers the calls it can prove hooks/hook
+# allows silently and execs hooks/hook for every other one (same argv, env and stdin). It runs only when it and the
+# sha256 its installer wrote beside it (sampo-fast.sha256) are this user's own files, not links, writable by no one
+# else, and the sum matches; otherwise, or when it can't start (126/127: another platform, a broken file), hooks/hook
+# runs alone, as before.
+h=${0%/*}
+b=$h/../native/sampo-fast
+ok=
+if [ -x "$b" ] && [ -O "$b" ] && [ -O "$b.sha256" ] && read -r want _ < "$b.sha256" 2>/dev/null; then
+  s=sha256sum
+  command -v sha256sum >/dev/null 2>&1 || s="shasum -a 256"
+  # one line per file that passes the checks, in argument order: the binary's sum first, then the sum file's
+  case $(find "$b" "$b.sha256" -prune ! -type l ! -perm -020 ! -perm -002 -exec $s {} + 2>/dev/null) in
+    "$want  $b
+"?*"  $b.sha256") ok=1 ;;
+  esac
+fi
+if [ "$ok" ]; then
+  "$b" --hook "$h/hook" "$@"
+  c=$?
+  [ "$c" -eq 126 ] || [ "$c" -eq 127 ] || exit "$c"
+fi
+exec "$h/hook" "$@"

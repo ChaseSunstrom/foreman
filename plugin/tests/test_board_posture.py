@@ -122,7 +122,7 @@ class BoardPostureBench(tbf._Bench):
         self.assertEqual([len(d) for d in dirs], [1, 0], "Foreman's arm, then a bare one")
         bare = args[1]
         hooks = json.loads(bare[bare.index("--settings") + 1])["hooks"]["PreToolUse"]
-        self.assertIn("hooks/hook", hooks[0]["hooks"][0]["command"], "the bare arm keeps the guard (bypass mode)")
+        self.assertIn("hooks/fast", hooks[0]["hooks"][0]["command"], "the bare arm keeps the guard (bypass mode)")
         self.assertIn("none", res["with"])
         self.assertIn("verdict", res)
 

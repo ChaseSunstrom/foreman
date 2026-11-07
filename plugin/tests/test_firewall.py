@@ -64,13 +64,15 @@ class OutlineFirst(Base):
 
 
 class ReadHookSafety(Base):
-    def test_its_own_entry_never_blocks_and_stays_fast(self):
+    def test_its_own_entry_fails_closed_and_stays_fast(self):
         with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hooks",
                                "hooks.json")) as f:
             entries = json.load(f)["hooks"]["PreToolUse"]
         read = [e for e in entries if "Read" in e["matcher"].split("|")]
         self.assertEqual(len(read), 1)
-        self.assertNotEqual(read[0]["hooks"][0].get("onFailure"), "block", "a Read hook failure never blocks reading")
+        # T-3571 (security review): the entry runs sampo-fast first, and a native crash (exit 101) must not read as
+        # an allow; a failure inside the Python check still lets the read through (below)
+        self.assertEqual(read[0]["hooks"][0].get("onFailure"), "block")
         guard = [e for e in entries if "Bash" in e["matcher"].split("|")]
         self.assertNotIn("Read", guard[0]["matcher"].split("|"))
         unreadable = self.write("locked.py", "x\n" * 900)

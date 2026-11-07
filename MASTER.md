@@ -80,6 +80,8 @@ The plugin itself: CLI, hooks, rules, skills, agents, tests.
 - `plugin/defaults.json` every setting's default as the last release shipped it… [→ files-1](docs/map/files-1.md)
 - `plugin/protocols.json` how much deliberation each tier gets: S no panel, M a… [→ files-1](docs/map/files-1.md)
 - `plugin/hooks/hook` dispatcher `hook <Event>`, and… [→ files-1](docs/map/files-1.md)
+- `plugin/hooks/fast` PreToolUse entry (T-3571): runs `plugin/native/sampo-fast`… [→ files-1](docs/map/files-1.md)
+- `plugin/native/` Rust workspace of `sampo-fast` (T-3571), the native… [→ files-1](docs/map/files-1.md)
 - `plugin/integrations/opencode/foreman.ts` opencode plugin… [→ files-1](docs/map/files-1.md)
 - `plugin/hooks/statusline` statusLine: one true-color session line + Sampo line… [→ files-1](docs/map/files-1.md)
 - `plugin/monitors/monitors.json` plugin monitor `foreman-mail`… [→ files-1](docs/map/files-1.md)

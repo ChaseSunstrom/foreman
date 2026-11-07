@@ -469,7 +469,7 @@ class PluginFiles(unittest.TestCase):
         for event, groups in hooks.items():
             for g in groups:
                 for h in g["hooks"]:
-                    if event == "PreToolUse" and g["matcher"] != "Read":
+                    if event == "PreToolUse":  # T-3571: Read's too, now that sampo-fast answers first
                         self.assertEqual(h.get("onFailure"), "block")
                     else:
                         self.assertNotIn("onFailure", h, event)

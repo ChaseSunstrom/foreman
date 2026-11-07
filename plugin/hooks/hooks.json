@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/hook",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/fast",
             "args": [
               "PreToolUse"
             ],
@@ -49,11 +49,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/hook",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/fast",
             "args": [
               "PreToolUse"
             ],
-            "timeout": 5
+            "timeout": 5,
+            "onFailure": "block"
           }
         ]
       },
@@ -62,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/hook",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/fast",
             "args": [
               "PreToolUse"
             ],

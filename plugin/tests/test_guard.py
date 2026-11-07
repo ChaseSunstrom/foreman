@@ -781,6 +781,9 @@ class Core(GuardCase):
             ("{fhome}/plugin/lib/fmnew.py", "core"),
             ("{fhome}/plugin/bin/fm", "core"),
             ("{fhome}/plugin/hooks/statusline", "core"),
+            ("{fhome}/plugin/hooks/fast", "core"),  # T-3571: the native fast path's entry, binary and source
+            ("{fhome}/plugin/native/sampo-fast", "core"),
+            ("{fhome}/plugin/native/crates/sampo-fast/src/main.rs", "core"),
             ("{fhome}/plugin/skills/intake/SKILL.md", None),
             ("{fhome}/plugin/tests/test_core.py", None),
         ], self.write)

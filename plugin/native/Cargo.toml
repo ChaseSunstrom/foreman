@@ -1,0 +1,17 @@
+# T-3571: Sampo's native fast path (protected core, like the hooks). Tests and lanes build `--profile lane` into one
+# shared CARGO_TARGET_DIR (~/.cache/sampo/cargo-target); release builds use thin LTO.
+[workspace]
+resolver = "2"
+members = ["crates/sampo-fast"]
+
+[profile.release]
+lto = "thin"
+panic = "unwind"  # a panic is caught and the call goes to Python; abort would read as a hook failure
+strip = true  # hooks/fast hashes the whole binary on every call: smaller is cheaper
+
+[profile.lane]
+inherits = "release"
+opt-level = 2
+lto = false
+incremental = true
+codegen-units = 256
