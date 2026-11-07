@@ -93,7 +93,7 @@ def _probe(p, main, base, b, tip, notes):
             cwd, cmd, _ = c.normalize_verify(wt, cmd)  # T-3411's cwd fix first: the nice wrapper would hide it
             if shutil.which("nice"):  # the probe yields to whatever else the machine runs
                 cmd = "nice -n 10 bash -c " + shlex.quote(cmd)
-            code, out = c.run_command(cwd, cmd, c.load_scaled(900))
+            code, out = c.run_command(cwd, cmd, c.load_scaled(900), priority=True)  # T-3614: ahead of lane runs
             return code, set(_CLASS.findall(out))
 
         def again(classes):  # the red classes alone where the runner names them (pm_rerun_cmd), else cmd again
@@ -250,7 +250,7 @@ def _run(p, main, ids):
             ts = [t for t in sub[2] if os.path.exists(os.path.join(wt, t))] if sub and cmd == sub[0] else []
             run = sub[1].replace("{tests}", shlex.join(ts)).replace("{names}", shlex.join(map(_stem, ts))) if ts else cmd
             t0 = time.monotonic()
-            code, out = c.run_command(wt, run, c.load_scaled(1800))
+            code, out = c.run_command(wt, run, c.load_scaled(1800), priority=True)  # T-3614: ahead of lane runs
             results.append({"cmd": cmd, "exit": code, "s": round(time.monotonic() - t0, 1)})
             if ts:  # the flag the pass's reusers read (cli._cached_pass): only these modules ran
                 results[-1]["affected"] = [_stem(t) for t in ts]

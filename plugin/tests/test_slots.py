@@ -18,9 +18,70 @@ class Slots(ForemanTestCase):
         env = {"XDG_RUNTIME_DIR": self.tmp, "SAMPO_SLOTS": "1"}
         self.patch = mock.patch.dict(os.environ, env)
         self.patch.start()
-        for k in (run.SLOT_ENV, "FOREMAN_SLOT", "FOREMAN_SLOTS"):  # this test's own runner set one of them
-            os.environ.pop(k, None)
+        for k in (run.SLOT_ENV, "FOREMAN_SLOT", "FOREMAN_SLOTS", "SAMPO_SLOT_PRIORITY", "FOREMAN_SLOT_PRIORITY"):
+            os.environ.pop(k, None)  # this test's own runner set one of them
         self.addCleanup(self.patch.stop)
+
+    def priority_waiter(self, flag):
+        """T-3614: a priority run.py's class waiting for a slot in another process; it touches flag once it has one."""
+        code = ("import sys, time; sys.path.insert(0, %r); import run\n"
+                "with run.cpu_slot(wait=30, poll=0.2):\n"
+                "    open(%r, 'w').close(); time.sleep(0.3)\n") % (run.HERE, flag)
+        p = subprocess.Popen([sys.executable, "-c", code], env=dict(os.environ, SAMPO_SLOT_PRIORITY="1"))
+        self.addCleanup(lambda: (p.kill(), p.wait()))
+        return p
+
+    def marks(self, until=5.0):
+        """The priority waiters' markers in the pool's folder, once one shows (or until s pass)."""
+        folder, end = os.path.join(self.tmp, f"sampo-slots-{os.getuid()}"), time.monotonic() + until
+        while time.monotonic() < end:
+            got = [x for x in os.listdir(folder) if x.startswith("prio-")]
+            if got:
+                return got
+            time.sleep(0.02)
+        return []
+
+    def test_a_waiting_priority_run_gets_the_freed_slot_before_a_lane_run(self):
+        # T-3614: the merge train's gate drew from the same pool as ~10 builders' runs and got 1/N of the freed slots
+        flag, seen = os.path.join(self.tmp, "priority-had-it"), []
+
+        def lane():  # a low run that retries 40x as often as the priority one: without priority it wins the race
+            with run.cpu_slot(wait=30, poll=0.005):
+                seen.append(os.path.exists(flag))
+
+        with run.cpu_slot() as s:
+            self.assertEqual(s, 0)
+            t = threading.Thread(target=lane)
+            t.start()
+            p = self.priority_waiter(flag)
+            self.assertTrue(self.marks(), "a waiting priority run marks the pool")
+        t.join(30)
+        p.wait(30)
+        self.assertEqual(seen, [True], "the lane run took the slot only after the priority run had it")
+        self.assertEqual(self.marks(until=0), [], "a priority run drops its marker once it holds a slot")
+
+    def test_a_lane_run_defers_to_a_priority_run_for_half_its_wait_only(self):
+        # a lane's run under a deadline would otherwise wait out a long gate and end NOT_STARTED
+        mark = run._mark(run._slot_folder())  # a live priority waiter's marker; the slot itself is free
+        self.addCleanup(os.close, mark[0])
+        start = time.monotonic()
+        with run.cpu_slot(wait=1, poll=0.01) as s:
+            waited = time.monotonic() - start
+            self.assertEqual(s, 0)
+        self.assertGreaterEqual(waited, 0.5)
+        self.assertLess(waited, 1)
+
+    def test_a_dead_priority_waiters_marker_blocks_nobody(self):
+        with run.cpu_slot():
+            p = self.priority_waiter(os.path.join(self.tmp, "never"))
+            self.assertTrue(self.marks())
+            p.kill()
+            p.wait()
+        start = time.monotonic()
+        with run.cpu_slot(wait=5) as s:
+            self.assertEqual(s, 0)
+        self.assertLess(time.monotonic() - start, 2)
+        self.assertEqual(self.marks(until=0), [], "the dead waiter's leftover marker is removed")
 
     def test_a_slot_mark_renamed_by_importing_sampo_still_counts(self):
         # T-3442: sampo.core's mirror_env turns SAMPO_SLOT into FOREMAN_SLOT in every test process, so a nested

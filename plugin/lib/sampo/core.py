@@ -786,15 +786,21 @@ def first_error_line(out):
     return ""
 
 
-def run_command(root, cmd, timeout=600, env=None, stdin=None):
+SLOT_PRIORITY = "FOREMAN_SLOT_PRIORITY"  # T-3614: tests/run.py's SAMPO_SLOT_PRIORITY, as mirror_env names it
+
+
+def run_command(root, cmd, timeout=600, env=None, stdin=None, priority=False):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output). stdin is
-    /dev/null unless a caller hands it one it knows won't block (T-1766)."""
+    /dev/null unless a caller hands it one it knows won't block (T-1766). priority: its tests/run.py takes freed CPU
+    slots ahead of lane runs (T-3614), unless SAMPO_SLOT_PRIORITY is already set (=0 opts out)."""
     stdin = subprocess.DEVNULL if stdin is None else stdin
     root, cmd, _ = normalize_verify(root, cmd)  # T-3411
     if root and os.path.isdir(root):
         _drop_racy_pyc(root)
     if env is None:  # T-1114: fm check sets the skip list itself; an inherited one would leave tests out silently
         env = {k: v for k, v in os.environ.items() if k != "FOREMAN_SKIP_TESTS"}
+    if priority and not env.get(SLOT_PRIORITY):
+        env = {**env, SLOT_PRIORITY: "1"}
     if timeout:  # T-3338: tests/run.py ends its own run under the timeout, naming what was slow, not killed unnamed
         env = {**env, "FM_RUN_DEADLINE": str(max(1, int(timeout) - min(30, int(timeout) // 10)))}
     try:  # its own process group, so a timeout kills the servers and workers it started too; no stdin to wait on

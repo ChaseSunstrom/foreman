@@ -337,5 +337,19 @@ class AffectedGate(Lanes):
             self.assertEqual(f.read(), before, "the linked tests ran again")
 
 
+class SlotPriority(Lanes):
+    def test_the_train_and_the_main_checks_runs_take_slots_first_and_a_lanes_do_not(self):
+        """T-3614: tests/run.py gives freed CPU slots to a waiting run with SAMPO_SLOT_PRIORITY=1 first."""
+        seen = os.path.join(self.tmp, "priority")
+        self.fm("check", "add", f'echo "${{FOREMAN_SLOT_PRIORITY:-low}}" >> {seen}')
+        unset = {"FOREMAN_SLOT_PRIORITY": ""}  # this test's own runner may run with it
+        tid = self.lane(1, "a.txt")
+        self.fm("check", "--fresh", cwd=os.path.join(self.tmp, "lane1"), env=unset)
+        self.fm("check", "--fresh", env=unset)
+        self.fm("check", "--fresh", env={"FOREMAN_SLOT_PRIORITY": "0"})  # an opt-out stays low
+        self.train(tid, env=unset)
+        self.assertEqual(open(seen).read().split(), ["low", "1", "0", "1"])
+
+
 if __name__ == "__main__":
     unittest.main()

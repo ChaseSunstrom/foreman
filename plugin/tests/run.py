@@ -82,33 +82,98 @@ def cpu_slot(wait=3600.0, poll=0.05):
     """T-3252: one of the machine's CPU slots, shared by every run.py on it (mine, each builder's, the ship's, the
     post-merge verify), held while the block runs: its number, or None when nested, off (SAMPO_SLOTS=0) or the wait ran
     out (the class then runs anyway: a slow run beats a hung one). A slot is a lock file, so the kernel frees it when
-    its holder dies and a crashed runner leaks nothing."""
+    its holder dies and a crashed runner leaks nothing. T-3614: while a SAMPO_SLOT_PRIORITY=1 run waits, other runs
+    leave freed slots to it (the merge train's gate got 1/N of them beside ~10 testing builders) for half their wait,
+    then compete again, so a lane's run under a deadline isn't left NOT_STARTED by a long gate."""
     n = slot_count()
     folder = _slot_folder() if n and not _env(SLOT_ENV) and fcntl else None
     if not folder:  # nested, off, no flock (Windows) or a folder that isn't safely ours: run without one
         yield None
         return
-    end, order = time.monotonic() + wait, random.sample(range(n), n)
-    while True:
-        for i in order:
-            try:
-                fd = os.open(os.path.join(folder, str(i)), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
-            except OSError:
-                continue
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                os.close(fd)
-                continue
-            try:
-                yield i
-            finally:
-                os.close(fd)  # closing it frees the slot
-            return
-        if time.monotonic() >= end:
-            yield None
-            return
-        time.sleep(poll * random.uniform(1, 5))  # spread the retries of many waiters
+    now, order, prio, mark = time.monotonic(), random.sample(range(n), n), _env(PRIO_ENV) == "1", None
+    end, defer = now + wait, now + wait / 2
+    try:
+        while not (got := _take(folder, order) if prio or time.monotonic() >= defer or not _prio_waiting(folder)
+                   else None):
+            if time.monotonic() >= end:
+                break
+            if prio and not mark:
+                mark = _mark(folder)
+            time.sleep(poll * random.uniform(1, 5))  # spread the retries of many waiters
+    finally:
+        if mark:
+            with contextlib.suppress(OSError):
+                os.unlink(mark[1])
+            os.close(mark[0])
+    if not got:
+        yield None
+        return
+    try:
+        yield got[0]
+    finally:
+        os.close(got[1])  # closing it frees the slot
+
+
+def _take(folder, order):
+    """A free slot: (its number, its locked fd), or None."""
+    for i in order:
+        try:
+            fd = os.open(os.path.join(folder, str(i)), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        except OSError:
+            continue
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            continue
+        return i, fd
+    return None
+
+
+PRIO_ENV = "SAMPO_SLOT_PRIORITY"  # T-3614: =1 (the train's gate and probes, ship's suite, sampo check outside a lane)
+
+
+def _mark(folder):
+    """T-3614: a waiting priority run's marker, (fd, path): locked before it takes its prio- name, so a prio- file
+    nobody holds is a dead waiter's. None when it can't be made (the run then just competes)."""
+    name = f"prio-{os.getpid()}-{random.getrandbits(32):08x}"
+    tmp, path = os.path.join(folder, "." + name), os.path.join(folder, name)
+    try:
+        fd = os.open(tmp, os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except OSError:
+        return None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.rename(tmp, path)
+    except OSError:
+        os.close(fd)
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        return None
+    return fd, path
+
+
+def _prio_waiting(folder):
+    """T-3614: whether a priority run waits for a slot (holds a prio- marker); a dead waiter's marker is removed."""
+    try:
+        names = [x for x in os.listdir(folder) if x.startswith("prio-")]
+    except OSError:
+        return False
+    for name in names:
+        path = os.path.join(folder, name)
+        try:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except OSError:
+            continue
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        finally:
+            os.close(fd)
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+    return False
 
 
 def _slot_folder():

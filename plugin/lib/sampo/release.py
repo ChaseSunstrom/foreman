@@ -625,6 +625,7 @@ def ship(p, args):
             tested = _git(wt, "rev-parse", "HEAD^{tree}").strip()  # T-2642: the tree the suite runs on is the tree pushed
             c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": os.path.realpath(wt)})
             env.setdefault("PYTHONUNBUFFERED", "1")
+            env[c.SLOT_PRIORITY] = env.get(c.SLOT_PRIORITY) or "1"  # T-3614: its runs take freed CPU slots first
             log = os.path.join(tmp, "test.log")  # T-2255: a file, not a pipe: a background process holding it can't hang the ship
             failed, tail, hit, rest = 0, "", None, []
             try:  # a full fm check here waits for this run; the ship's own fm check (in wt) doesn't

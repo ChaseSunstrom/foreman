@@ -5225,13 +5225,13 @@ def _cmd_check(args):
         guard_stored(p, act, cmd)  # T-0901 review: a stored gate (fm smoke set cmd adds one too)
         t0 = time.monotonic()
         gate_timeout = _gate_deadline(cmd, base_timeout)
-        code, output = c.run_command(p.root, cmd, gate_timeout, env=env)
+        code, output = c.run_command(p.root, cmd, gate_timeout, env=env, priority=not p.lane)  # T-3614
         if code == 124 and (hl := c.host_load()):  # T-3174: a timeout says the load it ran under
             output += f"\n(load {hl[0] / hl[1]:.1f} per CPU, deadline {gate_timeout:g}s)"
         slow = time.monotonic() - t0 > _slow_gate()  # a slow gate isn't rerun whole: its failure costs enough already
         narrow = _narrow_rerun(cmd, output) if code == 1 and slow and not failure_class(output) else None  # T-1678
         if code and (not slow or narrow):
-            code2, output2 = c.run_command(p.root, narrow or cmd, gate_timeout, env=env)
+            code2, output2 = c.run_command(p.root, narrow or cmd, gate_timeout, env=env, priority=not p.lane)
             if not code2 and _flaky_count(p, cmd) >= 2:  # a racy bug passes half the time: not "flaky" forever
                 notes[cmd] = "flaky again (failed first in 3+ recent runs): treated as a failure; find the race"
             elif not code2:
