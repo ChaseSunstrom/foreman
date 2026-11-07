@@ -11,7 +11,6 @@ created: 2026-11-05T03:05:54Z
 updated: 2026-11-06T03:53:31Z
 inferred_deps: [T-3100]
 inferred_why: T-3100: named in its request
-group: card library at scale
 ---
 # Card grids as data, with new domains: more languages, ops and infra, data and ML, security, writing and research, design, product and planning, and Sampo's own skills (T-3100 part 3)
 ## Raw request

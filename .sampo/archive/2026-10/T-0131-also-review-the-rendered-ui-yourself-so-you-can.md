@@ -37,7 +37,7 @@ none: dev tool, documented in its docstring
 - (step 1) `python3 mods/foreman-ui/tools/shot.py snap shot3.png` → PNG of the live band and pane, OSC stripped, symbol fallback fonts (2026-10-03T04:59:10Z)
 - (step 2) `fm state (FOREMAN_STATE=scratchpad/uistate)` → uidemo: active FEATURE 2/4, 3 queued incl. an L plan, 3 inbox (2026-10-03T04:59:10Z)
 - (step 3) `fm task log T-0122` → 9 findings recorded (2026-10-03T04:59:11Z)
-- (ac 1) `python3 mods/foreman-ui/tools/shot.py snap /tmp/claude-1000/-home-<user>--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/shot3.png` → 60-row PNG of the live engine's band and pane (2026-10-03T04:59:16Z)
+- (ac 1) `python3 mods/foreman-ui/tools/shot.py snap /tmp/claude-1000/-home-~--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/shot3.png` → 60-row PNG of the live engine's band and pane (2026-10-03T04:59:16Z)
 - (audit intent) `self: dev tool outside the mod's hooks (not loaded by the engine); tmux session name fixed; sends only local commands` → I can now see the real rendering, colours and layout included, and found 9 concrete problems tests could not show [tree 4b216dc9ba1c] (2026-10-03T04:59:16Z)
 - (audit edge) `self: dev tool outside the mod's hooks (not loaded by the engine); tmux session name fixed; sends only local commands` → OSC hyperlinks stripped; wide chars advance 2; missing glyphs fall back to Noto symbol fonts; dim/reverse/256/true colour handled [tree 4b216dc9ba1c] (2026-10-03T04:59:16Z)
 ## Log

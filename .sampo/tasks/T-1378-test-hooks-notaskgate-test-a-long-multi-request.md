@@ -37,11 +37,11 @@ Measured first (see log): per queued request ~0.15 s of argparse building (twice
 <!-- auto -->
 - 2026-10-21T17:39:55Z steps 3/3 done
 - git: foreman/build; 3 uncommitted: plugin/lib/fmcli.py, plugin/tests/test_cli.py, plugin/tests/test_worker_reads.py
-- touched since last checkpoint: plugin/tests/test_cli.py, plugin/lib/fmcli.py, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/catalogue-r2.md, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/intake-r2.txt, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/r2rows.py, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/r2page.py
+- touched since last checkpoint: plugin/tests/test_cli.py, plugin/lib/fmcli.py, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/catalogue-r2.md, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/intake-r2.txt, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/r2rows.py, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/r2page.py
 ## Docs impact
 CHANGELOG line; no user-facing command changed
 ## Verification evidence
-- (step 1) `sh /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/prof_task_new.sh` → exit 0 · 54    0.000    0.000    0.004    0.000 fmcore.py:1629(_read_brief) / 2    0.000    0.000    0.004    0.002 fmcore.py:3160(_git) [ran] [tree 4d0bf8b785b3] (2026-10-21T15:37:35Z)
+- (step 1) `sh /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/prof_task_new.sh` → exit 0 · 54    0.000    0.000    0.004    0.000 fmcore.py:1629(_read_brief) / 2    0.000    0.000    0.004    0.002 fmcore.py:3160(_git) [ran] [tree 4d0bf8b785b3] (2026-10-21T15:37:35Z)
 - (step 2) `python3 plugin/tests/run.py test_cli` → ✗ exit 1 · Ran 106 tests in 61.5s (30 classes, 16 at a time; slowest: TaskLifecycle 61s, StateViews 26s, Checks 21s) / FAILED (1 classes) [ran] [tree 76deb74c0ab5] (2026-10-21T17:13:26Z)
 - (step 2) `python3 plugin/tests/run.py test_cli` → exit 0 · Ran 106 tests in 59.7s (30 classes, 16 at a time; slowest: TaskLifecycle 59s, StateViews 25s, AuditPrep 23s) / OK [ran] [tree 1ed2d58e676b] (2026-10-21T17:17:47Z)
 - (step 3) `for i in 1 2 3 4 5; do python3 plugin/tests/run.py test_hooks test_session >/dev/null 2>&1 || exit 1; done; echo 5 of 5` → ✗ exit 124 (timed out after 600s) · timed out after 600s [ran] [tree 1ed2d58e676b] (2026-10-21T17:27:48Z)

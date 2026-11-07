@@ -44,7 +44,7 @@ Options: (a) a stdlib curses TUI that runs fm code as a child with --json and dr
 <!-- auto -->
 - 2026-10-20T17:57:25Z step 3/7: Views: stations, action log, verify output, diff, history, model and worker picker, stop and resume
 - git: foreman/build; 4 uncommitted: plugin/lib/fmcode.py, plugin/lib/fmcodetui.py, plugin/tests/fixtures/code_tui_demo.jsonl, plugin/tests/test_code_tui.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/shots.py, plugin/lib/fmcodetui.py, plugin/tests/test_code_tui.py, plugin/lib/fmcode.py, plugin/tests/fixtures/code_tui_demo.jsonl
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/shots.py, plugin/lib/fmcodetui.py, plugin/tests/test_code_tui.py, plugin/lib/fmcode.py, plugin/tests/fixtures/code_tui_demo.jsonl
 ## Docs impact
 README, MASTER.md, CHANGELOG, site Foreman Code page, templates/tui/cost_meter.py
 ## Verification evidence

@@ -9,6 +9,7 @@ depends_on: [T-1738]
 source: discovered
 created: 2026-11-06T09:08:26Z
 updated: 2026-11-06T09:08:26Z
+group: re-verify failures on the same test runs
 ---
 # Re-verify failed for T-1738 (b1e01b): python3 plugin/tests/run.py test_showpieces.Graph
 ## Raw request

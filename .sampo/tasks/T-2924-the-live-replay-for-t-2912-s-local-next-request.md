@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-04T07:46:22Z
 updated: 2026-11-04T07:46:22Z
-group: live runs when endpoint frees
 ---
 # The live replay for T-2912's local next-request arm: louhi.replay_forecast(p,…
 ## Raw request

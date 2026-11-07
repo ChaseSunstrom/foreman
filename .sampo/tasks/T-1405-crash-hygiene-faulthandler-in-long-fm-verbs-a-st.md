@@ -44,7 +44,7 @@ Options per part — (1) stack dumps: faulthandler on SIGUSR1 plus dump_tracebac
 <!-- auto -->
 - 2026-10-22T15:48:05Z step 1/4: failing tests
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/t1380.edit
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/t1380.edit
 - failures met: stopped
 ## Docs impact
 MASTER.md bullet; CHANGELOG line

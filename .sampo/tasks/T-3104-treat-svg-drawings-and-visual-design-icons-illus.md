@@ -10,7 +10,6 @@ source: steer
 created: 2026-11-05T03:06:07Z
 updated: 2026-11-05T05:59:17Z
 steer_method_rate: 0.218
-group: design works at scale
 ---
 # Design works at scale: thousands of genuinely good SVG drawings and designs across many types, each rendered, checked, revised and ranked, with the user's picks setting the bar
 ## Raw request

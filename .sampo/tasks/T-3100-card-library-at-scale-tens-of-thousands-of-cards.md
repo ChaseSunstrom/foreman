@@ -9,7 +9,6 @@ depends_on: []
 source: user
 created: 2026-11-05T03:05:17Z
 updated: 2026-11-05T05:59:18Z
-group: card library at scale
 ---
 # Card library at scale: tens of thousands of cards on every kind of work, browsable on the main site, each UI card with a rendered example
 ## Raw request

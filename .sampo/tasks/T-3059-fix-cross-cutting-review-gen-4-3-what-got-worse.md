@@ -8,7 +8,7 @@ scope: [plugin/tests/test_site_build.py, CHANGELOG.md, .fm-scratch/**, .sampo/ar
 depends_on: []
 source: genesis-review
 created: 2026-11-05T00:31:08Z
-updated: 2026-11-06T13:50:19Z
+updated: 2026-11-06T16:29:48Z
 trigger: genesis-review
 trigger_key: 58187438a6e7bdb0
 base: 44ae7c50fa7078373e6d0c7457f373c30f9436db
@@ -21,6 +21,7 @@ builder_returned: 2026-11-06T12:50:15Z
 lane_stop: merged 2026-11-06T13:26:16Z
 verified: strong
 unproven: [meaning]
+lane_verified: c9e81561bd8dba3f2795cad2c26bc7d0cf1fc5a9
 ---
 # The site build test proves the published share image is a real PNG, not a symlink the deploy might not follow
 ## Raw request
@@ -69,6 +70,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T13:49:20Z focused
 - 2026-11-06T13:50:15Z done
 - 2026-11-06T13:50:19Z committed fe5138e95 (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains c9e81561b
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

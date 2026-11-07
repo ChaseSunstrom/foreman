@@ -43,7 +43,7 @@ Choice 1 (88%): the same pipeline with Mission 6's measures built in.
 <!-- auto -->
 - 2026-11-02T22:06:54Z step 1/3: brainstorm (with --lens grid) and canary-checked grounding; catalogue with both counts
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/m7/mission.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/m7/mission.md
 ## Docs impact
 none: the catalogue and Mission are Foreman state, not repo docs
 ## Verification evidence

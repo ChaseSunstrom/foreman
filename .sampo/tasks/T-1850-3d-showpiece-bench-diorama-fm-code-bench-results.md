@@ -35,7 +35,7 @@ fm scene bench [--out PATH]: fm code bench's history (fmcodebench.history(), las
 <!-- auto -->
 - 2026-10-28T18:38:45Z steps 2/2 done
 - git: foreman/build; 6 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmscene.py, plugin/skills/playbooks/references/ui/scene-3d.md, plugin/tests/test_scene.py
-- touched since last checkpoint: MASTER.md, plugin/lib/fmcli.py, plugin/skills/playbooks/references/ui/scene-3d.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/look-test.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/look-impl.txt, plugin/tests/test_scene.py, CHANGELOG.md, plugin/lib/fmscene.py
+- touched since last checkpoint: MASTER.md, plugin/lib/fmcli.py, plugin/skills/playbooks/references/ui/scene-3d.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/look-test.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/look-impl.txt, plugin/tests/test_scene.py, CHANGELOG.md, plugin/lib/fmscene.py
 ## Docs impact
 ~/.claude/foreman/plugin/skills/playbooks/references/ui/scene-3d.md
 ## Verification evidence

@@ -86,7 +86,7 @@ def need_brief(p, tid):
 
 
 def mutate(p, tid, fn, event, data=None):
-    """Load a brief under the project lock, apply fn(brief), save, log, regenerate views."""
+    """Load a brief under the project lock, apply fn(brief), save, log; regenerate the views after the lock (T-3556)."""
     with c.lock(p.dir):
         b = need_brief(p, tid)
         before = c.stage(b)  # T-1137: in-memory only, no extra loads
@@ -102,7 +102,8 @@ def mutate(p, tid, fn, event, data=None):
         after = c.stage(b)
         if after != before:  # pane splits read these instead of proxy events
             c.log_event(p, "stage", task=b.id, data={"from": before, "to": after}, session=session())
-        c.regen_views(p)
+        c.export_mirror(p)
+    c.regen_views(p, mirror=False)  # every brief re-read: never while hooks queue on the project lock
     return b, result
 
 
@@ -208,9 +209,9 @@ def _scope_paths(values):
     return list(dict.fromkeys(out))
 
 
-def _create(p, title, type, tier, status, raw=None, scope=(), depends=(), source="user", priority="normal", explore=False):
+def _create(p, title, type, tier, status, raw=None, scope=(), depends=(), source="user", priority="normal", explore=False, net=True):
     scope = _scope_paths(scope)
-    tid = c.next_id(p)
+    tid = c.next_id(p, net=net)  # T-3329: the hook captures pass net=False, so no prompt or stop waits on the claims remote
     b = c.Brief.new(tid, title, type, tier, raw=raw, scope=scope, depends=depends, source=source,
                     priority=priority, status=status, explore=explore)
     c.save_brief(p, b, touch=False)
@@ -1741,7 +1742,8 @@ def _known_flaky(p):
 
 def _gates_cover(p, cmd):
     """T-3526: the gates' full pass on this code tree (_full_pass) when `cmd` is a gate's argv plus bare module names
-    (`python3 plugin/tests/run.py` + `test_x test_y`), else None: another runner's selection isn't known to be in it."""
+    (`python3 plugin/tests/run.py` + `test_x test_y`), else None: another runner's selection isn't known to be in it.
+    A train's affected-only pass (T-3544) covers only the modules it ran."""
     import shlex
     try:
         argv = shlex.split(cmd)
@@ -1753,7 +1755,7 @@ def _gates_cover(p, cmd):
         except ValueError:
             continue
         if ga and argv[:len(ga)] == ga and all(a.isidentifier() for a in argv[len(ga):]):
-            return _full_pass(p)
+            return _full_pass(p, argv[len(ga):])
     return None
 
 
@@ -1840,13 +1842,13 @@ def _sentinel(p):
         pass
     events, last, closes = c.ledger_tail(p, 5000), None, 0
     for e in reversed(events):
-        if e.get("event") == "check_run":
+        if e.get("event") in ("check_run", "lane_verified"):  # T-3576: a post-merge verify is a full run too
             last = c.parse_ts(e.get("ts"))
             break
         closes += e.get("event") == "task_done"
     if last and closes < SENTINEL_CLOSES and time.time() - last.timestamp() < SENTINEL_MIN * 60:
         return None
-    if c.host_strain() or _full_pass(p):  # T-3120: a pass on this code tree already holds
+    if c.host_strain() or _full_pass(p) or _pm_covers(p):  # T-3120: a pass on this code tree already holds (or a pm one)
         return None
     env = dict(os.environ, FOREMAN_SENTINEL_RUN="1", FOREMAN_SENTINEL_TREE=c.worktree_id(p.root) or "")
     argv = [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "check"]
@@ -1863,6 +1865,21 @@ def _sentinel(p):
                           cwd=p.root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                           stderr=subprocess.DEVNULL, start_new_session=True)
     return "started" if pr.pid else None
+
+
+def _pm_covers(p):
+    """T-3576: the post-merge full verify (lanes.pm_run) is a train batch's one full suite run, so the sentinel's would
+    repeat it: one is running (live pid) or pending (landed within SENTINEL_MIN; older is stuck), or the newest green
+    one ran on this code tree within CACHE_DAYS (a requeued merge's tree had reverts in it: not a commit's tree)."""
+    from sampo import lanes
+    recs = list(lanes.pm_records(p).values())
+    fresh = lambda r, days: (a := c.age_days(r.get("at"))) is not None and a < days  # noqa: E731
+    if any(r["state"] == "running" and not lanes._pm_dead(r) or r["state"] == "pending" and fresh(r, SENTINEL_MIN / 1440)
+           for r in recs):
+        return True
+    g = next((r for r in reversed(recs) if r["state"] == "green"), None)
+    return bool(g and not g.get("after_reverts") and fresh(g, CACHE_DAYS) and (now := c.code_tree(p.root))
+                and c.code_tree(p.root, g.get("covered_by") or g["sha"]) == now)
 
 
 def _unlink(path):
@@ -3795,11 +3812,95 @@ def task_ac(p, args):
     out(args, c.brief_summary(b), f"{b.id}: criterion {n} checked.")
 
 
+def _focus_edit(p, target, once, blast=""):
+    """Focus's edits to the brief, in memory: lane binding, start point, snapshots, recall, preflight, predict.
+    T-3558: every slow read (git, recall, the map, outcomes) goes through once(key, fn), so a first pass on the peek
+    before the project lock does them and the pass under it reuses them; an input that moved meanwhile is a new key,
+    read there. Returns (resumed, first focus, recall hits, related text, the new base_tree snapshot or None)."""
+    if target.meta.get("lane") != p.lane:  # moving between checkouts: its start point is taken here, afresh
+        for k in ("base", "base_tree", "paused_tree"):
+            target.meta.pop(k, None)
+    if p.lane:  # T-0234 review: the branch it was bound on is the one fm lane rm may delete later
+        target.meta.update(lane=p.lane, lane_branch=once("branch", lambda: (c._git(
+            p.lane, "branch", "--show-current", fail=None, timeout=10) or "").strip() or None))
+    else:
+        target.meta.pop("lane", None)
+    resumed = target.status not in ("active", "verifying")  # set active by hand: its pause point is stale (review)
+    target.meta["status"] = "active"
+    first_focus = not target.meta.get("base")
+    if not target.meta.get("base") and (head := once("head", lambda: c.git_head(p.root))):
+        target.meta["base"] = head  # where the task's diff starts (fm audit prep)
+    snap = lambda: once("snap", lambda: c.worktree_tree(p.root))  # noqa: E731  the files now, one snapshot per focus
+    paused = target.meta.pop("paused_tree", None)
+    if resumed and paused and (base := target.meta.get("base_tree")) and (now := snap()) and now != paused:
+        moved = once(("rebase", base, paused), lambda: c.rebase_snapshot(p.root, base, paused, now))  # T-0136
+        if moved:
+            target.meta["base_tree"] = moved
+            target.append_log("re-based: what other work changed while it was paused isn't its own change")
+        else:
+            target.append_log("its pause snapshot is gone (git pruned it): its diff may include work done meanwhile"
+                              if moved is False else
+                              "other work changed the same lines while it was paused: its diff still includes that work")
+    snapped = None
+    if not target.meta.get("base_tree") and c.git_root(p.root):
+        snapped = snap()  # T-0078: its own changes are measured from the files as they are now
+        if snapped:
+            target.meta["base_tree"] = snapped
+        else:
+            target.append_log("snapshot of the working files failed (git add): its diff starts at the start commit")
+    from sampo import eco
+    mach = eco.machine()  # T-0574: a named machine shows in the log fm sync carries: which machine ran what
+    target.append_log("focused" + (f" on {mach['name']}" if mach["named"] else ""))
+    related, hits = "", []
+    if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)
+        from sampo import recall
+
+        def recalled():
+            found = recall.recall(p, recall.brief_query(target), skip=target.id)
+            text = recall.render(found, target.tier)
+            if target.meta.get("scope") and c.git_root(p.root):  # the tests that go with the scope (T-0044)
+                from sampo import map as smap
+                try:
+                    tests = smap.tests_for(smap.load(p), target.meta["scope"])
+                except Exception:  # the map is a hint: it never stops a focus
+                    tests = []
+                if tests:
+                    text = (text or "Related (data):") + "\n- likely tests for the scope: " + c.fit(", ".join(tests), 200)
+            return found, text
+        hits, related = once(("related", recall.brief_query(target), target.tier, tuple(target.meta.get("scope") or [])),
+                             recalled)
+        if related:
+            target.set_section("Related", related)
+    moved = once(("moved", tuple(target.meta.get("scope") or []), str(target.meta.get("created") or "")),
+                 lambda: _moved_since_planned(p, target))
+    if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since (kept for fresh sessions)
+        related = (related + "\n" if related else "") + moved
+        target.set_section("Preflight", moved + "\n")
+    if blast and not _BLAST_LINE.search(target.section("Risks and rollback")):
+        old = target.section("Risks and rollback").strip()  # T-2277: written once into the plan
+        target.set_section("Risks and rollback", (old + "\n" if old else "") + blast)
+    if not target.meta.get("plan0_at"):  # T-1061: the plan at first focus, which the close is scored against
+        from sampo import outcomes  # T-2290: Foreman's own guess, from its closes; a typed prediction stays
+        guess = None if target.meta.get("predict_minutes") or target.meta.get("predict_attempts") else \
+            once(("predict", target.type, target.tier), lambda: outcomes.predict(p, target.type, target.tier))
+        if guess:
+            target.meta.update(predict_minutes=guess[0], predict_attempts=guess[1])
+            target.append_log(f"predicted from its closes: {guess[0]} min, {guess[1]} attempt(s)")
+        target.meta.update(plan0_at=c.now(), plan0_scope=list(target.meta.get("scope") or []))
+    return resumed, first_focus, hits, related, snapped
+
+
 def cmd_focus(args):
     p = resolve(args)
     warn = None
     blast = ""  # T-2277: git and sqlite waits happen before the project lock every verb queues on
     peek = None
+    slow = {}
+
+    def once(key, fn):  # T-3558: what the pass on the peek read, the locked pass reuses
+        if key not in slow:
+            slow[key] = fn()
+        return slow[key]
     try:
         peek = need_brief(p, args.id)
         if peek.tier in ("M", "L") and not _BLAST_LINE.search(peek.section("Risks and rollback")):
@@ -3811,8 +3912,12 @@ def cmd_focus(args):
     if peek and peek.status not in c.CLOSED:  # T-2342: doors read, snapshots taken and parks recorded under their own locks
         from sampo import doors as sdoors
         sdoors.check(p, peek.id)
+        try:  # T-3558: git, recall and predict before the lock every verb and hook queues on; the peek's edits are dropped
+            _focus_edit(p, peek, once, blast)
+        except Exception:  # the locked pass reads what is missing and reports what fails
+            pass
     with c.lock(p.dir):
-        target = need_brief(p, args.id)
+        target = need_brief(p, args.id)  # read again under the lock: an edit made meanwhile is kept
         if target.status in c.CLOSED:
             raise UsageError(f"{target.id} is {target.status}")
         if target.meta.get("lane_only") and not p.lane and not target.meta.get("lane"):
@@ -3829,77 +3934,17 @@ def cmd_focus(args):
             where = target.meta.get("lane") or "the main checkout"
             raise c.PolicyError(f"{target.id} is held by {'lane ' if target.meta.get('lane') else ''}{where}: work on it "
                                 f"there (sampo lane list), or sampo lane rm it first")
-        if target.meta.get("lane") != p.lane:  # moving between checkouts: its start point is taken here, afresh
-            for k in ("base", "base_tree", "paused_tree"):
-                target.meta.pop(k, None)
-        if p.lane:  # T-0234 review: the branch it was bound on is the one fm lane rm may delete later
-            target.meta.update(lane=p.lane, lane_branch=(c._git(p.lane, "branch", "--show-current", fail=None,
-                                                                 timeout=10) or "").strip() or None)
-        else:
-            target.meta.pop("lane", None)
+        resumed, first_focus, hits, related, snapped = _focus_edit(p, target, once, blast)
         for b in c.load_briefs(p):
             if b.status in ("active", "verifying") and b.id != target.id and b.meta.get("lane") == p.lane:
-                c.pause_snapshot(p.root, b)  # T-0136
+                if b.meta.get("base_tree") and (tree := once("snap", lambda: c.worktree_tree(p.root))):
+                    b.meta["paused_tree"] = tree  # T-0136 (c.pause_snapshot): the files as it leaves them
                 b.meta["status"] = "planned"
                 b.append_log(f"paused: focus moved to {target.id}")
                 c.save_brief(p, b)
-        resumed = target.status not in ("active", "verifying")  # set active by hand: its pause point is stale (review)
-        target.meta["status"] = "active"
-        first_focus = not target.meta.get("base")
-        if not target.meta.get("base") and (head := c.git_head(p.root)):
-            target.meta["base"] = head  # where the task's diff starts (fm audit prep)
-        paused = target.meta.pop("paused_tree", None)
-        if resumed and paused and target.meta.get("base_tree") and (now := c.worktree_tree(p.root)) and now != paused:
-            moved = c.rebase_snapshot(p.root, target.meta["base_tree"], paused, now)  # T-0136
-            if moved:
-                target.meta["base_tree"] = moved
-                target.append_log("re-based: what other work changed while it was paused isn't its own change")
-            else:
-                target.append_log("its pause snapshot is gone (git pruned it): its diff may include work done meanwhile"
-                                  if moved is False else
-                                  "other work changed the same lines while it was paused: its diff still includes that work")
-        if not target.meta.get("base_tree") and c.git_root(p.root):
-            snap = c.worktree_tree(p.root)  # T-0078: its own changes are measured from the files as they are now
-            if snap:
-                target.meta["base_tree"] = snap
-                _save_dirty(p, target, snap)
-            else:
-                target.append_log("snapshot of the working files failed (git add): its diff starts at the start commit")
-        from sampo import eco
-        mach = eco.machine()  # T-0574: a named machine shows in the log fm sync carries: which machine ran what
-        target.append_log("focused" + (f" on {mach['name']}" if mach["named"] else ""))
-        related = ""
-        if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)
+        if hits:
             from sampo import recall
-            hits = recall.recall(p, recall.brief_query(target), skip=target.id)
-            related = recall.render(hits, target.tier)
             recall.log_shown(p, hits, target.id)  # T-0617
-            if target.meta.get("scope") and c.git_root(p.root):  # the tests that go with the scope (T-0044)
-                from sampo import map as smap
-                try:
-                    tests = smap.tests_for(smap.load(p), target.meta["scope"])
-                except Exception:  # the map is a hint: it never stops a focus
-                    tests = []
-                if tests:
-                    related = (related or "Related (data):") + "\n- likely tests for the scope: " + c.fit(
-                        ", ".join(tests), 200)
-            if related:
-                target.set_section("Related", related)
-        moved = _moved_since_planned(p, target)
-        if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since (kept for fresh sessions)
-            related = (related + "\n" if related else "") + moved
-            target.set_section("Preflight", moved + "\n")
-        if blast and not _BLAST_LINE.search(target.section("Risks and rollback")):
-            old = target.section("Risks and rollback").strip()  # T-2277: written once into the plan
-            target.set_section("Risks and rollback", (old + "\n" if old else "") + blast)
-        if not target.meta.get("plan0_at"):  # T-1061: the plan at first focus, which the close is scored against
-            from sampo import outcomes  # T-2290: Foreman's own guess, from its closes; a typed prediction stays
-            guess = None if target.meta.get("predict_minutes") or target.meta.get("predict_attempts") else \
-                outcomes.predict(p, target.type, target.tier)
-            if guess:
-                target.meta.update(predict_minutes=guess[0], predict_attempts=guess[1])
-                target.append_log(f"predicted from its closes: {guess[0]} min, {guess[1]} attempt(s)")
-            target.meta.update(plan0_at=c.now(), plan0_scope=list(target.meta.get("scope") or []))
         c.save_brief(p, target)
         other = c.read_meta(p).get("session") or {}
         age = c.age_days(other.get("seen"))
@@ -3910,7 +3955,10 @@ def cmd_focus(args):
         c.log_event(p, "focus", task=target.id, session=session())
         if c.stage(target) != stage_before:
             c.log_event(p, "stage", task=target.id, data={"from": stage_before, "to": c.stage(target)}, session=session())
-        c.regen_views(p)
+        c.export_mirror(p)
+    if snapped:
+        _save_dirty(p, target, snapped)  # T-1169: keyed by task, read at its close
+    c.regen_views(p, mirror=False)  # T-3556
     if warn:
         print(warn, file=sys.stderr)
     stale = c.stale_refs(p, target) if resumed and target.meta.get("base") else []  # T-0113: picked up again
@@ -4804,7 +4852,7 @@ def capture_promises(p, text, sid=None):
             if title.lower() in have:
                 continue
             b = _create(p, title, "FEATURE", "S", "captured", raw=f"{x}\n(promised in Claude's reply; captured so it "
-                                                                  f"isn't lost)", source="followup")
+                                                                  f"isn't lost)", source="followup", net=False)
             c.log_event(p, "capture", task=b.id, data={"source": "promise"}, session=sid)
             made.append(b.id)
         if made:
@@ -4820,7 +4868,7 @@ def capture_friction(p, text, sid=None):
     with c.lock(p.dir, timeout=1):  # the prompt hook: a busy lock loses this capture, not the turn
         b = next((b for b in c.load_briefs(p) if b.status not in c.CLOSED and b.title.lower() == title.lower()), None)
         if b is None:
-            b = _create(p, title, "RESEARCH", "M", "captured", source="self",
+            b = _create(p, title, "RESEARCH", "M", "captured", source="self", net=False,
                         raw=f"{c.fit(c.plain(c.redact(text)).strip(), 300)}\n(the user's friction with {area}: run fm "
                             f"mission --request on it, then sampo ideas, then a build round)")
             c.log_event(p, "capture", task=b.id, data={"source": "friction", "area": area}, session=sid)
@@ -5641,7 +5689,8 @@ def _gate_order(p, checks, runs=20):
     for e in reversed(c.ledger_tail(p, 2000)):
         for r in (e.get("data") or {}).get("results") or [] if e.get("event") == "check_run" else []:
             h = hist.get(r.get("cmd"))
-            if h is not None and len(h) < runs and not r.get("since") and isinstance(r.get("s"), (int, float)):
+            if h is not None and len(h) < runs and not r.get("since") and not r.get("affected") \
+                    and isinstance(r.get("s"), (int, float)):  # T-3544: a train's affected-only run isn't the gate's runtime
                 h.append((bool(r.get("exit")) or str(r.get("note") or "").startswith("flaky"), max(r["s"], 0.1)))
 
     def score(cmd):
@@ -5775,19 +5824,21 @@ def _left_out(skip):
 FULL_CHECK = re.compile(r"(?:sampo|fm|\S*/bin/(?:sampo|fm)) check")
 
 
-def _full_pass(p):
+def _full_pass(p, names=None):
     """T-3120: the reusable pass for the configured gates on the working files now (see _cached_pass), else None."""
     checks = list(c.read_meta(p).get("checks") or [])
     snap = c.worktree_tree(p.root)
     if not checks or not snap:
         return None
     skip = red_first_tests(p, c.active_brief(c.load_briefs(p), p.lane), checks)
-    return _cached_pass(p, checks, snap[:12], skip, c.code_tree(p.root, snap))
+    return _cached_pass(p, checks, snap[:12], skip, c.code_tree(p.root, snap), names)
 
 
-def _cached_pass(p, checks, tree, skip=(), ctree=None):
+def _cached_pass(p, checks, tree, skip=(), ctree=None, names=None):
     """When the newest full fm check run was on this tree (or its code tree: T-3380, T-3120), with these gates, and
-    all passed: its time. `ctree`: the code tree of the same snapshot as `tree` (computed here when not given)."""
+    all passed: its time. `ctree`: the code tree of the same snapshot as `tree` (computed here when not given).
+    T-3544: a train's suite gate may have run only the tests the batch reached (a row's `affected` lists them; the full
+    suite verifies after landing): it is the same gate list, and holds for `names` only when it ran each of them."""
     if not tree:
         return None
     for e in reversed(c.ledger_tail(p, 2000)):
@@ -5803,8 +5854,12 @@ def _cached_pass(p, checks, tree, skip=(), ctree=None):
             if (d.get("tree") == tree or d.get("code_tree")) and d.get("env") == c.env_id() and [r.get("cmd") for r in rs] == checks \
                     and (d.get("skip_tests") or []) == sorted(skip) \
                     and not any(r.get("exit") for r in rs) and age is not None and age < CACHE_DAYS:
+                part = next((r["affected"] for r in rs if r.get("affected")), None)
+                if part and names is not None and not set(names) <= set(part):
+                    return None
                 ts = str(e.get("ts", ""))  # provenance: when, which code tree, whose run (the ledger's check_run)
-                at = f"run {ts[:10]} {ts[11:16]} UTC, code_tree {(d.get('code_tree') or d.get('tree') or '')[:12]}, from {e.get('task') or 'a train'}"
+                at = f"run {ts[:10]} {ts[11:16]} UTC, code_tree {(d.get('code_tree') or d.get('tree') or '')[:12]}, from {e.get('task') or 'a train'}" \
+                    + (f", the suite on {len(part)} affected module(s)" if part else "")
                 if d.get("tree") == tree:
                     return at
                 if d.get("changelog") != _changelog_hash(p.root) and not _changelog_reads_clean(p):
@@ -5851,7 +5906,8 @@ def _runnable(template, tests):
 
 
 HOOK_BUDGET = (("plugin/lib/sampo/hooks.py", "plugin/lib/sampo/core.py"), "plugin/tests/test_core.py")  # T-2307
-RULE_TESTS = ("test_doctor", "test_models", "test_left_out", "test_rename_scan")  # T-2992: self-docs, ModelRules, left-out, rename scan: in every affected set
+RULE_TESTS = ("test_doctor", "test_models", "test_left_out", "test_rename_scan",  # T-2992: self-docs, ModelRules, left-out, rename scan: in every affected set
+              "test_rename_aliases", "test_redefinitions", "test_suite_hygiene")  # T-3544: repo-shape scans a new module or test trips with no map link (T-3316)
 HUB_PAIRS = 10 # T-1467: more co-changed tests than this and a file's pairs are noise
 
 
@@ -5904,15 +5960,16 @@ def _hub_tests(p, m, base, changed, detail=None, tree=None):
     return picked
 
 
-def affected(p, b=None, skipped=None, since=None, detail=None):
+def affected(p, b=None, skipped=None, since=None, detail=None, only=None):
     """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
     project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705).
-    Another open task's red-first test files are left out (T-1718); a dict passed as skipped gets them {module: task}."""
+    Another open task's red-first test files are left out (T-1718); a dict passed as skipped gets them {module: task}.
+    `only`: exactly these files as the changed ones (T-3533: fm ship's files main moved past the gated tree)."""
     from sampo import map as smap
     import shlex
     act = b or (None if since else c.active_brief(c.load_briefs(p), p.lane))  # T-1117 review: the closing task's base, active or not
     base = since or (c.task_base(p.root, act) if act else None) or "HEAD"  # T-2323: fm ship's range, from a commit
-    changed = set(smap.changed(p.root, base))
+    changed = set(only) if only is not None else set(smap.changed(p.root, base))
     if b:  # T-1968: a close answers for its own changes; another task's files are left out, as its commit leaves them
         changed -= set(_theirs(p, b, sorted(changed)))
     m = smap.load(p)
@@ -7747,6 +7804,11 @@ def _build_parser(only=None):
             help="opt-in mirror of this project's briefs, decisions and research in the repo (.sampo/)")
     s.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "import", "export"])
     s.add_argument("--remove", action="store_true", help="off: also delete .sampo/")
+    s = add("private", lazy("sampo.sync", "cmd_private"), tier=("Project and settings", 791),
+            help="private terms (a host glob like '*.home.example.test', or a word) kept in the state folder only: "
+                 "the sync mirror shows <host> or <private>, sampo ship refuses a push carrying one (T-3529)")
+    s.add_argument("action", choices=["add", "rm", "list"])
+    s.add_argument("term", nargs="?", help="add, rm: the term (never printed or logged; a digest is)")
 
     s = add("audit", cmd_audit, tier=("Finding your way", 420), help="prep audits: freeze the task's diff and write one review brief for one reviewer")
     s.add_argument("action", choices=["prep", "scan", "run"], help="prep ID: review brief for a task; scan: mechanical "
@@ -8238,8 +8300,10 @@ def _build_parser(only=None):
                    "(exit 1), green is fixed (exit 0), a missing saved test can't be re-checked (exit 1)")
     s = add("exam", lazy("sampo.louhi", "cmd_exam"), tier=("Finding your way", 456), help="a seeded exam of throwaway repos in six "
             "languages with planted defects and hidden keys; agents answer, scores go to the Genesis exam.jsonl (T-2079)")
-    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard", "long", "runs", "steer", "models", "taxonomy"),
-                   help="taxonomy RUN: Smith's failure classes with counts and rates from a --agent smith run's event logs "
+    s.add_argument("action", nargs="?", choices=("status", "gen", "run", "grade", "check", "scorecard", "long", "runs", "steer", "models", "taxonomy", "loop"),
+                   help="loop --run RUN [--model PROFILE] [--rounds N]: each round answers the next unseen holdout scenarios on the "
+                        "smith arm per local profile and appends its failure classes to research/local-loop.jsonl (T-3484); "
+                        "taxonomy RUN: Smith's failure classes with counts and rates from a --agent smith run's event logs "
                         "(run it with --model PROFILE; T-2908); scorecard: each gen-0 §2 capability's held-out pass rate from graded runs; exit 1 unless all "
                         "pass (T-2097); long: replayed past changes, sampo exam long gen [--from PATH] [--n N] | run RUN | "
                         "grade RUN (--agent oracle|empty; T-2258); steer: raw words expanded into standing rules, graded by a "
@@ -8270,6 +8334,7 @@ def _build_parser(only=None):
                         "and resume keys (kept only when sampo exam check passes); only these decide sampo exam scorecard")
     s.add_argument("--model", help="gen: the child author's model (default sonnet); run: the session's model")
     s.add_argument("--limit", type=int, help="run: answer the first N picked scenarios (session arms default to 3)")
+    s.add_argument("--rounds", type=int, default=1, help="loop: rounds to run (T-3484)")
     s.add_argument("--jobs", type=int, help="run, long run: session scenarios at once (default 1, T-2292); steer run: "
                                             "cases at once (default 4)")
     s.add_argument("--final", action="store_true", help="long run: this is the end-of-run exam (session arms wait for it)")

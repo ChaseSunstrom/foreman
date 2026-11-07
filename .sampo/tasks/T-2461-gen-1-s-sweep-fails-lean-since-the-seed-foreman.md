@@ -42,7 +42,7 @@ What fails: a hook, skill or the MCP server still runs a removed verb (caught by
 <!-- auto -->
 - 2026-11-01T08:39:06Z step 3/5: fold incident, sweep and instruments
 - git: foreman/build; 13 uncommitted: CHANGELOG.md, MASTER.md, README.md, plugin/lib/fmagents.py, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmmcp.py, plugin/lib/fmprove.py, plugin/tests/test_agents.py, plugin/tests/test_proof.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/fold_proof.py, CHANGELOG.md, MASTER.md, README.md, plugin/lib/fmagents.py, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmmcp.py, plugin/lib/fmprove.py, plugin/tests/test_agents.py, plugin/tests/test_proof.py, plugin/tests/test_site.py, site/pages.py, site/stats.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/fold_proof.py, CHANGELOG.md, MASTER.md, README.md, plugin/lib/fmagents.py, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmmcp.py, plugin/lib/fmprove.py, plugin/tests/test_agents.py, plugin/tests/test_proof.py, plugin/tests/test_site.py, site/pages.py, site/stats.py
 ## Docs impact
 CHANGELOG Unreleased entry; MASTER, README, the intake and debug-test skills, the ops incident playbook and the AGENTS plan line name the new homes; unreleased CHANGELOG lines moved, released ones keep their shipped names
 ## Verification evidence

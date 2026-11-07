@@ -8,6 +8,7 @@ import codecs
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -313,11 +314,13 @@ def _push(ctx):
     with tempfile.TemporaryDirectory() as tmp:
         wt = os.path.join(tmp, "rel")
         _git(root, "worktree", "add", "-q", "--detach", wt, "FETCH_HEAD")
+        main = _git(wt, "rev-parse", "HEAD").strip()
         try:
             if c._git(wt, "merge", "-q", "--no-ff", sha, "-m", f"Foreman {v}", timeout=300, proc=True).returncode:
                 _git(wt, "merge", "--abort", ok=True)
                 _land_over_picks(wt, sha, v)  # T-2598: ship cherry-picked the branch onto main
             landed = _git(wt, "rev-parse", "HEAD").strip()
+            _refuse_private(wt, _git(wt, "rev-list", f"{main}..{landed}").split(), landed)  # T-3529: as fm ship does
             _push_main(p, b.id, landed, remote, "fm release --push")
         finally:
             _git(root, "worktree", "remove", "--force", wt, ok=True)
@@ -354,6 +357,47 @@ def _land_over_picks(wt, sha, v):
     new = _git(wt, "commit-tree", _git(wt, "write-tree").strip(), "-p", main, "-p", sha, "-m", f"Foreman {v}").strip()
     _git(wt, "reset", "-q", "--hard", new)
     print(f"  {v}: main held the branch's commits as cherry-picks; landed the release tree over it with main's data")
+
+
+def _refuse_private(root, picks, tip):
+    """T-3529: refuse when the commits picks (messages, added lines against the first parent) or tip's tree hold one of
+    the user's private terms (sampo private) or a value from their secrets file, naming the commits (the user's own
+    shas: a scratch tree's re-picks differ) and files, never the term."""
+    from sampo import models, sandbox  # a secret-named line only: a base URL or a port there is no secret
+    terms, values = c.private_terms(), [v for k, v in models.secret_pairs() if len(v) >= 8 and sandbox.secret(k)]
+    if not terms and not values:
+        return
+    def bad(text):
+        return c.has_private(text, terms) or any(v in text for v in values)
+    commits = [s for s in picks
+               if bad(_git(root, "log", "-1", "--format=%B", s)) or bad("\n".join(
+                   ln for ln in _git(root, "diff", "--no-color", "--no-ext-diff", "-U0", f"{s}^", s).splitlines()
+                   if ln.startswith("+") and not ln.startswith("+++ ")))]
+    needles = [max(t.removeprefix("*.").split("*"), key=len) for t in terms] + values  # fixed strings; bad() decides
+    tmp = tempfile.mkdtemp(prefix="sampo-private-")  # argv shows in ps: the needles go in a 0600 file in a 0700 dir
+    try:
+        fd, pats = tempfile.mkstemp(dir=tmp)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write("\n".join(needles) + "\n")
+        r = c._git(root, "grep", "-l", "-z", "-I", "-i", "-F", "-f", pats, tip, "--", timeout=300, proc=True)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if r.returncode not in (0, 1):
+        _err(f"git grep failed: {c.plain(r.stderr.strip())[:200]}; nothing was pushed")
+    blobs = dict((ln.partition("\t")[2], ln.split()[2]) for ln in _git(root, "ls-tree", "-r", "-z", tip).split("\0") if ln)
+    hits = {x.split(":", 1)[1] for x in r.stdout.split("\0") if ":" in x}  # by blob id: a path may hold a term too
+    files = sorted({f for f in hits if f in blobs and bad(_git(root, "cat-file", "blob", blobs[f]))} | set(filter(bad, blobs)))
+    def shown(f):  # a path that holds a term or a value is named redacted
+        for v in values:
+            f = f.replace(v, "[REDACTED]")
+        return c.redact_local(f)
+    files = [shown(f) for f in files]
+    if commits or files:
+        where = ([f"commit{'s' if len(commits) > 1 else ''} " + c.joinmore([s[:8] for s in commits], 5)] if commits else []) \
+            + ([f"file{'s' if len(files) > 1 else ''} " + c.joinmore(files, 5)] if files else [])
+        _err(f"a private term (sampo private list) or a secrets-file value is in {' and '.join(where)}; nothing was "
+             "pushed: redact it (sampo sync export for .sampo/; amend or rebase a commit that carries it), then ship again")
 
 
 def _push_main(p, tid, sha, remote, by):
@@ -399,9 +443,10 @@ def _gated_pass(p, root, wt, base, said):
     """T-3468: the gates' pass (a train's or a full fm check's) that already covers the tree about to be pushed, or
     None. It holds when the ship's test is the gates' own (the default fm check, or one of the configured checks),
     HEAD's code tree passed every configured gate, the shipped commits change no CI workflow (they supply the ignore
-    globs), and the pushed tree differs from HEAD's only in files that CI never tests (paths-ignore: the tower's
-    shards) or the sync mirror's notes; a tower move in a file tests read (the stats) or a CHANGELOG.md main changed
-    still runs the suite. After a train the ship ran the whole suite again on the same code (14-20 min at load)."""
+    globs), and the pushed tree differs from HEAD's in no CI workflow and no Python file under plugin/. After a train
+    the ship ran the whole suite again on the same code (14-20 min at load). Returns (the pass or None, the differing
+    files besides CI-skipped ones (paths-ignore: the tower's shards) and the sync mirror's notes): T-3533, the tower's
+    stats or a CHANGELOG.md main changed, whose affected tests the caller runs instead of the suite (17-25 min)."""
     import shlex
     from sampo import cli
     checks = list(c.read_meta(p).get("checks") or [])
@@ -409,14 +454,15 @@ def _gated_pass(p, root, wt, base, said):
     head = _git(root, "rev-parse", "HEAD^{tree}").strip()
     pushed = _git(wt, "rev-parse", "HEAD^{tree}").strip()
     if not checks or not head or not pushed or (said and norm(said) not in {norm(x) for x in checks}):
-        return None
+        return None, []
     if _git(wt, "diff", "--name-only", base, "HEAD", "--", ".github").strip():
-        return None
+        return None, []
     ignored = _ci_ignored(wt, "HEAD")
-    for f in _git(root, "diff", "--name-only", "--no-renames", head, pushed).splitlines():
-        if not ((f.startswith(c.MIRROR_DIRS) and f.endswith(".md")) or any(g.match(f) for g in ignored)):
-            return None
-    return cli._cached_pass(p, checks, head[:12], (), c.code_tree(root, head))
+    rest = [f for f in _git(root, "diff", "--name-only", "--no-renames", head, pushed).splitlines()
+            if not ((f.startswith(c.MIRROR_DIRS) and f.endswith(".md")) or any(g.match(f) for g in ignored))]
+    if any(f.startswith(".github/") or (f.startswith("plugin/") and f.endswith(".py")) for f in rest):
+        return None, []
+    return cli._cached_pass(p, checks, head[:12], (), c.code_tree(root, head)), rest
 
 
 def _run_test(p, wt, base, env, test, log):
@@ -459,23 +505,26 @@ def _rerun_red(wt, out, code, env):
     return classes
 
 
-def _affected_first(p, wt, base, env):
+def _affected_first(p, wt, base, env, only=None):
     """T-2323: fm check's affected-test selection over the range (main..the cherry-picked tip) in the scratch tree, run
-    before the full suite; red stops the ship naming the failing classes. No linked test or no affected command: goes on."""
+    before the full suite; red stops the ship naming the failing classes. No linked test or no affected command: goes on.
+    `only`: exactly these files instead of the range (T-3533). The tests run green ([] when none is linked), or None
+    when no selection could be made."""
     from sampo import cli
     try:
-        cmd, tests, _ = cli.affected(c.Project(p.slug, wt, p.dir, p.lane), since=base)
+        cmd, tests, _ = cli.affected(c.Project(p.slug, wt, p.dir, p.lane), since=base, only=only)
     except Exception as e:  # a convenience: the full suite still runs
         print(f"affected tests skipped: {c.fit(c.plain(str(e)), 120)}", flush=True)
-        return
+        return None
     if not cmd:
-        return
-    print(f"testing the {len(tests)} affected test file(s) first", flush=True)
+        return []
+    print(f"testing the {len(tests)} affected test file(s) " + (f"of {c.joinmore(only, 5)}" if only else "first"), flush=True)
     code, out = c.run_command(wt, cmd, 900, env=dict(cli._skip_env({}), **{k: v for k, v in env.items() if k != "FOREMAN_SKIP_TESTS"}))
     if code and _rerun_red(wt, out, code, env) is None:
         print(out[-4000:], flush=True)
         bad = sorted({m.group(1) for m in re.finditer(r"^(?:FAIL|ERROR): \S+ \(([\w.]+?)\.\w+\)", out, re.M)})
         _err("the affected tests failed in the scratch tree" + (f": {', '.join(bad)}" if bad else "") + "; nothing was pushed")
+    return tests
 
 
 def _tower_files(root, last, base):
@@ -567,6 +616,7 @@ def ship(p, args):
             if mine and c._git(wt, "diff", "--quiet", "HEAD", picks[-1], "--", *mine, timeout=300, proc=True).returncode:
                 _err(f"the shipped files differ from {picks[-1][:8]}'s: a commit is missing or extra, or main changed "
                      "these files since the branch left it (rebase onto main); nothing was pushed")
+            _refuse_private(root, picks, _git(wt, "rev-parse", "HEAD").strip())  # T-3529: before the suite runs
             from sampo import ambient
             c.wait_while(lambda: c.gates_live(p) or ambient.running(p),  # T-1978: never two suites at once
                          "a running fm check or ambient test run", "fm ship", out=sys.stdout)
@@ -576,15 +626,20 @@ def ship(p, args):
             c.update_meta(p, ship_testing={"pid": os.getpid(), "at": c.now(), "root": os.path.realpath(wt)})
             env.setdefault("PYTHONUNBUFFERED", "1")
             log = os.path.join(tmp, "test.log")  # T-2255: a file, not a pipe: a background process holding it can't hang the ship
-            failed, tail, hit = 0, "", None
+            failed, tail, hit, rest = 0, "", None, []
             try:  # a full fm check here waits for this run; the ship's own fm check (in wt) doesn't
                 try:
-                    hit = _gated_pass(p, root, wt, base, said)  # T-3468
+                    hit, rest = _gated_pass(p, root, wt, base, said)  # T-3468
                 except Exception as e:  # review: a check that can't run falls back to the suite
                     print(f"gates pass reuse skipped: {c.fit(c.plain(str(e)), 120)}", flush=True)
+                # T-3533: main moved files tests read (the tower's daily stats): only their tests run, red stops the ship
+                ran = _affected_first(p, wt, base, env, only=rest) if hit and rest else []
+                hit = hit if ran is not None else None
                 if hit:
+                    top = (f"; in {c.joinmore(rest, 5)} its affected tests passed "
+                           f"({c.joinmore([os.path.basename(t) for t in ran], 8) or 'none linked'})") if rest else ""
                     print(f"reusing the gates' pass ({hit}): the pushed tree differs from it only in files its CI "
-                          "skips, CHANGELOG.md or the sync mirror, so the suite isn't run again", flush=True)
+                          f"skips or the sync mirror{top}, so the suite isn't run again", flush=True)
                 else:
                     failed, tail = _run_test(p, wt, base, env, test, log)
             finally:

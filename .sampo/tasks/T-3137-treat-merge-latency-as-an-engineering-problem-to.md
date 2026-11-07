@@ -10,7 +10,6 @@ source: steer
 created: 2026-11-05T04:52:25Z
 updated: 2026-11-05T04:52:25Z
 steer_method_rate: 0.218
-group: fast merges and merge trains
 ---
 # Treat merge latency as an engineering problem to solve: when Sampo's merge path takes…
 ## Raw request

@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-06T06:41:43Z
-updated: 2026-11-06T11:13:05Z
+updated: 2026-11-06T16:29:47Z
 base: 019c4c4cfde0468d58e407ecb302cc1efcb28c9d
 base_tree: d9b1fcb5d9c62c98583101806fc081c72a3bbcf6
 predict_minutes: 2
@@ -18,6 +18,7 @@ plan0_scope: []
 builder_returned: 2026-11-06T09:26:36Z
 lane_stop: merged 2026-11-06T11:12:35Z
 verified: strong
+lane_verified: 777427b019db94904b2365e3deac47a2fdb77150
 ---
 # Claude Code 2.1.312-2.1.316 adaptations left out of T-3341: per-lane-class subagent…
 ## Raw request
@@ -64,6 +65,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T11:12:36Z scope: widened at merge to the reviewed lane's own diff (777427b01), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T11:13:03Z done
 - 2026-11-06T11:13:05Z committed 5ddaa3e49 (1 file)
+- 2026-11-06T16:29:47Z verified: the full suite is green on 1078ed22d, which contains 777427b01
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

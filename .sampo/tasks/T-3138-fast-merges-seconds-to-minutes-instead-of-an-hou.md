@@ -11,7 +11,6 @@ created: 2026-11-05T04:53:13Z
 updated: 2026-11-05T04:57:16Z
 rival_at: 2026-11-05T04:56:49Z
 rival_split: true
-group: fast merges and merge trains
 ---
 # Fast merges: seconds-to-minutes instead of an hour, still proven: a runtime map of what each hook loads, content-hashed test results with impact analysis, land-then-verify with automatic revert, and parallel checks in separate processes
 ## Raw request

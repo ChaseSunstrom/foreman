@@ -19,7 +19,7 @@ verified: ok
 ## Interpretation
 ## Assumptions (confidence)
 ## Acceptance criteria
-- [x] JARVIS has 1.2.3 installed and its live cache synced — verify with `ssh -o BatchMode=yes <user>@<host> 'grep -c "base=base" ~/.claude/plugins/cache/foreman/foreman/1.2.2/lib/fmlanes.py'`
+- [x] JARVIS has 1.2.3 installed and its live cache synced — verify with `ssh -o BatchMode=yes <host> 'grep -c "base=base" ~/.claude/plugins/cache/foreman/foreman/1.2.2/lib/fmlanes.py'`
 ## Non-goals
 ## Approach (options → choice → why)
 ## Risks and rollback
@@ -29,8 +29,8 @@ verified: ok
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `ssh -o BatchMode=yes <user>@<host> 'grep -c "base=base" ~/.claude/plugins/cache/foreman/foreman/1.2.2/lib/fmlanes.py'` → exit 0 · 1 [ran] [tree 3ed35f8b6b2b] (2026-10-09T00:45:27Z)
-- (ac 1) `ssh -o BatchMode=yes <user>@<host> 'grep -c "base=base" ~/.claude/plugins/cache/foreman/foreman/1.2.2/lib/fmlanes.py'` → exit 0 · 1 [ran] [tree 3ed35f8b6b2b] (2026-10-09T00:45:28Z)
+- (step 1) `ssh -o BatchMode=yes <host> 'grep -c "base=base" ~/.claude/plugins/cache/foreman/foreman/1.2.2/lib/fmlanes.py'` → exit 0 · 1 [ran] [tree 3ed35f8b6b2b] (2026-10-09T00:45:27Z)
+- (ac 1) `ssh -o BatchMode=yes <host> 'grep -c "base=base" ~/.claude/plugins/cache/foreman/foreman/1.2.2/lib/fmlanes.py'` → exit 0 · 1 [ran] [tree 3ed35f8b6b2b] (2026-10-09T00:45:28Z)
 - (audit self) `self: gate green (901 tests, doctor, roundtrip, hooks bench, mod tests, replay) before the bump; merged in a scratch clone; JARVIS fast-forwarded, plugin 1.2.3 installed, live cache synced with cp (no rsync there)` → no findings [tree 3ed35f8b6b2b] (2026-10-09T00:45:28Z)
 ## Log
 - 2026-10-09T00:43:56Z created

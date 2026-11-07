@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/core.py, plugin/lib/sampo/tidy.py, plugin/lib/sampo/cli
 depends_on: []
 source: discovered
 created: 2026-11-06T11:17:37Z
-updated: 2026-11-06T13:00:55Z
+updated: 2026-11-06T16:29:47Z
 base: b61801502ce5693a2fe1122f4926d2dcf7a0feae
 base_tree: 94e4bcdb7a597b91e2201fd7391f50556cd176e2
 predict_minutes: 2
@@ -19,6 +19,7 @@ builder_returned: 2026-11-06T11:37:52Z
 lane_stop: merged 2026-11-06T12:56:33Z
 verified: strong
 unproven: [meaning]
+lane_verified: a9301d00a4461b49ce5d05093c4df5327311e361
 ---
 # order_queue (sampo queue) and tidy flag a dependency on an archived (closed) task as…
 ## Raw request
@@ -66,6 +67,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T12:56:38Z scope: widened at merge to the reviewed lane's own diff (a9301d00a), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T13:00:36Z done
 - 2026-11-06T13:00:55Z committed 4a071f512 (1 file)
+- 2026-11-06T16:29:47Z verified: the full suite is green on 1078ed22d, which contains a9301d00a
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

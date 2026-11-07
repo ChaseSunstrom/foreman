@@ -26,7 +26,7 @@
 
    **FORMS to add** to `plugin/tests/test_guard_diff.py`. Whether the guard should allow each form is a decision for the main thread.
    - Must stay blocked: `python3 - <<E\nimport fmhooks\nfmhooks.save_brief(x)\nE`
-   - Must stay blocked: `python3 -c 'open("/home/u/.ssh/id_rsa","w")'`
+   - Must stay blocked: `python3 -c 'open("~/.ssh/id_rsa","w")'`
    - Allowed after Fix 2: `echo x > <scratch>/secrets.txt`
    - Allowed after Fix 3: a Python heredoc with `s = "import fmsecrets; write_atomic(x)"` and no real import.
    - Must stay blocked: `python3 - <<E\nexec("import fmsecrets; write_atomic(1)")\nE`

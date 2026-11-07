@@ -42,7 +42,7 @@ Blast radius (fm graph blast): co-changes plugin/lib/fmcli.py, plugin/lib/fmgene
 <!-- auto -->
 - 2026-11-02T19:15:42Z step 1/3: measure two or three method variants on the train split (same cases, same judge)
 - git: foreman/build; 7 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmguard.py, plugin/lib/fmsteer.py, plugin/tests/test_guard.py, plugin/tests/test_steer.py, MOONSHOT.md
-- touched since last checkpoint: plugin/lib/fmsteer.py, plugin/tests/test_steer.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/extract_json.py
+- touched since last checkpoint: plugin/lib/fmsteer.py, plugin/tests/test_steer.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/extract_json.py
 ## Docs impact
 CHANGELOG (Unreleased: one judge, the strongest; the measured null result); MASTER.md fmsteer line (the judge).
 ## Verification evidence

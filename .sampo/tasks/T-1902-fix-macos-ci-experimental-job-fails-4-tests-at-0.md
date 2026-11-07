@@ -38,7 +38,7 @@ Chosen: judge the lane and main at their real paths too (Ctx keeps confine_real 
 <!-- auto -->
 - 2026-10-29T03:29:07Z steps 4/4 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, plugin/lib/fmguard.py, plugin/tests/test_code.py, plugin/tests/test_guard.py, plugin/tests/test_settings_scopes.py
-- touched since last checkpoint: CHANGELOG.md, plugin/lib/fmguard.py, plugin/tests/test_code.py, plugin/tests/test_settings_scopes.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1904.txt, plugin/tests/test_guard.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1903.txt
+- touched since last checkpoint: CHANGELOG.md, plugin/lib/fmguard.py, plugin/tests/test_code.py, plugin/tests/test_settings_scopes.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1904.txt, plugin/tests/test_guard.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1903.txt
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

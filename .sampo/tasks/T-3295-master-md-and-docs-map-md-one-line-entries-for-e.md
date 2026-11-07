@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T02:54:38Z
 updated: 2026-11-06T02:54:38Z
+inferred_deps: [T-3288]
+inferred_why: T-3288: named in its request
 ---
 # MASTER.md and docs/map/*.md one-line entries for each new module block parallel lanes on…
 ## Raw request

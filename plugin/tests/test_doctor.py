@@ -669,6 +669,19 @@ class Command(ForemanTestCase):
             self.assertIn("FOREMAN_DOCTOR_BENCH=0", rs[n]["detail"])
 
 
+class CodeTreeDocs(ForemanTestCase):
+    def test_self_docs_and_the_file_map_read_the_running_codes_tree_not_the_home(self):
+        # T-3529: a lane (or a train's scratch tree) adding a verb with its docs failed `MASTER.md lacks fm <verb>`:
+        # doctor read FOREMAN_HOME's (the main checkout's) docs; here the home is a test's empty folder
+        fast = {k: (lambda *a, **kw: d.Result("fast", "PASS")) for k in dir(d)
+                if k.startswith("check_") and k not in ("check_self_docs", "check_file_map")}
+        with unittest.mock.patch.multiple(d, **fast), unittest.mock.patch.dict(os.environ, {"FOREMAN_DOCTOR_BENCH": "0"}):
+            rs = {r.name: r for r in d.run_all()}
+        self.assertFalse(os.path.exists(os.path.join(self.home, "MASTER.md")))
+        for name in ("self docs", "file map"):
+            self.assertEqual(rs[name].status, "PASS", rs[name].detail)
+
+
 class Timing(ForemanTestCase):
     def test_a_slow_check_tops_the_slowest_list(self):  # T-2279
         import unittest.mock as mock

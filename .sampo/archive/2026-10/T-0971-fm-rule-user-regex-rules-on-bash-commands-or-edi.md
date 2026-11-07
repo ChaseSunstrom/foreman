@@ -33,7 +33,7 @@ Options: fm rule add PATTERN --on bash|path --warn|--block --why TEXT, stored in
 <!-- auto -->
 - 2026-10-15T23:02:34Z step 1/2: Failing UserRules tests
 - git: foreman/build; 4 uncommitted: plugin/lib/fmcore.py, plugin/lib/fmguard.py, plugin/lib/fmhooks.py, plugin/tests/test_user_rules.py
-- touched since last checkpoint: .claude/worktrees/agent-a714812d19c0f3e45/plugin/tests/test_user_rules.py, .claude/worktrees/agent-a714812d19c0f3e45/plugin/lib/fmcore.py, .claude/worktrees/agent-a714812d19c0f3e45/plugin/lib/fmhooks.py, .claude/worktrees/agent-a714812d19c0f3e45/plugin/lib/fmguard.py, .claude/worktrees/agent-a714812d19c0f3e45/plugin/lib/fmcli.py, .claude/worktrees/agent-a714812d19c0f3e45/MASTER.md, plugin/tests/test_user_rules.py, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/rulesfix.py, plugin/lib/fmcore.py, plugin/lib/fmguard.py, plugin/lib/fmhooks.py
+- touched since last checkpoint: .claude/worktrees/agent-a714812d19c0f3e45/plugin/tests/test_user_rules.py, .claude/worktrees/agent-a714812d19c0f3e45/plugin/lib/fmcore.py, .claude/worktrees/agent-a714812d19c0f3e45/plugin/lib/fmhooks.py, .claude/worktrees/agent-a714812d19c0f3e45/plugin/lib/fmguard.py, .claude/worktrees/agent-a714812d19c0f3e45/plugin/lib/fmcli.py, .claude/worktrees/agent-a714812d19c0f3e45/MASTER.md, plugin/tests/test_user_rules.py, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/rulesfix.py, plugin/lib/fmcore.py, plugin/lib/fmguard.py, plugin/lib/fmhooks.py
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-06T12:25:10Z
-updated: 2026-11-06T12:53:36Z
+updated: 2026-11-06T16:29:47Z
 base: 1f5c52c04454b3dc054a804d2913fffb11fcabb6
 base_tree: 2d7e4f16be1ef9286c172ea07a38adb1b0b753ac
 predict_minutes: 6
@@ -19,6 +19,7 @@ builder_returned: 2026-11-06T12:30:08Z
 lane_stop: merged 2026-11-06T12:41:39Z
 verified: strong
 unproven: [meaning]
+lane_verified: a0f6762fe1caa0759184a50b4705d78d478a5878
 ---
 # Sampo ship's scratch-tree full suite refuses on any red class with no flake rerun:…
 ## Raw request
@@ -61,6 +62,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T12:41:43Z scope: widened at merge to the reviewed lane's own diff (a0f6762fe), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T12:53:32Z done
 - 2026-11-06T12:53:36Z committed b61801502 (1 file)
+- 2026-11-06T16:29:47Z verified: the full suite is green on 1078ed22d, which contains a0f6762fe
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

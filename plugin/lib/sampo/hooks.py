@@ -23,7 +23,11 @@ CTX_BUDGET = 1500       # SessionStart additionalContext, mandate and leads incl
 PROMPT_BUDGET = 400     # UserPromptSubmit additionalContext
 NOTE_BUDGET = 200       # PreToolUse scope note
 DRIVE_MAX = 50          # consecutive drive continuations without a user prompt
+DRIVE_LINE = 160        # T-3163: the drive's push is printed in the terminal: one line naming the one next action
 OFFERS_MAX = 3          # T-0401: queued tasks offered, one per Stop, while one set of background jobs runs
+WAIT_REPUSH_S = 600     # T-3163: the background-wait push, at most once per active task per this many seconds
+
+
 def _slack(raw):
     """T-3366: tests under load stretch the fixed limits below; 1..10, anything else (abc, 0, -1, nan, inf) is 1.
     For tests only: Claude Code kills a hook at its own limit (Stop at 30 s) whatever this says."""
@@ -348,11 +352,69 @@ def _other_session(other, sid, mine):
     """The note when another session claimed this project in the last 15 minutes. T-0841: a resume (or /clear) in the
     same claude process changes the id but is the same session, so a claim from this process is no other."""
     age = c.age_days(other.get("seen"))
-    if not other.get("id") or other["id"] == sid or age is None or age >= 15 / 1440:
+    if not other.get("id") or other["id"] == sid or age is None:
+        return None
+    try:  # T-3331: a recorded process says whether the holder lives; the 15-minute stamp is the fallback
+        from sampo import bus
+        state = bus.proc_state(other["proc"]) if other.get("proc") else None
+    except Exception:
+        state = None
+    if state == "stopped" or (state != "alive" and age >= 15 / 1440):
         return None
     if mine and other.get("pid") == mine:
         return None
     return f"Another Claude Code session ({other['id'][:8]}) was active in this project {int(age * 1440)}m ago."
+
+
+def _mark_second(meta, sid, mine):
+    """T-3331: a prompt or start from an interactive session while another live one holds the checkout marks it a
+    second session (meta['seconds']) and leaves the holder in meta['session']; True when marked. Needs this session's
+    own claude pid (without it a /resume can't be told from a second session), and a holder whose process is gone
+    (or, unchecked, unseen for 15 min) is replaced, so a crash never locks the checkout."""
+    seconds = {k: v for k, v in (meta.get('seconds') or {}).items() if k != sid and c.age_days(v) is not None
+               and c.age_days(v) < 1}
+    second = bool(sid and mine) and _lanes_on(meta) and \
+        _other_session(meta.get('session') or {}, sid, mine) is not None
+    if second:
+        seconds[sid] = c.now()
+    if seconds:
+        meta['seconds'] = seconds
+    else:
+        meta.pop('seconds', None)
+    return second
+
+
+def _lanes_on(meta):
+    """T-3331: the off switch: FOREMAN_NO_SESSION_LANES, or meta lane_per_session=false; a claude -p never counts."""
+    return not (os.environ.get('FOREMAN_NO_SESSION_LANES') or meta.get('lane_per_session') is False or _headless())
+
+
+def _holder_rec(sid):
+    """The session record: id, last seen, and the claude process (pid, and host|ns|pid|start to tell if it lives)."""
+    try:
+        from sampo import bus
+        proc = bus.claude_proc()
+    except Exception:
+        proc = None
+    return {'id': sid, 'seen': c.now(), 'pid': _claude_pid(), 'proc': proc}
+
+
+def _second_refusal(p, pl, path):
+    """T-3331: why a second session's edit in the main checkout is refused, with the lane to work in; else None."""
+    sid = pl.get('session_id')
+    if not sid or p.lane or os.environ.get('FOREMAN_NO_SESSION_LANES') or not _in_project(path, p) or c._WORKTREE_PREFIX.match(os.path.relpath(path, p.root)):
+        return None
+    meta = c.read_meta(p)
+    holder = meta.get('session') or {}
+    mine = _claude_pid()
+    if sid not in (meta.get('seconds') or {}) or not mine or not _lanes_on(meta) \
+            or _other_session(holder, sid, mine) is None:
+        return None
+    return (f"Sampo: session {holder['id'][:8]} holds this checkout. Work in a lane of your own: sampo task new "
+            f"\"<title>\" (no --focus), sampo lane new T-x (it lands in {p.root}.lanes/T-x), EnterWorktree that path, "
+            "sampo focus T-x there. Edits here are refused until that session ends; uncommitted files stay where "
+            "they are. This gate is advisory: Bash writes aren't checked. Off: FOREMAN_NO_SESSION_LANES=1 or meta "
+            "lane_per_session=false.")
 
 
 def session_start(pl):
@@ -406,6 +468,11 @@ def session_start(pl):
         meta = c.read_meta(p)
         other_note = _other_session(meta.get("session") or {}, sid, _claude_pid())
         busy = other_note is not None
+        second = busy and _mark_second(meta, sid, _claude_pid())
+        if second:  # T-3331: the holder stays the holder; this one is told to take a lane
+            other_note += (" It holds this checkout: work in a lane of your own (sampo task new \"<title>\" without "
+                           "--focus, sampo lane new T-x, EnterWorktree its path, sampo focus T-x); edits here are "
+                           "refused while it lives (FOREMAN_NO_SESSION_LANES=1 turns this off).")
         offered = c.age_days(meta.get("digest_offered"))
         if offered is None or offered >= 7:  # once a week: what got done (R1 weekly digest)
             meta["digest_offered"] = c.now()  # checked once a week even when there was nothing to show
@@ -434,8 +501,10 @@ def session_start(pl):
                 meta["repo_config"] = digest
         except Exception:
             log_error("SessionStart", _tb())
-        meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root),
-                    foreman=eco.stamp())
+        if not second and not _headless():  # a claude -p never takes the holder's place
+            meta.update(session=_holder_rec(sid))
+            _mark_second(meta, sid, None)  # drops its own old mark
+        meta.update(last_active=c.now(), sensitive=c.detect_sensitive(p.root), foreman=eco.stamp())
         c.write_meta(p, meta)
         synced = _sync_import(p)
         rewind = _reconcile(p, "SessionStart")
@@ -830,6 +899,60 @@ def _first_brief(p, sid, transcript=None):
     return (f"Sampo made this session's task from your request: {act.id} ({act.type} {act.tier}, focused), with "
             f"{len(done)} criterion(s) from it; this edit goes ahead.{close} Wrong size? sampo task set {act.id} "
             f"tier=S|M|L.")
+
+
+_LANE_BRANCH = c.lazy(r"foreman/(T-\d+)")
+LANE_FOCUS_S = 2.5  # T-3519 review: the lookup and its focus, well inside the PreToolUse hook's 5 s
+
+
+def _lane_focus(p, sid):
+    """T-3519: an edit in a lane with no task active there focuses the lane's task first, by `sampo focus` itself: the
+    one runnable task its branch foreman/T-N names, or whose brief records this lane's path or branch (fm lane new, or
+    an earlier focus here that something knocked off). 113 of a day's 140 brief refusals were builders in such lanes.
+    Only Sampo's lane folder and Claude Code's .claude/worktrees count; the focus runs as its own process group, killed
+    at the deadline. Returns (note, hint): the note when it focused (the caller re-runs the guard); else None and the
+    refusal's hint ("" when the lane has no task of its own)."""
+    end = time.monotonic() + LANE_FOCUS_S * SLACK
+    main = c.read_meta(p).get("path") or ""
+    if not main or os.path.dirname(p.lane) not in (main + ".lanes", os.path.join(main, ".claude", "worktrees")):
+        return None, ""
+    branch = c._git(p.lane, "branch", "--show-current").strip()  # its 2 s default
+    named = _LANE_BRANCH.fullmatch(branch)
+    hits = [b.id for b in c.load_briefs(p) if b.status in c.RUNNABLE and (
+        named and b.id == named[1] or b.meta.get("lane") == p.lane or branch and b.meta.get("lane_branch") == branch)]
+    if len(hits) != 1:
+        return None, (f" This lane matches several open tasks ({', '.join(hits)}): sampo focus ID here takes one."
+                      if hits else "")
+    tid, err = hits[0], None
+    import fcntl
+    with open(os.path.join(p.dir, "first-brief.lock"), "a") as lk:  # parallel edits focus it once
+        while (left := end - time.monotonic()) > 0:
+            try:
+                fcntl.flock(lk, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                time.sleep(0.02)
+        if left > 0 and c.active_brief_fast(p, p.lane):
+            return "", ""
+        if left > 0:  # SAMPO_LANE_CHILD: this plugin's own focus, as in-process (no hand-over to the lane's copy)
+            proc = subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "focus", tid], cwd=p.root,
+                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                    text=True, start_new_session=True,
+                                    env=dict(os.environ, FOREMAN_SESSION_ID=sid or "", SAMPO_LANE_CHILD="1"))
+            try:
+                err = proc.communicate(timeout=max(end - time.monotonic(), 0.05))[1] or ""
+            except subprocess.TimeoutExpired:
+                c.kill_group(proc)  # its git children too; the flocks they held go with them
+                proc.wait()
+                proc.stderr.close()
+    act = c.active_brief_fast(p, p.lane)
+    if not act or act.id != tid:
+        why = c.fit(re.sub(r"^fm: (refused: )?", "", c.plain((err.strip().splitlines() or [""])[0])), 200) if err \
+            else None
+        return None, (f" This lane's task is {tid}, but sampo focus {tid} here refused: {why}" if why else
+                      f" This lane's task is {tid}, but sampo focus {tid} didn't finish in time here: run it, then retry.")
+    c.log_event(p, "auto_focus", task=tid, data={"lane": p.lane, "branch": branch}, session=sid)
+    return f"Sampo focused {tid}, this lane's task, so this edit goes ahead (no sampo focus needed).", ""
 
 
 REQUEST_HEAD = c.lazy(r"(?im)^#{1,3}\s*request\s+\d+\b[^\n]*$")
@@ -1452,7 +1575,8 @@ def user_prompt_submit(pl):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
                 # T-2374 review: an unanswered dialog is not a no; its queued request stays queued (only an explicit no
                 # is remembered, so one missed dialog never suppresses a request for good)
-            meta["session"] = {"id": sid, "seen": c.now(), "pid": _claude_pid()}  # T-0841: whose process it is
+            if not _mark_second(meta, sid, _claude_pid()) and not _headless():  # T-3331: a second session or a
+                meta["session"] = _holder_rec(sid)  # claude -p never takes the holder's place; T-0841: whose process
             if (meta.get("resume_after_reload") or {}).get("session") == sid:
                 meta.pop("resume_after_reload")  # T-0145: the reloaded mod's prompt (or the user's) resumed it
             if "PAUSE" in r.overrides:
@@ -2046,10 +2170,13 @@ def _pre_tool_use(raw):
               f"Details: {os.path.join(c.state_dir(), 'logs', 'hooks.log')}. "
               f"If this persists: claude plugin disable foreman@foreman", file=sys.stderr)
         return 2
-    made = None
+    made, lane_hint = None, ""
     if block and block.category == "brief" and p:
         try:
-            made = _first_brief(p, pl.get("session_id"), pl.get("transcript_path"))
+            if getattr(p, "lane", None):  # T-3519: the lane's own task before anything is made
+                made, lane_hint = _lane_focus(p, pl.get("session_id"))
+            if made is None and not lane_hint:  # review: a lane's hint is the answer; no new task beside its own
+                made = _first_brief(p, pl.get("session_id"), pl.get("transcript_path"))
             if made is not None:  # the whole guard again, with the task active: the edit goes ahead if nothing stops it
                 ctx, p, act, found, block = _guard_decision(pl, guard)
         except Exception as e:
@@ -2065,7 +2192,9 @@ def _pre_tool_use(raw):
         long_cmd = str((pl.get("tool_input") or {}).get("command") or "") if tool == "Bash" else ""
         if len(long_cmd) > 160:  # T-0500: in a long command, quote the part that matched
             reason += f"\nin: {c.redact(_window(long_cmd, block.detail))}"
-        if block.category == "brief" and p:  # T-0409: the work in progress is usually right there in the queue
+        if block.category == "brief" and lane_hint:  # T-3519: the lane's candidates, not the main queue's next
+            reason += lane_hint
+        elif block.category == "brief" and p:  # T-0409: the work in progress is usually right there in the queue
             try:
                 nxt = next(iter(c.order_queue(c.load_briefs(p))[0]), None)
             except Exception:
@@ -2126,6 +2255,19 @@ def _pre_tool_use(raw):
                                                  "permissionDecisionReason": why}}))
         print(why, file=sys.stderr)
         return 2
+    if p and tool in FILE_TOOLS:  # T-3331: a second live session's edit in the main checkout goes to its own lane
+        try:
+            ti = pl.get("tool_input") or {}
+            second = _second_refusal(p, pl, os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or
+                                                                          ti.get("notebook_path") or "")))
+        except Exception:
+            log_error("PreToolUse", _tb())
+            second = None
+        if second:
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                     "permissionDecisionReason": second}}))
+            print(second, file=sys.stderr)
+            return 2
     if p and tool in FILE_TOOLS and os.path.exists(os.path.join(c.state_dir(), "bus", "leases.json")):  # T-0708
         # another session's lease on the function this edit lands in
         try:
@@ -3765,7 +3907,7 @@ def _stop(pl):
             or _proof_claim_gate(p, act, pl, g)
             or _question_nudge(pl, p)
             or _headless_wait(pl))
-        reason = nudge or (None if oneoff or "drive" in c.ablated() else _drive(p, sd, briefs, pl, g))  # T-1375
+        reason = nudge or (None if oneoff or "drive" in c.ablated() else _drive(p, sd, briefs, pl, g, save))  # T-1375
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
@@ -3801,7 +3943,7 @@ def _stop(pl):
     if not reason and not oneoff and sd.get("autonomy") == "full" and not pl.get("stop_hook_active") \
             and not os.environ.get("FOREMAN_BENCH"):  # T-1242: a replay never pings the user's phone
         reason = _push_nudge(sid, sd, drained)
-    if not reason and not oneoff and not reloading and not waiting_on and (sd["active"] or sd["queue"]):
+    if not reason and not oneoff and not reloading and waiting_on is None and (sd["active"] or sd["queue"]):
         # T-0957: open work, and nothing kept it going (a reload or a background wait resumes by itself)
         try:
             c.log_event(p, "idle_stop", task=act.id if act else None, data={"queue": len(sd["queue"])}, session=sid)
@@ -4256,7 +4398,52 @@ def _scan_notices(pl, g):
         _event({"kind": "bg_done", "session_id": sid, "id": tid.decode()})
 
 
-def _drive(p, sd, briefs, pl, g):
+def _drive(p, sd, briefs, pl, g, saved=True):
+    """T-3539: _drive_push's block, unless it repeats this session's last one (numbers aside: context %, ages, counts)
+    with no user turn and nothing since that changes the work: 361 identical blocks in one session, each a forced turn
+    and a Stop hook error on the user's screen. With a task active, a tool run since is work on it, so its push
+    repeats (as _progressed lets it); a push to start one (no task active) waits for the work to change."""
+    reason = _drive_push(p, sd, briefs, pl, g, saved)
+    if not reason:
+        return None
+    sid = pl.get("session_id")
+    d = g["drive"].setdefault(sid, {"count": 0})
+    h = hashlib.sha1(re.sub(r"(?<![\w-])\d[\d.,:]*", "#", reason).encode()).hexdigest()[:16]  # T-1331's digits stay
+    last = d.get("said") or {}
+    d["said"] = {"hash": h, "ledger": _marks(p)["ledger"], "turn": d.get("turn_at"), "at": time.time()}
+    if last.get("hash") == h and last.get("turn") == d.get("turn_at") \
+            and not _work_changed(p, last.get("ledger", 0), set(re.findall(r"\bT-\d+", reason))) \
+            and not (sd["active"] and _tools_ran(sid, last.get("at"))):
+        return None
+    return reason
+
+
+def _work_changed(p, at, named=()):
+    """T-3539: a ledger event past byte offset at that changes what the drive says: a close, a block, a lane merge, a
+    focus, the user's capture or steer, or a change to a task the push names (a raised cost cap is a new hold)."""
+    try:
+        with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
+            if at > os.fstat(f.fileno()).st_size:
+                return True  # rotated by fm tidy
+            f.seek(at)
+            for raw in f:
+                try:
+                    e = json.loads(raw)
+                except ValueError:
+                    continue
+                ev = e.get("event") if isinstance(e, dict) else None
+                if (ev in ("task_done", "task_block", "lane_merge", "focus")
+                        or ev == "capture" and (e.get("data") or {}).get("source") in ("user", "steer")
+                        or ev == "task_set" and e.get("task") in named):
+                    return True
+    except OSError:
+        return True
+    return False
+
+
+def _drive_push(p, sd, briefs, pl, g, saved=True):
+    """saved: False while another writer holds the project lock (T-3163): a push said once (a wait, an offer, a lane's
+    merge) can't record that it was said, so it waits for a Stop that can rather than repeating on each one."""
     sid = pl.get("session_id")
     full = sd.get("autonomy") == "full"
     if sd.get("panic") or not sd["drive"] or sd["paused"] or (needs_user(pl.get("last_assistant_message")) and not full):
@@ -4289,28 +4476,30 @@ def _drive(p, sd, briefs, pl, g):
     recovery, key = "", []
     if not work and full and not scope:  # T-2354: a lane that stopped before its merge has one recovery: do it
         try:
-            recovery = slanes.recovery_line(p, briefs, True)
+            recovery = slanes.recovery_line(p, briefs, False)  # T-3163: the short form (fm lane recover prints the launch)
             key = sorted(f"{t}:{v[0]}" for t, v in slanes.stop_causes(p, briefs).items() if v[0] != "no_report")
         except Exception:  # a lane that can't be read never traps or ends the drive
             recovery = ""
     if not recovery:
         d.pop("recover", None)  # nothing pending: the same stop later is a new one, so the cap block is reached
     elif d.get("recover") != key:  # said once per set of stopped lanes (the cause keys)
+        if not saved:
+            return None
         d["recover"] = key
-        return "Sampo drive: " + recovery
+        return _line("Sampo drive: " + recovery)
     try:
         done = [] if work else slanes.awaiting_merge(p, briefs)  # T-2038: a finished lane waits on a merge
     except Exception:
         done = [] if work else c.finished_lanes(p, briefs)
     if not work and (held or done):  # said once per set of lanes; each builder's notification wakes the session
-        if d.get("lanes") == held + ["done"] + done:
+        if d.get("lanes") == held + ["done"] + done or not saved:
             return None
         d["lanes"] = held + ["done"] + done
-        if done:
-            return ("Sampo drive: builder lane(s) finished and wait on a merge: " + c.merge_hint(done)
-                    + " (review the branch first), then sampo lane rm and close it here.")  # T-3467
-        return (f"Sampo drive: builder lanes hold {', '.join(held[:4])}; nothing else is queued. Each builder's "  # not a list: text for a model, not a screen
-                f"notification wakes you: then review its branch, sampo lane merge, sampo lane rm, and close it here.")
+        if done:  # T-3163: one line; T-3467: two or more land through one train (merge_hint names the batch)
+            return _line(f"Sampo drive: builder lane(s) finished and wait on a merge: {c.merge_hint(done)}",
+                         [" after reviewing the branches; then close each here", " after reviewing the branches"])
+        return _line(f"Sampo drive: builder lanes hold {c.joinmore(held, 3)} and nothing else is queued: when a builder's "
+                     "notification comes, review its branch and sampo lane merge it")
     if d.get("hold"):
         return None  # the user asked for planning only this turn
     from sampo import loop as sloop  # T-1057
@@ -4324,26 +4513,25 @@ def _drive(p, sd, briefs, pl, g):
         # round is progress, so it resets the cap); usage ahead of pace pauses it until a later Stop
         if looping and not scope and not waiting and not _headless():
             key = [int(sloop.state(p).get("round") or 0), len(briefs)]
-            if d.get("loop") == key or _pace(p) or c._round_first(p):  # T-2466: a round's new work waits for Genesis
+            if d.get("loop") == key or not saved or _pace(p) or c._round_first(p):  # T-2466: a round's new work waits for Genesis
                 return None
             d.update(loop=key, count=1, marks=_marks(p))
             _event({"kind": "drive_loop", "session_id": sid, "project": p.slug, "round": key[0] + 1})
-            return f"Sampo loop: the queue is empty and the forever loop is on. Next: {sloop.action(p)}."
+            return _line(f"Sampo loop: the queue is empty and the forever loop is on. Next: {sloop.action(p)}")
         # waiting: what's left is the user's; drained: checked already, and no task has been made since; review: only
         # after this turn worked a task (answering a question isn't a drain) and within DRIVE_MAX
         began = _turn_began(p, sid, d) or time.time()
         worked = any(time.time() - (c.age_days(b.meta.get("updated")) or 1e9) * 86400 >= began - 1 for b in briefs)
-        if (not full or scope or waiting or d.get("drained") == len(briefs) or not worked or _headless()
+        if (not full or scope or waiting or d.get("drained") == len(briefs) or not worked or not saved or _headless()
                 or d.get("count", 0) >= DRIVE_MAX):
             return None
         # T-0417: in full autonomy a drained queue is when to look at the product as its user does, once per drain
         d.update(drained=len(briefs), count=d.get("count", 0) + 1, marks=_marks(p))
         _event({"kind": "drive_drained", "session_id": sid, "project": p.slug})  # project: fm explain (T-0464)
-        return ("Sampo drive: the queue is empty. Before stopping, check the product the way its user uses it: "
-                + ("sampo smoke, then " if (c.read_meta(p).get("smoke") or {}).get("web") else "")
-                + "every screen at desktop and phone width (or every command), the main flows, the service logs. "
-                  "sampo capture --source self each defect or gap, then plan and work the first. If everything holds, "
-                  "say so in one line and stop.")
+        return _line("Sampo drive: the queue is empty: "
+                     + ("sampo smoke, then " if (c.read_meta(p).get("smoke") or {}).get("web") else "")
+                     + "use the product as its user does, sampo capture --source self each gap, then work the first",
+                     ["; if it all holds, say so and stop", "; all holds: stop"])
     wb = next(b for b in briefs if b.id == work["id"])
     if wb.meta.get("cost_cap"):  # T-1083: a cap hit asks for a checkpoint, once (T-1127: recorded on the brief)
         try:
@@ -4353,8 +4541,8 @@ def _drive(p, sd, briefs, pl, g):
             log_error("Stop", _tb())
             hit = False
         if hit:
-            return (f"Sampo drive: cost cap hit on {wb.id} (sampo cost --task {wb.id}). sampo checkpoint, then tell the "
-                    f"user; they raise it (sampo task set {wb.id} cost_cap=…) or close it.")
+            return _line(f"Sampo drive: cost cap hit on {wb.id}: sampo checkpoint, then tell the user",
+                         [f" (they raise it: sampo task set {wb.id} cost_cap=…)"])
     if c.waits_on_user(wb, waiting, sd.get("autonomy") or "standard"):  # T-1061: "slow" gates M too
         return None  # waiting on the user's approval (AUTONOMY standard)
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
@@ -4369,37 +4557,45 @@ def _drive(p, sd, briefs, pl, g):
     agents = ({str(t.get("id")) for t in bg if isinstance(t, dict) and t.get("type") == "agent"} if isinstance(bg, list)
               else set()) | scanned  # T-0575: a subagent (a builder can take 30 min) is work that ends, never a service
     running = [k for k in running if k in agents or now - since[k] < LONG_JOB_S]
-    if running and sd["active"]:  # background work is out; its notification wakes the session (no active task:
-        # the jobs don't hold back starting the next one)
-        # sorted: the same jobs in another order aren't a new set; T-2901: while agents run, only they make a new set
-        key = [k for k in running if k in agents] or running  # (the shells a subagent starts come and go under it)
-        first = d.get("waited") != key[:5]
+    act = sd["active"]
+    if running:  # background work is out; its notification wakes the session. T-3539: with no active task too (a
+        # session keeping the main checkout unfocused for lane merges got 361 pushes to focus one): the wait is said
+        # once, and only a builder lane, which starts without a focus here, is offered
+        # T-3163: once per active task per WAIT_REPUSH_S, not once per running set: with ~20 agents out, any start,
+        # finish or resume among them made a new set (T-2901 had narrowed it to the agents) and the push came each Stop
+        w = d.get("waited")  # (a list: the old per-set form, read as a new wait)
+        task = work["id"] if act else None  # T-3539: a focus after an unfocused wait is a new wait
+        first = saved and not (isinstance(w, dict) and w.get("task") == task
+                               and 0 <= now - (w.get("at") or 0) < WAIT_REPUSH_S)
         if first:  # one wait, one event (T-0152: every Stop counted again in fm friction)
+            d["waited"] = {"task": task, "at": now}
             _event({"kind": "drive_wait", "session_id": sid, "project": p.slug, "task": work["id"],
                     "running": running[:5]})
         if d.get("offered_for") != work["id"]:  # T-2507: a new background set isn't a new round of offers; a new
             d.update(offered=[], offered_for=work["id"])  # active task is (each queued task offered once per task)
-        d.update(waited=key[:5], waiting_on=running[:3])  # waiting_on: said on screen, a silent end reads as a stall
-        if _headless() or d.get("count", 0) >= DRIVE_MAX:
+        # said on screen: a silent end reads as a stall; unfocused, once a wait ([]: still not an idle Stop)
+        d["waiting_on"] = running[:3] if act or first else []
+        jm = [f". Waiting on {c.joinmore(running, 3)}", f". Waiting on {c.joinmore(running, 1)}"]
+        if _headless() or d.get("count", 0) >= DRIVE_MAX or not saved:  # (the wait is still said on screen)
             return None
         offered = d.get("offered") or []
         made, st = set(d.get("made") or []), {b.id: b.status for b in briefs}  # T-2513: "id:status" offered this
         # session: each stage of a task (a captured one's plan, a planned one's draft) is offered once per session
         skip = offered + [i for i, s in st.items() if f"{i}:{s}" in made]
         pace = _pace(p)  # T-0449: while usage runs ahead of pace, no side work (each would be a builder or a plan)
-        offer = _side_work(sd, briefs, work, full, skip, p) if len(offered) < OFFERS_MAX and not pace else None
+        offer = (_side_work(sd, briefs, work if act else {"id": None}, full, skip, p, lane_only=not act)
+                 if len(offered) < OFFERS_MAX and not pace else None)
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], made=sorted(made | {f"{offer['id']}:{st.get(offer['id'])}"}),
                      count=d.get("count", 0) + 1, marks=_marks(p))
             how = _start_how(offer, lanes_free(briefs, p), _economy(p))
             _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
                     "offer": offer["id"], "how": how})
-            return (f"Sampo drive: background work is still running ({c.joinmore(running, 3)}); don't idle on it. "
-                    f"Start {offer['id']} ({offer['tier']} {offer['type']}: {c.fit(offer['title'], 80)}) now: {how}. "
-                    f"A queued task that can't move now (it needs a device, a person, another task): sampo task block ID "
-                    f"\"why\", and take the next. The drive offers another when you stop; its notification still "
-                    f"wakes you for {work['id']}.")
-        if not first:
+            block = f"; if it can't move: sampo task block {offer['id']} \"why\""
+            lead, tail = f"Sampo drive: Start {offer['id']} ({offer['tier']} {offer['type']}: ", f") now: {how}"
+            title = c.fit(" ".join(offer["title"].split()), max(20, DRIVE_LINE - len(lead) - len(tail) - len(block)))
+            return _line(lead + title + tail, [block, f"; can't move: sampo task block {offer['id']}"], jm)
+        if not first or not act:
             return None
         # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
@@ -4408,63 +4604,57 @@ def _drive(p, sd, briefs, pl, g):
         if not more and full and d.get("drained") != len(briefs) and not c._round_first(p):  # T-0415: nothing queued: find
             # the next (T-2466: not while fm drive --round-first holds new work for the Genesis round)
             d["drained"] = len(briefs)  # work rather than wait; once per drain, as below, not once per set of jobs
-            return (f"Sampo drive: background work is still running ({c.joinmore(running, 3)}) and nothing else is "
-                    f"queued; don't wait on it. Check the product end to end as its user uses it (every screen at "
-                    f"desktop and phone width, or every command; the main flows; the service logs), sampo capture each "
-                    f"defect or gap you find, then plan and work the first. Its notification still wakes you for "
-                    f"{work['id']}.")
-        return (f"Sampo drive: background work is still running ({c.joinmore(running, 3)}); its notification wakes "
-                f"you, so don't sleep or poll. Meanwhile do what doesn't need its result: the next step's test, the "
-                f"audit lenses on the current diff (sampo audit prep), docs, "
-                + (f"grounding and planning {', '.join(more)}, or an independent S/M task in a builder lane "
-                   f"(sampo lane brief ID). " if more else "planning what comes after this task. ")
-                + (f"Optional work is dropped ({pace}): no side work; required gates still run. " if pace else "")
-                + "If nothing is independent of it, end the turn with one line naming what you wait on.")
-    d.pop("waited", None)
-    if running:  # T-2790: no active task, jobs running: the next task is named once per running set, not every Stop
-        if d.get("pushed_for") == running[:5]:  # (a queued close run's own fm focus calls were raced by the repeats)
-            return None
-        d["pushed_for"] = running[:5]
-    else:
-        d.pop("pushed_for", None)
+            return _line("Sampo drive: nothing else is queued: check the product end to end as its user does, sampo "
+                         "capture each gap, then work the first", jm)
+        # the pace note rides the head, never cut by the line's limit: it is why no side task is offered (T-1969)
+        lead = "Sampo drive: background work runs" + (
+            f". Optional work is dropped ({pace.split(' (')[0].split(' with ')[0]}): do" if pace else "; meanwhile do")
+        return _line(f"{lead} what doesn't need it" + (f", like planning {', '.join(more)}" if more else ""),
+                     [] if more else [": the next step's test, sampo audit prep, docs", ": the next step's test"],
+                     [f". Its notification wakes you ({c.joinmore(running, 3)})"] + jm)
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
         return None  # no progress since the last continuation: let the turn end
     if d.get("count", 0) >= DRIVE_MAX:
         return None
-    more = [x["id"] for x in sd["queue"] if x["id"] != work["id"] and x["id"] not in blocked]
-    what = (f"step {work['step']['n']}/{work['step']['of']} ({work['step']['text'][:80]}) is open" if work.get("step")
-            else "is open" if sd["active"] and work["id"] == sd["active"]["id"]
-            else "is captured in the inbox (plan it, then work it)" if work.get("status") == "captured"
-            else "is next in the queue (not focused)")
-    reason = (f"Sampo drive: {work['id']} {work['type']} {what}"
-              + (f"; {len(more)} more queued ({', '.join(more[:4])})" if more else "")
-              + (". Autonomy full: the user is not asked mid-run; decide with your default and record it (sampo decide), "
-                 "self-approve L/? plans after the self-critique, keep what needs the user (sampo ask) for the final report"
-                 + (f"; waiting on the user: {', '.join(waiting)}" if waiting else "")
-                 + (f"; {_queue_line(p, briefs)}" if _queue_line(p, briefs) else "") + "."
-                 if full else
-                 ". No question to the user or approval is pending. Drive ends when the queue is empty, "
-                 "when a question or approval is needed, or with `sampo drive off`."))
+    # T-3163: the engine prints this reason in the terminal, so it is one line naming the one next action; the riders
+    # (merges, andons, decisions) wait in sampo next and the drive's rules in the session's own context
+    tid, first = work["id"], f"{work['id']} is next"
+    rest, hint, extras = [], "", []
     try:
+        first = c.next_action(wb, sd.get("autonomy") or "standard")  # next_for may name another (a waiting one)
         nb, nst, action = c.next_for(p, briefs)
-        hint = _skill_once(sid, c.skill_for(nb, nst))  # T-1697
-        reason += " Next: " + action + (f" ({hint})" if hint else "")
+        if nb is not None and nb.id == tid:
+            head, *rest = action.split(" · ")
+            first = head.strip() or first
+            hint = _skill_once(sid, c.skill_for(nb, nst), peek=True)  # T-1697: marked told only once it is shown
         pct, tokens = _context(sid)
         big = pct is not None and (pct >= CONTEXT_NOTE_PCT or tokens >= CONTEXT_NOTE_TOKENS)
         used = f"{pct}%" + (f" ({tokens // 1000}k tokens)" if tokens else "")
         act = sd["active"]
         if not act and big:
-            reason += (f" Context {used} used at a task boundary; Sampo state is saved, so this is a good point for "
-                       f"the user to /compact or start a fresh session (auto-compaction will also handle it).")
+            extras.append([f" · Context {used} used at a task boundary: a good point to /compact", f" · /compact ({used})",
+                           " · /compact"])  # short forms: a long step title never hides it
         elif act and act["tier"] in ("M", "L") and big:
             n = _step_boundary(p, act["id"])  # T-0448: compact between steps, not mid-step; once per boundary
             if n and _first_time(sid, f"compact-{act['id']}-s{n}"):
-                reason += (f" Context {used} used at a step boundary of {act['id']} (step {n} has its evidence): "
-                           f"checkpoint here, sampo checkpoint --note \"<what the next step needs>\"; its Resume here is "
-                           f"the handoff the compacted context reads, so this is the point for the user to /compact "
-                           f"(auto-compaction will also handle it).")
+                first = (f"context {used} at {act['id']}'s step boundary: the user can /compact after sampo checkpoint "
+                         f"--note \"<step {n + 1} needs>\" (its Resume here)")
+                rest, hint = [], ""
     except Exception:
         log_error("Stop", _tb())
+    if full and waiting:  # full autonomy: what waits on the user is for the final report
+        extras.append([f"; waiting on the user: {c.joinmore(waiting, 3)}"])
+    queued = _queue_line(p, briefs) if full else ""
+    if queued:
+        rest = [r for r in rest if r != queued]
+        extras.append([f"; {queued}", f"; {queued.split(' (')[0]}"])
+    if hint:
+        extras.append([f" ({hint})", f" ({hint.split(';')[0]})"])
+    if rest:
+        extras.append([f" (+{len(rest)} more: sampo next)"])
+    reason = _line("Sampo drive: " + first, *extras)
+    if hint and f"({hint.split(';')[0]}" in reason:
+        _skill_once(sid, hint)
     changed = _ui_changed(sid, _turn_began(p, sid, d), d.get("ui_mtime"))
     if changed:  # T-0145: Claude Code hot-reloads only at a real turn end; the reloaded mod resumes (fm ui --json)
         meta = c.read_meta(p)  # the caller holds the lock
@@ -4476,6 +4666,15 @@ def _drive(p, sd, briefs, pl, g):
     _event({"kind": "drive", "session_id": sid, "project": p.slug, "task": work["id"]})
     d.update(count=d.get("count", 0) + 1, marks=_marks(p))
     return reason
+
+
+def _line(head, *extras):
+    """T-3163: a drive push as one terminal line of at most DRIVE_LINE characters: its head (the one next action), then
+    each extra in its fullest form that still fits, in order."""
+    reason = " ".join(head.split())
+    for alts in extras:
+        reason += next((a for a in alts if len(reason) + len(a) <= DRIVE_LINE), "")
+    return c.fit(" ".join(reason.split()), DRIVE_LINE)
 
 
 def _step_boundary(p, tid):
@@ -4500,7 +4699,7 @@ def _pace(p=None):
         return None
 
 
-def _side_work(sd, briefs, work, full, offered, p):
+def _side_work(sd, briefs, work, full, offered, p, lane_only=False):
     """T-0401: the next queued task (then, in full autonomy, captured one) that can move while the active one's
     background jobs run: not the active one, not offered already for this set, not waiting on an open task
     (depends_on or what fm relate inferred; T-1899: any open one, not only the active), not already briefed for a
@@ -4519,6 +4718,8 @@ def _side_work(sd, briefs, work, full, offered, p):
         if (x.get("status") != "captured" and b.section("Plan review").strip()
                 and not (lanes and x.get("tier") in ("S", "M"))):  # T-0700: planned and reviewed, no lane free:
             continue                                                 # nothing left to do on it from here
+        if lane_only and not _laneable(x, lanes, _economy(p)):  # T-3539: no active task: only what a builder takes
+            continue
         return x
     return None
 
@@ -4587,16 +4788,20 @@ def _economy(p=None):
 def _start_how(x, lanes=True, economy=False):
     """How to start a side task: a builder lane for planned S/M work while a slot is free, planning for the rest;
     under economy mode (T-2495) no lane: main-thread prep that leaves the tree alone while the gate runs."""
-    if x.get("status") == "captured":
-        return (f"plan it (sampo task new \"<title>\" --from {x['id']} with its criteria and steps; /foreman:intake §2 "
-                f"for M/L), so it's ready to run")
+    if x.get("status") == "captured":  # T-3163: short, as it rides the drive's one terminal line
+        return f"plan it (sampo task new \"<title>\" --from {x['id']})"
     if economy:
-        return (f"read its code and draft its red test and fix in the scratchpad (economy mode: no builder lane), then "
-                f"land them after the gate, as {x['id']}'s own task")
-    # T-1176: a brainstorm runs fm ideas here and a release pushes: neither is a builder's work
-    if x.get("tier") in ("S", "M") and lanes and x.get("type") != "RESEARCH" and not x.get("title", "").startswith("Release"):
-        return f"sampo lane brief {x['id']}, then launch the builder it prints (Agent, isolation worktree)"
-    return f"ground it and sharpen its plan (sampo second plan {x['id']}), so it's ready when the current task lands"
+        return "draft its test and fix in the scratchpad (economy: no lane)"
+    if _laneable(x, lanes, economy):
+        return f"sampo lane brief {x['id']}, then launch the builder it prints"
+    return f"sharpen its plan (sampo second plan {x['id']})"
+
+
+def _laneable(x, lanes=True, economy=False):
+    """Whether _start_how starts x in a builder lane. T-1176: a brainstorm runs fm ideas here and a release pushes:
+    neither is a builder's work."""
+    return (x.get("status") != "captured" and not economy and lanes and x.get("tier") in ("S", "M")
+            and x.get("type") != "RESEARCH" and not x.get("title", "").startswith("Release"))
 
 
 def _turn_began(p, sid, d):
@@ -4729,7 +4934,15 @@ def notification(pl):
 def session_end(pl):
     p = c.find_project(_cwd(pl))
     if p:
-        c.update_meta(p, last_active=c.now())
+        sid = pl.get("session_id")
+
+        with c.lock(p.dir):  # T-3331: the ended session no longer holds the checkout (claude --continue is no second one)
+            meta = c.read_meta(p)
+            meta["last_active"] = c.now()
+            if sid and (meta.get("session") or {}).get("id") == sid:
+                meta.pop("session")
+            (meta.get("seconds") or {}).pop(sid, None)
+            c.write_meta(p, meta)
         c.regen_registry()
     return None
 

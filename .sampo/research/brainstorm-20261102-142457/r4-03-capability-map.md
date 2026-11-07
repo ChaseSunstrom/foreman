@@ -26,7 +26,7 @@
 
 - **Unwrap interpreter one-liners and wrapper commands in the guard** — SECURITY — value 4 — effort M — risk med — category: guard parsing
   Why: assumption: the guard may judge `python -c`, `node -e`, `perl -e`, `xargs`, `find -exec`, `timeout` and `env` by command shape alone. The idea unwraps them and maps embedded calls (`shutil.rmtree`, `fs.rmSync`, `os.system`) to the same danger classes as `rm -rf`.
-  Done when: `python3 -c "import shutil; shutil.rmtree('/home/x')"` is blocked like `rm -rf /home/x`, with a benign `python3 -c "print(1)"` still allowed in the guard's test table.
+  Done when: `python3 -c "import shutil; shutil.rmtree('~')"` is blocked like `rm -rf ~`, with a benign `python3 -c "print(1)"` still allowed in the guard's test table.
 
 - **Run every hook under rlimits and a bounded stdin read** — PERFORMANCE — value 3 — effort S — risk low — category: hook resilience
   Why: assumption: a 200 MB tool response could stall or OOM a hook that reads it whole. Setting CPU, address-space and file-size limits and capping the payload read turns that into a named, declared fail mode.

@@ -43,7 +43,7 @@ Blast radius (fm graph blast): co-changes bench/spec-suite/README.md, bench/spec
 ## Docs impact
 none: the catalogue is Foreman state in the Genesis tower, not a repo doc
 ## Verification evidence
-- (step 1) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/moon/kill_m02.py /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/moon/killrun` → exit 0 · "verdict": "viable" / } [ran] [tree 37c80f3d08ed] [world 2f1906870a] (2026-11-02T22:01:07Z)
+- (step 1) `python3 /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/moon/kill_m02.py /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/moon/killrun` → exit 0 · "verdict": "viable" / } [ran] [tree 37c80f3d08ed] [world 2f1906870a] (2026-11-02T22:01:07Z)
 - (step 2) `grep -q 'Evidence: T-2679' state/projects/foreman-4a056f/research/genesis/moonshot.md` → exit 0 · (no output) [ran] [tree 37c80f3d08ed] [world 2f1906870a] (2026-11-02T22:01:54Z)
 - (ac 1) `fm genesis moonshot status` → exit 0 · - Floor: advance at least one extreme or massive moonshot by a stage and write 'Advanced: M-NN <stage> (T-NNNN)' in gen-3/mission-moonshot.md; fm genesis check holds it once gen-4 exists. Every built [ran] [tree 37c80f3d08ed] [world 2f1906870a] (2026-11-02T22:01:54Z)
 - (ac 1) `fm genesis moonshot status` → exit 0 · reused: the same command passed on this tree and world at 2026-11-02T22:01:54Z [ran] [tree 37c80f3d08ed] [world 2f1906870a] (2026-11-02T22:01:55Z)

@@ -9,6 +9,7 @@ depends_on: []
 source: discovered
 created: 2026-11-06T05:11:42Z
 updated: 2026-11-06T05:11:42Z
+group: landscape scan and model tracking
 ---
 # Model retirement warnings: Opus 4.8 fast mode retires before 2026-11-30 (release watch…
 ## Raw request

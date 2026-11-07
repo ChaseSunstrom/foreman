@@ -38,14 +38,14 @@ A complete version: fresh assets for every visitor, ambient motion in the hero, 
 <!-- auto -->
 - 2026-10-30T00:18:47Z step 3/4: hero lights drift, proof figures count up once, fcards get a pointer-follow glow, shader ids wrap whole
 - git: foreman/build; 4 uncommitted: plugin/tests/test_site_build.py, site/build.py, site/site.js, site/style.css
-- touched since last checkpoint: plugin/tests/test_site_build.py, site/build.py, site/style.css, site/site.js, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/shoot_polish.sh
+- touched since last checkpoint: plugin/tests/test_site_build.py, site/build.py, site/style.css, site/site.js, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/shoot_polish.sh
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence
 - (step 1) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_site_build.Landing.test_asset_urls_change_with_their_content` → red as expected (exit 1) · Ran 1 tests in 1.3s (1 classes, 16 at a time; slowest: Landing 1s) / FAILED (1 classes) [ran] [tree fcb59a154e5e] (2026-10-30T00:12:39Z)
 - (step 2) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_site_build` → exit 0 · Ran 11 tests in 4.2s (5 classes, 16 at a time; slowest: Landing 4s, Reproducible 2s, TitleCard 1s) / OK [ran] [tree 1f0cf15f3730] (2026-10-30T00:13:27Z)
 - (step 3) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_site_build` → exit 0 · Ran 11 tests in 2.5s (5 classes, 16 at a time; slowest: Landing 2s, Reproducible 1s, TitleCard 1s) / OK [ran] [tree 87503fd943ae] (2026-10-30T00:20:27Z)
-- (step 4) `sh /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/shoot_polish.sh` → exit 0 · 102399 p-glow-1.png / 227141 p-phone.png [ran] [tree 87503fd943ae] (2026-10-30T00:20:35Z)
+- (step 4) `sh /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/shoot_polish.sh` → exit 0 · 102399 p-glow-1.png / 227141 p-phone.png [ran] [tree 87503fd943ae] (2026-10-30T00:20:35Z)
 - (ac 1) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_site_build 2>&1 | grep -E "^(FAIL|ERROR)|AssertionError|^OK|^FAILED|Ran " | head` → exit 0 · Ran 11 tests in 2.3s (5 classes, 16 at a time; slowest: Landing 2s, Reproducible 1s, TitleCard 1s) / OK [ran] [tree 3a55a4e41d19] (2026-10-30T00:21:40Z)
 - (ac 1) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_site_build 2>&1 | grep -E "^(FAIL|ERROR)|Error|^OK|Ran " | head` → exit 0 · Ran 11 tests in 2.6s (5 classes, 16 at a time; slowest: Landing 2s, Reproducible 1s, TitleCard 1s) / OK [ran] [tree 5cad1dc37ea1] (2026-10-30T00:23:50Z)
 - (ac 1) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_site_build` → exit 0 · Ran 11 tests in 2.4s (5 classes, 16 at a time; slowest: Landing 2s, Reproducible 1s, TitleCard 1s) / OK [ran] [tree 5cad1dc37ea1] (2026-10-30T00:24:10Z)

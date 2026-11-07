@@ -41,7 +41,7 @@ Options: a new fm brand command; an fm design brand action; --to brand on fm des
 <!-- auto -->
 - 2026-10-28T21:00:02Z step 1/4: tests first (red)
 - git: foreman/build; 12 uncommitted: .claude-plugin/marketplace.json, CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmcritique.py, plugin/lib/fmdesign.py, plugin/lib/fmrelease.py, plugin/skills/ui-design/SKILL.md, plugin/tests/test_critique.py, plugin/tests/test_design_surfaces.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1652-i.txt, plugin/tests/test_design_surfaces.py, plugin/tests/test_release.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1652-j.txt, .claude-plugin/marketplace.json, plugin/lib/fmcli.py, plugin/lib/fmdesign.py, plugin/lib/fmrelease.py, plugins/foreman-design/.claude-plugin/plugin.json
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1652-i.txt, plugin/tests/test_design_surfaces.py, plugin/tests/test_release.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1652-j.txt, .claude-plugin/marketplace.json, plugin/lib/fmcli.py, plugin/lib/fmdesign.py, plugin/lib/fmrelease.py, plugins/foreman-design/.claude-plugin/plugin.json
 - failures met: plugin.json
 ## Docs impact
 MASTER.md, CHANGELOG.md, plugin/skills/ui-design/SKILL.md

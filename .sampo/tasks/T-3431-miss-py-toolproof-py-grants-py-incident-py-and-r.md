@@ -18,6 +18,9 @@ predict_attempts: 1
 plan0_at: 2026-11-06T11:19:05Z
 plan0_scope: [plugin/lib/sampo/miss.py, plugin/lib/sampo/toolproof.py, plugin/lib/sampo/grants.py, plugin/lib/sampo/incident.py, plugin/lib/sampo/rollback.py, plugin/tests/test_hooks.py]
 builder_returned: 2026-11-06T11:37:33Z
+inferred_deps: [T-3423]
+inferred_why: T-3423: named in its request
+group: hook lock contention and error logging
 ---
 # miss.py, toolproof.py, grants.py, incident.py and rollback.py append to hooks.log…
 ## Raw request

@@ -18,6 +18,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T06:19:37Z
 plan0_scope: [plugin/lib/sampo/hooks.py, plugin/hooks/hook, plugin/tests/test_bench_hooks.py]
 builder_returned: 2026-11-06T06:59:14Z
+group: hook, doctor and UI speed
 ---
 # Trim the hook process floor: sampo.hooks imports its stdlib extras lazily (tempfile/random, shutil/bz2, hashlib) and hooks/hook runs python3 -I, so the floor (TaskCompleted p50, 37.5 ms) drops to 30 ms or less with every gate green
 ## Raw request

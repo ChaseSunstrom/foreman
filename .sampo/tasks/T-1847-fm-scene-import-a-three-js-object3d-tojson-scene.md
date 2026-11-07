@@ -35,7 +35,7 @@ Options: (a) pure-Python reader of the JSON into a scene dict, then validate(); 
 <!-- auto -->
 - 2026-10-28T17:50:22Z step 1/2: test: from_three() and fm scene import (red)
 - git: foreman/build; 6 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmscene.py, plugin/skills/playbooks/references/ui/scene-3d.md, plugin/tests/test_scene.py
-- touched since last checkpoint: plugin/lib/fmcli.py, CHANGELOG.md, MASTER.md, plugin/skills/playbooks/references/ui/scene-3d.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/import-impl2.py, plugin/tests/test_scene.py, plugin/lib/fmscene.py
+- touched since last checkpoint: plugin/lib/fmcli.py, CHANGELOG.md, MASTER.md, plugin/skills/playbooks/references/ui/scene-3d.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/import-impl2.py, plugin/tests/test_scene.py, plugin/lib/fmscene.py
 ## Docs impact
 ~/.claude/foreman/plugin/skills/playbooks/references/ui/scene-3d.md
 ## Verification evidence

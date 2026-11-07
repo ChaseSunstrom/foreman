@@ -10,9 +10,6 @@ source: steer
 created: 2026-11-05T03:13:56Z
 updated: 2026-11-05T03:13:56Z
 steer_method_rate: 0.218
-inferred_deps: [T-3123]
-inferred_why: T-3123: generalized corrections build on the miss ledger
-group: self-awareness and miss ledger
 ---
 # When the user points out a miss, a correction, or a preference, generalize it into the…
 ## Raw request

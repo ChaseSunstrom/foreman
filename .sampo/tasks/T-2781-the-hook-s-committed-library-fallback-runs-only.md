@@ -40,7 +40,7 @@ Blast radius (fm graph blast): co-changes plugin/lib/fmhooks.py, CHANGELOG.md, M
 <!-- auto -->
 - 2026-11-03T17:02:53Z steps 3/3 done
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/9-fiery-forge/_src/index.src.html
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/9-fiery-forge/_src/index.src.html
 ## Docs impact
 none: the hook's comment names T-2781
 ## Verification evidence

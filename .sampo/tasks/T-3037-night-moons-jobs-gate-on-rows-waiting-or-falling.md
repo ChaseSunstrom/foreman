@@ -9,7 +9,6 @@ depends_on: []
 source: followup
 created: 2026-11-04T23:52:31Z
 updated: 2026-11-04T23:52:31Z
-group: 10000 moons target
 ---
 # Night Moons jobs gate on rows waiting or falling novelty, not the fixed 10,000 target:…
 ## Raw request

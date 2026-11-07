@@ -46,7 +46,7 @@ Choice: A, with a title/use-line scan when the sqlite build lacks FTS5. Why: std
 ## Docs impact
 MASTER.md
 ## Verification evidence
-- (step 3) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/hintcost.py` → exit 0 · import 33.2 ms; finds (first is cold) 2.2, 1.0, 0.9 ms / books 76 [ran] [tree 9f2683ca3349] (2026-10-28T10:35:15Z)
+- (step 3) `python3 /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/hintcost.py` → exit 0 · import 33.2 ms; finds (first is cold) 2.2, 1.0, 0.9 ms / books 76 [ran] [tree 9f2683ca3349] (2026-10-28T10:35:15Z)
 - (step 1) `python3 plugin/tests/run.py test_playbook_route` → exit 0 · Ran 19 tests in 2.8s (2 classes, 16 at a time; slowest: Cli 2s, Rank 1s) / OK [ran] [tree 9f2683ca3349] (2026-10-28T10:35:26Z)
 - (step 2) `python3 plugin/tests/run.py test_playbook_use` → exit 0 · Ran 12 tests in 9.9s (2 classes, 16 at a time; slowest: Use 10s, Cap 0s) / OK [ran] [tree 9f2683ca3349] (2026-10-28T10:35:36Z)
 - (ac 2) `python3 plugin/tests/run.py test_playbook_use 2>&1 | grep -E "^FAIL|^ERROR|failures|errors|^OK" | head -4` → ✗ exit 1 · FAILED (failures=1) / FAILED (1 classes) [ran] [tree 919369c53df1] (2026-10-28T15:40:12Z)

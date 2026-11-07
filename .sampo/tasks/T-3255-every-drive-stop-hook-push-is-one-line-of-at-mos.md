@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T00:17:43Z
 updated: 2026-11-06T00:17:43Z
+inferred_deps: [T-3163]
+inferred_why: T-3163: named in its request
 ---
 # Every drive Stop-hook push is one line of at most 160 characters (recovery, lanes,…
 ## Raw request

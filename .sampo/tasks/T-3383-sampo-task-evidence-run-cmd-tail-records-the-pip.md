@@ -8,16 +8,18 @@ scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T06:41:41Z
-updated: 2026-11-06T09:56:04Z
-lane: ~/.claude/foreman/.claude/worktrees/agent-a2f1e18efd3bd34d3
-lane_branch: worktree-agent-a2f1e18efd3bd34d3
-base: 19cf45dc02be51d02cca75532c0a953687420bda
-base_tree: f7e92771539040aa709b2972758be9d5f52b3845
+updated: 2026-11-06T17:38:39Z
+lane_branch: foreman/T-3383
 predict_minutes: 8
 predict_attempts: 1
 plan0_at: 2026-11-06T08:45:58Z
 plan0_scope: []
 builder_returned: 2026-11-06T09:56:04Z
+lane: ~/.claude/foreman.lanes/T-3383
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
+inferred_deps: [T-3353]
+inferred_why: T-3353: named in its request
 ---
 # Sampo task evidence --run '<cmd> | tail' records the pipe's exit code, not the…
 ## Raw request
@@ -53,6 +55,9 @@ Reading 1: run --run with pipefail. Reading 2 (ruled out): refuse top-level pipe
 - 2026-11-06T08:45:46Z planned: it has criteria and steps
 - 2026-11-06T08:45:58Z focused
 - 2026-11-06T08:45:58Z predicted from its closes: 8 min, 1 attempt(s)
+- 2026-11-06T17:37:49Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-a2f1e18efd3bd34d3 (branch worktree-agent-a2f1e18efd3bd34d3 kept: not merged)
+- 2026-11-06T17:37:50Z lane: ~/.claude/foreman.lanes/T-3383 on foreman/T-3383
+- 2026-11-06T17:38:39Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

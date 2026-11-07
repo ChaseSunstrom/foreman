@@ -18,6 +18,8 @@ predict_attempts: 1
 plan0_at: 2026-11-06T06:27:56Z
 plan0_scope: []
 builder_returned: 2026-11-06T06:59:54Z
+inferred_deps: [T-3364]
+inferred_why: T-3364: named in its request
 ---
 # A stale per-worktree index.lock (.git/worktrees/<lane>/index.lock, left by a killed…
 ## Raw request

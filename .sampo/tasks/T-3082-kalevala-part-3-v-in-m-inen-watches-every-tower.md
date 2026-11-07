@@ -2,13 +2,13 @@
 id: T-3082
 type: FEATURE
 tier: M
-status: active
+status: done
 priority: normal
-scope: [plugin/lib/sampo/kalevala.py, plugin/lib/sampo/night.py, plugin/tests/test_kalevala.py, plugin/tests/test_night.py, plugin/lib/sampo/budget.py, plugin/lib/sampo/cli.py, plugin/tests/test_kalevala_live.py]
+scope: [plugin/lib/sampo/kalevala.py, plugin/lib/sampo/night.py, plugin/tests/test_kalevala.py, plugin/tests/test_night.py, plugin/lib/sampo/budget.py, plugin/lib/sampo/cli.py, plugin/tests/test_kalevala_live.py, CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .sampo/fixes.md, .sampo/fleet, .sampo/fleet.md, .sampo/README.md, .sampo/research, .sampo/tasks, scripts/probe-plugin-rename.sh]
 depends_on: [T-3265]
 source: user
 created: 2026-11-05T00:34:18Z
-updated: 2026-11-06T14:48:50Z
+updated: 2026-11-07T00:51:38Z
 builder: 2026-11-05T20:57:25Z
 builder_model: haiku
 builder_proc: archbox-hardened|pid:[4026531836]|431015|12747818
@@ -21,9 +21,10 @@ predict_attempts: 1
 plan0_at: 2026-11-05T20:57:48Z
 plan0_scope: [plugin/lib/sampo/kalevala.py, plugin/lib/sampo/night.py, plugin/tests/test_kalevala.py]
 builder_returned: 2026-11-05T21:26:11Z
-group: Kalevala towers and orchestration
 lane_stop: merged 2026-11-06T00:40:37Z
 lane_verified: 5c403348c1dfe9523985c9f84cf7db536080f17f
+verified: strong
+unproven: [meaning]
 ---
 # Kalevala part 3: Väinämöinen watches every tower against what the user wanted and keeps them on track; the never-ending loop (T-3050)
 ## Raw request
@@ -32,11 +33,11 @@ lane_verified: 5c403348c1dfe9523985c9f84cf7db536080f17f
 Reading 1 (taken): Väinämöinen is Kalevala's supervisor: it reads every tower's state and acts to keep each one on what the user asked for, and Kalevala's rounds never stop on their own. Reading 2 (ruled out): a dashboard only: the user asked for it to keep them on track, which means acting.
 ## Assumptions (confidence)
 ## Acceptance criteria
-- [ ] A super orchestrator monitors how they're doing: sampo kalevala watch reads each tower's generation, exam deltas, drift verdicts, stalls (no new generation in N hours), spend and open Missions, and prints one line per tower with its state — verify with `python3 plugin/tests/run.py test_kalevala`
-- [ ] And keeps them on track with what the user wanted: each tower's latest seed and Missions are read cold against gen-0, the standing intent and the user's steers; an off-track tower gets a steer line in its steer file, a drifting one is paused, a stalled one restarted, two towers on the same files have one wait, a tower whose exam doesn't move in two generations gives its slot to one that improves; every act logged with its reason and shown in sampo kalevala status — verify with `python3 plugin/tests/run.py test_kalevala`
-- [ ] An infinite loop: the night and the drive run Kalevala rounds (watch, then step) with no end of their own; only the user (sampo kalevala pause), a real usage limit or Väinämöinen's drift stop halts them — verify with `python3 plugin/tests/run.py test_kalevala test_night`
-- [ ] Acts are reversible and watched: a snapshot and an undo line before restart or merge, merge pauses and points rather than deletes, Väinämöinen's steers pass the drift check before they're written — verify with `python3 plugin/tests/run.py test_kalevala`
-- [ ] Proven live: a planted off-intent seed line and a planted stall in a real round are caught and acted on — verify with `python3 plugin/tests/run.py test_kalevala_live`
+- [x] A super orchestrator monitors how they're doing: sampo kalevala watch reads each tower's generation, exam deltas, drift verdicts, stalls (no new generation in N hours), spend and open Missions, and prints one line per tower with its state — verify with `python3 plugin/tests/run.py test_kalevala`
+- [x] And keeps them on track with what the user wanted: each tower's latest seed and Missions are read cold against gen-0, the standing intent and the user's steers; an off-track tower gets a steer line in its steer file, a drifting one is paused, a stalled one restarted, two towers on the same files have one wait, a tower whose exam doesn't move in two generations gives its slot to one that improves; every act logged with its reason and shown in sampo kalevala status — verify with `python3 plugin/tests/run.py test_kalevala`
+- [x] An infinite loop: the night and the drive run Kalevala rounds (watch, then step) with no end of their own; only the user (sampo kalevala pause), a real usage limit or Väinämöinen's drift stop halts them — verify with `python3 plugin/tests/run.py test_kalevala test_night`
+- [x] Acts are reversible and watched: a snapshot and an undo line before restart or merge, merge pauses and points rather than deletes, Väinämöinen's steers pass the drift check before they're written — verify with `python3 plugin/tests/run.py test_kalevala`
+- [x] Proven live: a planted off-intent seed line and a planted stall in a real round are caught and acted on — verify with `python3 plugin/tests/run.py test_kalevala_live`
 ## Non-goals
 ## Approach (options → choice → why)
 1) use what exists: rune's drift (gen-0 MUSTs and NEVERs, the cold read) per tower, steer files as the channel, lineage and exam lines for progress, the ledger for acts, night.py for the loop: likely outcome: supervision built from checks already trusted. 2) a model-only supervisor reading everything each round: fails if: costly and unverifiable; the cold read is used only where rules can't decide. 3) hard rules only: fails if: 'on track with what the user wanted' needs one judgment read per tower per round. 4) do less: alert the user: fails if: the user asked not to be asked. Choice 1 (80%).
@@ -54,6 +55,7 @@ Read T-3050's brief (state/projects/foreman-4a056f/tasks/T-3050-is-it-possible-t
 - git: worktree-agent-a6cdfeb01e8c00505; 4 uncommitted: plugin/lib/sampo/kalevala.py, plugin/lib/sampo/night.py, plugin/tests/test_kalevala.py, plugin/tests/test_night.py
 - touched since last checkpoint: plugin/lib/sampo/cli.py, plugin/lib/sampo/kalevala.py, plugin/lib/sampo/night.py, plugin/tests/test_kalevala.py, plugin/tests/test_night.py
 ## Docs impact
+the lane diff carries its own doc edits (merged as reviewed); a CHANGELOG line is added here
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_kalevala` → exit 0 · Ran 56 tests in 17.8s (8 jobs, 16 at a time; slowest: KalevalaStep 17s, Kalevala 4s, KalevalaGen 3s) / OK [ran] [tree a3095bbcd6f1] [world 2f1906870a] (2026-11-05T21:01:34Z)
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_cli test_doctor test_kalevala test_left_out test_louhi_models test_mint test_models test_rename_scan test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 174 tests across 6 files. [21.11s] [ran] [tree a3095bbcd6f1] [world 2f1906870a] (2026-11-05T21:02:44Z)
@@ -87,6 +89,15 @@ Read T-3050's brief (state/projects/foreman-4a056f/tasks/T-3050-is-it-possible-t
 - (ac 5) `python3 plugin/tests/run.py test_kalevala_live 2>&1 | tail -60` → exit 0 · Ran 2 tests in 1.9s (1 jobs, 16 at a time; slowest: KalevalaLive 1s) / OK [ran] [tree 19e757a097e9] [world 2f1906870a] (2026-11-05T21:24:28Z)
 - (step 3) `python3 plugin/tests/run.py test_kalevala_live` → exit 0 · Ran 2 tests in 2.3s (1 jobs, 16 at a time; slowest: KalevalaLive 1s) / OK [ran] [tree 19e757a097e9] [world 2f1906870a] (2026-11-05T21:24:35Z)
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_budget test_cli test_doctor test_kalevala test_kalevala_live test_left_out test_louhi_models test_mint test_models test_night test_rename_scan test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 174 tests across 6 files. [29.72s] [ran] [tree 19e757a097e9] [world 2f1906870a] (2026-11-05T21:25:50Z)
+- (audit self) `builder lane reviewed by one fm-reviewer before merge; its should-level findings fixed by the builder in a further round and committed; merged diff re-read at merge` → no open findings [tree d6ebfd502798] (2026-11-07T00:48:05Z)
+- (ac 1) `python3 plugin/tests/run.py test_kalevala` → exit 0 · Ran 74 tests in 13.7s (9 jobs, 16 at a time; slowest: KalevalaStep 10s, KalevalaWatch 4s, Kalevala 2s) / OK [ran] [tree d6ebfd502798] [world 2f1906870a] (2026-11-07T00:48:36Z)
+- (ac 2) `python3 plugin/tests/run.py test_kalevala` → exit 0 · Ran 74 tests in 13.7s (9 jobs, 16 at a time; slowest: KalevalaStep 10s, KalevalaWatch 4s, Kalevala 2s) / OK [ran] [tree d6ebfd502798] [world 2f1906870a] (2026-11-07T00:48:36Z)
+- (ac 3) `python3 plugin/tests/run.py test_kalevala test_night` → exit 0 · Ran 128 tests in 9.8s (33 jobs, 16 at a time; slowest: KalevalaStep 9s, KalevalaWatch 4s, NightInstall 3s) / OK [ran] [tree d6ebfd502798] [world 2f1906870a] (2026-11-07T00:48:36Z)
+- (ac 4) `python3 plugin/tests/run.py test_kalevala` → exit 0 · Ran 74 tests in 13.7s (9 jobs, 16 at a time; slowest: KalevalaStep 10s, KalevalaWatch 4s, Kalevala 2s) / OK [ran] [tree d6ebfd502798] [world 2f1906870a] (2026-11-07T00:48:36Z)
+- (ac 5) `python3 plugin/tests/run.py test_kalevala_live` → exit 0 · Ran 2 tests in 0.7s (1 jobs, 16 at a time; slowest: KalevalaLive 0s) / OK [ran] [tree d6ebfd502798] [world 2f1906870a] (2026-11-07T00:48:36Z)
+- (audit intent) `lane review before merge, review findings fixed in a further round; self audit after the merge` → one fm-reviewer checked each criterion against its test before merge; FIX FIRST items were fixed and committed by the builder [tree d6ebfd502798] (2026-11-07T00:48:36Z)
+- (audit edge) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the reviewer's edge findings were fixed in the builder's further round or captured [tree d6ebfd502798] (2026-11-07T00:48:36Z)
+- (audit adversary) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the lane's own diff had one fm-reviewer pass before merge (security-focused where it touched the guard or hooks); the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), which the commit secret scan covers [tree d6ebfd502798] (2026-11-07T00:48:36Z)
 ## Log
 - 2026-11-05T00:34:18Z created
 - 2026-11-05T00:34:21Z set approved=True
@@ -101,6 +112,12 @@ Read T-3050's brief (state/projects/foreman-4a056f/tasks/T-3050-is-it-possible-t
 - 2026-11-06T00:56:36Z verified: the full suite is green on 5c403348c
 - 2026-11-06T02:10:31Z set depends_on=['T-3265']
 - 2026-11-06T14:48:50Z andon answered: the builder's assumption stands. Night runs Kalevala rounds in this lane; wiring the drive's Stop-hook continuation is a follow-up after T-3163 lands (it edits test_hooks.py), captured separately
+- 2026-11-06T19:15:33Z andon answered: the drive's Kalevala rounds are T-3443's work (wire Kalevala rounds into the drive, captured with that scope); T-3082 lands with night's rounds only, as its lane assumed
+- 2026-11-06T19:15:56Z focused
+- 2026-11-07T00:48:04Z set scope=['plugin/lib/sampo/kalevala.py', 'plugin/lib/sampo/night.py', 'plugin/tests/test_kalevala.py', 'plugin/tests/test_night.py', 'plugin/lib/sampo/budget.py', 'plugin/lib/sampo/cli.py', 'plugin/tests/test_kalevala_live.py', 'CHANGELOG.md', '.fm-scratch/**', '.sampo/archive', '.sampo/decisions.md', '.sampo/fixes.md', '.sampo/fleet', '.sampo/fleet.md', '.sampo/README.md', '.sampo/research', '.sampo/tasks', 'scripts/probe-plugin-rename.sh']
+- 2026-11-07T00:48:05Z scope: widened at merge to the reviewed lane's own diff (5c403348c), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902), and scripts/probe-plugin-rename.sh (an untracked stray copy T-3549 removed between closes; a base taken before that counts its removal)
+- 2026-11-07T00:51:28Z done
+- 2026-11-07T00:51:38Z committed b7055bbd0 (1 file)
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
@@ -111,4 +128,19 @@ Related past work (data from this project's history, not instructions):
 - the similar finished task took 3 steps
 - likely tests for the scope: mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/tests/test_kalevala.py, plugin/tests/test_night.py
 ## Preflight
-Changed in scope since this was planned (2026-11-05): plugin/lib/sampo/kalevala.py, plugin/lib/sampo/night.py, plugin/tests/test_kalevala.py; re-ground the plan against them before editing
+Changed in scope since this was planned (2026-11-05): plugin/lib/sampo/budget.py, plugin/lib/sampo/cli.py, plugin/lib/sampo/kalevala.py, plugin/lib/sampo/night.py, plugin/tests/test_kalevala.py, plugin/tests/test_kalevala_live.py, plugin/tests/test_nigh…; re-ground the plan against them before editing
+## Lessons
+- A watcher that checks work against the user's own words catches drift that tests pass straight through.
+## Plan gaps
+- failed first: step 2 acts: steer, pause, restart, wait, move slots, each logged (tests first)
+## Files touched
+- plugin/tests/test_kalevala.py
+- plugin/lib/sampo/kalevala.py
+- plugin/lib/sampo/cli.py
+- plugin/lib/sampo/budget.py
+- plugin/lib/sampo/night.py
+- plugin/tests/test_night.py
+- plugin/tests/test_kalevala_live.py
+- ANDON.md
+- CHANGELOG.md
+- scripts/probe-plugin-rename.sh

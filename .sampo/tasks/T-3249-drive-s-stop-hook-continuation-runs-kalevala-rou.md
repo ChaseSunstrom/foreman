@@ -9,9 +9,8 @@ depends_on: [T-3163, T-3265]
 source: followup
 created: 2026-11-05T21:26:45Z
 updated: 2026-11-06T02:25:09Z
-inferred_deps: [T-3082, T-3163]
-inferred_why: T-3082: named in its request; T-3163: named in its request
-group: Kalevala towers and orchestration
+inferred_deps: [T-3082]
+inferred_why: T-3082: named in its request
 ---
 # Drive's Stop-hook continuation runs Kalevala rounds too (T-3082 criterion 3's drive…
 ## Raw request

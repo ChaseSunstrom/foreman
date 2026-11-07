@@ -9,7 +9,6 @@ depends_on: [T-3092]
 source: discovered
 created: 2026-11-05T03:43:05Z
 updated: 2026-11-05T03:43:13Z
-group: live page polish and charts
 ---
 # The live page's Moons stat tile gets a sparkline of kept moons like the other tiles
 ## Raw request

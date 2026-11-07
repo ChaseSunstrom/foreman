@@ -11,7 +11,6 @@ created: 2026-11-05T03:13:12Z
 updated: 2026-11-06T03:53:34Z
 rival_at: 2026-11-05T05:47:11Z
 rival_split: true
-group: fast merges and merge trains
 ---
 # Merge trains: land several green lanes with one self-change gate run and one suite run, bisecting a red train to the lane that broke it
 ## Raw request

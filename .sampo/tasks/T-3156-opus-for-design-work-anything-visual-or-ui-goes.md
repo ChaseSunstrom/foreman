@@ -10,7 +10,6 @@ source: steer
 created: 2026-11-05T05:58:28Z
 updated: 2026-11-05T05:58:28Z
 steer_method_rate: 0.218
-group: design works at scale
 ---
 # **Opus for design work.** Anything visual or UI goes to Opus: SVGs, art, illustrations,…
 ## Raw request

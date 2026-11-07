@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T13:50:37Z
 updated: 2026-11-05T13:50:37Z
-group: guard bypasses and over-refusals
 ---
 # Guard: _python_units never checks whether python3 itself was redefined earlier in the…
 ## Raw request

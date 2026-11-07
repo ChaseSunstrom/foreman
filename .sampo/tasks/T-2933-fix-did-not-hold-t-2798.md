@@ -8,10 +8,9 @@ scope: [plugin/lib/sampo/doctor.py, plugin/tests/test_doctor.py, plugin/tests/te
 depends_on: []
 source: discovered
 created: 2026-11-04T08:30:24Z
-updated: 2026-11-06T09:59:27Z
+updated: 2026-11-06T17:31:13Z
 trigger: did-not-hold
 trigger_key: d9b7abe3c2d7a06d
-group: hook bench gate
 lane: ~/.claude/foreman/.claude/worktrees/agent-adaffb74a41ffae35
 lane_branch: worktree-agent-adaffb74a41ffae35
 base: 9d9fa0fbb24df1b029200903120bfec2db40d1de
@@ -21,6 +20,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T09:32:35Z
 plan0_scope: [plugin/lib/sampo/doctor.py, plugin/tests/test_doctor.py, CHANGELOG.md]
 builder_returned: 2026-11-06T09:59:27Z
+lane_passed: {"tree": "698321386936fe3f7c7512d4901519568d6f1b41", "cmds": ["python3 plugin/tests/run.py test_doctor"]}
 ---
 # fm doctor's hook SLO judges PreToolUse runs taken under 0.5 load per CPU, where the hooks' own speed shows, not runs up to 1.5 that measure the machine
 ## Raw request

@@ -43,7 +43,7 @@ Choice 1 (75%): no installs, no copies; the shared cargo target turns minutes in
 <!-- auto -->
 - 2026-11-04T16:02:57Z step 3/3: live mint on trader plus one of jarvis-code or volt-gate; numbers in T-2978's research
 - git: foreman/build; 4 uncommitted: plugin/lib/sampo/cli.py, plugin/lib/sampo/louhi.py, plugin/lib/sampo/mint.py, plugin/tests/test_mint.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/testcmd-edit.json, plugin/lib/sampo/cli.py, plugin/lib/sampo/louhi.py, plugin/lib/sampo/mint.py, plugin/tests/test_mint.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/testcmd-edit.json, plugin/lib/sampo/cli.py, plugin/lib/sampo/louhi.py, plugin/lib/sampo/mint.py, plugin/tests/test_mint.py
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_mint` → ✗ exit 1 · Ran 14 tests in 3.1s (2 classes, 16 at a time; slowest: MintFromRepo 3s, MintWithUntrackedDeps 2s) / FAILED (1 classes: test_mint.MintWithUntrackedDeps) [ran] [tree 3f0a7760d814] [world 2f1906870a] (2026-11-04T15:25:27Z)

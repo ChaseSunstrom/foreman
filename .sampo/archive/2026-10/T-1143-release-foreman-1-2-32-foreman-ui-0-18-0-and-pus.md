@@ -32,7 +32,7 @@ verified: ok
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `tail -4 /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/tasks/b077kppml.output` → exit 0 · ! the gates changed the working tree: one of them writes files (a check should only read) / [exited with code 0] [ran] [tree 84ea54cfce55] (2026-10-16T10:11:06Z)
+- (step 1) `tail -4 /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/tasks/b077kppml.output` → exit 0 · ! the gates changed the working tree: one of them writes files (a check should only read) / [exited with code 0] [ran] [tree 84ea54cfce55] (2026-10-16T10:11:06Z)
 - (step 2) `git log origin/main --oneline -1` → exit 0 · 9876489 Merge foreman/build: Foreman 1.2.32 [ran] [tree d0b30fee36d6] (2026-10-16T10:12:00Z)
 - (ac 1) `git log origin/main --oneline -1` → exit 0 · 9876489 Merge foreman/build: Foreman 1.2.32 [ran] [tree d0b30fee36d6] (2026-10-16T10:12:01Z)
 - (audit self) `self: full gates green before the bump (1,921 tests OK, replay 0 newly allowed); fm release-check OK after it; merged --no-ff in a temporary worktree like 1.2.31 and pushed 20ff93a..9876489` → no findings [tree d0b30fee36d6] (2026-10-16T10:12:01Z)

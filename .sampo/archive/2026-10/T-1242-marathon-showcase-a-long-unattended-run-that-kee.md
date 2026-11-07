@@ -39,7 +39,7 @@ Chosen: extend fm bench (duel) with forced compaction and a multi-request case f
 <!-- auto -->
 - 2026-10-16T21:02:45Z steps 3/3 done
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: site/stats.py, site/pages.py, plugin/tests/test_dirty_at_focus.py, bench/spec-suite/README.md, plugin/tests/test_bench.py, site/style.css, plugin/lib/fmcli.py, plugin/tests/test_bench_family.py, plugin/lib/fmbench.py, plugin/tests/test_hooks.py, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/dbg_req.py, plugin/lib/fmhooks.py, CHANGELOG.md, MASTER.md, ~/.claude/projects/-home-<user>--claude-foreman/memory/hook-context-size-limit.md
+- touched since last checkpoint: site/stats.py, site/pages.py, plugin/tests/test_dirty_at_focus.py, bench/spec-suite/README.md, plugin/tests/test_bench.py, site/style.css, plugin/lib/fmcli.py, plugin/tests/test_bench_family.py, plugin/lib/fmbench.py, plugin/tests/test_hooks.py, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/dbg_req.py, plugin/lib/fmhooks.py, CHANGELOG.md, MASTER.md, ~/.claude/projects/-home-~--claude-foreman/memory/hook-context-size-limit.md
 - failures met: 0
 ## Docs impact
 bench/spec-suite/README.md (long-session commands), MASTER.md (long sessions bullet), CHANGELOG, the Benchmarks page

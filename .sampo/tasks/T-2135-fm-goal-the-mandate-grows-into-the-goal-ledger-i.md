@@ -36,7 +36,7 @@ A (chosen, decided): grow fm mandate. B: a GOAL brief type with children via dep
 <!-- auto -->
 - 2026-10-31T01:34:20Z step 1/3: goal record: items {n,text,source,done_when,tasks} on the mandate, fm goal set/item/link/show, test-first
 - git: foreman/build; 5 uncommitted: plugin/lib/fmcli.py, plugin/lib/fmhooks.py, plugin/lib/fmmandate.py, plugin/tests/test_goal.py, plugin/tests/test_mandate.py
-- touched since last checkpoint: plugin/tests/test_mandate.py, plugin/tests/test_goal.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2135.edit, plugin/lib/fmcli.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2135b.edit, plugin/lib/fmhooks.py, plugin/lib/fmmandate.py
+- touched since last checkpoint: plugin/tests/test_mandate.py, plugin/tests/test_goal.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2135.edit, plugin/lib/fmcli.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2135b.edit, plugin/lib/fmhooks.py, plugin/lib/fmmandate.py
 ## Docs impact
 MASTER.md, CHANGELOG.md
 ## Verification evidence

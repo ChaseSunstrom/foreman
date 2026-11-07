@@ -9,9 +9,6 @@ depends_on: [T-3296]
 source: discovered
 created: 2026-11-05T05:37:02Z
 updated: 2026-11-06T03:56:17Z
-inferred_deps: [T-3140]
-inferred_why: T-3140: named in its request
-group: fast merges and merge trains
 ---
 # Sampo check --no-cache: wire run.py's --no-cache drift comparison into sampo check and…
 ## Raw request

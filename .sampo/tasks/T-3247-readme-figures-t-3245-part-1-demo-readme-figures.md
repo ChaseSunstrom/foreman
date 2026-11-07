@@ -45,7 +45,7 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 <!-- auto -->
 - 2026-11-06T00:29:28Z steps 5/5 done
 - git: foreman/build; 11 uncommitted: CHANGELOG.md, README.md, docs/map/files-1.md, docs/map/files-lib-3.md, plugin/lib/sampo/cli.py, plugin/lib/sampo/works.py, plugin/tests/test_design_works.py, demo/figures/, demo/readme_figures.py, plugin/tests/test_readme_figures.py
-- touched since last checkpoint: plugin/lib/sampo/works.py, CHANGELOG.md, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3252/test_slots.py, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3252/perf_bench.py, .claude/worktrees/agent-a615cb8d3c1e381e4/ANDON.md
+- touched since last checkpoint: plugin/lib/sampo/works.py, CHANGELOG.md, /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3252/test_slots.py, /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3252/perf_bench.py, .claude/worktrees/agent-a615cb8d3c1e381e4/ANDON.md
 - failures met: uv.lock
 ## Docs impact
 README, CHANGELOG, docs/map files-1 (demo/figures) and files-lib-3 (works figure type)

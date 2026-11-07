@@ -39,7 +39,7 @@ A) trim paragraphs in place: cheap, no visuals, still long. B) split deep refere
 <!-- auto -->
 - 2026-10-29T21:06:08Z steps 5/5 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, MASTER.md, README.md, plugin/tests/test_docs.py, site/assets/diagrams/
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl2052.json, CHANGELOG.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl2052.json, CHANGELOG.md
 - failures met: ls: cannot access 'rd*.png': no such file or directory
 ## Docs impact
 MASTER.md
@@ -47,7 +47,7 @@ MASTER.md
 - (step 1) `xmllint --noout site/assets/diagrams/loop.svg site/assets/diagrams/guard.svg site/assets/diagrams/architecture.svg` → exit 0 · (no output) [ran] [tree 8c266412ead9] (2026-10-29T20:49:55Z)
 - (step 2) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_docs` → ✗ exit 1 · Ran 78 tests in 10.2s (20 classes, 16 at a time; slowest: Fences 9s, TaskLifecycle 1s, Site 1s) / FAILED (1 classes) (start tree + this task's tests) [ran] [tree b14331b277a9] (2026-10-29T20:50:39Z)
 - (step 2) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_docs` → ✗ exit 1 · Ran 78 tests in 7.9s (20 classes, 16 at a time; slowest: Fences 8s, TaskLifecycle 1s, Site 1s) / FAILED (1 classes) [ran] [tree b14331b277a9] (2026-10-29T20:50:39Z)
-- (step 3) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 -I /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/readme_stats.py README.md` → exit 0 · 276 Claude Code is fast. Left alone, it also edits before it understands, says "tests pass" wi / images ['site/assets/foreman.svg', 'https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml [ran] [tree f88b448cf566] (2026-10-29T20:57:10Z)
+- (step 3) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 -I /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/readme_stats.py README.md` → exit 0 · 276 Claude Code is fast. Left alone, it also edits before it understands, says "tests pass" wi / images ['site/assets/foreman.svg', 'https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml [ran] [tree f88b448cf566] (2026-10-29T20:57:10Z)
 - (step 2) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_docs` → ✗ exit 1 · Ran 78 tests in 10.2s (20 classes, 16 at a time; slowest: Fences 9s, TaskLifecycle 1s, Site 1s) / FAILED (1 classes) (start tree + this task's tests) [ran] [tree b37012116a47] (2026-10-29T20:58:13Z)
 - (step 2) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_docs` → exit 0 · Ran 78 tests in 7.9s (20 classes, 16 at a time; slowest: Fences 8s, TaskLifecycle 1s, Site 1s) / OK [ran] [tree b37012116a47] (2026-10-29T20:58:13Z)
 - (step 4) `~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 plugin/tests/run.py test_docs test_doctor` → exit 0 · Ran 148 tests in 7.9s (44 classes, 16 at a time; slowest: Fences 8s, ViewsRepair 3s, LockProbe 2s) / OK [ran] [tree b37012116a47] (2026-10-29T20:58:21Z)

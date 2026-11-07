@@ -11,7 +11,6 @@ created: 2026-11-05T00:18:06Z
 updated: 2026-11-06T03:52:37Z
 inferred_deps: [T-3050]
 inferred_why: T-3050: named in its request
-group: 10000 moons target
 ---
 # Moons learn from misses: every feature the user asks for that no moon predicted…
 ## Raw request

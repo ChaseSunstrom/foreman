@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T13:54:49Z
 updated: 2026-11-05T13:54:49Z
-group: guard bypasses and over-refusals
 ---
 # Guard: write classification never treats 'uniq IN OUT' (or 'uniq -- - -x') as a write to…
 ## Raw request

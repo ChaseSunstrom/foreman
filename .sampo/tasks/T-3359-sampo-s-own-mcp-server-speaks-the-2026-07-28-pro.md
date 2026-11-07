@@ -18,6 +18,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T05:53:29Z
 plan0_scope: [plugin/lib/sampo/mcp.py, plugin/tests/test_mcp.py, CHANGELOG.md]
 builder_returned: 2026-11-06T06:47:35Z
+group: MCP 2026-07-28 protocol support
 ---
 # Sampo's own MCP server speaks the 2026-07-28 protocol: stateless (no initialize handshake required), server/discover, the protocol version per request in _meta, ping removed for new clients, with the 2025-06-18 initialize path kept for older clients
 ## Raw request

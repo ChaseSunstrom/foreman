@@ -37,7 +37,7 @@ Options: one builder lane per batch, test-first, the smallest change at each sit
 <!-- auto -->
 - 2026-10-15T21:55:46Z steps 3/3 done
 - git: foreman/build; 4 uncommitted: MASTER.md, plugin/lib/fmdoctor.py, plugin/lib/fmhooks.py, plugin/tests/test_board_hooks.py
-- touched since last checkpoint: plugin/tests/test_board_hooks.py, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/hooksfix.py, plugin/lib/fmdoctor.py, plugin/lib/fmhooks.py, MASTER.md
+- touched since last checkpoint: plugin/tests/test_board_hooks.py, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/hooksfix.py, plugin/lib/fmdoctor.py, plugin/lib/fmhooks.py, MASTER.md
 ## Docs impact
 MASTER, CHANGELOG
 ## Verification evidence

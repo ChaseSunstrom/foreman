@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T09:08:54Z
-updated: 2026-11-06T09:44:24Z
+updated: 2026-11-07T00:42:15Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-afec3ab52b3885cca
 lane_branch: worktree-agent-afec3ab52b3885cca
 base: e82c630e4a99732132ef271c31a6f9b466c2aad3
@@ -18,6 +18,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T09:12:37Z
 plan0_scope: []
 builder_returned: 2026-11-06T09:44:24Z
+lane_passed: {"tree": "1d2552de7b729fc34faa5e73e052881985e5aefb", "cmds": ["python3 plugin/tests/run.py test_cli -k test_affected_template_needs", "python3 plugin/tests/run.py test_cli -k test_lane_cannot_change"]}
 ---
 # 'sampo check affected <files>' silently replaced the project's affected-tests template…
 ## Raw request

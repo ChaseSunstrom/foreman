@@ -20,7 +20,7 @@ Open-ended 'keep improving' request, bounded here: one friction pass (recon → 
 ## Assumptions (confidence)
 ## Acceptance criteria
 - [ ] the self-improvement fixes and the four app rounds pass their tests — verify with `python3 plugin/tests/run.py -k 'test_guard or test_agents or test_projects or test_cli or test_recall or test_unattended'`
-- [x] the app type-checks and its transport tests pass — verify with `bash -c 'cd ~/projects/foreman-desktop && bun run check && cd src-tauri && cargo test --target-dir /tmp/claude-1000/-home-<user>--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'`
+- [x] the app type-checks and its transport tests pass — verify with `bash -c 'cd ~/projects/foreman-desktop && bun run check && cd src-tauri && cargo test --target-dir /tmp/claude-1000/-home-~--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'`
 ## Non-goals
 ## Approach (options → choice → why)
 (A) Bound the umbrella to the rounds done and let the friction loop carry the rest. (B) Keep it open forever — it would sit at the head of the queue and block drive from ever finishing. Choice A.
@@ -32,7 +32,7 @@ Open-ended 'keep improving' request, bounded here: one friction pass (recon → 
 ## Docs impact
 ## Verification evidence
 - (ac 1) `python3 plugin/tests/run.py -k 'test_guard or test_agents or test_projects or test_cli or test_recall or test_unattended'` → ✗ exit 1 · Ran 0 tests in 0.1s (0 classes, 16 at a time; slowest: ) / NO TESTS RAN [ran] [tree 4848aa4d9c28] (2026-10-06T03:48:35Z)
-- (ac 2) `bash -c 'cd ~/projects/foreman-desktop && bun run check && cd src-tauri && cargo test --target-dir /tmp/claude-1000/-home-<user>--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → exit 0 · 1791258515447 START "~/projects/foreman-desktop" / 1791258515448 COMPLETED 200 FILES 0 ERRORS 0 WARNINGS 0 FILES_WITH_PROBLEMS [ran] [tree 4848aa4d9c28] (2026-10-06T03:48:35Z)
+- (ac 2) `bash -c 'cd ~/projects/foreman-desktop && bun run check && cd src-tauri && cargo test --target-dir /tmp/claude-1000/-home-~--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → exit 0 · 1791258515447 START "~/projects/foreman-desktop" / 1791258515448 COMPLETED 200 FILES 0 ERRORS 0 WARNINGS 0 FILES_WITH_PROBLEMS [ran] [tree 4848aa4d9c28] (2026-10-06T03:48:35Z)
 - (step 1) `python3 plugin/tests/run.py -k 'test_guard or test_agents or test_projects or test_cli or test_recall or test_unattended'` → ✗ exit 1 · Ran 0 tests in 0.1s (0 classes, 16 at a time; slowest: ) / NO TESTS RAN [ran] [tree 4848aa4d9c28] (2026-10-06T03:48:35Z)
 ## Log
 - 2026-10-06T02:02:33Z created

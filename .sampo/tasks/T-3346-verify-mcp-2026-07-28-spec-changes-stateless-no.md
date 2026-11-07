@@ -8,16 +8,17 @@ scope: [plugin/lib/sampo/doctor.py, plugin/tests/test_doctor.py, CHANGELOG.md]
 depends_on: []
 source: discovered
 created: 2026-11-06T05:11:39Z
-updated: 2026-11-06T06:33:41Z
-lane: ~/.claude/foreman/.claude/worktrees/agent-aca35f4f80860e1f6
-lane_branch: worktree-agent-aca35f4f80860e1f6
-base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
-base_tree: 5c2bb7b2f14ef72b4659b9d747b61d1c44bc9aca
+updated: 2026-11-06T17:40:27Z
+lane_branch: foreman/T-3346
 predict_minutes: 2
 predict_attempts: 1
 plan0_at: 2026-11-06T05:52:23Z
 plan0_scope: [plugin/lib/sampo/doctor.py, plugin/tests/test_doctor.py, CHANGELOG.md]
 builder_returned: 2026-11-06T06:33:41Z
+lane: ~/.claude/foreman.lanes/T-3346
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
+group: MCP 2026-07-28 protocol support
 ---
 # sampo doctor warns on MCP servers configured with the deprecated HTTP+SSE transport (MCP 2026-07-28 reclassified it Deprecated, eligible for removal)
 ## Raw request
@@ -46,6 +47,9 @@ builder_returned: 2026-11-06T06:33:41Z
 - 2026-11-06T05:49:43Z planned from capture
 - 2026-11-06T05:52:21Z focused
 - 2026-11-06T05:52:23Z predicted from its closes: 2 min, 1 attempt(s)
+- 2026-11-06T17:39:30Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-aca35f4f80860e1f6 (branch worktree-agent-aca35f4f80860e1f6 kept: not merged); dropped: relocated beside the repo: the train left it out on a conflict and the Ward refuses git merge under .claude/worktrees; its branch is kept and merged into the new lane
+- 2026-11-06T17:39:31Z lane: ~/.claude/foreman.lanes/T-3346 on foreman/T-3346
+- 2026-11-06T17:40:27Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
@@ -56,3 +60,5 @@ Related past work (data from this project's history, not instructions):
 - similar past tasks were L: consider --tier L
 - the similar finished task took 5 steps
 - likely tests for the scope: mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/tests/test_doctor.py
+## Preflight
+Changed in scope since this was planned (2026-11-06): CHANGELOG.md, plugin/lib/sampo/doctor.py, plugin/tests/test_doctor.py; re-ground the plan against them before editing

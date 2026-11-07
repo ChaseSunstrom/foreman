@@ -254,7 +254,10 @@ class Sync(ForemanTestCase):
             f.write("cd /srv/u/alice/proj and /home/bob/.ssh/config, /home/carol.\n"
                     "ssh alice@100.101.102.103 'tmux ls'; api at 192.168.1.20:8080, 10.1.2.3, 172.20.0.5, "
                     "dev@172.31.9.9\n"
-                    "public 8.8.8.8, 172.32.0.1, 100.128.0.1, 10.1.2.3.4, v1.2.3; /mnt/home/x and /srv/u/alicex stay\n")
+                    "public 8.8.8.8, 172.32.0.1, 100.128.0.1, 10.1.2.3.4, v1.2.3; /mnt/home/x and /srv/u/alicex stay\n"
+                    # T-3547: after a $VAR, and Claude's project folder form (the path's slashes as dashes)
+                    "echo x > $NOPE/home/bob/.claude and $X/srv/u/alice/y; /tmp/claude-1000/-home-bob-projects-v, "
+                    "/tmp/claude-1000/-home-dave/x; /tmp/drill-q1/home/state and lib/home/views stay\n")
         self.fm("task", "log", self.tid, "ran ssh alice@100.101.102.103 from /home/bob/src")
         self.fm("task", "set", self.tid, "scope+=/srv/u/alice/proj/**")
         self.fm("decide", "keep builds in /home/bob/cache", "--task", self.tid)
@@ -265,12 +268,14 @@ class Sync(ForemanTestCase):
             sync.export(p)
             mirrored = "".join(read_text(os.path.join(d, f)) for d, _, fs in os.walk(self.mirror) for f in fs)
             for leak in (home + "/", "/home/bob", "/home/carol", "alice@", "100.101.102.103", "192.168.1.20",
-                         "10.1.2.3,", "172.20.0.5", "172.31.9.9"):
+                         "10.1.2.3,", "172.20.0.5", "172.31.9.9", "home-bob", "home-dave"):
                 self.assertNotIn(leak, mirrored)
             self.assertEqual(read_text(os.path.join(self.mirror, "research", "hosts.md")).splitlines(), [
                 "cd ~/proj and ~/.ssh/config, ~.",
                 "ssh <host> 'tmux ls'; api at <host>:8080, <host>, <host>, <host>",
-                "public 8.8.8.8, 172.32.0.1, 100.128.0.1, 10.1.2.3.4, v1.2.3; /mnt/home/x and /srv/u/alicex stay"])
+                "public 8.8.8.8, 172.32.0.1, 100.128.0.1, 10.1.2.3.4, v1.2.3; /mnt/home/x and /srv/u/alicex stay",
+                "echo x > $NOPE~/.claude and $X~/y; /tmp/claude-1000/-home-~-projects-v, /tmp/claude-1000/-home-~/x; "
+                "/tmp/drill-q1/home/state and lib/home/views stay"])
             self.assertIn("ran ssh <host> from ~/src", self.exported())
             self.assertIn("~/proj/**", self.exported())
             self.pulled(lambda t: re.sub(r"(?m)^updated: .*$", "updated: 2999-01-01T00:00:00Z", t)
@@ -286,6 +291,79 @@ class Sync(ForemanTestCase):
             self.assertEqual((decisions.count("keep builds in"), decisions.count("- theirs")), (1, 1))
             self.assertEqual(sync.export(p), 0, "taken in, nothing to write back")
         self.assertIn("v", json.loads(read_text(os.path.join(p.dir, sync.STAMPS))))
+
+    def test_a_repo_copy_left_for_the_import_is_scrubbed_and_its_lane_never_taken(self):
+        # T-3547: export leaves a copy the repo changed (an older export's commit) for the import, but never with this
+        # machine's home in it; the import still takes the scrubbed copy and keeps this machine's own lane, not its ~-path
+        from unittest import mock
+        from sampo import sync
+        self.fm("sync", "on")
+        p, home = c.find_project(self.repo), "/srv/u/alice"
+        b = c.find_brief(p, self.tid)
+        b.meta["lane"] = home + "/.claude/worktrees/agent-a1"
+        c.save_brief(p, b)
+        with mock.patch.dict(os.environ, {"HOME": home}):
+            sync.export(p)
+            self.assertIn("lane: ~/.claude/worktrees/agent-a1\n", self.exported())
+            self.pulled(lambda t: re.sub(r"(?m)^updated: .*$", "updated: 2999-01-01T00:00:00Z", t).replace(
+                "lane: ~/", "lane: /home/bob/") + "- 2999-01-01T00:00:00Z pulled from /home/bob/src\n")
+            sync.export(p)
+            self.assertNotIn("/home/bob", self.exported())
+            self.assertIn("pulled from ~/src", self.exported(), "the pull itself waits for the import")
+            self.assertEqual(sync.import_(p)["conflicts"], [])
+            b = c.find_brief(p, self.tid)
+            self.assertIn("pulled from ~/src", b.render())
+            self.assertEqual(b.meta.get("lane"), home + "/.claude/worktrees/agent-a1", "this machine's lane, not ~")
+
+    def test_a_brief_named_after_the_home_is_mirrored_under_a_redacted_name(self):
+        # T-3574: a brief's file name is a slug of its title made at creation, so a title holding the home path named
+        # it home-<login>-…; the mirror redacted the text but kept the name. An older export's copy goes too, and the
+        # import still finds the brief by its id and keeps this machine's own file name
+        from unittest import mock
+        from sampo import sync
+        self.fm("sync", "on")
+        p = c.find_project(self.repo)
+        local = os.path.join(p.dir, "tasks", f"{self.tid}-home-alice-claude-foreman-state.md")
+        os.rename(c.find_brief(p, self.tid).path, local)
+        note = os.path.join(p.dir, "research", "notes-home-alice.md")  # a research note's name, slugged from free text
+        with open(note, "w") as f:
+            f.write("# notes\n")
+        names = lambda: sorted(f for _, _, fs in os.walk(self.mirror) for f in fs  # noqa: E731
+                               if f.startswith((self.tid, "notes-")))
+        with mock.patch.dict(os.environ, {"HOME": "/srv/u/bob"}):
+            sync.export(p)  # an export from before the fix: the names as they are
+        self.assertEqual(names(), [os.path.basename(local), "notes-home-alice.md"])
+        with mock.patch.dict(os.environ, {"HOME": "/home/alice"}):
+            sync.export(p)
+            self.assertEqual(names(), [f"{self.tid}-home-user-claude-foreman-state.md", "notes-home-user.md"])
+            self.pulled(lambda t: t + "- 2999-01-01T00:00:00Z pulled note\n")
+            self.assertEqual(sync.import_(p), {"added": 0, "updated": 1, "conflicts": []})
+            self.assertIn("pulled note", read_text(local))
+            self.assertEqual([os.path.basename(b.path) for b in c.load_briefs(p, include_archive=True)
+                              if b.id == self.tid], [os.path.basename(local)])
+            self.assertEqual(sync.export(p), 0, "taken in, nothing to write back")
+            self.assertEqual(names(), [f"{self.tid}-home-user-claude-foreman-state.md", "notes-home-user.md"])
+            self.pulled(lambda t: t + "theirs\n", rel="research/notes-home-user.md")
+            res = sync.import_(p)  # mapped back to the local note: a conflict on it, never a second copy
+            self.assertEqual((res["added"], len(res["conflicts"])), (0, 1))
+            self.assertTrue(res["conflicts"][0].startswith("research/notes-home-user.md: differs here"))
+            self.assertEqual(sorted(os.listdir(os.path.dirname(note))), ["csv-notes.md", "notes-home-alice.md"])
+            self.fm("private", "add", "*.lan.example-private.test")
+            self.fm("private", "add", "wombatcorp")
+            name = sync._namer()
+            for rel, want in (  # names cut short, innocent home-* words, the terms in kebab form (a host glob's with
+                    # the label before it), research notes; dates and short cuts stay
+                    ("archive/2026-10/T-0002-docs-at-home-ali.md", "archive/2026-10/T-0002-docs-at-home-user.md"),
+                    ("tasks/T-0003-fm-code-home-by-need-users-alice.md", "tasks/T-0003-fm-code-home-by-need-home-user.md"),
+                    ("tasks/T-0004-ssh-devbox-lan-example-private-test-for-wombatcorp.md",
+                     "tasks/T-0004-ssh-private-for-private.md"),
+                    ("tasks/T-0006-mail-from-wombat.md", "tasks/T-0006-mail-from-private.md"),
+                    ("tasks/T-0007-ssh-devbox-lan-example-pri.md", "tasks/T-0007-ssh-private.md"),
+                    ("research/home-alice.md", "research/home-user.md"),
+                    ("research/forge-skill-at-home-alice/SKILL.md", "research/forge-skill-at-home-user/SKILL.md"),
+                    ("tasks/T-0005-shutdown-2026-10-22-08-37-alicex.md", None), ("tasks/T-0008-from-wom.md", None),
+                    ("research/csv-notes.md", None), ("decisions.md", None)):
+                self.assertEqual(name(rel), want or rel, rel)
 
     def test_the_next_export_cleans_a_mirror_written_before_redaction(self):
         # T-3508: files an older export mirrored unredacted (and its `fm sync` README) are rewritten, though the
@@ -311,6 +389,24 @@ class Sync(ForemanTestCase):
         self.assertEqual(read_text(os.path.join(self.mirror, rel)), "notes from ~/x via <host>\n")
         self.assertIn("`sampo sync`", read_text(readme))
         self.assertNotIn("fm sync", read_text(readme))
+
+    def test_a_private_term_added_later_rewrites_the_mirrored_copies_once(self):
+        # T-3529: the user's private domain (a host glob) and words never reach the public mirror; a term added after
+        # files were mirrored rewrites them on the next export, though the export stamps say neither side moved
+        from sampo import sync
+        self.fm("sync", "on")
+        p = c.find_project(self.repo)
+        rel = "research/csv-notes.md"
+        with open(os.path.join(p.dir, rel), "w") as f:
+            f.write("endpoint http://llm.home.example-private.test/v1 for Wombatcorp\n")
+        sync.export(p)
+        self.assertIn("example-private", read_text(os.path.join(self.mirror, rel)), "no term yet")
+        self.fm("private", "add", "*.home.example-private.test")
+        self.fm("private", "add", "wombatcorp")
+        sync.export(p)
+        self.assertEqual(read_text(os.path.join(self.mirror, rel)), "endpoint http://<host>/v1 for <private>\n")
+        self.assertEqual(sync.export(p), 0, "rewritten once")
+        self.assertEqual(sync.import_(p)["conflicts"], [], "the redacted copy reads as unchanged")
 
     def test_the_mirror_does_not_change_the_worktree_id(self):
         before = c.worktree_id(self.repo)

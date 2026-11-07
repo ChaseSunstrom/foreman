@@ -40,7 +40,7 @@ Options: (a) raise the macOS cap to 60 min: hides the cause; (b) drop macOS: los
 <!-- auto -->
 - 2026-10-28T08:05:43Z steps 4/4 done
 - git: foreman/build; 5 uncommitted: .github/workflows/test.yml, CHANGELOG.md, plugin/tests/run.py, plugin/tests/test_ci_annotations.py, plugin/tests/test_run.py
-- touched since last checkpoint: plugin/tests/test_run.py, plugin/tests/run.py, .github/workflows/test.yml, CHANGELOG.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/triage1798.md
+- touched since last checkpoint: plugin/tests/test_run.py, plugin/tests/run.py, .github/workflows/test.yml, CHANGELOG.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/triage1798.md
 - failures met: jq: error (at ideas.json:0): null (null) has no keys
 ## Docs impact
 CHANGELOG Unreleased entry; run.py docstring and --deadline help

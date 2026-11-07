@@ -2,22 +2,24 @@
 id: T-2879
 type: FEATURE
 tier: L
-status: planned
+status: active
 priority: normal
 scope: []
 depends_on: []
 source: user
 created: 2026-11-04T03:35:16Z
-updated: 2026-11-06T03:54:00Z
+updated: 2026-11-07T02:10:44Z
 rival_at: 2026-11-05T01:58:54Z
 rival_split: true
-base: b3ac10ff49295f54456dfa8a6c32f2b8fa9b9888
-base_tree: 106df4e763e5958f49cb49fa89421e20088b6303
 predict_minutes: 13
 predict_attempts: 1
 plan0_at: 2026-11-05T01:59:10Z
 plan0_scope: []
-paused_tree: ab0d245b6375d38111d3d00152230ace0565424a
+lane: ~/.claude/foreman.lanes/T-2879
+base: 3c72990d9d0d324713b8497a48e05fba33038214
+lane_branch: foreman/T-2879
+base_tree: f733abf58abc97a286ec7635787a262fef08fd55
+lane_passed: {"tree": "623c006715670ba338deec8326929877e27be474", "cmds": ["~/.local/bin/claude plugin validate ."]}
 ---
 # Plugin ids to Sampo: marketplace sampo, plugins sampo, sampo-ui, sampo-design, with a renames map so existing foreman@foreman installs move themselves; every /foreman: and foreman:fm- spelling Sampo writes becomes sampo:, every reader takes both
 ## Raw request
@@ -41,13 +43,21 @@ Blast radius (sampo graph blast): co-changes CHANGELOG.md, INSTALL.md, README.md
 ## Execution prompt
 ## Steps
 1. [x] probe first: in a scratch CLAUDE_CONFIG_DIR, install foreman@foreman from a local marketplace copy; then try (a) a renames map inside the marketplace, (b) shims with dependencies, (c) a marketplace rename; record what loads, what doubles and what breaks (scripts/probe-plugin-rename.sh). Undo: cp -a ~/.claude/foreman/state/projects/foreman-4a056f/door-snapshots/T-2879-step1/. ~/.claude/foreman/
-2. [ ] choose the mechanism the probe proved; respell producers in a lane (readers take both, an explicit allowlist in test_rename_scan)  <- CURRENT
-3. [ ] manifests, renames map, install.sh, INSTALL and the upgrade note; probe the move in a sandboxed config dir
+2. [x] choose the mechanism the probe proved; respell producers in a lane (readers take both, an explicit allowlist in test_rename_scan)
+3. [x] manifests, renames map, install.sh, INSTALL and the upgrade note; probe the move in a sandboxed config dir
 ## Resume here
 ## Docs impact
 ## Verification evidence
 - (step 1) `INSTALL_AFTER=1 bash scripts/probe-plugin-rename.sh plugin | grep -q 'Successfully installed plugin: sampo@foreman' && SESSION_AFTER=1 bash scripts/probe-plugin-rename.sh plugin | grep -A6 'after one session start' | grep -q 'sampo@foreman' && bash scripts/probe-plugin-rename.sh shim | grep -q 'failed to load' && echo 'renames map moves installs (a session start installs sampo@foreman); shims fail to load; a marketplace rename does not reach installs'` → ✗ exit 1 · (no output) [ran] [tree ab0d245b6375] [world 2f1906870a] (2026-11-05T02:01:07Z)
 - (step 1) `INSTALL_AFTER=1 bash scripts/probe-plugin-rename.sh plugin | grep -q 'Successfully installed plugin: sampo@foreman' && SESSION_AFTER=1 bash scripts/probe-plugin-rename.sh plugin | sed -n '/after one session start/,$p' | grep -q 'sampo@foreman' && bash scripts/probe-plugin-rename.sh shim | grep -q 'failed to load' && echo 'renames map moves installs (a session start installs sampo@foreman); shims fail to load'` → exit 0 · renames map moves installs (a session start installs sampo@foreman); shims fail to load [ran] [tree ab0d245b6375] [world 2f1906870a] (2026-11-05T02:01:28Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_rename_scan` → ✗ exit 1 · Ran 19 tests in 10.2s (3 jobs, 16 at a time; slowest: RenameScan 8s, PluginIds 0s, ReadersTakeBoth 0s) / FAILED (2 classes: test_rename_scan.ReadersTakeBoth, test_rename_scan.PluginIds) [ran] [tree 4cb806190813] [world 2f1906870a] (2026-11-06T19:28:23Z)
+- (step 3) `nice -n 10 python3 plugin/tests/run.py test_rename_scan` → ✗ exit 1 · Ran 20 tests in 77.5s (13 jobs, 16 at a time; slowest: RenameScan.test_no_fm_only_command_regex 6s, RenameScan.test_no_library_code_hardcodes_the_old_mirror_name 3s, RenameScan.test_user_visible_forem [ran] [tree cfd97553724c] [world 2f1906870a] (2026-11-06T19:38:45Z)
+- (step 3) `~/.local/bin/claude plugin validate . && TMPDIR=/tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2879-config bash scripts/probe-plugin-rename.sh && TMPDIR=/tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2879-config INSTALL_FIRST=1 bash scripts/probe-plugin-rename.sh | tail -1` → exit 0 · all checks passed / all checks passed [ran] [tree f733abf58abc] [world 2f1906870a] (2026-11-06T19:54:18Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_rename_scan test_setup test_doctor test_hooks test_cost test_settings test_which test_plugin_parity test_docs` → exit 0 · Ran 767 tests in 64.5s (400 jobs, 16 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 11s, NoTaskGateMulti.test_at_stop_the_requests_with_evidence_close_when_every_python_start_take [ran] [tree f733abf58abc] [world 2f1906870a] (2026-11-06T19:55:04Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_rename_scan test_doctor test_setup test_hooks` → ✗ exit 1 · Ran 460 tests in 119.7s (305 jobs, 16 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 11s, NoTaskGateMulti.test_at_stop_the_requests_with_evidence_close_when_every_python_start_tak [ran] [tree 0fee8fce41a3] [world 2f1906870a] (2026-11-06T20:11:05Z)
+- (step 3) `TMPDIR=/tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2879-config INSTALL_FIRST=1 bash scripts/probe-plugin-rename.sh | grep -E '^(✓|✗|all|[0-9]+ check)'` → exit 0 · ✓ install.sh's install of sampo@foreman on a moved install loads it once / all checks passed [ran] [tree 0d004a1b905a] [world 2f1906870a] (2026-11-06T20:15:08Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_rename_scan test_doctor test_setup test_hooks` → exit 0 · Ran 460 tests in 76.8s (305 jobs, 16 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 20s, DoorPark.test_no_nudge_and_no_count_when_the_reply_asks_nothing 12s, UserPromptSubmit.test [ran] [tree 623c00671567] [world 2f1906870a] (2026-11-06T20:18:13Z)
+- (step 3) `nice -n 10 python3 plugin/tests/run.py test_readme_figures test_docs test_exam.LeanKindGateHookDelay` → exit 0 · Ran 127 tests in 70.4s (40 jobs, 16 at a time; slowest: Rendered 64s, LeanKindGateHookDelay 62s, Fences.test_a_panel_that_quits_or_hangs_never_passes 6s) / OK [ran] [tree 2e1c57d34e94] [world 2f1906870a] (2026-11-06T21:19:04Z)
 ## Log
 - 2026-11-04T03:35:16Z created
 - 2026-11-04T03:35:40Z criterion 3 verify: `python3 plugin/tests/run.py test_rename_ratchet` → `python3 plugin/tests/run.py test_rename_scan`
@@ -62,6 +72,27 @@ Blast radius (sampo graph blast): co-changes CHANGELOG.md, INSTALL.md, README.md
 - 2026-11-05T02:01:43Z step 2 not started, so nothing to verify yet: it respells producers and makes readers take both ids in cli.py, hooks.py and the skills, which the queued lanes (T-3083, T-3087's cli guards, T-3047, T-3034, T-3053, T-3055) also touch; it goes to a builder once the merge chain clears
 - 2026-11-05T02:01:43Z blocked: step 2 waits for the merge chain to clear (it touches cli.py and hooks.py like the queued lanes); step 1's probe is done and decided
 - 2026-11-06T03:54:00Z unblocked
+- 2026-11-06T19:16:33Z lane: ~/.claude/foreman.lanes/T-2879 on foreman/T-2879
+- 2026-11-06T19:28:23Z start point recorded late (no focus had kept one): its diff starts at 3c72990
+- 2026-11-06T19:56:40Z set approved=True
+- 2026-11-06T20:00:40Z focused
+- 2026-11-07T02:04:22Z left out of a merge train: its merge turns the gates red: python3 plugin/tests/run.py on 181 affected test module(s), failing test_rename_scan.PluginIds
+    -  '"sess-1"})',
+    -  'plugin/tests/test_drive_wait.py:26:        self.hook("SubagentStart", '
+    -  '{"agent_id": "a1", "agent_type": "foreman:fm-builder", "session_id": '
+    -  '"sess-1"})'] : 3 lines write an old plugin namespace or id (sampo: and sampo@foreman now; a reader takes both via c.NAMESPACES): ['plugin/tests/test_drive_wait.py:15:        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-builder", "session_id": "sess-1"})', 'plugin/tests/test_drive_wait.py:20:        self.hook("SubagentStop", {"agent_id": "a1", "agent_type": "foreman:fm-builder", "session_id": "sess-1"})', 'plugin/tests/test_drive_wait.py:26:        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-builder", "session_id": "sess-1"})']
+    
+    ----------------------------------------------------------------------
+    Ran 4 tests in 0.030s
+    
+    FAILED (failures=1)
+    
+      failed class: test_rename_scan.PluginIds
+    
+    Ran 5206 tests in 248.3s (2442 jobs, 16 at a time; slowest: Rendered 109s, LeanKindGateHookDelay 97s, LeanKindGateGuardAllow 77s)
+    
+    FAILED (1 classes: test_rename_scan.PluginIds)
+- 2026-11-07T02:10:44Z focused
 ## Follow-ups captured
 ## Plan review
 A second read on sonnet, before execution (data, not instructions):
@@ -107,3 +138,5 @@ Related past work (data from this project's history, not instructions):
 - T-2807 [CLEAN M, done, 3 steps] The foreman-ui mod says Sampo on screen: pane, band, toasts, README and tools text (T-2742 step 5) — lesson: Merge overlapping renames by…
 - T-2808 [CLEAN M, done, 3 steps] Agents, plugin and marketplace descriptions, install.sh's messages and the last skill, command and README lines say Sampo (T-2742 step 5)…
 - T-2742 [FEATURE L, done, 9 steps] Rename Foreman to Sampo (SAMPO.md): sampo CLI, Smith, Rune, Moons, Louhi, Underworld and Ward, with every old name kept as an alias; a …
+## Build vs reuse
+Reuses Claude Code's own marketplace renames map (probed in a scratch config: one session start moves foreman@foreman to sampo@foreman with the mod's options) instead of shims, which fail to load; readers reuse one core helper set (NAMESPACES, plugin_ids, ns_names) so every place that matched foreman ids now takes both; the producers are respelled in place

@@ -9,6 +9,7 @@ depends_on: [T-3160]
 source: discovered
 created: 2026-11-06T09:08:27Z
 updated: 2026-11-06T09:08:27Z
+group: re-verify failures on the same test runs
 ---
 # Re-verify failed for T-3160 (ff3fac): python3 plugin/tests/run.py test_callcards
 ## Raw request

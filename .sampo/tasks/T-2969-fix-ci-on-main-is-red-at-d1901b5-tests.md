@@ -11,7 +11,6 @@ created: 2026-11-04T13:53:41Z
 updated: 2026-11-06T09:09:00Z
 trigger: ci-red
 trigger_key: 09aeed4b8bce88fb
-group: CI-red fixes on main
 rival_at: 2026-11-06T08:56:02Z
 rival_split: true
 ---

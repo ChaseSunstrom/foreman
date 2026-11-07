@@ -8,19 +8,17 @@ scope: [plugin/lib/sampo/clfrag.py, plugin/tests/test_clfrag.py, plugin/lib/samp
 depends_on: []
 source: user
 created: 2026-11-06T02:34:40Z
-updated: 2026-11-06T05:19:06Z
-builder: 2026-11-06T02:35:00Z
+updated: 2026-11-06T17:40:15Z
 builder_model: haiku
-builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
-lane: ~/.claude/foreman/.claude/worktrees/agent-aafa297b00b69b32a
-lane_branch: worktree-agent-aafa297b00b69b32a
-base: 5c403348c1dfe9523985c9f84cf7db536080f17f
-base_tree: 9eb33fa93e768f0136959dc9b365e08cdaa741eb
+lane_branch: foreman/T-3288
 predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:35:51Z
 plan0_scope: [plugin/lib/sampo/clfrag.py, plugin/tests/test_clfrag.py, plugin/lib/sampo/release.py, plugin/agents/fm-builder.md, CHANGELOG.md]
 builder_returned: 2026-11-06T05:19:06Z
+lane: ~/.claude/foreman.lanes/T-3288
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
 ---
 # Moon C-000268: changelog lines as per-task fragments (changelog.d/T-NNNN.md) folded into CHANGELOG.md at release, so lanes never collide there
 ## Raw request
@@ -79,6 +77,9 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 - 2026-11-06T03:40:15Z set scope=['plugin/lib/sampo/clfrag.py', 'plugin/tests/test_clfrag.py', 'plugin/lib/sampo/release.py', 'plugin/agents/fm-builder.md', 'CHANGELOG.md', 'plugin/lib/sampo/core.py', 'plugin/lib/sampo/docs.py', 'plugin/lib/fmguard.py', 'plugin/lib/sampo/doctor.py', 'plugin/tests/test_docsdrift.py', 'plugin/tests/test_guard.py', 'plugin/tests/test_doctor.py']
 - 2026-11-06T03:40:18Z steer: lead review fixes (scope widened to the files they name: core scope and history docs, guard hint, doctor release age, docs history)
 - 2026-11-06T04:14:21Z correction: the step 1 red record reports 484 tests and 6 failing classes; those counts were not captured from run output. The red itself was seen before the source fixes; exact counts are unverified
+- 2026-11-06T17:39:27Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-aafa297b00b69b32a (branch worktree-agent-aafa297b00b69b32a kept: not merged); dropped: relocated beside the repo: the train left it out on a conflict and the Ward refuses git merge under .claude/worktrees; its branch is kept and merged into the new lane
+- 2026-11-06T17:39:28Z lane: ~/.claude/foreman.lanes/T-3288 on foreman/T-3288
+- 2026-11-06T17:40:15Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
@@ -88,3 +89,5 @@ Related past work (data from this project's history, not instructions):
 - decision 2026-10-16: T-1069 self-approved under full autonomy: a race clones the brief as a 'b' task so each builder works under its own id; pick merges the winner throu…
 - similar finished tasks took 3–9 steps
 - likely tests for the scope: mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/tests/test_agents.py, plugin/tests/test_audit.py, plugin/tests/test_builder.py, plugin/tests/test_claims.py, plugin/tests/test_claude.py, plugin/test…
+## Preflight
+Changed in scope since this was planned (2026-11-06): CHANGELOG.md, plugin/lib/fmguard.py, plugin/lib/sampo/core.py, plugin/lib/sampo/doctor.py, plugin/lib/sampo/release.py, plugin/tests/test_doctor.py, plugin/tests/test_guard.py; re-ground the plan against them before editing

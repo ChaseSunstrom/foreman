@@ -34,7 +34,7 @@ verified: strong
 <!-- auto -->
 - 2026-10-29T01:14:02Z steps 3/3 done
 - git: foreman/build; 4 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/tests/test_cli.py
-- touched since last checkpoint: plugin/tests/test_cli.py, plugin/lib/fmcli.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1889t.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1889i.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1888t.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1888i.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/apply.py
+- touched since last checkpoint: plugin/tests/test_cli.py, plugin/lib/fmcli.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1889t.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1889i.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1888t.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1888i.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/apply.py
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

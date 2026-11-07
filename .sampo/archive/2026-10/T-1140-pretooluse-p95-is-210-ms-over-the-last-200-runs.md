@@ -38,7 +38,7 @@ CHANGELOG.md MASTER.md
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py -k ActiveFast test_core` → ✗ exit 1 · Ran 69 tests in 1.8s (17 classes, 16 at a time; slowest: WritesAndLocks 2s, PreToolUse 1s, ActiveFast 1s) / FAILED (1 classes) [ran] [tree c1b40c0d2a00] (2026-10-16T09:53:49Z)
 - (step 2) `python3 plugin/tests/run.py test_core test_hooks test_guard test_lanes test_claims test_risk` → exit 0 · Ran 382 tests in 37.5s (90 classes, 16 at a time; slowest: Stop 37s, PreToolUse 22s, SessionStart 16s) / OK [ran] [tree 0877d56cbd48] (2026-10-16T09:55:23Z)
-- (ac 2) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/ab1140.py` → exit 0 · old: median 132 ms, p90 136 ms / new: median 72 ms, p90 73 ms [ran] [tree 0877d56cbd48] (2026-10-16T09:55:33Z)
+- (ac 2) `python3 /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/ab1140.py` → exit 0 · old: median 132 ms, p90 136 ms / new: median 72 ms, p90 73 ms [ran] [tree 0877d56cbd48] (2026-10-16T09:55:33Z)
 - (ac 1) `python3 plugin/tests/run.py test_core test_hooks test_guard` → exit 0 · Ran 336 tests in 36.0s (83 classes, 16 at a time; slowest: Stop 36s, PreToolUse 20s, SessionStart 14s) / OK [ran] [tree 99c37fe7c38b] (2026-10-16T09:57:12Z)
 - (ac 2) `python3 plugin/tests/bench_hooks.py --runs 20` → exit 0 · Notification                38.3    40.6     150  [0] / SessionEnd                  33.9    37.6     150  [0] [ran] [tree 99c37fe7c38b] (2026-10-16T09:57:12Z)
 - (step 1) `python3 plugin/tests/run.py test_core test_hooks` → exit 0 · Ran 225 tests in 36.1s (36 classes, 16 at a time; slowest: Stop 36s, PreToolUse 21s, SessionStart 14s) / OK [ran] [tree 99c37fe7c38b] (2026-10-16T09:57:12Z)

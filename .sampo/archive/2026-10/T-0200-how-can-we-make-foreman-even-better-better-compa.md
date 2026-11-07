@@ -34,7 +34,7 @@ Context pack → fm ideas (default lenses + compat lens, --deepen 3) → merge, 
 ## Docs impact
 none: research only, recorded with fm research add
 ## Verification evidence
-- (step 1) `wc -w /tmp/claude-1000/-home-<user>--claude-foreman/2bb9323b-b323-4901-bb61-924ab8371253/scratchpad/pack.md` → exit 0 · 993 /tmp/claude-1000/-home-<user>--claude-foreman/2bb9323b-b323-4901-bb61-924ab8371253/scratchpad/pack.md [ran] [tree 99cced0e67c2] (2026-10-04T04:07:13Z)
+- (step 1) `wc -w /tmp/claude-1000/-home-~--claude-foreman/2bb9323b-b323-4901-bb61-924ab8371253/scratchpad/pack.md` → exit 0 · 993 /tmp/claude-1000/-home-~--claude-foreman/2bb9323b-b323-4901-bb61-924ab8371253/scratchpad/pack.md [ran] [tree 99cced0e67c2] (2026-10-04T04:07:13Z)
 - (step 2) `grep -c '^- ' state/projects/foreman-4a056f/research/brainstorm-20261003-230652/ideas.md state/projects/foreman-4a056f/research/brainstorm-20261003-230844/ideas.md` → exit 0 · state/projects/foreman-4a056f/research/brainstorm-20261003-230652/ideas.md:83 / state/projects/foreman-4a056f/research/brainstorm-20261003-230844/ideas.md:65 [ran] [tree 99cced0e67c2] (2026-10-04T04:10:18Z)
 - (step 3) `fm research list 2>/dev/null | grep -c round6 || ls state/projects/foreman-4a056f/research/brainstorm-20261003-round6.md` → exit 0 · 0 / state/projects/foreman-4a056f/research/brainstorm-20261003-round6.md [ran] [tree 99cced0e67c2] (2026-10-04T04:10:53Z)
 - (ac 1) `test -s state/projects/foreman-4a056f/research/brainstorm-20261003-round6.md && fm queue | grep -c T-02` → exit 0 · 1 [ran] [tree 99cced0e67c2] (2026-10-04T04:11:42Z)

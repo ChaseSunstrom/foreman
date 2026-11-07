@@ -11,7 +11,6 @@ created: 2026-11-05T06:18:15Z
 updated: 2026-11-05T06:18:15Z
 trigger: ci-red
 trigger_key: 09aeed4b8bce88fb
-group: CI-red fixes on main
 ---
 # FIX: CI on main is red at f16c5fd (tests)
 ## Raw request

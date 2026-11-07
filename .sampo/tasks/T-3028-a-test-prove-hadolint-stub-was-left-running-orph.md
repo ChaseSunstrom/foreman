@@ -40,9 +40,9 @@ Choice 1 (85%).
 ## Docs impact
 none: a test helper
 ## Verification evidence
-- (step 1) `sh /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3028/check.sh && python3 plugin/tests/run.py test_prove` → exit 0 · Ran 107 tests in 9.2s (16 classes, 16 at a time; slowest: InfraProof 9s, InfraFinish 6s, ReleaseProof 6s) / OK [ran] [tree 39f0fddb5a32] [world 2f1906870a] (2026-11-04T22:12:54Z)
+- (step 1) `sh /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3028/check.sh && python3 plugin/tests/run.py test_prove` → exit 0 · Ran 107 tests in 9.2s (16 classes, 16 at a time; slowest: InfraProof 9s, InfraFinish 6s, ReleaseProof 6s) / OK [ran] [tree 39f0fddb5a32] [world 2f1906870a] (2026-11-04T22:12:54Z)
 - (ac 1) `python3 plugin/tests/run.py test_prove` → exit 0 · Ran 107 tests in 7.3s (16 classes, 16 at a time; slowest: InfraProof 7s, ReleaseProof 3s, InfraFinish 3s) / OK [ran] [tree 39f0fddb5a32] [world 2f1906870a] (2026-11-04T22:15:20Z)
-- `sh /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3028/check.sh && python3 plugin/tests/run.py test_prove` → exit 0 · reused: the same command passed on this tree and world at 2026-11-04T22:12:54Z [ran] [tree 39f0fddb5a32] [world 2f1906870a] (2026-11-04T22:15:20Z)
+- `sh /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3028/check.sh && python3 plugin/tests/run.py test_prove` → exit 0 · reused: the same command passed on this tree and world at 2026-11-04T22:12:54Z [ran] [tree 39f0fddb5a32] [world 2f1906870a] (2026-11-04T22:15:20Z)
 - (audit edge) `self: read the one-line stub change against the timeout test it serves; kill -0 $PPID is a builtin, so the PATH with no sleep still works; the timeout test still sees a hang and reports unproven` → the parent's pid reused within the loop would keep it alive only until that process ends; the check script shows the old stub orphaned and the new one ending with its parent [tree 39f0fddb5a32] (2026-11-04T22:15:20Z)
 - (audit self) `self: read the one-line stub change against the timeout test it serves; kill -0 $PPID is a builtin, so the PATH with no sleep still works; the timeout test still sees a hang and reports unproven` → no findings [tree 39f0fddb5a32] (2026-11-04T22:15:20Z)
 ## Log

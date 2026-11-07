@@ -24,7 +24,7 @@
 
 ## Acceptance criteria
 - **Claims marked verified / not found / unchecked, recall first:** met. `Verify.test_quotes_are_checked...` covers all three statuses. `test_plans_fans_out...` checks that the "Already known" entry (`speed-notes`) appears in the note. Real `fetch` is only reached with a stub, and the stub `claude` makes no web calls.
-- **Private or non-https URL never fetched:** met for the direct URL. The test covers `http://`, localhost, 127.0.0.1, 10.0.0.1, `::1`, `file:`, the metadata IP and `ftp:`. The redirect handler `_Redirect` has no test, so that path is unverified.
+- **Private or non-https URL never fetched:** met for the direct URL. The test covers `http://`, localhost, 127.0.0.1, <host>, `::1`, `file:`, the metadata IP and `ftp:`. The redirect handler `_Redirect` has no test, so that path is unverified.
 
 ## Intent
 The four DONE-WHENs in the request (a plugin-skill line in `next_action`, `fm-recon.md` and `delegate.md` carrying the protocol, the agent file with read-only tools and doctor, ideas annotated with brief ids) are not in `fmresearch.py`. The diff touches `fm-recon.md` and `delegate.md`, but I did not confirm the other items. The task's own criteria cover only `fm research ask`, so they capture only part of the request. I could not check this from the diff.

@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T06:41:44Z
 updated: 2026-11-06T08:56:10Z
+inferred_deps: [T-3329]
+inferred_why: T-3329: named in its request
 ---
 # claims._body fetches into local refs/sampo/* on every read and never prunes, leaving…
 ## Raw request

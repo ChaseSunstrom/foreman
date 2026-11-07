@@ -8,19 +8,17 @@ scope: [plugin/lib/sampo/lane_preview.py, plugin/lib/sampo/lanes.py, plugin/lib/
 depends_on: []
 source: user
 created: 2026-11-06T02:27:17Z
-updated: 2026-11-06T04:52:27Z
-builder: 2026-11-06T02:27:29Z
+updated: 2026-11-06T17:40:02Z
 builder_model: haiku
-builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
-lane: ~/.claude/foreman/.claude/worktrees/agent-a924b708954d48496
-lane_branch: worktree-agent-a924b708954d48496
-base: 5c403348c1dfe9523985c9f84cf7db536080f17f
-base_tree: 9eb33fa93e768f0136959dc9b365e08cdaa741eb
+lane_branch: foreman/T-3268
 predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:28:21Z
 plan0_scope: [plugin/lib/sampo/lane_preview.py, plugin/lib/sampo/lanes.py, plugin/tests/test_lane_preview.py, CHANGELOG.md]
 builder_returned: 2026-11-06T04:52:27Z
+lane: ~/.claude/foreman.lanes/T-3268
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
 ---
 # Moon C-000616: lane_preview trial-merges every open lane branch against main and each other (git merge-tree) and lane list names the conflicting files
 ## Raw request
@@ -80,6 +78,9 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 - 2026-11-06T02:34:45Z set scope=['plugin/lib/sampo/lane_preview.py', 'plugin/lib/sampo/lanes.py', 'plugin/tests/test_lane_preview.py', 'plugin/lib/fmlane_preview.py', 'MASTER.md', 'docs/map/files-lib-2.md', 'CHANGELOG.md']
 - 2026-11-06T03:41:16Z set scope=['plugin/lib/sampo/lane_preview.py', 'plugin/lib/sampo/lanes.py', 'plugin/lib/sampo/cli.py', 'plugin/tests/test_lane_preview.py', 'plugin/lib/fmlane_preview.py', 'MASTER.md', 'docs/map/files-lib-2.md', 'CHANGELOG.md']
 - 2026-11-06T03:41:18Z scope widened: plugin/lib/sampo/cli.py gets the one --no-preview argument line in the lane parser (review fixes, T-3268)
+- 2026-11-06T17:39:21Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-a924b708954d48496 (branch worktree-agent-a924b708954d48496 kept: not merged); dropped: relocated beside the repo: the train left it out on a conflict and the Ward refuses git merge under .claude/worktrees; its branch is kept and merged into the new lane
+- 2026-11-06T17:39:22Z lane: ~/.claude/foreman.lanes/T-3268 on foreman/T-3268
+- 2026-11-06T17:40:02Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
@@ -89,3 +90,5 @@ Related past work (data from this project's history, not instructions):
 - decision 2026-11-05: [costly] Parked T-3006 at a one-way, ambiguous step: failing tests with a fake model: the state message, the deliberate trigger, the check-before-ed…
 - similar finished tasks took 3–3 steps
 - likely tests for the scope: mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/tests/test_lane_twins.py, plugin/tests/test_lanes.py
+## Preflight
+Changed in scope since this was planned (2026-11-06): CHANGELOG.md, MASTER.md, docs/map/files-lib-2.md, plugin/lib/sampo/cli.py, plugin/lib/sampo/lanes.py; re-ground the plan against them before editing

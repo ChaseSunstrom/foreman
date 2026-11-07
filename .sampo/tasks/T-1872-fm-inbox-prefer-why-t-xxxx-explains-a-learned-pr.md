@@ -39,7 +39,7 @@ Read-only and additive; git revert.
 <!-- auto -->
 - 2026-10-29T00:04:09Z steps 3/3 done
 - git: foreman/build; 6 uncommitted: CHANGELOG.md, MASTER.md, plugin/commands/backlog.md, plugin/lib/fmcli.py, plugin/lib/fmeco.py, plugin/tests/test_inbox_more.py
-- touched since last checkpoint: plugin/lib/fmcli.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1872d.txt, MASTER.md, plugin/commands/backlog.md, plugin/lib/fmeco.py, plugin/tests/test_inbox_more.py, CHANGELOG.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1874t.txt
+- touched since last checkpoint: plugin/lib/fmcli.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1872d.txt, MASTER.md, plugin/commands/backlog.md, plugin/lib/fmeco.py, plugin/tests/test_inbox_more.py, CHANGELOG.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1874t.txt
 ## Docs impact
 ~/.claude/foreman/plugin/commands/backlog.md
 ## Verification evidence

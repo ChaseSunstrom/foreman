@@ -45,7 +45,7 @@ Choice 1 (85%): the user asked for a brainstorm across the space.
 ## Docs impact
 research brainstorm-20261104-model
 ## Verification evidence
-- (step 1) `test -s /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/model-pack.md` → exit 0 · (no output) [ran] [tree 09ba3246ae3f] [world 2f1906870a] (2026-11-04T14:16:13Z)
+- (step 1) `test -s /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/model-pack.md` → exit 0 · (no output) [ran] [tree 09ba3246ae3f] [world 2f1906870a] (2026-11-04T14:16:13Z)
 - (step 2) `sampo research show brainstorm-20261104-model` → exit 0 · Later (captured): H, I, J, K's remainder, L, M. / Why this order: every model needs the same data and the same honest bar; a retrieval baseline may already beat the bench's best decider at no training [ran] [tree 09ba3246ae3f] [world 2f1906870a] (2026-11-04T14:20:08Z)
 - (step 3) `sampo task show T-2974` → exit 0 · - 2026-11-04T14:20:23Z created / ## Follow-ups captured [ran] [tree 09ba3246ae3f] [world 2f1906870a] (2026-11-04T14:22:25Z)
 - (ac 1) `sampo research list` → exit 0 · wave3-intent  2026-09-26  708B  Wave 3 intent audit (fm-reviewer, read-only) over wave3.diff + wave3-stages-ear… / claude-code-capabilities-2026-09-26  2026-09-26  1497B  Claude Code 2.1.280 capabilit [ran] [tree 09ba3246ae3f] [world 2f1906870a] (2026-11-04T14:22:36Z)

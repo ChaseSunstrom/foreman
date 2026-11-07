@@ -36,7 +36,7 @@ A. Chosen: two KINDS in fmexam reusing the defect machinery (render, _check_one,
 <!-- auto -->
 - 2026-10-30T11:02:28Z steps 3/3 done
 - git: foreman/build; 4 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmexam.py, plugin/tests/test_exam.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2140-impl.edit, plugin/tests/test_exam.py, plugin/lib/fmexam.py, CHANGELOG.md, MASTER.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2140-impl.edit, plugin/tests/test_exam.py, plugin/lib/fmexam.py, CHANGELOG.md, MASTER.md
 ## Docs impact
 MASTER fmexam entry, CHANGELOG
 ## Verification evidence

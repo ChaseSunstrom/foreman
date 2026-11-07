@@ -9,6 +9,7 @@ depends_on: [T-3339]
 source: followup
 created: 2026-11-06T05:54:24Z
 updated: 2026-11-06T05:54:25Z
+group: landscape scan and model tracking
 ---
 # Landscape files what Sampo lacks: new verified items recall.covered misses are clustered locally (moonscale _reps/_bar) and filed once per cluster through eco.capture_once with their sources, one trigger per track so each track's precision is judged on its own; the scan runs in Sampo's home project once a week per machine
 ## Raw request

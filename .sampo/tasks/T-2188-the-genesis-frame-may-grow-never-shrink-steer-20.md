@@ -40,7 +40,7 @@ Revised after fm second plan (verdict revise). (1) Cold read: frame.md is a towe
 <!-- auto -->
 - 2026-10-31T02:49:31Z step 2/4: fm genesis grow and frame.md (OWNED), the cold read, the lineage line
 - git: foreman/build; 6 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmgenesis.py, plugin/skills/genesis/SKILL.md, plugin/tests/test_genesis.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2188_test.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2188.edit, plugin/lib/fmcli.py, plugin/tests/test_genesis.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2188b.edit, plugin/lib/fmgenesis.py, CHANGELOG.md, MASTER.md, plugin/skills/genesis/SKILL.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2188_test.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2188.edit, plugin/lib/fmcli.py, plugin/tests/test_genesis.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2188b.edit, plugin/lib/fmgenesis.py, CHANGELOG.md, MASTER.md, plugin/skills/genesis/SKILL.md
 ## Docs impact
 MASTER.md, CHANGELOG.md, plugin/skills/genesis/SKILL.md
 ## Verification evidence

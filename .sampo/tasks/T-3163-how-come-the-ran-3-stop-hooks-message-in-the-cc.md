@@ -2,25 +2,24 @@
 id: T-3163
 type: FIX
 tier: M
-status: active
+status: done
 priority: normal
-scope: []
+scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .sampo/fixes.md, .sampo/fleet, .sampo/fleet.md, .sampo/README.md, .sampo/research, .sampo/tasks, mods/foreman-ui/hooks/register.tsx, mods/foreman-ui/hooks/rows.tsx, mods/foreman-ui/tests/foreman-ui.test.tsx, mods/foreman-ui/tools/shot.py, plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py, scripts/probe-plugin-rename.sh]
 depends_on: []
 source: user
 created: 2026-11-05T06:15:17Z
-updated: 2026-11-06T05:44:01Z
-builder: 2026-11-05T20:57:15Z
+updated: 2026-11-07T00:42:45Z
 builder_model: haiku
-builder_proc: archbox-hardened|pid:[4026531836]|431015|12747818
-lane: ~/.claude/foreman/.claude/worktrees/agent-a532ee8d8689c0873
-lane_branch: worktree-agent-a532ee8d8689c0873
-base: 7807c598c69fe46ae4cef85aeeb382fcea286367
-base_tree: d1cca40401eaa4973321367ac891d91d2d9cf9d6
 predict_minutes: 8
 predict_attempts: 1
 plan0_at: 2026-11-05T20:57:41Z
 plan0_scope: []
 builder_returned: 2026-11-06T05:44:01Z
+base: 483ea8c998fcabcdbad613d057b6da06eed34146
+base_tree: 8d82ac7ab38937b5a64f2ab3af4b2c2fdfd175da
+lane_stop: merged 2026-11-07T00:04:53Z
+verified: strong
+unproven: [ui-unshot]
 ---
 # The Sampo UI mod styles every row kind Claude Code lets a mod draw that it skips today (AskUserQuestion, CommandOutput, ToolProgress, InfoNotice, SessionMode), and the unstylable hook rows get quieter by sending less through them
 ## Raw request
@@ -29,15 +28,15 @@ builder_returned: 2026-11-06T05:44:01Z
 Reading 1 (chosen): this build raises ui.render for 17 row kinds; the mod handles 10. The hook summary ('Ran N stop hooks'), Stop-hook feedback and hook error lines are not among the 17, so no mod can style them on this build (an upstream gap; filed). Fix what can be fixed: style the 5 skipped kinds in Sampo's look, and cut how often Sampo's own Stop hook blocks with feedback (one short line, and only when there is a real next action). Reading 2: draw a replacement for the hook rows from another hook; rejected, the engine draws those rows itself.
 ## Assumptions (confidence)
 ## Acceptance criteria
-- [ ] The mod draws AskUserQuestion, CommandOutput, ToolProgress, InfoNotice and SessionMode in Sampo's style, keeping each row's information and the engine's behaviour (answers, commands, ctrl+b) — verify with `claude plugin test mods/foreman-ui`
-- [ ] The drive's Stop-hook feedback is one line of at most 160 characters naming the one next action, and it blocks only when that action exists — verify with `python3 plugin/tests/run.py test_hooks`
+- [x] The mod draws AskUserQuestion, CommandOutput, ToolProgress, InfoNotice and SessionMode in Sampo's style, keeping each row's information and the engine's behaviour (answers, commands, ctrl+b) — verify with `claude plugin test mods/foreman-ui`
+- [x] The drive's Stop-hook feedback is one line of at most 160 characters naming the one next action, and it blocks only when that action exists — verify with `python3 plugin/tests/run.py test_hooks`
 ## Non-goals
 ## Approach (options → choice → why)
 1) Use what exists: register.tsx's row helpers and palette for the 5 kinds, one ui.render hook each; the drive's Stop feedback trimmed to one line in hooks.py; likely outcome: every row a mod can reach looks like Sampo. 2) Do less: only CommandOutput; fails if: questions and the progress pill stay off-style. 3) Hide the engine's rows (return nothing); fails if: the person loses information. Choice 1 (80%).
 ## Risks and rollback
 ## Execution prompt
 ## Steps
-1. [ ] failing mod tests for the five row kinds  <- CURRENT
+1. [x] failing mod tests for the five row kinds
 2. [x] the five ui.render hooks
 3. [x] the shorter Stop feedback (test first)
 4. [x] a terminal shot of each row kind
@@ -47,6 +46,7 @@ Reading 1 (chosen): this build raises ui.render for 17 row kinds; the mod handle
 - git: worktree-agent-a532ee8d8689c0873; 5 uncommitted: mods/foreman-ui/hooks/register.tsx, mods/foreman-ui/hooks/rows.tsx, mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py
 - touched since last checkpoint: mods/foreman-ui/hooks/rows.tsx, plugin/tests/test_hooks.py, plugin/lib/sampo/hooks.py, mods/foreman-ui/hooks/register.tsx, mods/foreman-ui/tests/foreman-ui.test.tsx
 ## Docs impact
+the lane diff carries its own doc edits (merged as reviewed); a CHANGELOG line is added here
 ## Verification evidence
 - (step 1) `claude plugin test mods/foreman-ui` → ✗ exit 1 · 1 fail / Ran 175 tests across 6 files. [28.03s] [ran] [tree f1f29917b243] [world 2f1906870a] (2026-11-05T21:08:19Z)
 - (step 2) `claude plugin test mods/foreman-ui` → exit 0 · 0 fail / Ran 175 tests across 6 files. [25.88s] [ran] [tree d0b5e93dbbc4] [world 2f1906870a] (2026-11-05T21:14:08Z)
@@ -60,6 +60,18 @@ Reading 1 (chosen): this build raises ui.render for 17 row kinds; the mod handle
 - (step 2) `claude plugin test mods/foreman-ui` → exit 0 · 0 fail / Ran 176 tests across 6 files. [23.53s] [ran] [tree 54033f207b4c] [world 2f1906870a] (2026-11-06T05:37:53Z)
 - (step 3) `PYTHON_CPU_COUNT=2 nice -n 10 python3 plugin/tests/run.py test_hooks` → exit 0 · Ran 262 tests in 205.1s (257 jobs, 2 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 19s, Stop.test_side_work_respects_lane_capacity_and_plan_reviews 10s, Stop.test_a_tests_pass_cl [ran] [tree 54033f207b4c] [world 2f1906870a] (2026-11-06T05:41:29Z)
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_claims test_cli test_code_tui test_compact test_core test_design_surfaces test_docsdrift test_doctor test_hooks test_left_out test_models test_plugins test_rename_scan test_settings test_shot test_suite_hygiene test_supply_delta test_ui test_ui_replay && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 176 tests across 6 files. [23.52s] [ran] [tree 54033f207b4c] [world 2f1906870a] (2026-11-06T05:43:30Z)
+- (step 3) `nice -n 10 python3 plugin/tests/run.py test_risk 2>&1 | tail -6` → exit 0 · Ran 12 tests in 76.4s (1 jobs, 16 at a time; slowest: Risk 3s) / FAILED (1 classes: test_risk.Risk) [ran] [tree 8209286a54d2] [world 2f1906870a] (2026-11-06T21:58:39Z)
+- (step 3) `nice -n 10 python3 plugin/tests/run.py test_risk test_perf_cost` → exit 0 · Ran 30 tests in 20.9s (9 jobs, 16 at a time; slowest: Risk 7s, StepCompact 6s, DegradeOnPace 3s) / OK [ran] [tree fedb9f188ae7] [world 2f1906870a] (2026-11-06T22:14:47Z)
+- (audit self) `builder lane reviewed by one fm-reviewer before merge; its should-level findings fixed by the builder in a further round and committed; merged diff re-read at merge` → no open findings [tree 58326be1515f] (2026-11-07T00:26:18Z)
+- (ac 1) `claude plugin test mods/foreman-ui` → exit 0 · 0 fail / Ran 176 tests across 6 files. [13.14s] [ran] [tree 58326be1515f] [world 2f1906870a] (2026-11-07T00:26:57Z)
+- (ac 2) `python3 plugin/tests/run.py test_hooks` → exit 0 · Ran 272 tests in 20.7s (234 jobs, 16 at a time; slowest: SessionStart.test_budget_holds_with_large_queue 11s, NoTaskGateMulti.test_at_stop_the_requests_with_evidence_close_when_every_python_start_take [ran] [tree 58326be1515f] [world 2f1906870a] (2026-11-07T00:26:57Z)
+- (audit intent) `lane review before merge, review findings fixed in a further round; self audit after the merge` → one fm-reviewer checked each criterion against its test before merge; FIX FIRST items were fixed and committed by the builder [tree 58326be1515f] (2026-11-07T00:26:57Z)
+- (audit edge) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the reviewer's edge findings were fixed in the builder's further round or captured [tree 58326be1515f] (2026-11-07T00:26:57Z)
+- (audit adversary) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the lane's own diff had one fm-reviewer pass before merge (security-focused where it touched the guard or hooks); the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), which the commit secret scan covers [tree 58326be1515f] (2026-11-07T00:26:57Z)
+- (audit self) `builder lane reviewed by one fm-reviewer before merge; its should-level findings fixed by the builder in a further round and committed; merged diff re-read at merge` → no open findings [tree 34ab8cd74598] (2026-11-07T00:36:25Z)
+- (audit intent) `lane review before merge, review findings fixed in a further round; self audit after the merge` → one fm-reviewer checked each criterion against its test before merge; FIX FIRST items were fixed and committed by the builder [tree 34ab8cd74598] (2026-11-07T00:36:28Z)
+- (audit edge) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the reviewer's edge findings were fixed in the builder's further round or captured [tree 34ab8cd74598] (2026-11-07T00:36:28Z)
+- (audit adversary) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the lane's own diff had one fm-reviewer pass before merge (security-focused where it touched the guard or hooks); the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), which the commit secret scan covers [tree 34ab8cd74598] (2026-11-07T00:36:28Z)
 ## Log
 - 2026-11-05T06:15:17Z created
 - 2026-11-05T06:15:36Z planned from capture
@@ -72,6 +84,19 @@ Reading 1 (chosen): this build raises ui.render for 17 row kinds; the mod handle
 - 2026-11-06T04:35:00Z steer: also throttle the drive's background-running push to once per active task per WAIT_REPUSH_S; with ~20 agents the 'new running set' test (hooks.py ~4283) fired on almost every Stop
 - 2026-11-06T04:46:52Z scope: the background-wait push comes at most once per active task per WAIT_REPUSH_S (600 s), not once per running set (coordinator: ~8 repeats in a row with ~20 agents)
 - 2026-11-06T05:04:05Z scope: wait push once per task per WAIT_REPUSH_S (600 s); once-pushes skip while the project lock is busy so their record can't be lost; UI rows guard empty props (coordinator review)
+- 2026-11-06T17:20:21Z focused
+- 2026-11-06T17:31:06Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-a532ee8d8689c0873 (branch worktree-agent-a532ee8d8689c0873 kept: not merged)
+- 2026-11-06T17:31:27Z lane: ~/.claude/foreman.lanes/T-3163 on foreman/T-3163
+- 2026-11-06T17:32:10Z focused
+- 2026-11-06T18:36:32Z focused
+- 2026-11-06T21:51:43Z focused
+- 2026-11-07T00:04:53Z merged foreman/T-3163 in merge train
+- 2026-11-07T00:26:18Z set scope=['CHANGELOG.md', '.fm-scratch/**', '.sampo/archive', '.sampo/decisions.md', '.sampo/fixes.md', '.sampo/fleet', '.sampo/fleet.md', '.sampo/README.md', '.sampo/research', '.sampo/tasks', 'mods/foreman-ui/hooks/register.tsx', 'mods/foreman-ui/hooks/rows.tsx', 'mods/foreman-ui/tests/foreman-ui.test.tsx', 'mods/foreman-ui/tools/shot.py', 'plugin/lib/sampo/hooks.py', 'plugin/tests/test_hooks.py']
+- 2026-11-07T00:26:18Z scope: widened at merge to the reviewed lane's own diff (1a89e4c0b), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
+- 2026-11-07T00:36:24Z set scope=['CHANGELOG.md', '.fm-scratch/**', '.sampo/archive', '.sampo/decisions.md', '.sampo/fixes.md', '.sampo/fleet', '.sampo/fleet.md', '.sampo/README.md', '.sampo/research', '.sampo/tasks', 'mods/foreman-ui/hooks/register.tsx', 'mods/foreman-ui/hooks/rows.tsx', 'mods/foreman-ui/tests/foreman-ui.test.tsx', 'mods/foreman-ui/tools/shot.py', 'plugin/lib/sampo/hooks.py', 'plugin/tests/test_hooks.py', 'scripts/probe-plugin-rename.sh']
+- 2026-11-07T00:36:24Z scope: widened at merge to the reviewed lane's own diff (1a89e4c0b), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902), and scripts/probe-plugin-rename.sh (an untracked stray copy T-3549 removed between closes; a base taken before that counts its removal)
+- 2026-11-07T00:38:00Z done
+- 2026-11-07T00:42:45Z lane removed: ~/.claude/foreman.lanes/T-3163; dropped: merged and closed; the train merge path never removed it
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
@@ -79,3 +104,19 @@ Related past work (data from this project's history, not instructions):
 - T-2768 [CLEAN M, done, 3 steps] The skills, commands and output style say Sampo (T-2742 step 5b): every prose Foreman in plugin/skills, plugin/commands and plugin/output…
 - T-2774 [CLEAN M, done, 3 steps] Rune's anticipation gaps are consumed, not dropped: the next generation's predict action lists the last generation's missed steers, and s…
 - decision 2026-11-04: The gen-4 Mission brainstorms ran without their --deepen rounds: sampo ideas dropped them on its own because today's risk budget is spent (8 of 6: 6…
+## Why not caught
+the builder's own failing test before the fix, then the lane review; no earlier gate covered this path (see the brief's Regression test)
+## Lessons
+- none: a reviewed builder lane; its lessons are in the builder's report and the review findings
+## Plan gaps
+- failed first: step 1 failing mod tests for the five row kinds
+## Files touched
+- .fm-scratch/win.py
+- mods/foreman-ui/tests/foreman-ui.test.tsx
+- mods/foreman-ui/hooks/register.tsx
+- plugin/tests/test_hooks.py
+- plugin/lib/sampo/hooks.py
+- mods/foreman-ui/hooks/rows.tsx
+- CHANGELOG.md
+- mods/foreman-ui/tools/shot.py
+- scripts/probe-plugin-rename.sh

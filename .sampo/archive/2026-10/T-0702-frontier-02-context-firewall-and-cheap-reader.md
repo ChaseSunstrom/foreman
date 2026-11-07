@@ -43,7 +43,7 @@ Options: (a) PostToolUse rewriting results — Claude Code hooks can't replace a
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py -p test_firewall.py` → ✗ exit 1 · Ran 7 tests in 1.0s (4 classes, 16 at a time; slowest: DeltaReads 1s, QuietWrap 1s, CompactionReset 0s) / FAILED (2 classes) [ran] [tree f16493954cbd] (2026-10-09T16:35:51Z)
 - (step 2) `python3 plugin/tests/run.py -p test_firewall.py -p test_hooks.py` → exit 0 · Ran 143 tests in 24.8s (22 classes, 16 at a time; slowest: Stop 25s, PreToolUse 12s, Approvals 12s) / OK [ran] [tree 591c08bcd24a] (2026-10-09T16:40:45Z)
-- (step 3) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/fwmeasure.py` → exit 0 · Read: 4148 calls, ~6,633,492 tokens; unchanged re-reads 174 calls, ~109 tokens (0.0%) / Bash: ~10,911,924 tokens; plain noisy runners 0 calls, ~0 tokens (fm quiet keeps ~1 line on success, 40 on failu [ran] [tree 3c8dd28cda96] (2026-10-09T16:42:44Z)
+- (step 3) `python3 /tmp/claude-1000/-home-~--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/fwmeasure.py` → exit 0 · Read: 4148 calls, ~6,633,492 tokens; unchanged re-reads 174 calls, ~109 tokens (0.0%) / Bash: ~10,911,924 tokens; plain noisy runners 0 calls, ~0 tokens (fm quiet keeps ~1 line on success, 40 on failu [ran] [tree 3c8dd28cda96] (2026-10-09T16:42:44Z)
 ## Log
 - 2026-10-09T16:27:55Z created
 - 2026-10-09T16:31:05Z focused

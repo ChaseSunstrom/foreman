@@ -42,7 +42,7 @@ T-0707: all steps evidenced (backtest pack 56% vs keyword 10%, blast 67%); finis
 <!-- auto -->
 - 2026-10-09T18:55:50Z step 1/4: failing tests first
 - git: foreman/build; 8 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmhooks.py, plugin/lib/fmdebug.py, plugin/lib/fmgraph.py, plugin/tests/test_graph.py, plugin/tests/test_suspects.py
-- touched since last checkpoint: plugin/tests/test_graph.py, plugin/lib/fmgraph.py, plugin/lib/fmcli.py, /tmp/claude-1000/-home-<user>--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/graph_backtest.py, CHANGELOG.md, MASTER.md
+- touched since last checkpoint: plugin/tests/test_graph.py, plugin/lib/fmgraph.py, plugin/lib/fmcli.py, /tmp/claude-1000/-home-~--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/graph_backtest.py, CHANGELOG.md, MASTER.md
 ## Docs impact
 CHANGELOG; MASTER.md module list (fmgraph)
 ## Verification evidence

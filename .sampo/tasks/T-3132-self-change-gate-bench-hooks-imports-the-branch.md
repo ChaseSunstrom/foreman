@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T03:51:02Z
 updated: 2026-11-06T06:22:35Z
-group: hook bench gate
 lane: ~/.claude/foreman/.claude/worktrees/agent-a51eef1318dd31261
 lane_branch: worktree-agent-a51eef1318dd31261
 base: 0e503eeeeb87000325d02673ba119e35ff08b7e8

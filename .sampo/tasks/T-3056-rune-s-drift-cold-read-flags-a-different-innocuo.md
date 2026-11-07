@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/rune.py, plugin/tests/test_genesis.py, CHANGELOG.md, .f
 depends_on: []
 source: discovered
 created: 2026-11-05T00:29:05Z
-updated: 2026-11-06T13:21:40Z
+updated: 2026-11-06T16:29:48Z
 base: da5255104c56fd26f565ba4b921968fc16002ebc
 base_tree: 1fb5d53a9f8bd834fde7d23f1dce75eb3a9d038e
 predict_minutes: 2
@@ -18,6 +18,7 @@ plan0_scope: [plugin/lib/sampo/rune.py, plugin/tests/test_genesis.py, CHANGELOG.
 builder_returned: 2026-11-06T12:53:47Z
 lane_stop: merged 2026-11-06T13:18:37Z
 verified: strong
+lane_verified: 5257ad3eadfb71380afb19a4eb213c1bcc93a3b5
 ---
 # Rune's drift check counts a seed line as drifted only when a second cold read confirms it, and records each read's verdict
 ## Raw request
@@ -64,6 +65,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T13:18:45Z scope: widened at merge to the reviewed lane's own diff (5257ad3ea), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T13:21:36Z done
 - 2026-11-06T13:21:40Z committed 44ae7c50f (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains 5257ad3ea
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

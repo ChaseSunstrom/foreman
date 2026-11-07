@@ -33,7 +33,7 @@ verified: strong
 <!-- auto -->
 - 2026-10-29T21:12:38Z steps 2/2 done
 - git: foreman/build; 3 uncommitted: plugin/lib/fmcli.py, plugin/lib/fmrelease.py, plugin/tests/test_ship.py
-- touched since last checkpoint: plugin/tests/test_ship.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ship2054.json, plugin/lib/fmrelease.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ship2054b.json, plugin/lib/fmcli.py
+- touched since last checkpoint: plugin/tests/test_ship.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ship2054.json, plugin/lib/fmrelease.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ship2054b.json, plugin/lib/fmcli.py
 ## Docs impact
 plugin/lib/fmcli.py
 ## Verification evidence

@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T15:04:37Z
 updated: 2026-11-05T15:04:37Z
-group: affected-test set gaps
 ---
 # A close's affected-test set includes test modules from lanes merged and reverted inside…
 ## Raw request

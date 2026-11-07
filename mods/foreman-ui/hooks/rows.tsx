@@ -47,7 +47,7 @@ export function meter(
 }
 
 export type Part = { text: string; color?: number; bold?: boolean }
-const LIGHT = 0xd0d5dd // body text that reads, as in the pane
+export const LIGHT = 0xd0d5dd // body text that reads, as in the pane
 
 /** T-1031: a chat row's head, as the pane's section titles ('make the full chat UI match the panel look'): a mark, a
  * bold label in the row's colour, its subject, a rule fading out in that colour (a comet runs along it while `frame`),

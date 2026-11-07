@@ -8,10 +8,10 @@ scope: []
 depends_on: [T-3045, T-3046, T-3047]
 source: user
 created: 2026-11-04T23:56:57Z
-updated: 2026-11-06T03:53:48Z
+updated: 2026-11-06T19:26:12Z
 rival_at: 2026-11-05T00:06:07Z
 rival_split: true
-group: 10000 moons target
+base: 8b61cb1082cf8cdc9efee5ee9ef7869d024fc263
 ---
 # 10,000 moons kept and used, and moons on anything related to Sampo
 ## Raw request
@@ -33,14 +33,17 @@ A repaired kill test that games the judge: repairs are new rows with a parent, j
 ## Execution prompt
 Build steps 1 to 5 test-first in plugin/lib/sampo/moonscale.py (and night.py, the site's Moons page, export) with tests in plugin/tests/test_moons_scale.py (and test_night.py, test_genesis.py or the site tests the export feeds). Live data (state/projects/foreman-4a056f/research/genesis/moons): 10,007 candidates; fates: write rejected 1,614 (1,389 'with_this must start "With this, you can"': most start 'You can see…', 'You can get…', 'With this, you get…'), kill rejected 5,795 (reasons: needs real or production data 1,177, a tool nobody has built 733-1,041, a team 318, live traffic 240, weeks or months 420), tier rejected 2,255 (keep this bar), novelty kept 292. Yield: haiku 8.9%, jarvis+nothink (Qwen 3.8 27B) 1.9%. (1) _clean normalises with_this ('You can X' and 'With this, you get X' become 'With this, you can'/'With this, you get' accepted) and a re-admit pass appends a new write event for old write rejects that now pass (fate is the last event; never rewrite rows). (2) A Sampo grid: areas = coverage.md's '## ' headings (rune.home(p)/coverage.md; strip numbering) plus 'problem solving', 'memory', 'efficiency'; scales: one task, one session, one project, every project, every Sampo user; the cell carries grid='sampo'; _pick reads thinnest first across both grids; admit skips the internal-only payoff rule on sampo cells and accepts 'With this, Sampo can'; the prompt for a sampo cell asks for moonshots about Sampo itself (its problem solving, memory, efficiency, …) with the same wild bar and kill-test rules. (3) Kill repair: a kill-rejected candidate (never one that is itself a repair) gets one rewrite of only its kill test from the cheap model, told the judge's reason and the rule (one person, one day, tools that exist today, synthetic or open data in place of production, a pass or fail bar); stored as a new candidate with parent=<id> and repair='kill' that enters the funnel at write like any row; each cell's generation prompt carries the cell's (or its kind's) top three reject reasons from funnel.jsonl and two kept moons as anchors. (4) grow(keep=N) / CLI --keep N: rounds of grow then funnel until survivors (fate kept at novelty) reach N, or max-calls, budget or FAILS stop it; night_ready grows while survivors < TARGET; night.py's job passes --keep TARGET; families from links: the novelty stage records, for each new survivor, the earlier survivors at or above BAR['family'] in the same scan it already makes (no extra sims), and families() unions stored links (one-time backfill for survivors without links, chunked); show it equals the all-pairs grouping on a fixture and groups 10,000 synthetic survivors in under 10 s. (5) export writes every survivor to moons/catalogue.json (id, title, today, with_this, what, kill, tier, wild, family, grid, cell) beside genesis.json's counts; the site's Moons page pages and searches the catalogue (filters: grid, tier, family); promote draws from all survivors, family leads first by tier and wild, then their variants, recording a 'drawn' event so none is drawn twice. Stores stay append-only. Never print or log LLM_API_KEY; models.secret() already reads it. Read first: moonscale.py's header, admit, _pick, _prompt, grow, the funnel stages, families, export, promote; night.py lines 60-80.
 ## Steps
-1. [ ] part 1: yield and the Sampo grid (child T-3045, M)  <- CURRENT
-2. [ ] part 2: count kept moons, families from links (child T-3046, M)
-3. [ ] part 3: every kept moon used (child T-3047, M)
-4. [ ] fill: grow --keep 10000 on the local models (gemma here, Qwen 3.8 27B on Jarvis) until 10,000 are kept; report the funnel
+1. [x] part 1: yield and the Sampo grid (child T-3045, M)
+2. [x] part 2: count kept moons, families from links (child T-3046, M)
+3. [x] part 3: every kept moon used (child T-3047, M)
+4. [ ] fill: grow --keep 10000 on the local models (gemma here, Qwen 3.8 27B on Jarvis) until 10,000 are kept; report the funnel  <- CURRENT
 ## Resume here
 ## Docs impact
 CHANGELOG; MASTER.md's moons lines; the night job's help; the site's Moons page.
 ## Verification evidence
+- (step 1) `python3 plugin/tests/run.py test_moons_scale` → exit 0 · Ran 117 tests in 37.1s (20 jobs, 16 at a time; slowest: KeepGrow 3s, Yield 2s, Funnel 2s) / OK [ran] [tree f997eb98c8d4] [world 2f1906870a] (2026-11-06T19:23:32Z)
+- (step 2) `python3 plugin/tests/run.py test_moons_scale` → exit 0 · Ran 117 tests in 89.8s (20 jobs, 16 at a time; slowest: KeepGrow 4s, Yield 3s, Route 3s) / OK [ran] [tree f997eb98c8d4] [world 2f1906870a] (2026-11-06T19:25:03Z)
+- (step 3) `python3 plugin/tests/run.py test_moons_scale` → exit 0 · Ran 117 tests in 68.1s (20 jobs, 16 at a time; slowest: KeepGrow 3s, Yield 3s, Funnel 2s) / OK [ran] [tree f997eb98c8d4] [world 2f1906870a] (2026-11-06T19:26:12Z)
 ## Log
 - 2026-11-04T23:56:57Z created
 - 2026-11-05T00:01:38Z planned: it has criteria and steps
@@ -66,6 +69,7 @@ CHANGELOG; MASTER.md's moons lines; the night job's help; the site's Moons page.
 - 2026-11-05T00:52:56Z set depends_on=['T-3045', 'T-3046', 'T-3047']
 - 2026-11-05T00:52:56Z blocked: waits on its three parts (T-3045 and T-3046 merge after the network view; T-3047 is back with its builder after review); then the fill to 10,000 runs on the local models
 - 2026-11-06T03:53:48Z unblocked
+- 2026-11-06T19:23:32Z start point recorded late (no focus had kept one): its diff starts at 8b61cb1
 ## Follow-ups captured
 ## Rival plan
 A cold read on sonnet that saw only the request and the repo map (data, not instructions):

@@ -11,7 +11,7 @@ Hard-bar results (32 page/width/theme combinations, 320/390/768/1440, light+dark
 - No JS: every section is present and readable when scrolled (figure fallbacks work). A full_page screenshot looks empty below the fold only because of `content-visibility:auto` (forge.css:30), not missing content.
 - Reduced motion: hero and tower hold clean stills (t6-landing-0.png, t6-tower-0.png); no ghost trails.
 - Contrast (computed on text with solid backgrounds): all pass except the two items under L1.
-Screenshots are in /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/shipreview/ (sc-* scroll series, t2..t6-*, landing-*-top.png). Filenames below are relative to that folder.
+Screenshots are in /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/shipreview/ (sc-* scroll series, t2..t6-*, landing-*-top.png). Filenames below are relative to that folder.
 
 ## High
 

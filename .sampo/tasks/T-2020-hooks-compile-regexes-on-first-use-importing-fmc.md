@@ -37,7 +37,7 @@ A pattern passed bare to re.* or isinstance-checked would break: reuse.py found 
 <!-- auto -->
 - 2026-10-29T17:42:21Z step 1/2: test: no module-level compile at import (red)
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, plugin/lib/fmcore.py, plugin/lib/fmguard.py, plugin/lib/fmhooks.py, plugin/tests/test_core.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/hook_t.py, plugin/tests/test_core.py, plugin/lib/fmhooks.py, plugin/lib/fmcore.py, plugin/lib/fmguard.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ld_t.py, CHANGELOG.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ld_parts.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/rd_t.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/hook_t.py, plugin/tests/test_core.py, plugin/lib/fmhooks.py, plugin/lib/fmcore.py, plugin/lib/fmguard.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ld_t.py, CHANGELOG.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ld_parts.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/rd_t.py
 - failures met: fmguard.py:0:class lazy: # noqa: n0 — fmcore.lazy's twin: this module imports no other fo…
 ## Docs impact
 CHANGELOG line added

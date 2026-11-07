@@ -41,7 +41,7 @@ A trigger kind could tempt an arm to install a timer: the scenario's done_ok req
 <!-- auto -->
 - 2026-10-30T22:08:37Z steps 6/6 done
 - git: foreman/build; 7 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmexam.py, plugin/lib/fmgenesis.py, plugin/tests/test_exam.py, plugin/tests/test_genesis.py, site/genesis/index.html
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2216_test.edit, plugin/tests/test_genesis.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2216_code.edit, plugin/lib/fmgenesis.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2216_child_test.edit, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2216_child_code.edit, plugin/lib/fmexam.py, plugin/tests/test_exam.py, CHANGELOG.md, MASTER.md, site/genesis/index.html
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2216_test.edit, plugin/tests/test_genesis.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2216_code.edit, plugin/lib/fmgenesis.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2216_child_test.edit, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2216_child_code.edit, plugin/lib/fmexam.py, plugin/tests/test_exam.py, CHANGELOG.md, MASTER.md, site/genesis/index.html
 ## Docs impact
 ~/.claude/foreman/MASTER.md ~/.claude/foreman/CHANGELOG.md ~/.claude/foreman/site/genesis/index.html
 ## Verification evidence

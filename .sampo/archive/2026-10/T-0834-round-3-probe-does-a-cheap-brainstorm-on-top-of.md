@@ -31,7 +31,7 @@ verified: ok
 <!-- auto -->
 - 2026-10-14T18:48:28Z step 1/2: Probe: 2 lenses, 2 rounds, --seen every earlier run
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/merge_boards.py, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/dead_defs.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/merge_boards.py, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/dead_defs.py
 ## Docs impact
 none: research record
 ## Verification evidence

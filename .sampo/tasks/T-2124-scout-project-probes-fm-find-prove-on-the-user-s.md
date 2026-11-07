@@ -35,7 +35,7 @@ A) wait for T-2122 and capture nothing until prove exists: blocks a tier-3 brief
 <!-- auto -->
 - 2026-10-30T10:09:04Z steps 2/2 done
 - git: foreman/build; 7 uncommitted: CHANGELOG.md, MASTER.md, README.md, plugin/lib/fmfind.py, plugin/lib/fmscout.py, plugin/tests/test_find.py, plugin/tests/test_scout.py
-- touched since last checkpoint: CHANGELOG.md, MASTER.md, README.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2127-impl.edit, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2124-fix-tests.edit, plugin/tests/test_find.py, plugin/tests/test_scout.py
+- touched since last checkpoint: CHANGELOG.md, MASTER.md, README.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2127-impl.edit, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2124-fix-tests.edit, plugin/tests/test_find.py, plugin/tests/test_scout.py
 ## Docs impact
 MASTER.md, CHANGELOG.md, README.md
 ## Verification evidence

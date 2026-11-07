@@ -2870,7 +2870,8 @@ def run_all(full=False, accept_supply=False):
     results.append(check_release_age(here.root if here else os.getcwd()))  # T-2597
     results.append(check_version_skew(c.all_projects()))
     home_p = c.find_project(home)  # T-1998: its active task's in-scope core edits aren't a warning
-    results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
+    tree = os.path.dirname(os.path.abspath(PLUGIN))  # T-3529: the running code's own docs (a lane's, a train's), not the home's
+    results += [check_self_docs(tree), check_file_map(tree, os.path.join(tree, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home, home_p and c.active_brief_fast(home_p)),
                 check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),

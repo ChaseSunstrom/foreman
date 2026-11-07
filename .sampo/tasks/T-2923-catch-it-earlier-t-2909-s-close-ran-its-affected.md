@@ -9,7 +9,6 @@ depends_on: []
 source: followup
 created: 2026-11-04T07:43:18Z
 updated: 2026-11-04T07:43:18Z
-group: affected-test set gaps
 ---
 # Catch it earlier: T-2909's close ran its affected tests, which didn't include…
 ## Raw request

@@ -9,9 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T06:42:17Z
 updated: 2026-11-05T06:42:17Z
-inferred_deps: [T-3140]
-inferred_why: T-3140: named in its request
-group: timeouts under parallel load
 ---
 # test_clock_windows' fm digest call times out under heavy parallel load (load 24-28 on 16…
 ## Raw request

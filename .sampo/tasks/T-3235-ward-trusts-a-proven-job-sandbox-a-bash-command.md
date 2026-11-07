@@ -9,9 +9,6 @@ depends_on: []
 source: followup
 created: 2026-11-05T18:59:15Z
 updated: 2026-11-05T18:59:15Z
-inferred_deps: [T-3231]
-inferred_why: T-3231: trusts a sandbox that must be proven first
-group: guard bypasses and over-refusals
 ---
 # Ward trusts a proven job sandbox: a Bash command run through sampo sandbox run skips the…
 ## Raw request

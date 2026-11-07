@@ -9,8 +9,6 @@ depends_on: []
 source: followup
 created: 2026-11-05T18:59:13Z
 updated: 2026-11-05T18:59:13Z
-inferred_deps: [T-3231]
-inferred_why: T-3231: runs through the job sandbox it adds
 ---
 # Local-model tool runs (smith's act loop, calling cards' callers) through the job sandbox…
 ## Raw request

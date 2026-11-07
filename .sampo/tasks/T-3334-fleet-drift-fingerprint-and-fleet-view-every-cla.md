@@ -2,22 +2,25 @@
 id: T-3334
 type: FEATURE
 tier: S
-status: planned
+status: active
 priority: normal
 scope: [plugin/lib/sampo/claims.py, plugin/lib/sampo/mandate.py, plugin/lib/sampo/sync.py, plugin/lib/sampo/cli.py, plugin/tests/test_drift_fleet.py]
 depends_on: [T-3321]
 source: followup
 created: 2026-11-06T04:32:05Z
-updated: 2026-11-06T07:06:09Z
-lane: ~/.claude/foreman/.claude/worktrees/agent-a1a866bdfa7ddc7ca
-lane_branch: worktree-agent-a1a866bdfa7ddc7ca
-base: 855eb8464dede6701bd08a68da4504a6db91cf3e
-base_tree: be236efca055096c48da09056d95772cb57f90d4
+updated: 2026-11-06T17:45:52Z
+lane_branch: foreman/T-3334
 predict_minutes: 2
 predict_attempts: 1
 plan0_at: 2026-11-06T06:19:11Z
 plan0_scope: [plugin/lib/sampo/claims.py, plugin/lib/sampo/mandate.py, plugin/lib/sampo/sync.py, plugin/tests/test_drift_fleet.py]
 builder_returned: 2026-11-06T07:06:09Z
+lane: ~/.claude/foreman.lanes/T-3334
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
+inferred_deps: [T-3330]
+inferred_why: T-3330: fingerprint is carried on each claim
+group: fleet claims and session liveness
 ---
 # Fleet: drift fingerprint and fleet view: every claim carries a hash of mandate, root seal, tower gen-0s, steers, standing intent and plugin version; a mismatch refuses tower claims and names the differing part; sampo fleet lists who works what where from the refs
 ## Raw request
@@ -50,6 +53,9 @@ builder_returned: 2026-11-06T07:06:09Z
 - 2026-11-06T06:43:41Z focused
 - 2026-11-06T06:59:56Z focused
 - 2026-11-06T07:02:12Z focused
+- 2026-11-06T17:41:19Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-a1a866bdfa7ddc7ca (branch worktree-agent-a1a866bdfa7ddc7ca kept: not merged); dropped: relocated beside the repo: the train left it out on a conflict and the Ward refuses git merge under .claude/worktrees; its branch is kept and merged into the new lane
+- 2026-11-06T17:41:20Z lane: ~/.claude/foreman.lanes/T-3334 on foreman/T-3334
+- 2026-11-06T17:45:52Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
@@ -59,4 +65,4 @@ Related past work (data from this project's history, not instructions):
 - decision 2026-11-02: [costly] [reverses: queued and starts automatically once gen-0's DONE-WHEN holds] [cites: user steer 2026-11-02: Honestly integrate MOOMSHOT into ea…
 - likely tests for the scope: mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/tests/test_claims.py, plugin/tests/test_mandate.py, plugin/tests/test_rename_scan.py, plugin/tests/test_sync.py
 ## Preflight
-Changed in scope since this was planned (2026-11-06): plugin/lib/sampo/claims.py, plugin/lib/sampo/cli.py, plugin/lib/sampo/mandate.py, plugin/lib/sampo/sync.py, plugin/tests/test_drift_fleet.py; re-ground the plan against them before editing
+Changed in scope since this was planned (2026-11-06): plugin/lib/sampo/cli.py, plugin/lib/sampo/sync.py; re-ground the plan against them before editing

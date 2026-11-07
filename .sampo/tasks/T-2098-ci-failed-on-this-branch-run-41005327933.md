@@ -19,9 +19,9 @@ updated: 2026-10-30T12:38:46Z
 > | .github:87 2 classes failed: test_exam.ExamC (exit 1), test_exam.ExamRust (exit 1)
 > | .github:86 Ran 2142 tests in 858s; slowest: Bench 59s, Command 48s, Fakes 46s, Resume 44s, Durable 44s
 > | .github:84 stderr=b''.join(stderr_seq) if stderr_seq else None)
-> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '/Users/runner/work/foreman/foreman/plugin/bin/fm', 'exam', 'check', 's5-001', '--json']' timed out after 30.0 seconds
+> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '~/work/foreman/foreman/plugin/bin/fm', 'exam', 'check', 's5-001', '--json']' timed out after 30.0 seconds
 > | .github:82 stderr=b''.join(stderr_seq) if stderr_seq else None)
-> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '/Users/runner/work/foreman/foreman/plugin/bin/fm', 'exam', 'check', 's5-001', '--json']' timed out after 30.0 seconds
+> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '~/work/foreman/foreman/plugin/bin/fm', 'exam', 'check', 's5-001', '--json']' timed out after 30.0 seconds
 > | .github:1 Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.
 ## Interpretation
 ## Assumptions (confidence)

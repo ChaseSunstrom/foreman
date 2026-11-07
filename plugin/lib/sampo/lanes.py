@@ -2193,8 +2193,9 @@ def pm_rerun_cmd(main, classes):
     return ""
 
 
-def pm_record(p, sha, tid, main):
-    """A landed merge waits for its verify; start the runner. No suite command, no record."""
+def pm_record(p, sha, tid, main, spawn=True):
+    """A landed merge waits for its verify; start the runner (spawn: a train records each lane's merge, starts one).
+    No suite command, no record."""
     os.makedirs(_pm_dir(p), exist_ok=True)
     if not pm_cmd(main):
         if not os.path.exists(os.path.join(_pm_dir(p), ".nosuite")):  # once
@@ -2206,7 +2207,8 @@ def pm_record(p, sha, tid, main):
     with c.lock(_pm_dir(p)):
         c.write_atomic(os.path.join(_pm_dir(p), f"{sha}.json"), json.dumps(
             {"sha": sha, "task": tid, "state": "pending", "run_at": sha, "n": time.time_ns(), "at": c.now()}))
-    pm_spawn(p, main)
+    if spawn:
+        pm_spawn(p, main)
 
 
 def pm_spawn(p, main):

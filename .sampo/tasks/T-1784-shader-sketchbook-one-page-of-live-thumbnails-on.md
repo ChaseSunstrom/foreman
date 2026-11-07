@@ -37,7 +37,7 @@ Options: (a) screenshots of each shader (a browser and GPU at build time); (b) a
 <!-- auto -->
 - 2026-10-29T20:18:34Z steps 4/4 done
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/logo/a.svg, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/logo/b.svg, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/logo/c.svg, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/logo/preview.html
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/logo/a.svg, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/logo/b.svg, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/logo/c.svg, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/logo/preview.html
 ## Docs impact
 CHANGELOG line from the lane; fm scene help names sketchbook
 ## Verification evidence

@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-06T10:32:50Z
-updated: 2026-11-06T12:40:36Z
+updated: 2026-11-06T16:29:47Z
 base: 45804224777bebea4d4b8fd9f7374ddf631a46d9
 base_tree: 1dd49205a84d78a4b7a802302d6ffeb25b24288a
 predict_minutes: 6
@@ -18,6 +18,7 @@ plan0_scope: []
 builder_returned: 2026-11-06T11:18:15Z
 lane_stop: merged 2026-11-06T12:37:48Z
 verified: strong
+lane_verified: bf7e8f5889093b0f5c9ec337ef284b0f47b1db9c
 ---
 # The post-merge suite auto-reverted T-3410's docs-only merge (0cad059e5: a MASTER.md…
 ## Raw request
@@ -66,6 +67,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T12:37:51Z scope: widened at merge to the reviewed lane's own diff (bf7e8f588), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T12:40:32Z done
 - 2026-11-06T12:40:36Z committed 1f5c52c04 (1 file)
+- 2026-11-06T16:29:47Z verified: the full suite is green on 1078ed22d, which contains bf7e8f588
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

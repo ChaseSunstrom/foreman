@@ -19,13 +19,14 @@ import json
 import os
 import re
 import shutil
+import sys
 
 from sampo import core as c
 
 DIR = c.MIRROR
 OLD = c.MIRRORS[1]  # T-3342: the folder before the rename; read while DIR is absent, moved by move()
 STAMPS = "sync-stamps.json"  # T-3349: per mirrored file, its source's and its mirror copy's (mtime_ns, size) last export
-SCRUB = 1  # T-3508: the stamps' "v"; bump when _outgoing changes, so the next export rewrites every mirrored file
+SCRUB = 2  # T-3508 (2: T-3547): the stamps' "v"; bump when _outgoing changes, so the next export rewrites every mirrored file
 LOCAL_ONLY = ("allow", "approved", "plugin_pin")
 LEASE_MARKS = ("lane", "lane_branch", "builder", "builder_proc", "cost_cap", "cap_hit")  # one machine's marks on a brief
 
@@ -246,6 +247,46 @@ def _outgoing(rel, text):
     return c.redact_local(c.redact(_for_mirror(text) if rel.startswith(BRIEFS) else text))
 
 
+def _namer():
+    """T-3574: rel -> the path the mirror gives a brief or research note. A brief's name is kebab(title) from its
+    creation (a research note's is often slugged from free text too), so a title holding the home folder or a private
+    term named the file with it. In kebab form the home (home-/users-<login>, or the home's own kebab when it has two
+    parts) reads home-user and a private term private, a host glob's (*.lan.example.test) with the one label before
+    it; either cut short at the end of a name (kebab cuts at 48) too. Other names are kept. Built once per export or
+    import (the terms are read once). An ip stays: in kebab form 10-22-08-37 is as likely a date."""
+    kebab = lambda s: re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")  # noqa: E731  c.kebab, uncut, never "task"
+
+    def rx(alts, cuts, low):  # whole matches, or at the end of a name a cut of `low` or more characters
+        cut = [lead + t[:k] + "$" for lead, t in cuts for k in range(len(t) - 1, low - 1, -1) if t[k - 1] != "-"]
+        return re.compile(r"(?i)(?<![a-z0-9])(?:" + "|".join([a + r"(?![a-z0-9])" for a in alts] + cut) + ")")
+    home, subs = os.path.expanduser("~").rstrip("/"), []
+    if login := kebab(os.path.basename(home)):
+        own = kebab(home)
+        subs.append((rx([f"(?:home|users)-{login}"] + [own] * ("-" in own), [("(?:home|users)-", login)], 3),
+                     "home-user"))
+    terms = sorted({(kebab(t.replace("*", "")), t.startswith("*.")) for t in c.private_terms()},
+                   key=lambda x: -len(x[0]))
+    if terms := [("(?:[a-z0-9]+-)?" if glob else "", t) for t, glob in terms if t]:
+        subs.append((rx([lead + t for lead, t in terms], terms, 4), "private"))
+
+    def name(rel):
+        if rel.startswith(BRIEFS):
+            d, f = os.path.split(rel)
+            m = _ID.match(f)
+            if not m or not f.endswith(".md"):
+                return rel
+            head, stem = (d and d + "/") + m.group(1), f[len(m.group(1)):-3]
+        elif rel.startswith("research/") and rel.endswith(".md"):
+            head, stem = "research", rel[len("research"):-3]
+        else:
+            return rel
+        red = stem
+        for r, repl in subs:
+            red = r.sub(repl, red)
+        return rel if red == stem else head + red + ".md"
+    return name
+
+
 def _from_mirror(text):
     """A mirrored brief as this machine may take it: no grants, no run or worktree marks, audits relabelled so they
     don't count here (this machine's gates need its own runs and audits)."""
@@ -273,17 +314,20 @@ def export(p):
     root = mirror(p)
     if os.path.islink(root):
         raise OSError(f"{root} is a symlink; fm sync writes only a real folder")
-    base, written, here = dict(c.read_meta(p).get("sync_base") or {}), 0, {}
-    old, stamps = _stamps(p), {"v": SCRUB}
+    base, written, here, name, gone = dict(c.read_meta(p).get("sync_base") or {}), 0, {}, _namer(), set()
+    old, stamps = _stamps(p), {"v": _version()}
     readme = os.path.join(root, "README.md")  # an older fm wrote its own wording: refreshed with the first re-scrub
     if not os.path.exists(readme) or not old and os.path.isfile(readme) and _read(readme) != README \
             and _read(readme).startswith(("# " + DIR + "\n", "# " + OLD + "\n")):  # fm's heading: not the user's own
         _write(readme, README)
-    for rel in _local(p):
-        m = _ID.match(os.path.basename(rel)) if rel.startswith(BRIEFS) else None
-        if rel.startswith(BRIEFS) and not m:
+    for lrel in _local(p):
+        m = _ID.match(os.path.basename(lrel)) if lrel.startswith(BRIEFS) else None
+        if lrel.startswith(BRIEFS) and not m:
             continue  # not a brief (fm names them T-NNNN-…)
-        src, dest = os.path.join(p.dir, rel), os.path.join(root, rel)
+        rel = name(lrel)  # T-3574: the mirror's name for it, redacted; base and stamps key by it
+        if rel != lrel and not m:
+            gone.add(lrel)  # a research note's old-named copy, dropped below while it is still ours
+        src, dest = os.path.join(p.dir, lrel), os.path.join(root, rel)
         seen = [_stamp(src), _stamp(dest)]
         if seen[1] and old.get(rel) == seen and rel in base:  # T-3349: neither side moved since the last export
             stamps[rel] = seen
@@ -298,15 +342,18 @@ def export(p):
             here[m.group(1)] = rel
         cur = _read(dest) if os.path.isfile(dest) and not os.path.islink(dest) else None
         if cur is not None and cur != text and _sha(cur) != base.get(rel):
+            if (clean := c.redact_local(c.redact(cur))) != cur:  # T-3547: but never kept with a home or private host
+                _write(dest, clean)
+                written += 1
             continue  # changed in the repo (pull, merge): the import takes it first
         if cur != text:
             _write(dest, text)
             written += 1
         base[rel] = _sha(text)
         stamps[rel] = [_stamp(src), _stamp(dest)]
-    for rel in list(_walk(root)):  # a brief archived here moved: drop its old copy if it is still ours
+    for rel in list(_walk(root)):  # a brief archived here moved (or renamed): drop its old copy if it is still ours
         m = _ID.match(os.path.basename(rel))
-        if rel.startswith(BRIEFS) and m and here.get(m.group(1), rel) != rel \
+        if (rel in gone or rel.startswith(BRIEFS) and m and here.get(m.group(1), rel) != rel) \
                 and _sha(_read(os.path.join(root, rel))) == base.get(rel):
             os.remove(os.path.join(root, rel))
             base.pop(rel, None)
@@ -337,11 +384,18 @@ def _stamp(path):
     return [st.st_mtime_ns, st.st_size]
 
 
+def _version():
+    """The stamps' "v": SCRUB, and a digest of the user's private terms once there are any (T-3529), so adding or
+    removing a term rewrites every mirrored file on the next export."""
+    terms = c.private_terms()
+    return f"{SCRUB}:{c.private_digest(terms)}" if terms else SCRUB
+
+
 def _stamps(p):
     try:
         with open(os.path.join(p.dir, STAMPS), encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) and data.get("v") == SCRUB else {}  # older stamps: rewrite all
+        return data if isinstance(data, dict) and data.get("v") == _version() else {}  # older stamps: rewrite all
     except (OSError, ValueError):
         return {}
 
@@ -354,10 +408,11 @@ def _set_aside(p, rel, text):
 
 def import_(p):
     """Take in what changed in the mirror since fm last wrote or read it. Returns {added, updated, conflicts}."""
-    root, res = mirror(p), {"added": 0, "updated": 0, "conflicts": []}
+    root, res, name = mirror(p), {"added": 0, "updated": 0, "conflicts": []}, _namer()
     base = dict(c.read_meta(p).get("sync_base") or {})
     mine = {b.id: b for b in c.load_briefs(p, include_archive=True)}
     active = {b.id for b in mine.values() if b.status in ("active", "verifying")}
+    notes = {n: r for r in ("research/" + x for x in _walk(os.path.join(p.dir, "research"))) if (n := name(r)) != r}
     for rel in _walk(root):
         if not _travels(rel):
             continue
@@ -371,7 +426,7 @@ def import_(p):
         if _CONFLICT.search(cur):
             res["conflicts"].append(f"{rel}: unresolved merge conflict (resolve it in git, then fm sync import)")
             continue
-        dest = os.path.join(p.dir, rel)
+        dest = os.path.join(p.dir, notes.get(rel, rel))  # T-3574: a note the mirror renamed is this machine's own
         if rel.startswith(BRIEFS):
             try:
                 theirs = _from_mirror(cur)
@@ -379,6 +434,8 @@ def import_(p):
                 res["conflicts"].append(f"{rel}: not a brief")
                 continue
             local = mine.get(theirs.id)
+            if local and name(os.path.relpath(local.path, p.dir).replace(os.sep, "/")) == rel:
+                dest = local.path  # T-3574: the mirror's redacted name for this machine's own file: it keeps its name
             keep = theirs.status in ("active", "verifying") and theirs.id in active and theirs.status
             settle(theirs, local is None)
             if keep:  # this machine's own focus stays
@@ -512,3 +569,37 @@ def cmd_sync(args):
                                                  if st.get("move_error") else "") + "".join(f"\n  {k.replace('_', ' ')}: {', '.join(st[k])}" for k in
                                                          ("incoming", "repo_only", "local_only") if st[k])
               + ("\n  A teammate joins from their clone, once .sampo/ is pushed: fm sync on" if st["on"] else ""))
+
+
+def cmd_private(args):
+    """T-3529: sampo private add|rm|list TERM — the user's private terms (a host glob like *.home.example.test, or a
+    plain word), one JSON file in the state folder. The mirror export writes <host> or <private> in their place and
+    sampo ship refuses a push carrying one. A term is never printed or logged: a digest and a count are."""
+    from sampo import cli
+    path, term = os.path.join(c.state_dir(), c.PRIVATE_TERMS), (args.term or "").strip().lower()
+    if args.action == "list":
+        terms = c.private_terms()
+        if terms and sys.stdout.isatty():
+            return print("\n".join(terms))
+        return print(f"{len(terms)} private terms ({', '.join(c.private_digest([t]) for t in terms) or 'none'}); "
+                     "run sampo private list in a terminal to read them")
+    if not c.private_ok(term):
+        raise cli.UsageError("a private term is a host glob (*.home.example.test) or a word: 3 or more characters "
+                             "besides * and dots, no spaces or control characters")
+    with c.lock(c.state_dir()):
+        terms = c.private_terms()
+        if args.action == "rm" and term not in terms:
+            raise cli.UsageError(f"no private term with digest {c.private_digest([term])}; sampo private list")
+        terms = sorted(set(terms) - {term} if args.action == "rm" else set(terms) | {term})
+        if not os.path.exists(path):
+            os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))  # write_atomic keeps this mode
+        c.write_atomic(path, json.dumps(terms))
+    try:
+        p = cli.resolve(args, create=False)
+    except cli.UsageError:
+        p = None  # outside a project: the terms are the user's, not a project's; nothing to log in
+    if p:
+        c.log_event(p, "private_terms", data={"op": args.action, "digest": c.private_digest([term]), "count": len(terms)},
+                    session=cli.session())
+    print(f"{'Removed' if args.action == 'rm' else 'Added'} a private term (digest {c.private_digest([term])}); "
+          f"{len(terms)} in all. The next sync export rewrites the mirror.")

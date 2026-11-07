@@ -8,19 +8,17 @@ scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T02:10:18Z
-updated: 2026-11-06T05:12:10Z
-builder: 2026-11-06T02:21:59Z
+updated: 2026-11-07T00:43:32Z
 builder_model: haiku
-builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
-lane: ~/.claude/foreman/.claude/worktrees/agent-a98bd3c1b2e46bb9d
-lane_branch: worktree-agent-a98bd3c1b2e46bb9d
-base: 5c403348c1dfe9523985c9f84cf7db536080f17f
-base_tree: 9eb33fa93e768f0136959dc9b365e08cdaa741eb
+lane_branch: foreman/T-3265
 predict_minutes: 8
 predict_attempts: 1
 plan0_at: 2026-11-06T02:22:49Z
 plan0_scope: []
 builder_returned: 2026-11-06T05:12:10Z
+lane: ~/.claude/foreman.lanes/T-3265
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
 ---
 # T-3082 review fixes: night's Kalevala rounds get a wall-clock cap and a heartbeat each…
 ## Raw request
@@ -71,6 +69,12 @@ Choice 1 (85%): each fix is small and sits on a hook that already exists.
 - 2026-11-06T02:22:49Z focused
 - 2026-11-06T02:22:49Z predicted from its closes: 8 min, 1 attempt(s)
 - 2026-11-06T04:44:54Z criterion 3 text: the restart undo quotes its paths and moves the current folder aside; a bare resume asks for --tower or --all; a halt prints its reason and exits 3 → the restart undo quotes its paths and moves the current folder aside; a bare resume asks for --tower or --all; a halt prints its reason and exits 6
+- 2026-11-06T17:39:22Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-a98bd3c1b2e46bb9d (branch worktree-agent-a98bd3c1b2e46bb9d kept: not merged); dropped: relocated beside the repo: the train left it out on a conflict and the Ward refuses git merge under .claude/worktrees; its branch is kept and merged into the new lane
+- 2026-11-06T17:39:23Z lane: ~/.claude/foreman.lanes/T-3265 on foreman/T-3265
+- 2026-11-06T17:46:25Z focused
+- 2026-11-06T18:40:39Z focused
+- 2026-11-06T18:41:30Z steer: held: after T-3332 landed it conflicts in kalevala.py and test_kalevala.py; the Ward refused git merge in its lane (blocked core) where the same step worked for T-3163 minutes before; not retried against the guard
+- 2026-11-07T00:43:32Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

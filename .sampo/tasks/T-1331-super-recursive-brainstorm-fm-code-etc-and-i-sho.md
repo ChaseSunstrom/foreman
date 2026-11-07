@@ -42,7 +42,7 @@ Grounding by two agents in parallel (runners/setup/reliability/projects; UI/expe
 <!-- auto -->
 - 2026-11-06T05:17:38Z step 6/6: After each build round, brainstorm again past every earlier ideas.md until dry
 - git: foreman/build; 1 uncommitted: scripts/
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3349-plan.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t3349-plan.md
 ## Docs impact
 ## Verification evidence
 - (step 1) `test -s state/projects/foreman-4a056f/research/brainstorm-fm-code-catalogue.md` → exit 0 · (no output) [ran] [tree 2ed17ecfc203] (2026-10-21T05:47:39Z)

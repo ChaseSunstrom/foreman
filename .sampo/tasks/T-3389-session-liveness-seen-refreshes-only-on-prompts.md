@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T06:54:34Z
-updated: 2026-11-06T09:55:09Z
+updated: 2026-11-06T17:30:34Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-aa1439dafb598cd7c
 lane_branch: worktree-agent-aa1439dafb598cd7c
 base: 9d9fa0fbb24df1b029200903120bfec2db40d1de
@@ -18,6 +18,10 @@ predict_attempts: 1
 plan0_at: 2026-11-06T09:34:00Z
 plan0_scope: []
 builder_returned: 2026-11-06T09:55:09Z
+lane_passed: {"tree": "ab31cc0d2ec820b32cd8873f653daad299566661", "cmds": ["python3 -m unittest plugin.tests.test_hooks.PostToolUse"]}
+inferred_deps: [T-3331]
+inferred_why: T-3331: named in its request
+group: fleet claims and session liveness
 ---
 # Session liveness ('seen') refreshes only on prompts, so a holder doing 15+ min of…
 ## Raw request

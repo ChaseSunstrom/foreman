@@ -10,7 +10,6 @@ source: steer
 created: 2026-11-04T23:56:18Z
 updated: 2026-11-04T23:56:18Z
 steer_method_rate: 0.218
-group: 10000 moons target
 ---
 # Sampo's "10000 moons" target is a literal count. It must produce 10000 distinct moons…
 ## Raw request

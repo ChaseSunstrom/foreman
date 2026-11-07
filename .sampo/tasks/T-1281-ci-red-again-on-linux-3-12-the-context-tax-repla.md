@@ -21,7 +21,7 @@ verified: strong
 ## Interpretation
 ## Assumptions (confidence)
 ## Acceptance criteria
-- [x] the context-tax replay measures a set-up install whatever HOME the suite runs under — verify with `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax`
+- [x] the context-tax replay measures a set-up install whatever HOME the suite runs under — verify with `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax`
 ## Non-goals
 ## Approach (options → choice → why)
 ## Risks and rollback
@@ -33,12 +33,12 @@ verified: strong
 ## Docs impact
 none: a test-only fix
 ## Verification evidence
-- (step 1) `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → ✗ exit 1 · Ran 1 test in 3.424s / FAILED (failures=1) [ran] [tree 7632e5583371] (2026-10-20T17:04:41Z)
-- `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 3.761s / OK (start tree + this task's tests) [ran] [tree 218dc1d43dc7] (2026-10-20T17:04:57Z)
-- `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 3.336s / OK [ran] [tree 218dc1d43dc7] (2026-10-20T17:04:57Z)
-- (step 2) `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 2.371s / OK [ran] [tree 218dc1d43dc7] (2026-10-20T17:05:14Z)
-- (ac 1) `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 1.578s / OK [ran] [tree 218dc1d43dc7] (2026-10-20T17:05:20Z)
-- `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax && python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 1.635s / OK [ran] [tree 218dc1d43dc7] (2026-10-20T17:05:20Z)
+- (step 1) `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → ✗ exit 1 · Ran 1 test in 3.424s / FAILED (failures=1) [ran] [tree 7632e5583371] (2026-10-20T17:04:41Z)
+- `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 3.761s / OK (start tree + this task's tests) [ran] [tree 218dc1d43dc7] (2026-10-20T17:04:57Z)
+- `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 3.336s / OK [ran] [tree 218dc1d43dc7] (2026-10-20T17:04:57Z)
+- (step 2) `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 2.371s / OK [ran] [tree 218dc1d43dc7] (2026-10-20T17:05:14Z)
+- (ac 1) `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 1.578s / OK [ran] [tree 218dc1d43dc7] (2026-10-20T17:05:20Z)
+- `cd plugin/tests && env -i PATH=/usr/bin:/bin HOME=/tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/emptyhome python3 -m unittest test_context_tax && python3 -m unittest test_context_tax` → exit 0 · Ran 1 test in 1.635s / OK [ran] [tree 218dc1d43dc7] (2026-10-20T17:05:20Z)
 - (audit intent) `self: reproduced CI's 1360/1348 bytes with an empty HOME, found the one-time setup note, made the replay's HOME a set-up one` → the ratchet measures Foreman's steady-state injection, not a first-run setup note, so it is the same on any machine [tree 218dc1d43dc7] (2026-10-20T17:05:20Z)
 - (audit edge) `self: reproduced CI's 1360/1348 bytes with an empty HOME, found the one-time setup note, made the replay's HOME a set-up one` → HOME is restored after the test; the setup note itself still shows on an un-set-up machine, untouched [tree 218dc1d43dc7] (2026-10-20T17:05:20Z)
 - (audit self) `self: reproduced CI's 1360/1348 bytes with an empty HOME, found the one-time setup note, made the replay's HOME a set-up one` → no findings [tree 218dc1d43dc7] (2026-10-20T17:05:20Z)

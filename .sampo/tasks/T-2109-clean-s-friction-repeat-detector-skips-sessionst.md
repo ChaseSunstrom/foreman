@@ -34,7 +34,7 @@ chosen: one digest line from the existing budget dict (count, chars) — avg = c
 <!-- auto -->
 - 2026-10-30T07:50:07Z steps 1/1 done
 - git: foreman/build; 4 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmfriction.py, plugin/tests/test_friction.py
-- touched since last checkpoint: CHANGELOG.md, MASTER.md, plugin/lib/fmfriction.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/critique-genesis.md, ~/.claude/projects/-home-<user>--claude-foreman/memory/github-ssh-443.md
+- touched since last checkpoint: CHANGELOG.md, MASTER.md, plugin/lib/fmfriction.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/critique-genesis.md, ~/.claude/projects/-home-~--claude-foreman/memory/github-ssh-443.md
 ## Docs impact
 MASTER.md fm friction line, CHANGELOG Unreleased
 ## Verification evidence

@@ -33,8 +33,8 @@ verified: strong
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence
-- (step 1) `cd /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/wt1708 && python3 plugin/tests/run.py test_drive_side.LaneHeld` → red as expected (exit 1) · Ran 3 tests in 11.0s (1 classes, 16 at a time; slowest: LaneHeld 10s) / FAILED (1 classes) [ran] [tree 83954d14bc7d] (2026-10-23T01:30:16Z)
-- (step 2) `cd /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/wt1708 && python3 plugin/tests/run.py test_drive_side test_core` → exit 0 · Ran 75 tests in 6.3s (19 classes, 16 at a time; slowest: LaneHeld 6s, DriveSide 6s, PreToolUse 3s) / OK [ran] [tree 83954d14bc7d] (2026-10-23T01:32:55Z)
+- (step 1) `cd /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/wt1708 && python3 plugin/tests/run.py test_drive_side.LaneHeld` → red as expected (exit 1) · Ran 3 tests in 11.0s (1 classes, 16 at a time; slowest: LaneHeld 10s) / FAILED (1 classes) [ran] [tree 83954d14bc7d] (2026-10-23T01:30:16Z)
+- (step 2) `cd /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/wt1708 && python3 plugin/tests/run.py test_drive_side test_core` → exit 0 · Ran 75 tests in 6.3s (19 classes, 16 at a time; slowest: LaneHeld 6s, DriveSide 6s, PreToolUse 3s) / OK [ran] [tree 83954d14bc7d] (2026-10-23T01:32:55Z)
 - (ac 1) `python3 plugin/tests/run.py test_drive_side.LaneHeld` → exit 0 · Ran 3 tests in 11.2s (1 classes, 16 at a time; slowest: LaneHeld 11s) / OK [ran] [tree cd53a90448bd] (2026-10-23T01:33:45Z)
 - `python3 plugin/tests/run.py test_drive_side.LaneHeld` → ✗ exit 1 · Ran 3 tests in 12.5s (1 classes, 16 at a time; slowest: LaneHeld 10s) / FAILED (1 classes) (start tree + this task's tests) [ran] [tree cd53a90448bd] (2026-10-23T01:34:08Z)
 - `python3 plugin/tests/run.py test_drive_side.LaneHeld` → exit 0 · Ran 3 tests in 9.0s (1 classes, 16 at a time; slowest: LaneHeld 9s) / OK [ran] [tree cd53a90448bd] (2026-10-23T01:34:08Z)

@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-06T14:47:16Z
-updated: 2026-11-06T16:04:55Z
+updated: 2026-11-06T16:29:49Z
 base: 505653aa8122335185ba3b9326d460a8a493f887
 base_tree: b1b2c54bb7c8ae5a52b438b9c355cb265b9793a5
 lane_stop: merged 2026-11-06T15:21:21Z
@@ -18,6 +18,7 @@ plan0_at: 2026-11-06T15:21:22Z
 plan0_scope: []
 verified: strong
 unproven: [docs]
+lane_verified: 2feead64bf3b6c42838a43ad1705682c3e4f9271
 ---
 # A nested run.py start-up costs 25-45 s at load 30 while a trivial nested run takes 0.2 s…
 ## Raw request
@@ -89,6 +90,7 @@ the lane diff carries its own doc edits (merged as reviewed); a CHANGELOG line i
 - 2026-11-06T16:04:01Z focused
 - 2026-11-06T16:04:52Z done
 - 2026-11-06T16:04:55Z committed 9b5639c43 (1 file)
+- 2026-11-06T16:29:49Z verified: the full suite is green on 1078ed22d, which contains 2feead64b
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

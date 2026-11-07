@@ -43,7 +43,7 @@ Choice 1 (85%).
 <!-- auto -->
 - 2026-11-03T04:47:32Z step 1/2: red tests in test_friction: three gates slow in one loaded run make one load line; one slow gate on a quiet run stays a slow-gate line
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/BRIEF.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/BRIEF.md
 - failures met: timed out after 0s
 ## Docs impact
 none: fm friction's own line is the doc

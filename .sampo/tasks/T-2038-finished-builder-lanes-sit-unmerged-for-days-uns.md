@@ -35,7 +35,7 @@ Options: (1) a finished_lanes(p, briefs) helper in fmcore read by next_for, cmd_
 <!-- auto -->
 - 2026-10-29T22:45:19Z steps 2/2 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmhooks.py, plugin/tests/test_lanes.py
-- touched since last checkpoint: plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmhooks.py, plugin/tests/test_lanes.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl2038.json, CHANGELOG.md
+- touched since last checkpoint: plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmhooks.py, plugin/tests/test_lanes.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl2038.json, CHANGELOG.md
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

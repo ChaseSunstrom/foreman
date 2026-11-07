@@ -8,19 +8,17 @@ scope: [plugin/lib/sampo/lane_overlap.py plugin/lib/fmlane_overlap.py plugin/lib
 depends_on: []
 source: user
 created: 2026-11-06T02:34:16Z
-updated: 2026-11-06T06:12:03Z
-builder: 2026-11-06T02:34:32Z
+updated: 2026-11-06T17:43:08Z
 builder_model: haiku
-builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
-lane: ~/.claude/foreman/.claude/worktrees/agent-afb7472a42a09803e
-lane_branch: worktree-agent-afb7472a42a09803e
-base: 5c403348c1dfe9523985c9f84cf7db536080f17f
-base_tree: 9eb33fa93e768f0136959dc9b365e08cdaa741eb
+lane_branch: foreman/T-3285
 predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:43:11Z
 plan0_scope: [plugin/lib/sampo/lane_overlap.py, plugin/lib/sampo/lanes.py, plugin/tests/test_lane_overlap.py, CHANGELOG.md]
 builder_returned: 2026-11-06T06:12:03Z
+lane: ~/.claude/foreman.lanes/T-3285
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
 ---
 # Moon C-005835: tell the lead which open builder lanes overlap (same files or same new function) so one can be merged or stopped
 ## Raw request
@@ -82,6 +80,9 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 - 2026-11-06T02:43:11Z predicted from its closes: 4 min, 1 attempt(s)
 - 2026-11-06T02:47:31Z set scope=['plugin/lib/sampo/lane_overlap.py plugin/lib/fmlane_overlap.py plugin/lib/sampo/lanes.py plugin/tests/test_lane_overlap.py MASTER.md docs/map/files-lib-2.md CHANGELOG.md']
 - 2026-11-06T02:47:33Z steer: scope widened to the fm shim, MASTER.md and docs/map/files-lib-2.md: the brief's standing rule needs a shim, a MASTER bullet and a map line for a new lib module (T-3285 step 2)
+- 2026-11-06T17:39:24Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-afb7472a42a09803e (branch worktree-agent-afb7472a42a09803e kept: not merged); dropped: relocated beside the repo: the train left it out on a conflict and the Ward refuses git merge under .claude/worktrees; its branch is kept and merged into the new lane
+- 2026-11-06T17:39:25Z lane: ~/.claude/foreman.lanes/T-3285 on foreman/T-3285
+- 2026-11-06T17:43:08Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

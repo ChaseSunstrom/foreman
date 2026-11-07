@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 import unittest
 
 from helpers import ForemanTestCase
@@ -230,6 +231,46 @@ class CloseGates(ForemanTestCase):
         self.write("calc.py", SRC + "# again\n")
         self.fm("task", "finish", tid, "--audit", "self", "--run", "true", env={"FOREMAN_SENTINEL": "sync"})
         self.assertEqual(len(self.events("check_run")), before + 1, "a fresh full run: none started")
+
+    # T-3576: a train's merges get the full suite in the background (lanes.pm_run): the batch's one full run, so the
+    # sentinel after its closes would repeat it
+    def pm(self, sha, state, **kv):  # a post-merge verify record, as lanes.pm_record writes it
+        os.makedirs(os.path.join(self.p.dir, "postmerge"), exist_ok=True)
+        with open(os.path.join(self.p.dir, "postmerge", f"{sha}.json"), "w") as f:
+            json.dump({"sha": sha, "task": "T-0001", "state": state, "n": time.time_ns(), "at": c.now(), **kv}, f)
+
+    def sentinel(self):
+        from sampo import cli
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"FOREMAN_SENTINEL": "sync"}), mock.patch.object(c, "host_strain", lambda: False):
+            return cli._sentinel(self.p)
+
+    def head(self):
+        return subprocess.run(["git", "-C", self.repo, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    def test_the_sentinel_waits_for_a_pending_or_running_post_merge_verify(self):
+        self.pm("a" * 40, "pending")
+        self.assertIsNone(self.sentinel())
+        self.pm("a" * 40, "running", pid=os.getpid())
+        self.assertIsNone(self.sentinel())
+
+    def test_a_post_merge_verify_of_this_code_tree_stands_for_the_sentinel(self):
+        self.pm(self.head(), "green")
+        self.write("CHANGELOG.md", "- a close's note\n")  # a close's own edit: the code tree is unchanged
+        self.assertIsNone(self.sentinel())
+
+    def test_a_recent_post_merge_verify_counts_as_the_last_full_run(self):
+        c.log_event(self.p, "lane_verified", task="T-0001", data={"sha": "b" * 40})
+        self.assertIsNone(self.sentinel())
+
+    def test_the_sentinel_still_runs_when_no_verify_covers_this_tree(self):
+        old = self.head()
+        self.write("calc.py", SRC + "# changed\n")
+        subprocess.run(["git", "-C", self.repo, "commit", "-qam", "change"], check=True)
+        self.pm(old, "green")  # verified, but an older code tree
+        self.pm("c" * 40, "pending", at="2026-01-01T00:00:00Z")  # stuck: landed long ago, no runner took it
+        self.pm("d" * 40, "running", pid=4194305)  # its runner is gone (past any pid_max)
+        self.assertEqual(self.sentinel(), "ran")
 
 
 if __name__ == "__main__":

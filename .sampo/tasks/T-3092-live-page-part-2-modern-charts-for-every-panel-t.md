@@ -18,7 +18,6 @@ plan0_at: 2026-11-05T03:10:58Z
 plan0_scope: [plugin/web/live/live.js, plugin/web/live/live.css, plugin/web/live/index.html, plugin/web/live/charts.js, plugin/lib/sampo/live.py, plugin/tests/test_live_page.py, plugin/tests/test_live.py]
 lane_stop: merged 2026-11-05T04:41:51Z
 paused_tree: 4a0c0294eeb52294dc9a63fde0c9789b3e43b42e
-group: live page polish and charts
 ---
 # Live page part 2: modern charts for every panel (time series, stacked GPU memory, a moons funnel, sparklines, job progress bars) from one small chart kit, in both themes (T-3054)
 ## Raw request

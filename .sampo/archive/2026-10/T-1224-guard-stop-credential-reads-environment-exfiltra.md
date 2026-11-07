@@ -35,7 +35,7 @@ Options: (a) a deny list of exact commands (brittle), (b) classify by what a com
 <!-- auto -->
 - 2026-10-16T16:25:11Z step 1/2: Failing guard cases and labelled corpus entries for each refusal and each look-alike
 - git: foreman/build; 7 uncommitted: site/build.py, site/index.html, site/pages.py, site/stats.py, site/style.css, site/bench_safety.py, site/data/bench.json
-- touched since last checkpoint: .claude/worktrees/agent-a88af2c71ac552a50/plugin/tests/fixtures/guard_cases.jsonl, .claude/worktrees/agent-a88af2c71ac552a50/plugin/lib/fmcli.py, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/probe.py, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/timing.py, .claude/worktrees/agent-a88af2c71ac552a50/plugin/lib/fmguard.py, .claude/worktrees/agent-a88af2c71ac552a50/plugin/lib/fmhooks.py, .claude/worktrees/agent-a88af2c71ac552a50/plugin/tests/test_guard.py
+- touched since last checkpoint: .claude/worktrees/agent-a88af2c71ac552a50/plugin/tests/fixtures/guard_cases.jsonl, .claude/worktrees/agent-a88af2c71ac552a50/plugin/lib/fmcli.py, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/probe.py, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/timing.py, .claude/worktrees/agent-a88af2c71ac552a50/plugin/lib/fmguard.py, .claude/worktrees/agent-a88af2c71ac552a50/plugin/lib/fmhooks.py, .claude/worktrees/agent-a88af2c71ac552a50/plugin/tests/test_guard.py
 ## Docs impact
 ~/.claude/foreman/CHANGELOG.md
 ## Verification evidence

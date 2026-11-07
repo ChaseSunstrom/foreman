@@ -34,7 +34,7 @@ verified: strong
 <!-- auto -->
 - 2026-10-29T03:48:08Z steps 3/3 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/tests/test_diagnosis.py, plugin/tests/test_task_ergonomics.py
-- touched since last checkpoint: plugin/tests/test_diagnosis.py, CHANGELOG.md, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/tests/test_task_ergonomics.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1907t.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1907i.txt
+- touched since last checkpoint: plugin/tests/test_diagnosis.py, CHANGELOG.md, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/tests/test_task_ergonomics.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1907t.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1907i.txt
 - failures met: assertionerror: '--lens "adversary:' not found in 'fm: t-0 not finished, nothing ran:\n -…
 ## Docs impact
 CHANGELOG.md

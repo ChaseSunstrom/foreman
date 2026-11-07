@@ -37,7 +37,7 @@ Hint text on the block's detail and in fm risk's rule list; a rule-name normaliz
 <!-- auto -->
 - 2026-10-29T05:10:10Z steps 3/3 done
 - git: foreman/build; 1 uncommitted: CHANGELOG.md
-- touched since last checkpoint: .claude/worktrees/agent-a3819c7350f17e7af/plugin/tests/test_risk.py, .claude/worktrees/agent-a3819c7350f17e7af/plugin/tests/test_safety.py, .claude/worktrees/agent-a3819c7350f17e7af/CHANGELOG.md, .claude/worktrees/agent-a3819c7350f17e7af/plugin/lib/fmguard.py, .claude/worktrees/agent-a3819c7350f17e7af/plugin/lib/fmrisk.py, CHANGELOG.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1919.txt
+- touched since last checkpoint: .claude/worktrees/agent-a3819c7350f17e7af/plugin/tests/test_risk.py, .claude/worktrees/agent-a3819c7350f17e7af/plugin/tests/test_safety.py, .claude/worktrees/agent-a3819c7350f17e7af/CHANGELOG.md, .claude/worktrees/agent-a3819c7350f17e7af/plugin/lib/fmguard.py, .claude/worktrees/agent-a3819c7350f17e7af/plugin/lib/fmrisk.py, CHANGELOG.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1919.txt
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

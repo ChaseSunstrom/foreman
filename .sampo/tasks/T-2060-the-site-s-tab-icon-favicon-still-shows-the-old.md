@@ -36,7 +36,7 @@ Options: (a) rename the file each logo change (manual, forgotten again); (b) a ?
 <!-- auto -->
 - 2026-10-29T23:33:26Z step 1/3: failing test
 - git: foreman/build; 7 uncommitted: CHANGELOG.md, plugin/tests/test_site_build.py, site/build.py, site/index.html, site/style.css, site/assets/share.png, site/share.html
-- touched since last checkpoint: plugin/tests/test_site_build.py, site/style.css, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/poster/poster.html, site/assets/share.png, site/index.html, site/share.html, site/build.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl2060.json, CHANGELOG.md
+- touched since last checkpoint: plugin/tests/test_site_build.py, site/style.css, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/poster/poster.html, site/assets/share.png, site/index.html, site/share.html, site/build.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl2060.json, CHANGELOG.md
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

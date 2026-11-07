@@ -37,7 +37,7 @@ Fuzz the state Foreman reads: a brief with truncated frontmatter, binary bytes o
 <!-- auto -->
 - 2026-10-28T23:13:02Z steps 3/3 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmtidy.py, plugin/tests/test_robustness.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/rb.sh, plugin/lib/fmtidy.py, CHANGELOG.md, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/tests/test_robustness.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/rb.sh, plugin/lib/fmtidy.py, CHANGELOG.md, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/tests/test_robustness.py
 - failures met: fm: warning: verify command `true`: it can't fail (nothing in it checks the behaviour)
 ## Docs impact
 ~/.claude/foreman/CHANGELOG.md

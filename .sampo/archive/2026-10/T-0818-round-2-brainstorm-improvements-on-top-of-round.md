@@ -37,7 +37,7 @@ Options: (a) fm ideas super mode (4 rounds, deepen 3) with --seen both 10-14 run
 ## Docs impact
 none: research record
 ## Verification evidence
-- (step 1) `test -s /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/pack-round2.md` → exit 0 · (no output) [ran] [tree 2a5d935940b2] (2026-10-14T18:09:33Z)
+- (step 1) `test -s /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/pack-round2.md` → exit 0 · (no output) [ran] [tree 2a5d935940b2] (2026-10-14T18:09:33Z)
 - (step 2) `test -s state/projects/foreman-4a056f/research/brainstorm-20261014-130926/ideas.md` → exit 0 · (no output) [ran] [tree 374a0776be48] (2026-10-14T18:30:29Z)
 - (step 3) `fm research show brainstorm-round2-20261014` → exit 0 · - Wild: Hand the queue to a rival harness overnight and diff the results — near T-0683 (done): Milestone: Intelligence — Agent types and roles (Round 4) / - Wild: Offer a "premortem tape" the user can [ran] [tree ee7c0734d9be] (2026-10-14T18:37:55Z)
 - (ac 1) `fm research show brainstorm-round2-20261014` → exit 0 · - Wild: Hand the queue to a rival harness overnight and diff the results — near T-0683 (done): Milestone: Intelligence — Agent types and roles (Round 4) / - Wild: Offer a "premortem tape" the user can [ran] [tree ee7c0734d9be] (2026-10-14T18:38:08Z)

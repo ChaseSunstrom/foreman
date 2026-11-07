@@ -45,7 +45,7 @@ Complete version: grade lines carry closed ids per split and gen; select N compa
 <!-- auto -->
 - 2026-10-30T05:52:16Z step 5/5: gates, review, finish, ship
 - git: foreman/build; 8 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmexam.py, plugin/lib/fmgenesis.py, plugin/templates/genesis.md, plugin/tests/test_exam.py, plugin/tests/test_genesis.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/mission-genesis.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/brief5.txt, plugin/tests/test_genesis.py, plugin/tests/test_exam.py, plugin/lib/fmexam.py, plugin/lib/fmgenesis.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/mission-genesis.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/brief5.txt, plugin/tests/test_genesis.py, plugin/tests/test_exam.py, plugin/lib/fmexam.py, plugin/lib/fmgenesis.py
 ## Docs impact
 MASTER.md,CHANGELOG.md
 ## Verification evidence

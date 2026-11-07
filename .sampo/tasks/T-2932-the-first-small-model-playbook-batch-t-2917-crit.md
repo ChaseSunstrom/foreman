@@ -9,7 +9,6 @@ depends_on: [T-2949]
 source: discovered
 created: 2026-11-04T08:23:48Z
 updated: 2026-11-04T11:28:23Z
-group: live runs when endpoint frees
 ---
 # The first small-model playbook batch (T-2917 criterion 4 and the bench half of 5):…
 ## Raw request

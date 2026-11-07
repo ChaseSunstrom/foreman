@@ -20,7 +20,7 @@ verified: ok
 ## Assumptions (confidence)
 ## Acceptance criteria
 - [x] 1.2.25 is on GitHub main — verify with `git fetch -q origin main && git log -1 --format=%s origin/main | grep -q 'Foreman 1.2.25'`
-- [x] JARVIS runs 1.2.25 — verify with `ssh -o BatchMode=yes <user>@<host> 'grep -q 1.2.25 ~/.claude/foreman/plugin/.claude-plugin/plugin.json'`
+- [x] JARVIS runs 1.2.25 — verify with `ssh -o BatchMode=yes <host> 'grep -q 1.2.25 ~/.claude/foreman/plugin/.claude-plugin/plugin.json'`
 ## Non-goals
 ## Approach (options → choice → why)
 ## Risks and rollback
@@ -32,7 +32,7 @@ verified: ok
 ## Docs impact
 ## Verification evidence
 - (ac 1) `git fetch -q origin main && git log -1 --format=%s origin/main | grep -q 'Foreman 1.2.25'` → exit 0 · (no output) [ran] [tree bacbcb1881ed] (2026-10-09T20:43:16Z)
-- (ac 2) `ssh -o BatchMode=yes <user>@<host> 'grep -q 1.2.25 ~/.claude/foreman/plugin/.claude-plugin/plugin.json'` → exit 0 · (no output) [ran] [tree bacbcb1881ed] (2026-10-09T20:43:16Z)
+- (ac 2) `ssh -o BatchMode=yes <host> 'grep -q 1.2.25 ~/.claude/foreman/plugin/.claude-plugin/plugin.json'` → exit 0 · (no output) [ran] [tree bacbcb1881ed] (2026-10-09T20:43:16Z)
 - (step 1) `git fetch -q origin main && git log -1 --format=%s origin/main | grep -q 'Foreman 1.2.25'` → exit 0 · (no output) [ran] [tree bacbcb1881ed] (2026-10-09T20:43:16Z)
 - (step 2) `git fetch -q origin main && git log -1 --format=%s origin/main | grep -q 'Foreman 1.2.25'` → exit 0 · (no output) [ran] [tree bacbcb1881ed] (2026-10-09T20:43:16Z)
 - (audit self) `self: release.py's gates passed, pushed, JARVIS plugin reports 1.2.25` → no findings [tree bacbcb1881ed] (2026-10-09T20:43:16Z)

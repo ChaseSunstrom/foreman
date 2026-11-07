@@ -37,7 +37,7 @@ Rerunning checks executes the session-written code in its kept tree: these are F
 ## Docs impact
 research long-false-done
 ## Verification evidence
-- (step 1) `python3 -I /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/longdiag.py ~/.claude/foreman/state/projects/foreman-4a056f/exam/long foreman | grep -c FAIL` → exit 0 · 31 [ran] [tree 9581b1432c10] [world 2f1906870a] (2026-11-02T06:50:29Z)
+- (step 1) `python3 -I /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/longdiag.py ~/.claude/foreman/state/projects/foreman-4a056f/exam/long foreman | grep -c FAIL` → exit 0 · 31 [ran] [tree 9581b1432c10] [world 2f1906870a] (2026-11-02T06:50:29Z)
 - (step 2) `test -s state/projects/foreman-4a056f/research/long-false-done.md && grep -c '^- ' state/projects/foreman-4a056f/research/long-false-done.md` → exit 0 · 9 [ran] [tree 9581b1432c10] [world 2f1906870a] (2026-11-02T06:50:29Z)
 - (ac 1) `test -s state/projects/foreman-4a056f/research/long-false-done.md` → exit 0 · (no output) [ran] [tree 9581b1432c10] [world 2f1906870a] (2026-11-02T06:50:38Z)
 - (audit intent) `self-review: every failed check was rerun on the session's kept tree with the hidden files laid over a copy, the grader's recipe; classes assigned from the first error line and the goal text; raw output kept in the research file` → why the long tier reads 6 of 6 false dones is now known: 17 of 31 failures are the exam's reach (unstated interfaces), 14 are real misses; T-2557 targets the real misses and the keys go to the user [tree 9581b1432c10] (2026-11-02T06:50:38Z)

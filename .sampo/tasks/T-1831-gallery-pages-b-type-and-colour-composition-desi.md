@@ -22,19 +22,19 @@ verified: strong
 Write the named example pages for the site gallery: each a small, real screen that applies its playbook visibly and keeps the page contract in Context. Only files under plugin/skills/playbooks/references/ui/examples/.
 ## Assumptions (confidence)
 ## Acceptance criteria
-- [x] Each page exists, keeps the page contract in /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/gallery_spec.md and passes fm design lint — verify with `fm new check plugin/skills/playbooks/references/ui/examples/type-and-colour.html plugin/skills/playbooks/references/ui/examples/composition.html plugin/skills/playbooks/references/ui/examples/design-direction.html plugin/skills/playbooks/references/ui/examples/data-viz.html`
+- [x] Each page exists, keeps the page contract in /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/gallery_spec.md and passes fm design lint — verify with `fm new check plugin/skills/playbooks/references/ui/examples/type-and-colour.html plugin/skills/playbooks/references/ui/examples/composition.html plugin/skills/playbooks/references/ui/examples/design-direction.html plugin/skills/playbooks/references/ui/examples/data-viz.html`
 ## Non-goals
 ## Approach (options → choice → why)
 Per page: read its playbook in full and plugin/templates/web/index.html (the strict web template) for the token, theme and reduced-motion pattern; pick a distinct palette and voice; write the page; run fm new check on it until clean; check 360 px by reading the CSS (no fixed widths over 360, wrap or stack). Rejected: a shared CSS file (each page must stand alone on the site); a framework or CDN (the CSP forbids it).
 ## Risks and rollback
 ## Execution prompt
 ## Steps
-1. [x] Read /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/gallery_spec.md and each playbook in full, then write the pages
+1. [x] Read /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/gallery_spec.md and each playbook in full, then write the pages
 ## Resume here
 <!-- auto -->
-- 2026-10-28T10:04:20Z step 1/1: Read /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/gallery_spec.md and each playbook in full, then write the pages
+- 2026-10-28T10:04:20Z step 1/1: Read /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/gallery_spec.md and each playbook in full, then write the pages
 - git: worktree-agent-a5fe20e9b081985a0; 1 uncommitted: plugin/skills/playbooks/references/ui/examples/
-- touched since last checkpoint: plugin/skills/playbooks/references/ui/examples/type-and-colour.html, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/jscheck.js, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cr.py, plugin/skills/playbooks/references/ui/examples/composition.html, plugin/skills/playbooks/references/ui/examples/design-direction.html, plugin/skills/playbooks/references/ui/examples/data-viz.html
+- touched since last checkpoint: plugin/skills/playbooks/references/ui/examples/type-and-colour.html, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/jscheck.js, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cr.py, plugin/skills/playbooks/references/ui/examples/composition.html, plugin/skills/playbooks/references/ui/examples/design-direction.html, plugin/skills/playbooks/references/ui/examples/data-viz.html
 ## Docs impact
 T-1785 owns the CHANGELOG and MASTER lines
 ## Verification evidence

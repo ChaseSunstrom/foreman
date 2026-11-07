@@ -35,7 +35,7 @@ fm ship naming both commits, the 3.12 suite as the test, --watch to dogfood T-19
 <!-- auto -->
 - 2026-10-29T09:50:45Z step 1/1: fm ship the two commits with --watch
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/round9.txt
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/round9.txt
 ## Docs impact
 ## Verification evidence
 - (ac 1) `git fetch -q origin main && git log FETCH_HEAD --format=%s -n3 | grep -q T-1948` → exit 0 · (no output) [ran] [tree e13fd27ddd43] (2026-10-29T10:14:30Z)

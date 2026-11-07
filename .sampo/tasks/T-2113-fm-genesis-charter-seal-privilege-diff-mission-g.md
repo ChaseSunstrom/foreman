@@ -38,7 +38,7 @@ Chosen: a sha256 file beside gen-0 plus a ledger scan in sweep (reuses ledger_ta
 <!-- auto -->
 - 2026-10-30T07:29:47Z step 1/3: tests first: seal + privileges + export seal (red)
 - git: foreman/build; 7 uncommitted: CHANGELOG.md, MASTER.md, README.md, plugin/lib/fmgenesis.py, plugin/skills/genesis/SKILL.md, plugin/tests/test_genesis.py, site/genesis/genesis.js
-- touched since last checkpoint: CHANGELOG.md, README.md, plugin/skills/genesis/SKILL.md, site/genesis/genesis.js, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2109t.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2109a.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2113r.py, plugin/lib/fmgenesis.py, plugin/tests/test_genesis.py, MASTER.md
+- touched since last checkpoint: CHANGELOG.md, README.md, plugin/skills/genesis/SKILL.md, site/genesis/genesis.js, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2109t.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2109a.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2113r.py, plugin/lib/fmgenesis.py, plugin/tests/test_genesis.py, MASTER.md
 - failures met: syntaxerror: unterminated triple-quoted string literal (detected at line 0)
 ## Docs impact
 MASTER.md, CHANGELOG.md, README.md, plugin/skills/genesis/SKILL.md, site/genesis/genesis.js

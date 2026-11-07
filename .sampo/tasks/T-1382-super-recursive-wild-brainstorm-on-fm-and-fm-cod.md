@@ -38,7 +38,7 @@ Inputs: research/claude-code-capabilities.md (recon of the claude-code repo) and
 <!-- auto -->
 - 2026-10-21T17:03:05Z step 1/4: Pack: fm mission plus both repo recons, the round-1 catalogue, fm code's state; fm ideas --rounds 4 --deepen 3 --seen
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/pack2-addendum.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/pack2-addendum.md
 ## Docs impact
 ## Verification evidence
 - (step 1) `test -s state/projects/foreman-4a056f/research/brainstorm-fm-anthropic-catalogue.md && fm inbox | grep -cE 'T-1(38[89]|39[0-9]|40[0-9]|41[0-2])'` → exit 0 · 25 [ran] [tree 1ed2d58e676b] (2026-10-21T17:32:05Z)

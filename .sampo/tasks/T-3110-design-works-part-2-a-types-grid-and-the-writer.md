@@ -11,7 +11,6 @@ created: 2026-11-05T03:08:02Z
 updated: 2026-11-06T03:52:29Z
 inferred_deps: [T-3104]
 inferred_why: T-3104: named in its request
-group: design works at scale
 ---
 # Design works part 2: a types grid and the writer loop: best of N, critique of the render, revise, pairwise rank (T-3104)
 ## Raw request

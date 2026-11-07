@@ -11,7 +11,6 @@ created: 2026-11-05T00:16:07Z
 updated: 2026-11-05T00:54:05Z
 rival_at: 2026-11-05T00:20:07Z
 rival_split: true
-group: Kalevala towers and orchestration
 ---
 # Kalevala: many Rune towers at once on every aspect of Sampo, overseen by Väinämöinen, and evolving its own setup
 ## Raw request

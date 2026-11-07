@@ -154,6 +154,8 @@ function world(on: On, views: FmView[]) {
   }))
   on('ui.render', async ($, e) => {
     const { Text } = $.ui.resolve(e)
+    // the question dialog is drawn by exactly one engine node (the engine's own fallback shape): a hook can only wrap it
+    if (e.component === 'AskUserQuestion') return { type: 'engine', ref: 0 } as never
     if (e.component === 'Spinner') return <Text>{`${e.props.word}${e.props.suffix}`}</Text>
     if (e.component === 'PromptHint') return <Text>{`${e.props.hint}${e.props.tail ?? ''}`}</Text>
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
@@ -2729,4 +2731,104 @@ test('the crest gives way on a short dock, shrinks under 60 columns and holds st
   expect(await crestOf({ scroll: { offset: 0, bodyRows: 20 } })).toBeUndefined()
   expect((await crestOf({ bodyColumns: 50 }))?.props.rows).toBe(3)
   expect((await crestOf({}))?.props.rows).toBe(8)
+})
+
+test('the rows no hook styled draw in Sampo\'s look and keep what they say (T-3163)', async ($, on) => {
+  // 'the "ran 3 stop hooks" message … isn't being rendered like the rest of the mod text … and a few other things arent either'
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const mount = (component: string, props: object, requestId?: string, surface = 'terminal') =>
+    $.ui.mount({ plugin: 'foreman-ui', surface, component, ...(requestId ? { requestId } : {}), props } as never)
+  // the background hint: the key in the accent, the words kept; ctrl+b itself stays the engine's
+  const hint = await mount('ToolProgress', { tool_use_id: 'b1', kind: 'background_hint', hint: '(ctrl+b to run in background)' }, 'b1')
+  expect((await hint.find({ type: 'Text', text: 'ctrl+b' }))?.props.color).toBe(hex(C.accent))
+  expect(await hint.find({ type: 'Text', text: 'to run in background' })).toBeDefined()
+  expect(await hint.find({ text: 'engine' })).toBeUndefined()
+  await hint.unmount()
+  const tmux = await mount('ToolProgress', { tool_use_id: 'b2', kind: 'background_hint', hint: '(ctrl+b ctrl+b (twice) to run in background)' }, 'b2')
+  expect(await tmux.find({ type: 'Text', text: 'ctrl+b ctrl+b (twice)' })).toBeDefined()
+  await tmux.unmount()
+  const quiet = await mount('ToolProgress', { tool_use_id: 'b3', kind: 'background_hint', hint: '' }, 'b3')
+  expect(await quiet.find({ text: 'engine' })).toBeDefined() // nothing to say: the engine's own (empty) row
+  await quiet.unmount()
+  // a slash command's output: the command as a section head, its markdown under it whole
+  const cost = await mount('CommandOutput', { command: 'cost', args: '', text: 'Total cost: **$0.12**\nTotal duration: 3m', isErrored: false }, 'm1')
+  expect(await cost.find({ type: 'Text', text: '/cost' })).toBeDefined()
+  expect((await cost.find({ type: 'Markdown' }))?.text).toBe('Total cost: **$0.12**\nTotal duration: 3m')
+  expect(await cost.find({ text: 'engine' })).toBeUndefined()
+  await cost.unmount()
+  // arguments: drawn once, in the head when they fit, under it when not
+  for (const args of ['an-argument '.repeat(5).trim(), 'a-very-long-argument '.repeat(10).trim()]) {
+    const wide = await mount('CommandOutput', { command: 'add-dir', args, text: 'Added.', isErrored: false }, `m4-${args.length}`)
+    expect((await wide.findAll({ type: 'Text' })).filter(t => t.text === args)).toHaveLength(1)
+    await wide.unmount()
+  }
+  const bad = await mount('CommandOutput', { command: 'model', args: 'nope', text: 'Unknown model: nope', isErrored: true }, 'm2')
+  expect(await bad.find({ type: 'Text', text: 'nope' })).toBeDefined()
+  expect((await bad.find({ type: 'Text', text: 'Unknown model: nope' }))?.props.color).toBe(hex(C.err))
+  await bad.unmount()
+  const ansi = await mount('CommandOutput', { command: 'context', args: '', text: '\u001b[1mContext\u001b[0m 12%', isErrored: false }, 'm3')
+  expect(await ansi.find({ text: 'engine' })).toBeDefined() // escapes: the engine draws them, under Sampo's head
+  expect(await ansi.find({ type: 'Text', text: '/context' })).toBeDefined()
+  await ansi.unmount()
+  // a startup notice: its words and its command, in the palette
+  const note = await mount('InfoNotice', { text: 'Using Opus 5.5', command: '/model' }, 'notice:Using Opus 5.5')
+  expect(await note.find({ type: 'Text', text: 'Using Opus 5.5' })).toBeDefined()
+  expect((await note.find({ type: 'Text', text: '/model' }))?.props.color).toBe(hex(C.accent))
+  await note.unmount()
+  const bare = await mount('InfoNotice', { text: 'Auto-update failed', command: null }, 'notice:Auto-update failed')
+  expect(await bare.find({ type: 'Text', text: 'Auto-update failed' })).toBeDefined()
+  expect(await bare.find({ type: 'Text', text: '·' })).toBeUndefined()
+  await bare.unmount()
+  // the footer's mode badges: each mode in colour; none still draws nothing (the engine's)
+  const modes = await mount('SessionMode', { modes: ['plan mode', 'fast'] }, 'session-mode')
+  expect(await modes.find({ type: 'Text', text: 'plan mode' })).toBeDefined()
+  expect(await modes.find({ type: 'Text', text: 'fast' })).toBeDefined()
+  expect(await modes.find({ text: /modes:/ })).toBeUndefined()
+  expect(await modes.find({ type: 'Text', text: /·/ })).toBeUndefined() // review: the labels only, never a second separator
+  await modes.unmount()
+  const desk = await mount('SessionMode', { modes: ['plan mode'] }, 'session-mode', 'desktop')
+  expect(await desk.find({ text: 'modes:plan mode' })).toBeDefined() // the desktop lays its footer out itself
+  await desk.unmount()
+  // a question for the person: a Sampo head over the engine's own dialog, so answering works as before
+  const questions = [{ question: 'Which database?', header: 'Storage', multiSelect: false,
+    options: [{ label: 'SQLite', description: 'one file' }, { label: 'Postgres', description: 'a server' }] }]
+  const ask = await mount('AskUserQuestion', { tool: 'AskUserQuestion', questions, metadataSource: undefined }, 'q1')
+  expect((await ask.find({ type: 'Text', text: /Claude asks/ }))?.props.color).toBe(hex(C.warn))
+  expect(await ask.find({ type: 'Text', text: 'Storage' })).toBeDefined()
+  expect(await ask.find({ type: 'Text', text: /1 question/ })).toBeDefined()
+  await ask.unmount()
+})
+
+test('those rows survive empty or missing props and draw only where their kind and surface are theirs (T-3163)', async ($, on) => {
+  // review: plain(args)/plain(text)/e.props.text read .length unguarded, so an empty output or a missing prop threw and
+  // tripped the breaker; a progress kind or a surface the hooks weren't written for is the engine's
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const mount = (component: string, props: object, requestId?: string, surface = 'terminal') =>
+    $.ui.mount({ plugin: 'foreman-ui', surface, component, ...(requestId ? { requestId } : {}), props } as never)
+  for (const [i, props] of ([{ args: '', text: '' }, { args: '', text: '  \n' }, {}, { args: null, text: null }] as object[]).entries()) {
+    const out = await mount('CommandOutput', { command: 'clear', isErrored: false, ...props }, `e${i}`)
+    expect(await out.find({ type: 'Text', text: '/clear' })).toBeDefined() // the head still
+    expect(await out.find({ type: 'Markdown' })).toBeUndefined() // no empty body under it
+    expect(await out.find({ text: 'engine' })).toBeUndefined()
+    await out.unmount()
+  }
+  for (const [i, props] of ([{ text: '', command: '/model' }, { command: null }, { text: null, command: null }] as object[]).entries()) {
+    const note = await mount('InfoNotice', props, `n${i}`)
+    expect(await note.find({ text: 'engine' })).toBeDefined() // nothing to say: the engine's own row
+    await note.unmount()
+  }
+  const other = await mount('ToolProgress', { tool_use_id: 'b4', kind: 'upload_bar', hint: '(ctrl+b to run in background)' }, 'b4')
+  expect(await other.find({ text: 'engine' })).toBeDefined() // a progress kind it wasn't written for
+  await other.unmount()
+  const nohint = await mount('ToolProgress', { tool_use_id: 'b5', kind: 'background_hint' }, 'b5')
+  expect(await nohint.find({ text: 'engine' })).toBeDefined()
+  await nohint.unmount()
+  for (const component of ['ToolProgress', 'InfoNotice']) {
+    const desk = await mount(component, { tool_use_id: 'b6', kind: 'background_hint', hint: '(ctrl+b to run in background)',
+      text: 'Using Opus 5.5', command: '/model' }, `d-${component}`, 'desktop')
+    expect(await desk.find({ text: 'engine' })).toBeDefined() // another surface lays its own rows
+    await desk.unmount()
+  }
 })

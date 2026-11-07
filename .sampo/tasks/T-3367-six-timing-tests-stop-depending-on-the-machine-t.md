@@ -37,7 +37,7 @@ unproven: [meaning, typed]
 <!-- auto -->
 - 2026-11-06T09:58:39Z steps 1/1 done
 - git: foreman/build; 2 uncommitted: CHANGELOG.md, scripts/
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/capture4.sh
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/capture4.sh
 ## Docs impact
 the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG line added here
 ## Verification evidence

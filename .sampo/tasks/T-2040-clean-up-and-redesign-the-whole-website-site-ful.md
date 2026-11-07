@@ -42,7 +42,7 @@ Risk: content hidden by an animation in a browser without view-timeline support;
 <!-- auto -->
 - 2026-10-29T22:06:18Z steps 6/6 done
 - git: foreman/build; 16 uncommitted: CHANGELOG.md, MASTER.md, demo/live.cast, demo/live.mp4, demo/live.svg, demo/record_live.py, plugin/tests/test_showpieces.py, plugin/tests/test_site_build.py, plugin/tests/test_site_hero.py, site/build.py
-- touched since last checkpoint: site/build.py, plugin/tests/test_site_hero.py, site/style.css, MASTER.md, plugin/tests/test_showpieces.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl2040.json, CHANGELOG.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2038_test.py
+- touched since last checkpoint: site/build.py, plugin/tests/test_site_hero.py, site/style.css, MASTER.md, plugin/tests/test_showpieces.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl2040.json, CHANGELOG.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2038_test.py
 - failures met: assertionerror: 0 not less than or equal to 0 : track (0, 0, 0), --rule (0, 0, 0), {'st':…; assertionerror: 0 not less than or equal to 0 : track (0, 0, 0), --rule (0, 0, 0), {'st':…; live_trim.mp0: no such file or directory
 ## Docs impact
 site/index.html

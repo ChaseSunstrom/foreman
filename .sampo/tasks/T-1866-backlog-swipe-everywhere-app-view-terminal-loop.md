@@ -52,7 +52,7 @@ Keys: the app uses r revive · d drop · space keep (k is up in lists); the term
 <!-- auto -->
 - 2026-10-28T22:33:38Z steps 7/7 done
 - git: foreman/build; 10 uncommitted: CHANGELOG.md, MASTER.md, plugin/commands/backlog.md, plugin/lib/fmcli.py, plugin/lib/fmcodetui.py, plugin/lib/fmeco.py, plugin/tests/test_backlog.py, plugin/tests/test_code_tui.py, plugin/tests/test_plugin_parity.py, plugin/tests/test_inbox_more.py
-- touched since last checkpoint: CHANGELOG.md, MASTER.md, plugin/lib/fmcodetui.py, plugin/tests/test_inbox_more.py, plugin/lib/fmeco.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1858.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1858t.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1859.txt
+- touched since last checkpoint: CHANGELOG.md, MASTER.md, plugin/lib/fmcodetui.py, plugin/tests/test_inbox_more.py, plugin/lib/fmeco.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1858.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1858t.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1859.txt
 - failures met: 0: import fmcli
 ## Docs impact
 MASTER.md backlog line, CHANGELOG.md entry, plugin/commands/backlog.md reset

@@ -18,6 +18,9 @@ predict_attempts: 1
 plan0_at: 2026-11-06T07:43:22Z
 plan0_scope: []
 builder_returned: 2026-11-06T08:21:48Z
+inferred_deps: [T-3363]
+inferred_why: T-3363: named in its request
+group: guard bypass paths for interpreted scripts
 ---
 # fmguard.py:~4186 reads '#!/usr/bin/env -S python3' as interpreter '-S', so kind is None…
 ## Raw request

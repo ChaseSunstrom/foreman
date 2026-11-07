@@ -42,7 +42,7 @@ Options: (a) weight grid only over WEIGHTS; (b) add an indexed name column built
 MASTER.md playbook routing line; CHANGELOG Unreleased
 ## Verification evidence
 - (step 2) `python3 plugin/tests/run.py test_playbook_route test_which test_playbook_machinery` → exit 0 · Ran 60 tests in 3.9s (10 classes, 16 at a time; slowest: Load 4s, Verbs 2s, Cli 2s) / OK [ran] [tree d7b9cf45fd4f] (2026-10-28T16:02:33Z)
-- (step 1) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/routetune5.py` → exit 0 · 1 24 1 (4, 11) (1, 1) (12, 5) / 1 24 1.5 (4, 10) (2, 3) (13, 6) [ran] [tree d7b9cf45fd4f] (2026-10-28T16:02:40Z)
+- (step 1) `python3 /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/routetune5.py` → exit 0 · 1 24 1 (4, 11) (1, 1) (12, 5) / 1 24 1.5 (4, 10) (2, 3) (13, 6) [ran] [tree d7b9cf45fd4f] (2026-10-28T16:02:40Z)
 - (step 3) `grep -n 'T-1838 step 3' state/projects/foreman-4a056f/decisions.md` → exit 0 · 202:| 2026-10-28 | T-1838 step 3: the per-turn hint still does not name the top routed book | after tuning, the top 1 is right on 9 of 24 real titles: a wrong book named every turn costs 22-33 ms and [ran] [tree d7b9cf45fd4f] (2026-10-28T16:02:40Z)
 - (ac 1) `python3 plugin/tests/run.py test_playbook_route 2>&1 | grep -B2 -A12 "^ERROR\|Traceback" | head -30` → ✗ exit 1 · FAILED (errors=1) / Ran 23 tests in 2.2s (2 classes, 16 at a time; slowest: Cli 2s, Rank 1s) [ran] [tree 04dc4a0f7aa8] (2026-10-28T16:05:02Z)
 - (ac 1) `python3 plugin/tests/run.py test_playbook_route` → exit 0 · Ran 23 tests in 2.3s (2 classes, 16 at a time; slowest: Cli 2s, Rank 1s) / OK [ran] [tree 4d41fc8eba91] (2026-10-28T16:06:23Z)

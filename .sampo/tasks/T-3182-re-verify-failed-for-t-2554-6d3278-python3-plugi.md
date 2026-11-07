@@ -9,7 +9,6 @@ depends_on: [T-2554]
 source: discovered
 created: 2026-11-05T08:53:57Z
 updated: 2026-11-05T08:53:57Z
-group: timeouts under parallel load
 ---
 # Re-verify failed for T-2554 (6d3278): python3 plugin/tests/run.py test_exam
 ## Raw request

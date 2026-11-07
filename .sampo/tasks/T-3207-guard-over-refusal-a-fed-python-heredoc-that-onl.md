@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T13:50:37Z
 updated: 2026-11-05T13:50:37Z
-group: guard bypasses and over-refusals
 ---
 # Guard over-refusal: a fed python heredoc that only reads plugin/lib/X.py after a cd…
 ## Raw request

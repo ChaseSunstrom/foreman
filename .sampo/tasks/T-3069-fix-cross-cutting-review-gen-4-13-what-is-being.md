@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: genesis-review
 created: 2026-11-05T00:31:13Z
-updated: 2026-11-06T14:15:31Z
+updated: 2026-11-06T16:29:48Z
 trigger: genesis-review
 trigger_key: 43e2306442479bcc
 base: 74e8d98a05b695ab98f8b23f241802a3b888d156
@@ -21,6 +21,7 @@ builder_returned: 2026-11-06T13:16:49Z
 lane_stop: merged 2026-11-06T14:07:50Z
 verified: strong
 unproven: [meaning]
+lane_verified: 4fa15eda56c663f17991a74339e383aea8fdb8e1
 ---
 # The next-request predictor is shown as leading only when its lead over the naive guess is significant on replay, not three rows
 ## Raw request
@@ -67,6 +68,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T14:07:53Z scope: widened at merge to the reviewed lane's own diff (4fa15eda5), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T14:15:25Z done
 - 2026-11-06T14:15:31Z committed c53e668e2 (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains 4fa15eda5
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

@@ -34,7 +34,7 @@ Options: (a) refuse every eval/sh -c with an unresolved expansion — closes the
 ## Docs impact
 CHANGELOG line
 ## Verification evidence
-- (step 1) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/computed_names.py` → exit 0 · 2 $S/voltccold | fm task new "PERF: fannkuch 1.07x of C (LLVM): find what shapes its loops" --from T-0281 --type PERF --tier M --ac "fann / 1 $S/sitegenboot | S=/tmp/claude-1000/-home-<user>-projects-v [ran] [tree a4820ff90bc1] (2026-10-09T15:22:46Z)
+- (step 1) `python3 /tmp/claude-1000/-home-~--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/computed_names.py` → exit 0 · 2 $S/voltccold | fm task new "PERF: fannkuch 1.07x of C (LLVM): find what shapes its loops" --from T-0281 --type PERF --tier M --ac "fann / 1 $S/sitegenboot | S=/tmp/claude-1000/-home-~-projects-v [ran] [tree a4820ff90bc1] (2026-10-09T15:22:46Z)
 - (step 2) `python3 plugin/tests/run.py -k ComputedNames` → ✗ exit 1 · Ran 1 tests in 0.2s (1 classes, 16 at a time; slowest: ComputedNames 0s) / FAILED (1 classes) [ran] [tree a4820ff90bc1] (2026-10-09T15:22:47Z)
 - (step 3) `python3 plugin/tests/run.py -k ComputedNames` → exit 0 · Ran 1 tests in 0.2s (1 classes, 16 at a time; slowest: ComputedNames 0s) / OK [ran] [tree 833d1b31dbc0] (2026-10-09T15:27:51Z)
 - (ac 1) `python3 plugin/tests/run.py -k EvalVars` → ✗ exit 1 · Ran 0 tests in 0.1s (0 classes, 16 at a time; slowest: ) / NO TESTS RAN [ran] [tree e72454fc1ae0] (2026-10-09T15:28:00Z)

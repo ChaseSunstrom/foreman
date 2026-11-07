@@ -2,13 +2,13 @@
 id: T-3439
 type: FIX
 tier: S
-status: planned
+status: done
 priority: urgent
-scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .sampo/fixes.md, .sampo/README.md, .sampo/research, .sampo/tasks, .github/workflows/test.yml, plugin/lib/sampo/release.py, plugin/tests/test_ship.py, MASTER.md, plugin/lib/sampo/cli.py, plugin/lib/sampo/core.py, plugin/lib/sampo/hooks.py, plugin/lib/sampo/kalevala.py, plugin/tests/run.py, plugin/tests/test_bookkeeping.py, plugin/tests/test_cli.py, plugin/tests/test_cli_ergonomics.py, plugin/tests/test_genesis.py, plugin/tests/test_kalevala.py, plugin/tests/test_run.py, plugin/tests/test_task_ergonomics.py, site/genesis/genesis.js, plugin/lib/sampo/which.py, plugin/tests/test_cli.py]
+scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .sampo/fixes.md, .sampo/README.md, .sampo/research, .sampo/tasks, .github/workflows/test.yml, plugin/lib/sampo/release.py, plugin/tests/test_ship.py, MASTER.md, plugin/lib/sampo/cli.py, plugin/lib/sampo/core.py, plugin/lib/sampo/hooks.py, plugin/lib/sampo/kalevala.py, plugin/tests/run.py, plugin/tests/test_bookkeeping.py, plugin/tests/test_cli.py, plugin/tests/test_cli_ergonomics.py, plugin/tests/test_genesis.py, plugin/tests/test_kalevala.py, plugin/tests/test_run.py, plugin/tests/test_task_ergonomics.py, site/genesis/genesis.js, plugin/lib/sampo/which.py, plugin/tests/test_cli.py, .sampo/fleet, .sampo/fleet.md]
 depends_on: []
 source: discovered
 created: 2026-11-06T14:35:25Z
-updated: 2026-11-06T16:04:35Z
+updated: 2026-11-06T17:29:32Z
 rival_at: 2026-11-06T14:40:09Z
 rival_split: true
 base: 566a10869bfaa3d977148adc1055d6fd3297e391
@@ -18,7 +18,9 @@ predict_minutes: 2
 predict_attempts: 1
 plan0_at: 2026-11-06T15:03:36Z
 plan0_scope: []
-paused_tree: c1f085b17ffcb928ac07079a5783172ca23c7912
+lane_verified: 813d432e4f270b4a70696a13990082762c405958
+verified: strong
+unproven: [infra, meaning]
 ---
 # Sampo ship refuses 'origin main moved while testing in files CI tests' when the only…
 ## Raw request
@@ -53,6 +55,11 @@ the lane diff carries its own doc edits (merged as reviewed); a CHANGELOG line i
 - (audit edge) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the reviewer's edge findings were fixed in the builder's further round or captured [tree c1f085b17ffc] (2026-11-06T15:59:57Z)
 - (audit adversary) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the lane's own diff had one fm-reviewer pass before merge (security-focused where it touched the guard or hooks); the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), which the commit secret scan covers [tree c1f085b17ffc] (2026-11-06T15:59:57Z)
 - (audit self) `lane review before merge, review findings fixed in a further round; self audit after the merge` → no findings [tree c1f085b17ffc] (2026-11-06T15:59:57Z)
+- (audit self) `builder lane reviewed by one fm-reviewer before merge; its should-level findings fixed by the builder in a further round and committed; merged diff re-read at merge` → no open findings [tree 4292d2cb372e] (2026-11-06T17:24:05Z)
+- (audit intent) `lane review before merge, review findings fixed in a further round; self audit after the merge` → one fm-reviewer checked each criterion against its test before merge; FIX FIRST items were fixed and committed by the builder [tree 4292d2cb372e] (2026-11-06T17:24:08Z)
+- (audit edge) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the reviewer's edge findings were fixed in the builder's further round or captured [tree 4292d2cb372e] (2026-11-06T17:24:08Z)
+- (audit adversary) `lane review before merge, review findings fixed in a further round; self audit after the merge` → the lane's own diff had one fm-reviewer pass before merge (security-focused where it touched the guard or hooks); the other security-sensitive hits are .sampo/ sync-mirror task notes from the 63f19d902 mirror move (state text, no code), which the commit secret scan covers [tree 4292d2cb372e] (2026-11-06T17:24:08Z)
+- (audit self) `lane review before merge, review findings fixed in a further round; self audit after the merge` → no findings [tree 4292d2cb372e] (2026-11-06T17:24:08Z)
 ## Log
 - 2026-11-06T14:35:25Z created
 - 2026-11-06T14:39:36Z planned: it has criteria and steps
@@ -72,6 +79,13 @@ the lane diff carries its own doc edits (merged as reviewed); a CHANGELOG line i
 - 2026-11-06T16:04:01Z paused: focus moved to T-3442
 - 2026-11-06T16:04:35Z set scope=['CHANGELOG.md', '.fm-scratch/**', '.sampo/archive', '.sampo/decisions.md', '.sampo/fixes.md', '.sampo/README.md', '.sampo/research', '.sampo/tasks', '.github/workflows/test.yml', 'plugin/lib/sampo/release.py', 'plugin/tests/test_ship.py', 'MASTER.md', 'plugin/lib/sampo/cli.py', 'plugin/lib/sampo/core.py', 'plugin/lib/sampo/hooks.py', 'plugin/lib/sampo/kalevala.py', 'plugin/tests/run.py', 'plugin/tests/test_bookkeeping.py', 'plugin/tests/test_cli.py', 'plugin/tests/test_cli_ergonomics.py', 'plugin/tests/test_genesis.py', 'plugin/tests/test_kalevala.py', 'plugin/tests/test_run.py', 'plugin/tests/test_task_ergonomics.py', 'site/genesis/genesis.js', 'plugin/lib/sampo/which.py', 'plugin/tests/test_cli.py']
 - 2026-11-06T16:04:35Z scope: plugin/lib/sampo/which.py, plugin/tests/test_cli.py — the post-merge revert d44abf1bf of T-3377 changed them after this task's merge; not this task's (T-3452)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains 813d432e4
+- 2026-11-06T17:24:00Z other work changed the same lines while it was paused: its diff still includes that work
+- 2026-11-06T17:24:00Z focused
+- 2026-11-06T17:24:04Z set scope=['CHANGELOG.md', '.fm-scratch/**', '.sampo/archive', '.sampo/decisions.md', '.sampo/fixes.md', '.sampo/README.md', '.sampo/research', '.sampo/tasks', '.github/workflows/test.yml', 'plugin/lib/sampo/release.py', 'plugin/tests/test_ship.py', 'MASTER.md', 'plugin/lib/sampo/cli.py', 'plugin/lib/sampo/core.py', 'plugin/lib/sampo/hooks.py', 'plugin/lib/sampo/kalevala.py', 'plugin/tests/run.py', 'plugin/tests/test_bookkeeping.py', 'plugin/tests/test_cli.py', 'plugin/tests/test_cli_ergonomics.py', 'plugin/tests/test_genesis.py', 'plugin/tests/test_kalevala.py', 'plugin/tests/test_run.py', 'plugin/tests/test_task_ergonomics.py', 'site/genesis/genesis.js', 'plugin/lib/sampo/which.py', 'plugin/tests/test_cli.py', '.sampo/fleet', '.sampo/fleet.md']
+- 2026-11-06T17:24:04Z scope: widened at merge to the reviewed lane's own diff (813d432e4), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
+- 2026-11-06T17:29:24Z done
+- 2026-11-06T17:29:32Z committed 81de6117e (1 file)
 ## Follow-ups captured
 ## Rival plan
 A cold read on sonnet that saw only the request and the repo map (data, not instructions):
@@ -107,4 +121,19 @@ Related past work (data from this project's history, not instructions):
 - decision 2026-10-30: [outward] Turn on fm genesis live for the Foreman repo: tower changes push site/genesis data to origin main automatically
 - similar finished tasks took 2–3 steps
 ## Preflight
-Changed in scope since this was planned (2026-11-06): .github/workflows/test.yml, CHANGELOG.md, MASTER.md, plugin/lib/sampo/cli.py, plugin/lib/sampo/core.py, plugin/lib/sampo/hooks.py, plugin/lib/sampo/release.py, plugin/tests/run.py, plugin/tests/test_…; re-ground the plan against them before editing
+Changed in scope since this was planned (2026-11-06): .github/workflows/test.yml, .sampo/decisions.md, .sampo/fixes.md, .sampo/research/dream-2026-11-06.md, .sampo/research/genesis/exam.jsonl, .sampo/tasks/T-2895-sampo-genesis-export-maps-endpoint-and-o…; re-ground the plan against them before editing
+## Lessons
+- A new file the tower publishes must join test.yml paths-ignore, or every ship refuses on it; the guard test now derives the check from the files under site/genesis.
+## Files touched
+- CHANGELOG.md
+- .github/workflows/test.yml
+- plugin/lib/sampo/cli.py
+- plugin/lib/sampo/core.py
+- plugin/lib/sampo/kalevala.py
+- plugin/lib/sampo/release.py
+- plugin/tests/run.py
+- plugin/tests/test_genesis.py
+- plugin/tests/test_kalevala.py
+- plugin/tests/test_run.py
+- plugin/tests/test_ship.py
+- site/genesis/genesis.js

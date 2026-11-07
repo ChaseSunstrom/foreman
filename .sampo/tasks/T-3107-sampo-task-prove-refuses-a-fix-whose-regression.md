@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/cli.py, plugin/tests/test_verify_strength.py, CHANGELOG
 depends_on: []
 source: discovered
 created: 2026-11-05T03:07:29Z
-updated: 2026-11-06T13:57:20Z
+updated: 2026-11-06T16:29:48Z
 base: fe5138e95ef19b4432555545e84eee4cc68828d2
 base_tree: 905bf469abae626cb969ef4e99f7bf8c00c2ccf4
 predict_minutes: 2
@@ -18,6 +18,7 @@ plan0_scope: [plugin/lib/sampo/cli.py, plugin/tests/test_verify_strength.py, CHA
 builder_returned: 2026-11-06T13:08:00Z
 lane_stop: merged 2026-11-06T13:53:06Z
 verified: strong
+lane_verified: d99caf544ce23b0d7b917fa4839f60e7c9a539ca
 ---
 # sampo task prove accepts a regression test that already existed: with no changed test file it runs the check on the start tree as it was and now
 ## Raw request
@@ -66,6 +67,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T13:53:10Z scope: widened at merge to the reviewed lane's own diff (d99caf544), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T13:57:17Z done
 - 2026-11-06T13:57:20Z committed beec10300 (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains d99caf544
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

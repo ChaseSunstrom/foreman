@@ -20,7 +20,6 @@ predict_minutes: 6
 predict_attempts: 1
 plan0_at: 2026-11-05T23:56:45Z
 plan0_scope: [site/assets/diagrams/*, plugin/tests/test_readme_diagrams.py, CHANGELOG.md]
-group: README figures and diagrams
 builder_returned: 2026-11-06T05:21:23Z
 ---
 # README diagrams (T-3245 part 2): redraw site/assets/diagrams loop, guard and architecture in Sampo's look and name (they still say Foreman), light and dark, gated by sampo works check

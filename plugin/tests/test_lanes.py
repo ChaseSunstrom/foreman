@@ -60,6 +60,57 @@ class Lanes(ForemanTestCase):
             self.assertIn(tid, out)
             self.assertIn(f"sampo lane rm {tid}", out)
 
+    def test_a_second_live_session_is_sent_to_a_lane_and_freed_when_the_first_ends(self):  # T-3331
+        pr, edit, holder = self.two_sessions()
+        start = self.hook("SessionStart", {"source": "startup", "session_id": "sess-2"}, flags=[])
+        self.assertIn("sampo lane new", start.stdout)
+        self.assertIn('sampo task new', start.stdout)
+        p = self.hook("PreToolUse", edit, flags=[])
+        self.assertEqual(p.returncode, 2, p.stdout)
+        for word in (self.repo + ".lanes", "FOREMAN_NO_SESSION_LANES", "Bash"):
+            self.assertIn(word, p.stderr)
+        self.assertNotIn("<ID>", p.stderr)
+        self.hook("UserPromptSubmit", {"prompt": "hi again", "session_id": "sess-2"}, flags=[])  # still a second one
+        self.assertEqual(self.hook("PreToolUse", edit, flags=[]).returncode, 2)
+        self.assertEqual(self.hook("PreToolUse", dict(edit, session_id="sess-1"), flags=[]).returncode, 0, "the holder")
+        old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 7200))
+        c.update_meta(pr, session=dict(holder, seen=old))  # a holder in a long autonomous run is still alive
+        self.assertEqual(self.hook("PreToolUse", edit, flags=[]).returncode, 2)
+        c.update_meta(pr, session=dict(holder, proc=f"{holder['proc'].rsplit('|', 2)[0]}|99999999|1"))
+        self.assertEqual(self.hook("PreToolUse", edit, flags=[]).returncode, 0, "a dead holder never locks the checkout")
+
+    def two_sessions(self):
+        from sampo import bus
+        self.new("Main work", self.repo)
+        pr = c.find_project(self.repo)
+        holder = {"id": "sess-1", "seen": c.now(), "pid": 1, "proc": f"{bus.host_id()}|{os.getpid()}|{bus._proc(os.getpid())[1]}"}
+        c.update_meta(pr, session=holder)  # a live process that is not the second session's
+        edit = {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "x.py"), "content": "x"},
+                "session_id": "sess-2"}
+        return pr, edit, holder
+
+    def test_a_session_is_never_refused_when_it_cant_be_told_from_the_holder(self):  # T-3331
+        pr, edit, holder = self.two_sessions()
+        self.assertEqual(self.hook("PreToolUse", edit).returncode, 0, "no claude process found: not another session")
+        self.hook("UserPromptSubmit", {"prompt": "hi", "session_id": "sess-2"}, flags=[])
+        for env in ({"FOREMAN_NO_SESSION_LANES": "1"}, {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"}):  # the off switch; claude -p
+            self.assertEqual(self.hook("PreToolUse", edit, env=env, flags=[]).returncode, 0, env)
+        c.update_meta(pr, lane_per_session=False)
+        self.assertEqual(self.hook("PreToolUse", edit, flags=[]).returncode, 0, "meta off switch")
+
+    def test_a_session_start_records_its_process_and_a_session_end_frees_the_checkout(self):  # T-3331
+        pr, edit, holder = self.two_sessions()
+        c.update_meta(pr, session={})
+        self.hook("SessionStart", {"source": "startup", "session_id": "sess-1"}, flags=[])
+        rec = c.read_meta(pr)["session"]
+        self.assertTrue(rec.get("pid") and rec.get("proc"), rec)
+        c.update_meta(pr, session=holder)
+        self.hook("UserPromptSubmit", {"prompt": "hi", "session_id": "sess-2"}, flags=[])
+        self.assertEqual(self.hook("PreToolUse", edit, flags=[]).returncode, 2)
+        self.hook("SessionEnd", {"session_id": "sess-1"}, flags=[])
+        self.assertNotIn("session", c.read_meta(pr))
+        self.assertEqual(self.hook("PreToolUse", edit, flags=[]).returncode, 0, "claude --continue right after")
+
     def test_the_edit_gate_in_a_lane_needs_that_lanes_task(self):
         self.new("Main work", self.repo)
         edit = {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.lane, "x.py"), "content": "x"},

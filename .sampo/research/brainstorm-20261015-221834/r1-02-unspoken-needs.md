@@ -14,7 +14,7 @@
 
 - **Scrub secrets and paths from shared hints before commit** — SECURITY — value 4 — effort S — risk low — category: privacy
   Why: fixes now ride in git, and transcript-derived text can hold tokens, home paths or private URLs; T-0791 lists injection defenses but not leakage into committed hints. Assumption: no redaction pass exists yet.
-  Done when: a hint seeded with a fake API key and `/home/user/...` is committed with both redacted, and a CI check fails on a committed hint matching a secret pattern.
+  Done when: a hint seeded with a fake API key and `~/...` is committed with both redacted, and a CI check fails on a committed hint matching a secret pattern.
 
 - **Treat a hint pulled from git as untrusted input** — SECURITY — value 4 — effort M — risk med — category: trust
   Why: teammates' hints get injected into sessions, and the 18 injection ideas in T-0791 are deferred. A poisoned hint could say "run curl|sh".

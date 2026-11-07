@@ -891,21 +891,22 @@ def secret(env):
     ~/.config/sampo/secrets.env: KEY=VALUE lines, export and quotes allowed), so hooks, the night job and sampo-live,
     which no login shell starts, find a key the user stored once. A file others can read is not trusted (as ssh)."""
     got = (os.environ.get(env) or "").strip()
-    if got:
-        return got
+    return got or next((v for k, v in secret_pairs() if k == env), "")
+
+
+def secret_pairs():
+    """(name, value) of each line of the private secrets file; none when others can read it. T-3529: sampo ship
+    refuses a push that carries one of the values."""
     path = secrets_path()
     try:
         st = os.stat(path)
         if st.st_mode & 0o077 or st.st_uid != os.getuid():
-            return ""
+            return []
         with open(path, encoding="utf-8") as f:
-            for line in f:
-                k, eq, v = line.strip().removeprefix("export ").partition("=")
-                if eq and k.strip() == env:
-                    return v.strip().strip("'\"").strip()
+            return [(k.strip(), v.strip().strip("'\"").strip()) for line in f
+                    for k, eq, v in [line.strip().removeprefix("export ").partition("=")] if eq]
     except (OSError, UnicodeDecodeError):
-        pass
-    return ""
+        return []
 
 
 def _key(profile):

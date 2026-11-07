@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T07:00:29Z
 updated: 2026-11-06T07:00:29Z
+inferred_deps: [T-3181]
+inferred_why: T-3181: named in its request
 ---
 # Calling cards pilot at 40+ pairs: widen the exam pool beyond the 30 python bug/vuln/none…
 ## Raw request

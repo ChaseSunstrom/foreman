@@ -36,7 +36,7 @@ Options: A tower files are the state (chosen, mission design A); B a JSON journa
 <!-- auto -->
 - 2026-10-30T05:00:57Z steps 3/3 done
 - git: foreman/build; 7 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmgenesis.py, plugin/tests/test_genesis.py, site/genesis/genesis.js
-- touched since last checkpoint: plugin/lib/fmcli.py, site/genesis/genesis.js, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e3.txt, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e4.txt, plugin/lib/fmcore.py, plugin/lib/fmgenesis.py, plugin/tests/test_genesis.py
+- touched since last checkpoint: plugin/lib/fmcli.py, site/genesis/genesis.js, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e3.txt, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e4.txt, plugin/lib/fmcore.py, plugin/lib/fmgenesis.py, plugin/tests/test_genesis.py
 - failures met: couldn't fetch workflows for foreman: http 0: api rate limit exceeded for 0.0.0.0. (but h…
 ## Docs impact
 MASTER.md fmgenesis entry (step), CHANGELOG Unreleased line, site Genesis page shows next

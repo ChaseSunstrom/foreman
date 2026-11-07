@@ -21,7 +21,7 @@ User: the spinner, 'full auto', the tops of the panels and the Next/Drive button
 ## Assumptions (confidence)
 ## Acceptance criteria
 - [x] mod tests pass with the new look — verify with `claude plugin test mods/foreman-ui`
-- [x] the live render at 200 and 100 columns shows no wrapped chips, no [ ] buttons and no agent instruction — verify with `python3 mods/foreman-ui/tools/shot.py snap /tmp/claude-1000/-home-<user>--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png`
+- [x] the live render at 200 and 100 columns shows no wrapped chips, no [ ] buttons and no agent instruction — verify with `python3 mods/foreman-ui/tools/shot.py snap /tmp/claude-1000/-home-~--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png`
 ## Non-goals
 ## Approach (options → choice → why)
 Options: (a) fix each finding in place: narrow layout below ~90 columns, chips as colored words, every Button plain (hotkeyed where safe), short human next, dock width request (columns), footer separator, mode words, Claude-style star spinner; (b) redesign the band as one Raster. Choice (a): Text keeps copy/paste and screen readers working, and each fix is checkable in the live render.
@@ -39,9 +39,9 @@ CHANGELOG.md: the new look and shot.py
 - (step 1) `claude plugin test mods/foreman-ui` → exit 0 · 0 fail / Ran 37 tests across 1 file. [1.80s] [ran] [tree d8d4135d7677] (2026-10-03T05:04:01Z)
 - (step 2) `claude plugin test mods/foreman-ui` → exit 0 · 0 fail / Ran 37 tests across 1 file. [1.78s] [ran] [tree d8d4135d7677] (2026-10-03T05:04:03Z)
 - (step 3) `claude plugin test mods/foreman-ui` → exit 0 · 0 fail / Ran 37 tests across 1 file. [1.80s] [ran] [tree d8d4135d7677] (2026-10-03T05:04:05Z)
-- (step 4) `python3 mods/foreman-ui/tools/shot.py snap /tmp/claude-1000/-home-<user>--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png` → exit 0 · /tmp/claude-1000/-home-<user>--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png (45 rows) [ran] [tree d8d4135d7677] (2026-10-03T05:04:06Z)
+- (step 4) `python3 mods/foreman-ui/tools/shot.py snap /tmp/claude-1000/-home-~--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png` → exit 0 · /tmp/claude-1000/-home-~--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png (45 rows) [ran] [tree d8d4135d7677] (2026-10-03T05:04:06Z)
 - (ac 1) `claude plugin test mods/foreman-ui` → exit 0 · 0 fail / Ran 37 tests across 1 file. [1.84s] [ran] [tree d8d4135d7677] (2026-10-03T05:07:18Z)
-- (ac 2) `python3 mods/foreman-ui/tools/shot.py snap /tmp/claude-1000/-home-<user>--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png` → exit 0 · /tmp/claude-1000/-home-<user>--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png (60 rows) [ran] [tree d8d4135d7677] (2026-10-03T05:07:18Z)
+- (ac 2) `python3 mods/foreman-ui/tools/shot.py snap /tmp/claude-1000/-home-~--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png` → exit 0 · /tmp/claude-1000/-home-~--claude-foreman/30a00329-d877-454a-a322-ecdf12fae04b/scratchpad/polish.png (60 rows) [ran] [tree d8d4135d7677] (2026-10-03T05:07:18Z)
 - (audit intent) `reviewed in the live render at 200 and 100 columns (shot.py PNGs); 37 mod tests` → every item the user named is addressed: spinner (Claude Code star glyphs), 'full auto' (a coloured word in the band and header; the engine pill removed), tops of the panels (Foreman · project, mode in words), Next/Drive buttons (quiet key: label controls), highlighted blue text (coloured words) [tree d8d4135d7677] (2026-10-03T05:07:18Z)
 - (audit edge) `reviewed in the live render at 200 and 100 columns (shot.py PNGs); 37 mod tests` → narrow band (<90 cols) is single cut lines, nothing wraps; dock width requested (76) though a kept width wins; footer separator verified live [tree d8d4135d7677] (2026-10-03T05:07:18Z)
 ## Log

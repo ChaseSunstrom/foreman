@@ -23,7 +23,7 @@ verified: ok
 ## Interpretation
 ## Assumptions (confidence)
 ## Acceptance criteria
-- [x] the replay ran fm find on the parent of each of the last 40 FIX-task commits and reports how many fixes a lead sat within 3 lines of, with each miss's file kind; the verdict and the blind-spot classes are in the brief and feed Mission 3's critique — verify with `python3 /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py --summary`
+- [x] the replay ran fm find on the parent of each of the last 40 FIX-task commits and reports how many fixes a lead sat within 3 lines of, with each miss's file kind; the verdict and the blind-spot classes are in the brief and feed Mission 3's critique — verify with `python3 /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py --summary`
 ## Non-goals
 ## Approach (options → choice → why)
 ## Risks and rollback
@@ -34,10 +34,10 @@ verified: ok
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 -m py_compile /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py && echo compiled` → exit 0 · compiled [ran] [tree 96d345cc8aad] (2026-11-01T06:30:50Z)
-- (step 2) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py --summary` → exit 0 · miss 8da84f2ce fm ci-watch: a cancelled run is not a failure (T-2287) / miss 9f67b04d2 The plan gate counts options that start with a flag, code or a quote (T-2285) [ran] [tree 96d345cc8aad] (2026-11-01T06:34:44Z)
-- (ac 1) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py --summary` → exit 0 · miss 8da84f2ce fm ci-watch: a cancelled run is not a failure (T-2287) / miss 9f67b04d2 The plan gate counts options that start with a flag, code or a quote (T-2285) [ran] [tree 96d345cc8aad] (2026-11-01T06:34:44Z)
-- (ac 1) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py --summary` → exit 0 · miss 8da84f2ce fm ci-watch: a cancelled run is not a failure (T-2287) / miss 9f67b04d2 The plan gate counts options that start with a flag, code or a quote (T-2285) [ran] [tree 96d345cc8aad] (2026-11-01T06:34:54Z)
+- (step 1) `python3 -m py_compile /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py && echo compiled` → exit 0 · compiled [ran] [tree 96d345cc8aad] (2026-11-01T06:30:50Z)
+- (step 2) `python3 /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py --summary` → exit 0 · miss 8da84f2ce fm ci-watch: a cancelled run is not a failure (T-2287) / miss 9f67b04d2 The plan gate counts options that start with a flag, code or a quote (T-2285) [ran] [tree 96d345cc8aad] (2026-11-01T06:34:44Z)
+- (ac 1) `python3 /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py --summary` → exit 0 · miss 8da84f2ce fm ci-watch: a cancelled run is not a failure (T-2287) / miss 9f67b04d2 The plan gate counts options that start with a flag, code or a quote (T-2285) [ran] [tree 96d345cc8aad] (2026-11-01T06:34:44Z)
+- (ac 1) `python3 /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/replay_fixes.py --summary` → exit 0 · miss 8da84f2ce fm ci-watch: a cancelled run is not a failure (T-2287) / miss 9f67b04d2 The plan gate counts options that start with a flag, code or a quote (T-2285) [ran] [tree 96d345cc8aad] (2026-11-01T06:34:54Z)
 - (audit self) `self: the method checked against two sanity points: fm find's 44 current leads on this tree are mostly untested symbols, and the same-day exam sweep gives the same blind spot (bug 0/72); worktrees were throwaway and removed, fm find without --capture saves no flags, nothing in the repo changed` → no findings [tree 96d345cc8aad] (2026-11-01T06:34:54Z)
 - (audit self) `self: the method checked against two sanity points: fm find's 44 current leads on this tree are mostly untested symbols, and the same-day exam sweep gives the same blind spot (bug 0/72); worktrees were throwaway and removed, fm find without --capture saves no flags, nothing in the repo changed` → no findings [tree 96d345cc8aad] (2026-11-01T06:35:07Z)
 ## Log

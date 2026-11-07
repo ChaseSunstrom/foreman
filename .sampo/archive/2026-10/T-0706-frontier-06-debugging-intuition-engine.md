@@ -43,7 +43,7 @@ T-0706: steps 1-4 evidenced; localisation gym running in background (scratchpad/
 <!-- auto -->
 - 2026-10-09T18:51:21Z step 5/5: localisation gym, docs, CHANGELOG, full suite
 - git: foreman/build; 5 uncommitted: MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmhooks.py, plugin/lib/fmdebug.py, plugin/tests/test_suspects.py
-- touched since last checkpoint: plugin/tests/test_suspects.py, plugin/lib/fmcli.py, plugin/lib/fmhooks.py, /tmp/claude-1000/-home-<user>--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/loc_gym.py, MASTER.md, plugin/lib/fmdebug.py
+- touched since last checkpoint: plugin/tests/test_suspects.py, plugin/lib/fmcli.py, plugin/lib/fmhooks.py, /tmp/claude-1000/-home-~--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/loc_gym.py, MASTER.md, plugin/lib/fmdebug.py
 ## Docs impact
 CHANGELOG; MASTER.md module list (fmdebug)
 ## Verification evidence

@@ -34,7 +34,7 @@ Options: (1) refuse every tree write after an unnamed cd (broad, blocks cd $(git
 <!-- auto -->
 - 2026-10-29T07:40:11Z step 1/1: Probe each shape; test-first table of refused and allowed lines; fix in _moved / the cd handling / nested checks; adversarial cases
 - git: foreman/build; 2 uncommitted: plugin/lib/fmguard.py, plugin/tests/test_guard.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1923c.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1923d.py, plugin/lib/fmguard.py, plugin/tests/test_guard.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1923c.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1923d.py, plugin/lib/fmguard.py, plugin/tests/test_guard.py
 - failures met: python0: can't open file 't0b.py': [errno 0] no such file or directory
 ## Docs impact
 CHANGELOG.md

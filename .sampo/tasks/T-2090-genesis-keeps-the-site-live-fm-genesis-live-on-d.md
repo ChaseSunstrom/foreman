@@ -43,7 +43,7 @@ Complete version: opt-in switch (live on/off, grant spent once, undo listed), tr
 <!-- auto -->
 - 2026-10-30T03:48:42Z step 1/4: failing tests: live on/off grant, publish to a bare remote (change, no change, paths), kick throttle and off, status
 - git: foreman/build; 7 uncommitted: .github/workflows/test.yml, CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmgenesis.py, plugin/lib/fmhooks.py, plugin/tests/test_genesis.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2090c.py, plugin/lib/fmgenesis.py, plugin/lib/fmcli.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2090d.py, CHANGELOG.md, MASTER.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2090c.py, plugin/lib/fmgenesis.py, plugin/lib/fmcli.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2090d.py, CHANGELOG.md, MASTER.md
 ## Docs impact
 MASTER.md fmgenesis entry, CHANGELOG Unreleased
 ## Verification evidence

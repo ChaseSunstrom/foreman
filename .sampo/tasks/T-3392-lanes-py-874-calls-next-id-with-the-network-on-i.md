@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T06:54:39Z
 updated: 2026-11-06T06:54:39Z
+inferred_deps: [T-3329]
+inferred_why: T-3329: named in its request
 ---
 # lanes.py:~874 calls next_id with the network on inside the lane race loop, which may run…
 ## Raw request

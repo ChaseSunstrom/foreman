@@ -9,7 +9,6 @@ depends_on: []
 source: followup
 created: 2026-11-04T08:22:27Z
 updated: 2026-11-04T08:22:27Z
-group: affected-test set gaps
 ---
 # Catch it earlier: the T-2912 lane's affected tests didn't include test_left_out
 ## Raw request

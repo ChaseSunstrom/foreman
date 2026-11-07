@@ -51,7 +51,7 @@ Choice 1 on 3 (75%): the doubt is sample size: fm code's own closes here are few
 <!-- auto -->
 - 2026-11-03T21:37:32Z steps 4/4 done
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: .claude/worktrees/agent-ab7c74bd2ab3fdf1d/plugin/tests/test_code.py, .claude/worktrees/agent-ab7c74bd2ab3fdf1d/plugin/lib/sampo/cli.py, .claude/worktrees/agent-ab7c74bd2ab3fdf1d/plugin/lib/sampo/outcomes.py, .claude/worktrees/agent-ab7c74bd2ab3fdf1d/plugin/lib/sampo/smith.py, .claude/worktrees/agent-ab7c74bd2ab3fdf1d/README.md, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/12-forge-illustrated/_review/r2/extra2.py, plugin/skills/playbooks/ratchet.json
+- touched since last checkpoint: .claude/worktrees/agent-ab7c74bd2ab3fdf1d/plugin/tests/test_code.py, .claude/worktrees/agent-ab7c74bd2ab3fdf1d/plugin/lib/sampo/cli.py, .claude/worktrees/agent-ab7c74bd2ab3fdf1d/plugin/lib/sampo/outcomes.py, .claude/worktrees/agent-ab7c74bd2ab3fdf1d/plugin/lib/sampo/smith.py, .claude/worktrees/agent-ab7c74bd2ab3fdf1d/README.md, /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/12-forge-illustrated/_review/r2/extra2.py, plugin/skills/playbooks/ratchet.json
 ## Docs impact
 README: the Smith line names the escalation
 ## Verification evidence

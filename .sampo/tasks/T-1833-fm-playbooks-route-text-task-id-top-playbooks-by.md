@@ -37,7 +37,7 @@ sqlite3 FTS5 table (path UNINDEXED, title, use, heads, body) with bm25() weights
 <!-- auto -->
 - 2026-10-28T10:14:37Z steps 3/3 done
 - git: worktree-agent-ac9c5d6b51b4d1564; 3 uncommitted: plugin/lib/fmplaybooks.py, plugin/tests/test_playbook_machinery.py, plugin/tests/test_playbook_route.py
-- touched since last checkpoint: plugin/tests/bench_playbooks.py, plugin/lib/fmcli.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/prof.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/micro.py, MASTER.md, plugin/tests/test_playbook_route.py, plugin/tests/test_playbook_machinery.py, plugin/lib/fmplaybooks.py
+- touched since last checkpoint: plugin/tests/bench_playbooks.py, plugin/lib/fmcli.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/prof.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/micro.py, MASTER.md, plugin/tests/test_playbook_route.py, plugin/tests/test_playbook_machinery.py, plugin/lib/fmplaybooks.py
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

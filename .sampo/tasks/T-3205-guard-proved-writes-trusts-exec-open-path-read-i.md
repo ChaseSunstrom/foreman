@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T13:50:36Z
 updated: 2026-11-05T13:50:36Z
-group: guard bypasses and over-refusals
 ---
 # Guard: _proved_writes trusts exec(open(path).read()) inside a heredoc fed to python, so…
 ## Raw request

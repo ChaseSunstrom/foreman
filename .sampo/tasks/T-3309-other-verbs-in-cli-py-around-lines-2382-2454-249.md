@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T04:01:16Z
 updated: 2026-11-06T04:01:16Z
+inferred_deps: [T-3269]
+inferred_why: T-3269: named in its request
 ---
 # Other verbs in cli.py (around lines 2382, 2454, 2497, 2910) run a whole-repo 'git…
 ## Raw request

@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T01:16:46Z
 updated: 2026-11-06T03:53:56Z
-group: hook bench gate
 ---
 # Self-change gate holds on T-3034, T-3047 and T-3053: bench each held hook on base and branch at low load, fix a real slowdown in its lane, or make the gate confirm before it holds
 ## Raw request

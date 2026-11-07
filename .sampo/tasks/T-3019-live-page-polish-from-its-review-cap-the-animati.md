@@ -9,7 +9,6 @@ depends_on: [T-3055, T-3092]
 source: discovered
 created: 2026-11-04T20:31:43Z
 updated: 2026-11-05T02:09:35Z
-group: live page polish and charts
 ---
 # Live page polish from its review: cap the animation loop near 30 fps when nothing moves…
 ## Raw request

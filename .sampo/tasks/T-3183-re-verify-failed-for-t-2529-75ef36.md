@@ -9,7 +9,6 @@ depends_on: [T-2529]
 source: discovered
 created: 2026-11-05T08:53:57Z
 updated: 2026-11-05T08:53:57Z
-group: timeouts under parallel load
 ---
 # Re-verify failed for T-2529 (75ef36):…
 ## Raw request

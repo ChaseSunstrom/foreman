@@ -8,9 +8,8 @@ scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T14:02:51Z
-updated: 2026-11-06T15:19:35Z
+updated: 2026-11-06T21:59:38Z
 base_note: 
-lane: ~/.claude/foreman/.claude/worktrees/agent-afd0c3f102fbffc2c
 lane_branch: worktree-agent-afd0c3f102fbffc2c
 base: 74e8d98a05b695ab98f8b23f241802a3b888d156
 base_tree: 767124e325e1332b8ac205fbf3ebdca97ee37f1c
@@ -48,6 +47,7 @@ Reading 1: nested fm/run.py calls in four classes outlast their fixed timeouts u
 - 2026-11-06T14:13:33Z predicted from its closes: 4 min, 1 attempt(s)
 - 2026-11-06T15:19:35Z dropped: superseded by T-3442: the timeouts came from nested run.py queuing on the slot pool (a renamed env var), not from load; scaling the timeouts would only hide that
 - 2026-11-06T15:19:35Z work at drop saved: bc05214b7c67 (restore: git -C ~/.claude/foreman restore --source=bc05214b7c67 --worktree -- :/)
+- 2026-11-06T21:59:38Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-afd0c3f102fbffc2c (branch worktree-agent-afd0c3f102fbffc2c kept: not merged); dropped: its task is closed; the lane was left behind after the merge
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

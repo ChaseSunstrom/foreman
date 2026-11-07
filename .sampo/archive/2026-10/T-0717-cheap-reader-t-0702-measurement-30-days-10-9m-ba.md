@@ -30,7 +30,7 @@ verified: ok
 ## Docs impact
 ## Verification evidence
 - (ac 1) `fm research show T-0717-tool-result-sizes` → ✗ exit 2 · usage: fm research [-h] [--json] [-p PROJECT] {add,ask} ... / fm research: error: argument research_cmd: invalid choice: 'show' (choose from 'add', 'ask') [ran] [tree ba46d775536d] (2026-10-09T17:17:48Z)
-- (step 1) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/sizes.py` → exit 0 · Bash results over 3k tokens, by first word of the last command: sed 536,906, cd 383,281, cat 365,287, grep 200,978, git 39,965, for 21,813, python3 20,995, ? 20,985 / Read results over 3k tokens, by e [ran] [tree ba46d775536d] (2026-10-09T17:17:48Z)
+- (step 1) `python3 /tmp/claude-1000/-home-~--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/sizes.py` → exit 0 · Bash results over 3k tokens, by first word of the last command: sed 536,906, cd 383,281, cat 365,287, grep 200,978, git 39,965, for 21,813, python3 20,995, ? 20,985 / Read results over 3k tokens, by e [ran] [tree ba46d775536d] (2026-10-09T17:17:48Z)
 - (ac 1) `fm research show T-0717-tool-result-sizes` → ✗ exit 2 · usage: fm research [-h] [--json] [-p PROJECT] {add,ask} ... / fm research: error: argument research_cmd: invalid choice: 'show' (choose from 'add', 'ask') [ran] [tree ba46d775536d] (2026-10-09T17:17:56Z)
 - (ac 1) `test -s state/projects/foreman-4a056f/research/T-0717-tool-result-sizes.md` → exit 0 · (no output) [ran] [tree ba46d775536d] (2026-10-09T17:18:00Z)
 - (audit self) `self: chars/4 over 64,393 results incl. subagent transcripts; the .diff bucket matches reviewer briefs pointing at audits/*.diff` → no findings [tree ba46d775536d] (2026-10-09T17:18:00Z)

@@ -31,7 +31,7 @@ verified: strong
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py -p test_docs.py` → exit 0 · Ran 18 tests in 0.0s (6 classes, 16 at a time; slowest: Skills 0s, PluginConflicts 0s, OutputStyle 0s) / OK [ran] [tree 538107223f11] (2026-10-09T01:44:01Z)
-- (step 2) `ssh -o BatchMode=yes <user>@<host> 'grep -c 1.2.4 ~/.claude/plugins/cache/foreman/foreman/1.2.3/.claude-plugin/plugin.json && test -f ~/.claude/plugins/cache/foreman/foreman/1.2.3/lib/fmmission.py'` → exit 0 · 1 [ran] [tree 538107223f11] (2026-10-09T01:48:03Z)
+- (step 2) `ssh -o BatchMode=yes <host> 'grep -c 1.2.4 ~/.claude/plugins/cache/foreman/foreman/1.2.3/.claude-plugin/plugin.json && test -f ~/.claude/plugins/cache/foreman/foreman/1.2.3/lib/fmmission.py'` → exit 0 · 1 [ran] [tree 538107223f11] (2026-10-09T01:48:03Z)
 - (ac 1) `python3 plugin/tests/run.py -p test_docs.py` → exit 0 · Ran 18 tests in 0.0s (6 classes, 16 at a time; slowest: Skills 0s, OutputStyle 0s, PluginConflicts 0s) / OK [ran] [tree 538107223f11] (2026-10-09T01:48:09Z)
 - (audit intent) `self: version 1.2.4 in plugin.json and marketplace.json (both entries), changelog heading, doc tests; JARVIS's running cache carries it and its guard was probed live` → JARVIS runs the fixed guard now; the GitHub publish waits for the owner (T-0388) [tree 538107223f11] (2026-10-09T01:48:09Z)
 - (audit edge) `self: version 1.2.4 in plugin.json and marketplace.json (both entries), changelog heading, doc tests; JARVIS's running cache carries it and its guard was probed live` → the cache folder is still named 1.2.3 (the running session keeps its path); the next plugin update replaces it with the marketplace version, which T-0388 makes 1.2.4 [tree 538107223f11] (2026-10-09T01:48:09Z)

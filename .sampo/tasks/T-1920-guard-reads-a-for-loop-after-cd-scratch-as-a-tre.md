@@ -36,7 +36,7 @@ Options: (a) mask each innermost compound whose body names no cwd mover (cd push
 <!-- auto -->
 - 2026-10-29T05:57:24Z step 3/3: Review, full test_guard
 - git: foreman/build; 2 uncommitted: plugin/lib/fmguard.py, plugin/tests/test_guard.py
-- touched since last checkpoint: plugin/lib/fmguard.py, plugin/tests/test_guard.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1920.txt
+- touched since last checkpoint: plugin/lib/fmguard.py, plugin/tests/test_guard.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1920.txt
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

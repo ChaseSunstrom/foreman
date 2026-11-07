@@ -31,7 +31,7 @@ verified: strong
 ## Resume here
 ## Docs impact
 ## Verification evidence
-- (step 1) `cd plugin/tests && PATH=/tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/nobwrap:$PATH python3 -m unittest test_unattended.RunModels` → exit 0 · Ran 3 tests in 1.302s / OK [ran] [tree 80cd3f7d44d5] (2026-10-16T20:08:47Z)
+- (step 1) `cd plugin/tests && PATH=/tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/nobwrap:$PATH python3 -m unittest test_unattended.RunModels` → exit 0 · Ran 3 tests in 1.302s / OK [ran] [tree 80cd3f7d44d5] (2026-10-16T20:08:47Z)
 - (ac 1) `cd plugin/tests && python3 -m unittest test_unattended.RunModels` → exit 0 · Ran 3 tests in 1.303s / OK [ran] [tree 397fe598486e] (2026-10-16T20:08:56Z)
 - (audit edge) `self: the CI annotation (FileNotFoundError …/argv in test_unattended) reproduced locally with a failing bwrap shadowing the real one; green with the stubs` → macOS keeps sandbox-exec, the stubs don't matter there [tree 397fe598486e] (2026-10-16T20:08:56Z)
 - (audit self) `self: the CI annotation (FileNotFoundError …/argv in test_unattended) reproduced locally with a failing bwrap shadowing the real one; green with the stubs` → no findings [tree 397fe598486e] (2026-10-16T20:08:56Z)

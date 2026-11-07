@@ -32,7 +32,7 @@ verified: strong
 <!-- auto -->
 - 2026-10-30T08:07:56Z steps 1/1 done
 - git: foreman/build; 1 uncommitted: plugin/tests/test_run.py
-- touched since last checkpoint: plugin/tests/test_run.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/mission-initiative.md
+- touched since last checkpoint: plugin/tests/test_run.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/mission-initiative.md
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_run` → exit 0 · Ran 61 tests in 5.8s (34 classes, 16 at a time; slowest: Ship 5s, Ambient 5s, Hang 5s) / OK [ran] [tree 403a5734cc90] (2026-10-30T08:04:52Z)

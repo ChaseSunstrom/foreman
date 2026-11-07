@@ -35,7 +35,7 @@ Options: (a) marching cubes with the 256-entry edge/triangle tables; (b) marchin
 <!-- auto -->
 - 2026-10-28T17:59:06Z steps 2/2 done
 - git: foreman/build; 6 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmscene.py, plugin/skills/playbooks/references/ui/scene-3d.md, plugin/tests/test_scene.py
-- touched since last checkpoint: plugin/tests/test_scene.py, CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmscene.py, plugin/skills/playbooks/references/ui/scene-3d.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/terrain-test.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/terrain-impl.py
+- touched since last checkpoint: plugin/tests/test_scene.py, CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmscene.py, plugin/skills/playbooks/references/ui/scene-3d.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/terrain-test.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/terrain-impl.py
 ## Docs impact
 ~/.claude/foreman/plugin/skills/playbooks/references/ui/scene-3d.md
 ## Verification evidence

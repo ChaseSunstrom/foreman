@@ -37,7 +37,7 @@ Probe in real time over DevTools via spied (page/init/expr parameters), with HEA
 <!-- auto -->
 - 2026-10-29T04:33:54Z steps 3/3 done
 - git: foreman/build; 4 uncommitted: CHANGELOG.md, plugin/lib/fmcore.py, plugin/tests/test_gate_friction.py, plugin/tests/test_site_hero.py
-- touched since last checkpoint: plugin/tests/test_gate_friction.py, CHANGELOG.md, plugin/lib/fmcore.py, plugin/tests/test_site_hero.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1912t.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1912i.txt
+- touched since last checkpoint: plugin/tests/test_gate_friction.py, CHANGELOG.md, plugin/lib/fmcore.py, plugin/tests/test_site_hero.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1912t.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1912i.txt
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

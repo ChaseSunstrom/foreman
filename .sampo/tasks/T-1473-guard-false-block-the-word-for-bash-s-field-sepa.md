@@ -36,7 +36,7 @@ Grounded: _ifs_unreadable (fmguard.py ~697) sets hidden = _RUNS_HERE.search(rest
 <!-- auto -->
 - 2026-10-22T18:22:51Z step 1/2: failing test
 - git: foreman/build; 2 uncommitted: plugin/lib/fmguard.py, plugin/tests/test_guard.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/probe_ifs.py, plugin/tests/test_guard.py, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/trace_ifs.py, plugin/lib/fmguard.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/probe_ifs.py, plugin/tests/test_guard.py, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/trace_ifs.py, plugin/lib/fmguard.py
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

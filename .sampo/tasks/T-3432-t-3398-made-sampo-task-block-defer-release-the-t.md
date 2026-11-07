@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-06T12:03:01Z
-updated: 2026-11-06T12:13:57Z
+updated: 2026-11-06T16:29:47Z
 base: 26077fb83c0e892ff609b074873efcbde342a5c1
 base_tree: c0e2827033a327ad14764d1ffd9e36b35caddf0a
 predict_minutes: 2
@@ -19,6 +19,7 @@ builder_returned: 2026-11-06T12:05:14Z
 lane_stop: merged 2026-11-06T12:12:45Z
 verified: strong
 unproven: [meaning]
+lane_verified: 5594fdc089b274605da8665a4d3393302262ca55
 ---
 # T-3398 made sampo task block/defer release the task's file leases, but T-2870's…
 ## Raw request
@@ -61,6 +62,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T12:12:49Z scope: widened at merge to the reviewed lane's own diff (5594fdc08), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T12:13:55Z done
 - 2026-11-06T12:13:57Z committed 458042247 (1 file)
+- 2026-11-06T16:29:47Z verified: the full suite is green on 1078ed22d, which contains 5594fdc08
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

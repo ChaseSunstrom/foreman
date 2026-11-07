@@ -1,6 +1,6 @@
 # Crest shots (T-3113)
 
-Taken 2026-11-05 after the merge, with mods/foreman-ui/tools/shot.py: Claude Code 2.1.318 in a tmux harness with the merged mod, in a scratch folder. Images: ~/.claude/foreman/state/projects/foreman-4a056f/research/crest-shots/idle-200.png and ~/.claude/foreman/state/projects/foreman-4a056f/research/crest-shots/narrow-150.png; the working frame is /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/crest-f2.png (scratchpad). The runes render in Konsole through Noto Sans Runic; shot.py now falls back to it too.
+Taken 2026-11-05 after the merge, with mods/foreman-ui/tools/shot.py: Claude Code 2.1.318 in a tmux harness with the merged mod, in a scratch folder. Images: ~/.claude/foreman/state/projects/foreman-4a056f/research/crest-shots/idle-200.png and ~/.claude/foreman/state/projects/foreman-4a056f/research/crest-shots/narrow-150.png; the working frame is /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/crest-f2.png (scratchpad). The runes render in Konsole through Noto Sans Runic; shot.py now falls back to it too.
 
 ## Idle, 200 columns: the ring dim, the mark lit
 ```

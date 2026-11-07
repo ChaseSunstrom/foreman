@@ -34,7 +34,7 @@ Options: (a) record at submit, re-account on read (chosen: no write in Stop, whi
 <!-- auto -->
 - 2026-10-30T12:05:13Z steps 1/1 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmhooks.py, plugin/lib/fmrecall.py, plugin/tests/test_hooks.py
-- touched since last checkpoint: CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2146b.edit, plugin/lib/fmhooks.py, plugin/lib/fmrecall.py, plugin/tests/test_hooks.py
+- touched since last checkpoint: CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2146b.edit, plugin/lib/fmhooks.py, plugin/lib/fmrecall.py, plugin/tests/test_hooks.py
 ## Docs impact
 MASTER.md T-2138 paragraph, CHANGELOG Unreleased
 ## Verification evidence

@@ -8,16 +8,17 @@ scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py, plugin/lib/sampo/
 depends_on: []
 source: discovered
 created: 2026-11-06T05:52:49Z
-updated: 2026-11-06T06:51:16Z
-lane: ~/.claude/foreman/.claude/worktrees/agent-a09d67b7a4e0566b9
-lane_branch: worktree-agent-a09d67b7a4e0566b9
-base: 0e503eeeeb87000325d02673ba119e35ff08b7e8
-base_tree: 5c2bb7b2f14ef72b4659b9d747b61d1c44bc9aca
+updated: 2026-11-06T17:40:23Z
+lane_branch: foreman/T-3360
 predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T05:53:11Z
 plan0_scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py, plugin/lib/sampo/doctor.py, plugin/tests/test_doctor.py]
 builder_returned: 2026-11-06T06:51:16Z
+lane: ~/.claude/foreman.lanes/T-3360
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
+group: guard bypass paths for interpreted scripts
 ---
 # Monitor tool commands bypass the guard: since Claude Code 2.1.314 Bash-matching hooks also run for Monitor commands, but hooks.py GUARDED = FILE_TOOLS | {'Bash'} (hooks.py:31) returns early for tool_name Monitor, so a Monitor 'rm -rf ~' or force-push is never checked
 ## Raw request
@@ -46,6 +47,9 @@ builder_returned: 2026-11-06T06:51:16Z
 - 2026-11-06T05:53:08Z focused
 - 2026-11-06T05:53:11Z predicted from its closes: 4 min, 1 attempt(s)
 - 2026-11-06T06:27:41Z set scope=['plugin/lib/sampo/hooks.py', 'plugin/tests/test_hooks.py', 'plugin/lib/sampo/doctor.py', 'plugin/tests/test_doctor.py', 'plugin/lib/fmguard.py', 'plugin/hooks/hooks.json']
+- 2026-11-06T17:39:28Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-a09d67b7a4e0566b9 (branch worktree-agent-a09d67b7a4e0566b9 kept: not merged); dropped: relocated beside the repo: the train left it out on a conflict and the Ward refuses git merge under .claude/worktrees; its branch is kept and merged into the new lane
+- 2026-11-06T17:39:29Z lane: ~/.claude/foreman.lanes/T-3360 on foreman/T-3360
+- 2026-11-06T17:40:23Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
@@ -54,3 +58,5 @@ Related past work (data from this project's history, not instructions):
 - T-0785 [FEATURE S, done, 2 steps] fm doctor names the Foreman features the installed Claude Code is too old for — lesson: a probe for a setting must look where Foreman w…
 - decision 2026-10-30: [cites: user steer 2026-10-30: Foreman shouldn't be specific to CC and must work outside it] [check: python3 plugin/tests/run.py test_setup.NoClaude…
 - likely tests for the scope: mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/tests/test_doctor.py, plugin/tests/test_hooks.py
+## Preflight
+Changed in scope since this was planned (2026-11-06): plugin/lib/fmguard.py, plugin/lib/sampo/doctor.py, plugin/lib/sampo/hooks.py, plugin/tests/test_doctor.py, plugin/tests/test_hooks.py; re-ground the plan against them before editing

@@ -19,7 +19,7 @@ verified: strong
 ## Interpretation
 ## Assumptions (confidence)
 ## Acceptance criteria
-- [x] the app runs fm digest and fm friction read-only (friction with --json alone; --mark, --brief and --every refused) — verify with `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-<user>--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'`
+- [x] the app runs fm digest and fm friction read-only (friction with --json alone; --mark, --brief and --every refused) — verify with `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-~--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'`
 - [x] the app type-checks — verify with `bash -c 'cd ~/projects/foreman-desktop && bun run check'`
 ## Non-goals
 ## Approach (options → choice → why)
@@ -32,10 +32,10 @@ verified: strong
 ## Docs impact
 CHANGELOG; app README
 ## Verification evidence
-- (step 1) `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-<user>--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → ✗ exit 1 · (no output) [ran] [tree 30501586cacd] (2026-10-06T03:46:32Z)
-- (step 1) `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-<user>--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → exit 0 · (no output) [ran] [tree ce7c72491bb2] (2026-10-06T03:47:21Z)
-- (step 2) `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-<user>--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → exit 0 · (no output) [ran] [tree ce7c72491bb2] (2026-10-06T03:47:22Z)
-- (ac 1) `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-<user>--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → exit 0 · (no output) [ran] [tree ce7c72491bb2] (2026-10-06T03:47:27Z)
+- (step 1) `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-~--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → ✗ exit 1 · (no output) [ran] [tree 30501586cacd] (2026-10-06T03:46:32Z)
+- (step 1) `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-~--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → exit 0 · (no output) [ran] [tree ce7c72491bb2] (2026-10-06T03:47:21Z)
+- (step 2) `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-~--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → exit 0 · (no output) [ran] [tree ce7c72491bb2] (2026-10-06T03:47:22Z)
+- (ac 1) `bash -c 'cd ~/projects/foreman-desktop/src-tauri && cargo test --target-dir /tmp/claude-1000/-home-~--claude-foreman/e18ac773-469c-4b5e-8209-e5612aaa52a2/scratchpad/cargo-target 2>&1 | grep -q "test result: ok. 9 passed"'` → exit 0 · (no output) [ran] [tree ce7c72491bb2] (2026-10-06T03:47:27Z)
 - (ac 2) `bash -c 'cd ~/projects/foreman-desktop && bun run check'` → exit 0 · 1791258447771 START "~/projects/foreman-desktop" / 1791258447772 COMPLETED 200 FILES 0 ERRORS 0 WARNINGS 0 FILES_WITH_PROBLEMS [ran] [tree ce7c72491bb2] (2026-10-06T03:47:27Z)
 - (audit self) `self-review: digest and friction are read-only in Foreman; the allow-list refuses friction --mark/--brief/--every (they move the self-improvement window); cargo tests 9/9, type-check clean, Review tab verified in a screenshot` → no findings [tree ce7c72491bb2] (2026-10-06T03:47:27Z)
 ## Log

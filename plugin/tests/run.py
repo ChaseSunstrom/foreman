@@ -127,6 +127,58 @@ def _slot_folder():
     return folder
 
 
+SUITE_ENV = "SAMPO_NO_SUITE_SLOT"  # T-3541: =1 runs a full suite without the machine-wide slot
+
+
+def _holder(fd):
+    """Who holds the suite slot, from what it wrote into the lock file."""
+    try:
+        h = json.loads(os.pread(fd, 4096, 0))
+        return f"the full suite running in {h['cwd']} (pid {int(h['pid'])}, {(time.time() - float(h['at'])) // 60:.0f} min)"
+    except (OSError, ValueError, TypeError, KeyError):  # not written yet, or garbled
+        return "another full suite"
+
+
+@contextlib.contextmanager
+def suite_slot(until):
+    """T-3541: the machine's one full-suite slot, held while the block runs: three full suites at once (two builders'
+    and the ship's) each took 3x as long and slowed everything else. A second full run waits, saying for whom every
+    minute, and goes ahead beside the holder once until (an epoch) passes. None when nested in a class (SAMPO_SLOT),
+    SAMPO_NO_SUITE_SLOT=1 or no flock. The holder's pid, cwd and start are in the lock file; the kernel frees the lock
+    when the holder dies."""
+    fd = None
+    if not (_env(SLOT_ENV) or _env(SUITE_ENV) or not fcntl):
+        path = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sampo", "suite.lock")
+        with contextlib.suppress(OSError):
+            os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+            fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    said = 0.0
+    try:
+        while fd is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                pass
+            else:
+                with contextlib.suppress(OSError):
+                    os.ftruncate(fd, 0)
+                    os.pwrite(fd, json.dumps({"pid": os.getpid(), "cwd": os.getcwd(), "at": time.time()}).encode(), 0)
+                break
+            now = time.time()
+            if now >= until:
+                sys.stderr.write(f"run.py: {_holder(fd)} still holds the slot; going ahead beside it\n")
+                break
+            if now - said >= 60:
+                sys.stderr.write(f"run.py: waiting for {_holder(fd)}\n")
+                sys.stderr.flush()
+                said = now
+            time.sleep(0.2)  # the next suite starts within 0.2 s of the slot freeing
+        yield
+    finally:
+        if fd is not None:
+            os.close(fd)  # closing it frees the slot
+
+
 def skipped():
     """T-1101: the modules FOREMAN_SKIP_TESTS names (fm check: another open task's red-first test files)."""
     return {x.strip() for x in os.environ.get("FOREMAN_SKIP_TESTS", "").split(",") if x.strip()}
@@ -481,17 +533,19 @@ def main():
     if a.load and (room := load_room(a.load)) < a.load:
         sys.stderr.write(f"run.py: --load {a.load} cut to {room}: the host already runs near twice its CPU count\n")
         a.load = room
-    with burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
-        try:
-            import helpers  # T-3338: lazily, after classes() put the tests folder on sys.path
-            busy = helpers.busy_factor()
-        except ImportError:  # a copy of run.py alone (test_check_paths) has no helpers
-            busy = 1
-        cap = round(a.timeout * busy)  # a loaded host's class runs slower; the deadline still clamps
-        # T-3338 review: --deadline, else the gate's (core.run_command sets FM_RUN_DEADLINE under its own timeout), else
-        # 8 class timers: the scaled timers never outlast the caller's, so a kill names the class
-        dl = a.deadline if a.deadline is not None else int(os.environ.get("FM_RUN_DEADLINE") or 0) or max(8 * cap, 600)
-        a.deadline, end = dl, t0 + dl
+    try:
+        import helpers  # T-3338: lazily, after classes() put the tests folder on sys.path
+        busy = helpers.busy_factor()
+    except ImportError:  # a copy of run.py alone (test_check_paths) has no helpers
+        busy = 1
+    cap = round(a.timeout * busy)  # a loaded host's class runs slower; the deadline still clamps
+    # T-3338 review: --deadline, else the gate's (core.run_command sets FM_RUN_DEADLINE under its own timeout), else
+    # 8 class timers: the scaled timers never outlast the caller's, so a kill names the class
+    dl = a.deadline if a.deadline is not None else int(os.environ.get("FM_RUN_DEADLINE") or 0) or max(8 * cap, 600)
+    a.deadline, end = dl, t0 + dl
+    # T-3541: the whole suite (the gate: no names, -k or -p) waits for any other on the machine, at most half its deadline
+    slot = suite_slot(t0 + dl / 2) if not (a.names or a.k or a.p) else contextlib.nullcontext()
+    with slot, burn(a.load), concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
         results = list(ex.map(lambda c: run_one(c, a.k or a.names, cap, end), todo))  # T-1994: the class is in a named module, so -k alone
     if not a.shard:
         seen = set(ids)

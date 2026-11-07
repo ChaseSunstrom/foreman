@@ -21,7 +21,7 @@
 - LOW — `louhi.py:3711` — `getpass.getuser()` raises `KeyError` on Python before 3.13 when the container has no passwd entry or `USER`. The `except` does not catch it, so the scenario fails, which breaks the "grade never depends on it" comment — Wrap `getuser` or catch `Exception` — PLAUSIBLE
 
 ## lens: maintainer
-- MEDIUM — `plugin/tests/test_traces.py:56-65` — The test's `/home/zed` is removed by the path pattern, not by the user-name list. Nothing tests user-name stripping, tmp-root stripping, secret redaction, forge-owner stripping or the 20000-character cap. Nothing tests the `--traces` branch or a fabricated journal — Add each as an assertion — CONFIRMED
+- MEDIUM — `plugin/tests/test_traces.py:56-65` — The test's `~` is removed by the path pattern, not by the user-name list. Nothing tests user-name stripping, tmp-root stripping, secret redaction, forge-owner stripping or the 20000-character cap. Nothing tests the `--traces` branch or a fabricated journal — Add each as an assertion — CONFIRMED
 - LOW — `test_traces.py:86` — The cap assertion allows 20000 bytes of slack; the real bound is `CAP + 1` — Assert `<= traces.CAP + 1` — CONFIRMED
 - LOW — `traces.py:81` — The oversized-run tail is dropped, so a green trace can end mid-tool-call — Drop back to the last assistant turn.
 

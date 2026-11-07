@@ -2,13 +2,13 @@
 id: T-1217
 type: FIX
 tier: S
-status: blocked
+status: captured
 priority: normal
 scope: []
 depends_on: []
 source: user
 created: 2026-10-16T15:23:33Z
-updated: 2026-10-20T17:21:09Z
+updated: 2026-11-06T19:15:06Z
 ---
 # Foreman-ui pane: Claude Code paints the docked pane's background #262626 (48;2;38;38;38, 4
 ## Raw request
@@ -27,4 +27,6 @@ updated: 2026-10-20T17:21:09Z
 ## Log
 - 2026-10-16T15:23:33Z created
 - 2026-10-20T17:21:09Z blocked: needs the foreman-ui mod update the user must approve (installed 0.7.0, repo 0.18.2); the pane background can't be checked or changed on the old mod
+- 2026-11-06T19:15:05Z unblocked
+- 2026-11-06T19:15:06Z unblocked: claude plugin list shows foreman-ui 0.20.0 enabled, read from ~/.claude/foreman/mods/foreman-ui; the old 0.7.0 mod this waited on is gone
 ## Follow-ups captured

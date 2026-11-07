@@ -34,7 +34,7 @@ Options: (a) in check(), treat got == 'system' and _unread(detail) like unanalys
 <!-- auto -->
 - 2026-10-29T07:51:34Z step 1/1: Test-first: table of unread shapes under --allow system; one clause in check(); message says no grant lifts it
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1931.txt
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1931.txt
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

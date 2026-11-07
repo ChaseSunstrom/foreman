@@ -33,7 +33,7 @@ verified: ok
 <!-- auto -->
 - 2026-10-29T16:20:50Z step 1/1: fm ship --watch
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: ~/.claude/projects/-home-<user>--claude-foreman/memory/recursive-improvement-loop.md
+- touched since last checkpoint: ~/.claude/projects/-home-~--claude-foreman/memory/recursive-improvement-loop.md
 - failures met: fm: error: unrecognized arguments: pushed 0; ci watch running in the background; bash: line 0: rsync: command not found; test_worker_reads.py:0:class workeronlyreads(foremantestcase):
 ## Docs impact
 ## Verification evidence

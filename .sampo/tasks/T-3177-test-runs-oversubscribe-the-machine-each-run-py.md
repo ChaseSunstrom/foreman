@@ -18,7 +18,6 @@ predict_attempts: 1
 plan0_at: 2026-11-05T11:45:26Z
 plan0_scope: []
 builder_returned: 2026-11-05T12:27:39Z
-group: timeouts under parallel load
 ---
 # Test runs oversubscribe the machine: each run.py starts 16 workers regardless of load,…
 ## Raw request

@@ -35,7 +35,7 @@ fm ship with no shas (it starts after refs/foreman/shipped) and the 3.12 suite a
 <!-- auto -->
 - 2026-10-29T10:15:57Z step 1/1: fm ship the three commits with --watch
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/round11.txt
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/round11.txt
 ## Docs impact
 ## Verification evidence
 - (ac 1) `git fetch -q origin main && git log FETCH_HEAD --format=%s -n5 | grep -q T-1957` → exit 0 · (no output) [ran] [tree 53f59661335e] (2026-10-29T10:36:40Z)

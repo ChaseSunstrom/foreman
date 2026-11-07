@@ -35,7 +35,7 @@ Stop's _running json-loads all 1,500 tail lines of events.jsonl (6 ms profiled) 
 <!-- auto -->
 - 2026-10-29T19:39:12Z step 1/2: Red test: _running decodes only this session's lines and still answers the same
 - git: foreman/build; 3 uncommitted: CHANGELOG.md, plugin/lib/fmhooks.py, plugin/tests/test_hooks.py
-- touched since last checkpoint: plugin/tests/test_hooks.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit33.json, plugin/lib/fmhooks.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl33.json, CHANGELOG.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit32.json
+- touched since last checkpoint: plugin/tests/test_hooks.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit33.json, plugin/lib/fmhooks.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/cl33.json, CHANGELOG.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit32.json
 ## Docs impact
 CHANGELOG line
 ## Verification evidence

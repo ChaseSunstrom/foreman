@@ -37,7 +37,7 @@ verified: strong
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_site 2>&1 | grep -E "overlaps|off screen|sideways|OK|FAILED|skipped" | head -8` → exit 0 · OK [ran] [tree 7037d60a3905] (2026-10-30T13:22:37Z)
-- (step 1) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/brandtext.py` → exit 0 · genesis/index.html [["Foreman",16,144,16,144,"\"Barlow Condensed\", \"Roboto Co",128,128],["Install",170,221,170,221,"Barlow, system-ui, -apple-syst",50,50],["GitHub",235,292,235,292,"Barlow, system-u [ran] [tree 8676fe324214] (2026-10-30T13:27:42Z)
+- (step 1) `python3 /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/brandtext.py` → exit 0 · genesis/index.html [["Foreman",16,144,16,144,"\"Barlow Condensed\", \"Roboto Co",128,128],["Install",170,221,170,221,"Barlow, system-ui, -apple-syst",50,50],["GitHub",235,292,235,292,"Barlow, system-u [ran] [tree 8676fe324214] (2026-10-30T13:27:42Z)
 - (step 2) `python3 plugin/tests/run.py test_site` → exit 0 · Ran 26 tests in 4.8s (10 classes, 16 at a time; slowest: Header 5s, Landing 2s, Session 1s) / OK [ran] [tree 8676fe324214] (2026-10-30T13:27:47Z)
 - (ac 1) `python3 plugin/tests/run.py test_site` → exit 0 · Ran 26 tests in 4.7s (10 classes, 16 at a time; slowest: Header 4s, Landing 2s, Session 1s) / OK [ran] [tree 8676fe324214] (2026-10-30T13:27:52Z)
 - `python3 plugin/tests/run.py test_site` → ✗ exit 1 · Ran 26 tests in 5.5s (10 classes, 16 at a time; slowest: Header 4s, Landing 2s, Session 1s) / FAILED (1 classes) (start tree + this task's tests) [ran] [tree 6beb224254e9] (2026-10-30T13:28:09Z)
@@ -52,7 +52,7 @@ verified: strong
 - 2026-10-30T13:22:00Z set scope=['site/style.css', 'site/genesis/genesis.css', 'site/features/*.css', 'plugin/tests/test_site*.py', 'CHANGELOG.md']
 - 2026-10-30T13:22:01Z planned: it has criteria and steps
 - 2026-10-30T13:22:01Z focused
-- 2026-10-30T13:27:40Z criterion 1 verify: `python3 /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/header360.py` → `python3 plugin/tests/run.py test_site`
+- 2026-10-30T13:27:40Z criterion 1 verify: `python3 /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/header360.py` → `python3 plugin/tests/run.py test_site`
 - 2026-10-30T13:28:29Z done
 - 2026-10-30T13:28:30Z committed 6b506e55 (3 files)
 - 2026-10-30T13:28:42Z guard authorization added: publish

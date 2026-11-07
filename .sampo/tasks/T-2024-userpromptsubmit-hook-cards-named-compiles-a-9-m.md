@@ -34,10 +34,10 @@ Options: (1) prefilter card names by substring, compile only the candidates (sam
 <!-- auto -->
 - 2026-10-29T18:12:37Z step 2/2: prefilter cards_named, lazy module patterns, memo last_change; measure
 - git: foreman/build; 5 uncommitted: plugin/lib/fmbus.py, plugin/lib/fmcore.py, plugin/lib/fmlib.py, plugin/lib/fmplugins.py, plugin/tests/test_cards_at_prompt.py
-- touched since last checkpoint: plugin/tests/test_cards_at_prompt.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit24b.json, plugin/lib/fmbus.py, plugin/lib/fmcore.py, plugin/lib/fmlib.py, plugin/lib/fmplugins.py
+- touched since last checkpoint: plugin/tests/test_cards_at_prompt.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit24b.json, plugin/lib/fmbus.py, plugin/lib/fmcore.py, plugin/lib/fmlib.py, plugin/lib/fmplugins.py
 ## Docs impact
 ## Verification evidence
-- (step 1) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/hook_t.py /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/base4/plugin/hooks/hook UserPromptSubmit:ups.json` → exit 0 · UserPromptSubmit min  115 ms, median  119 ms [ran] [tree 9ad593d302ff] (2026-10-29T18:12:18Z)
+- (step 1) `python3 /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/hook_t.py /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/base4/plugin/hooks/hook UserPromptSubmit:ups.json` → exit 0 · UserPromptSubmit min  115 ms, median  119 ms [ran] [tree 9ad593d302ff] (2026-10-29T18:12:18Z)
 - (step 2) `python3 plugin/tests/run.py test_ledger_chain test_nudges test_cards_at_prompt test_hooks test_core test_library test_plugins 2>&1 | grep -E "^FAIL|^ERROR|Error:|^OK|Ran" | head -12` → exit 0 · Ran 413 tests in 48.2s (70 classes, 16 at a time; slowest: Stop 48s, NoTaskGate 39s, PreToolUse 33s) / OK [ran] [tree 5981924a35f4] (2026-10-29T18:16:59Z)
 - (step 2) `python3 plugin/tests/run.py test_cards_at_prompt test_library test_ledger_chain test_nudges -k named -k last_change -k loads_briefs` → ✗ exit 1 · run.py: no test matches test_library with -k named -k last_change -k loads_briefs [ran] [tree 38eefc5a578f] (2026-10-29T18:17:37Z)
 - (step 2) `python3 plugin/tests/run.py test_cards_at_prompt test_ledger_chain test_nudges` → exit 0 · Ran 53 tests in 4.0s (7 classes, 16 at a time; slowest: Chain 4s, Receipt 2s, Revisit 1s) / OK [ran] [tree 38eefc5a578f] (2026-10-29T18:17:45Z)

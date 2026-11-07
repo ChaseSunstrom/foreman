@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/doctor.py, plugin/lib/sampo/core.py, plugin/lib/fm*.py,
 depends_on: []
 source: discovered
 created: 2026-11-05T02:06:49Z
-updated: 2026-11-06T11:20:09Z
+updated: 2026-11-06T16:29:47Z
 base: 5ddaa3e49ac9c627fcc658cf12299c6e3280741e
 base_tree: 357e887063e02ddedd3ad3378e7559761cfb88f7
 predict_minutes: 2
@@ -18,6 +18,7 @@ plan0_scope: [plugin/lib/sampo/doctor.py, plugin/lib/sampo/core.py, plugin/lib/f
 builder_returned: 2026-11-06T09:25:58Z
 lane_stop: merged 2026-11-06T11:19:18Z
 verified: strong
+lane_verified: a9016bc0a91e023f334752f0ce2c1ea8ba322fdc
 ---
 # The fm*.py alias modules say they stay for two releases (T-2742) but nothing records the…
 ## Raw request
@@ -64,6 +65,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T11:19:24Z scope: widened at merge to the reviewed lane's own diff (a9016bc0a), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T11:20:03Z done
 - 2026-11-06T11:20:09Z committed 34d1fad89 (1 file)
+- 2026-11-06T16:29:47Z verified: the full suite is green on 1078ed22d, which contains a9016bc0a
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

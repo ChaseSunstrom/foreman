@@ -42,7 +42,7 @@ Choice 1 (85%): the checker and the rater already exist; this is their first rea
 ## Docs impact
 none: the catalogue is Foreman state in the Genesis tower, not a repo doc
 ## Verification evidence
-- (step 1) `fm genesis moonshot rate > /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/moon/rate.txt 2>&1` → exit 0 · (no output) [ran] [tree 3f668e7c8b00] [world 2f1906870a] (2026-11-02T21:37:09Z)
+- (step 1) `fm genesis moonshot rate > /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/moon/rate.txt 2>&1` → exit 0 · (no output) [ran] [tree 3f668e7c8b00] [world 2f1906870a] (2026-11-02T21:37:09Z)
 - (step 1) `test -s state/projects/foreman-4a056f/research/genesis/moonshot.md` → exit 0 · (no output) [ran] [tree 25470459a4ab] [world 2f1906870a] (2026-11-02T21:41:41Z)
 - (step 2) `fm genesis moonshot status` → exit 0 · - Floor: advance at least one extreme or massive moonshot by a stage and write 'Advanced: M-NN <stage> (T-NNNN)' in gen-3/mission-moonshot.md; fm genesis check holds it once gen-4 exists. Every built [ran] [tree 25470459a4ab] [world 2f1906870a] (2026-11-02T21:41:42Z)
 - (step 3) `fm genesis moonshot order` → exit 0 · M-14 full (high): Breed lane strategies by tournament, with heritable genomes / M-19 full (medium): Hold every self-promotion to a false-discovery bar [ran] [tree 25470459a4ab] [world 2f1906870a] (2026-11-02T21:41:43Z)

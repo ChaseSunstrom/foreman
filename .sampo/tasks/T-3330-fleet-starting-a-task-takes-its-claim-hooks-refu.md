@@ -2,13 +2,13 @@
 id: T-3330
 type: FEATURE
 tier: M
-status: planned
+status: active
 priority: normal
 scope: [plugin/lib/sampo/fleet.py, plugin/lib/sampo/cli.py, plugin/lib/sampo/hooks.py, plugin/tests/test_fleet_focus.py]
 depends_on: [T-3321]
 source: followup
 created: 2026-11-06T04:31:57Z
-updated: 2026-11-06T07:07:04Z
+updated: 2026-11-07T00:57:34Z
 lane: ~/.claude/foreman/.claude/worktrees/agent-a6974a31f571ee3eb
 lane_branch: worktree-agent-a6974a31f571ee3eb
 base: f411f679994b62594fe9e6ee6d701ac0a56c080d
@@ -18,6 +18,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T06:28:59Z
 plan0_scope: [plugin/lib/sampo/core.py, plugin/lib/sampo/hooks.py, plugin/tests/test_claims_remote.py]
 builder_returned: 2026-11-06T07:07:04Z
+group: fleet claims and session liveness
 ---
 # Fleet: starting a task takes its claim; hooks refuse edits once the claim is lost, naming the holder's machine
 ## Raw request
@@ -52,6 +53,7 @@ Blast radius (sampo graph blast): co-changes plugin/tests/test_hooks.py, plugin/
 - 2026-11-06T06:29:09Z set scope=['plugin/lib/sampo/fleet.py', 'plugin/lib/sampo/cli.py', 'plugin/lib/sampo/hooks.py', 'plugin/tests/test_fleet_focus.py']
 - 2026-11-06T07:00:30Z focused
 - 2026-11-06T07:01:11Z focused
+- 2026-11-07T00:57:34Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

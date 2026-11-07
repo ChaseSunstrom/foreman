@@ -33,7 +33,7 @@ Options: (a) brainstorm only from lenses; (b) grounded CC-feature inventory firs
 <!-- auto -->
 - 2026-10-14T15:37:14Z step 1/3: Inventory CC features vs Foreman use; extend the pack
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/cc-features.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/cc-features.md
 ## Docs impact
 ## Verification evidence
 - (step 1) `grep -rl 'ScheduleWakeup\|PushNotification\|ReportFindings\|EnterWorktree' plugin/ | wc -l` → exit 0 · 0 [ran] [tree 82c6f888d49e] (2026-10-14T15:47:38Z)

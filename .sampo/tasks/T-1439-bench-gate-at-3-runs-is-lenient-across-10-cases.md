@@ -35,7 +35,7 @@ A stdlib Monte Carlo in the scratchpad (binomial draws per case, 10k trials) ove
 ## Docs impact
 research bench-band-calibration
 ## Verification evidence
-- (step 1) `python3 -I /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/bandsim.py` → exit 0 · 0.90    10    2 |     0.95        0.98                 0.04 / 0.90    10    3 |     1.00        1.00                 0.00 [ran] [tree 67da385a2aba] (2026-10-22T14:51:19Z)
+- (step 1) `python3 -I /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/bandsim.py` → exit 0 · 0.90    10    2 |     0.95        0.98                 0.04 / 0.90    10    3 |     1.00        1.00                 0.00 [ran] [tree 67da385a2aba] (2026-10-22T14:51:19Z)
 - (step 2) `fm research list | grep -q bench-band-calibration` → exit 0 · (no output) [ran] [tree 67da385a2aba] (2026-10-22T14:51:21Z)
 - (ac 1) `fm research list | grep -q bench-band-calibration` → exit 0 · (no output) [ran] [tree 67da385a2aba] (2026-10-22T14:51:26Z)
 - (audit intent) `self: stdlib Monte Carlo (seed 1439, 4,000 trials/cell) over p {0.5, 2/3, 0.9}, runs {3,5,10}, loss {0..3}; band computed from observed rates as fmbench.pass_band does. Findings and recommendation in research bench-band-calibration; follow-up captured T-1464.` → confirms the capture: at 3 runs a 2-pass loss passes as noise ~half the time; false alarms stay 3-5% [tree 67da385a2aba] (2026-10-22T14:51:26Z)

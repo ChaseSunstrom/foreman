@@ -9,9 +9,8 @@ depends_on: []
 source: user
 created: 2026-11-05T03:08:04Z
 updated: 2026-11-06T03:52:32Z
-inferred_deps: [T-3104, T-3110, T-3197]
-inferred_why: T-3104: named in its request; T-3110: fill needs the writer loop; T-3197: fill to thousands needs indexed dedupe first
-group: design works at scale
+inferred_deps: [T-3104]
+inferred_why: T-3104: named in its request
 ---
 # Design works part 4: fill to 3,000 kept across 10+ types over nights; local models learn SVG techniques as cards and join when their measured lift clears the bar (T-3104)
 ## Raw request

@@ -19,7 +19,7 @@ verified: strong
 # fm code hardening: inline --worker templates linted, more metadata endpoints refused, odd usage counts survived, the pl…
 ## Raw request
 > T-1418: fm code: an inline --worker 'CMD --yolo {prompt}' skips T-1395's dangerous-flag lint; gemini's -y isn't in DANGEROUS; fmcodetui._choices doesn't catch CodeError from all_runners, so a bad code.toml can break the TUI picker
-> T-1421: fm code's model endpoint check: also refuse other cloud metadata addresses (Alibaba 100.100.100.200, Azure wireserver 168.63.129.16) and hostnames resolving to them (T-1395 ponytail)
+> T-1421: fm code's model endpoint check: also refuse other cloud metadata addresses (Alibaba <host>, Azure wireserver 168.63.129.16) and hostnames resolving to them (T-1395 ponytail)
 > T-1423: fm code's Run.usage adds the server's reported token counts with no type check, so a server reporting usage as a string crashes the run with a TypeError (T-1404 builder)
 > T-1426: fm code's planner sets FOREMAN_WORKER_OF but its claude stream gets no lean init check (T-1388 covers the worker only); and fm state without --line can create a project through resolve(create=True), a write on a read (T-1388 review)
 ## Interpretation
@@ -30,7 +30,7 @@ Four gaps reviewers and builders found in today's fm code hardening (T-1388, T-1
 - [x] T-1421: Fm code's model endpoint check: also refuse other cloud metadata addresses (Alibaba 100.10 works — verify with `python3 plugin/tests/run.py test_code_hardening`
 - [x] T-1423: Fm code's Run.usage adds the server's reported token counts with no type check, so a serve works — verify with `python3 plugin/tests/run.py test_code_hardening`
 - [x] T-1426: Fm code's planner sets FOREMAN_WORKER_OF but its claude stream gets no lean init check (T- works — verify with `python3 plugin/tests/run.py test_code_hardening`
-- [x] fm code --worker 'gemini --yolo {prompt}' (an inline template with an approval-off flag) is refused, pointing to a code.toml runner with an [ack]; a model base_url of 100.100.100.200, 168.63.129.16, or a hostname resolving to 169.254.169.254 is refused — verify with `python3 plugin/tests/run.py test_code_hardening`
+- [x] fm code --worker 'gemini --yolo {prompt}' (an inline template with an approval-off flag) is refused, pointing to a code.toml runner with an [ack]; a model base_url of <host>, 168.63.129.16, or a hostname resolving to 169.254.169.254 is refused — verify with `python3 plugin/tests/run.py test_code_hardening`
 - [x] a model server reporting usage counts as strings or null doesn't crash fm code (counted as 0); a lean claude planner whose init lists an MCP server stops the plan with that named; fm state under FOREMAN_WORKER_OF in an unregistered folder creates no project — verify with `python3 plugin/tests/run.py test_code_hardening`
 ## Non-goals
 ## Approach (options → choice → why)
@@ -43,7 +43,7 @@ One batch, one lane: each member is a few lines in fmcode, fmmodels or fmcli bes
 3. [x] T-1423: Fm code's Run.usage adds the server's reported token counts with no type check, so a serve
 4. [x] T-1426: Fm code's planner sets FOREMAN_WORKER_OF but its claude stream gets no lean init check (T-
 5. [x] failing tests in plugin/tests/test_code_hardening.py for each of the six behaviours
-6. [x] worker_argv runs fmcode.dangerous_flags on an inline template and refuses with the code.toml + [ack] route; fmmodels._link_local adds 100.100.100.200 and 168.63.129.16 and resolves a hostname (getaddrinfo, short timeout) refusing if any address is link-local or metadata; Run.usage coerces non-int counts to 0; the planner's stream path (fmmodels._cli with the claude plan runner) applies fmcode.lean_extras to its init line and raises naming them; fmcli: a read under FOREMAN_WORKER_OF resolves without create
+6. [x] worker_argv runs fmcode.dangerous_flags on an inline template and refuses with the code.toml + [ack] route; fmmodels._link_local adds <host> and 168.63.129.16 and resolves a hostname (getaddrinfo, short timeout) refusing if any address is link-local or metadata; Run.usage coerces non-int counts to 0; the planner's stream path (fmmodels._cli with the claude plan runner) applies fmcode.lean_extras to its init line and raises naming them; fmcli: a read under FOREMAN_WORKER_OF resolves without create
 7. [x] review fix: dangerous_flags also reads the words inside a multi-word argument (an sh -c script), so a shell wrapper can't hide the flag
 ## Resume here
 ## Docs impact
@@ -70,7 +70,7 @@ CHANGELOG line
 - (ac 4) `python3 plugin/tests/run.py test_code_hardening` → exit 0 · Ran 8 tests in 2.1s (5 classes, 16 at a time; slowest: InlineWorker 2s, LeanPlanner 1s, WorkerReadCreatesNothing 1s) / OK [ran] [tree 44850c6e72aa] (2026-10-21T21:25:25Z)
 - (ac 5) `python3 plugin/tests/run.py test_code_hardening` → exit 0 · Ran 8 tests in 2.1s (5 classes, 16 at a time; slowest: InlineWorker 2s, LeanPlanner 1s, WorkerReadCreatesNothing 1s) / OK [ran] [tree 44850c6e72aa] (2026-10-21T21:25:25Z)
 - (ac 6) `python3 plugin/tests/run.py test_code_hardening` → exit 0 · Ran 8 tests in 2.1s (5 classes, 16 at a time; slowest: InlineWorker 2s, LeanPlanner 1s, WorkerReadCreatesNothing 1s) / OK [ran] [tree 44850c6e72aa] (2026-10-21T21:25:25Z)
-- (audit intent) `fm-reviewer: approve with nits; the one MEDIUM (sh -c wrapper) fixed failing-first; nits captured as T-1438` → an inline approval-off template (and one wrapped in sh -c) is refused toward code.toml + [ack]; 100.100.100.200, 168.63.129.16 and a name resolving to 169.254.169.254 are refused; string/null usage counts as 0; a lean planner loading MCP stops naming it; fm state in an unregistered folder as a worker creates no project (test_code_hardening) [tree 44850c6e72aa] (2026-10-21T21:25:25Z)
+- (audit intent) `fm-reviewer: approve with nits; the one MEDIUM (sh -c wrapper) fixed failing-first; nits captured as T-1438` → an inline approval-off template (and one wrapped in sh -c) is refused toward code.toml + [ack]; <host>, 168.63.129.16 and a name resolving to 169.254.169.254 are refused; string/null usage counts as 0; a lean planner loading MCP stops naming it; fm state in an unregistered folder as a worker creates no project (test_code_hardening) [tree 44850c6e72aa] (2026-10-21T21:25:25Z)
 - (audit edge) `fm-reviewer: approve with nits; the one MEDIUM (sh -c wrapper) fixed failing-first; nits captured as T-1438` → the resolver check fails open on a timeout or error (the real request would fail on NXDOMAIN too; rebinding stays a time-of-check gap, named); mycli -y and a wrapped mycli -y stay allowed; float token counts undercount to 0 [tree 44850c6e72aa] (2026-10-21T21:25:25Z)
 ## Log
 - 2026-10-21T20:44:12Z created

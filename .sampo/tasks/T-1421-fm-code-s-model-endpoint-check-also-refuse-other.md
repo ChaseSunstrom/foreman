@@ -13,7 +13,7 @@ done_in: T-1432
 ---
 # Fm code's model endpoint check: also refuse other cloud metadata addresses (Alibaba 100.10
 ## Raw request
-> fm code's model endpoint check: also refuse other cloud metadata addresses (Alibaba 100.100.100.200, Azure wireserver 168.63.129.16) and hostnames resolving to them (T-1395 ponytail)
+> fm code's model endpoint check: also refuse other cloud metadata addresses (Alibaba <host>, Azure wireserver 168.63.129.16) and hostnames resolving to them (T-1395 ponytail)
 ## Interpretation
 ## Assumptions (confidence)
 ## Acceptance criteria

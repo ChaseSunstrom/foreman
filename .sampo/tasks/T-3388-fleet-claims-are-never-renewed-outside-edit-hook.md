@@ -9,6 +9,9 @@ depends_on: []
 source: discovered
 created: 2026-11-06T06:54:33Z
 updated: 2026-11-06T06:54:33Z
+inferred_deps: [T-3330, T-3333]
+inferred_why: T-3330: named in its request; T-3333: named in its request
+group: fleet claims and session liveness
 ---
 # Fleet claims are never renewed outside edit hooks: claims.renew has no caller in…
 ## Raw request

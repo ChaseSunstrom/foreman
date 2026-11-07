@@ -37,7 +37,7 @@ Open M/L tasks written before the rule may be refused at focus: the gap names th
 <!-- auto -->
 - 2026-10-31T05:26:33Z step 1/3: red tests: each gap refused with its fix named; a full brief starts; an active task isn't re-gated
 - git: worktree-agent-a2f6f547b49b194e2; 2 uncommitted: plugin/tests/test_cli.py, plugin/tests/test_core.py
-- touched since last checkpoint: plugin/lib/fmcore.py, plugin/skills/intake/references/planning.md, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/b1.json, plugin/tests/test_builder.py, plugin/tests/test_clean_helpers.py, plugin/tests/test_conflict_history.py, plugin/tests/test_defect_classes.py, plugin/tests/test_evidence_quality.py, plugin/tests/test_lane_stall.py, plugin/tests/test_lanes.py, plugin/tests/test_metacog.py, plugin/tests/test_pass4.py, plugin/tests/test_reasoning.py
+- touched since last checkpoint: plugin/lib/fmcore.py, plugin/skills/intake/references/planning.md, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/b1.json, plugin/tests/test_builder.py, plugin/tests/test_clean_helpers.py, plugin/tests/test_conflict_history.py, plugin/tests/test_defect_classes.py, plugin/tests/test_evidence_quality.py, plugin/tests/test_lane_stall.py, plugin/tests/test_lanes.py, plugin/tests/test_metacog.py, plugin/tests/test_pass4.py, plugin/tests/test_reasoning.py
 ## Docs impact
 MASTER.md, CHANGELOG.md, plugin/skills/intake/references/planning.md
 ## Verification evidence

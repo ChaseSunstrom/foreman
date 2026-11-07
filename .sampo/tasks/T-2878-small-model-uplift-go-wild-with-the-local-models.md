@@ -2,23 +2,24 @@
 id: T-2878
 type: FEATURE
 tier: L
-status: planned
+status: active
 priority: normal
 scope: []
 depends_on: []
 source: user
 created: 2026-11-04T03:33:45Z
-updated: 2026-11-06T03:54:01Z
+updated: 2026-11-07T04:54:00Z
 base_note: 
 rival_at: 2026-11-05T00:44:53Z
 rival_split: true
-base: 5de167c784f44cc82a9dc40f1f944a571df03532
-base_tree: c2d86a4e65fac0d00f45dfcb601e9aca10332e01
 predict_minutes: 13
 predict_attempts: 1
 plan0_at: 2026-11-05T00:45:40Z
 plan0_scope: []
-paused_tree: 106df4e763e5958f49cb49fa89421e20088b6303
+lane: ~/.claude/foreman.lanes/T-2878
+base: 8b61cb1082cf8cdc9efee5ee9ef7869d024fc263
+lane_branch: foreman/T-2878
+base_tree: cc5fffae3f8171d193ad5413161d55c2c5e43df5
 ---
 # Small-model uplift: go wild with the local models (jarvis qwen3.6-35b, qwen3.8-27b, the…
 ## Raw request
@@ -74,15 +75,21 @@ Build vs reuse:
   - Smith's mode is behind a profile flag.
 ## Execution prompt
 ## Steps
-1. [ ] measure: Smith bench and a Louhi smith arm on qwen3.8-27b, qwen3.6-35b and the local gemma/MiMo; gate: tool calls parse on 95% of steps before anything else; the deterministic taxonomy filed  <- CURRENT
-2. [ ] control: Smith's small-model mode for the top failure classes, each measured on the train split, then held out (paired, ≥30 scenarios)
-3. [ ] volume: parallel local calls for moons grow and the ideas lenses, reasoning off where it doesn't pay (after control, so volume follows what the data says)
+1. [x] measure: Smith bench and a Louhi smith arm on qwen3.8-27b, qwen3.6-35b and the local gemma/MiMo; gate: tool calls parse on 95% of steps before anything else; the deterministic taxonomy filed
+2. [x] control: Smith's small-model mode for the top failure classes, each measured on the train split, then held out (paired, ≥30 scenarios)
+3. [ ] volume: parallel local calls for moons grow and the ideas lenses, reasoning off where it doesn't pay (after control, so volume follows what the data says)  <- CURRENT
 4. [ ] corpus: the card store, grid and coverage, the A/B gate; bulk on the local models, leads by the strongest
 5. [ ] tower: the uplift stage in every Rune generation and its section on the tower page
 6. [ ] close: lean check, audits, docs, the gap number in the changelog
 ## Resume here
 ## Docs impact
 ## Verification evidence
+- (step 1) `for r in s28-020 s29-024 s28-021 s28-022; do sampo exam taxonomy $r | head -3; done; python3 -I /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2878_parse.py ~/.claude/foreman/state/projects/foreman-4a056f/exam s28-020 s29-024 s28-021 s28-022; python3 -I /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2878_fail.py ~/.claude/foreman/state/projects/foreman-4a056f/exam /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2878-logs s28-020 s29-024 s28-021 s28-022` → exit 0 · {"run": "s28-021", "model": "gpu-gemma12-32k", "scenarios": 44, "passed": 0, "failed": 44, "failed_by_split": {"train": 33, "holdout": 11}, "ends": {"hollow_close": 17, "loop": 11, "answered": 8, "fin [ran] [tree cc5fffae3f81] [world 2f1906870a] (2026-11-06T22:39:52Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_models` → red as expected (exit 1) · Ran 91 tests in 2.9s (15 jobs, 16 at a time; slowest: Bench 2s, RunRoute 1s, ModelRules 1s) / FAILED (1 classes: test_models.ExtractJson) [ran] [tree 15f990eaf055] [world 2f1906870a] (2026-11-06T23:15:22Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_smith_small test_models` → exit 0 · Ran 101 tests in 11.3s (25 jobs, 16 at a time; slowest: SmallMode.test_a_perf_plan_whose_check_already_passes_goes_back_once 6s, Bench 4s, SmallMode.test_the_last_step_of_a_change_plan_cant_end_with_n [ran] [tree a33875fcd7f0] [world 2f1906870a] (2026-11-07T01:07:41Z)
+- (step 2) `python3 -I /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2878_paired.py ~/.claude/foreman/state/projects/foreman-4a056f/exam /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2878-logs qwen3.8-27b s28-027:s28-028 s29-035:s29-036 s30-037:s30-038 && python3 -I /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2878_paired.py ~/.claude/foreman/state/projects/foreman-4a056f/exam /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2878-logs gemma4:12b s28-029:s28-030 && python3 -I /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2878_paired.py ~/.claude/foreman/state/projects/foreman-4a056f/exam /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/t2878-logs mimo-v2.6:9b s28-031:s28-032` → exit 0 · {"label": "gemma4:12b", "pairs": 44, "on_pass": 0, "off_pass": 0, "b": 0, "c": 0, "by_split": {"train": {"n": 33, "on_pass": 0, "off_pass": 0}, "holdout": {"n": 11, "on_pass": 0, "off_pass": 0}}, "end [ran] [tree a33875fcd7f0] [world 2f1906870a] (2026-11-07T04:39:32Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_models test_smith_small` → red as expected (exit 1) · Ran 105 tests in 388.8s (27 jobs, 16 at a time; slowest: SmallMode.test_the_last_step_of_a_change_plan_cant_end_with_nothing_changed 8s, ArgAliases.test_a_missing_argument_comes_back_as_one_line_namin [ran] [tree d4c3dec20464] [world 2f1906870a] (2026-11-07T04:48:45Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_models test_smith_small` → exit 0 · Ran 105 tests in 36.8s (27 jobs, 16 at a time; slowest: SmallMode.test_a_perf_plan_whose_check_already_passes_goes_back_once 3s, Bench 3s, SmallMode.test_the_last_step_of_a_change_plan_cant_end_with_n [ran] [tree 77fa2dde0bfb] [world 2f1906870a] (2026-11-07T04:54:00Z)
 ## Log
 - 2026-11-04T03:33:45Z created
 - 2026-11-04T03:38:28Z set tier=L
@@ -110,6 +117,13 @@ Build vs reuse:
 - 2026-11-05T01:58:31Z focused
 - 2026-11-05T01:58:32Z blocked: step 1's measurement waits for the merge chain to clear (its exam scenarios load the machine the gate benches on); the script is ready (scratchpad t2878-measure.sh: every scenario, Jarvis two at a time, the foreman agent on Haiku as the Claude arm) and starts when the chain ends
 - 2026-11-06T03:54:01Z unblocked
+- 2026-11-06T18:53:57Z steer: carried forward as the standing local-model loop T-3483, split into builder parts T-3484 (round driver), T-3485 (class→scaffold registry), T-3486 (n>=30 re-measure gate), T-3487 (own exam lock, built), T-3488 (misses→card requests), T-3494 (GPU-idle sensor)
+- 2026-11-06T19:26:48Z lane: ~/.claude/foreman.lanes/T-2878 on foreman/T-2878
+- 2026-11-06T22:39:52Z start point recorded late (no focus had kept one): its diff starts at 8b61cb1
+- 2026-11-06T22:49:52Z step 1 measured: smith arm on s28-020+s29-024 (qwen3.8-27b, 84/88 failed, parse 89.1%), s28-021 (gemma4:12b, 44/44, parse 98.5%), s28-022 (mimo-v2.6:9b, 43/44, parse 87.5%); taxonomy filed (T-2878-taxonomy): hollow_close 36%, answered 23%, loop 18%, no_plan 13% of 171 failures; parse gate passes on gemma only; qwen3.6-35b not measurable while moons grow pins the 27b on llama-swap (35b calls time out at 120 s), run s28-023 waits for it; seed-29 runs s29-025 (gemma) and s29-026 (mimo) still running for the step-2 baseline; sampo focus refused: L tier lacks approval (standard autonomy), so no code was changed
+- 2026-11-06T23:12:04Z set approved=True
+- 2026-11-06T23:12:15Z focused
+- 2026-11-07T04:39:37Z step 2 round 1: small-model mode (6847d1892), T-3530 escape fix (2e2a4b67d), arg aliases (88e8cffb5); paired on vs off: qwen3.8-27b 9 vs 8 passes of 129 (p=1.0, held out 2 vs 1 of 32), gemma 0 vs 0 of 44, mimo 0 vs 0 of 44; no pass-rate gain; filed T-2878-uplift; next: T-3569 findings precision, T-3567 plan normaliser, T-3568 mimo text actions
 ## Follow-ups captured
 ## Plan review
 A second read on sonnet, before execution (data, not instructions):
@@ -158,3 +172,5 @@ Related past work (data from this project's history, not instructions):
 - T-2909 [FEATURE M, done, 5 steps] Small-model cards part 1: a store of cards written for small models (research/cards/cards.jsonl), a grid (kind of work x stack x stage …
 - T-2865 [FEATURE L, done, 5 steps] Moons at scale: grow the Moons catalogue to 10,000 candidate moons about what Sampo can do for its user, by grid, through a cheap-first…
 - decision 2026-11-04: [cites: user steer 2026-11-04: MOON CATALOGUE AT SCALE: grow the Moons catalogue to 10,000 candidate moons, all about what Sampo can do for its user…
+## Build vs reuse
+Reuses the Louhi smith arm, sampo exam taxonomy and grade, callcards and smallcards (T-3483..T-3488) for every measurement; step 2's controls go into the existing Smith small-model mode and models.extract_json, not a new runner

@@ -37,7 +37,7 @@ Complete version: grouped by rule, newest detail redacted, rewrite from fmguard.
 <!-- auto -->
 - 2026-10-29T02:35:25Z steps 3/3 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmhooks.py, plugin/lib/fmrisk.py, plugin/tests/test_risk.py
-- touched since last checkpoint: CHANGELOG.md, MASTER.md, plugin/lib/fmhooks.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/imp.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1875r.txt, plugin/lib/fmrisk.py, plugin/tests/test_risk.py
+- touched since last checkpoint: CHANGELOG.md, MASTER.md, plugin/lib/fmhooks.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/imp.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1875r.txt, plugin/lib/fmrisk.py, plugin/tests/test_risk.py
 ## Docs impact
 MASTER.md
 ## Verification evidence

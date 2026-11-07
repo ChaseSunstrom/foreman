@@ -51,6 +51,11 @@ for _k in setup.ENV:
     os.environ.pop(_k, None)
 for _k in ("SAMPO_CALLS", "FOREMAN_CALLS"):  # T-3014: a test run under sampo check never logs into the live page's calls
     os.environ.pop(_k, None)  # T-3448: core (imported above) has moved an inherited SAMPO_CALLS to FOREMAN_CALLS
+from sampo import core as _core  # noqa: E402
+# T-3529: the user's own private terms (sampo private add), read before a test points FOREMAN_HOME at its own folder
+# (and from the state path itself: state_dir() could move state to a fallback); none (CI): a made-up one
+PRIVATE_TERMS = _core.private_terms(os.environ.get("FOREMAN_STATE") or os.path.join(_core.foreman_home(), "state")) \
+    or ["*.home.example-private.test"]
 
 
 def valid_m_plan():

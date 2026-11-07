@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-05T02:11:39Z
-updated: 2026-11-06T13:59:24Z
+updated: 2026-11-06T16:29:48Z
 base: beec10300b8a1f9bc28f418d89f42c5300429ba8
 base_tree: c4d1f13676e6e31227899de2ef2f55511289d665
 predict_minutes: 2
@@ -18,6 +18,7 @@ plan0_scope: []
 builder_returned: 2026-11-06T13:08:18Z
 lane_stop: merged 2026-11-06T13:58:18Z
 verified: strong
+lane_verified: 3a0cebecf67d29328cc802bfd87e8b781ef75a63
 ---
 # moons grow --keep waits and retries a local model that stops answering, stopping only after a sustained outage
 ## Raw request
@@ -67,6 +68,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T13:58:20Z scope: widened at merge to the reviewed lane's own diff (3a0cebecf), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T13:59:22Z done
 - 2026-11-06T13:59:24Z committed 74e8d98a0 (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains 3a0cebecf
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

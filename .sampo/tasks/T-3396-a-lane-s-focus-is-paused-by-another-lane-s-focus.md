@@ -21,6 +21,8 @@ predict_attempts: 1
 plan0_at: 2026-11-06T07:44:19Z
 plan0_scope: []
 builder_returned: 2026-11-06T08:03:44Z
+inferred_deps: [T-3330]
+inferred_why: T-3330: named in its request
 ---
 # A lane's focus is paused by another lane's focus/check: builders report 'no active task'…
 ## Raw request

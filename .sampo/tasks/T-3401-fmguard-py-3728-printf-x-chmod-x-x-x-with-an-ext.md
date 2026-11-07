@@ -9,6 +9,9 @@ depends_on: []
 source: discovered
 created: 2026-11-06T07:50:27Z
 updated: 2026-11-06T07:50:27Z
+inferred_deps: [T-3387]
+inferred_why: T-3387: named in its request
+group: guard bypass paths for interpreted scripts
 ---
 # fmguard.py:~3728: 'printf ... > x; chmod +x x; ./x' with an extensionless x is neither…
 ## Raw request

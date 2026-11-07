@@ -38,7 +38,7 @@ Options: (1) nested names in fm research add — mixes concerns, defang breaks v
 <!-- auto -->
 - 2026-10-30T01:27:53Z steps 3/3 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmgenesis.py, plugin/tests/test_genesis.py
-- touched since last checkpoint: plugin/tests/test_genesis.py, plugin/lib/fmgenesis.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/gap-map.md, plugin/lib/fmcli.py
+- touched since last checkpoint: plugin/tests/test_genesis.py, plugin/lib/fmgenesis.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/gap-map.md, plugin/lib/fmcli.py
 - failures met: watching 0 on main, up to 0 polls
 ## Docs impact
 ~/.claude/foreman/CHANGELOG.md,~/.claude/foreman/MASTER.md

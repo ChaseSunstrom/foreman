@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T13:54:51Z
 updated: 2026-11-05T13:54:51Z
-group: guard bypasses and over-refusals
 ---
 # Guard: _EVAL_WORD (fmguard ~834) misses escaped or quoted builtins (e\val, ev""al, '.'…
 ## Raw request

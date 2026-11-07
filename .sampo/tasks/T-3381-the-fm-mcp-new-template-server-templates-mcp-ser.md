@@ -9,6 +9,9 @@ depends_on: []
 source: discovered
 created: 2026-11-06T06:25:51Z
 updated: 2026-11-06T06:25:51Z
+inferred_deps: [T-3359]
+inferred_why: T-3359: named in its request
+group: MCP 2026-07-28 protocol support
 ---
 # The fm mcp new template server (templates/mcp-server) speaks only 2025-06-18: give it…
 ## Raw request

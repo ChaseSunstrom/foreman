@@ -9,9 +9,8 @@ depends_on: []
 source: user
 created: 2026-11-05T03:06:17Z
 updated: 2026-11-06T03:53:07Z
-inferred_deps: [T-3100, T-3103]
-inferred_why: T-3100: named in its request; T-3103: fill across every grid needs the new domains
-group: card library at scale
+inferred_deps: [T-3100]
+inferred_why: T-3100: named in its request
 ---
 # Fill the card library to 30,000 kept across every grid, local writers first, the night growing it and the live page showing progress (T-3100 part 4)
 ## Raw request

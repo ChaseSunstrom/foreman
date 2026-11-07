@@ -40,7 +40,7 @@ unproven: [meaning, red]
 <!-- auto -->
 - 2026-11-05T12:27:26Z steps 2/2 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, plugin/lib/sampo/cost.py, plugin/tests/test_clock_windows.py, plugin/tests/test_usage_burn.py, scripts/
-- touched since last checkpoint: plugin/tests/test_clock_windows.py, plugin/lib/sampo/cost.py, plugin/tests/test_usage_burn.py, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/ab-digest.sh, CHANGELOG.md
+- touched since last checkpoint: plugin/tests/test_clock_windows.py, plugin/lib/sampo/cost.py, plugin/tests/test_usage_burn.py, /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/ab-digest.sh, CHANGELOG.md
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_usage_burn` → ✗ exit 1 · Ran 6 tests in 0.9s (2 jobs, 16 at a time; slowest: UsageBurn 0s, ScanCache 0s) / FAILED (1 classes: test_usage_burn.UsageBurn) [ran] [tree 2471022136a1] [world 2f1906870a] (2026-11-05T12:10:28Z)

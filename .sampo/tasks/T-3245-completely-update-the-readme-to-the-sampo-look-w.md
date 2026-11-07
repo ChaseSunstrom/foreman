@@ -11,7 +11,6 @@ created: 2026-11-05T21:05:47Z
 updated: 2026-11-06T00:00:13Z
 rival_at: 2026-11-05T21:10:04Z
 rival_split: true
-group: README figures and diagrams
 ---
 # Completely update the README to the Sampo look with the charts and such; turn every…
 ## Raw request

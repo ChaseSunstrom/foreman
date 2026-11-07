@@ -20,7 +20,7 @@ verified: strong
 ## Assumptions (confidence)
 ## Acceptance criteria
 - [x] the reviewer's diff shows a file whose change repeats another's as one line naming the first, cuts context lines over 200 characters, and lists fixtures and lockfiles by name and +/- counts instead of their bodies; changed lines stay whole — verify with `python3 plugin/tests/run.py -p test_audit.py -k CompactDiff`
-- [x] measured on real audit diffs (T-0673, T-0018) — verify with `python3 /tmp/claude-1000/-home-<user>--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/diffsave.py`
+- [x] measured on real audit diffs (T-0673, T-0018) — verify with `python3 /tmp/claude-1000/-home-~--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/diffsave.py`
 ## Non-goals
 ## Approach (options → choice → why)
 ## Risks and rollback
@@ -33,11 +33,11 @@ verified: strong
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py -p test_audit.py` → ✗ exit 1 · Ran 2 tests in 0.1s (1 classes, 16 at a time; slowest: CompactDiff 0s) / FAILED (1 classes) [ran] [tree 21e17499f5ce] (2026-10-09T17:31:18Z)
-- (ac 2) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/diffsave.py` → exit 0 · T-0364.diff: 70,738 → 55,303 chars (21% less) / 48 diffs over 20 KB: 2,239,286 → 1,974,997 chars (11% less) [ran] [tree b6ed5361ffa9] (2026-10-09T17:31:39Z)
+- (ac 2) `python3 /tmp/claude-1000/-home-~--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/diffsave.py` → exit 0 · T-0364.diff: 70,738 → 55,303 chars (21% less) / 48 diffs over 20 KB: 2,239,286 → 1,974,997 chars (11% less) [ran] [tree b6ed5361ffa9] (2026-10-09T17:31:39Z)
 - (step 2) `python3 plugin/tests/run.py -p test_audit.py -p test_diff_gates.py -p test_pass4.py -p test_builder.py` → exit 0 · Ran 40 tests in 6.5s (11 classes, 16 at a time; slowest: DiffGates 6s, Contract 5s, Brief 2s) / OK [ran] [tree b6ed5361ffa9] (2026-10-09T17:32:06Z)
-- (step 3) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/diffsave.py` → exit 0 · T-0364.diff: 70,738 → 55,303 chars (21% less) / 48 diffs over 20 KB: 2,239,286 → 1,974,997 chars (11% less) [ran] [tree b6ed5361ffa9] (2026-10-09T17:32:07Z)
+- (step 3) `python3 /tmp/claude-1000/-home-~--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/diffsave.py` → exit 0 · T-0364.diff: 70,738 → 55,303 chars (21% less) / 48 diffs over 20 KB: 2,239,286 → 1,974,997 chars (11% less) [ran] [tree b6ed5361ffa9] (2026-10-09T17:32:07Z)
 - (ac 1) `python3 plugin/tests/run.py -p test_audit.py -k CompactDiff` → exit 0 · Ran 2 tests in 0.1s (1 classes, 16 at a time; slowest: CompactDiff 0s) / OK [ran] [tree 8ac20711a081] (2026-10-09T17:32:17Z)
-- (ac 2) `python3 /tmp/claude-1000/-home-<user>--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/diffsave.py` → exit 0 · T-0364.diff: 70,738 → 55,303 chars (21% less) / 48 diffs over 20 KB: 2,239,286 → 1,974,997 chars (11% less) [ran] [tree 8ac20711a081] (2026-10-09T17:32:17Z)
+- (ac 2) `python3 /tmp/claude-1000/-home-~--claude-foreman/017cbb6b-0026-4a64-af96-4068091225da/scratchpad/diffsave.py` → exit 0 · T-0364.diff: 70,738 → 55,303 chars (21% less) / 48 diffs over 20 KB: 2,239,286 → 1,974,997 chars (11% less) [ran] [tree 8ac20711a081] (2026-10-09T17:32:17Z)
 - (step 1) `python3 plugin/tests/run.py -p test_audit.py` → exit 0 · Ran 2 tests in 0.1s (1 classes, 16 at a time; slowest: CompactDiff 0s) / OK [ran] [tree 8ac20711a081] (2026-10-09T17:32:17Z)
 - (audit edge) `self: compaction runs after secret redaction on the frozen copy only; the pre-audit and file list read the raw diff; changed lines never cut` → a renamed or binary file (no @@) passes through unchanged; a diff with no repeats is byte-identical (test) [tree 8ac20711a081] (2026-10-09T17:32:17Z)
 - (audit self) `self: compaction runs after secret redaction on the frozen copy only; the pre-audit and file list read the raw diff; changed lines never cut` → no findings [tree 8ac20711a081] (2026-10-09T17:32:17Z)

@@ -24,7 +24,7 @@ class Cockpit(ForemanTestCase):
         fleet = self.ui()["fleet"]
         self.assertEqual([s["session"] for s in fleet], ["sess-x"])
         self.assertFalse(any(s.get("remote") for s in fleet), "no remote was added")
-        self.fm("conductor", "remote", "add", "jarvis", "<user>@jarvis.example")
+        self.fm("conductor", "remote", "add", "jarvis", "devbox@jarvis.example")
         bus = os.path.join(self.home, "state", "bus")
         with open(os.path.join(bus, "remote-jarvis.json"), "w") as f:  # what a refresh over ssh leaves
             json.dump({"ts": c.now(), "sessions": [{"session": "j-1", "project": "jarvis-d7aeca", "task": "T-0341",

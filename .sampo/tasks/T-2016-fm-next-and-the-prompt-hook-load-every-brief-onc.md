@@ -33,7 +33,7 @@ verified: strong
 <!-- auto -->
 - 2026-10-29T16:56:56Z steps 2/2 done
 - git: foreman/build; 4 uncommitted: plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/tests/test_cli.py, plugin/tests/test_nudges.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/next_t.py, plugin/tests/test_nudges.py, plugin/lib/fmcore.py, plugin/lib/fmcli.py, plugin/tests/test_cli.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/next_t.py, plugin/tests/test_nudges.py, plugin/lib/fmcore.py, plugin/lib/fmcli.py, plugin/tests/test_cli.py
 ## Docs impact
 ## Verification evidence
 - (ac 1) `python3 plugin/tests/run.py test_nudges -k loads_briefs_once 2>&1 | grep -E "Assertion|^OK|FAIL|Error" | head -4` → ✗ exit 1 · FAILED (failures=1) / FAILED (1 classes) [ran] [tree bff367e4395e] (2026-10-29T16:54:34Z)

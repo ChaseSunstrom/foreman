@@ -318,6 +318,7 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 - M and L work lists the approaches first.
 - The queue orders itself, dependencies included.
 - Each brief lives in Sampo's state, outside your repo, unless you turn on `sampo sync`.
+- `sampo private add '*.home.example.test'` (or a word) keeps a private name out of the repo: the mirror shows `<host>` or `<private>`, and `sampo ship` refuses a push that carries one. The terms stay in Sampo's state.
 
 </details>
 

@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T00:17:41Z
 updated: 2026-11-06T00:17:41Z
+inferred_deps: [T-3163]
+inferred_why: T-3163: named in its request
 ---
 # shot.py sessions never touch the user's settings: start uses its own settings file (a…
 ## Raw request

@@ -18,6 +18,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T06:19:42Z
 plan0_scope: [plugin/lib/sampo/doctor.py, plugin/tests/test_doctor.py, plugin/agents/fm-builder.md]
 builder_returned: 2026-11-06T06:47:45Z
+group: Claude Code release adaptation
 ---
 # Claude Code 2.1.311-2.1.318 adaptation: doctor gate for SubagentStop firing once per subagent (2.1.311; older versions overcount budget rows), and fm-builder.md pins effort: high like every other agent (2.1.316-317 effort routing), with a test that every agent names effort
 ## Raw request

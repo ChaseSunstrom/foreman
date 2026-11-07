@@ -2,14 +2,13 @@
 id: T-3382
 type: FIX
 tier: M
-status: active
+status: dropped
 priority: normal
 scope: []
 depends_on: []
 source: discovered
 created: 2026-11-06T06:41:39Z
-updated: 2026-11-06T08:54:38Z
-lane: ~/.claude/foreman/.claude/worktrees/agent-aaef5cc538514050f
+updated: 2026-11-06T21:59:33Z
 lane_branch: worktree-agent-aaef5cc538514050f
 base: 19cf45dc02be51d02cca75532c0a953687420bda
 base_tree: f7e92771539040aa709b2972758be9d5f52b3845
@@ -45,6 +44,9 @@ Reading 1: the 50-67 s caps are fixed subprocess timeouts to scale. Reading 2: t
 - 2026-11-06T08:46:40Z planned: it has criteria and steps
 - 2026-11-06T08:46:52Z focused
 - 2026-11-06T08:46:53Z predicted from its closes: 8 min, 1 attempt(s)
+- 2026-11-06T17:43:23Z dropped: superseded by T-3442: CheckSkip's timeouts were nested run.py runs queuing on the machine-wide slot pool (FOREMAN_SLOT never read), fixed at the cause; this lane's two commits add and then revert a load-gate override, so it carries no change
+- 2026-11-06T17:43:23Z work at drop saved: a74f7440847b (restore: git -C ~/.claude/foreman restore --source=a74f7440847b --worktree -- :/)
+- 2026-11-06T21:59:33Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-aaef5cc538514050f (branch worktree-agent-aaef5cc538514050f kept: not merged); dropped: its task is closed; the lane was left behind after the merge
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

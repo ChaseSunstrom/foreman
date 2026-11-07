@@ -6,7 +6,7 @@ import os
 import tempfile
 import threading
 
-from helpers import ForemanTestCase, read_text
+from helpers import PRIVATE_TERMS, ForemanTestCase, read_text
 
 from sampo import core as c
 from sampo import louhi
@@ -200,7 +200,7 @@ class LouhiModels(ForemanTestCase):
         src = os.path.join(os.path.dirname(louhi.__file__))
         for f in ("louhi.py", "models.py"):
             with open(os.path.join(src, f)) as fh:
-                self.assertNotIn("<private>", fh.read(), f)
+                self.assertFalse(c.has_private(fh.read(), PRIVATE_TERMS), f"{f} names a private term")
         self.assertFalse(hasattr(louhi, "SERVING"))
         profs = [{"base_url": "http://x/v1", "model": "first"}, {"base_url": "http://x/v1", "model": "second"}]
         self.assertEqual(louhi._serving(profs), {"http://x/v1": "first"})

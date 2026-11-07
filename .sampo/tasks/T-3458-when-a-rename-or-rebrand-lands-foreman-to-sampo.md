@@ -8,7 +8,7 @@ scope: []
 depends_on: []
 source: steer
 created: 2026-11-06T16:09:51Z
-updated: 2026-11-06T16:09:51Z
+updated: 2026-11-06T16:24:13Z
 steer_method_rate: 0.218
 ---
 # When a rename or rebrand lands (Foreman to Sampo, Rune to Kalevala), treat it as…
@@ -37,4 +37,5 @@ steer_method_rate: 0.218
 ## Verification evidence
 ## Log
 - 2026-11-06T16:09:51Z created
+- 2026-11-06T16:24:13Z steer: the stale .foreman/ was folded into .sampo/ by sync.move's no-loss rules and committed gone (f6777351f, between queue rows)
 ## Follow-ups captured

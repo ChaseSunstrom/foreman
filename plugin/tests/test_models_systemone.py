@@ -4,6 +4,8 @@ import json
 import os
 
 import test_models as tm
+from helpers import PRIVATE_TERMS
+from sampo import core as c
 from sampo import models as m
 
 CHOICES = ["FIX", "FEATURE", "CLEAN"]
@@ -87,7 +89,7 @@ class Systemone(tm.Base):
         m.decide("intake-type", "fix it", want, backends=[{"name": "c", "local": True, "profile": prof}])
         self.assertIn(want["FIX"], json.dumps(chat.seen[0][3]["messages"]))
         with open(m.__file__) as fh:
-            self.assertNotIn("<private>", fh.read())
+            self.assertFalse(c.has_private(fh.read(), PRIVATE_TERMS), "models.py names a private term")
 
     def test_ollama_decision_models_are_found_through_their_capabilities(self):
         tags = {"models": [{"name": "kev:4b-q8_0", "capabilities": ["completion", "decision"]},

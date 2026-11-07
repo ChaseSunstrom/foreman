@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: user
 created: 2026-11-06T15:16:56Z
-updated: 2026-11-06T15:39:26Z
+updated: 2026-11-06T16:29:49Z
 base: 0f041f3f124accbe21ab3de0210f85a00c1f6bb3
 base_tree: 11ad039d1bd71e18a402bd5e2a6c3c6f50e722b6
 lane_stop: merged 2026-11-06T15:28:32Z
@@ -18,6 +18,7 @@ plan0_at: 2026-11-06T15:28:35Z
 plan0_scope: []
 verified: strong
 unproven: [docs, meaning]
+lane_verified: 97fd67e1e4198c87b22e5b08b2be83e114927e30
 ---
 # Re-land T-2911 and T-3372: both auto-reverted on CheckSkip/Claims reds the slot-pool bug (T-3442) made, red at their parents too
 ## Raw request
@@ -56,6 +57,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T15:28:38Z scope: widened at merge to the reviewed lane's own diff (97fd67e1e), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T15:39:23Z done
 - 2026-11-06T15:39:26Z committed c93f915a6 (1 file)
+- 2026-11-06T16:29:49Z verified: the full suite is green on 1078ed22d, which contains 97fd67e1e
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

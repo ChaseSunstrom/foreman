@@ -9,6 +9,8 @@ depends_on: []
 source: discovered
 created: 2026-11-06T14:48:50Z
 updated: 2026-11-06T14:48:50Z
+inferred_deps: [T-3082, T-3163]
+inferred_why: T-3082: named in its request; T-3163: named in its request
 ---
 # The drive's Stop-hook continuation (hooks._drive) runs Kalevala rounds when towers are…
 ## Raw request

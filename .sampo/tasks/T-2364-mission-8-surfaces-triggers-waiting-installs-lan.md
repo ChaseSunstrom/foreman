@@ -45,7 +45,7 @@ Blast radius (fm graph blast): co-changes CHANGELOG.md, plugin/lib/fmcli.py, MAS
 <!-- auto -->
 - 2026-11-01T05:23:37Z steps 3/3 done
 - git: foreman/build; 17 uncommitted: CHANGELOG.md, MASTER.md, README.md, plugin/lib/fmagents.py, plugin/lib/fmcli.py, plugin/lib/fmcode.py, plugin/lib/fmcore.py, plugin/lib/fmmcp.py, plugin/lib/fmtriggers.py, plugin/lib/fmwatch.py
-- touched since last checkpoint: plugin/tests/test_cli.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2364_edits.py, plugin/tests/test_agents.py, plugin/tests/test_code.py, plugin/tests/test_mcp.py, plugin/tests/test_site.py, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmtriggers.py, plugin/lib/fmmcp.py, plugin/lib/fmwatch.py, plugin/lib/fmagents.py, plugin/lib/fmcode.py, site/stats.py, site/pages.py
+- touched since last checkpoint: plugin/tests/test_cli.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2364_edits.py, plugin/tests/test_agents.py, plugin/tests/test_code.py, plugin/tests/test_mcp.py, plugin/tests/test_site.py, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmtriggers.py, plugin/lib/fmmcp.py, plugin/lib/fmwatch.py, plugin/lib/fmagents.py, plugin/lib/fmcode.py, site/stats.py, site/pages.py
 ## Docs impact
 MASTER.md (fmtriggers T-2364), README.md (Self-running line), CHANGELOG.md Unreleased
 ## Verification evidence

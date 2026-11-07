@@ -37,7 +37,7 @@ A stale entry would show old meta: entries are keyed by inode+mtime_ns+size and 
 <!-- auto -->
 - 2026-10-29T17:53:01Z step 2/2: index in load_briefs and active_brief_fast; lazy body for stubs; render compares to raw lines; measure
 - git: foreman/build; 3 uncommitted: CHANGELOG.md, plugin/lib/fmcore.py, plugin/tests/test_core.py
-- touched since last checkpoint: plugin/tests/test_core.py, plugin/lib/fmcore.py, CHANGELOG.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/exp/plugin/lib/fmcore.py
+- touched since last checkpoint: plugin/tests/test_core.py, plugin/lib/fmcore.py, CHANGELOG.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/exp/plugin/lib/fmcore.py
 ## Docs impact
 CHANGELOG line
 ## Verification evidence

@@ -8,7 +8,7 @@
   - "git push origin v1.2" (`v1.2` isn't all digits)
   - "wrap fetch(this.url)" or "fetch() … utils.helper"
   — Read only the first positional argument of curl, wget, ssh, scp, rsync, nc and git clone/fetch/push/remote add. Take `fetch(` only with a quoted literal first argument. — high
-- HIGH — fmcode.py:1825, 1858 — A bare `/home`, `/root` or `/Users` token resolves to a home root and is flagged. "add a /home route", "redirect / to /home" and "GET /root" are refused. Dockerfile steps such as `WORKDIR /home/node/app` are refused too. — Skip a path that is exactly one of the home roots. Flag `/home/X` only when X exists on the host, or the path contains `..`. — high
+- HIGH — fmcode.py:1825, 1858 — A bare `/home`, `/root` or `/Users` token resolves to a home root and is flagged. "add a /home route", "redirect / to /home" and "GET /root" are refused. Dockerfile steps such as `WORKDIR ~/app` are refused too. — Skip a path that is exactly one of the home roots. Flag `~` only when X exists on the host, or the path contains `..`. — high
 - MEDIUM — fmcode.py:1818-1825 — Prose tokens are read as paths. A lone `..` ("cd ..", "from .. import x") normalises to the repo's parent, which is under a home on any dev machine. A lone `~` ("~ 5 min") resolves to the home. — Ignore a bare `..` or `~` token unless it has a following segment. — high
 - MEDIUM — fmcode.py:1800-1806 — Scheme URLs flag every non-loopback host, including ones that can't leave the machine:
   - `https://example.com` and `api.example.com`

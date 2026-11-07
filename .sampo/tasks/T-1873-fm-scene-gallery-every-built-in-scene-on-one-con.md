@@ -39,7 +39,7 @@ Refactoring cmd_scene's built-in branch could change its output: the existing sc
 <!-- auto -->
 - 2026-10-29T00:19:08Z step 2/3: gallery(), _builtin, _sheet, the action in fmcli; green
 - git: foreman/build; 6 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmscene.py, plugin/skills/playbooks/references/ui/scene-3d.md, plugin/tests/test_scene.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/test_task_bulk.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1877i.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1877d.txt
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/test_task_bulk.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1877i.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1877d.txt
 - failures met: assertionerror: 0 != 0 : ✗ scene-0d.md: grew from 0,0 to 0,0 tokens, past its ceiling's s…
 ## Docs impact
 ~/.claude/foreman/plugin/skills/playbooks/references/ui/scene-3d.md

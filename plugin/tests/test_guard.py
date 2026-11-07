@@ -2895,6 +2895,114 @@ class CredentialReadHook(ForemanTestCase):
         self.assertEqual((set(hooks._CRED_DIRS), set(hooks._CRED_FILES)), (set(g._CRED_DIRS), set(g._CRED_FILES)))
 
 
+class LaneAutoFocus(ForemanTestCase):
+    """T-3519: an edit in a lane with no task active there focuses the lane's task first (the one its branch
+    foreman/T-N names, or the one open brief that records this lane) and goes ahead; none or several still refuse."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+
+    def planned(self, title):
+        out = self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                      "--json").stdout
+        return json.JSONDecoder().raw_decode(out)[0]["id"]
+
+    def lane(self, path, branch):
+        subprocess.run(["git", "-C", self.repo, "worktree", "add", "-q", "-b", branch, path], check=True)
+        return path
+
+    def sampo_lane(self, tid):
+        return self.lane(os.path.join(self.repo + ".lanes", tid), f"foreman/{tid}")
+
+    def payload(self, lane):
+        return {"tool_name": "Write", "cwd": lane, "session_id": "sess-1",
+                "tool_input": {"file_path": os.path.join(lane, "x.py"), "content": "x"}}
+
+    def edit(self, lane):
+        return self.hook("PreToolUse", {"tool_name": "Write", "cwd": lane,
+                                        "tool_input": {"file_path": os.path.join(lane, "x.py"), "content": "x"}})
+
+    def active(self, cwd):
+        return (json.loads(self.fm("state", "--json", cwd=cwd).stdout).get("active") or {}).get("id")
+
+    def auto(self):
+        from sampo import core as c
+        return [e["task"] for e in c.ledger_tail(c.find_project(self.repo)) if e["event"] == "auto_focus"]
+
+    def test_a_lane_on_its_tasks_branch_focuses_that_task_and_the_edit_goes_ahead(self):
+        tid = self.planned("Lane work")
+        lane = self.sampo_lane(tid)
+        p = self.edit(lane)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn(tid, p.stdout)  # the note tells the builder
+        self.assertEqual((self.active(lane), self.active(self.repo)), (tid, None))  # that lane's, never main's
+        self.assertEqual(self.auto(), [tid])
+        self.assertEqual(self.edit(lane).returncode, 0)
+        self.assertEqual(self.auto(), [tid], "once: the second edit finds it active")
+
+    def test_a_brief_recording_the_lane_is_its_task_and_none_or_several_still_refuse(self):
+        a, b = self.planned("First"), self.planned("Second")
+        lane = self.lane(os.path.join(self.repo, ".claude", "worktrees", "agent-x"), "worktree-agent-x")
+        p = self.edit(lane)  # Claude Code's branch names no task, and no brief records the lane yet
+        self.assertEqual(p.returncode, 2, p.stdout)
+        self.assertIn("no active task", p.stdout)
+        self.fm("focus", a, cwd=lane)
+        self.fm("focus", b, cwd=lane)  # a is paused: planned, still recording the lane
+        self.fm("task", "block", b, "waits", cwd=lane)
+        self.fm("task", "unblock", b, cwd=lane)  # both planned in this lane, neither active
+        p = self.edit(lane)
+        self.assertEqual(p.returncode, 2, p.stdout)
+        self.assertIn(f"{a}, {b}", p.stdout)  # the hint names the candidates
+        self.fm("task", "drop", b, "not needed", cwd=lane)
+        p = self.edit(lane)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.active(lane), a)
+        self.assertEqual(self.auto(), [a])
+
+    def test_a_lane_whose_task_refuses_focus_says_why(self):
+        tid = self.planned("Main took it")
+        self.fm("focus", tid)  # active in the main checkout: sampo focus in the lane refuses
+        lane = self.sampo_lane(tid)
+        p = self.edit(lane)
+        self.assertEqual(p.returncode, 2, p.stdout)
+        self.assertIn(f"sampo focus {tid} here refused", p.stdout)
+        self.assertIn("held by the main checkout", p.stdout)
+        self.assertNotIn("Next:", p.stdout)  # focus's first line only
+        self.assertEqual((self.active(self.repo), self.auto()), (tid, []))
+
+    def test_a_refusal_hint_makes_no_task_and_a_worktree_elsewhere_is_no_lane(self):
+        import contextlib
+        import io
+        from sampo import hooks
+        tid = self.planned("Main took it")
+        self.fm("focus", tid)
+        held = self.sampo_lane(tid)
+        other = self.lane(os.path.join(self.tmp, "elsewhere"), f"foreman/{self.planned('Elsewhere')}")
+        for lane, made in ((held, 0), (other, 1)):  # review: a hint is the answer; a worktree elsewhere isn't a lane
+            with mock.patch.object(hooks, "_first_brief", return_value=None) as first, \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(hooks._pre_tool_use(json.dumps(self.payload(lane))), 2)
+            self.assertEqual(first.call_count, made, lane)
+        self.assertEqual(self.auto(), [])
+
+    def test_a_slow_focus_gives_up_by_its_deadline_and_frees_the_locks(self):
+        import fcntl
+        from sampo import core as c, hooks
+        tid = self.planned("Slow")
+        lane = self.sampo_lane(tid)
+        p, t0 = c.find_project(lane), time.monotonic()
+        with mock.patch.dict(os.environ, self.slow_start(5)), mock.patch.object(hooks, "LANE_FOCUS_S", 1.0):
+            note, hint = hooks._lane_focus(p, "sess-1")  # review: never the hook's 5 s, never a hang
+        self.assertLess(time.monotonic() - t0, 4)
+        self.assertIsNone(note)
+        self.assertIn(f"sampo focus {tid} didn't finish in time", hint)
+        self.assertIsNone(self.active(lane))
+        with open(os.path.join(p.dir, "first-brief.lock"), "a") as lk:
+            fcntl.flock(lk, fcntl.LOCK_EX | fcntl.LOCK_NB)  # raises if still held
+        with c.lock(p.dir, timeout=0.5):
+            pass
+
+
 class ProtectedTouch(GuardCase):
     """T-1680: touch that makes a file in a protected folder is a write there (a new hooks.json in Claude Code's plugin
     cache runs as a hook); touch on a file that exists only changes its times."""

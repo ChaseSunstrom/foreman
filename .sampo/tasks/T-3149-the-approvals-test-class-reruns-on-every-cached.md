@@ -9,9 +9,6 @@ depends_on: [T-3296]
 source: discovered
 created: 2026-11-05T05:37:01Z
 updated: 2026-11-06T03:56:14Z
-inferred_deps: [T-3140]
-inferred_why: T-3140: named in its request
-group: fast merges and merge trains
 ---
 # The Approvals test class reruns on every cached pass (~15 s): its children go untraced;…
 ## Raw request

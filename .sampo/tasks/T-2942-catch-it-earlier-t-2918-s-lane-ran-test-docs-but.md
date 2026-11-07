@@ -9,7 +9,6 @@ depends_on: []
 source: followup
 created: 2026-11-04T08:52:17Z
 updated: 2026-11-04T08:52:17Z
-group: affected-test set gaps
 ---
 # Catch it earlier: T-2918's lane ran test_docs but not test_rename_aliases
 ## Raw request

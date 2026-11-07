@@ -18,6 +18,9 @@ predict_attempts: 1
 plan0_at: 2026-11-06T10:24:36Z
 plan0_scope: []
 builder_returned: 2026-11-06T10:43:12Z
+inferred_deps: [T-3419]
+inferred_why: T-3419: named in its request
+group: hook lock contention and error logging
 ---
 # hooks.log_error appends to state/logs/hooks.log with no size cap or rotation (repeated…
 ## Raw request

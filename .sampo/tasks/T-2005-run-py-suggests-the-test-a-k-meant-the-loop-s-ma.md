@@ -40,7 +40,7 @@ run.py: on a miss, rediscover unfiltered and suggest up to three ids whose folde
 <!-- auto -->
 - 2026-10-29T15:54:34Z steps 2/2 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, plugin/lib/fmloop.py, plugin/tests/run.py, plugin/tests/test_loop.py, plugin/tests/test_run.py
-- touched since last checkpoint: plugin/tests/test_run.py, plugin/lib/fmloop.py, plugin/tests/run.py, CHANGELOG.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ideas_tsv.py
+- touched since last checkpoint: plugin/tests/test_run.py, plugin/lib/fmloop.py, plugin/tests/run.py, CHANGELOG.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/ideas_tsv.py
 ## Docs impact
 - CHANGELOG.md: Unreleased entry for T-2003 and T-2004. MASTER.md unchanged (run.py and the loop brief's wording aren't mapped there).
 ## Verification evidence

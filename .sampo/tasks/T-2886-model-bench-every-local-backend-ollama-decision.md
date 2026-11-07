@@ -4,12 +4,18 @@ type: FEATURE
 tier: L
 status: planned
 priority: normal
-scope: []
+scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .sampo/fixes.md, .sampo/fleet, .sampo/fleet.md, .sampo/README.md, .sampo/research, .sampo/tasks]
 depends_on: [T-3093]
 source: user
 created: 2026-11-04T03:52:03Z
-updated: 2026-11-06T03:53:23Z
+updated: 2026-11-06T21:46:58Z
 base: 5de167c784f44cc82a9dc40f1f944a571df03532
+base_tree: f7c8eef5853160e7fbc6207d0fcb591f4fe5482a
+predict_minutes: 12
+predict_attempts: 1
+plan0_at: 2026-11-06T21:46:53Z
+plan0_scope: []
+paused_tree: f7c8eef5853160e7fbc6207d0fcb591f4fe5482a
 ---
 # Model bench: every local backend (Ollama decision models, Jeff, SelfJev, embedders, generators) measured on Sampo's own work with and without it, as a Louhi arm; numbers on the site's Models section; rerun every Rune generation
 ## Raw request
@@ -35,14 +41,17 @@ GPU contention: the arms run one backend at a time, local-first, with a job cap,
 1. [x] systemone backend kind and local profiles (lane A)
 2. [x] Louhi models arm: decision and embedding arms, held-out split, metrics, results file (lane A)
 3. [x] generation arm: ideas yield per model and Smith seeds with timeouts sized to the model (lane B)
-4. [ ] site Models section, per-generation $0 rerun (child T-3093, M, in a lane)  <- CURRENT
-5. [ ] promotion and demotion rule (child T-3093)
+4. [x] site Models section, per-generation $0 rerun (child T-3093, M, in a lane)
+5. [x] promotion and demotion rule (child T-3093)
 ## Resume here
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_models_systemone test_louhi_models` → exit 0 · Ran 25 tests in 25.4s (3 classes, 16 at a time; slowest: LouhiModels 25s, LouhiLoo 3s, Systemone 0s) / OK [ran] [tree f78e3fa0e0e2] [world 2f1906870a] (2026-11-05T00:51:08Z)
 - (step 2) `python3 plugin/tests/run.py test_models_systemone test_louhi_models` → exit 0 · Ran 25 tests in 30.1s (3 classes, 16 at a time; slowest: LouhiModels 30s, LouhiLoo 2s, Systemone 0s) / OK [ran] [tree f78e3fa0e0e2] [world 2f1906870a] (2026-11-05T00:55:44Z)
 - (step 3) `python3 plugin/tests/run.py test_models_systemone test_louhi_models` → exit 0 · Ran 25 tests in 66.8s (3 classes, 16 at a time; slowest: LouhiModels 66s, LouhiLoo 5s, Systemone 1s) / OK [ran] [tree f78e3fa0e0e2] [world 2f1906870a] (2026-11-05T00:57:42Z)
+- (step 4) `python3 plugin/tests/run.py test_site_build test_louhi_models test_night` → exit 0 · Ran 109 tests in 85.8s (40 jobs, 16 at a time; slowest: Night 16s, CardsPage 14s, NightTimers 5s) / OK [ran] [tree f997eb98c8d4] [world 2f1906870a] (2026-11-06T19:22:52Z)
+- (step 5) `python3 plugin/tests/run.py test_louhi_models` → exit 0 · Ran 27 tests in 53.8s (10 jobs, 16 at a time; slowest: LouhiModels.test_retrieval_rows_vote_from_the_nearest_train_requests_and_abstain_when_split 3s, ModelBenchVisible 2s, LouhiModels.test_a_failing_ [ran] [tree f997eb98c8d4] [world 2f1906870a] (2026-11-06T19:23:54Z)
+- (audit self) `builder lane reviewed by one fm-reviewer before merge; its should-level findings fixed by the builder in a further round and committed; merged diff re-read at merge` → no open findings [tree f7c8eef58531] (2026-11-06T21:46:55Z)
 ## Log
 - 2026-11-04T03:52:03Z created
 - 2026-11-04T03:52:47Z set approved=True
@@ -57,6 +66,12 @@ GPU contention: the arms run one backend at a time, local-first, with a job cap,
 - 2026-11-05T02:02:19Z set depends_on=['T-3093']
 - 2026-11-05T02:02:19Z blocked: steps 4-5 are T-3093, building in a lane
 - 2026-11-06T03:53:23Z unblocked
+- 2026-11-06T18:53:58Z steer: its measuring half overlaps T-3484's per-profile rounds and T-3487's bench lock; split what remains after those land
+- 2026-11-06T21:46:52Z focused
+- 2026-11-06T21:46:53Z predicted from its closes: 12 min, 1 attempt(s)
+- 2026-11-06T21:46:54Z set scope=['CHANGELOG.md', '.fm-scratch/**', '.sampo/archive', '.sampo/decisions.md', '.sampo/fixes.md', '.sampo/fleet', '.sampo/fleet.md', '.sampo/README.md', '.sampo/research', '.sampo/tasks']
+- 2026-11-06T21:46:55Z scope: widened at merge to the reviewed lane's own diff (), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
+- 2026-11-06T21:46:58Z paused: focus moved to T-3473
 ## Follow-ups captured
 ## Build vs reuse
 Reuse: louhi (held-out hashing, run ids, scorecard shape), models (decide, registry, complete, embed, shadow uses, live()), moonscale (admit, the funnel's kill and tier stages), smithbench (seeds), core (briefs). Build: the systemone backend kind, the models arm with its decision, embedding and generation sub-arms, the results file, the site section, the per-generation stage. Nothing outside fits: lm-eval-harness and promptfoo would need installs and grade other tasks than Sampo's.
@@ -76,3 +91,9 @@ Verdict: revise — the built parts are sound, but the remaining work has a bloc
 - [x] MEDIUM: Held-out leakage is addressed only for prompts. Rune generations produce new tasks, and "the latest run" gets compared across generations, so the held-out set shifts and numbers aren't comparable over time. Also, if promoted models later influence which tasks get closed or labelled, labels … — answered: adopted: a frozen held-out set pinned at gen 4 for comparisons over time, the rolling set beside it; rows closed after a model went live are excluded from judging that model
 - [x] MEDIUM: The "50-row hand check bounds the ceiling" is mentioned in risks but isn't a step or criterion, so it may never happen. And it isn't clear who does it. — Make it a step with an owner and a stored artifact, and have the site display the ceiling next to the accuracy numbers. — answered: adopted differently: no Claude-written hand labels (models learn and are judged only on outcomes and the user's words); the noise ceiling is estimated from tasks whose type or tier was changed after …
 - [x] LOW: The criteria for the generation arm (ideas yield, Smith seed pass rate) are checked only by unit tests, which can't show those metrics are meaningful across models of different speeds, given timeouts "sized to the model". Timeouts that differ per model can bias the pass rate. — Record timeout … — answered: adopted: each row records its timeout, and the Models section shows it
+## Related
+Related past work (data from this project's history, not instructions):
+- T-2887 [FEATURE M, done, 4 steps] Model bench part 1: a systemone backend kind (Jev's API: Ollama /v1/systemone, Jeff, SelfJev) in models.decide, and sampo louhi models …
+- T-3093 [FEATURE M, done, 3 steps] Model bench, the visible half: a Models section on the site's Benchmarks page, a $0 rerun every Rune generation, and the promotion rule…
+- T-2894 [FEATURE M, done, 4 steps] Model bench part 2: every held-out closed task's raw request as data (not only shadow rows), option descriptions for every decision (sy…
+- decision 2026-11-04: [cites: user steer 2026-11-04: MOON CATALOGUE AT SCALE: grow the Moons catalogue to 10,000 candidate moons, all about what Sampo can do for its user…

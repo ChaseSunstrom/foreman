@@ -20,6 +20,8 @@ plan0_at: 2026-11-06T06:29:30Z
 plan0_scope: []
 lane_stop: refused 2026-11-06T08:51:40Z
 builder_returned: 2026-11-06T08:56:15Z
+inferred_deps: [T-3274, T-3287]
+inferred_why: T-3274: named in its request; T-3287: named in its request
 ---
 # test_exam's GateGrowth classes (LeanKindGate*, one per louhi.GATE_MUTATIONS entry,…
 ## Raw request

@@ -552,3 +552,81 @@ class PerTestJobs(unittest.TestCase):
         r, _ = nested(["test_run.WithSetUpClass"], {"test_run.WithSetUpClass": 99})
         self.assertIn("(1 jobs", r.stderr)
         self.assertIn("Ran 2 tests", r.stderr)
+
+
+class SuiteSlot(unittest.TestCase):
+    """T-3541: three full suites at once (two builders' and the ship's: 38 workers, load 30 on 16 CPUs) each took 3x as
+    long and slowed the whole machine; a full run now holds one machine-wide slot, and a second one waits for it."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d, True)
+        shutil.copy(run.__file__, self.d)  # its own copy: a full run of it discovers only the fake test below
+        self.log, self.go = os.path.join(self.d, "log"), os.path.join(self.d, "go")
+        with open(os.path.join(self.d, "test_fake.py"), "w") as f:  # holds its run until the test says go
+            f.write(f"import os, time, unittest\nclass F(unittest.TestCase):\n    def test_f(self):\n"
+                    f"        t = time.time()\n        while not os.path.exists({self.go!r}) and time.time() < t + 60:\n"
+                    f"            time.sleep(0.05)\n        open({self.log!r}, 'a').write(f'{{t}} {{time.time()}}\\n')\n")
+        self.lock = os.path.join(self.d, "cache", "sampo", "suite.lock")
+        self.env = {k: v for k, v in os.environ.items() if not k.endswith("_SLOT")}  # not nested, slot not skipped
+        self.env.update(XDG_CACHE_HOME=os.path.join(self.d, "cache"), SAMPO_SLOTS="0", FM_RUN_DEADLINE="16",
+                        FM_TEST_TIMES=os.path.join(self.d, "t.json"))
+
+    def start(self, *args, **env):
+        import subprocess
+        return subprocess.Popen([sys.executable, os.path.join(self.d, "run.py"), *args], cwd=self.d, text=True,
+                                env=dict(self.env, **env), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def held(self):
+        """The slot taken here, as a full suite started 3 minutes ago in /elsewhere would hold it."""
+        import fcntl
+        import json
+        import time
+        os.makedirs(os.path.dirname(self.lock))
+        fd = os.open(self.lock, os.O_RDWR | os.O_CREAT)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.write(fd, json.dumps({"pid": 4242, "cwd": "/elsewhere", "at": time.time() - 185}).encode())
+        open(self.go, "w").close()
+
+    def test_two_full_runs_take_turns_and_the_second_says_for_whom(self):
+        import time
+        first = self.start("--deadline", "120")
+        end = time.time() + 60
+        while time.time() < end and f'"pid": {first.pid}' not in (open(self.lock).read() if os.path.exists(self.lock) else ""):
+            time.sleep(0.05)
+        second = self.start("--deadline", "120")
+        said = ""
+        for line in second.stderr:  # its first lines, before its run can start
+            said += line
+            if "waiting for" in line:
+                break
+        open(self.go, "w").close()
+        outs = [p.communicate(timeout=120) for p in (first, second)]
+        self.assertEqual([p.returncode for p in (first, second)], [0, 0], outs)
+        self.assertIn(f"run.py: waiting for the full suite running in {os.path.realpath(self.d)} (pid {first.pid}, 0 min)",
+                      said)
+        self.assertNotIn("waiting for", outs[0][1])
+        (s1, e1), (s2, e2) = sorted(tuple(map(float, ln.split())) for ln in open(self.log))
+        self.assertLessEqual(e1, s2, "the two full runs overlapped")
+
+    def test_a_targeted_run_never_waits(self):
+        self.held()
+        r = self.start("test_fake")
+        _, err = r.communicate(timeout=120)
+        self.assertEqual(r.returncode, 0, err)
+        self.assertNotIn("waiting for", err)
+
+    def test_the_switch_skips_the_slot_and_a_wait_runs_out_beside_the_holder(self):
+        self.held()
+        r = self.start(FOREMAN_NO_SUITE_SLOT="1")
+        _, err = r.communicate(timeout=120)
+        self.assertEqual(r.returncode, 0, err)
+        self.assertNotIn("waiting for", err)
+        r = self.start()  # FM_RUN_DEADLINE 16: it waits half of it, then runs beside the holder
+        _, err = r.communicate(timeout=120)
+        self.assertEqual(r.returncode, 0, err)
+        self.assertIn("run.py: waiting for the full suite running in /elsewhere (pid 4242, 3 min)", err)
+        self.assertIn("going ahead beside it", err)

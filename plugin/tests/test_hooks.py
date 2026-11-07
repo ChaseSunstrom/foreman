@@ -104,6 +104,11 @@ class HookCase(ForemanTestCase):
     def project(self):
         return c.find_project(self.repo)
 
+    def read_a_file(self, env=None):
+        """A tool run in sess-1: work on the active task, so the drive's same push may come again (T-3539)."""
+        self.hook("PostToolUse", {"tool_name": "Read", "tool_input": {"file_path": "README.md"}, "tool_response": "",
+                                  "session_id": "sess-1"}, env=env)
+
     def task(self, title="Fix login", type_="FIX", tier="S", steps=("reproduce", "fix"), focus=True, scope=None):
         args = ["task", "new", title, "--type", type_, "--tier", tier]
         for s in scope or []:
@@ -298,6 +303,8 @@ class SessionStart(HookCase):
         self.fm("autonomy", "standard")
         self.assertIsNone(first(self.run_ss("resume")), "standard autonomy waits for the person")
         self.fm("autonomy", "full")
+        c.update_meta(self.project(), session=dict(c.read_meta(self.project())["session"], pid=1, proc=None))  # T-3331:
+        # SessionStart records its process now; sess-1 was another one (run under Claude Code, both share its pid)
         other = self.hook("SessionStart", {"source": "resume", "session_id": "sess-2"}, env={"CLAUDE_ENV_FILE": self.env_file})
         self.assertIsNone(first(other), "another session was here minutes ago: two drivers on one task")
         self.fm("drive", "off")
@@ -2862,18 +2869,105 @@ class Stop(HookCase):
         tid = self.task()
         p = self.stop("Continuing with the retry helper next.")
         self.assertEqual(self.decision(p), "block")
-        self.assertIn(f"Sampo drive: {tid}", parse(p)["reason"])
-        self.assertIn(f"Next: {tid} step 1/2", parse(p)["reason"])
+        self.assertIn(f"Sampo drive: {tid} step 1/2", parse(p)["reason"])
         self.assertNotIn("only your final message", parse(p)["reason"])  # interactive: the chat shows every message
 
+    def test_drive_feedback_is_one_short_line_naming_the_next_action(self):
+        # T-3163: the engine prints the Stop hook's reason in the terminal: one line of at most 160 characters naming
+        # the one next action (sampo next has the rest), not a paragraph of rules every push
+        self.fm("init")
+        tid = self.task(steps=("reproduce the expired-token login failure with the retry helper off and the cache "
+                               "cold, then pin it in a test", "fix"))
+        self.task("Other", focus=False)
+        for msg in ("Continuing with the retry helper next.", "Still going."):
+            self.read_a_file()  # T-3539: work on the active task between pushes, else the same push isn't repeated
+            reason = parse(self.stop(msg))["reason"]
+            self.assertNotIn("\n", reason)
+            self.assertLessEqual(len(reason), 160, reason)
+            self.assertTrue(reason.startswith(f"Sampo drive: {tid} step 1/2: reproduce"), reason)
+            self.assertNotIn("Drive ends when", reason)
+        self.fm("autonomy", "full")
+        self.read_a_file()
+        reason = parse(self.stop("Going on."))["reason"]
+        self.assertLessEqual(len(reason), 160, reason)
+        self.assertNotIn("Autonomy full:", reason, "the rules say how full autonomy works; the line names the action")
+        # the background pushes too (review: the wait push, the most common while builders run, was ~400 characters)
+        for i in range(5):
+            self.hook("SubagentStart", {"agent_id": f"a42cb51b932d111{i}a", "agent_type": "foreman:fm-builder"})
+        offer = parse(self.stop("Waiting on the builders."))["reason"]
+        self.assertIn("Start ", offer)
+        self.assertIn("sampo task block", offer)
+        self.assertIsNone(self.decision(self.stop("Waiting on the builders.")), "the same wait: said once")
+        self.age_wait(601)
+        wait = parse(self.stop("Waiting on the builders."))["reason"]
+        self.assertIn("background work runs", wait)
+        for r in (offer, wait):
+            self.assertNotIn("\n", r)
+            self.assertLessEqual(len(r), 160, r)
+
+    def age_wait(self, s):
+        gate = os.path.join(c.find_project(self.repo).dir, "gate.json")
+        with open(gate) as f:
+            g = json.load(f)
+        g["drive"]["sess-1"]["waited"]["at"] -= s
+        with open(gate, "w") as f:
+            json.dump(g, f)
+
+    def test_the_wait_push_comes_once_per_task_per_window(self):
+        # T-3163 (the coordinator, ~20 agents running): any start, finish or resume among the first five sorted ids was
+        # a "new running set", and the same wait push came on nearly every Stop
+        self.fm("init")
+        self.task()
+        agent = lambda i: {"id": f"aw{i}", "type": "agent", "status": "running", "description": "Build"}
+
+        def stop(*ids):
+            return self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on the builds.",
+                                      "session_id": "sess-1", "background_tasks": [agent(i) for i in ids]})
+        waits = lambda: sum(e["kind"] == "drive_wait" for e in self.events())
+        self.assertEqual(self.decision(stop(1)), "block")
+        self.assertIsNone(self.decision(stop(1, 2)), "another running set on the same task: not again")
+        self.assertEqual(waits(), 1)
+        self.age_wait(601)
+        self.assertEqual(self.decision(stop(2)), "block", "past WAIT_REPUSH_S: said again")
+        self.assertEqual(waits(), 2)
+        self.task("Next current task")
+        self.assertEqual(self.decision(stop(2)), "block", "a new active task: said at once")
+        self.assertEqual(waits(), 3)
+
+    def test_a_busy_project_lock_never_repeats_a_said_once_push(self):
+        # T-3163 (the coordinator): while a sampo task finish held the project lock, Stop couldn't save the drive's
+        # record, so every Stop looked like the first and the same wait push came back to back
+        self.fm("init")
+        self.task()
+        agent = {"id": "aw1", "type": "agent", "status": "running", "description": "Build"}
+
+        def stop():
+            return self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on the build.",
+                                      "session_id": "sess-1", "background_tasks": [agent]}, timeout=20)
+        with c.lock(self.project().dir, timeout=5):  # another writer holds the project lock the whole time
+            outs = [stop(), stop()]
+        self.assertEqual([self.decision(o) for o in outs], [None, None], "its record can't be saved: not pushed")
+        self.assertIn("waits for background work (aw1)", outs[1].stdout, "the wait still said on screen")
+        self.assertEqual(sum(e["kind"] == "drive_wait" for e in self.events()), 0)
+        self.assertEqual(self.decision(stop()), "block", "the lock free again: said, once")
+        self.assertIsNone(self.decision(stop()))
+
+    def test_drive_does_not_block_without_a_next_action(self):
+        self.fm("init")
+        self.assertIsNone(self.decision(self.stop("Nothing to do.")))
+        tid = self.task(steps=("reproduce",))
+        self.fm("task", "block", tid, "needs a device")
+        self.assertIsNone(self.decision(self.stop("Blocked on the device.")))
+
     def test_drive_names_the_skill_that_fits_once(self):
-        # T-1697: the drive's Next line carries the stage's skill the first time this session, not on every push
+        # T-1697: the drive's line carries the stage's skill the first time this session, not on every push
         self.fm("init")
         self.task()
         first = parse(self.stop("Continuing with the retry helper next."))["reason"]
-        self.assertIn("(load: Skill foreman:debug-test;", first)
+        self.assertIn("(load: Skill foreman:debug-test", first)
+        self.assertLessEqual(len(first), 160, first)
         again = parse(self.stop("Continuing with the retry helper next."))["reason"]
-        self.assertIn("Next: ", again)
+        self.assertIn("Sampo drive: ", again)
         self.assertNotIn("foreman:debug-test", again)
 
     def test_drive_does_not_push_an_unapproved_m_task_while_plans_keep_missing(self):
@@ -3144,7 +3238,7 @@ class Stop(HookCase):
                                             "session_id": "sess-1", "background_tasks": list(jobs)}))
         r = stop(ci)
         self.assertEqual(r.get("decision"), "block", "no active task: the jobs don't hold the next one back")
-        self.assertIn(f"sampo focus {queued}", r["reason"])
+        self.assertIn(f"sampo lane brief {queued}", r["reason"], "T-3539: as a builder lane, never a focus here")
         self.fm("focus", queued)
         r = stop(ci)
         self.assertIn("nothing else is queued", r["reason"])  # full autonomy: find the next work, don't wait
@@ -3160,7 +3254,7 @@ class Stop(HookCase):
             json.dump(g, f)
         r = stop(ci)
         self.assertEqual(r.get("decision"), "block")
-        self.assertIn(f"{queued} FIX step 1/2", r["reason"])
+        self.assertIn(f"{queued} step 1/2", r["reason"])
         # T-0575: a subagent (a builder can take 30 min) is work that ends, never a service: it keeps holding the drive
         agent = {"id": "a1b2", "type": "agent", "status": "running", "description": "Build T-0001"}
         stop(ci, agent)
@@ -3349,18 +3443,19 @@ class Stop(HookCase):
                                                  "</task-notification>", "session_id": "sess-1"})
         self.assertEqual(hooks._running("sess-1"), [], "its notice ends it")
 
-    def test_no_active_task_a_background_job_names_the_next_task_once_per_running_set(self):
-        # T-2790: five 'fm focus T-…' blocks in a row raced a queued close run's own fm focus calls
+    def test_no_active_task_a_background_job_names_the_next_task_once(self):
+        # T-2790: five 'fm focus T-…' blocks in a row raced a queued close run's own fm focus calls; T-3539: and with
+        # shells coming and going each set was new: 361 pushes in one session. Only a builder lane is offered, once.
         self.fm("init")
         nxt = self.task("Next one", focus=False)
         self.bg("bq9")
         first = parse(self.stop("Merged the lane."))
         self.assertEqual(first.get("decision"), "block")
-        self.assertIn(nxt, first["reason"])
+        self.assertIn(f"sampo lane brief {nxt}", first["reason"])
         for _ in range(3):
             self.assertIsNone(self.decision(self.stop("Waiting on the close run.")), "same running set: said once")
-        self.bg("bq10")  # a new running set is said again
-        self.assertEqual(self.decision(self.stop("Another job.")), "block")
+        self.bg("bq10")
+        self.assertIsNone(self.decision(self.stop("Another job.")), "a new running set: still nothing to push")
 
     def test_a_stopped_background_task_frees_drive(self):
         self.fm("init")
@@ -3563,8 +3658,9 @@ class Stop(HookCase):
         t2 = self.task("Other", focus=False)
         p = self.stop("Waiting on core for T-0001.")
         self.assertEqual(self.decision(p), "block")
-        self.assertIn(t2, parse(p)["reason"])
+        self.assertIn(f"sampo focus {t2}", parse(p)["reason"])  # T-3163: t2's own next action, not t1's
         self.assertIn(f"waiting on the user: {t1}", parse(p)["reason"])
+        self.assertLessEqual(len(parse(p)["reason"]), 160)
 
     def test_standard_autonomy_yields_while_an_approval_is_pending(self):
         self.fm("init")
@@ -3623,8 +3719,10 @@ class Reload(HookCase):
         cfg = os.path.join(self.tmp, "cc")
         env = {"CLAUDE_CONFIG_DIR": cfg}
         folder = os.path.join(cfg, "dev-mods", "sess-1", "ui")
-        stop = lambda: parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Next.",
-                                               "session_id": "sess-1"}, env=env)) or {}
+        def stop():
+            self.read_a_file(env)  # each turn works the task (T-3539: else the same push is said once)
+            return parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Next.",
+                                            "session_id": "sess-1"}, env=env)) or {}
         view = lambda: json.loads(self.fm("ui", "--json").stdout).get("resume_after_reload")
 
         def touch(rel, age):

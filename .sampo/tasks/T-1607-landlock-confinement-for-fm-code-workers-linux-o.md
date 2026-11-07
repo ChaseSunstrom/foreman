@@ -37,7 +37,7 @@ Options: bwrap around each worker (an extra dependency, and Claude Code's own sa
 <!-- auto -->
 - 2026-10-22T22:41:34Z steps 4/4 done
 - git: foreman/build; 6 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcode.py, plugin/lib/fmdoctor.py, plugin/tests/test_guard_hardening.py, plugin/lib/fmlandlock.py
-- touched since last checkpoint: plugin/lib/fmdoctor.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/skills_slate.sh, plugin/lib/fmlandlock.py, plugin/tests/test_guard_hardening.py, plugin/lib/fmcode.py
+- touched since last checkpoint: plugin/lib/fmdoctor.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/skills_slate.sh, plugin/lib/fmlandlock.py, plugin/tests/test_guard_hardening.py, plugin/lib/fmcode.py
 ## Docs impact
 MASTER.md
 ## Verification evidence

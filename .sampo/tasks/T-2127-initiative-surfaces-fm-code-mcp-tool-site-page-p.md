@@ -35,7 +35,7 @@ Options: (a) MCP tool wrapping fm find --rank with a path confined by _inside an
 <!-- auto -->
 - 2026-10-30T10:19:58Z step 1/2: MCP + fm code + pane
 - git: foreman/build; 8 uncommitted: CHANGELOG.md, MASTER.md, README.md, plugin/lib/fmmcp.py, plugin/lib/fmwatch.py, plugin/tests/test_mcp.py, plugin/tests/test_ui_signals.py, site/pages.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2127-tests2.edit, plugin/tests/test_ui_signals.py, plugin/lib/fmmcp.py, CHANGELOG.md, MASTER.md, README.md, plugin/lib/fmwatch.py, site/pages.py
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2127-tests2.edit, plugin/tests/test_ui_signals.py, plugin/lib/fmmcp.py, CHANGELOG.md, MASTER.md, README.md, plugin/lib/fmwatch.py, site/pages.py
 - failures met: assertionerror: items in the second set but not the first:
 ## Docs impact
 MASTER.md, README.md, CHANGELOG.md, site/pages.py

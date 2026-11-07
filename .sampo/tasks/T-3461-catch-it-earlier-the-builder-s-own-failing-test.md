@@ -9,6 +9,7 @@ depends_on: []
 source: followup
 created: 2026-11-06T16:17:14Z
 updated: 2026-11-06T16:17:14Z
+group: builder regression tests before lane review
 ---
 # Catch it earlier: the builder's own failing test before the fix, then the lane review;…
 ## Raw request

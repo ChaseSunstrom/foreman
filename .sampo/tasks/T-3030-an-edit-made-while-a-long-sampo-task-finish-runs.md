@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/hooks.py, plugin/lib/sampo/cli.py, plugin/lib/sampo/cor
 depends_on: []
 source: discovered
 created: 2026-11-04T22:15:19Z
-updated: 2026-11-06T14:25:21Z
+updated: 2026-11-06T16:29:48Z
 base: c53e668e206bbfea1192eb1c5f82f104836d8594
 base_tree: 6e5108b3f12c924080fafa7ad405dfb971e364ed
 predict_minutes: 2
@@ -18,6 +18,7 @@ plan0_scope: [plugin/lib/sampo/hooks.py, plugin/lib/sampo/cli.py, plugin/lib/sam
 builder_returned: 2026-11-06T13:21:14Z
 lane_stop: merged 2026-11-06T14:21:11Z
 verified: strong
+lane_verified: 928dd7fa2695366c4d4a8f0a0ee5bd8aacb63b5d
 ---
 # An edit made while sampo task finish runs is warned and never attributed to the task being closed
 ## Raw request
@@ -68,6 +69,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T14:21:14Z scope: widened at merge to the reviewed lane's own diff (928dd7fa2), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T14:25:17Z done
 - 2026-11-06T14:25:21Z committed 10e7eac9a (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains 928dd7fa2
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

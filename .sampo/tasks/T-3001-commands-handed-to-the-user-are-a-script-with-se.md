@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py, CHANGELOG.md, .fm
 depends_on: []
 source: discovered
 created: 2026-11-04T18:52:01Z
-updated: 2026-11-06T13:15:18Z
+updated: 2026-11-06T16:29:48Z
 base: 4a071f512dd1846d1eef4d166677386001c96bfd
 base_tree: 60cc54bf87559a732fc623eea93ed0ed81b84ed2
 predict_minutes: 2
@@ -18,6 +18,7 @@ plan0_scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py, CHANGELOG.m
 builder_returned: 2026-11-06T11:37:59Z
 lane_stop: merged 2026-11-06T13:05:40Z
 verified: strong
+lane_verified: e8524dd52903e0b49f1792dbcc7a472d28e080c4
 ---
 # A reply that hands the user a shell block with an irreversible step is held once unless it is a set -euo pipefail script with a check before that step
 ## Raw request
@@ -70,6 +71,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T13:05:47Z scope: widened at merge to the reviewed lane's own diff (e8524dd52), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T13:15:14Z done
 - 2026-11-06T13:15:18Z committed da5255104 (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains e8524dd52
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

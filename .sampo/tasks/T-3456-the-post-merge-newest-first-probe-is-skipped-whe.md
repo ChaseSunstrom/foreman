@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/lanes.py, plugin/tests/test_lanes.py, CHANGELOG.md, .fm
 depends_on: []
 source: user
 created: 2026-11-06T16:09:17Z
-updated: 2026-11-06T16:23:30Z
+updated: 2026-11-06T16:29:49Z
 base: 9ffb73b1a984e5f89c47e12877653a346cf94ea9
 base_tree: 524d68e9000f6be618cbb64b328d8e0f01c8ab6a
 lane_stop: merged 2026-11-06T16:21:16Z
@@ -17,6 +17,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T16:21:19Z
 plan0_scope: [plugin/lib/sampo/lanes.py, plugin/tests/test_lanes.py, CHANGELOG.md]
 verified: strong
+lane_verified: 7e6233bfedc57ef786badb1f4e73a31465ad43eb
 ---
 # The post-merge newest-first probe is skipped whenever any pending merge carries after_reverts, so after one revert every later record runs oldest first on old trees (20 pending, the slot-pool false reds return)
 ## Raw request
@@ -58,6 +59,7 @@ the lane diff carries its own doc edits (merged as reviewed); a CHANGELOG line i
 - 2026-11-06T16:21:22Z scope: widened at merge to the reviewed lane's own diff (7e6233bfe), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T16:23:27Z done
 - 2026-11-06T16:23:30Z committed e325b09c2 (1 file)
+- 2026-11-06T16:29:49Z verified: the full suite is green on 1078ed22d, which contains 7e6233bfe
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

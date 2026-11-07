@@ -35,7 +35,7 @@ Options: (a) in reconcile_rewind return None before worktree_tree when no step h
 <!-- auto -->
 - 2026-10-29T18:52:22Z step 1/2: Red tests: no worktree_tree call without a passing proof; briefs passed in are used, no active_brief_fast
 - git: foreman/build; 3 uncommitted: plugin/lib/fmcore.py, plugin/lib/fmhooks.py, plugin/tests/test_rewind.py
-- touched since last checkpoint: plugin/tests/test_rewind.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit29.json, plugin/lib/fmcore.py, plugin/lib/fmhooks.py
+- touched since last checkpoint: plugin/tests/test_rewind.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit29.json, plugin/lib/fmcore.py, plugin/lib/fmhooks.py
 ## Docs impact
 CHANGELOG line
 ## Verification evidence

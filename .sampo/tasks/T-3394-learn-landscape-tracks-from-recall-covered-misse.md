@@ -9,6 +9,9 @@ depends_on: []
 source: discovered
 created: 2026-11-06T07:00:59Z
 updated: 2026-11-06T07:00:59Z
+inferred_deps: [T-3339]
+inferred_why: T-3339: named in its request
+group: landscape scan and model tracking
 ---
 # Learn landscape tracks from recall.covered misses: use meta landscape_yield (items kept…
 ## Raw request

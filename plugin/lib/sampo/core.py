@@ -1320,7 +1320,9 @@ def redact(text):
     return text
 
 
-_HOMES = lazy(r"(?<![\w.~-])/(?:home|Users)/[\w-]+(?:\.[\w-]+)*(?![\w-]|\.\w)")
+_AT = r"(?:(?<![\w.~-])|(?<=\$)(\w+))"  # T-3547: right after a $VAR too, never inside a path (/mnt/home/x, lib/home/x)
+_HOMES = lazy(_AT + r"/(?:home|Users)/[\w-]+(?:\.[\w-]+)*(?![\w-]|\.\w)")
+_CLAUDE_HOMES = lazy(r"(?<![\w-])-(home|Users)-\w+")  # T-3547: Claude's project folder form, -home-bob-projects-x
 _IPV4 = lazy(r"(?<![\w.])(?:[\w.+-]+@)?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w]|\.\d)")
 
 
@@ -1332,14 +1334,66 @@ def _private_host(m):
 
 def redact_local(text):
     """T-3508: text bound for a public copy (the .sampo mirror) without this machine's layout: the home folder and any
-    /home/<name> (or /Users/<name>) read as ~; a user@ip or bare ip in 10/8, 172.16/12, 192.168/16 or CGNAT 100.64/10
-    reads as <host>."""
+    /home/<name> (or /Users/<name>) read as ~, and Claude's -home-<name>- project folders as -home-~-; a user@ip or bare
+    ip in 10/8, 172.16/12, 192.168/16 or CGNAT 100.64/10 reads as <host>."""
     if not isinstance(text, str):
         return text
     home = os.path.expanduser("~").rstrip("/")
     if home:
-        text = re.sub(r"(?<![\w.~-])" + re.escape(home) + r"(?![\w-]|\.\w)", "~", text)
-    return _IPV4.sub(_private_host, _HOMES.sub("~", text))
+        text = re.sub(_AT + re.escape(home) + r"(?![\w-]|\.\w)", r"\1~", text)
+    text = _IPV4.sub(_private_host, _CLAUDE_HOMES.sub(r"-\1-~", _HOMES.sub(r"\1~", text)))
+    for rx, repl in _private_res(tuple(private_terms())):  # T-3529: and the user's own private terms
+        text = rx.sub(repl, text)
+    return text
+
+
+PRIVATE_TERMS = "private-terms.json"  # T-3529: in the state folder (git-ignored), never in a repo
+_PRIVATE_RES = {}
+
+
+def private_terms(state=None):
+    """T-3529: the user's private terms, lowercased: host globs (*.home.example.test covers it and every host under
+    it) and plain words, kept by sampo private add|rm|list in the state folder only."""
+    try:
+        with open(os.path.join(state or state_dir(), PRIVATE_TERMS), encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return sorted({t.strip().lower() for t in data if private_ok(t)}) if isinstance(data, list) else []
+
+
+def private_ok(term):
+    """A term that can't match everything: 3+ characters besides * and dots, no spaces or control characters."""
+    return isinstance(term, str) and len(term.strip().replace("*", "").strip(".")) >= 3 \
+        and not any(ch.isspace() or ord(ch) < 32 for ch in term.strip())
+
+
+def private_digest(terms):
+    """A short sha256 of the terms, for logs and the mirror's stamp: never the terms themselves."""
+    return hashlib.sha256("\n".join(sorted(t.lower() for t in terms)).encode()).hexdigest()[:8]
+
+
+def _private_res(terms):
+    """(regex, replacement) pairs for the terms: a host glob's matches (a user@ before one too) read <host>, a word
+    (whole, any case) <private>."""
+    if terms not in _PRIVATE_RES:
+        hosts = [(r"(?:[\w-]+\.)*" if t.startswith("*.") else "")
+                 + r"[\w-]*".join(re.escape(x) for x in t.removeprefix("*.").split("*")) for t in terms if "*" in t]
+        words = sorted((re.escape(t) for t in terms if "*" not in t), key=len, reverse=True)
+        res = []
+        if hosts:
+            res.append((re.compile(r"(?i)(?<![\w.-])(?:[\w.+-]+@)?(?:" + "|".join(hosts) + r")(?![\w-]|\.[\w-])"),
+                        "<host>"))
+        if words:
+            res.append((re.compile(r"(?i)(?<!\w)(?:" + "|".join(words) + r")(?!\w)"), "<private>"))
+        _PRIVATE_RES[terms] = res
+    return _PRIVATE_RES[terms]
+
+
+def has_private(text, terms=None):
+    """Whether text holds one of the terms (default: the user's own)."""
+    terms = private_terms() if terms is None else terms
+    return isinstance(text, str) and any(rx.search(text) for rx, _ in _private_res(tuple(t.lower() for t in terms)))
 
 
 def redact_obj(obj):
@@ -2504,14 +2558,55 @@ def save_brief(p, b, touch=True):
     return b.path
 
 
-def next_id(p):
-    """Allocate the next T-id. Caller must hold the project lock."""
+def _reserve(p, meta, floor, net):
+    """T-3329: a new block's start from the claims ref, or None (hook path, offline, or a failure under 60 s ago)."""
+    if not net or time.time() - float(meta.get("id_fail") or 0) < 60:
+        return None
+    from sampo import claims
+    start = claims.Claims(p.root).reserve_ids(floor=floor)  # bounded by its own 5 s deadline
+    if start is None:
+        meta["id_fail"] = time.time()
+    return start
+
+
+def _block_id(p, meta, n, net):
+    """T-3329: the id for n (the lowest this clone may use) from meta["id_block"] = [next, end). A spent block is
+    replaced by the prefetched meta["id_ahead"], else reserved (net only). With no block left: PolicyError, since an
+    id outside a block may collide with another machine's. With 8 or fewer left the next block is prefetched.
+    Blocks need FOREMAN_CLAIMS_REMOTE (next_id only calls this then)."""
+    blk = meta.get("id_block") or [0, 0]
+    n = max(n, blk[0])
+    if n >= blk[1]:
+        ahead = meta.pop("id_ahead", None) or [0, 0]
+        if ahead[1] > max(n, ahead[0]):
+            n, blk = max(n, ahead[0]), ahead
+        else:
+            start = _reserve(p, meta, n, net)
+            if start is None:
+                write_meta(p, meta)  # keeps the failure stamp, so the next try waits
+                raise PolicyError("the id block is used up and the claims remote can't give a new one"
+                                  + ("" if net else " (this path never reaches the network)")
+                                  + ": reconnect to the remote (FOREMAN_CLAIMS_REMOTE), or run `sampo sync`, then retry")
+            n, blk = start, [start, start + 32]
+    meta["id_block"] = [n + 1, blk[1]]
+    if net and blk[1] - n - 1 <= 8 and not meta.get("id_ahead"):
+        s = _reserve(p, meta, blk[1], net)
+        if s is not None:
+            meta["id_ahead"] = [s, s + 32]
+    return n
+
+
+def next_id(p, net=True):
+    """Allocate the next T-id. Caller must hold the project lock. net=False (the hook paths) never reaches the
+    network: with FOREMAN_CLAIMS_REMOTE set and no id left in the block it raises PolicyError."""
     meta = read_meta(p)
     highest = max([id_num(_BRIEF_FILE.match(os.path.basename(x)).group(1)) for x in brief_paths(p, True)] or [0])
     if meta.get("sync"):  # ids another clone already used (fm sync's mirror)
         from sampo import sync
         highest = max([highest] + [id_num(i) for i in sync.mirrored_ids(p)])
     n = max(int(meta.get("next_id", 1)), highest + 1)
+    if os.environ.get("FOREMAN_CLAIMS_REMOTE"):  # T-3329: blocks of 32 from the claims ref, so machines never collide
+        n = _block_id(p, meta, n, net)
     meta["next_id"] = n + 1
     write_meta(p, meta)
     return f"T-{n:04d}"
@@ -4853,8 +4948,6 @@ def regen_views(p, briefs=None, mirror=True):
     """STATE/INBOX and the status files; with mirror (and fm sync on), the repo's .sampo/ mirror too. T-0673 review:
     a capture into another project (fm projects --sweep) passes mirror=False, so nothing lands in that repo's tree."""
     p = main_view(p)
-    sd = state_dict(p, briefs)
-    ts = now()
 
     def put(name, text):  # T-1879: unchanged but for line 2's "_Generated <ts>" is unchanged: no rewrite, no fsync
         path = os.path.join(p.dir, name)
@@ -4867,19 +4960,32 @@ def regen_views(p, briefs=None, mirror=True):
         if old != new and not (old and len(old) == len(new) > 1 and old[0] == new[0] and old[2:] == new[2:]
                                and old[1].startswith("_Generated ")):
             write_atomic(path, text)
-    put("STATE.md", render_state(sd, ts))
-    put("INBOX.md", render_inbox(sd, ts))
-    put("state.line", state_line(sd) + "\n")
-    put("badge.txt", badge_text(sd) + "\n")
-    put("progress.line", progress_line(sd) + "\n")
-    put("status.json", json.dumps(status_dict(sd)) + "\n")
-    if mirror and read_meta(p).get("sync"):  # fm sync: keep the repo's mirror current with every change
+    try:  # T-3556: views have their own lock, so callers may regenerate after the project lock; reading the state
+        with lock(os.path.join(p.dir, "views"), timeout=30):  # under it means the last regen to write saw every save
+            sd, ts = state_dict(p, briefs), now()
+            put("STATE.md", render_state(sd, ts))
+            put("INBOX.md", render_inbox(sd, ts))
+            put("state.line", state_line(sd) + "\n")
+            put("badge.txt", badge_text(sd) + "\n")
+            put("progress.line", progress_line(sd) + "\n")
+            put("status.json", json.dumps(status_dict(sd)) + "\n")
+    except LockTimeout:  # a regen wedged for 30 s: the next one writes them; the command's own change is saved
+        sd = state_dict(p, briefs)
+    if mirror:
+        export_mirror(p)
+    return sd
+
+
+def export_mirror(p):
+    """fm sync on: bring the repo's mirror up to date with every change. Callers hold the project lock: fm sync off's
+    removal relies on it to keep an export from writing the folder back (T-3556)."""
+    p = main_view(p)
+    if read_meta(p).get("sync"):
         from sampo import sync
         try:
             sync.export(p)
         except (OSError, ValueError):
             pass  # a read-only checkout or a bad brief costs the mirror update, never the fm command
-    return sd
 
 
 def status_dict(sd):

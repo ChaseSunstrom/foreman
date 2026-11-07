@@ -8,11 +8,12 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-06T15:19:16Z
-updated: 2026-11-06T16:17:10Z
+updated: 2026-11-06T16:29:49Z
 base: d44abf1bf2aaa1a637c2f827e12987784415fea1
 base_tree: 42342a629535547394bf0c00def6a6252f84c5f7
 lane_stop: merged 2026-11-06T15:57:53Z
 verified: strong
+lane_verified: 255a4a32c208803c591cb131c124cdfb36cc99f8
 ---
 # The post-merge suite reverts a merge whose red classes are red at its parent too…
 ## Raw request
@@ -53,6 +54,7 @@ the lane diff carries its own doc edits (merged as reviewed); a CHANGELOG line i
 - 2026-11-06T15:57:54Z set scope=['CHANGELOG.md', '.fm-scratch/**', '.sampo/archive', '.sampo/decisions.md', '.sampo/fixes.md', '.sampo/README.md', '.sampo/research', '.sampo/tasks', 'plugin/lib/sampo/lanes.py', 'plugin/tests/test_lanes.py']
 - 2026-11-06T15:57:54Z scope: widened at merge to the reviewed lane's own diff (255a4a32c), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T16:17:10Z done
+- 2026-11-06T16:29:49Z verified: the full suite is green on 1078ed22d, which contains 255a4a32c
 ## Follow-ups captured
 ## Why not caught
 the builder's own failing test before the fix, then the lane review; no earlier gate covered this path (see the brief's Regression test)

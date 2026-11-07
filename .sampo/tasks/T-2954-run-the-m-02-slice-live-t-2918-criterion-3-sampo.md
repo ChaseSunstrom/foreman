@@ -9,7 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-04T10:28:00Z
 updated: 2026-11-05T01:20:00Z
-group: live runs when endpoint frees
 ---
 # Run the M-02 slice live (T-2918 criterion 3): sampo moons regen --slice over every leaf…
 ## Raw request

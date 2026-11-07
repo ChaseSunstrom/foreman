@@ -8,7 +8,7 @@ scope: [plugin/lib/sampo/cli.py, plugin/lib/sampo/core.py, plugin/tests/test_lan
 depends_on: []
 source: discovered
 created: 2026-11-06T15:46:25Z
-updated: 2026-11-06T16:16:09Z
+updated: 2026-11-06T16:29:49Z
 base: 9b5639c438e9f1956fa429aabfa14132c50b6872
 base_tree: c1f085b17ffcb928ac07079a5783172ca23c7912
 lane_stop: merged 2026-11-06T16:08:02Z
@@ -17,6 +17,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T16:08:05Z
 plan0_scope: [plugin/lib/sampo/cli.py, plugin/lib/sampo/core.py, plugin/tests/test_lanes.py, CHANGELOG.md]
 verified: strong
+lane_verified: 1f53628d3c723ce4498c9cb502f9bc3f0f37e5d4
 ---
 # A doc named in passing in a task's Docs impact is claimed as the task's own once the…
 ## Raw request
@@ -62,6 +63,7 @@ the lane diff carries its own doc edits (merged as reviewed); a CHANGELOG line i
 - 2026-11-06T16:08:07Z scope: widened at merge to the reviewed lane's own diff (1f53628d3), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T16:16:04Z done
 - 2026-11-06T16:16:09Z committed 9ffb73b1a (1 file)
+- 2026-11-06T16:29:49Z verified: the full suite is green on 1078ed22d, which contains 1f53628d3
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

@@ -40,7 +40,7 @@ Options: (a) a vision model reads marks: rejected, optional only and costly; (b)
 <!-- auto -->
 - 2026-10-28T20:17:16Z step 1/3: tests first (red)
 - git: foreman/build; 6 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmcritique.py, plugin/skills/ui-design/SKILL.md, plugin/tests/test_critique.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1644-lib.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1644-edit.txt, plugin/lib/fmcli.py, plugin/lib/fmcritique.py, plugin/tests/test_critique.py, CHANGELOG.md, MASTER.md, plugin/skills/ui-design/SKILL.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1644-lib.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t1644-edit.txt, plugin/lib/fmcli.py, plugin/lib/fmcritique.py, plugin/tests/test_critique.py, CHANGELOG.md, MASTER.md, plugin/skills/ui-design/SKILL.md
 ## Docs impact
 ui-design skill, MASTER fmcritique bullet, CHANGELOG
 ## Verification evidence

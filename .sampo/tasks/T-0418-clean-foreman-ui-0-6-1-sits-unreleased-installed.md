@@ -2,13 +2,13 @@
 id: T-0418
 type: CLEAN
 tier: S
-status: blocked
+status: dropped
 priority: normal
 scope: []
 depends_on: []
 source: self
 created: 2026-10-09T13:33:05Z
-updated: 2026-10-10T00:27:29Z
+updated: 2026-11-06T19:13:41Z
 base: 4a9bf49a329a62d797e24dacdb67306687aa8570
 base_tree: 94176e91d646b648c8b4d40c838a1ca1135013ed
 paused_tree: 94176e91d646b648c8b4d40c838a1ca1135013ed
@@ -38,6 +38,7 @@ paused_tree: 94176e91d646b648c8b4d40c838a1ca1135013ed
 - 2026-10-09T22:56:56Z user approved plugin in Claude Code's permission prompt
 - 2026-10-09T22:57:09Z plugin grant used for: claude plugin install changes Claude Code's plugins, MCP servers or config [plugin foreman-ui@foreman]
 - 2026-10-10T00:27:29Z blocked: the user declined the grant for claude plugin update foreman-ui@foreman (2026-10-09); the 0.6.1 code already loads in place from the repo, only the recorded version is 0.6.0 — waits for the user's go-ahead
+- 2026-11-06T19:13:41Z dropped: superseded: mods/foreman-ui is past 0.6.1 (see its plugin.json) and the code loads in place from the repo; nothing left to update
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

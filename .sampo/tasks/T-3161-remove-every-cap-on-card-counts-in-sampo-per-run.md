@@ -10,7 +10,6 @@ source: steer
 created: 2026-11-05T06:12:49Z
 updated: 2026-11-05T06:12:49Z
 steer_method_rate: 0.218
-group: card library at scale
 ---
 # Remove every cap on card counts in Sampo (per-run, per-deck, per-store, per-generation,…
 ## Raw request

@@ -9,7 +9,6 @@ depends_on: []
 source: followup
 created: 2026-11-04T11:48:44Z
 updated: 2026-11-04T11:48:44Z
-group: affected-test set gaps
 ---
 # Catch it earlier: test_ship moved main only in files the branch never touched (T-2212);…
 ## Raw request

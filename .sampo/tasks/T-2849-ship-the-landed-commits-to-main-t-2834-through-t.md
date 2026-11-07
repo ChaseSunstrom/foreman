@@ -35,7 +35,7 @@ verified: strong
 <!-- auto -->
 - 2026-11-03T22:41:59Z step 1/1: full gates, then fm ship under a publish grant
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/12-forge-illustrated/_review/r3/extra_r3.py, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/picker/watch.sh
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/12-forge-illustrated/_review/r3/extra_r3.py, /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/picker/watch.sh
 ## Docs impact
 ## Verification evidence
 - (ac 1) `fm ship --check` → exit 0 · nothing to ship: origin main already has HEAD's changes after the last shipped commit 363b6c3f [ran] [tree 8136bffa2548] [world 2f1906870a] (2026-11-03T22:47:48Z)

@@ -9,9 +9,6 @@ depends_on: []
 source: followup
 created: 2026-11-05T14:58:21Z
 updated: 2026-11-05T14:58:21Z
-inferred_deps: [T-3050]
-inferred_why: T-3050: fresh tower seeds build on Kalevala
-group: Kalevala towers and orchestration
 ---
 # Kalevala writes a fresh tower's gen-1 seed itself (from its aspect and the root's gen-0)…
 ## Raw request

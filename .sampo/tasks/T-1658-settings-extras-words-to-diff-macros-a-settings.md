@@ -44,7 +44,7 @@ options: a new fmsettingsx module; each idea as an fm settings action in fmsetti
 <!-- auto -->
 - 2026-10-28T21:31:13Z step 5/5: docs, gates, review
 - git: foreman/build; 6 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmideas.py, plugin/lib/fmsettings.py, plugin/tests/test_settings_extras.py
-- touched since last checkpoint: plugin/lib/fmideas.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/test_settings_room.py
+- touched since last checkpoint: plugin/lib/fmideas.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/test_settings_room.py
 - failures met: assertionerror: 'timed out' not found in "the ideas child didn't answer in 0 s (is `claud…; typeerror: startswith first arg must be bytes or a tuple of bytes, not str
 ## Docs impact
 MASTER.md, CHANGELOG.md

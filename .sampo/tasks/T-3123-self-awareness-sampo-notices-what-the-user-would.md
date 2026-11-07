@@ -9,7 +9,6 @@ depends_on: []
 source: user
 created: 2026-11-05T03:15:19Z
 updated: 2026-11-05T03:20:51Z
-group: self-awareness and miss ledger
 ---
 # Self-awareness: Sampo notices what the user would otherwise point out: a miss ledger from the user's pointing-out messages, turn-end self-checks per miss class, and a next-ask review at each task boundary
 ## Raw request

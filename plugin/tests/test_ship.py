@@ -231,8 +231,43 @@ class Ship(ForemanTestCase):
 
     def test_a_tower_move_in_a_file_tests_read_runs_the_suite(self):
         self._gated_with_a_tower_move("site/genesis/stats.json")  # not CI-skipped: test_docs reads the stats
-        r = self.ship("--test", self.FAILS)
+        r = self.ship("--test", self.FAILS)  # T-3533: no affected command here, so its tests can't be picked
         self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("reusing the gates' pass", r.stdout)
+
+    def _gated_with_a_linked_test(self, rel, template):
+        """T-3533: a test linked (map-links) to the tower's stats, an affected runner that logs what it ran."""
+        with open(os.path.join(self.repo, "test_stats.py"), "w") as f:
+            f.write("# map-links: site/genesis/stats.json\n")
+        sh(self.repo, "add", "test_stats.py")
+        sh(self.repo, "commit", "-qm", "add test_stats")
+        self.ran = os.path.join(self.tmp, "affected-ran")
+        self.fm("check", "affected", f"echo {{tests}} >> {self.ran}; {template}")
+        self._gated_with_a_tower_move(rel)
+        return self.ship("--test", self.FAILS)  # the suite would fail: only a reuse ships
+
+    def test_a_stats_only_difference_runs_its_affected_tests_not_the_suite(self):
+        # T-3533: the tower's daily stats.json (which tests read) made every ship rerun the whole suite (17-25 min)
+        r = self._gated_with_a_linked_test("site/genesis/stats.json", "true")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("reusing the gates' pass", r.stdout)
+        self.assertIn("site/genesis/stats.json", r.stdout)
+        self.assertIn("test_stats.py", r.stdout)
+        with open(self.ran) as f:
+            self.assertEqual(f.read().split(), ["test_stats.py"], "the stats' tests ran once, not the range's")
+        self.assertEqual(self.main_log()[:4], ["add test_stats", "add b", "add a", "tower update"])
+
+    def test_a_red_affected_run_on_a_stats_difference_stops_the_ship(self):  # T-3533
+        r = self._gated_with_a_linked_test("site/genesis/stats.json", "echo 'FAIL: test_x (test_stats.Cls.test_x)'; exit 1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("affected tests failed", r.stdout + r.stderr)
+        self.assertNotIn("reusing the gates' pass", r.stdout)
+        self.assertNotIn("add a", self.main_log())
+        self.assertTrue(self.granted())
+
+    def test_a_code_difference_still_runs_the_suite(self):  # T-3533
+        r = self._gated_with_a_linked_test("plugin/lib/sampo/stats.py", "true")
+        self.assertNotEqual(r.returncode, 0, "a plugin .py moved: the suite runs and fails")
         self.assertNotIn("reusing the gates' pass", r.stdout)
 
     def test_a_ship_test_other_than_the_gates_still_runs(self):
@@ -298,6 +333,92 @@ class Ship(ForemanTestCase):
         self.assertNotIn("add a", self.main_log())
         self.assertTrue(self.granted())
         self.assertEqual(sh(self.repo, "worktree", "list").count("\n"), 1)
+
+    def test_a_private_term_or_a_secret_value_in_the_shipped_commits_or_tree_refuses_naming_where(self):  # T-3529
+        self.grant()
+        self.fm("private", "add", "*.home.example-private.test")
+        with open(os.path.join(self.repo, "c.txt"), "w") as f:
+            f.write("url = http://llm.home.example-private.test/v1\n")
+        sh(self.repo, "add", "c.txt")
+        sh(self.repo, "commit", "-qm", "add c")
+        leak = sh(self.repo, "rev-parse", "HEAD").strip()
+        ran = os.path.join(self.tmp, "ran")
+        r = self.ship("--test", f"touch {ran}")
+        out = r.stdout + r.stderr
+        self.assertNotEqual(r.returncode, 0, out)
+        self.assertIn("c.txt", out)
+        self.assertIn(leak[:8], out, "the commit that added it")
+        self.assertIn("private term", out)
+        self.assertNotIn("example-private", out, "the term itself is never printed")
+        self.assertIn("ship again", out, "how to fix")
+        self.assertFalse(os.path.exists(ran), "refused before the tests run")
+        self.assertNotIn("add a", self.main_log())
+        self.assertTrue(self.granted())
+        with open(os.path.join(self.repo, "c.txt"), "w") as f:
+            f.write("url = http://<host>/v1\n")
+        sh(self.repo, "commit", "-qam", "redact c")
+        r = self.ship("--test", "true")
+        out = r.stdout + r.stderr
+        self.assertNotEqual(r.returncode, 0, "the commit that added it still carries it: amend or rebase it out")
+        self.assertIn(f"private term (sampo private list) or a secrets-file value is in commit {leak[:8]};", out)
+        self.assertNotIn("c.txt", out, "the tree is clean now")
+        sh(self.repo, "reset", "-q", "--hard", "HEAD~2")
+        secrets = os.path.join(self.tmp, "secrets.env")
+        with open(secrets, "w") as f:
+            f.write("export FIXTURE_TOKEN='fixture-value-0123456789'\nSHORT=abc\nBASE_URL=http://127.0.0.1:11434/v1\n")
+        os.chmod(secrets, 0o600)
+        def commit(name, text, msg):  # a file each: an empty commit doesn't cherry-pick
+            with open(os.path.join(self.repo, name), "w") as f:
+                f.write(text)
+            sh(self.repo, "add", name)
+            sh(self.repo, "commit", "-qm", msg)
+        commit("d.txt", "base_url = http://127.0.0.1:11434/v1\n", "local model")
+        env = {"FOREMAN_SECRETS": secrets}
+        r = self.fm("ship", "--remote", "origin", "--test", "true", check=False, env=env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)  # a URL line names no secret
+        self.grant()
+        commit("e.txt", "e\n", "token fixture-value-0123456789")
+        r = self.fm("ship", "--remote", "origin", "--test", "true", check=False, env=env)
+        out = r.stdout + r.stderr
+        self.assertNotEqual(r.returncode, 0, out)
+        self.assertIn(sh(self.repo, "rev-parse", "HEAD").strip()[:8], out)
+        self.assertIn("secrets-file value", out)
+        self.assertNotIn("fixture-value", out)
+        self.assertNotIn("token", self.main_log()[0])
+        self.assertTrue(self.granted())
+
+    def test_the_private_scan_never_puts_a_term_or_a_secret_on_gits_command_line(self):  # T-3529 review
+        # argv shows in ps and /proc/<pid>/cmdline to anyone on the machine: needles go through a 0600 pattern file
+        from unittest import mock
+        from sampo import cli, release
+        secrets = os.path.join(self.tmp, "secrets.env")
+        with open(secrets, "w") as f:
+            f.write("FIXTURE_TOKEN=fixture-value-0123456789\n")
+        os.chmod(secrets, 0o600)
+        with open(os.path.join(c.state_dir(), c.PRIVATE_TERMS), "w") as f:
+            json.dump(["*.home.example-private.test"], f)
+        os.makedirs(os.path.join(self.repo, "hosts", "llm.home.example-private.test"))
+        for rel, text in (("c.txt", "key fixture-value-0123456789\n"), ("hosts/llm.home.example-private.test/notes.md", "n\n")):
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write(text)
+        sh(self.repo, "add", "-A")
+        sh(self.repo, "commit", "-qm", "leak")
+        tip, seen, real = sh(self.repo, "rev-parse", "HEAD").strip(), [], c._git
+        def spy(root, *a, **kw):
+            seen.append(a)
+            return real(root, *a, **kw)
+        with mock.patch.dict(os.environ, {"FOREMAN_SECRETS": secrets}), mock.patch.object(c, "_git", spy):
+            with self.assertRaises(cli.UsageError) as e:
+                release._refuse_private(self.repo, [tip], tip)
+        msg = str(e.exception)
+        self.assertIn("c.txt", msg)
+        self.assertIn("hosts/<host>/notes.md", msg, "a path holding a term is named redacted")
+        self.assertIn(tip[:8], msg)
+        self.assertTrue(any("grep" in a for a in seen))
+        argv = "\0".join(x for a in seen for x in a).lower()
+        for needle in ("example-private", "fixture-value"):
+            self.assertNotIn(needle, argv)
+            self.assertNotIn(needle, msg)
 
     def test_a_tree_changed_after_the_tests_ran_refuses_with_both_hashes(self):  # T-2642
         self.grant()

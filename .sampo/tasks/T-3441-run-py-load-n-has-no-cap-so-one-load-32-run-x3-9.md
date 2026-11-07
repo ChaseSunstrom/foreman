@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-06T14:47:16Z
-updated: 2026-11-06T15:19:21Z
+updated: 2026-11-06T16:29:48Z
 base: fc66ce46233bff4275210cce926900ba3a5eb08c
 base_tree: 8d97eab5734ba217b7f4e0653215b3c412e1343c
 lane_stop: merged 2026-11-06T15:14:41Z
@@ -17,6 +17,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T15:14:43Z
 plan0_scope: []
 verified: strong
+lane_verified: 45e9af018eeff582f8a78b214c23ee731cce69e6
 ---
 # run.py --load N has no cap, so one --load 32 run (x3, 96 busy loops) pushed a 16-CPU…
 ## Raw request
@@ -56,6 +57,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T15:14:44Z scope: widened at merge to the reviewed lane's own diff (45e9af018), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T15:19:17Z done
 - 2026-11-06T15:19:21Z committed 505653aa8 (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains 45e9af018
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

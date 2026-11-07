@@ -18,6 +18,7 @@ predict_attempts: 1
 plan0_at: 2026-11-06T05:57:02Z
 plan0_scope: [plugin/lib/sampo/outside.py, plugin/tests/test_outside.py, plugin/lib/sampo/cli.py, docs/map/ops-2.md]
 builder_returned: 2026-11-06T07:02:07Z
+group: landscape scan and model tracking
 ---
 # Landscape scan: weekly, four fixed tracks (what users want or miss; models, APIs and MCP servers; Codex/Cursor/Gemini CLI/opencode/Aider features; agent research) with no planner call, and Decision/[read] lines never taken for items
 ## Raw request

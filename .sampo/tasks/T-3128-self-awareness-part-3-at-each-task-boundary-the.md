@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: user
 created: 2026-11-05T03:20:45Z
-updated: 2026-11-06T14:47:27Z
+updated: 2026-11-06T16:29:48Z
 inferred_deps: [T-3123]
 inferred_why: T-3123: named in its request
 group: self-awareness and miss ledger
@@ -21,6 +21,7 @@ plan0_scope: []
 builder_returned: 2026-11-06T13:18:07Z
 lane_stop: merged 2026-11-06T14:41:20Z
 verified: strong
+lane_verified: 791a5b6e839e087c496a4a41ad826581d4a4fd71
 ---
 # Self-awareness part 3: at each task boundary, the predicted next asks no open task covers become captures, and a predicted capture the user later asks for counts as a catch (T-3123)
 ## Raw request
@@ -67,6 +68,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T14:41:23Z scope: widened at merge to the reviewed lane's own diff (791a5b6e8), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T14:47:23Z done
 - 2026-11-06T14:47:27Z committed 566a10869 (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains 791a5b6e8
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

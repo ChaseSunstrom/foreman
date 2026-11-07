@@ -37,7 +37,7 @@ Options: a new verb; a hook nudge; a tail on the existing log and newcomer outpu
 <!-- auto -->
 - 2026-10-29T02:47:13Z steps 3/3 done
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmsettings.py, plugin/tests/test_settings_extras.py, plugin/tests/test_settings_room.py
-- touched since last checkpoint: plugin/tests/test_settings_extras.py, plugin/tests/test_settings_room.py, CHANGELOG.md, MASTER.md, plugin/lib/fmsettings.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1898t.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1898i.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/hero_load.sh
+- touched since last checkpoint: plugin/tests/test_settings_extras.py, plugin/tests/test_settings_room.py, CHANGELOG.md, MASTER.md, plugin/lib/fmsettings.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1898t.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1898i.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/hero_load.sh
 ## Docs impact
 MASTER.md
 ## Verification evidence

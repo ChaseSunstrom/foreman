@@ -4,7 +4,7 @@
 
 1. **HIGH — `plugin/lib/fmguard.py:604` — the `.replace(` narrowing misses a one-argument `Path.replace`.**
    - The lookahead `(?![^()]*,\s*[^\s)])` skips the rule for any comma followed by a non-space, non-`)` character before the first paren. That comma does not have to be an argument separator.
-   - Exact command: `python3 -c 'import pathlib; pathlib.Path("/tmp/a").replace(["/home/u/.claude/CLAUDE.md",0][0])'`.
+   - Exact command: `python3 -c 'import pathlib; pathlib.Path("/tmp/a").replace(["~/.claude/CLAUDE.md",0][0])'`.
      - The guard sees `,0`, so `_WRITE_API` does not match.
      - `proved` is None because `pathlib` is not in `_PY_PURE`, so `_interpreter_writes` returns `[]` at line 1006.
      - Python really renames `/tmp/a` over `CLAUDE.md`.

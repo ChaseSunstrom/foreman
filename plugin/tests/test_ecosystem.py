@@ -262,14 +262,14 @@ class MachineIdentity(ForemanTestCase):
         self.assertEqual(self.fm_json("machine"), a)
         self.assertEqual(a["name"], os.uname().nodename)
         self.assertRegex(a["id"], r"^[0-9a-f]{12}$")
-        b = self.fm_json("machine", "--name", "<user>")
-        self.assertEqual((b["id"], b["name"]), (a["id"], "<user>"))
+        b = self.fm_json("machine", "--name", "devbox")
+        self.assertEqual((b["id"], b["name"]), (a["id"], "devbox"))
         self.assertNotEqual(self.fm("machine", "--name", "bad\x1bname", check=False).returncode, 0)
         self.fm("init")
         self.hook("SessionStart", {"source": "startup"})
-        self.assertEqual(self.fm_json("projects")["projects"][0]["foreman"]["machine"], "<user>")
+        self.assertEqual(self.fm_json("projects")["projects"][0]["foreman"]["machine"], "devbox")
         self.fm("task", "new", "Login", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "a", "--focus")
-        self.assertIn("focused on <user>", c.find_brief(c.find_project(self.repo), "T-0001").section("Log"))
+        self.assertIn("focused on devbox", c.find_brief(c.find_project(self.repo), "T-0001").section("Log"))
 
     def test_doctor_rehearses_restoring_the_newest_backup(self):
         from sampo import doctor

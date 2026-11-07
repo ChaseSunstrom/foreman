@@ -36,7 +36,7 @@ unproven: [typed]
 <!-- auto -->
 - 2026-11-03T20:32:42Z step 2/2: fix: cli.affected filters {names} groups to the runner's folder
 - git: foreman/build; 2 uncommitted: plugin/lib/sampo/cli.py, plugin/tests/test_affected_hubs.py
-- touched since last checkpoint: plugin/tests/test_affected_hubs.py, plugin/lib/sampo/cli.py, /tmp/claude-1000/-home-<user>--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/12-forge-illustrated/_src/page.js
+- touched since last checkpoint: plugin/tests/test_affected_hubs.py, plugin/lib/sampo/cli.py, /tmp/claude-1000/-home-~--claude-foreman/46d2c60e-5e7f-5a7c-8611-d13c130ac8c2/scratchpad/directions-v2/12-forge-illustrated/_src/page.js
 ## Docs impact
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py test_affected_hubs` → red: 'python3 tests/run.py test_server test_a' != 'python3 tests/run.py test_a' [tree 1ad625785c2f] (2026-11-03T20:29:34Z)

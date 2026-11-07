@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-06T11:07:26Z
-updated: 2026-11-06T16:19:20Z
+updated: 2026-11-07T05:37:41Z
 base: 34d1fad891b45b0bc03dc9544e7529ce0d0ce468
 base_tree: e61fdd3a6ec55bd428636be34fa0a2f19e155caf
 predict_minutes: 2
@@ -18,6 +18,7 @@ plan0_scope: []
 builder_returned: 2026-11-06T11:08:51Z
 lane_stop: merged 2026-11-06T11:44:34Z
 verified: strong
+lane_verified: b03384a0c2a2fd968e18ec7a506b719c0a1ab24c
 ---
 # plugin/tests/e2e/roundtrip.py clones with --branch $(git rev-parse --abbrev-ref HEAD),…
 ## Raw request
@@ -63,6 +64,20 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T16:00:14Z guard authorization added: publish
 - 2026-11-06T16:00:21Z guard authorization added: publish
 - 2026-11-06T16:19:20Z publish grant used by fm ship
+- 2026-11-06T16:29:47Z verified: the full suite is green on 1078ed22d, which contains b03384a0c
+- 2026-11-06T16:34:24Z guard authorization added: publish
+- 2026-11-06T16:49:00Z publish grant used by fm ship
+- 2026-11-06T17:19:05Z guard authorization added: publish
+- 2026-11-06T17:48:27Z publish grant used by fm ship
+- 2026-11-06T18:03:30Z guard authorization added: publish
+- 2026-11-06T18:22:39Z publish grant used by fm ship
+- 2026-11-06T18:37:41Z guard authorization added: publish
+- 2026-11-06T18:58:01Z publish grant used by fm ship
+- 2026-11-06T19:13:04Z guard authorization added: publish
+- 2026-11-06T19:42:18Z publish grant used by fm ship
+- 2026-11-06T21:48:58Z guard authorization added: publish
+- 2026-11-06T22:22:29Z publish grant used by fm ship
+- 2026-11-07T05:37:41Z guard authorization added: publish
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

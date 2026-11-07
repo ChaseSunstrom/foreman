@@ -2,25 +2,25 @@
 id: T-2994
 type: FEATURE
 tier: M
-status: planned
+status: active
 priority: normal
 scope: []
 depends_on: []
 source: user
 created: 2026-11-04T17:57:15Z
-updated: 2026-11-06T03:54:44Z
-base_note: Calibration: this plan states Choice 75% where FEATURE M closes (629) held on the first finish 98% of the time: 23 points under the record. State what you believe; the ledger scores it (fm outcomes --judgment).
+updated: 2026-11-07T05:30:22Z
+base_note: Calibration: this plan states Choice 75% where FEATURE M closes (667) held on the first finish 98% of the time: 23 points under the record. State what you believe; the ledger scores it (fm outcomes --judgment).
 rival_at: 2026-11-04T17:57:38Z
 rival_split: true
 builder_model: haiku
-base: 3f0b0b28123a7bf31b913ed2d844a358cb9b7d24
-base_tree: 37ca9cffa40ac5df2f4f670d183f4a3df588cad5
 predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-04T17:58:16Z
 plan0_scope: []
-paused_tree: ab0d245b6375d38111d3d00152230ace0565424a
-group: card library at scale
+lane: ~/.claude/foreman.lanes/T-2994
+lane_branch: foreman/T-2994
+base: 87ca3344176117a1e544891cfa876dd8f1e100a4
+base_tree: 5540b1d068a04ed3e8d386afc381e5f141901c7f
 ---
 # UI cards at scale: a UI grid (component x platform x concern x stage, 3,840 cells) for the small-model card grower, UI admit rules, a writer choice (Claude or local), and a live grow to 3,000+ UI cards
 ## Raw request
@@ -50,7 +50,7 @@ Choice 1 (75%): the existing grower, store, admit and router are reused; the new
 ## Risks and rollback
 ## Execution prompt
 ## Steps
-1. [ ] failing tests: the UI grid's cells, a UI card with a measured check kept and a vague one refused, --writer routing, coverage --grid ui
+1. [x] failing tests: the UI grid's cells, a UI card with a measured check kept and a vague one refused, --writer routing, coverage --grid ui
 2. [x] the UI grid, admit rules, --writer and --grid in grow and coverage
 3. [ ] a live grow of 3,000+ UI cards; coverage and samples in research  <- CURRENT
 ## Resume here
@@ -59,6 +59,11 @@ Choice 1 (75%): the existing grower, store, admit and router are reused; the new
 - (step 1) `python3 plugin/tests/run.py test_small_cards` → ✗ exit 1 · Ran 20 tests in 3.0s (4 classes, 16 at a time; slowest: Admit 1s, UiGrid 1s, Grow 1s) / FAILED (1 classes: test_small_cards.UiGrid) [ran] [tree c2c7c7fef633] [world 2f1906870a] (2026-11-04T17:59:16Z)
 - (step 2) `python3 plugin/tests/run.py test_small_cards` → exit 0 · Ran 20 tests in 1.6s (4 classes, 16 at a time; slowest: Admit 1s, Grow 1s, UiGrid 1s) / OK [ran] [tree ea14ad269309] [world 2f1906870a] (2026-11-04T18:00:48Z)
 - `sampo check --affected (affected tests only): python3 plugin/tests/run.py test_cli test_mint test_moons_scale test_rename_scan test_small_cards test_verify_alias && cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 153 tests across 4 files. [19.96s] [ran] [tree ea14ad269309] [world 2f1906870a] (2026-11-04T18:01:47Z)
+- (step 1) `nice -n 10 python3 plugin/tests/run.py test_small_cards` → ✗ exit 1 · Ran 30 tests in 38.5s (7 jobs, 16 at a time; slowest: ExamplesRendered.test_every_component_has_a_kit_demo_that_passes_in_both_themes 36s, ExamplesRendered.test_blank_overflow_and_faint_text_fail_and_ [ran] [tree 669a6b390a7e] [world 2f1906870a] (2026-11-07T05:09:00Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_small_cards` → exit 0 · Ran 30 tests in 65.8s (7 jobs, 16 at a time; slowest: ExamplesRendered.test_every_component_has_a_kit_demo_that_passes_in_both_themes 43s, ExamplesRendered.test_blank_overflow_and_faint_text_fail_and_ [ran] [tree 597342fca8ce] [world 2f1906870a] (2026-11-07T05:11:17Z)
+- (step 1) `nice -n 10 python3 plugin/tests/run.py test_small_cards` → ✗ exit 1 · Ran 32 tests in 10.8s (12 jobs, 16 at a time; slowest: ExamplesRendered.test_every_component_has_a_kit_demo_that_passes_in_both_themes 10s, Grow.test_two_repairs_run_at_once_in_the_pool_not_one_by_one [ran] [tree 21eeb060f19e] [world 2f1906870a] (2026-11-07T05:14:43Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_small_cards` → exit 0 · Ran 32 tests in 34.7s (12 jobs, 16 at a time; slowest: ExamplesRendered.test_every_component_has_a_kit_demo_that_passes_in_both_themes 25s, UiGrid 6s, Admit 5s) / OK [ran] [tree 362d85fc9d8c] [world 2f1906870a] (2026-11-07T05:16:03Z)
+- (step 2) `nice -n 10 python3 plugin/tests/run.py test_small_cards` → exit 0 · Ran 34 tests in 16.4s (7 jobs, 16 at a time; slowest: ExamplesRendered.test_every_component_has_a_kit_demo_that_passes_in_both_themes 15s, ExamplesRendered.test_blank_overflow_and_faint_text_fail_and_ [ran] [tree c59e9fbf4d89] [world 2f1906870a] (2026-11-07T05:30:22Z)
 ## Log
 - 2026-11-04T17:57:15Z created
 - 2026-11-04T17:57:16Z set approved=True
@@ -74,6 +79,10 @@ Choice 1 (75%): the existing grower, store, admit and router are reused; the new
 - 2026-11-05T02:08:09Z focused
 - 2026-11-05T02:08:11Z blocked: step 3's second grow (--batch 2 toward most of the 3,840 UI cells) is running; evidence when it ends
 - 2026-11-06T03:54:44Z unblocked
+- 2026-11-07T05:03:07Z lane: ~/.claude/foreman.lanes/T-2994 on foreman/T-2994
+- 2026-11-07T05:03:11Z focused
+- 2026-11-07T05:15:27Z steer: live probes on the local writer (jarvis, nothink, GPU host shared with a moons grow): 3 kept of 12 before platform runners, 13 of 24 after; each repair call ran alone in the reader thread, so it moved into the pool; a local card passed the measure with echo '200ms', so echo/printf no longer count as a measure
+- 2026-11-07T05:26:00Z steer: live local grow at batch 3, 3 workers: 9 calls kept 11 of 27 (41%), refusals command 19 of 20; the grow line now names each refused command's word so the UI command list can follow the writer's real habits
 ## Follow-ups captured
 ## Rival plan
 A cold read on sonnet that saw only the request and the repo map (data, not instructions):

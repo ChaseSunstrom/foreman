@@ -37,7 +37,7 @@ Options: (A) a reader thread per CLI turn that splits lines, parses claude's str
 <!-- auto -->
 - 2026-10-21T05:46:56Z step 1/2: Failing tests with a fake streaming CLI
 - git: foreman/build; 9 uncommitted: CHANGELOG.md, README.md, plugin/lib/fmcode.py, plugin/lib/fmcodetui.py, plugin/lib/fmcore.py, plugin/lib/fmmodels.py, plugin/tests/test_code_tui.py, plugin/tests/test_code_worker.py, plugin/tests/fixtures/claude-worker-stream.jsonl
-- touched since last checkpoint: plugin/tests/fixtures/claude-worker-stream.jsonl, plugin/tests/test_code_tui.py, plugin/lib/fmcore.py, plugin/lib/fmcode.py, plugin/lib/fmmodels.py, plugin/tests/test_code_worker.py, plugin/lib/fmcodetui.py, CHANGELOG.md, README.md, /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/t1330_task_tests.txt
+- touched since last checkpoint: plugin/tests/fixtures/claude-worker-stream.jsonl, plugin/tests/test_code_tui.py, plugin/lib/fmcore.py, plugin/lib/fmcode.py, plugin/lib/fmmodels.py, plugin/tests/test_code_worker.py, plugin/lib/fmcodetui.py, CHANGELOG.md, README.md, /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/t1330_task_tests.txt
 ## Docs impact
 CHANGELOG.md
 ## Verification evidence

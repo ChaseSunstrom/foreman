@@ -9,8 +9,6 @@ depends_on: []
 source: followup
 created: 2026-11-05T18:59:12Z
 updated: 2026-11-05T18:59:12Z
-inferred_deps: [T-3231]
-inferred_why: T-3231: sandboxed ship tests need the job sandbox
 ---
 # Sampo ship's scratch-tree tests run sandboxed (run.py --sandbox) once the full sandboxed…
 ## Raw request

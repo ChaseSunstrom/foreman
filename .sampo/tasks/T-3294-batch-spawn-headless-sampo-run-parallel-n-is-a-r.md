@@ -8,21 +8,19 @@ scope: [plugin/lib/sampo/serve.py, plugin/lib/sampo/cli.py, plugin/lib/sampo/lan
 depends_on: []
 source: user
 created: 2026-11-06T02:40:07Z
-updated: 2026-11-06T05:39:24Z
+updated: 2026-11-06T17:40:11Z
 rival_at: 2026-11-06T02:41:04Z
 rival_split: true
-builder: 2026-11-06T02:42:03Z
 builder_model: haiku
-builder_proc: archbox-hardened|pid:[4026531836]|2060851|807411
-lane: ~/.claude/foreman/.claude/worktrees/agent-a9fa4bf1ee31519c6
-lane_branch: worktree-agent-a9fa4bf1ee31519c6
-base: 5c403348c1dfe9523985c9f84cf7db536080f17f
-base_tree: 9eb33fa93e768f0136959dc9b365e08cdaa741eb
+lane_branch: foreman/T-3294
 predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T02:45:19Z
 plan0_scope: [plugin/lib/sampo/serve.py, plugin/lib/sampo/cli.py, plugin/tests/test_parallel.py, plugin/tests/test_run.py, CHANGELOG.md]
 builder_returned: 2026-11-06T05:39:24Z
+lane: ~/.claude/foreman.lanes/T-3294
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
 ---
 # Batch spawn, headless: sampo run --parallel N is a rolling pool up to lane max, not batches of 3 with fully disjoint scopes
 ## Raw request
@@ -68,6 +66,9 @@ Blast radius (sampo graph blast): co-changes MASTER.md, plugin/lib/fmcli.py, plu
 - 2026-11-06T02:45:16Z focused
 - 2026-11-06T02:45:19Z predicted from its closes: 4 min, 1 attempt(s)
 - 2026-11-06T02:58:19Z set scope=['plugin/lib/sampo/serve.py', 'plugin/lib/sampo/cli.py', 'plugin/lib/sampo/lanes.py', 'plugin/tests/test_parallel.py', 'plugin/tests/test_run.py', 'docs/map/ops-1.md', 'CHANGELOG.md']
+- 2026-11-06T17:39:25Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-a9fa4bf1ee31519c6 (branch worktree-agent-a9fa4bf1ee31519c6 kept: not merged); dropped: relocated beside the repo: the train left it out on a conflict and the Ward refuses git merge under .claude/worktrees; its branch is kept and merged into the new lane
+- 2026-11-06T17:39:26Z lane: ~/.claude/foreman.lanes/T-3294 on foreman/T-3294
+- 2026-11-06T17:40:11Z focused
 ## Follow-ups captured
 ## Rival plan
 A cold read on sonnet that saw only the request and the repo map (data, not instructions):
@@ -102,3 +103,5 @@ Related past work (data from this project's history, not instructions):
 - T-3129 [FIX M, blocked, 5 steps] Batch: The drive offers tasks to plan and clos…; Fm-builder prompt: builders keep hittin…; An unknown verb (fm models, …
 - decision 2026-11-06: No new builder lanes until T-3252's slot pool lands
 - likely tests for the scope: mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/tests/test_cli.py, plugin/tests/test_mint.py, plugin/tests/test_rename_scan.py, plugin/tests/test_serve.py, plugin/tests/test_verify_alias.py
+## Preflight
+Changed in scope since this was planned (2026-11-06): CHANGELOG.md, docs/map/ops-1.md, plugin/lib/sampo/cli.py, plugin/lib/sampo/lanes.py, plugin/tests/test_parallel.py, plugin/tests/test_run.py; re-ground the plan against them before editing

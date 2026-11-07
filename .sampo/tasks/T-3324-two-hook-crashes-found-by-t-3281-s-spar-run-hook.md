@@ -18,6 +18,8 @@ predict_attempts: 1
 plan0_at: 2026-11-06T05:52:11Z
 plan0_scope: [plugin/lib/sampo/hooks.py, plugin/tests/test_hooks.py]
 builder_returned: 2026-11-06T06:48:23Z
+inferred_deps: [T-3281]
+inferred_why: T-3281: named in its request
 ---
 # Two hook crashes the spar fuzzer found are clean refusals
 ## Raw request

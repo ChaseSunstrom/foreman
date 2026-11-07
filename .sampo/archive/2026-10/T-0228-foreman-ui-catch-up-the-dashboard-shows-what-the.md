@@ -41,7 +41,7 @@ CHANGELOG.md
 ## Verification evidence
 - (step 1) `python3 plugin/tests/run.py -k test_ui` → exit 0 · Ran 12 tests in 4.9s (2 classes, 16 at a time; slowest: UiView 5s, SkillRoute 0s) / OK [ran] [tree 9be89774f598] (2026-10-04T05:47:01Z)
 - (step 2) `claude plugin test mods/foreman-ui` → exit 0 · 0 fail / Ran 62 tests across 1 file. [2.66s] [ran] [tree e9d3653424f7] (2026-10-04T05:49:17Z)
-- (step 3) `grep -c 'Spend today\|Bench\|Research' /tmp/claude-1000/-home-<user>--claude-foreman/2bb9323b-b323-4901-bb61-924ab8371253/scratchpad/pane3.txt` → exit 0 · 3 [ran] [tree 66852f6e74f9] (2026-10-04T05:50:27Z)
+- (step 3) `grep -c 'Spend today\|Bench\|Research' /tmp/claude-1000/-home-~--claude-foreman/2bb9323b-b323-4901-bb61-924ab8371253/scratchpad/pane3.txt` → exit 0 · 3 [ran] [tree 66852f6e74f9] (2026-10-04T05:50:27Z)
 - (ac 1) `python3 plugin/tests/run.py -k test_ui` → exit 0 · Ran 12 tests in 8.0s (2 classes, 16 at a time; slowest: UiView 8s, SkillRoute 1s) / OK [ran] [tree 28edbc2d4c32] (2026-10-04T05:50:40Z)
 - (ac 2) `claude plugin test mods/foreman-ui` → exit 0 · 0 fail / Ran 62 tests across 1 file. [4.84s] [ran] [tree 28edbc2d4c32] (2026-10-04T05:50:40Z)
 - (audit intent) `self review against the live render (shot.py: all three cards and the age fix seen in a 70-column pane)` → everything added since the last UI work is visible where the person looks — spend, bench/evolve, research, hypotheses, oracle questions, batches; quiet days show no extra cards (tested) [tree 28edbc2d4c32] (2026-10-04T05:50:40Z)

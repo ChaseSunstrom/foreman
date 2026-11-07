@@ -70,7 +70,7 @@ const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
 const reviewing = atom({ plugin: 'foreman-ui', key: 'reviewing' } as const, null as string | null) // T-0989: a waiting plan shown in the Task section
-import { TREE_INDENT, agentOut, agentRow, bars, branch, editChanges, editRow, gapTop, crestTree, liveTree, mascotTree, meter, miniRail, ownsResult, rail, railBox, sectionHead, shellRow, spark, toolRow, treeOn } from './rows'
+import { LIGHT, TREE_INDENT, agentOut, agentRow, bars, branch, editChanges, editRow, gapTop, crestTree, liveTree, mascotTree, meter, miniRail, ownsResult, rail, railBox, sectionHead, shellRow, spark, toolRow, treeOn } from './rows'
 import type { Motion } from './rows'
 
 // Sampo inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
@@ -1066,6 +1066,100 @@ export const register: Register = (on, options) => {
     if (e.props.isDraft || !waiting(v)) return next(e)
     const shown = (await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown) // /fm would close it
     return next({ ...e, props: { ...e.props, tail: shown ? '⚠ Sampo needs you: see the pane' : '⚠ Sampo needs you: /fm' } }) // the engine puts the separator before it
+  })
+
+  // T-3163: 'a few other things arent [rendered like the rest of the mod text] either': the five rows no hook drew. Each
+  // keeps its words; the engine keeps its behaviour (ctrl+b is its own key, answers go through its dialog). Text with
+  // escapes or past 9000 characters stays the engine's, under the Sampo mark. A missing prop reads as '' (a throw would
+  // trip the breaker).
+  const str = (t: unknown) => String(t ?? '')
+  const plain = (t: unknown) => str(t).length <= 9000 && !/[\u0000-\u0008\u000b-\u001f\u007f]/.test(str(t))
+
+  // the background hint under a running call: the key in the accent, the words quiet, on the call's rail
+  on('ui.render', { component: 'ToolProgress' }, async ($, e, next) => {
+    const hint = str(e.props.hint)
+    if (e.surface !== 'terminal' || e.props.kind !== 'background_hint' || !hint.trim() || !plain(hint)) return next(e)
+    const m = /^\((.+?) to (.+)\)$/.exec(hint)
+    const { Box, Text } = $.ui.resolve(e)
+    return branch($.ui.resolve(e), e, 'fm-hint-branch', (
+      <Box flexDirection="row" gap={1} paddingLeft={2} key="fm-hint">
+        <Text color={hex(C.dim)}>↧</Text>
+        {m ? <Text weight="bold" color={hex(C.accent)}>{m[1]}</Text> : null}
+        <Text color={hex(C.dim)} wrap="truncate-end">{m ? `to ${m[2]}` : hint}</Text>
+      </Box>), { at: 'body' })
+  })
+
+  // a slash command's output (/cost, /model …): the command as a section head, its markdown under it as the engine
+  // draws it (an error line in the error colour)
+  on('ui.render', { component: 'CommandOutput' }, async ($, e, next) => {
+    const { command, isErrored } = e.props
+    const args = str(e.props.args), text = str(e.props.text)
+    if (e.surface !== 'terminal' || !plain(args)) return next(e)
+    const color = isErrored ? C.err : C.accent
+    const { head, rest } = sectionHead($.ui.resolve(e), e, { key: 'fm-cmd', color, mark: '▸', label: `/${command}`,
+      subject: args || undefined, meta: isErrored ? [{ text: 'failed', color: C.err }] : [] })
+    const { Box, Text, Markdown } = $.ui.resolve(e)
+    return branch($.ui.resolve(e), e, 'fm-cmd-branch', (
+      <Box flexDirection="column" marginTop={gapTop(e)} key="fm-cmd">
+        {head}
+        {rest ? <Box paddingLeft={2}><Text color={hex(LIGHT)} wrap="wrap">{rest}</Text></Box> : null}
+        {!text.trim() ? null /* no output: the head alone */
+          : !plain(text) ? await next(e) /* its own ⎿ gutter: no padding, every column for width-laid output (/context) */
+          : <Box flexDirection="column" paddingLeft={2}>
+            {isErrored ? <Text color={hex(C.err)} wrap="wrap">{text}</Text> : <Markdown key="fm-cmd-md" text={text} />}
+          </Box>}
+      </Box>), { gap: true })
+  })
+
+  // a startup notice ('Using Opus … · /model'): a quiet mark, the words, the command to change it in the accent
+  on('ui.render', { component: 'InfoNotice' }, async ($, e, next) => {
+    const text = str(e.props.text)
+    if (e.surface !== 'terminal' || !text.trim() || !plain(text)) return next(e)
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="row" gap={1} key="fm-notice">
+        <Text color={hex(C.accent2)}>ℹ</Text>
+        <Text color={hex(C.muted)} wrap="wrap">{text}</Text>
+        {e.props.command ? <Text color={hex(C.dim)}>·</Text> : null}
+        {e.props.command ? <Text color={hex(C.accent)}>{str(e.props.command)}</Text> : null}
+      </Box>
+    )
+  })
+
+  // the footer's mode badges: each mode bold in its colour (a dangerous one in the error colour); the desktop lays its own
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const modes: string[] = e.props.modes ?? []
+    if (e.surface !== 'terminal' || !modes.length) return next(e)
+    const { Text } = $.ui.resolve(e)
+    return (
+      <Text key="fm-modes">{/* the labels only, as the engine's own node: the footer lays the separator before it */}
+        {modes.map((m, i) => (
+          <Text key={i}>
+            {i ? <Text color={hex(C.dim)}>{' & '}</Text> : null}
+            <Text weight="bold" color={hex(/bypass|danger|skip/i.test(m) ? C.err : C.accent2)}>{m}</Text>
+          </Text>
+        ))}
+      </Text>
+    )
+  })
+
+  // a question for the person: a Sampo head over the engine's own dialog (never replaced: it maps the answers back)
+  on('ui.render', { component: 'AskUserQuestion' }, async ($, e, next) => {
+    if (e.surface !== 'terminal') return next(e)
+    const qs: { header?: string; question?: string }[] = e.props.questions ?? []
+    const subject = qs.map(q => q.header).filter(Boolean).join(' · ') || qs[0]?.question
+    const { Box, Text } = $.ui.resolve(e)
+    // the dialog refuses sizing props and Rasters around it, so this head is one plain row, not sectionHead's
+    return (
+      <Box flexDirection="column" key="fm-ask">
+        <Box flexDirection="row" gap={1} key="fm-ask-head">
+          <Text weight="bold" color={hex(C.warn)}>? Claude asks</Text>
+          {subject ? <Text color={hex(LIGHT)} wrap="truncate-end">{subject}</Text> : null}
+          <Text color={hex(C.dim)}>{`${qs.length} question${qs.length === 1 ? '' : 's'}`}</Text>
+        </Box>
+        {await next(e)}
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

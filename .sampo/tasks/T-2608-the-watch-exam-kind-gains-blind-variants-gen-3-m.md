@@ -40,7 +40,7 @@ Reading 1 (chosen): grade, in the replayed stream, the one blind reason a replay
 <!-- auto -->
 - 2026-11-02T13:06:37Z steps 4/4 done
 - git: foreman/build; 3 uncommitted: CHANGELOG.md, plugin/lib/fmexam.py, plugin/tests/test_exam.py
-- touched since last checkpoint: plugin/tests/test_exam.py, plugin/lib/fmexam.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/critique3-1.md
+- touched since last checkpoint: plugin/tests/test_exam.py, plugin/lib/fmexam.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/critique3-1.md
 ## Docs impact
 CHANGELOG (Unreleased); the kind's description is unchanged in shape (the events that should start work didn't, or work started from ones that shouldn't).
 ## Verification evidence

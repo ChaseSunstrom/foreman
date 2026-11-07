@@ -28,4 +28,5 @@ class AffectedRules(ForemanTestCase):
         _, tests, _ = cli.affected(p)
         for t in cli.RULE_TESTS:
             self.assertIn(f"plugin/tests/{t}.py", tests)
-        self.assertEqual(set(cli.RULE_TESTS), {"test_doctor", "test_models", "test_left_out", "test_rename_scan"})
+        self.assertEqual(set(cli.RULE_TESTS), {"test_doctor", "test_models", "test_left_out", "test_rename_scan",
+                                               "test_rename_aliases", "test_redefinitions", "test_suite_hygiene"})

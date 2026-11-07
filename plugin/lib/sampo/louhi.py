@@ -4135,6 +4135,76 @@ def taxonomy(p, run, agent="smith"):
             "classes": dict(sorted(classes.items(), key=lambda kv: -kv[1]["rate"]))}
 
 
+LOOP_N = 3  # T-3484: holdout scenarios a profile answers per round
+LOOP_FILE = os.path.join("research", "local-loop.jsonl")  # one row per round, profile and failure class; a skipped round says why
+
+
+def _loop_rows(p, run):
+    """The loop's rows so far: (the highest round number, {profile: holdout ids it answered in this run}). A skipped row
+    answers nothing, so its scenarios stay unseen."""
+    path = os.path.join(p.root, LOOP_FILE)
+    rows = []
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8", errors="replace") as f:
+            rows = [r for r in (_json_line(ln) for ln in f) if r]
+    seen = {}
+    for r in rows:
+        if r.get("run") == run and "ids" in r:
+            seen.setdefault(r["model"], set()).update(r["ids"])
+    return max((r["round"] for r in rows if isinstance(r.get("round"), int)), default=0), seen
+
+
+def _loop_profile(p, run, rd, prof, n, seen):
+    """One profile's share of a round: its next n unseen holdout scenarios, then the taxonomy over exactly those answers.
+    run_agent wipes the agent's previous answers, so the taxonomy here is this profile's alone."""
+    from sampo import models as smodels
+    done = seen.get(prof, set())
+    todo = [s["id"] for s in load(p, run)["scenarios"] if s["split"] == "holdout" and s["id"] not in done][:n]
+    if not todo:
+        return [{"round": rd, "run": run, "model": prof, "skipped": "unseen: every holdout scenario is answered", "at": c.now()}]
+    try:
+        run_agent(p, run, "smith", split="holdout", limit=len(todo), model=prof, ids=set(todo))
+        tax = taxonomy(p, run, "smith")
+    except (ValueError, OSError, smodels.ModelError) as e:
+        return [{"round": rd, "run": run, "model": prof, "skipped": c.fit(str(e), 160), "at": c.now()}]
+    return [{"round": rd, "run": run, "model": prof, "class": k, "count": v["count"], "hit": v["scenarios"], "rate": v["rate"],
+             "n": len(todo), "ids": todo, "at": c.now()} for k, v in tax["classes"].items()]
+
+
+def _loop_round(p, run, rd, profiles, n, seen):
+    """One round under the moons store lock (grow, funnel and bench share it): a busy store is one skipped row."""
+    from sampo import moonscale
+    try:
+        with moonscale.store_lock(p):
+            return [r for prof in profiles for r in _loop_profile(p, run, rd, prof, n, seen)]
+    except moonscale.Busy as e:
+        return [{"round": rd, "run": run, "model": "*", "skipped": c.fit(f"funnel: {e}", 160), "at": c.now()}]
+
+
+def exam_loop(p, profiles=None, rounds=1, n=LOOP_N, run=None):
+    """T-3484: the exam loop, `rounds` times. Each round answers each local profile's next n unseen holdout scenarios on the
+    smith arm, then appends the rows (one per failure class per profile, or one skipped row) to research/local-loop.jsonl.
+    profiles None: every usable local profile. Returns the rows appended."""
+    if not run:
+        raise ValueError("fm exam loop needs --run RUN (a run with holdout scenarios: fm exam gen)")
+    if rounds < 1 or n < 1:
+        raise ValueError(f"--rounds and the per-round count are 1 or more, not {rounds} and {n}")
+    if profiles is None:
+        from sampo import moonscale
+        profiles = [x["name"] for x in moonscale._locals(bool(c.read_meta(p).get("sensitive")))]
+    if not profiles:
+        raise ValueError("no local profile to loop: sampo models list, or --model PROFILE")
+    out = []
+    for _ in range(rounds):
+        last, seen = _loop_rows(p, run)
+        rows = _loop_round(p, run, last + 1, profiles, n, seen)
+        path = os.path.join(p.root, LOOP_FILE)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        c.append_line(path, "".join(json.dumps(r) + "\n" for r in rows))
+        out += rows
+    return out
+
+
 def _json_line(ln):
     try:
         v = json.loads(ln)
@@ -4159,12 +4229,12 @@ def _answers(p, run, agent):
 
 
 def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, timeout=20, request=None, jobs=1, planner=None,
-              reason=None):
+              reason=None, ids=None):
     """T-3029: one run of a run's agent at a time. An exclusive flock on answers/<agent>/.lock (the kernel drops it when
     the process dies) refuses a second run before any scenario starts, naming the holder."""
     d = _answers(p, run, agent)
     if not os.path.isdir(os.path.join(root(p), run)) or agent not in {*AGENTS, *SESSIONS, *LOCAL}:  # refused below as before
-        return _run_agent(p, run, agent, split, limit, budget, model, timeout, request, jobs, planner, reason)
+        return _run_agent(p, run, agent, split, limit, budget, model, timeout, request, jobs, planner, reason, ids)
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, LOCK), "a+", encoding="utf-8") as lock:
         try:
@@ -4178,10 +4248,10 @@ def run_agent(p, run, agent, split="all", limit=None, budget=None, model=None, t
         lock.truncate()
         lock.write(f"{os.getpid()} {c.plain(model or 'default')[:60]}")
         lock.flush()
-        return _run_agent(p, run, agent, split, limit, budget, model, timeout, request, jobs, planner, reason)
+        return _run_agent(p, run, agent, split, limit, budget, model, timeout, request, jobs, planner, reason, ids)
 
 
-def _run_agent(p, run, agent, split, limit, budget, model, timeout, request, jobs, planner, reason):
+def _run_agent(p, run, agent, split, limit, budget, model, timeout, request, jobs, planner, reason, ids=None):
     """Answers from one agent on the run's scenarios (split, then the first `limit`), then the grade. A session arm runs
     `jobs` scenarios at a time (default 1) and defaults to 3 (ponytail: a spend guard; --limit raises it); kinds take
     turns, so a short sample still spans them."""
@@ -4208,7 +4278,8 @@ def _run_agent(p, run, agent, split, limit, budget, model, timeout, request, job
     def turn(s):  # the nth scenario of its kind; a stable sort on it interleaves the kinds
         seen[s["kind"]] = seen.get(s["kind"], 0) + 1
         return seen[s["kind"]]
-    picked = sorted((s for s in load(p, run)["scenarios"] if split == "all" or s["split"] == split), key=turn)
+    picked = sorted((s for s in load(p, run)["scenarios"] if (split == "all" or s["split"] == split)
+                     and (ids is None or s["id"] in ids)), key=turn)  # T-3484: ids, when given, is the exact set to answer
     picked = picked[:limit or (3 if agent in SESSIONS + LOCAL else None)]
     if not picked:
         raise ValueError(f"no {split} scenarios in {run}")
@@ -4726,6 +4797,11 @@ def cmd_exam(args):
             return cli.out(args, res, f"{res['run']} {res['agent']} {res['model'] or ''}: {res['scenarios']} scenarios\n"
                            "ends: " + ", ".join(f"{k} {v}" for k, v in res["ends"].items()) + "\n" + "\n".join(
                 f"  {k:<14} {v['count']:>3} in {v['scenarios']} scenarios ({v['rate']:.0%})" for k, v in res["classes"].items()))
+        if action == "loop":  # T-3484: the holdout loop, rows appended to research/local-loop.jsonl
+            rows = exam_loop(p, [args.model] if args.model else None, args.rounds, run=args.run)
+            skipped = [r for r in rows if "skipped" in r]
+            return cli.out(args, {"rows": rows}, f"{len(rows) - len(skipped)} row(s) appended to {os.path.join(p.root, LOOP_FILE)}"
+                           + "".join(f"\n  round {r['round']} {r['model']}: skipped, {r['skipped']}" for r in skipped))
         if action == "grade":
             if args.model:  # T-2158: answers from before the stamp, or stamped "default", name their model here
                 who = args.agent or "oracle"

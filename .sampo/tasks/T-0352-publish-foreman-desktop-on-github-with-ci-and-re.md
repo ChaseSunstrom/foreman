@@ -2,13 +2,13 @@
 id: T-0352
 type: FEATURE
 tier: M
-status: blocked
+status: planned
 priority: normal
 scope: []
 depends_on: []
 source: user
 created: 2026-10-06T04:38:42Z
-updated: 2026-10-08T23:50:48Z
+updated: 2026-11-06T19:13:44Z
 base: d1fdbc0758b37e1833248944fc24a0f31ec75b36
 base_tree: 023d8f3c3f0e0abc25ca695cec39715e7556cf2c
 paused_tree: 023d8f3c3f0e0abc25ca695cec39715e7556cf2c
@@ -58,6 +58,8 @@ The user said yes to publishing the app on GitHub, with build pipelines. Foreman
 - 2026-10-06T20:47:07Z criterion 2 text: CI (type-check, Rust tests) runs on every push and a v* tag builds Linux, Windows and macOS bundles into a release → CI (type-check, Rust tests) runs on every push and a v* tag builds Linux and macOS bundles into a public release (no Windows: fm decide)
 - 2026-10-08T22:55:18Z paused: focus moved to T-0364
 - 2026-10-08T23:50:48Z blocked: step 3 needs a GitHub repo created: gh isn't logged in on this machine (git over SSH works, the API doesn't); needs the user's gh auth login
+- 2026-11-06T19:13:43Z unblocked
+- 2026-11-06T19:13:44Z unblocked: github.com/ChaseSunstrom/foreman-desktop exists (git ls-remote: main at abe2a2cce), so step 3's repo is made; the rest goes over git ssh
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

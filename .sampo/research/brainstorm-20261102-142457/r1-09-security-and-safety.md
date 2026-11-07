@@ -34,7 +34,7 @@
 
 - **Fence security-testing tasks to an authorized scope file** — SECURITY — value 3 — effort M — risk low — category: authorization
   Why: pentest and CTF work needs clear authorization. A task kind that carries `scope.txt` (hosts, CIDRs, repos) lets the guard refuse `nmap`, `curl` and `sqlmap` against anything outside it.
-  Done when: with a scope of `10.0.0.5`, `nmap 10.0.0.6` is blocked with the scope line quoted, and `10.0.0.5` passes.
+  Done when: with a scope of `<host>`, `nmap <host>` is blocked with the scope line quoted, and `<host>` passes.
 
 - **Keep lessons bound to their repo by default** — SECURITY — value 3 — effort M — risk med — category: privacy
   Why: assumption: lessons and steers can be promoted across repos "when they recur". A lesson mined from a private repo can name a customer, path or secret, then enter a prompt sent for another repo.

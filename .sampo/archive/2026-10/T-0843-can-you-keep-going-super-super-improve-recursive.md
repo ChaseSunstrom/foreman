@@ -39,7 +39,7 @@ Options: (a) rerun fm ideas with the old pack (dry last time); (b) gather three 
 ## Docs impact
 none: research record
 ## Verification evidence
-- (step 1) `test -s /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/pack-round4.md` → exit 0 · (no output) [ran] [tree b2ab4ebce449] (2026-10-15T13:43:37Z)
+- (step 1) `test -s /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/pack-round4.md` → exit 0 · (no output) [ran] [tree b2ab4ebce449] (2026-10-15T13:43:37Z)
 - (step 2) `test -s state/projects/foreman-4a056f/research/brainstorm-20261015-084445/ideas.md` → exit 0 · (no output) [ran] [tree 28ac020d939b] (2026-10-15T14:09:23Z)
 - (step 3) `fm research show brainstorm-round4-20261015` → exit 0 · - Expose verify-as-a-service over A2A and MCP (Round 4) / - Add a thin editor sidebar for VS Code, Cursor and Windsurf (Round 4) [ran] [tree 28ac020d939b] (2026-10-15T14:11:57Z)
 - (ac 1) `fm research show brainstorm-round4-20261015` → exit 0 · - Expose verify-as-a-service over A2A and MCP (Round 4) / - Add a thin editor sidebar for VS Code, Cursor and Windsurf (Round 4) [ran] [tree 28ac020d939b] (2026-10-15T14:11:57Z)

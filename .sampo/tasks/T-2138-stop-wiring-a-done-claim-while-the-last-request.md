@@ -35,7 +35,7 @@ Options: (a) a new _clauses_gate in the stop() nudge chain after _evidence_gate;
 <!-- auto -->
 - 2026-10-30T10:44:08Z steps 2/2 done
 - git: foreman/build; 4 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmhooks.py, plugin/tests/test_hooks.py
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2138-test.edit, plugin/tests/test_hooks.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2138-impl.edit, plugin/lib/fmhooks.py, CHANGELOG.md, MASTER.md
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2138-test.edit, plugin/tests/test_hooks.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/t2138-impl.edit, plugin/lib/fmhooks.py, CHANGELOG.md, MASTER.md
 ## Docs impact
 MASTER.md: Stop hook section gains 'Unaccounted clauses (T-2138)'. CHANGELOG.md: one Unreleased line. No README or site change: an internal Stop guard.
 ## Verification evidence

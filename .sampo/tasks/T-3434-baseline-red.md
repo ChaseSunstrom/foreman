@@ -2,13 +2,13 @@
 id: T-3434
 type: FIX
 tier: M
-status: captured
+status: dropped
 priority: urgent
 scope: []
 depends_on: []
 source: baseline
 created: 2026-11-06T12:24:28Z
-updated: 2026-11-06T12:24:28Z
+updated: 2026-11-06T19:12:20Z
 trigger: baseline
 trigger_key: ad399f9e31a9242f
 baseline: true
@@ -29,4 +29,5 @@ baseline: true
 ## Verification evidence
 ## Log
 - 2026-11-06T12:24:28Z created
+- 2026-11-06T19:12:20Z dropped: green on HEAD 016e39895+: python3 plugin/tests/run.py test_check_paths ran 11 tests OK (CheckSkip 4 s); a load-time flake, covered by T-3436's load-robust classes
 ## Follow-ups captured

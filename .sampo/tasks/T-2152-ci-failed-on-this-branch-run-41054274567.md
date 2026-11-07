@@ -26,7 +26,7 @@ verified: strong
 > | .github:62 ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 > | AssertionError: 2.5880012079999233 not less than 2.0
 > | .github:60 stderr=b''.join(stderr_seq) if stderr_seq else None)
-> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '/Users/runner/work/foreman/foreman/plugin/bin/fm', 'exam', 'check', 's5-001', '--json']' timed out after 68.7060546875 seconds
+> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '~/work/foreman/foreman/plugin/bin/fm', 'exam', 'check', 's5-001', '--json']' timed out after 68.7060546875 seconds
 > | .github:1 Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.
 > | .github:35 Process completed with exit code 1.
 > | .github:19 1 classes failed: test_find.FindHostile (exit 1)

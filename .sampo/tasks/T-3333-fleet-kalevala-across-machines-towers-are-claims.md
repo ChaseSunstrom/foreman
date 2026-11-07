@@ -2,22 +2,25 @@
 id: T-3333
 type: FEATURE
 tier: M
-status: planned
+status: active
 priority: normal
 scope: [plugin/lib/sampo/kalevala.py, plugin/lib/sampo/sync.py, plugin/tests/test_kalevala.py]
 depends_on: [T-3321]
 source: followup
 created: 2026-11-06T04:32:03Z
-updated: 2026-11-06T07:01:19Z
-lane: ~/.claude/foreman/.claude/worktrees/agent-a6594317511297181
-lane_branch: worktree-agent-a6594317511297181
-base: 529a3fe0fde3b8d2a3695a2bbec5a028991cff17
-base_tree: e9852af9e333832b952bca409fda465999846644
+updated: 2026-11-07T00:57:29Z
+lane_branch: foreman/T-3333
 predict_minutes: 4
 predict_attempts: 1
 plan0_at: 2026-11-06T06:28:11Z
 plan0_scope: [plugin/lib/sampo/kalevala.py, plugin/lib/sampo/sync.py, plugin/tests/test_kalevala.py]
 builder_returned: 2026-11-06T07:01:19Z
+lane: ~/.claude/foreman.lanes/T-3333
+base: 81de6117ebb5eb92339e29c572d44667cd4faca5
+base_tree: c12888948f73da30dbb93b4113f6ee92b9d1021b
+inferred_deps: [T-3330]
+inferred_why: T-3330: tower claims need the claim mechanism first
+group: fleet claims and session liveness
 ---
 # Fleet: Kalevala across machines: towers are claims (tower:<name>), only the holder steps and watches a tower, exam.jsonl and acts merge by line, generation numbers come from a claim
 ## Raw request
@@ -56,6 +59,10 @@ Blast radius (sampo graph blast): co-changes plugin/lib/sampo/cli.py, plugin/lib
 - 2026-11-06T06:28:08Z focused
 - 2026-11-06T06:28:11Z predicted from its closes: 4 min, 1 attempt(s)
 - 2026-11-06T06:54:14Z focused
+- 2026-11-06T18:13:33Z lane removed: ~/.claude/foreman/.claude/worktrees/agent-a6594317511297181 (branch worktree-agent-a6594317511297181 kept: not merged); dropped: relocated beside the repo: the train left it out on a conflict and the Ward refuses git merge under .claude/worktrees; its branch is kept and merged into the new lane
+- 2026-11-06T18:15:34Z lane: ~/.claude/foreman.lanes/T-3333 on foreman/T-3333
+- 2026-11-06T18:15:50Z focused
+- 2026-11-07T00:57:29Z focused
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):
@@ -65,4 +72,4 @@ Related past work (data from this project's history, not instructions):
 - decision 2026-11-05: [check: python3 plugin/tests/run.py test_moons_scale] Every feature the user asks for that a generator never proposed is traced to the prompt line o…
 - likely tests for the scope: mods/foreman-ui/tests/foreman-ui.test.tsx, plugin/tests/test_kalevala.py, plugin/tests/test_sync.py
 ## Preflight
-Changed in scope since this was planned (2026-11-06): plugin/lib/sampo/kalevala.py, plugin/lib/sampo/sync.py; re-ground the plan against them before editing
+Changed in scope since this was planned (2026-11-06): plugin/lib/sampo/kalevala.py, plugin/lib/sampo/sync.py, plugin/tests/test_kalevala.py; re-ground the plan against them before editing

@@ -9,9 +9,6 @@ depends_on: []
 source: discovered
 created: 2026-11-05T18:13:16Z
 updated: 2026-11-05T18:13:16Z
-inferred_deps: [T-2994]
-inferred_why: T-2994: fills UI cards using the UI grid
-group: card library at scale
 ---
 # UI card examples: fill the other ~3,120 UI cards (about 4,000 local calls at 80% kept)…
 ## Raw request

@@ -36,7 +36,7 @@ Options: (a) hard marker in PANIC read by fm run's _watch + a panic_stop() in fm
 <!-- auto -->
 - 2026-10-28T08:50:31Z step 3/3: Gates and review
 - git: foreman/build; 7 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmserve.py, plugin/rules/foreman.md, plugin/tests/test_panic.py
-- touched since last checkpoint: plugin/tests/test_panic.py, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmserve.py, plugin/rules/foreman.md, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/test_plugin_parity.py
+- touched since last checkpoint: plugin/tests/test_panic.py, plugin/lib/fmcli.py, plugin/lib/fmcore.py, plugin/lib/fmserve.py, plugin/rules/foreman.md, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/test_plugin_parity.py
 - failures met: - fail; fm doctor: failed (0 pass, 0 warn, 0 fail)
 ## Docs impact
 CHANGELOG.md MASTER.md plugin/rules/foreman.md

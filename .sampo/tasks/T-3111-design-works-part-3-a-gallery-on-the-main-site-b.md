@@ -9,9 +9,8 @@ depends_on: []
 source: user
 created: 2026-11-05T03:08:03Z
 updated: 2026-11-06T03:53:46Z
-inferred_deps: [T-3104, T-3110]
-inferred_why: T-3104: named in its request; T-3110: gallery needs the types grid and writer loop
-group: design works at scale
+inferred_deps: [T-3104]
+inferred_why: T-3104: named in its request
 ---
 # Design works part 3: a gallery on the main site by type, with the user's picks and vetoes as the labels that set the bar (T-3104)
 ## Raw request

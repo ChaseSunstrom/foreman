@@ -38,7 +38,7 @@
 
 - **Redact proof receipts before they leave the machine** — SECURITY — value 4 — effort S — risk low — category: privacy
   Why: the site publishes Genesis data (T-2326) and ledger pages are proposed. Receipts contain commands, paths, hostnames and output. Nothing is said about secrets in them. Assumption: the guard's secret patterns can be reused.
-  Done when: publishing a receipt containing a planted token and `/home/NAME` writes neither, and a test fails if the redactor is skipped.
+  Done when: publishing a receipt containing a planted token and `~` writes neither, and a test fails if the redactor is skipped.
 
 - **Wild: Fast-forward the clock to prove ops tasks** — FEATURE — value 3 — effort M — risk med — category: ops proof
   Why: wild. Cert expiry, log rotation, cron and cache TTL bugs only show up over months, and the ops/incident work in Mission 7 has no way to see them. The wrapper would run the verify command under `faketime` stepped 400 days.

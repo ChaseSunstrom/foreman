@@ -43,7 +43,7 @@ why(): read code/<ID>.events.jsonl (newest when no ID) and the journal's phase_d
 <!-- auto -->
 - 2026-10-23T07:45:57Z step 1/3: T-1373: Fm code why ID: explains a run from its journal and events (status, where it stopped, a st
 - git: foreman/build; 0 uncommitted
-- touched since last checkpoint: /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/confirm_edits.txt
+- touched since last checkpoint: /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/confirm_edits.txt
 ## Docs impact
 README fm code section, CHANGELOG, MASTER
 ## Verification evidence

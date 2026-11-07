@@ -41,7 +41,7 @@ CHANGELOG.md
 - (step 1) `cd mods/foreman-ui && ~/.local/bin/claude plugin test . && cd ../.. && python3 plugin/tests/run.py test_ui test_board_surfaces` → exit 0 · Ran 28 tests in 8.5s (7 classes, 16 at a time; slowest: UiView 8s, BoardSurfaces 2s, UiSkills 1s) / OK [ran] [tree b1d907a500d2] (2026-10-16T01:51:03Z)
 - (step 2) `cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 96 tests across 1 file. [7.46s] [ran] [tree b1d907a500d2] (2026-10-16T01:51:19Z)
 - (step 3) `cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 96 tests across 1 file. [7.40s] [ran] [tree b1d907a500d2] (2026-10-16T01:51:27Z)
-- (step 4) `test -s /tmp/claude-1000/-home-<user>--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/ui-agents2.png && grep -q 'T-1023' CHANGELOG.md` → exit 0 · (no output) [ran] [tree 2fccac9820f8] (2026-10-16T01:52:06Z)
+- (step 4) `test -s /tmp/claude-1000/-home-~--claude-foreman/af0c3568-df7b-4d21-90d3-c48d315ddcfa/scratchpad/ui-agents2.png && grep -q 'T-1023' CHANGELOG.md` → exit 0 · (no output) [ran] [tree 2fccac9820f8] (2026-10-16T01:52:06Z)
 - (ac 1) `cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → exit 0 · 0 fail / Ran 96 tests across 1 file. [7.58s] [ran] [tree 2fccac9820f8] (2026-10-16T01:52:14Z)
 - (step 3) `cd mods/foreman-ui && ~/.local/bin/claude plugin test .` → ✗ exit 1 · 3 fail / Ran 98 tests across 1 file. [7.81s] [ran] [tree 467b0aaaf836] (2026-10-16T01:55:42Z)
 - (ac 2) `python3 plugin/tests/run.py test_ui test_board_surfaces` → exit 0 · Ran 28 tests in 8.8s (7 classes, 16 at a time; slowest: UiView 9s, BoardSurfaces 2s, UiSkills 1s) / OK [ran] [tree 5784ae3e4edb] (2026-10-16T01:56:36Z)

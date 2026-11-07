@@ -11,7 +11,6 @@ created: 2026-11-05T11:33:20Z
 updated: 2026-11-05T11:33:20Z
 inferred_deps: [T-3104, T-3110]
 inferred_why: T-3104: named in its request; T-3110: named in its request
-group: design works at scale
 ---
 # Works dedupe compares each new work with every kept one (O(n^2)); index the 24x24 thumbs…
 ## Raw request

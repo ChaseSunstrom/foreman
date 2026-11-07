@@ -3,13 +3,13 @@ id: T-3162
 type: RESEARCH
 tier: M
 status: captured
-priority: normal
+priority: urgent
 scope: []
 depends_on: []
 source: self
 created: 2026-11-05T06:13:46Z
 updated: 2026-11-05T06:13:46Z
-friction_at: 2026-11-05T06:13:46Z
+friction_at: 2026-11-06T21:55:51Z
 ---
 # Improve the hooks: sampo mission + sampo ideas from the user's friction
 ## Raw request

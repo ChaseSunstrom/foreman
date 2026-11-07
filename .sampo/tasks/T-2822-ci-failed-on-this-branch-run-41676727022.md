@@ -35,7 +35,7 @@ unproven: [meaning]
 > | .github:103 - ['README.md:87: timed out after 120 s']
 > | + []
 > | .github:101 stderr=b''.join(stderr_seq) if stderr_seq else None)
-> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '/Users/runner/work/sampo/sampo/plugin/bin/fm', 'new', 'web', 'site']' timed out after 60 seconds
+> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '~/work/sampo/sampo/plugin/bin/fm', 'new', 'web', 'site']' timed out after 60 seconds
 > | .github:95 README.md:87: timed out after 120 s
 > | fm release-check: FAILED (a temporary HOME, deleted)
 > | .github:1 Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.
@@ -54,15 +54,15 @@ unproven: [meaning]
 > | .github:51 1 classes failed: test_demo.DemoNext (exit 1)
 > | .github:50 Ran 2991 tests in 890s; slowest: LeanKind 249s, Worker 140s, ExamAuthors 85s, Long 72s, ExamGen 66s
 > | .github:48 stderr=b''.join(stderr_seq) if stderr_seq else None)
-> | subprocess.TimeoutExpired: Command '['/opt/hostedtoolcache/Python/3.14.9/x64/bin/python3', '/home/runner/work/sampo/sampo/plugin/bin/fm', 'demo']' timed out after 53.325 seconds
+> | subprocess.TimeoutExpired: Command '['/opt/hostedtoolcache/Python/3.14.9/x64/bin/python3', '~/work/sampo/sampo/plugin/bin/fm', 'demo']' timed out after 53.325 seconds
 > | .github:1 "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
 > | .github:121 Process completed with exit code 1.
 > | .github:120 4 classes failed: test_library.LibSources (exit 1), test_rename_cli.RenameCli (exit 1), test_drill.Drill (exit 1), test_demo.DemoNext (exit 1)
 > | .github:119 Ran 1998 tests in 1320s; slowest: LeanKind 304s, Worker 236s, Drill 135s, Bench 92s, Lanes 87s
 > | .github:117 stderr:
-> | fm demo: Sampo didn't do what the demo expects: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '/Users/runner/work/sampo/sampo/plugin/bin/fm', 'task', 'evidence', 'T-0001', '--step', '1', '--run', 'python3 -m unittest -q 
+> | fm demo: Sampo didn't do what the demo expects: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '~/work/sampo/sampo/plugin/bin/fm', 'task', 'evidence', 'T-0001', '--step', '1', '--run', 'python3 -m unittest -q 
 > | .github:115 stderr=b''.join(stderr_seq) if stderr_seq else None)
-> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '/Users/runner/work/sampo/sampo/plugin/bin/fm', 'drill', '--seed', '5', '--json']' timed out after 59.765625 seconds
+> | subprocess.TimeoutExpired: Command '['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '~/work/sampo/sampo/plugin/bin/fm', 'drill', '--seed', '5', '--json']' timed out after 59.765625 seconds
 > | .github:113 ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
 > | AssertionError: 'now sampo' not found in ''
 > | .github:111 ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

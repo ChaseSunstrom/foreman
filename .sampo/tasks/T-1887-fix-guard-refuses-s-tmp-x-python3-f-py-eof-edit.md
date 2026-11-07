@@ -34,7 +34,7 @@ verified: strong
 <!-- auto -->
 - 2026-10-29T01:25:01Z step 2/3: Widen _python_units' prefix with _PRE_DENY and the exported check
 - git: foreman/build; 4 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmguard.py, plugin/tests/test_guard.py
-- touched since last checkpoint: plugin/tests/test_guard.py, CHANGELOG.md, MASTER.md, plugin/lib/fmguard.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/route_diff.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1890t.txt, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1890i.txt
+- touched since last checkpoint: plugin/tests/test_guard.py, CHANGELOG.md, MASTER.md, plugin/lib/fmguard.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/route_diff.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1890t.txt, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/e1890i.txt
 - failures met: assertionerror: false is not true : x=0 &&
 ## Docs impact
 CHANGELOG.md

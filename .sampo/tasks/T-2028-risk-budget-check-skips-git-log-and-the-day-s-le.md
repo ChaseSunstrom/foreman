@@ -35,7 +35,7 @@ Options: (a) a cache file with the day's counts, the ledger offset read up to (c
 <!-- auto -->
 - 2026-10-29T18:44:50Z step 1/2: Red tests: no git subprocess on a second process call with an unchanged reflog; new guard_block lines counted from the saved offset; a rolled (rewritten) ledger rescans
 - git: foreman/build; 1 uncommitted: plugin/tests/test_risk.py
-- touched since last checkpoint: plugin/tests/test_risk.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit28.json
+- touched since last checkpoint: plugin/tests/test_risk.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/edit28.json
 ## Docs impact
 CHANGELOG line added; no user-facing docs change (internal cache)
 ## Verification evidence

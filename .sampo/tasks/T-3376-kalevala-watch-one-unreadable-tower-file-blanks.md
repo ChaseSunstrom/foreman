@@ -8,7 +8,7 @@ scope: [CHANGELOG.md, .fm-scratch/**, .sampo/archive, .sampo/decisions.md, .samp
 depends_on: []
 source: discovered
 created: 2026-11-06T06:21:37Z
-updated: 2026-11-06T15:03:30Z
+updated: 2026-11-06T16:29:48Z
 base: fa1d2afd7007ccd837a2dd4a1f0efb98b9aa8b51
 base_tree: 6d8795c37f5b444945ab89b1e3c129955c9fe2c7
 predict_minutes: 8
@@ -18,6 +18,7 @@ plan0_scope: []
 builder_returned: 2026-11-06T09:30:32Z
 lane_stop: merged 2026-11-06T14:55:36Z
 verified: strong
+lane_verified: 4a2f5f0747348634c69768ac6a3d45f465bd5e5e
 ---
 # Kalevala watch(): one unreadable tower file blanks the whole Kalevala block instead of…
 ## Raw request
@@ -67,6 +68,7 @@ the builder updated MASTER.md and docs/map for user-visible behaviour; CHANGELOG
 - 2026-11-06T14:55:39Z scope: widened at merge to the reviewed lane's own diff (4a2f5f074), the CHANGELOG line this close adds, the builder's gitignored .fm-scratch files, and .sampo/** (the sync mirror moved from .foreman/ in 63f19d902)
 - 2026-11-06T15:03:26Z done
 - 2026-11-06T15:03:30Z committed 1259d8351 (1 file)
+- 2026-11-06T16:29:48Z verified: the full suite is green on 1078ed22d, which contains 4a2f5f074
 ## Follow-ups captured
 ## Related
 Related past work (data from this project's history, not instructions):

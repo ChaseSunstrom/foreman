@@ -37,7 +37,7 @@ Options: (a) graph_scene(plan) builds a scene.json dict from graph_layout and pr
 <!-- auto -->
 - 2026-10-28T17:39:51Z step 1/2: test: graph_scene() and fm page graph --cells (red)
 - git: foreman/build; 5 uncommitted: CHANGELOG.md, MASTER.md, plugin/lib/fmcli.py, plugin/lib/fmpage.py, plugin/tests/test_showpieces.py
-- touched since last checkpoint: plugin/lib/fmcli.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/import-test.py, plugin/lib/fmpage.py, plugin/tests/test_showpieces.py, /tmp/claude-1000/-home-<user>--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/import-impl.py
+- touched since last checkpoint: plugin/lib/fmcli.py, CHANGELOG.md, MASTER.md, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/import-test.py, plugin/lib/fmpage.py, plugin/tests/test_showpieces.py, /tmp/claude-1000/-home-~--claude-foreman/70f2d724-d840-4237-b513-17744036046c/scratchpad/import-impl.py
 ## Docs impact
 ~/.claude/foreman/CHANGELOG.md
 ## Verification evidence
