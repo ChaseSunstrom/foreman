@@ -114,6 +114,28 @@ def _which(name, path):
 SEALED = ("bwrap", "docker", "podman", "firejail", "unshare", "chroot", "ssh", "sudo")  # another view of the files
 
 
+# T-3623: read the repo only through a path they are given (judged below), never through their working folder
+QUIET = frozenset(("sleep", "true", "false", "echo", "nvidia-smi", "nproc", "uname", "whoami", "hostname"))
+BROWSERS = ("chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")  # what helpers.headless_chrome finds
+
+
+def _one_shot(name, argv):
+    """A browser given one page to dump or shoot (--dump-dom, --screenshot) and no devtools pipe, which loads pages
+    later (Page.navigate) where no hook sees. Its page is judged by its arguments; the page's own relative
+    subresources (scripts, styles) are not keyed."""
+    return name in BROWSERS and not any(a.startswith("--remote-debugging") for a in argv) and any(
+        a.startswith(("--dump-dom", "--screenshot")) for a in argv) and any("://" in a for a in argv[1:])
+
+
+def _path(t):
+    """A word as a file name: --opt=value's value, file://host/x?a=1#f as /x, %-escapes undone."""
+    from urllib.parse import unquote
+    t = t.strip("'\"();|&<>=")
+    if t.startswith("file://"):
+        t = "/" + t[7:].partition("/")[2]
+    return unquote(t.split("?")[0].split("#")[0])
+
+
 def _shebang(prog, path):
     """The python a script's #! line runs (resolved on PATH for /usr/bin/env), else None."""
     try:
@@ -161,9 +183,9 @@ def _blind(prog, argv, cwd, env, wrapper=False):
         if sub not in ("init", "clone") and _inside(where) or any(_inside(v) for k in ("GIT_DIR", "GIT_WORK_TREE")
                                                                    if (v := e.get(k))):
             return "g"  # it reads the files and git's own state (HEAD, tags)
-    elif _inside(cwd) and not wrapper:  # it may read the repo through its working folder (ls, make, grep -r)
-        return True
-    toks = [t.strip("'\"();|&<>=") for a in [prog, *argv] for t in a.split()]
+    elif _inside(cwd) and not wrapper and name not in QUIET and not _one_shot(name, argv):
+        return True  # it may read the repo through its working folder (ls, make, grep -r)
+    toks = [_path(t) for a in [prog, *argv] for w in a.split() for t in (w, *w.split("=")[1:2])]
     if name in ("sh", "bash", "dash", "zsh"):  # a command line: a python it runs must be this one, a program not ours
         for t in toks[1:]:
             w = _which(t, path) if t and "/" not in t else t

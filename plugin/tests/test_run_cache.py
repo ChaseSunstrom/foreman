@@ -16,6 +16,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(__file__))
 import run  # noqa: E402
+import runcover  # noqa: E402
 
 NESTED = ("SAMPO_SLOT", "FOREMAN_SLOT", "SAMPO_SLOTS", "FOREMAN_SLOTS", "SAMPO_NO_TEST_CACHE", "FOREMAN_NO_TEST_CACHE",
           "SAMPO_CACHE_FULL", "FOREMAN_CACHE_FULL")  # T-3638: a verify's opt-in in the caller's env must not skip a plain run
@@ -185,9 +186,9 @@ class Recorder(unittest.TestCase):
     def setUpClass(cls):
         cls.d = os.path.realpath(tempfile.mkdtemp())
         scratch(cls.d, {"lib/mod_a.py": "A = 1\n", "lib/mod_b.py": "B = 1\n", "data.txt": "x\n", "folder/f.txt": "y\n",
-                        "bin/tool": "#!/bin/sh\ntrue\n",
+                        "bin/tool": "#!/bin/sh\ntrue\n", "bin/sleep": "#!/bin/sh\ntrue\n",
                         "bin/pytool": "#!/usr/bin/env python3\nimport sys\nsys.path.insert(0, '.')\nimport mod_b\n"})
-        for name in ("tool", "pytool"):
+        for name in ("tool", "pytool", "sleep"):
             os.chmod(os.path.join(cls.d, "bin", name), 0o755)
         cls.cache = os.path.realpath(tempfile.mkdtemp())
         with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": cls.cache}):
@@ -310,6 +311,25 @@ class Recorder(unittest.TestCase):
                           "subprocess.run(['true'], check=True, cwd=t)\nsubprocess.run([sys.executable, '-I', '-c', 'pass'])\n"
                           "subprocess.run('echo hi', shell=True, capture_output=True, cwd=t)\n")
         self.assertNotIn("*", got)
+
+    def test_a_program_that_reads_no_files_stays_followed_in_the_repo_but_not_given_a_repo_path(self):
+        """T-3623: sleep, nvidia-smi and a one-shot browser run from a test's working folder (the repo) without reading it."""
+        for name in sorted(runcover.QUIET):
+            with self.subTest(name):
+                t = f"t = os.path.join(tempfile.mkdtemp(), {name!r})\nos.symlink('/bin/true', t)\n"
+                self.assertNotIn("*", self.record(t + "subprocess.run([t], check=True)\n"))
+        self.assertIn("*", self.record("subprocess.run(['./bin/sleep', '0'])\n"), "a program of the repo's own")
+        b = "t = os.path.join(tempfile.mkdtemp(), 'chromium')\nos.symlink('/bin/true', t)\n"
+        shot = "subprocess.run([t, '--headless', '--dump-dom', %s], check=True)\n"
+        self.assertNotIn("*", self.record(b + shot % "'http://127.0.0.1:1/'"))
+        for arg in ("'data.txt'", "'file://' + os.path.abspath('data.txt')", "'file://localhost' + os.path.abspath('data.txt')",
+                    "'file://' + os.path.abspath('data.txt') + '?q=1#x'", "'--app=file://' + os.path.abspath('data.txt')",
+                    "'--user-data-dir=' + os.path.abspath('folder')", "'file://' + os.path.abspath('d%61ta.txt')"):
+            with self.subTest(arg):
+                self.assertIn("*", self.record(b + shot % ("'http://127.0.0.1:1/', " + arg)))
+        for args in ("'--headless', '--remote-debugging-pipe', 'about:blank'", "'--headless', 'http://127.0.0.1:1/'"):
+            with self.subTest(args):  # pages loaded later by devtools, or none to judge
+                self.assertIn("*", self.record(b + f"subprocess.run([t, {args}], check=True)\n"))
 
 
 def fake_classes(cids, tests=1, matched=None):
