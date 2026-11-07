@@ -351,7 +351,7 @@ def user_voice(p, n=20):
     lines = [f"- asked: {c.fit(c.plain(b.section('Raw request').strip().lstrip('> ') or b.title), 200)}"
              for b in asks[-n:]]
     lines += [f"- pushed back: {c.fit(c.plain((e.get('data') or {}).get('text', '')), 200)}"
-              for e in c.ledger_tail(p, 3000) if e.get("event") == "correction"][-n // 2:]
+              for e in c.ledger_tail(p, 3000, kinds=("correction",)) if e.get("event") == "correction"][-n // 2:]
     t = taste(p, n // 4)  # T-0112: what they turned down, and why, and how they steered work in flight
     lines += [f"- dropped: {d['title']} — {d['why']}" for d in t["dropped"] if d["why"]]
     lines += [f"- steered: {s}" for s in t["steered"]]

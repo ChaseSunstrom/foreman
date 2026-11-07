@@ -203,7 +203,7 @@ def _call(p, name, args):
             with open(path, encoding="utf-8", errors="replace") as f:
                 return f.read(200_000), False
         if name == "checks":  # review: the request's "check results", read from the ledger in-process
-            run = next((e for e in reversed(c.ledger_tail(p, 5000)) if e.get("event") == "check_run"), None)
+            run = next((e for e in reversed(c.ledger_tail(p, 5000, kinds=("check_run",))) if e.get("event") == "check_run"), None)
             if not run:
                 return "(fm check hasn't run in this project)", False
             rows = (run.get("data") or {}).get("results") or []

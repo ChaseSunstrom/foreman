@@ -826,7 +826,7 @@ def _by_model(p, args, cli):
     """T-0487: tasks finished per model and type/tier, with their verification grades, from task_done events (those
     since T-0487 carry them); what a router picking the cheapest model that passes would read."""
     since, rows = _since(args.days), {}
-    for e in c.ledger_tail(p, 20000):
+    for e in c.ledger_tail(p, 20000, kinds=("task_done",)):
         d = e.get("data") or {}
         if e.get("event") == "task_done" and d.get("tier") and str(e.get("ts", ""))[:19] >= since:
             r = rows.setdefault(str(d.get("model") or "unknown"), {}).setdefault(f"{d.get('type')} {d['tier']}",
@@ -926,7 +926,7 @@ def cmd_digest(args):
     lines += ["Would do differently:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in redo[-6:]] if redo else []
     from sampo import outcomes
     outs = outcomes.outcomes(p)
-    grew = [d["changed"] / d["planned"] for e in c.ledger_tail(p, 20000) if e.get("event") == "task_done"
+    grew = [d["changed"] / d["planned"] for e in c.ledger_tail(p, 20000, kinds=("task_done",)) if e.get("event") == "task_done"
             and str(e.get("ts", ""))[:19] >= since and (d := e.get("data") or {}).get("planned") and "changed" in d]
     lines += [f"Planned vs changed files: {len(grew)} task(s) with a scope changed ×{statistics.median(grew):.1f} "
               f"the paths they planned (median; T-0644)"] if grew else []
@@ -977,7 +977,7 @@ def cmd_digest(args):
     except Exception:  # the rollup never costs the digest
         unproven, kinds = [], {}
     lines += [c.unproven_line(len(unproven), kinds, lead="Done without a green run here: ")] if unproven else []
-    nights = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "night" and str(e.get("ts", ""))[:19] >= since]
+    nights = [e for e in c.ledger_tail(p, 3000, kinds=("night",)) if e.get("event") == "night" and str(e.get("ts", ""))[:19] >= since]
     lines += ["Night shift (fm night):"] + [  # T-0236
         f"- {str(e.get('ts', ''))[:10]}: " + (", ".join(f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('name')}"
                                                         for r in (e.get("data") or {}).get("ran") or []) or "nothing ran")
@@ -1226,7 +1226,7 @@ def agents_md(p, target="agents"):
             parts += [f"Last verdict ({str(v.get('at'))[:10]}): " + c.fit(c.defang(c.plain(v["verdict"] + (": " + "; ".join(map(str, v.get("causes") or []))
                                                                                   if v.get("causes") else ""))), 400)]
     said = [] if private else [c.fit(c.defang(c.plain(str((e.get("data") or {}).get("text") or ""))), 200)
-                               for e in c.ledger_tail(p, 3000) if e.get("event") == "correction"][-10:]
+                               for e in c.ledger_tail(p, 3000, kinds=("correction",)) if e.get("event") == "correction"][-10:]
     if said:
         parts += ["", "## What the user has corrected (their words; follow them)"] + [f"- {x}" for x in said if x]
     from sampo import fixes as sfixes
@@ -1310,7 +1310,7 @@ def _lesions(p, args, cli):
     """T-0664: what each ablation (fm evolve --drop) found: the bench held without the file (it may not earn the tokens
     it costs every session) or dropped (it earns its place), newest per file."""
     seen = {}
-    for e in c.ledger_tail(p, 50000):
+    for e in c.ledger_tail(p, 50000, kinds=("evolve",)):
         d = e.get("data") or {}
         if e.get("event") == "evolve" and str(d.get("why") or "").startswith("ablation") and d.get("target"):
             seen[d["target"]] = (str(e.get("ts", ""))[:10], bool(d.get("kept")))
@@ -1335,7 +1335,7 @@ def _agents(p, args, cli):
             r["spawns"] += int(e.get("runs") or 1)
             r["tokens"] += int(e.get("tokens") or 0)
     since = _since(args.days)
-    for e in c.ledger_tail(p, 20000):
+    for e in c.ledger_tail(p, 20000, kinds=("lane_merge", "lane_rm")):
         if str(e.get("ts", ""))[:19] >= since and e.get("event") in ("lane_merge", "lane_rm"):
             rows["fm-builder"]["merged" if e["event"] == "lane_merge" else "removed"] += 1
     text = (f"Agents, last {args.days:g} day(s):\n" + "\n".join(
@@ -1382,7 +1382,7 @@ def yields(p, since):
             second["n"] += 1
             second["hit"] += bool(d.get("captured"))
     verdicts = collections.defaultdict(collections.Counter)  # T-0743: per-finding verdicts, where recorded
-    for e in c.ledger_tail(p, 50000):
+    for e in c.ledger_tail(p, 50000, kinds=("finding",)):
         d = e.get("data") or {}
         if e.get("event") == "finding" and d.get("lens") and str(e.get("ts", ""))[:19] >= since:
             verdicts[d["lens"]][d.get("verdict")] += 1
@@ -1600,7 +1600,7 @@ def cmd_burden(args):
         return _prune(args, _since(args.days))
     sessions = burden(transcripts_dir(p.root), _since(args.days))
     version = {}
-    for e in c.ledger_tail(p, 50000):
+    for e in c.ledger_tail(p, 50000, kinds=("session_start",)):
         if e.get("event") == "session_start" and e.get("session_id"):
             version[e["session_id"]] = _version((e.get("data") or {}).get("root"))
     if getattr(args, "by_source", False):

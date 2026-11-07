@@ -60,7 +60,7 @@ def _evidence(p, b):
     """(the newest open capability miss, what fm which already searched) on this task, for the user's context."""
     from sampo import miss as smiss
     miss = (smiss.open_misses(p, b) or [None])[-1]
-    seen = [e for e in c.ledger_tail(p, 1500) if e.get("event") == "tool_search" and e.get("task") == b.id]
+    seen = [e for e in c.ledger_tail(p, 1500, kinds=("tool_search",)) if e.get("event") == "tool_search" and e.get("task") == b.id]
     hits = ((seen[-1].get("data") or {}).get("hits") or {}) if seen else {}
     alts = [f"{k} x{n}" for k, n in hits.items() if isinstance(n, int) and n > 0]
     return ({"name": _clean(miss["name"], 60), "cmd": _clean(miss["cmd"], 120)} if miss else None), alts

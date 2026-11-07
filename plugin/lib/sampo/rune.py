@@ -1821,7 +1821,7 @@ def facts(p):
                 head = c.redact(c.defang(c.plain_lines(fh.read(1500)))).replace("<", "‹")  # can't close the <project> fence
         except OSError:
             pass
-    fixes = [e for e in c.ledger_tail(p, 2000) if e.get("event") == "correction" and (e.get("data") or {}).get("text")]
+    fixes = [e for e in c.ledger_tail(p, 2000, kinds=("correction",)) if e.get("event") == "correction" and (e.get("data") or {}).get("text")]
     return {"project": os.path.basename(os.path.abspath(p.root)), "langs": sorted(counts, key=lambda k: -counts[k])
             or list(louhi.LANGS), "docs": docs or ["README", "CHANGELOG"], "readme": head,
             "gates": c.read_meta(p).get("checks") or ["fm check"],

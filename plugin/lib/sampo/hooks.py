@@ -1130,7 +1130,7 @@ def _requests_note(p, sid, cap=REQUEST_TEXT_CAP):
     briefs: the smoke run's summary kept their names and dropped their rules, and the agent wrote three modules from
     signatures. The active one first, then in order, within the cap (a longer hook context reaches the agent as a
     2 KB preview); fm task show names the rest."""
-    ids = {e.get("task") for e in c.ledger_tail(p, 5000)
+    ids = {e.get("task") for e in c.ledger_tail(p, 5000, kinds=("first_brief",))
            if e.get("event") == "first_brief" and e.get("session_id") == sid}
     left = sorted((b for b in c.load_briefs(p) if b.id in ids and b.status not in c.CLOSED),
                   key=lambda b: (b.status != "active", c.id_num(b.id)))
@@ -1401,7 +1401,7 @@ def _close_evidenced(p, sid, cmd, until):
     agent's evidence close the same way (focused, then finished), in order, while the stop's time lasts. The smoke run
     spent seven turns focusing them one at a time so each stop could close one."""
     fm, env = os.path.join(c.PLUGIN_ROOT, "bin", "fm"), dict(os.environ, FOREMAN_SESSION_ID=sid, FOREMAN_SENTINEL="off")
-    ids = {e.get("task") for e in c.ledger_tail(p, 5000)
+    ids = {e.get("task") for e in c.ledger_tail(p, 5000, kinds=("first_brief",))
            if e.get("event") == "first_brief" and e.get("session_id") == sid}
     for b in sorted((b for b in c.load_briefs(p) if b.id in ids and b.status not in c.CLOSED and b.tier == "S"
                      and b.type != "FIX" and b.has_evidence(step=1)), key=lambda b: c.id_num(b.id)):

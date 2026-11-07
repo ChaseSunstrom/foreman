@@ -101,7 +101,7 @@ def _receipt(p, k):
     from sampo import cost
     end = k.get("ended_at")
     since = _iso(k["started"])
-    done = [e["task"] for e in c.ledger_tail(p, 20000) if e.get("event") == "task_done" and e.get("task")
+    done = [e["task"] for e in c.ledger_tail(p, 20000, kinds=("task_done",)) if e.get("event") == "task_done" and e.get("task")
             and str(e.get("ts", "")) >= since and (not end or str(e["ts"]) <= _iso(end))]
     usd = spent(p, k["started"], end)
     return (f"contract receipt: {len(done)} task(s) closed" + (": " + ", ".join(done) if done else "")

@@ -47,7 +47,7 @@ def priority(name):
 
 def current_model(p):
     """The model of the newest finished task here (task_done events carry it), or None."""
-    return next(((e.get("data") or {}).get("model") for e in reversed(c.ledger_tail(p, 5000))
+    return next(((e.get("data") or {}).get("model") for e in reversed(c.ledger_tail(p, 5000, kinds=("task_done",)))
                  if e.get("event") == "task_done" and (e.get("data") or {}).get("model")), None)
 
 
@@ -58,7 +58,7 @@ def next_lesion(p):
     model = current_model(p)
     if not model or not bench._load_cases(p):
         return None
-    done = {(e.get("data") or {}).get("target") for e in c.ledger_tail(p, 20000) if e.get("event") == "evolve"
+    done = {(e.get("data") or {}).get("target") for e in c.ledger_tail(p, 20000, kinds=("evolve",)) if e.get("event") == "evolve"
             and (e.get("data") or {}).get("model") == model}
     root = os.path.dirname(c.PLUGIN_ROOT)
     files = [os.path.relpath(os.path.join(c.PLUGIN_ROOT, "rules", "foreman.md"), root)] + sorted(
@@ -80,7 +80,7 @@ def jobs(p):
         out.append(("steer checks", ["genesis", "steer"], 0.0))
     out.append(("compost", ["tidy", "--apply", "--lanes-only"], 0.0))  # T-1071: free: worktrees and branches of closed tasks
     out.append(("consolidate", ["recall", "--lessons", "--consolidate", "--capture", "--from-night"], 0.0))  # T-1071: free: a merge proposal, retires nothing
-    if any(e.get("event") == "task_done" for e in c.ledger_tail(p, 5000)):  # T-0888: free: closed tasks' checks on HEAD
+    if any(e.get("event") == "task_done" for e in c.ledger_tail(p, 5000, kinds=("task_done",))):  # T-0888: free: closed tasks' checks on HEAD
         out.append(("sentinel", ["sentinel", "--bisect"], 0.0))
     from sampo import moonscale
     ready = moonscale.night_ready(p)  # T-2916: free: a local model answers; grow under the target, funnel while rows wait
@@ -324,7 +324,7 @@ def fetches(p, days=7):
     events: routine approved polls are listed here (fm decide --review prints them), not as pending [outward] rows."""
     cut = (c.datetime.date.today() - c.datetime.timedelta(days=days)).isoformat()
     n = {}
-    for e in c.ledger_tail(p, 5000):
+    for e in c.ledger_tail(p, 5000, kinds=("night_tick",)):
         if e.get("event") == "night_tick" and str(e.get("ts"))[:10] >= cut:
             for f in (e.get("data") or {}).get("fetched") or []:
                 k = (str(e["ts"])[:10], str(f.get("kind")), str(f.get("repo")))
@@ -643,7 +643,7 @@ def cmd_night(args):
         ran.append({"name": j["name"], "exit": code, "tail": c.fit(c.plain(" ".join(tail)), 160)})
     if not stopped and ran and budget.spent()[0] - start > limit:
         stopped = f"spend ${budget.spent()[0] - start:.2f} passed the limit ${limit:.2f} in the last job"
-    closed = [e["task"] for e in c.ledger_tail(p, 5000) if e.get("event") == "task_done" and e.get("task")
+    closed = [e["task"] for e in c.ledger_tail(p, 5000, kinds=("task_done",)) if e.get("event") == "task_done" and e.get("task")
               and str(e.get("ts", ""))[:19] >= t0[:19]] if any(x["name"] == "queue" for x in ran) else []
     with c.lock(p.dir):
         c.log_event(p, "night", data={"ran": ran, "skipped": [s["name"] for s in skipped], "limit": limit,

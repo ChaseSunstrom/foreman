@@ -773,7 +773,7 @@ def lessons(p):
     shown UNRECALLED_DAYS after it closed, or a failure its task met came back in another task after it closed."""
     from sampo import outcomes
     shown = collections.Counter()
-    for e in c.ledger_tail(p, 50000):
+    for e in c.ledger_tail(p, 50000, kinds=("lesson_shown",)):
         if e.get("event") == "lesson_shown":
             shown[(e.get("data") or {}).get("of")] += 1
     for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 30000):
@@ -987,14 +987,14 @@ def cmd_recall(args):
         rows = lessons(p)
         return cli.out(args, {"lessons": rows}, _render_lessons(rows))
     if args.corrections:
-        rows = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "correction"][-(args.n * 5):]
+        rows = [e for e in c.ledger_tail(p, 3000, kinds=("correction",)) if e.get("event") == "correction"][-(args.n * 5):]
         return cli.out(args, rows, "\n".join(f"- {str(e.get('ts', ''))[:10]} {e.get('task') or '-'}: "
                                                 f"{c.plain((e.get('data') or {}).get('text', ''))}" for e in rows)
                          or "No corrections recorded.")
     if getattr(args, "magnets", False):  # T-0613: where fixes keep landing
         fixes = {b.id for b in c.load_briefs(p, include_archive=True) if b.type == "FIX"}
         by_file = {}
-        for e in c.ledger_tail(p, 50000):
+        for e in c.ledger_tail(p, 50000, kinds=("touched",)):
             f = (e.get("data") or {}).get("file")
             if e.get("event") == "touched" and e.get("task") in fixes and f:
                 by_file.setdefault(os.path.relpath(f, p.root), set()).add(e["task"])

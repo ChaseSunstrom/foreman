@@ -70,7 +70,7 @@ def _build(p, con):
         if 2 <= len(changed) <= CO_MAX:
             w = 1.0 / (len(changed) - 1)
             rows += [(a, b, "cochange", when, w) for a in changed for b in changed if a != b]
-    for e in c.ledger_tail(p, 50000):
+    for e in c.ledger_tail(p, 50000, kinds=("touched",)):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") else None
         if f and f.startswith(p.root.rstrip("/") + "/"):
             rows.append((f"task:{e['task']}", os.path.relpath(f, p.root), "touched", _utc(str(e.get("ts", ""))), 1.0))

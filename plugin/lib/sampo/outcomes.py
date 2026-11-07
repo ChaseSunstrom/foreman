@@ -1059,7 +1059,7 @@ def plan_lines(p):
 
 def _first_finish(p):
     first = {}
-    for e in c.ledger_tail(p, 50000):
+    for e in c.ledger_tail(p, 50000, kinds=("finish",)):
         if e.get("event") == "finish" and e.get("task") and e["task"] not in first:
             first[e["task"]] = not (e.get("data") or {}).get("failed")
     return first

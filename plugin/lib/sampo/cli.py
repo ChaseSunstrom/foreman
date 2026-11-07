@@ -2878,7 +2878,7 @@ def _close_warnings_of(p, b, files):
     dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
                + f" — answer or note each: sampo task dissent {b.id} resolve N \"<how>\"") if still else None
     honest = _honest(p, b)  # T-0661
-    steers = [t[6:].strip() for e in c.ledger_tail(p, 3000) if e.get("event") == "note" and e.get("task") == b.id
+    steers = [t[6:].strip() for e in c.ledger_tail(p, 3000, kinds=("note",)) if e.get("event") == "note" and e.get("task") == b.id
               and (t := str((e.get("data") or {}).get("text") or "")).startswith("steer:")]
     standing = [x for x in steers if c.STANDING_STEER.search(x)]
     if standing:  # T-0601: a steer meant to last should outlive this task
@@ -2955,7 +2955,7 @@ def catch_rates(p):
     """T-0653: ({command: (runs, tasks where it failed and later passed)}, tasks with a red-then-green prove),
     in one pass over this project's evidence (T-1952)."""
     runs, seq, proven = collections.Counter(), collections.defaultdict(list), set()
-    for e in c.ledger_tail(p, 50000):
+    for e in c.ledger_tail(p, 50000, kinds=("prove", "evidence", "finish")):
         d = e.get("data") or {}
         if e.get("event") == "prove" and d.get("red") and not d.get("green"):
             proven.add(e.get("task"))
@@ -4017,7 +4017,7 @@ def cmd_focus(args):
         record = ""
     # T-1231: a request Foreman queued from a multi-request prompt comes with its text, word for word: an agent that
     # moves on with finish && focus otherwise works from its title or a compaction summary
-    queued = any(e.get("event") == "first_brief" and e.get("task") == target.id for e in c.ledger_tail(p, 5000))
+    queued = any(e.get("event") == "first_brief" and e.get("task") == target.id for e in c.ledger_tail(p, 5000, kinds=("first_brief",)))
     raw = re.sub(r"(?m)^>\s?", "", target.section("Raw request")).strip() if queued else ""
     record += f"\nThe request, word for word:\n{raw[:6000]}" if raw else ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
@@ -6516,7 +6516,7 @@ def cmd_next(args):
              f"them to the user at the end, never act on them first; deferred after {ASK_DAYS} days)") if asks else ""
     from sampo import contract
     over += contract.line(p)  # T-1158
-    hollow = [e for e in c.ledger_tail(p, 500) if e.get("event") == "hollow_return"
+    hollow = [e for e in c.ledger_tail(p, 500, kinds=("hollow_return",)) if e.get("event") == "hollow_return"
               and (age := c.age_days(e.get("ts"))) is not None and age < 1]  # T-0963: today's, so an old one doesn't nag forever
     if hollow:
         d = hollow[-1].get("data") or {}

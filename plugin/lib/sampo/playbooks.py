@@ -411,7 +411,7 @@ def _book_of(e, books):
 def followed(p, b, root=ROOT):
     """T-1834: [{playbook, followed, steps}] for each playbook this task loaded since its first focus (this project's
     tool events), with score()'s share of its steps the run followed. Empty when it loaded none: no scoring then."""
-    start = min((e["ts"] for e in c.ledger_tail(p, 5000) if e.get("task") == b.id and e.get("event") == "focus"
+    start = min((e["ts"] for e in c.ledger_tail(p, 5000, kinds=("focus",)) if e.get("task") == b.id and e.get("event") == "focus"
                  and e.get("ts")), default=str(b.meta.get("created") or ""))
     books, loaded = listed(root), []  # an index loads too, and score() counts words over all of them
     # ponytail: the live log's last 50,000 events; a task that outlives a rotation or that many events loses its early loads
