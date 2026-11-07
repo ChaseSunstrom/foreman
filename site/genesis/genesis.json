@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-06T23:56:26Z",
- "rev": "45819b7d5",
+ "updated": "2026-11-07T00:02:07Z",
+ "rev": "8e7b447f1",
  "capabilities": [
   {
    "n": 1,
@@ -41758,10 +41758,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 37075,
+   "generated": 37241,
    "write": {
     "title": 252,
-    "line": 2114,
+    "line": 2124,
     "payoff": 25,
     "kill test": 131,
     "code": 11
@@ -41773,12 +41773,12 @@
    },
    "rejected": {
     "kill": 18973,
-    "tier": 12916,
+    "tier": 13048,
     "novelty": 122
    },
-   "merged": 831,
-   "kept": 1472,
-   "pending": 154
+   "merged": 841,
+   "kept": 1484,
+   "pending": 156
   },
   "families": [
    {
@@ -41816,7 +41816,7 @@
    },
    {
     "id": "F-021968",
-    "size": 200,
+    "size": 203,
     "lead": "Harmonize parallel agents via standing wave resonance",
     "today": "Today you can't ensure that parallel agents working on related tasks stay in sync without constant communication",
     "with_this": "With this, Sampo can create standing waves of task updates that naturally synchronize agents working on coupled components, reducing communication overhead",
@@ -41997,6 +41997,22 @@
     "evidence": "",
     "kinds": [
      "releases"
+    ]
+   },
+   {
+    "id": "F-027933",
+    "size": 2,
+    "lead": "Detect onboarding burnout from typing patterns",
+    "today": "Today you can't see if a new hire is struggling or stuck until they ask for help.",
+    "with_this": "With this, you can proactively offer help or simplify tasks when a new hire's typing rhythm shows signs of frustration.",
+    "tier": "extreme",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "onboarding"
     ]
    },
    {
@@ -42701,22 +42717,6 @@
     "evidence": "",
     "kinds": [
      "migrations"
-    ]
-   },
-   {
-    "id": "F-027933",
-    "size": 1,
-    "lead": "Detect onboarding burnout from typing patterns",
-    "today": "Today you can't see if a new hire is struggling or stuck until they ask for help.",
-    "with_this": "With this, you can proactively offer help or simplify tasks when a new hire's typing rhythm shows signs of frustration.",
-    "tier": "extreme",
-    "cold": null,
-    "wild": 3,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "onboarding"
     ]
    },
    {
@@ -45041,10 +45041,10 @@
     ]
    }
   ],
-  "families_total": 1140,
+  "families_total": 1145,
   "catalogue": {
    "file": "moons-catalogue.json",
-   "total": 1472
+   "total": 1484
   }
  },
  "steer": {
@@ -45078,7 +45078,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45101,7 +45101,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45124,7 +45124,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45147,7 +45147,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45170,7 +45170,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45193,7 +45193,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45216,7 +45216,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45239,7 +45239,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45262,7 +45262,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45285,7 +45285,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45308,7 +45308,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45331,7 +45331,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45354,7 +45354,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45377,7 +45377,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45400,7 +45400,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45423,7 +45423,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45446,7 +45446,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45469,7 +45469,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45492,7 +45492,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45515,7 +45515,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45538,7 +45538,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45561,7 +45561,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45584,7 +45584,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45607,7 +45607,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45630,7 +45630,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -45653,7 +45653,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 21.6,
+    "idle_h": 21.7,
     "spend": 0,
     "missions": 0,
     "restarted": null,
