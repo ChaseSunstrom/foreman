@@ -11,6 +11,7 @@
 
 ### Everything else
 
+- risk.json, genesis-step.json and doctor-cache.json no longer get rewritten by lanes and main for each other: risk keeps one HEAD-reflog entry per checkout under the worktree's real git dir, and rune.health and doctor key on content hashes (c.content_key), not on mtimes or the plugin path (T-3565).
 - sampo focus now refuses an unplanned, lane-only or held task before its git snapshot, recall and predict, and the views still update when saving the list of the user's uncommitted files fails (T-3583)
 - The test runner no longer crashes on a file whose name isn't valid UTF-8: the coverage cache reads git's output, hashes and saves such paths with surrogate escapes (a crash failed the 05:20 ship's full suite) (T-3651)
 - A close after a green merge train reuses the train's pass: its linked tests are counted the way the train picks them (another runner's tests only when a gate runs that runner; sync-mirror .md files no longer link tests), and a newer run on other code no longer hides the pass on this code (T-3566).
