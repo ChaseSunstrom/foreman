@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-07T01:46:16Z",
- "rev": "87141c836",
+ "updated": "2026-11-07T01:51:37Z",
+ "rev": "6847d1892",
  "capabilities": [
   {
    "n": 1,
@@ -42445,6 +42445,1513 @@
     "vuln"
    ],
    "author": "self"
+  },
+  {
+   "run": "s29-036",
+   "agent": "smith",
+   "keyed": 48,
+   "found": 11,
+   "false_alarms": 15,
+   "exam_defects": 0,
+   "fixable": 48,
+   "fixed": 5,
+   "tf_keyed": 24,
+   "tf_first": 0,
+   "readings_keyed": 8,
+   "readings_hit": 0,
+   "missing_keyed": 4,
+   "missing_hit": 4,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 1,
+   "broken": 0,
+   "scenarios": 44,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 44,
+   "conf_missing": 44,
+   "brier_sum": 11.0,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      8
+     ],
+     "js": [
+      1,
+      8
+     ],
+     "ts": [
+      2,
+      8
+     ],
+     "ruby": [
+      4,
+      10
+     ],
+     "python": [
+      2,
+      10
+     ],
+     "rust": [
+      2,
+      4
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      8
+     ],
+     "vuln": [
+      3,
+      8
+     ],
+     "untested": [
+      3,
+      8
+     ],
+     "slow": [
+      1,
+      8
+     ],
+     "docs": [
+      3,
+      8
+     ],
+     "flaky": [
+      1,
+      4
+     ],
+     "dep": [
+      0,
+      4
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 12,
+    "found": 4,
+    "false_alarms": 6,
+    "exam_defects": 0,
+    "fixable": 12,
+    "fixed": 0,
+    "tf_keyed": 6,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 1,
+    "broken": 0,
+    "scenarios": 11,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 11,
+    "conf_missing": 11,
+    "brier_sum": 2.75,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "ruby": [
+       3,
+       4
+      ],
+      "ts": [
+       0,
+       5
+      ],
+      "rust": [
+       1,
+       2
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       2
+      ],
+      "vuln": [
+       1,
+       2
+      ],
+      "untested": [
+       1,
+       2
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       1,
+       2
+      ],
+      "flaky": [
+       1,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "false_by_kind": {
+     "untested": 1,
+     "docs": 1,
+     "flaky": 2,
+     "dep": 1,
+     "missing-tool": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "train": {
+    "keyed": 36,
+    "found": 7,
+    "false_alarms": 9,
+    "exam_defects": 0,
+    "fixable": 36,
+    "fixed": 5,
+    "tf_keyed": 18,
+    "tf_first": 0,
+    "readings_keyed": 6,
+    "readings_hit": 0,
+    "missing_keyed": 3,
+    "missing_hit": 3,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 33,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 33,
+    "conf_missing": 33,
+    "brier_sum": 8.25,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       8
+      ],
+      "js": [
+       1,
+       8
+      ],
+      "ts": [
+       2,
+       3
+      ],
+      "python": [
+       2,
+       9
+      ],
+      "rust": [
+       1,
+       2
+      ],
+      "ruby": [
+       1,
+       6
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       6
+      ],
+      "vuln": [
+       2,
+       6
+      ],
+      "untested": [
+       2,
+       6
+      ],
+      "slow": [
+       1,
+       6
+      ],
+      "docs": [
+       2,
+       6
+      ],
+      "flaky": [
+       0,
+       3
+      ],
+      "dep": [
+       0,
+       3
+      ]
+     }
+    },
+    "false_by_kind": {
+     "bug": 2,
+     "vuln": 1,
+     "untested": 2,
+     "dep": 1,
+     "vague": 1,
+     "ambiguous": 1,
+     "none": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.0909
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-js-a5faf6",
+     "missing-tool-js-bbe750",
+     "missing-tool-ruby-936448"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [
+     "ambiguous-c-80d4dd",
+     "bug-ruby-054acd",
+     "dep-python-1b0221",
+     "docs-rust-c9e986",
+     "flaky-ruby-ea34e3",
+     "missing-tool-rust-65eb37",
+     "none-ts-dad1b6",
+     "slow-ts-69ecc4",
+     "untested-ruby-0673b6",
+     "vague-rust-b220b1",
+     "vuln-ruby-2121d4"
+    ],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "bug": 2,
+    "vuln": 1,
+    "untested": 3,
+    "docs": 1,
+    "flaky": 2,
+    "dep": 2,
+    "vague": 1,
+    "ambiguous": 1,
+    "missing-tool": 1,
+    "none": 1
+   },
+   "brier": 0.25,
+   "closed_share": 0.0682,
+   "tokens": 1231282,
+   "fix_rate": 0.0682,
+   "tokens_per_fix": 410427,
+   "model": "jarvis-nothink",
+   "at": "2026-11-07T01:50:13Z",
+   "gen": 4,
+   "split": "all",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "none",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s29-035",
+   "agent": "smith",
+   "keyed": 48,
+   "found": 7,
+   "false_alarms": 13,
+   "exam_defects": 0,
+   "fixable": 48,
+   "fixed": 7,
+   "tf_keyed": 24,
+   "tf_first": 2,
+   "readings_keyed": 8,
+   "readings_hit": 0,
+   "missing_keyed": 4,
+   "missing_hit": 4,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 1,
+   "broken": 0,
+   "scenarios": 44,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 44,
+   "conf_missing": 44,
+   "brier_sum": 11.0,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      8
+     ],
+     "js": [
+      1,
+      8
+     ],
+     "ts": [
+      2,
+      8
+     ],
+     "ruby": [
+      2,
+      10
+     ],
+     "python": [
+      2,
+      10
+     ],
+     "rust": [
+      0,
+      4
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      8
+     ],
+     "vuln": [
+      0,
+      8
+     ],
+     "untested": [
+      2,
+      8
+     ],
+     "slow": [
+      2,
+      8
+     ],
+     "docs": [
+      2,
+      8
+     ],
+     "flaky": [
+      1,
+      4
+     ],
+     "dep": [
+      0,
+      4
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 12,
+    "found": 1,
+    "false_alarms": 6,
+    "exam_defects": 0,
+    "fixable": 12,
+    "fixed": 1,
+    "tf_keyed": 6,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 11,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 11,
+    "conf_missing": 11,
+    "brier_sum": 2.75,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "ruby": [
+       0,
+       4
+      ],
+      "ts": [
+       1,
+       5
+      ],
+      "rust": [
+       0,
+       2
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       2
+      ],
+      "vuln": [
+       0,
+       2
+      ],
+      "untested": [
+       0,
+       2
+      ],
+      "slow": [
+       1,
+       2
+      ],
+      "docs": [
+       0,
+       2
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "false_by_kind": {
+     "vuln": 3,
+     "untested": 1,
+     "docs": 2
+    },
+    "brier": 0.25,
+    "closed_share": 0.0909
+   },
+   "train": {
+    "keyed": 36,
+    "found": 6,
+    "false_alarms": 7,
+    "exam_defects": 0,
+    "fixable": 36,
+    "fixed": 6,
+    "tf_keyed": 18,
+    "tf_first": 2,
+    "readings_keyed": 6,
+    "readings_hit": 0,
+    "missing_keyed": 3,
+    "missing_hit": 3,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 1,
+    "broken": 0,
+    "scenarios": 33,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 33,
+    "conf_missing": 33,
+    "brier_sum": 8.25,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       8
+      ],
+      "js": [
+       1,
+       8
+      ],
+      "ts": [
+       1,
+       3
+      ],
+      "python": [
+       2,
+       9
+      ],
+      "rust": [
+       0,
+       2
+      ],
+      "ruby": [
+       2,
+       6
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       6
+      ],
+      "vuln": [
+       0,
+       6
+      ],
+      "untested": [
+       2,
+       6
+      ],
+      "slow": [
+       1,
+       6
+      ],
+      "docs": [
+       2,
+       6
+      ],
+      "flaky": [
+       1,
+       3
+      ],
+      "dep": [
+       0,
+       3
+      ]
+     }
+    },
+    "false_by_kind": {
+     "bug": 2,
+     "vuln": 2,
+     "untested": 2,
+     "vague": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.0606
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-js-bbe750",
+     "missing-tool-ruby-936448"
+    ],
+    "holdout": [
+     "missing-tool-rust-65eb37"
+    ]
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [
+     "ambiguous-c-80d4dd",
+     "bug-ruby-054acd",
+     "dep-python-1b0221",
+     "docs-rust-c9e986",
+     "flaky-ruby-ea34e3",
+     "missing-tool-rust-65eb37",
+     "none-ts-dad1b6",
+     "slow-ts-69ecc4",
+     "untested-ruby-0673b6",
+     "vague-rust-b220b1",
+     "vuln-ruby-2121d4"
+    ],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "bug": 2,
+    "vuln": 5,
+    "untested": 3,
+    "docs": 2,
+    "vague": 1
+   },
+   "brier": 0.25,
+   "closed_share": 0.0682,
+   "tokens": 1746726,
+   "fix_rate": 0.0682,
+   "tokens_per_fix": 582242,
+   "model": "jarvis-nothink",
+   "at": "2026-11-07T01:50:25Z",
+   "gen": 4,
+   "split": "all",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "none",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s29-036",
+   "agent": "smith",
+   "keyed": 48,
+   "found": 11,
+   "false_alarms": 15,
+   "exam_defects": 0,
+   "fixable": 48,
+   "fixed": 5,
+   "tf_keyed": 24,
+   "tf_first": 0,
+   "readings_keyed": 8,
+   "readings_hit": 0,
+   "missing_keyed": 4,
+   "missing_hit": 4,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 1,
+   "broken": 0,
+   "scenarios": 44,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 44,
+   "conf_missing": 44,
+   "brier_sum": 11.0,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "c": [
+      0,
+      8
+     ],
+     "js": [
+      1,
+      8
+     ],
+     "ts": [
+      2,
+      8
+     ],
+     "ruby": [
+      4,
+      10
+     ],
+     "python": [
+      2,
+      10
+     ],
+     "rust": [
+      2,
+      4
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      8
+     ],
+     "vuln": [
+      3,
+      8
+     ],
+     "untested": [
+      3,
+      8
+     ],
+     "slow": [
+      1,
+      8
+     ],
+     "docs": [
+      3,
+      8
+     ],
+     "flaky": [
+      1,
+      4
+     ],
+     "dep": [
+      0,
+      4
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 12,
+    "found": 4,
+    "false_alarms": 6,
+    "exam_defects": 0,
+    "fixable": 12,
+    "fixed": 0,
+    "tf_keyed": 6,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 1,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 1,
+    "broken": 0,
+    "scenarios": 11,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 11,
+    "conf_missing": 11,
+    "brier_sum": 2.75,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "ruby": [
+       3,
+       4
+      ],
+      "ts": [
+       0,
+       5
+      ],
+      "rust": [
+       1,
+       2
+      ],
+      "python": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       2
+      ],
+      "vuln": [
+       1,
+       2
+      ],
+      "untested": [
+       1,
+       2
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       1,
+       2
+      ],
+      "flaky": [
+       1,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "false_by_kind": {
+     "untested": 1,
+     "docs": 1,
+     "flaky": 2,
+     "dep": 1,
+     "missing-tool": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "train": {
+    "keyed": 36,
+    "found": 7,
+    "false_alarms": 9,
+    "exam_defects": 0,
+    "fixable": 36,
+    "fixed": 5,
+    "tf_keyed": 18,
+    "tf_first": 0,
+    "readings_keyed": 6,
+    "readings_hit": 0,
+    "missing_keyed": 3,
+    "missing_hit": 3,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 33,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 33,
+    "conf_missing": 33,
+    "brier_sum": 8.25,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       8
+      ],
+      "js": [
+       1,
+       8
+      ],
+      "ts": [
+       2,
+       3
+      ],
+      "python": [
+       2,
+       9
+      ],
+      "rust": [
+       1,
+       2
+      ],
+      "ruby": [
+       1,
+       6
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       6
+      ],
+      "vuln": [
+       2,
+       6
+      ],
+      "untested": [
+       2,
+       6
+      ],
+      "slow": [
+       1,
+       6
+      ],
+      "docs": [
+       2,
+       6
+      ],
+      "flaky": [
+       0,
+       3
+      ],
+      "dep": [
+       0,
+       3
+      ]
+     }
+    },
+    "false_by_kind": {
+     "bug": 2,
+     "vuln": 1,
+     "untested": 2,
+     "dep": 1,
+     "vague": 1,
+     "ambiguous": 1,
+     "none": 1
+    },
+    "brier": 0.25,
+    "closed_share": 0.0909
+   },
+   "cost": 0,
+   "closed": {
+    "train": [
+     "missing-tool-js-a5faf6",
+     "missing-tool-js-bbe750",
+     "missing-tool-ruby-936448"
+    ],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [
+     "ambiguous-c-80d4dd",
+     "bug-ruby-054acd",
+     "dep-python-1b0221",
+     "docs-rust-c9e986",
+     "flaky-ruby-ea34e3",
+     "missing-tool-rust-65eb37",
+     "none-ts-dad1b6",
+     "slow-ts-69ecc4",
+     "untested-ruby-0673b6",
+     "vague-rust-b220b1",
+     "vuln-ruby-2121d4"
+    ],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "bug": 2,
+    "vuln": 1,
+    "untested": 3,
+    "docs": 1,
+    "flaky": 2,
+    "dep": 2,
+    "vague": 1,
+    "ambiguous": 1,
+    "missing-tool": 1,
+    "none": 1
+   },
+   "brier": 0.25,
+   "closed_share": 0.0682,
+   "tokens": 1231282,
+   "fix_rate": 0.0682,
+   "tokens_per_fix": 410427,
+   "model": "jarvis-nothink",
+   "at": "2026-11-07T01:50:30Z",
+   "gen": 4,
+   "split": "all",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "none",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
+  },
+  {
+   "run": "s28-032",
+   "agent": "smith",
+   "keyed": 48,
+   "found": 0,
+   "false_alarms": 7,
+   "exam_defects": 0,
+   "fixable": 48,
+   "fixed": 1,
+   "tf_keyed": 24,
+   "tf_first": 0,
+   "readings_keyed": 8,
+   "readings_hit": 0,
+   "missing_keyed": 4,
+   "missing_hit": 0,
+   "rank_keyed": 0,
+   "rank_hit": 0,
+   "false_done": 0,
+   "broken": 0,
+   "scenarios": 44,
+   "errors": 0,
+   "reasked": 0,
+   "proved_by_arm": 0,
+   "brier_n": 44,
+   "conf_missing": 44,
+   "brier_sum": 11.0,
+   "false_proofs": 0,
+   "watch_keyed": 0,
+   "watch_started": 0,
+   "watch_hit": 0,
+   "watch_ran": 0,
+   "lanes_keyed": 0,
+   "lanes_recovered": 0,
+   "lanes_kept": 0,
+   "lanes_dup": 0,
+   "lean_keyed": 0,
+   "lean_ok": 0,
+   "forecast_keyed": 0,
+   "forecast_type": 0,
+   "forecast_overlap": 0,
+   "forecast_base_type": 0,
+   "forecast_base_overlap": 0,
+   "breakage_keyed": 0,
+   "breakage_flagged": 0,
+   "breakage_false": 0,
+   "recall": {
+    "lang": {
+     "rust": [
+      0,
+      8
+     ],
+     "js": [
+      0,
+      11
+     ],
+     "c": [
+      0,
+      8
+     ],
+     "ruby": [
+      0,
+      8
+     ],
+     "ts": [
+      0,
+      5
+     ],
+     "python": [
+      0,
+      8
+     ]
+    },
+    "kind": {
+     "bug": [
+      0,
+      8
+     ],
+     "vuln": [
+      0,
+      8
+     ],
+     "untested": [
+      0,
+      8
+     ],
+     "slow": [
+      0,
+      8
+     ],
+     "docs": [
+      0,
+      8
+     ],
+     "flaky": [
+      0,
+      4
+     ],
+     "dep": [
+      0,
+      4
+     ]
+    }
+   },
+   "holdout": {
+    "keyed": 12,
+    "found": 0,
+    "false_alarms": 0,
+    "exam_defects": 0,
+    "fixable": 12,
+    "fixed": 0,
+    "tf_keyed": 6,
+    "tf_first": 0,
+    "readings_keyed": 2,
+    "readings_hit": 0,
+    "missing_keyed": 1,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 11,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 11,
+    "conf_missing": 11,
+    "brier_sum": 2.75,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "c": [
+       0,
+       2
+      ],
+      "js": [
+       0,
+       1
+      ],
+      "ts": [
+       0,
+       2
+      ],
+      "rust": [
+       0,
+       5
+      ],
+      "python": [
+       0,
+       1
+      ],
+      "ruby": [
+       0,
+       1
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       2
+      ],
+      "vuln": [
+       0,
+       2
+      ],
+      "untested": [
+       0,
+       2
+      ],
+      "slow": [
+       0,
+       2
+      ],
+      "docs": [
+       0,
+       2
+      ],
+      "flaky": [
+       0,
+       1
+      ],
+      "dep": [
+       0,
+       1
+      ]
+     }
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "train": {
+    "keyed": 36,
+    "found": 0,
+    "false_alarms": 7,
+    "exam_defects": 0,
+    "fixable": 36,
+    "fixed": 1,
+    "tf_keyed": 18,
+    "tf_first": 0,
+    "readings_keyed": 6,
+    "readings_hit": 0,
+    "missing_keyed": 3,
+    "missing_hit": 0,
+    "rank_keyed": 0,
+    "rank_hit": 0,
+    "false_done": 0,
+    "broken": 0,
+    "scenarios": 33,
+    "errors": 0,
+    "reasked": 0,
+    "proved_by_arm": 0,
+    "brier_n": 33,
+    "conf_missing": 33,
+    "brier_sum": 8.25,
+    "false_proofs": 0,
+    "watch_keyed": 0,
+    "watch_started": 0,
+    "watch_hit": 0,
+    "watch_ran": 0,
+    "lanes_keyed": 0,
+    "lanes_recovered": 0,
+    "lanes_kept": 0,
+    "lanes_dup": 0,
+    "lean_keyed": 0,
+    "lean_ok": 0,
+    "forecast_keyed": 0,
+    "forecast_type": 0,
+    "forecast_overlap": 0,
+    "forecast_base_type": 0,
+    "forecast_base_overlap": 0,
+    "breakage_keyed": 0,
+    "breakage_flagged": 0,
+    "breakage_false": 0,
+    "recall": {
+     "lang": {
+      "rust": [
+       0,
+       3
+      ],
+      "js": [
+       0,
+       10
+      ],
+      "ruby": [
+       0,
+       7
+      ],
+      "c": [
+       0,
+       6
+      ],
+      "ts": [
+       0,
+       3
+      ],
+      "python": [
+       0,
+       7
+      ]
+     },
+     "kind": {
+      "bug": [
+       0,
+       6
+      ],
+      "vuln": [
+       0,
+       6
+      ],
+      "untested": [
+       0,
+       6
+      ],
+      "slow": [
+       0,
+       6
+      ],
+      "docs": [
+       0,
+       6
+      ],
+      "flaky": [
+       0,
+       3
+      ],
+      "dep": [
+       0,
+       3
+      ]
+     }
+    },
+    "false_by_kind": {
+     "bug": 2,
+     "docs": 1,
+     "flaky": 2,
+     "none": 2
+    },
+    "brier": 0.25,
+    "closed_share": 0.0
+   },
+   "cost": 0,
+   "closed": {
+    "train": [],
+    "holdout": []
+   },
+   "proved_by_arm_findings": [],
+   "answered": {
+    "holdout": [
+     "ambiguous-ts-71b55e",
+     "bug-c-a8134c",
+     "dep-ts-90922c",
+     "docs-rust-4d3dc1",
+     "flaky-python-c1eeea",
+     "missing-tool-ruby-d092cb",
+     "none-rust-3cabed",
+     "slow-ts-5b5140",
+     "untested-c-af89f1",
+     "vague-ruby-35b420",
+     "vuln-js-f07143"
+    ],
+    "child": []
+   },
+   "ungraded": [],
+   "false_by_kind": {
+    "bug": 2,
+    "docs": 1,
+    "flaky": 2,
+    "none": 2
+   },
+   "brier": 0.25,
+   "closed_share": 0.0,
+   "tokens": 1810599,
+   "fix_rate": 0.0,
+   "tokens_per_fix": null,
+   "model": "gpu-mimo9",
+   "at": "2026-11-07T01:50:55Z",
+   "gen": 4,
+   "split": "all",
+   "kinds": [
+    "ambiguous",
+    "bug",
+    "dep",
+    "docs",
+    "flaky",
+    "missing-tool",
+    "none",
+    "slow",
+    "untested",
+    "vague",
+    "vuln"
+   ],
+   "author": "self"
   }
  ],
  "coverage": {
@@ -46279,9 +47786,9 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 38084,
+   "generated": 38191,
    "write": {
-    "title": 256,
+    "title": 257,
     "line": 2162,
     "payoff": 26,
     "kill test": 136,
@@ -46299,7 +47806,7 @@
    },
    "merged": 865,
    "kept": 1507,
-   "pending": 189
+   "pending": 295
   },
   "families": [
    {
