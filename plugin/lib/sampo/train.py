@@ -13,7 +13,7 @@ import tempfile
 import time
 
 from sampo import core as c
-from sampo.lanes import _git, _ref_ok, _verify, pm_record, pm_rerun_cmd, pm_wait
+from sampo.lanes import CriterionRed, _git, _ref_ok, _verify, pm_record, pm_rerun_cmd, pm_wait
 
 PROBE_JOBS = 3  # T-3531: pre-filter probes at once
 _CLASS = re.compile(r"^(?:FAIL|ERROR): \S+ \(([\w.]+?)\.\w+\)", re.M)  # the red classes unittest names (release.py too)
@@ -206,7 +206,11 @@ def _run(p, main, ids):
         seen = []
         if not why:  # as `lane merge` does: the lane's own acceptance commands re-run in its worktree
             try:
-                _verify(b)
+                try:
+                    _verify(b)
+                except CriterionRed as e:  # T-3629: red once, green on a rerun is a load flake, as _probe treats it
+                    _verify(b, only=e.n)  # that criterion alone: the others passed
+                    seen.append((b.id, f"flaky (red once, green on a rerun): {str(e).splitlines()[0][:160]}"))
             except (c.PolicyError, cli.UsageError) as e:
                 why = str(e).splitlines()[0]
         return why or _probe(p, main, base, b, tip, seen), seen  # T-3474: conflicts and red affected tests, before any gate run

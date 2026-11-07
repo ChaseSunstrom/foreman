@@ -100,12 +100,18 @@ class Load(unittest.TestCase):
         import time
         with run.burn(2) as procs:
             self.assertEqual(len(procs), 2)
-            time.sleep(0.3)
             self.assertTrue(all(p.poll() is None for p in procs))
             if os.path.isdir("/proc"):  # T-1828: macOS has no /proc; the children running is checked above
                 from helpers import read_text
-                cpu = [float(read_text(f"/proc/{p.pid}/stat").rsplit(")", 1)[1].split()[11]) for p in procs]
+                # T-3629: wait for each child's first CPU tick (up to 60 s) instead of a fixed 0.3 s window a loaded host starves
+                deadline = time.monotonic() + 60
+                while True:
+                    cpu = [float(read_text(f"/proc/{p.pid}/stat").rsplit(")", 1)[1].split()[11]) for p in procs]
+                    if all(t > 0 for t in cpu) or time.monotonic() > deadline:
+                        break
+                    time.sleep(0.1)
                 self.assertTrue(all(t > 0 for t in cpu), "each child spins")
+            self.assertTrue(all(p.poll() is None for p in procs))
         self.assertTrue(all(p.poll() is not None for p in procs), "none outlives the run")
 
     def test_hang_guards_stretch_with_the_load_and_stay_bounded(self):

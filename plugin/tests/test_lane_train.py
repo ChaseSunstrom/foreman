@@ -147,6 +147,25 @@ class Train(Lanes):
         self.assertEqual(self.gate_runs(), 1, r.stdout)
         self.assertTrue(os.path.exists(os.path.join(self.repo, "test_flaky.py")))
 
+    def test_a_criterion_red_once_and_green_on_a_rerun_does_not_leave_the_lane_out(self):
+        """T-3629: the acceptance re-run is retried once, like a probe: a load flake gets a note, not a left-out lane."""
+        count = os.path.join(self.tmp, "ac-runs")
+        a = self.lane(1, "a.txt", ac=f"echo x >> {count}; test $(wc -c < {count}) -gt 2")
+        r = self.train(a)
+        self.assertIn("flaky (red once, green on a rerun)", r.stdout)
+        self.assertNotIn(f"left out {a}", r.stdout)
+        self.assertTrue(self.meta(a)["lane_stop"].startswith("merged"), r.stdout)
+
+    def test_the_rerun_of_a_red_criterion_runs_that_criterion_alone(self):
+        """T-3629 review: criterion 1 passed, so the rerun of criterion 2 doesn't run it (or wait for load) again."""
+        first, count = os.path.join(self.tmp, "first-runs"), os.path.join(self.tmp, "second-runs")
+        a = self.lane(1, "a.txt", ac=f"echo x >> {first}")
+        self.fm("task", "ac", a, "add", "second", "--verify", f"echo x >> {count}; test $(wc -c < {count}) -gt 2")
+        r = self.train(a)
+        self.assertIn("flaky (red once, green on a rerun)", r.stdout)
+        self.assertEqual(len(open(first).read().split()), 1, "criterion 1 ran once")
+        self.assertEqual(len(open(count).read().split()), 2, "criterion 2 ran, then once more")
+
     def test_probes_run_three_at_once_and_leave_out_what_a_serial_run_does(self):
         """T-3531: up to 3 probes at once, each in its own scratch tree (a barrier only 3 concurrent runs pass); the
         left-out list stays in candidate order, as a serial run (a host over 2x its CPUs) gives it, though the first

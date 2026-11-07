@@ -1893,13 +1893,25 @@ def _passes(rec, tree):
     return list(seen.get("cmds") or []) if tree and isinstance(seen, dict) and seen.get("tree") == tree else []
 
 
-def _verify(b, p=None):
-    """T-0948: re-run each criterion's verify command in the lane's worktree (the runner and timeout fm task evidence
+class CriterionRed(c.PolicyError):
+    """T-3629: a criterion's verify command exited red in the lane (not a timeout or a missing worktree); n is its number."""
+
+    def __init__(self, msg, n):
+        super().__init__(msg)
+        self.n = n
+
+
+def _verify(b, p=None, only=None):
+    """T-3629: only=N re-runs that criterion alone (the train's single rerun of a red one).
+    T-0948: re-run each criterion's verify command in the lane's worktree (the runner and timeout fm task evidence
     --run uses); the first red one refuses the merge, and so does a brief with nothing to run. T-3444: a pass on the
     lane's clean tip tree is recorded on the brief (given p) and reused while that tree stays as it is."""
     from sampo import cli
     cmds = [(n, v) for n, v in b.verify_cmds() if v]
-    if not cmds:
+    allcmds = cmds
+    if only is not None:
+        cmds = [(n, v) for n, v in cmds if n == only]
+    if not allcmds:
         raise cli.UsageError(f"{b.id} has no criterion with a verify command, so there is nothing to re-run: plan "
                                f"verify commands first (fm task ac {b.id} add \"…\" --verify \"<cmd>\")")
     wt = b.meta.get("lane")
@@ -1910,7 +1922,7 @@ def _verify(b, p=None):
     branch = b.meta.get("lane_branch") or f"foreman/{b.id}"
     tree = _lane_tree(wt, branch)
     passed = _passes(b.meta.get("lane_passed"), tree)
-    if any(cmd not in passed for _, cmd in cmds):
+    if only is None and any(cmd not in passed for _, cmd in cmds):  # a single rerun skips the wait it already had
         c.wait_for_load(f"fm lane merge {b.id}")  # T-2797: a gate that can only time out waits; then a longer one
     for n, cmd in cmds:
         if cmd in passed:
@@ -1926,10 +1938,10 @@ def _verify(b, p=None):
                                 f"{b.id} --unverified \"<reason>\" waives it, logged)")
         if code:
             first = c.first_error_line(out)  # T-3411
-            raise c.PolicyError(f"{b.id}: criterion {n} is red in {wt}: `{cmd}` → exit {code}"
-                                + (f"\nfirst error: {first}" if first else "") + "\n"
-                                + "\n".join(out.rstrip().splitlines()[-15:]) + f"\nFix it on the branch, then merge "
-                                f"(fm lane merge {b.id} --unverified \"<reason>\" waives it, logged)")
+            raise CriterionRed(f"{b.id}: criterion {n} is red in {wt}: `{cmd}` → exit {code}"
+                               + (f"\nfirst error: {first}" if first else "") + "\n"
+                               + "\n".join(out.rstrip().splitlines()[-15:]) + f"\nFix it on the branch, then merge "
+                               f"(fm lane merge {b.id} --unverified \"<reason>\" waives it, logged)", n)
         if tree and p is not None and _lane_tree(wt, branch) == tree:  # review: the run may have rewritten files
 
             def keep(x, cmd=cmd):  # merged with a concurrent precheck's passes on the same tree

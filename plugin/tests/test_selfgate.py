@@ -17,13 +17,39 @@ class LoadedWallCheck(unittest.TestCase):
         self.assertEqual(g._slower(base, {"Stop": {"p95": 450.0, "p50": 70.0, "cpu_p95": 31.0, "load": 3.0,
                                                    "budget": 150}}), {}, "a 20 ms median wobble is load noise")
 
-    def test_the_exams_planted_wait_still_doubles_a_hook_slowed_by_load_3_per_cpu(self):  # T-3605: the train's flake
+    def planted_wait(self, age):
+        """(seconds slept, stderr) of the exam's planted hook line at load 3 per CPU, in a process `age` seconds old
+        (None: /proc unreadable). T-3629: it feeds the snippet a known /proc/self/stat and /proc/uptime."""
+        import io
         import os
-        from sampo import core as c, louhi, selfgate as g
-        line = next(e for m in louhi.GATE_MUTATIONS if m[0] == "hook-delay" for e in m[3])[2].splitlines()[-1]
-        waits = []
-        with mock.patch.dict(os.environ, FOREMAN_HOST="load=48,cpus=16"):
-            exec(line.strip(), {"time": mock.Mock(sleep=waits.append), "c": c})
+        from sampo import core as c, louhi
+        code = "\n".join(next(e for m in louhi.GATE_MUTATIONS if m[0] == "hook-delay" for e in m[3])[2].splitlines()[2:])
+        tck = os.sysconf("SC_CLK_TCK")
+        files = {"/proc/uptime": "1000.00 5000.00\n",
+                 "/proc/self/stat": "1 (a b) S " + " ".join(["0"] * 18) + f" {round((1000 - (age or 0)) * tck)} 0\n"}
+
+        def fake_open(path, *a, **k):
+            if age is None or path not in files:
+                raise OSError(path)
+            return io.StringIO(files[path])
+        waits, err = [], io.StringIO()
+        with mock.patch.dict(os.environ, FOREMAN_HOST="load=48,cpus=16"), mock.patch("builtins.open", fake_open), \
+                mock.patch("sys.stderr", err):
+            exec(code.replace("\n    ", "\n").lstrip(), {"time": mock.Mock(sleep=waits.append), "c": c, "os": os,
+                                                          "sys": __import__("sys")})
+        return waits[0], err.getvalue()
+
+    def test_the_planted_wait_is_three_times_the_hook_age_between_the_load_scaled_floor_and_a_cap(self):  # T-3629
+        self.assertAlmostEqual(self.planted_wait(0.5)[0], 1.5, places=2)  # 3 x age, over the load-scaled 0.75 s
+        self.assertAlmostEqual(self.planted_wait(0.1)[0], 0.75, places=2)  # the floor: 0.25 s x 48/16 load
+        self.assertAlmostEqual(self.planted_wait(20.0)[0], 3.0, places=2)  # the cap: 160 bench runs fit the timeout
+        wait, err = self.planted_wait(None)  # no /proc: the load-scaled wait, said aloud
+        self.assertAlmostEqual(wait, 0.75, places=2)
+        self.assertIn("no /proc", err)
+
+    def test_the_exams_planted_wait_still_doubles_a_hook_slowed_by_load_3_per_cpu(self):  # T-3605: the train's flake
+        from sampo import selfgate as g
+        waits = [self.planted_wait(0.3)[0]]
         base = {"Stop": {"p50": 300.0, "cpu_p50": 40.0, "cpu_p95": 45.0, "load": 3.0}}  # its fastest hook, past 250 ms
         self.assertIn("Stop", g._slower(base, {"Stop": dict(base["Stop"], p50=300.0 + waits[0] * 1000)}))
 

@@ -121,17 +121,18 @@ class ForkServer(ForemanTestCase):
         bad = forkcli.run(FM, ["no-such-verb"], cwd=self.repo, env=env, timeout=60)
         self.assertEqual(bad.returncode, 2)
 
-        def median(call):
-            times = []
-            for _ in range(9):
-                t = time.perf_counter()
-                call()
-                times.append(time.perf_counter() - t)
-            return statistics.median(times)
+        def timed(call):
+            t = time.perf_counter()
+            call()
+            return time.perf_counter() - t
 
-        slow = median(lambda: subprocess.run([sys.executable, FM, "task", "show", "T-0001"], cwd=self.repo, env=env,
-                                             capture_output=True))
-        fast = median(lambda: forkcli.run(FM, ["task", "show", "T-0001"], cwd=self.repo, env=env, timeout=60))
+        # T-3629: A/B samples alternate, so a load spike hits both arms alike (sequential arms flaked at load 50+)
+        slows, fasts = [], []
+        for _ in range(15):
+            slows.append(timed(lambda: subprocess.run([sys.executable, FM, "task", "show", "T-0001"], cwd=self.repo,
+                                                      env=env, capture_output=True)))
+            fasts.append(timed(lambda: forkcli.run(FM, ["task", "show", "T-0001"], cwd=self.repo, env=env, timeout=60)))
+        slow, fast = statistics.median(slows), statistics.median(fasts)
         # measured 2.4x both quiet (23 vs 55 ms) and at load 60 (85 vs 205 ms): the bar is a 40% cut
         self.assertLess(fast, slow * 0.6, f"forked {fast * 1000:.0f} ms, fresh {slow * 1000:.0f} ms")
 

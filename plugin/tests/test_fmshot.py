@@ -14,7 +14,7 @@ import time
 import unittest
 from unittest import mock
 
-from helpers import ForemanTestCase, headless_chrome
+from helpers import ForemanTestCase, busy_factor, headless_chrome
 
 from sampo import img
 from sampo import shot as sshot
@@ -279,8 +279,10 @@ class Unruly(StubCase):
                                   out=os.path.join(self.tmp, "o"), project=None, diff=None)
         env = {"FOREMAN_CHROME": self.stub, "STUB_LOG": self.log, "STUB_MODE": mode}
         out, code, start = io.StringIO(), 0, time.monotonic()
-        with mock.patch.dict(os.environ, env), mock.patch.object(sshot, "CALL_S", 1), \
-                mock.patch.object(sshot, "LOAD_S", 1), contextlib.redirect_stdout(out):
+        # T-3629: the answer deadlines stretch with the host's load (a stub browser starved of CPU missed 1 s on createTarget)
+        self.slack = busy = busy_factor()
+        with mock.patch.dict(os.environ, env), mock.patch.object(sshot, "CALL_S", busy), \
+                mock.patch.object(sshot, "LOAD_S", busy), contextlib.redirect_stdout(out):
             try:
                 sshot.cmd_shot(args)
             except SystemExit as e:
@@ -290,20 +292,20 @@ class Unruly(StubCase):
     def test_a_flood_of_events_still_times_out(self):
         code, data, took = self.run_shot("flood")
         self.assertEqual(code, 1)
-        self.assertLess(took, 10)  # wall clock: the browser-answer timeout deadline
+        self.assertLess(took, 10 * self.slack)  # wall clock: the browser-answer timeout deadline
         # the fonts check times out first and is only "unchecked"; the screenshot after it fails the page
         self.assertIn("no answer to Page.captureScreenshot", data["failed"][0]["error"])
 
     def test_a_hung_browser_times_out(self):
         code, data, took = self.run_shot("hang")
         self.assertEqual(code, 1)
-        self.assertLess(took, 10)  # wall clock: the browser-answer timeout deadline
+        self.assertLess(took, 10 * self.slack)  # wall clock: the browser-answer timeout deadline
         self.assertIn("no answer to Page.captureScreenshot", data["failed"][0]["error"])
 
     def test_a_browser_that_dies_is_named(self):
         code, data, took = self.run_shot("die")
         self.assertEqual(code, 1)
-        self.assertLess(took, 10)  # wall clock: a dead browser is named, not waited out
+        self.assertLess(took, 10 * self.slack)  # wall clock: a dead browser is named, not waited out
         self.assertIn("the browser closed", data["failed"][0]["error"])
 
     def test_a_browser_that_never_starts_says_why(self):

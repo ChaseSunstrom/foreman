@@ -3784,12 +3784,19 @@ GATE_MUTATIONS = (
         '                h["additionalContext"] = str(h.get("additionalContext") or "") + " A planted line." * 30\n'))]),
     ("hook-delay", "hook ", "hook", [("plugin/lib/sampo/hooks.py",  # T-2605: every _slower row starts "hook <name>" (p95, or p50 wall when loaded)
                                     "def run(event, raw):\n    t0 = time.monotonic()\n",
-                                    # T-3605: loaded, the gate wants a wall doubling; a fixed 250 ms isn't one once load
-                                    # slows every hook's base past it (the train's red, 2.8 per CPU), so the wait grows
-                                    # with load as gate timeouts do. ponytail: the load average, not this process's CPU
-                                    # share; a bench pinned to few CPUs could outrun it (then: wait as long as the hook)
+                                    # T-3605/T-3629: loaded, the gate wants a wall doubling between benches run at different
+                                    # moments, so the wait is 3x this hook process's own age (its real wall so far, at the
+                                    # load it runs under), never under the load-scaled 250 ms. Linux /proc; elsewhere the latter
                                     "def run(event, raw):\n    t0 = time.monotonic()\n"
-                                    "    time.sleep(c.load_scaled(0.25))\n")]),
+                                    "    try:\n"
+                                    "        st = int(open('/proc/self/stat').read().rsplit(')', 1)[1].split()[19])\n"
+                                    "        age = float(open('/proc/uptime').read().split()[0]) - st / os.sysconf('SC_CLK_TCK')\n"
+                                    "    except Exception:\n"
+                                    "        age = 0\n"
+                                    "        sys.stderr.write('planted hook wait: no /proc, load-scaled 250 ms only\\n')\n"
+                                    # capped: 160 hook runs a bench must not outgrow its 600 s timeout
+                                    "    w = c.load_scaled(0.25)\n"
+                                    "    time.sleep(min(max(w, 3 * age), max(w, 3.0)))\n")]),
     ("guard-allow", "guard: fm posture lite", "guard", [("plugin/lib/fmguard.py", _POSTURE, "")]),
     ("verb", "verbs", "verbs", [("plugin/lib/sampo/cli.py", '    s = add("night", ',
                                  '    add("zzlean", lazy("sampo.night", "cmd_night"), tier=("Running elsewhere", 1191), '
