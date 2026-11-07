@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-07T01:40:13Z",
- "rev": "6adf05663",
+ "updated": "2026-11-07T01:46:16Z",
+ "rev": "87141c836",
  "capabilities": [
   {
    "n": 1,
@@ -46279,10 +46279,10 @@
  },
  "moons_scale": {
   "funnel": {
-   "generated": 38020,
+   "generated": 38084,
    "write": {
     "title": 256,
-    "line": 2144,
+    "line": 2162,
     "payoff": 26,
     "kill test": 136,
     "code": 11
@@ -46299,7 +46299,7 @@
    },
    "merged": 865,
    "kept": 1507,
-   "pending": 143
+   "pending": 189
   },
   "families": [
    {
@@ -47429,6 +47429,22 @@
     ]
    },
    {
+    "id": "F-037501",
+    "size": 3,
+    "lead": "Buy back confidence in the migration via insurance pools",
+    "today": "Today you can't quantify the financial risk of a broken migration until after the outage costs are realized.",
+    "with_this": "With this, you can pre-fund an insurance pool based on the complexity of the migration, paying developers out of it if the migration fails, aligning incentives to catch errors early.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 3,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "migrations"
+    ]
+   },
+   {
     "id": "F-000458",
     "size": 2,
     "lead": "Let your dependencies write their own security patches",
@@ -47460,6 +47476,22 @@
     "kinds": [
      "data",
      "features"
+    ]
+   },
+   {
+    "id": "F-005284",
+    "size": 2,
+    "lead": "Auction off bug fixes to the lowest-cost model",
+    "today": "Today you can't bid on bug fixes so the most efficient solver gets the job.",
+    "with_this": "With this, you can reduce CI failure resolution time by 80 percent per incident.",
+    "tier": "xhigh",
+    "cold": null,
+    "wild": 1,
+    "block": null,
+    "stage": "candidate",
+    "evidence": "",
+    "kinds": [
+     "bugs"
     ]
    },
    {
@@ -48186,22 +48218,6 @@
     ]
    },
    {
-    "id": "F-005284",
-    "size": 1,
-    "lead": "Auction off bug fixes to the lowest-cost model",
-    "today": "Today you can't bid on bug fixes so the most efficient solver gets the job.",
-    "with_this": "With this, you can reduce CI failure resolution time by 80 percent per incident.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "bugs"
-    ]
-   },
-   {
     "id": "F-005288",
     "size": 1,
     "lead": "Limit orders for developer attention in CI queues",
@@ -48327,22 +48343,6 @@
     "evidence": "",
     "kinds": [
      "releases"
-    ]
-   },
-   {
-    "id": "F-006624",
-    "size": 1,
-    "lead": "Bet on migration outcomes to fund rollback insurance",
-    "today": "Today you can't get instant financial compensation if a migration fails and requires an emergency rollback that disrupts the team.",
-    "with_this": "With this, you can earn automatic budget credits for your team if a migration succeeds, or receive a pre-funded rollback budget if it fails, removing the fear of costly mistakes.",
-    "tier": "xhigh",
-    "cold": null,
-    "wild": 1,
-    "block": null,
-    "stage": "candidate",
-    "evidence": "",
-    "kinds": [
-     "migrations"
     ]
    },
    {
@@ -49562,7 +49562,7 @@
     ]
    }
   ],
-  "families_total": 1155,
+  "families_total": 1161,
   "catalogue": {
    "file": "moons-catalogue.json",
    "total": 1507
@@ -49599,7 +49599,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49622,7 +49622,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49645,7 +49645,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49668,7 +49668,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49691,7 +49691,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49714,7 +49714,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49737,7 +49737,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49760,7 +49760,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49783,7 +49783,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49806,7 +49806,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49829,7 +49829,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49852,7 +49852,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49875,7 +49875,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49898,7 +49898,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49921,7 +49921,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49944,7 +49944,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49967,7 +49967,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -49990,7 +49990,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -50013,7 +50013,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -50036,7 +50036,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -50059,7 +50059,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -50082,7 +50082,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -50105,7 +50105,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -50128,7 +50128,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -50151,7 +50151,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
@@ -50174,7 +50174,7 @@
     "drift": null,
     "closed": null,
     "delta": null,
-    "idle_h": 23.4,
+    "idle_h": 23.5,
     "spend": 0,
     "missions": 0,
     "restarted": null,
