@@ -11,6 +11,9 @@
 
 ### Everything else
 
+- A close after a green merge train reuses the train's pass: its linked tests are counted the way the train picks them (another runner's tests only when a gate runs that runner; sync-mirror .md files no longer link tests), and a newer run on other code no longer hides the pass on this code (T-3566).
+- Hooks no longer rebuild the whole task state for the taint check, scan the tasks folder once per hook run, and keep tempfile, shutil, hashlib, subprocess and other unused modules off the hot path, cutting PreToolUse Bash CPU from about 195 to 76 ms and PostToolUse Bash from 137 to 67 ms on real state (T-3577).
+- The exam's planted hook wait now scales with machine load, so the self-change gate's loaded doubling rule still catches it and test_exam.LeanKindGateHookDelay stops failing merges at high load (T-3605)
 - `sampo focus` and every task edit (set, ac, step, evidence) now hold the project lock only while they read and write the brief: git snapshots, recall, predict and the view regeneration run outside it, and an edit made meanwhile is kept (T-3558, T-3556).
 - The close sentinel no longer starts a full check while a merge train's post-merge verify is pending or running, or once one has verified this code tree, so a batch gets one full suite run (T-3576).
 - A full test-suite run holds one machine-wide slot (~/.cache/sampo/suite.lock), so a second full run waits its turn, saying every minute whose run it waits for, instead of three suites splitting the CPUs; targeted runs, nested runs and FOREMAN_NO_SUITE_SLOT=1 skip it (T-3541).
