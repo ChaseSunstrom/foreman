@@ -1342,11 +1342,15 @@ def write_atomic(path, text):
         raise
 
 
+_HELD = {}  # T-3613: (thread, directory) -> projects whose views wait for that lock's release
+
+
 @_contextmanager
 def lock(directory, timeout=5.0):
     os.makedirs(directory, exist_ok=True)
     fd = os.open(os.path.join(directory, ".lock"), os.O_CREAT | os.O_RDWR, 0o600)
     start = time.monotonic()
+    pending, failed = None, False
     try:
         while True:
             try:
@@ -1365,9 +1369,26 @@ def lock(directory, timeout=5.0):
             os.ftruncate(fd, 0)
             os.pwrite(fd, f"{os.getpid()} {time.time():.1f} {os.path.basename(argv[0])} {' '.join(argv[1:])}"
                       .encode("utf-8", "replace")[:300], 0)
-        yield
+        key = (_thread.get_ident(), os.path.abspath(directory))
+        _HELD[key] = pending = []
+        try:
+            yield
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            del _HELD[key]
     finally:
         os.close(fd)  # closing the descriptor releases the flock
+        if pending:  # T-3613: regen_views asked while held: the views are built now, with the lock free
+            if failed:  # the block's own error is on its way: a failed rebuild must not replace it
+                try:
+                    regen_views(pending[0], mirror=False)
+                except Exception as e:
+                    from sampo import hooks
+                    hooks.log_error("lock", f"views not rebuilt after a failed block: {e!r}")
+            else:
+                regen_views(pending[0], mirror=False)
 
 
 def _lock_holder(fd):
@@ -5281,6 +5302,13 @@ def regen_views(p, briefs=None, mirror=True):
     """STATE/INBOX and the status files; with mirror (and fm sync on), the repo's .sampo/ mirror too. T-0673 review:
     a capture into another project (fm projects --sweep) passes mirror=False, so nothing lands in that repo's tree."""
     p = main_view(p)
+    held = _HELD.get((_thread.get_ident(), os.path.abspath(p.dir)))
+    if held is not None and briefs is None:  # T-3613: this thread holds the project lock: every brief re-read waits for
+        if mirror:  # its release (lock() builds them); the mirror export stays under it, as T-3556 needs
+            export_mirror(p)
+        if not held:
+            held.append(p)
+        return None
 
     def put(name, text):  # T-1879: unchanged but for line 2's "_Generated <ts>" is unchanged: no rewrite, no fsync
         path = os.path.join(p.dir, name)
