@@ -72,6 +72,8 @@ class Base(unittest.TestCase):
         self.slept = []
         self._sleep, m._sleep = m._sleep, self.slept.append
         self._local, m.LOCAL = m.LOCAL, []
+        m._tags.cache_clear()  # T-3598: kept a minute per server URL, and a closed fake's port may come back
+        m._probe.cache_clear()
         self.fakes = []
 
     def tearDown(self):

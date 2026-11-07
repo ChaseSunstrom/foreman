@@ -40,10 +40,12 @@ stripped, refused if it holds control characters, never sent over plain http to 
 scrubbed from every error; nothing here logs or writes it. A base_url with a user or password in it is refused.
 """
 import datetime
+import fcntl
 import http.client
 import ipaddress
 import itertools
 import json
+import math
 import os
 import re
 import shlex
@@ -52,6 +54,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unicodedata
 import urllib.error
@@ -329,6 +332,27 @@ def _cloud(name=None, keyed=True):
             for n, k, u, mo, env, ctx in CLOUD if (name is None or n == name) and (not keyed or os.environ.get(env))]
 
 
+TAGS_S = 60.0  # T-3598: Smith's phase prompt probed the local profiles 3 times a step: ~2 /api/tags a second box-wide
+
+
+def _ttl(fn):
+    """T-3598: fn(..., url)'s answer for one of LOCAL's servers (the box's), reused for TAGS_S seconds in this process
+    (a dict as a fresh copy); any other server is asked each time."""
+    seen = {}
+
+    def wrap(*a):
+        url = a[-1][:-3] if a[-1].endswith("/v1") else a[-1]
+        if url not in {u[:-3] if u.endswith("/v1") else u for _, u in LOCAL}:
+            return fn(*a)
+        hit = seen.get(a)
+        if not hit or time.monotonic() - hit[0] >= TAGS_S:
+            hit = seen[a] = (time.monotonic(), fn(*a))
+        return dict(hit[1]) if isinstance(hit[1], dict) else hit[1]
+    wrap.cache_clear = seen.clear
+    return wrap
+
+
+@_ttl
 def _probe(name, base_url):
     """The local server's profile when it answers /models with at least one model, else None."""
     try:
@@ -349,6 +373,7 @@ def _probe(name, base_url):
             "context": _local_context(name, base_url, ids[0], row), "tools": False}  # small local models: extract_json
 
 
+@_ttl
 def _tags(base_url):
     """T-2887: Ollama's /api/tags rows ({name, capabilities?}) for a /v1 base_url; [] when it doesn't answer."""
     root = base_url[:-3] if base_url.endswith("/v1") else base_url
@@ -364,6 +389,8 @@ def _tags(base_url):
 def systemone_profiles(base_url="http://127.0.0.1:11434"):
     """T-2887: a systemone profile per Ollama model whose /api/tags capabilities include 'decision' (none when the
     server is down or lists no capabilities). Jeff and SelfJev come from models.json (kind systemone)."""
+    if os.environ.get("FOREMAN_NO_LOCAL_MODELS"):  # T-3598: as embedding_profiles: tests polled the box's Ollama here
+        return []
     base = base_url.rstrip("/") + ("" if base_url.rstrip("/").endswith("/v1") else "/v1")
     return [{"name": r["name"], "kind": "systemone", "base_url": base, "model": r["name"], "key_env": None,
              "context": LOCAL_CONTEXT, "tools": False}
@@ -557,6 +584,7 @@ def context_variant(profile, served=False):
             raise ModelError(f"{profile['name']}: ollama create {name} failed ({(r.stderr or r.stdout).strip()[-200:]}): "
                              f"run {manual}")
         made = "made"
+        _tags.cache_clear()  # the new model is listed now
     out = dict(profile, model=name)
     got = served_context(out)
     if got is None or got < want:
@@ -754,7 +782,207 @@ def _check_url(profile, base, key):
         raise ModelError(f"{who}: refusing to send {profile.get('key_env')} over plain http to {host}; use https")
 
 
+# T-3597: two jobs on models that can't share the 16 GB GPU (gemma4-12b-32k at OLLAMA_NUM_PARALLEL=4 x 32k is 12.5 GiB,
+# mimo-v2.6:9b 9.4 GiB) made Ollama evict and reload one for the other every 5-45 s, seconds of CPU each. Chat calls to
+# the local Ollama take turns through a box-wide ledger: two models share the GPU when they fit (_gpu_fits); else a
+# model keeps it GPU_HOLD s past another process's last call, and one kept waiting GPU_TURN s goes next. A per-call
+# num_ctx can't fit them: it is per slot, and the server multiplies it by its slots.
+# ponytail: pairwise fit from /api/ps sizes, with no unlearning when Ollama evicts a pair judged to fit; waiters poll
+# the ledger every GPU_POLL s.
+GPU_HOLD, GPU_TURN, GPU_FIT_S, GPU_POLL, GPU_PS_S, GPU_FILL = 20.0, 120.0, 86400, 1.0, 10.0, 0.8
+BAD_S, UNLOADABLE = 6 * 3600, "unknown model architecture"  # T-3599: a model this Ollama can't load, skipped box-wide
+LEDGER = ("calls", "wait", "last", "fit", "bad", "size", "gpu")
+
+
+def _gpu_file():
+    """The ledger beside the call log, which every model-calling process shares (an exam's Smith under a temp home too)."""
+    return os.path.join(os.path.dirname(os.environ.get(CALLS_ENV) or os.path.join(state_dir(), CALLS)), "gpu.json")
+
+
+def _ledger(fn):
+    """fn(state) -> (result, changed) under the ledger's flock, state LEDGER's dicts with dead processes' calls and
+    waits dropped; written back when changed. None when the ledger can't be used: the caller goes ahead."""
+    try:
+        with open(_gpu_file(), "a+", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            f.seek(0)
+            try:
+                st = json.loads(f.read() or "{}")
+            except ValueError:
+                st = {}
+            st = st if isinstance(st, dict) else {}
+            st = {k: st[k] if isinstance(st.get(k), dict) else {} for k in LEDGER}
+            n, now = len(st["calls"]) + len(st["wait"]), time.time()
+            for k in ("calls", "wait"):  # an hour-old entry is a reused pid's: no call or wait lasts that long
+                st[k] = {i: x for i, x in st[k].items() if isinstance(x, dict) and _alive(x.get("pid"))
+                         and type(x.get("since")) in (int, float) and now - x["since"] < 3600}
+            out, changed = fn(st)
+            if changed or n != len(st["calls"]) + len(st["wait"]):
+                f.seek(0)
+                f.truncate()
+                f.write(json.dumps(st))
+            return out
+    except OSError:
+        return None
+
+
+def _alive(pid):
+    if type(pid) is not int or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
+    except (OSError, OverflowError):
+        return False
+    return True
+
+
+def _turn_url(url):
+    """T-3597: whether url is a chat call to the local Ollama (LOCAL's port on loopback), so it takes GPU turns."""
+    try:
+        u, port = urllib.parse.urlsplit(url), urllib.parse.urlsplit(dict(LOCAL).get("ollama") or "").port
+        return bool(port) and u.port == port and is_loopback(u.hostname or "") and \
+            u.path.endswith(("/chat/completions", "/api/chat"))
+    except ValueError:
+        return False
+
+
+def _norm(name):
+    """A model's ledger name: Ollama's, without the default :latest tag a request may leave off."""
+    return name[:-7] if name.endswith(":latest") else name
+
+
+def _gpu_fits(st, a, b, now):
+    """T-3597: whether models a and b share the GPU: /api/ps showed both wholly in VRAM within GPU_FIT_S, or their VRAM
+    sizes (as /api/ps last showed each) sum to at most GPU_FILL of the most VRAM it ever showed in use at once."""
+    if st["fit"].get("\n".join(sorted((a, b))), -math.inf) > now - GPU_FIT_S:
+        return True
+    sa, sb, cap = st["size"].get(a), st["size"].get(b), st["gpu"].get("cap")
+    return all(type(x) is int for x in (sa, sb, cap)) and sa + sb <= GPU_FILL * cap
+
+
+def _gpu_learn(st, seen, now):
+    """Record what /api/ps showed ({model: VRAM bytes}, wholly in VRAM only): each size, the most in use at once, and
+    that the models it held together fit."""
+    st["size"].update(seen)
+    if sum(seen.values()) > (st["gpu"].get("cap") if type(st["gpu"].get("cap")) is int else 0):
+        st["gpu"]["cap"] = sum(seen.values())
+    st["fit"].update(("\n".join(p), now) for p in itertools.combinations(sorted(seen), 2))
+
+
+def _ps_seen(url, model):
+    """{model: VRAM bytes} for each model /api/ps shows wholly in VRAM; {} when it doesn't answer."""
+    u = urllib.parse.urlsplit(url)
+    got = _ollama_ps({"kind": "openai", "model": model, "base_url": f"{u.scheme}://{u.netloc}"})
+    return {_norm(n): x["size_vram"] for x in (got[1] if got else ()) if isinstance(x, dict)
+            for n in [x.get("name") or x.get("model")] if isinstance(n, str) and type(x.get("size")) is int
+            and type(x.get("size_vram")) is int and x["size_vram"] >= x["size"] > 0}
+
+
+def _gpu_may(st, me, model, now, pid=None):
+    """T-3597: whether call `me` (process pid) to `model` may start now: no model that can't share the GPU with it is
+    mid-call or still held by another process (its last call there ended under GPU_HOLD s ago, unless `me` has waited
+    GPU_TURN s), and no such model has waited a whole turn longer than `me` (it goes first). One process switching
+    between its own models never waits on its own hold."""
+    pid = os.getpid() if pid is None else pid
+
+    def clash(o):
+        return o != model and not _gpu_fits(st, model, str(o), now)
+    since = (st["wait"].get(me) or {}).get("since", now)
+    if any(clash(x.get("model")) for x in st["calls"].values()):
+        return False
+    if any(i != me and clash(w.get("model")) and w.get("since", now) <= now - GPU_TURN and w.get("since", now) < since
+           for i, w in st["wait"].items()):
+        return False
+    return since <= now - GPU_TURN or not any(
+        clash(o) and isinstance(x, dict) and x.get("pid") != pid and now - x.get("t", 0) < GPU_HOLD
+        for o, x in st["last"].items())
+
+
+def _gpu_take(url, model, timeout=None):
+    """T-3597: wait for model's turn on the local Ollama's GPU, at most 3 GPU_TURNs or the caller's timeout (then it
+    goes anyway); (the call's ledger id, whether its end should read /api/ps), or (None, False) when the ledger can't be
+    used. T-3599: ModelError, without a request, while model is marked unloadable."""
+    me, start, ps_at = f"{os.getpid()}-{threading.get_ident()}-{next(_ids)}", time.monotonic(), None
+    limit = min(3 * GPU_TURN, timeout) if type(timeout) in (int, float) and timeout > 0 else 3 * GPU_TURN
+    try:
+        while True:
+            now, seen = time.time(), {}
+            if ps_at is not None and time.monotonic() - ps_at >= GPU_PS_S:  # waiting: what does Ollama hold now?
+                seen, ps_at = _ps_seen(url, model), time.monotonic()
+
+            def step(st):
+                _gpu_learn(st, seen, now)
+                st["fit"] = {k: t for k, t in st["fit"].items() if type(t) in (int, float) and now - t < GPU_FIT_S}
+                st["last"] = {k: x for k, x in st["last"].items() if isinstance(x, dict)
+                              and type(x.get("t")) in (int, float) and now - x["t"] < max(GPU_HOLD, 60)}
+                bad = st["bad"].get(model)
+                if isinstance(bad, dict) and type(bad.get("until")) in (int, float) and bad["until"] > now:
+                    return bad, False
+                st["bad"].pop(model, None)
+                if time.monotonic() - start >= limit or _gpu_may(st, me, model, now):
+                    st["wait"].pop(me, None)
+                    st["calls"][me] = {"model": model, "pid": os.getpid(), "since": now}
+                    learn = model not in st["size"] or any(o != model for o in st["last"])  # a size, or a pair, to see
+                    return ("go", learn), True
+                if me in st["wait"]:
+                    return "wait", bool(seen)
+                st["wait"][me] = {"model": model, "pid": os.getpid(), "since": now}
+                return "wait", True
+            got = _ledger(step)
+            if got is None:
+                return None, False
+            if isinstance(got, tuple):
+                return me, got[1]
+            if isinstance(got, dict):
+                raise ModelError(f"{model}: skipped until {time.strftime('%H:%M', time.localtime(got['until']))}: "
+                                 f"{got.get('why') or 'this Ollama cannot load it'}; to ask it again now, delete its "
+                                 f"entry under \"bad\" in {_gpu_file()}")
+            ps_at = time.monotonic() - GPU_PS_S if ps_at is None else ps_at
+            time.sleep(GPU_POLL)
+    except BaseException:  # a skipped model, an interrupt: its wait must not hold other models back
+        _ledger(lambda st: (None, st["wait"].pop(me, None) is not None))
+        raise
+
+
+def _gpu_give(me, model, url, learn=False, bad=None):
+    """T-3597: call `me` gives its turn back; model stays held GPU_HOLD s for other processes; learn: read /api/ps (its
+    size, and which models fit beside it). T-3599 bad: why model can't load."""
+    seen = _ps_seen(url, model) if learn and not bad else {}
+
+    def step(st):
+        now = time.time()
+        _gpu_learn(st, seen, now)
+        st["calls"].pop(me, None)
+        st["last"][model] = {"t": now, "pid": os.getpid()}
+        if bad:
+            st["bad"][model] = {"until": now + BAD_S, "why": bad}
+        return None, True
+    _ledger(step)
+
+
 def _post(url, body, headers, timeout, key):
+    """_send, taking GPU turns for a chat call to the local Ollama (T-3597); a model it can't load is asked once, then
+    skipped BAD_S s box-wide (T-3599: each try was a llama-server start)."""
+    model = body.get("model") if _turn_url(url) else None
+    model = _norm(model) if isinstance(model, str) and model else None
+    me, learn = _gpu_take(url, model, timeout) if model else (None, False)
+    bad = None
+    try:
+        return _send(url, body, headers, timeout, key)
+    except ModelError as e:
+        if me and e.status == 500 and UNLOADABLE in str(e):
+            bad = f"this Ollama can't load it ({UNLOADABLE})"
+            raise ModelError(f"{model}: {bad}: skipped for {BAD_S // 3600} h (its entry under \"bad\" in "
+                             f"{_gpu_file()}): {e}", 500) from None
+        raise
+    finally:
+        if me:
+            _gpu_give(me, model, url, learn, bad)
+
+
+def _send(url, body, headers, timeout, key):
     data = json.dumps(body).encode()
     for attempt in range(TRIES):
         req = urllib.request.Request(url, data=data, method="POST",
@@ -770,7 +998,7 @@ def _post(url, body, headers, timeout, key):
                 text = ""
             finally:
                 e.close()
-            if (status == 429 or status >= 500) and attempt < TRIES - 1:
+            if (status == 429 or status >= 500) and attempt < TRIES - 1 and UNLOADABLE not in text:  # T-3599
                 try:
                     delay = float(hdrs.get("Retry-After"))
                 except (TypeError, ValueError):
