@@ -6,9 +6,11 @@ Exit 1 on any failure, with each failing class's report.
   python3 plugin/tests/run.py [-j N] [-k PATTERN] [-p GLOB] [--load N] [NAME ...]
 """
 import argparse
+import atexit
 import concurrent.futures
 import contextlib
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -16,6 +18,7 @@ import random
 import re
 import shutil
 import signal
+import site
 import subprocess
 import sys
 import tempfile
@@ -307,26 +310,35 @@ def _write_json(path, d):
 
 
 NO_CACHE = "SAMPO_NO_TEST_CACHE"  # T-3502: =1 (or FOREMAN_NO_TEST_CACHE) runs every class, cached or not
-SAMPLE = 0.1  # the share of cached classes rerun anyway: a key missing a dependency shows, and the cache is dropped
+SAMPLE = 0.1  # the share of cached classes rerun anyway: a file the coverage missed shows, and the cache is dropped
 STATE = ".sampo/"  # Sampo's synced task state: every sampo call writes it, no test reads it (each has its own home)
-WALKS = re.compile(r"\b(listdir|scandir|walk|glob|iglob|rglob|iterdir)\(|ls-files")  # reads folders: the whole tree
 PRUNE_S = 14 * 86400  # a repo's cache unused this long (a removed lane's) is deleted
+KEEP = 3  # T-3593: records kept per class, newest first: main's code beside the lanes' that changed what it reads
+COVERED = {}  # T-3593: job id -> what its processes recorded (runcover.py's lines), filled by _run_one
+GIT_STATE = "\0git"  # tree()'s key for HEAD and the tags (a recorded "g": git run on the repo); no path is named so
+
+
+def _cache_base():
+    return os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
 
 
 def cache_path(repo):
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-    return os.path.join(base, "sampo", "run-cache", hashlib.sha1(repo.encode()).hexdigest()[:16] + ".json")
+    return os.path.join(_cache_base(), "sampo", "run-cache", hashlib.sha1(repo.encode()).hexdigest()[:16] + ".json")
 
 
 def load_cache(path):
-    """T-3502: (generation, {class id: [key, tests]}) of the classes that passed whole at a key; (0, {}) when missing
-    or corrupt. The generation goes up each time a run finds the cache wrong and drops it."""
+    """(generation, {class id: [[digest, tests, [path, ...]], ...]}): per class up to KEEP records of a whole green
+    run, each the paths it read and their digest then (T-3593); (0, {}) when missing or corrupt. The generation goes up
+    each time a run finds the cache wrong and drops it (T-3502). On disk the paths are indexes into one table."""
     try:
         with open(path) as f:
             d = json.load(f)
-        recs = {c: v for c, v in d["classes"].items() if isinstance(v, list) and len(v) == 2 and isinstance(v[1], int)}
+        table = d.get("paths", [])
+        # ponytail: whole file parsed and indexes resolved each run (~0.1-0.3 s at the full suite's ~1500 classes x 3);
+        # store the indexes as strings and decode only the named classes' if that shows in a profile
+        recs = {c: [[v[0], int(v[1]), [table[i] for i in v[2]]] for v in vs] for c, vs in d["classes"].items()}
         return int(d["gen"]), recs
-    except Exception:  # a corrupt cache only costs reruns
+    except Exception:  # a corrupt cache, or T-3502's keys, only costs reruns
         return 0, {}
 
 
@@ -340,6 +352,7 @@ def _cache_lock(path):
         fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
         if fcntl:
             fcntl.flock(fd, fcntl.LOCK_EX)
+        os.utime(path + ".lock")  # in use: another repo's save never prunes it from under its holder
     try:
         yield
     finally:
@@ -348,16 +361,19 @@ def _cache_lock(path):
 
 
 def save_cache(path, new, gen):
-    """New records merged into the file's under its lock, newest 20000 kept; nothing when the cache was dropped since
-    this run read it at gen (its records came from a cache found wrong). The other repos' caches unused for PRUNE_S go."""
+    """New records ({class id: [digest, tests, paths]}) merged into the file's under its lock, each first among its
+    class's KEEP, newest 20000 classes kept; nothing when the cache was dropped since this run read it at gen (its
+    records came from a cache found wrong). The other repos' caches unused for PRUNE_S go."""
     with _cache_lock(path):
         cur_gen, recs = load_cache(path)
         if cur_gen != gen:
             return
         for c, v in new.items():
-            recs.pop(c, None)
-            recs[c] = v  # newest last: the cap keeps them
-        _write_json(path, {"gen": gen, "classes": dict(list(recs.items())[-20000:])})
+            recs[c] = [v] + [r for r in recs.pop(c, []) if r[0] != v[0]][:KEEP - 1]  # newest last: the cap keeps them
+        index = {}
+        recs = {c: [[r[0], r[1], [index.setdefault(p, len(index)) for p in r[2]]] for r in vs]
+                for c, vs in list(recs.items())[-20000:]}
+        _write_json(path, {"gen": gen, "paths": list(index), "classes": recs})
     folder = os.path.dirname(path)
     with contextlib.suppress(OSError):
         for name in os.listdir(folder):
@@ -380,15 +396,17 @@ def _git(cwd, *args, data=None):
 
 
 def tree():
-    """T-3502: (repo root, {path: blob hash}) of the files as they are on disk: the index's hashes, a modified or
-    untracked file hashed again. None outside git."""
+    """T-3502: (repo root, {path: "mode blob"}, the repo's shared git folder) of the files as they are on disk: the
+    index's, a modified or untracked file hashed again; GIT_STATE: HEAD and the tags, hashed. None outside git. T-3593: the cache is the git folder's,
+    so every worktree of the repo (a lane's, a train's scratch tree) reads and adds to one."""
     try:
         repo = _git(HERE, "rev-parse", "--show-toplevel").strip()
+        common = os.path.realpath(os.path.join(repo, _git(repo, "rev-parse", "--git-common-dir").strip()))
         blobs = {}
         for ln in _git(repo, "ls-files", "-s", "-z").split("\0"):
             if ln:
                 meta, path = ln.split("\t", 1)
-                blobs[path] = meta.split()[1]
+                blobs[path] = " ".join(meta.split()[:2])  # mode and blob: a chmod -x is a change (review)
         dirty = _git(repo, "ls-files", "-z", "-m", "-o", "--exclude-standard").split("\0")
         dirty = list(dict.fromkeys(f for f in dirty if f))
         for f in dirty:
@@ -397,86 +415,143 @@ def tree():
         if any("\n" in f for f in live):
             return None  # hash-object reads a path a line
         if live:
-            blobs.update(zip(live, _git(repo, "hash-object", "--stdin-paths", data="\n".join(live) + "\n").split()))
+            hashed = _git(repo, "hash-object", "--stdin-paths", data="\n".join(live) + "\n").split()
+            blobs.update((f, f"{'100755' if os.stat(os.path.join(repo, f)).st_mode & 0o100 else '100644'} {b}")
+                         for f, b in zip(live, hashed))
+        try:  # what git itself says (log, describe, rev-parse) to a class that ran git on the repo: HEAD and the tags,
+            head = _git(repo, "rev-parse", "HEAD", "--symbolic-full-name", "HEAD")  # not every ref: a lane's commit
+        except subprocess.CalledProcessError:  # no commit yet                       moves one, review
+            head = ""
+        tags = _git(repo, "for-each-ref", "--format=%(objectname) %(refname)", "refs/tags")
+        blobs[GIT_STATE] = hashlib.sha1((head + tags).encode()).hexdigest()
     except (OSError, subprocess.SubprocessError, ValueError, IndexError):
         return None
-    return repo, blobs
+    return repo, blobs, common
 
 
-def _test_links(repo, files, only):
-    """The map's test → sources links (sampo.map.test_links); ImportError in a copy of run.py without Sampo."""
-    lib = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
-    if lib not in sys.path:
-        sys.path.insert(0, lib)
-    from sampo import map as smap
-    return smap.test_links(repo, files, only)
+def _roots(repo):
+    """The repo's folder as git names it, resolved, and as this run.py reaches it, each ending in a separator."""
+    return sorted({os.path.join(r, "") for r in (repo, os.path.realpath(repo), os.path.dirname(os.path.dirname(HERE)))})
 
 
-def _refs(text):
-    """The module names a test file imports or names as NAME.py (a script beside it that it runs)."""
-    out = set(re.findall(r"\b(\w+)\.py\b", text))
-    for a, b in re.findall(r"^\s*(?:from\s+(\w+)|import\s+([\w., ]+))", text, re.M):
-        out.update([a] if a else (x.split()[0].split(".")[0] for x in b.split(",") if x.split()))
+def cover_python():
+    """T-3593: a venv whose python loads runcover.py (through a .pth) in every Python started with it, so each process
+    records the repo files it reads; that python, or None where it can't be made (not POSIX, no runcover.py beside
+    run.py, a python that doesn't start). One per interpreter and runcover.py under the cache folder, outside /tmp,
+    which a job sandbox (bwrap --tmpfs /tmp) hides; made aside and renamed in, so a run sees it whole or not at all;
+    one no run used for PRUNE_S goes."""
+    src = os.path.join(HERE, "runcover.py")
+    if os.name != "posix" or not os.path.isfile(src):
+        return None
+    real = os.path.realpath(sys.executable)
+    own = [p for p in site.getsitepackages() + ([site.getusersitepackages()] if site.ENABLE_USER_SITE else [])
+           if os.path.isdir(p)]  # run.py's own packages (a venv's) stay importable
+    with open(src, "rb") as f:
+        key = hashlib.sha1(f"{real}\0{sys.version}\0{own}\0python python3\0".encode() + f.read()).hexdigest()[:16]
+    top = os.path.join(_cache_base(), "sampo", "run-py")
+    d = os.path.join(top, key)
+    py = os.path.join(d, "bin", "python3")
+    try:
+        if not os.path.exists(py):
+            os.makedirs(top, exist_ok=True)
+            new = tempfile.mkdtemp(dir=top, prefix=".new-")
+            try:
+                lib = os.path.join(new, os.path.relpath(site.getsitepackages([d])[0], d))
+                os.makedirs(lib)
+                os.mkdir(os.path.join(new, "bin"))
+                for name in ("python", "python3"):  # first on a class's PATH: `python3 x.py`, fm's #! line record too
+                    os.symlink(real, os.path.join(new, "bin", name))
+                with open(os.path.join(new, "pyvenv.cfg"), "w") as f:
+                    f.write(f"home = {os.path.dirname(real)}\ninclude-system-site-packages = true\n")
+                shutil.copy(src, lib)
+                with open(os.path.join(lib, "runcover.pth"), "w") as f:
+                    f.write("".join(p + "\n" for p in own) + f"import runcover; runcover.setup({py!r})\n")
+                subprocess.run([os.path.join(new, "bin", "python3"), "-c", "import runcover, sys; sys.exit(not runcover.PY)"],
+                               check=True, timeout=120, capture_output=True)
+                with contextlib.suppress(OSError):  # a run beside this one's won: the same venv
+                    os.rename(new, d)
+            finally:
+                shutil.rmtree(new, ignore_errors=True)  # gone once renamed
+        os.utime(d)  # in use: the pruning below keeps it
+        for name in os.listdir(top):
+            if name != key and time.time() - os.lstat(os.path.join(top, name)).st_mtime > PRUNE_S:
+                shutil.rmtree(os.path.join(top, name), ignore_errors=True)
+    except (OSError, IndexError, subprocess.SubprocessError):
+        return None
+    return py if os.path.exists(py) else None
+
+
+def covered(text, repo, blobs):
+    """T-3593: the paths a class's recorded lines name, relative to the repo: its files (a module's source for its
+    .pyc), its listed folders ('x/', './' the root), '*' for the whole tree. A file on disk that git doesn't see
+    (ignored, or under .git/) and Sampo's task state are left out; a missing one stays, so creating it reruns.
+    Accepted gaps (the 1-in-10 rerun is their backstop): the import system's own folder listings, so a new module
+    shadowing one later on sys.path goes unseen, and where an in-repo symlink points."""
+    roots, out = _roots(repo), set()
+    for ln in text.splitlines():
+        kind, _, p = ln.partition(" ")
+        if kind in ("*", "g"):  # a child it couldn't follow; "g": that child was git on the repo
+            out.add("*" if kind == "*" else GIT_STATE)
+            continue
+        root = next((r for r in roots if (p + os.sep).startswith(r)), None)
+        if root is None or kind not in ("f", "d", "s"):
+            continue
+        rel = p[len(root):].replace(os.sep, "/")
+        if kind == "s":  # stat, exists, access: a file's content and mode, else whether it is there (review)
+            if rel and not rel.startswith(STATE):
+                out.add(rel if rel in blobs else "?" + rel)
+            continue
+        if kind == "d":
+            if not (rel + "/").startswith(STATE):
+                out.add(rel.rstrip("/") + "/" if rel else "./")
+            continue
+        if "__pycache__/" in rel and rel.endswith(".pyc"):
+            with contextlib.suppress(ValueError):
+                rel = importlib.util.source_from_cache(rel)
+        if rel and not rel.startswith(STATE) and (rel in blobs or not os.path.lexists(os.path.join(repo, rel))):
+            out.add(rel)
     return out
 
 
-def cache_keys(repo, blobs, cids):
-    """T-3502: {class id: key}, a hash of the blobs its module depends on: the module, the files beside run.py it
-    imports or names (helpers, forkcli, another test's base class), run.py, every root file and every file of the tests'
-    own top folder (plugin/: nearly every test drives Sampo, which may read any of it), and what the map links to those
-    modules (site/ for a test naming "site"). A module that, or whose helpers, read folders, or any when the map can't
-    be loaded: the whole
-    tree. Never Sampo's task state. Python's version, --sandbox and the local-models switch go in too."""
-    rel = os.path.relpath(HERE, repo).replace(os.sep, "/")
-    files = {f: b for f, b in blobs.items() if not f.startswith(STATE)}
-    texts = {}
+def shared(repo, blobs):
+    """T-3593: what every class depends on: run.py and the helpers beside it (helpers.py, forkcli.py, runcover.py)."""
+    rel = os.path.relpath(os.path.realpath(HERE), os.path.realpath(repo)).replace(os.sep, "/")
+    return {f for f in blobs if f.startswith(rel + "/") and f.endswith(".py") and "/" not in f[len(rel) + 1:]
+            and not os.path.basename(f).startswith("test")}
 
-    def text(path):
-        if path not in texts:
-            try:
-                with open(os.path.join(repo, path), encoding="utf-8", errors="replace") as f:
-                    texts[path] = f.read()
-            except OSError:
-                texts[path] = ""
-        return texts[path]
 
-    def closure(path):
-        seen, todo = set(), [path]
-        while todo:
-            p = todo.pop()
-            if p not in seen and p in files:
-                seen.add(p)
-                todo += [f"{rel}/{n}.py" for n in _refs(text(p))]
-        return seen
+def values(blobs):
+    """T-3593: what a recorded path is worth in a tree: a file its mode and blob ('' when gone), a folder ('x/') the
+    names in it, '?x' whether x is a file, a folder or absent, '*' the whole tree's files (Sampo's task state left
+    out), GIT_STATE HEAD and the tags."""
+    memo, kids = {}, {}
 
-    def digest(paths, seed=""):
-        env = f"{sys.version}\0{bool(SANDBOX)}\0{os.environ.get('FOREMAN_NO_LOCAL_MODELS', '1')}\0{seed}"
-        h = hashlib.sha1(env.encode())
-        for f in sorted(paths):
-            h.update(f"{f}\0{files[f]}\0".encode())
-        return h.hexdigest()
-    beside = lambda f: f.startswith(rel + "/") and f.endswith(".py") and "/" not in f[len(rel) + 1:]  # noqa: E731
-    base = {f for f in files if not beside(f) and ("/" not in f or f.startswith(rel.split("/")[0] + "/"))}
-    base |= {f"{rel}/run.py"} & files.keys()
-    paths = {m: f"{rel}/{m.replace('.', '/')}.py" for m in {c.rsplit(".", 1)[0] for c in cids}}
-    deps = {m: closure(p) for m, p in paths.items() if p in files}
-    try:
-        links = _test_links(repo, list(files), set().union(*deps.values()))
-    except Exception:  # no Sampo beside this run.py, or a map that can't read this tree: every key is the whole tree
-        links = None
-    under, keys, every, root = {}, {}, None, digest(base)
-    for m, own in deps.items():
-        if links is None or any(WALKS.search(text(p)) for p in own):  # its helpers' walks too
-            every = keys[m] = every or digest(files)
-            continue
-        extra = set(own)
-        for s in {s for t in own for s in links.get(t, ())}:
-            if s.endswith("/"):
-                extra |= under.setdefault(s, {f for f in files if f.startswith(s)})
-            elif s in files:
-                extra.add(s)
-        keys[m] = digest(extra - base, root)
-    return {c: keys[c.rsplit(".", 1)[0]] for c in cids if c.rsplit(".", 1)[0] in keys}
+    def value(p):
+        if p not in memo:
+            if p == "*":
+                memo[p] = hashlib.sha1("".join(f"{f}\0{b}\0" for f, b in sorted(blobs.items())
+                                               if not f.startswith(STATE) and f != GIT_STATE).encode()).hexdigest()
+            elif p.endswith("/") or p.startswith("?"):
+                if not kids:
+                    for f in blobs:
+                        parts = f.split("/") if f != GIT_STATE else []
+                        for i, name in enumerate(parts):
+                            kids.setdefault("/".join(parts[:i]) + "/" if i else "./", set()).add(name)
+                q = p[1:]
+                memo[p] = ("/".join(sorted(kids.get(p, ()))) if p.endswith("/") else
+                           "file" if q in blobs else "dir" if q + "/" in kids else "")
+            else:
+                memo[p] = blobs.get(p, "")
+        return memo[p]
+    return value
+
+
+def digest(paths, value):
+    """T-3593: one hash of the paths' values (sorted paths), Python's version, --sandbox and the local-models switch."""
+    h = hashlib.sha1(f"{sys.version}\0{bool(SANDBOX)}\0{os.environ.get('FOREMAN_NO_LOCAL_MODELS', '1')}".encode())
+    for p in paths:
+        h.update(f"{p}\0{value(p)}\0".encode())
+    return h.hexdigest()
 
 
 def work_time(secs):
@@ -562,6 +637,7 @@ BOOT = ("import ctypes, os, signal, sys, unittest\n"
 
 
 SANDBOX = []  # T-3222: run.py --sandbox, once its job sandbox is known to work here
+COVER_PY = []  # T-3593: the venv python recording each class's reads (cover_python), when there is one
 
 
 def sandboxed(argv, tmp, env):
@@ -604,6 +680,9 @@ def _run_one(cid, k, timeout, deadline, slot):
     argv, env =[sys.executable, "-X", "faulthandler", "-c", BOOT, "0" if SANDBOX else str(os.getpid()), "-q", cid,
                  *extra], child_env(tmp)
     env[SLOT_ENV] = "none" if slot is None else str(slot)  # T-3442: with no slot too, its runs never queue again
+    if COVER_PY:  # T-3593: its processes append the repo files they read here, the venv's python first on PATH
+        env["RUNPY_COVER"] = os.path.join(tmp, ".runcover")
+        env["PATH"] = os.path.dirname(COVER_PY[0]) + os.pathsep + env.get("PATH", os.defpath)
     if SANDBOX:  # its own pid namespace: it dies with bwrap (--die-with-parent), not by a parent pid check
         argv, env = sandboxed(argv, tmp, env)
     p = subprocess.Popen(argv, cwd=HERE,
@@ -622,6 +701,10 @@ def _run_one(cid, k, timeout, deadline, slot):
         _, err = p.communicate()
         err += f"\nrun.py: {cid} {why}\n"
     finally:
+        if COVER_PY:
+            with contextlib.suppress(OSError), open(os.path.join(tmp, ".runcover"), encoding="utf-8",
+                                                    errors="surrogateescape") as f:
+                COVERED[cid] = f.read()
         shutil.rmtree(tmp, ignore_errors=True)
     m = re.search(r"Ran (\d+) tests?", err)
     return cid, p.returncode, err, int(m.group(1)) if m else 0, time.time() - t0  # killed: negative
@@ -771,19 +854,25 @@ def main():
         todo = todo[a.shard[0] - 1::a.shard[1]]
     # T-3502: a run naming modules skips the classes green at the same code, but 1 in 10 drawn; every run records
     # them. Not with -k (part of a class), switched off, or nested in a class's slot (a test's own run.py).
+    # T-3593: "the same code" is what the class read when it passed (its coverage), so a change elsewhere skips it
     skip, drawn, got = {}, set(), None
     if not (a.k or (_env(NO_CACHE) or "0") != "0" or _env(SLOT_ENV)):
         got = tree()
     if got:
-        cache, keys = cache_path(got[0]), cache_keys(*got, todo)
+        cache, value = cache_path(got[2]), values(got[1])
+        COVERED.clear()
         gen, recs = load_cache(cache)
-        hits = [c for c in todo if c in keys and recs.get(c, [None])[0] == keys[c]] if a.names else []
+        hits = {c: r[1] for c in todo for r in recs.get(c, ())[::-1] if r[0] == digest(r[2], value)} if a.names else {}
         drawn = {c for c in hits if random.random() < SAMPLE}
-        skip = {c: recs[c][1] for c in hits if c not in drawn}
+        skip = {c: n for c, n in hits.items() if c not in drawn}
         todo = [c for c in todo if c not in skip]
         if skip:
             sys.stderr.write(f"run.py: skipped {len(skip)} classes green at the same code; "
                              "FOREMAN_NO_TEST_CACHE=1 runs them\n")
+        if not SANDBOX and (py := cover_python()):
+            COVER_PY.append(py)
+            sys.executable = py  # every Python run.py starts records, a fork server it starts (T-3572) too
+            os.environ["RUNPY_COVER_ROOTS"] = os.pathsep.join(_roots(got[0]))  # what runcover.py records
     owner = lambda j: j if j in parts else j.rsplit(".", 1)[0]  # noqa: E731  (a split class's job is one test)
     times = {} if a.shard else load_times()  # a shard's slice must not depend on this machine's last run
     todo = plan(todo, parts, whole, times)  # T-3166: jobs, a big class's tests apart
@@ -822,19 +911,24 @@ def main():
             more = plan(list(skip), parts, whole, times)
             results += list(ex.map(go, more))
             todo, skip, got = todo + more, {}, None
-    if got:  # T-3502: each class that ran whole and green, none skipped, recorded at its key
-        size, ran = {}, {}
+    if got:  # T-3502: each class that ran whole and green, none skipped, recorded with what it read (T-3593)
+        size, ran, cov = {}, {}, {}
         for t in set(ids):
             size[t.rsplit(".", 1)[0]] = size.get(t.rsplit(".", 1)[0], 0) + 1
         for job, code, err, n, _ in results:  # a skip (skipUnless a browser) passes here, maybe not elsewhere
             ok, m = ran.get(owner(job), (True, 0))
             ran[owner(job)] = ok and code == 0 and not re.search(r"\bskipped=\d", err), m + n
-        new = {c: n for c, (ok, n) in ran.items() if ok and c in keys and n == size.get(c) == len(parts.get(c, ()))}
+            cov.setdefault(owner(job), []).append(COVERED.get(job))  # None: a job nothing recorded for
+        new = {c: n for c, (ok, n) in ran.items()
+               if ok and None not in cov[c] and n == size.get(c) == len(parts.get(c, ()))}
         again = tree() if new else None  # a file edited while the run ran: its class ran the old code or the new
-        now = cache_keys(*again, list(new)) if again and again[0] == got[0] else {}
-        new = {c: [keys[c], n] for c, n in new.items() if now.get(c) == keys[c]}
-        if new:
-            save_cache(cache, new, gen)
+        if again and again[0] == got[0]:
+            base, after = shared(*got[:2]), values(again[1])
+            paths = {c: sorted(base.union(*(covered(t, *got[:2]) for t in cov[c]))) for c in new}
+            new = {c: [digest(paths[c], value), n, paths[c]] for c, n in new.items()}
+            new = {c: r for c, r in new.items() if digest(r[2], after) == r[0]}
+            if new:
+                save_cache(cache, new, gen)
     if not a.shard:
         seen = set(ids)
         # T-3338: a killed class (negative rc) counts as slow, so the next run splits it instead of killing it again
